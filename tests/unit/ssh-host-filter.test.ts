@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterSshHosts } from '../../src/renderer/components/sidebar/sshHostFilter'
+import { filterSshHosts } from '../../src/renderer/components/sidebar/ssh-host-filter'
 import type { SshHost } from '@shared/machines'
 
 const hosts: SshHost[] = [

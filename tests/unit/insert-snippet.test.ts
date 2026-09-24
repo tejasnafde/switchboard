@@ -5,7 +5,7 @@
  * caret happens to be.
  */
 import { describe, it, expect } from 'vitest'
-import { insertSnippetWithNewlineGuards } from '../../src/renderer/services/insertSnippet'
+import { insertSnippetWithNewlineGuards } from '../../src/renderer/services/insert-snippet'
 
 describe('insertSnippetWithNewlineGuards', () => {
   it('inserts into empty body without leading or trailing newline', () => {

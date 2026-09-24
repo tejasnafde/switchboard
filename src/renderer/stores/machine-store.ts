@@ -11,9 +11,9 @@ import { create } from 'zustand'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type { Project, SessionSummary } from '@shared/types'
 import { AppChannels } from '@shared/ipc-channels'
-import { projectOrganizationItems } from '@shared/workspaceOrganization'
-import type { MachineStatus } from '../components/sidebar/machineList'
-import { projectsToSnapshot } from '../components/sidebar/machineSnapshot'
+import { projectOrganizationItems } from '@shared/workspace-organization'
+import type { MachineStatus } from '../components/sidebar/machine-list'
+import { projectsToSnapshot } from '../components/sidebar/machine-snapshot'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:machines')

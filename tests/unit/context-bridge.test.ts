@@ -4,8 +4,8 @@ import {
   formatTerminalContext,
   contextElementForSelection,
   sessionIdForContextElement,
-} from '../../src/renderer/services/contextBridge'
-import { nextCommittedIdeBinding, sameIdeWorkspaceTarget } from '../../src/renderer/services/ideWorkspaceBinding'
+} from '../../src/renderer/services/context-bridge'
+import { nextCommittedIdeBinding, sameIdeWorkspaceTarget } from '../../src/renderer/services/ide-workspace-binding'
 
 /**
  * Pure-function tests for the ⌘L context-bridge formatter.

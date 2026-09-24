@@ -4,7 +4,7 @@ import {
   classifyLegacyConversationSidebarRole,
   logicalImportConversationId,
   recoveryCandidateTitle,
-} from '../../src/main/db/conversationSidebarRole'
+} from '../../src/main/db/conversation-sidebar-role'
 const databaseSource = readFileSync(new URL('../../src/main/db/database.ts', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../../src/main/ipc/app.ts', import.meta.url), 'utf8')
 

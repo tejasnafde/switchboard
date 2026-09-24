@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { deriveProjectPositions } from '../../src/main/db/projectOrdering'
+import { deriveProjectPositions } from '../../src/main/db/project-ordering'
 
 describe('deriveProjectPositions', () => {
   it('migrates a global saved order into contiguous positions per workspace', () => {

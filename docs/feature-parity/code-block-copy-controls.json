@@ -8,7 +8,7 @@
       "status": "implemented",
       "evidence": [
         "src/renderer/components/chat/MarkdownWithCopyControls.tsx",
-        "src/renderer/services/messageLifecycle.ts",
+        "src/renderer/services/message-lifecycle.ts",
         "src/renderer/components/chat/ChatPanel.tsx",
         "tests/unit/code-block-copy-controls.test.ts",
         "tests/unit/message-copy-lifecycle.test.ts"

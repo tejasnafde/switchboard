@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RecentSessionsSection } from '../../src/renderer/components/sidebar/RecentSessionsSection'
-import type { RecentSessionItem } from '../../src/renderer/components/sidebar/recentSessions'
+import type { RecentSessionItem } from '../../src/renderer/components/sidebar/recent-sessions'
 import { RecentConversationsSetting } from '../../src/renderer/components/SettingsModal'
 
 const item: RecentSessionItem = {

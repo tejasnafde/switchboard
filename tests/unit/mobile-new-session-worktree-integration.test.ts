@@ -12,12 +12,12 @@ import {
   createNewSessionCreationCoordinator,
   newSessionCreationActions,
   type MobileNewSessionIntent,
-} from '../../apps/mobile/src/lib/newSessionCreation'
+} from '../../apps/mobile/src/lib/new-session-creation'
 import {
   createMobileNewSessionCreationStorage,
   type AsyncKeyValueStorage,
   type PersistedMobileNewSessionCreation,
-} from '../../apps/mobile/src/lib/newSessionCreationStorage'
+} from '../../apps/mobile/src/lib/new-session-creation-storage'
 
 const intent: MobileNewSessionIntent = {
   connectionId: 'connection-1',

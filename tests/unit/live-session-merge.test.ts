@@ -18,7 +18,7 @@ import {
   mergeLiveSessions,
   toAgentStatus,
   type LiveSessionSummary,
-} from '../../src/renderer/stores/liveSessionMerge'
+} from '../../src/renderer/stores/live-session-merge'
 
 interface Existing {
   id: string

@@ -7,7 +7,7 @@ import {
   shouldEvictReplacedSession,
   shouldShowChatFocusIndicator,
   type ChatWorkspaceState,
-} from '../../src/renderer/services/chatWorkspace'
+} from '../../src/renderer/services/chat-workspace'
 
 const dual = (overrides: Partial<ChatWorkspaceState> = {}): ChatWorkspaceState => ({
   primarySessionId: 'a',

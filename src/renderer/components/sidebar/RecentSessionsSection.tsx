@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { RecentSessionItem, RecentSessionStatus } from './recentSessions'
+import type { RecentSessionItem, RecentSessionStatus } from './recent-sessions'
 import { formatRelativeTime } from './sidebar-helpers'
 import {
   DEFAULT_RECENT_SESSION_LIMIT,
@@ -7,7 +7,7 @@ import {
   nextRecentSessionRevealCount,
   visibleRecentSessions,
   type RecentSessionLimit,
-} from './recentSessionLimit'
+} from './recent-session-limit'
 
 const STATUS = {
   approval: 'Approval',

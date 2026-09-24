@@ -10,7 +10,7 @@ import {
   buildKanbanFirstTurn,
   launchCardChat,
   resolveCardRuntimeMode,
-} from '../../src/renderer/components/kanban/cardLaunch'
+} from '../../src/renderer/components/kanban/card-launch'
 import {
   useAgentStore,
   setStoreDefaultRuntimeMode,

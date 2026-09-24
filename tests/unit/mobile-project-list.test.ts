@@ -2,7 +2,7 @@
  * Projects-screen search helpers.
  */
 import { describe, it, expect } from 'vitest'
-import { matchesQuery } from '../../apps/mobile/src/lib/projectList'
+import { matchesQuery } from '../../apps/mobile/src/lib/project-list'
 import { initialsFromEmail } from '../../apps/mobile/src/lib/account'
 
 describe('matchesQuery', () => {

@@ -5,7 +5,7 @@ import {
   captureTerminalContext,
   formatTerminalContext,
   sendQuickPrompt,
-} from '../services/contextBridge'
+} from '../services/context-bridge'
 import { useLayoutStore } from '../stores/layout-store'
 
 interface QuickPromptModalProps {

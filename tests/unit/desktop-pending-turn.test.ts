@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import * as submissionModule from '../../src/renderer/services/desktopTurnSubmission'
+import * as submissionModule from '../../src/renderer/services/desktop-turn-submission'
 import {
   acceptedDesktopUserMessage,
   pendingDesktopUserMessage,
-} from '../../src/renderer/services/desktopTurnSubmission'
+} from '../../src/renderer/services/desktop-turn-submission'
 import type { RuntimeUserMessageEvent, UserTurnSubmissionV1 } from '../../src/shared/provider-events'
 
 const turn: UserTurnSubmissionV1 = {

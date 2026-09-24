@@ -7,7 +7,7 @@
  * resolved content is correct before wiring it to files:write-file.
  */
 import { describe, it, expect } from 'vitest'
-import { buildFileDiff, resolvedContent, applyHunkDecision, hunkRows } from '../../src/renderer/components/chat/fileDiffResolve'
+import { buildFileDiff, resolvedContent, applyHunkDecision, hunkRows } from '../../src/renderer/components/chat/file-diff-resolve'
 
 const OLD = 'line1\nline2\nline3\n'
 const NEW = 'line1\nCHANGED\nline3\nADDED\n'

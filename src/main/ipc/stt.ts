@@ -25,7 +25,7 @@ import {
 import { ensureWhisperBinary, ensureWhisperModel, whisperSpawnEnv } from '../stt/whisper-binary'
 import { WhisperServerManager } from '../stt/whisper-manager'
 import { listAllFiles } from '../files/listing'
-import { allocatePort } from '../machines/connectDeps'
+import { allocatePort } from '../machines/connect-deps'
 import { userDataDir } from '../runtime'
 import { createMainLogger } from '../logger'
 

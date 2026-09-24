@@ -43,7 +43,7 @@ import {
   WORKTREE_CLONE_DEPENDENCIES_SETTING,
   type CloneRunner,
   type AccessFn,
-} from '../../src/main/git/dependencyClone'
+} from '../../src/main/git/dependency-clone'
 
 afterEach(() => {
   mocks.log.info.mockClear()

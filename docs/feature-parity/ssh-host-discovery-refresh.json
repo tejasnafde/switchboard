@@ -8,7 +8,7 @@
       "status": "implemented",
       "evidence": [
         "src/renderer/components/sidebar/AddMachineModal.tsx",
-        "src/renderer/components/sidebar/addMachineValidation.ts",
+        "src/renderer/components/sidebar/add-machine-validation.ts",
         "tests/unit/add-machine-validation.test.ts",
         "e2e/ssh-host-discovery.e2e.mjs"
       ]
@@ -16,7 +16,7 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/lib/iapDiscovery.ts",
+        "apps/mobile/src/lib/iap-discovery.ts",
         "apps/mobile/src/screens/PairScreen.tsx",
         "tests/unit/mobile-iap-discovery.test.ts"
       ]

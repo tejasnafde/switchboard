@@ -5,15 +5,15 @@ import { existsSync, mkdirSync, renameSync } from 'fs'
 import { createMainLogger as createLogger } from '../logger'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanStatus } from '@shared/kanban'
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
-import { applyKanbanArchiveSideEffect } from '@shared/kanbanArchive'
+import { applyKanbanArchiveSideEffect } from '@shared/kanban-archive'
 import type { RuntimeMode } from '@shared/provider-events'
 import { isRuntimeMode } from '@shared/session-defaults'
 import { AGENT_TYPES, defaultInstanceId } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ProjectOrganizationItem } from '@shared/types'
 import type { SessionSource } from '@shared/types'
-import { deriveProjectPositions } from './projectOrdering'
-import type { ConversationSidebarRole } from './conversationSidebarRole'
+import { deriveProjectPositions } from './project-ordering'
+import type { ConversationSidebarRole } from './conversation-sidebar-role'
 import type { WorktreeCreationStatus } from '@shared/worktree-creation'
 import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
 import { searchMessagesInDatabase, type SearchResult } from './message-search'
@@ -439,7 +439,7 @@ function migrate(db: Database.Database): void {
   ensureBookmarksTable(db)
 
   // Provider instances: named credential sets scoped to an agent kind.
-  // See src/main/db/providerInstances.ts for the encryption contract.
+  // See src/main/db/provider-instances.ts for the encryption contract.
   db.exec(`
     CREATE TABLE IF NOT EXISTS provider_instances (
       id            TEXT PRIMARY KEY,

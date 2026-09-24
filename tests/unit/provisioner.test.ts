@@ -4,9 +4,9 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { provisionRemote } from '../../src/main/machines/provisioner'
-import { bridgeMarker, REMOTE_CODEX_VERSION } from '../../src/main/machines/provisionSetup'
-import { managedToolsMarker } from '../../src/main/machines/managedToolPlan'
-import { execProc } from '../../src/main/machines/provisionDeps'
+import { bridgeMarker, REMOTE_CODEX_VERSION } from '../../src/main/machines/provision-setup'
+import { managedToolsMarker } from '../../src/main/machines/managed-tool-plan'
+import { execProc } from '../../src/main/machines/provision-deps'
 import { _resetShellEnvCacheForTests } from '../../src/main/shell-env'
 import type { Machine } from '@shared/machines'
 
@@ -58,7 +58,7 @@ describe('provisionRemote', () => {
     // missing @anthropic-ai/claude-agent-sdk cannot be fixed by relinking
     // whatever happens to already be on disk. Attempting it and then writing
     // the tools marker as if it worked would claim a pinned version we never
-    // actually installed - the exact silent-convergence bug managedToolPlan.ts
+    // actually installed - the exact silent-convergence bug managed-tool-plan.ts
     // exists to prevent.
     const r = runner({ ...full, codexBin: '/home/u/.local/bin/codex', codexVersion: REMOTE_CODEX_VERSION })
     const res = await provisionRemote(machine, inputs, r)

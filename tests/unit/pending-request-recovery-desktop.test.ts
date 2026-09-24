@@ -3,7 +3,7 @@ import {
   missingPendingCards,
   pendingRequestMessageId,
   pendingRequestToChatMessage,
-} from '../../src/renderer/services/pendingRequestRecovery'
+} from '../../src/renderer/services/pending-request-recovery'
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
 
 const approval: PendingBlockingEvent = {

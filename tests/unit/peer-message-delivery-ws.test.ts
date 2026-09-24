@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WebSocketServer, type AddressInfo } from 'ws'
 
-vi.mock('../../src/main/db/providerInstances', () => ({
+vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({
     id: id ?? `${agentType}-default`,
     env: {},
@@ -66,8 +66,8 @@ import {
   peerMessageId,
   wrapPeerMessage,
 } from '../../src/shared/peer-messaging'
-import { peerMessageToChatMessage } from '../../src/renderer/components/chat/sendToCommand'
-import { parseRotationMarker } from '../../src/renderer/components/chat/rotationMarker'
+import { peerMessageToChatMessage } from '../../src/renderer/components/chat/send-to-command'
+import { parseRotationMarker } from '../../src/renderer/components/chat/rotation-marker'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent, RuntimePeerMessageEvent } from '../../src/shared/provider-events'
 

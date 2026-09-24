@@ -78,7 +78,7 @@ import type { ConversationForkCoordinator } from '../conversations/conversation-
 import { parseForkConversationRequest, type ForkConversationOutcome } from '@shared/conversation-fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary } from '@shared/types'
-import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conversationSidebarRole'
+import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conversation-sidebar-role'
 import { loadCursorConversation } from '../cursor/store'
 import { importCursorSnapshot } from '../db/cursor-import'
 

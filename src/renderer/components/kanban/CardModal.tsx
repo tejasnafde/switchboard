@@ -12,10 +12,10 @@
 
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent } from 'react'
 import { useKanbanStore } from '../../stores/kanban-store'
-import { downscaleImage } from '../../services/imageDownscale'
-import { insertSnippetWithNewlineGuards } from '../../services/insertSnippet'
-import { buildKanbanCardCreateSubmission } from './kanbanCreateIntent'
-import { describeKanbanWorktreeCreation } from './kanbanWorktreePresentation'
+import { downscaleImage } from '../../services/image-downscale'
+import { insertSnippetWithNewlineGuards } from '../../services/insert-snippet'
+import { buildKanbanCardCreateSubmission } from './kanban-create-intent'
+import { describeKanbanWorktreeCreation } from './kanban-worktree-presentation'
 import {
   KANBAN_COLUMNS,
   KANBAN_DEFAULT_RUNTIME_MODE,

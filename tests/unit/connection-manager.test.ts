@@ -4,7 +4,7 @@
  * tested without real ssh or sockets. Node-specific deps live in ipc/machines.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { ConnectionManager, type ConnectionManagerDeps, type TunnelProcess } from '../../src/main/machines/connectionManager'
+import { ConnectionManager, type ConnectionManagerDeps, type TunnelProcess } from '../../src/main/machines/connection-manager'
 import type { Machine } from '@shared/machines'
 
 const machine = (over: Partial<Machine> = {}): Machine => ({

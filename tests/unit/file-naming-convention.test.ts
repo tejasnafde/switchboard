@@ -14,8 +14,7 @@ import {
 } from '../../scripts/apply-naming-convention.mjs'
 
 describe('file naming convention', () => {
-  // Unskipped by the generated rename commit.
-  it.skip('every tracked file follows it', () => {
+  it('every tracked file follows it', () => {
     const offenders = (trackedFiles() as string[])
       .map((f) => [f, expectedBasename(f)] as const)
       .filter(([, expected]) => expected)

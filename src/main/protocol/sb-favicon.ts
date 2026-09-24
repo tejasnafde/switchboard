@@ -14,7 +14,7 @@
  *      ask for favicons of projects it actually has registered - no
  *      arbitrary disk reads.
  *   2. The favicon resolver itself only probes a fixed list of paths
- *      *inside* the project root (faviconResolver.ts), so even with a
+ *      *inside* the project root (favicon-resolver.ts), so even with a
  *      poisoned project entry the disk reads stay scoped.
  *
  * The pure functions exported here (parseFaviconUrl, isAuthorizedProjectPath)
@@ -23,7 +23,7 @@
  */
 import { net, protocol } from 'electron'
 import { pathToFileURL } from 'node:url'
-import { resolveProjectFavicon } from '../projects/faviconResolver'
+import { resolveProjectFavicon } from '../projects/favicon-resolver'
 
 export interface ParsedFaviconUrl {
   projectPath: string

@@ -7,7 +7,7 @@ import {
   resolveLoadedRecentSessionLimit,
   type RecentSessionLimit,
   visibleRecentSessions,
-} from '../../src/renderer/components/sidebar/recentSessionLimit'
+} from '../../src/renderer/components/sidebar/recent-session-limit'
 
 describe('recent session limit', () => {
   it('defaults invalid and missing settings to four rows', () => {

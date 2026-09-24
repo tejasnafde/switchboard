@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deriveRecentSessions } from '../../src/renderer/components/sidebar/recentSessions'
+import { deriveRecentSessions } from '../../src/renderer/components/sidebar/recent-sessions'
 import type { Project } from '@shared/types'
 
 function project(): Project {

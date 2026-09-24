@@ -1,12 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAgentStore } from '../stores/agent-store'
-import { renderSnippetHtml } from './searchSnippet'
+import { renderSnippetHtml } from './search-snippet'
 import { resolveSessionSelectTarget } from '../utils/session-eviction'
 import type { ChatMessage } from '@shared/types'
 import {
   projectLoadedSearchSession,
   type LoadedSearchSessionMeta,
-} from '../services/searchSessionProjection'
+} from '../services/search-session-projection'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('search-modal')

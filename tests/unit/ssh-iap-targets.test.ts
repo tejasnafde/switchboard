@@ -5,7 +5,7 @@
  * including the quoted and unquoted flag styles that coexist there.
  */
 import { describe, it, expect } from 'vitest'
-import { iapTransportForMachine, parseIapTargets } from '../../src/main/machines/sshConfig'
+import { iapTransportForMachine, parseIapTargets } from '../../src/main/machines/ssh-config'
 import type { Machine } from '@shared/machines'
 
 describe('parseIapTargets', () => {

@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   submitQueuedTurn,
   type QueuedTurnDeliveryPort,
-} from '../../apps/mobile/src/lib/outboxDelivery'
-import type { QueuedMessage } from '../../apps/mobile/src/lib/outboxModel'
+} from '../../apps/mobile/src/lib/outbox-delivery'
+import type { QueuedMessage } from '../../apps/mobile/src/lib/outbox-model'
 
 const image = { url: 'data:image/png;base64,AAAA', mimeType: 'image/png' }
 

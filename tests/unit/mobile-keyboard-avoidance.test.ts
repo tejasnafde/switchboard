@@ -9,7 +9,7 @@
  * recipe is an iOS recipe that double-counts the header on Android.
  */
 import { describe, it, expect } from 'vitest'
-import { keyboardAvoidance } from '../../apps/mobile/src/lib/keyboardAvoidance'
+import { keyboardAvoidance } from '../../apps/mobile/src/lib/keyboard-avoidance'
 
 describe('keyboardAvoidance on ios', () => {
   it('pads the container, which leaves the list scrolled where the user left it', () => {

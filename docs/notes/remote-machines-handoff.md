@@ -41,24 +41,24 @@ backend. Proven in `tests/unit/provider-switch-ws.test.ts`.
   `CHECK_FOR_UPDATES`, all `machines:*`) on Electron IPC. `on` subscribes both.
 
 ### Machine layer
-- **M1** `src/main/machines/sshConfig.ts` (parser), `src/main/db/machines.ts`
+- **M1** `src/main/machines/ssh-config.ts` (parser), `src/main/db/machines.ts`
   (CRUD + `machine_snapshots`), `src/main/ipc/machines.ts`, `MachineChannels`,
   `@shared/machines`.
-- **M2a** `src/renderer/components/sidebar/machineList.ts` (`buildMachineList`),
+- **M2a** `src/renderer/components/sidebar/machine-list.ts` (`buildMachineList`),
   `src/renderer/stores/machine-store.ts`. Hydrated in `App.tsx`.
 - **M2b** `src/renderer/components/sidebar/MachineLayer.tsx` (local pinned,
   wraps the workspace tree; remotes as rows), `AddMachineModal.tsx`.
 - **M2c** drag-reorder remotes (@dnd-kit; local pinned).
-- **M3** `machineSnapshot.ts` (`syncedAgoLabel` / `cachedProjects`),
+- **M3** `machine-snapshot.ts` (`syncedAgoLabel` / `cachedProjects`),
   `machine_snapshots` table + `saveMachineSnapshot` / `getMachineSnapshots`,
   `machines:get-snapshots`. Offline remotes with a snapshot render a greyed
   read-only tree. Populated on connect by `syncMachine` (M4b step 3).
-- **M4a** `src/main/machines/sshTunnel.ts` (`buildTunnelCommand`),
-  `src/main/machines/connectionStatus.ts` (`nextConnectionStatus` reducer).
+- **M4a** `src/main/machines/ssh-tunnel.ts` (`buildTunnelCommand`),
+  `src/main/machines/connection-status.ts` (`nextConnectionStatus` reducer).
   `MachineStatus` gained `'error'` + a red pip.
-- **M4b step 1 (spawn + health)** `src/main/machines/connectionManager.ts`
+- **M4b step 1 (spawn + health)** `src/main/machines/connection-manager.ts`
   (`ConnectionManager` - DI lifecycle, unit-tested) +
-  `src/main/machines/connectDeps.ts` (node impls: `allocatePort`, `spawnTunnel`,
+  `src/main/machines/connect-deps.ts` (node impls: `allocatePort`, `spawnTunnel`,
   `waitForHealth`). `machines:connect` / `machines:disconnect` /
   `machines:status` channels, store actions + status subscription, and a live
   Connect/Disconnect button in `MachineLayer`.
@@ -94,14 +94,14 @@ npm + key-based ssh; no compiler for common triples (prebuilt binaries).
 - **P1** `remoteProbe.parseProbeOutput`, `provisionPlan.planProvision`
   (`ready`/`install`/`upgrade`/`no-node`), `provisionCommands.buildProbeCommand`
   + `buildRemoteShellCommand`. `sshHostArgs` factored out of `buildTunnelCommand`.
-- **P2** `provisionSetup.ts`: `remotePackageJson` (better-sqlite3 pinned;
+- **P2** `provision-setup.ts`: `remotePackageJson` (better-sqlite3 pinned;
   `node-pty` aliased to `@homebridge/node-pty-prebuilt-multiarch` for the linux
   prebuilds upstream lacks) + `remoteInstallScript` (npm install, version marker
   written last). npm's own prebuild-install / bundled prebuilds fetch binaries.
 - **P3** `provisioner.ts`: `provisionRemote(machine, inputs, ProcRunner)` -
   probe -> plan -> on install/upgrade: mkdir, `cat >` bundle + package.json, run
   install. DI'd runner, unit-tested.
-- **P4** `provisionDeps.ts`: real `child_process` runner + `readServerBundle`
+- **P4** `provision-deps.ts`: real `child_process` runner + `readServerBundle`
   (from `out/server/index.cjs`, shipped via `out/**`). `ConnectionManager` runs
   `provision` before the tunnel (`no-node`/throw -> error, no tunnel).
   `REMOTE_COMMAND` = `PORT=8765 node $HOME/.switchboard-server/index.cjs`.
@@ -130,7 +130,7 @@ tree is Electron-ABI so the headless server can't run locally (native-ABI wall).
    `syncMachine` populates the tree -> open AND new remote chat -> remote terminal
    -> provider/instance switch -> drop the tunnel and watch it reconnect. Most
    likely break points: (a) node-pty fork version - `REMOTE_NODE_PTY` in
-   `provisionSetup.ts` is pinned `^0.12.0`; confirm it installs + is API-compatible
+   `provision-setup.ts` is pinned `^0.12.0`; confirm it installs + is API-compatible
    with `pty-manager.ts`'s spawn/onData/onExit/write/resize/kill, bump if not;
    (b) `SWITCHBOARD_DATA_DIR`/`SWITCHBOARD_SECRET` are read from the remote process
    env - `REMOTE_COMMAND` only sets `PORT`, so set the rest in the VM shell profile

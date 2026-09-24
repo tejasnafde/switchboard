@@ -109,7 +109,7 @@ test).
    ```
    Port 22 already works because IAP SSH is in daily use; 8766 needs its own
    rule. This is a work-infra change, so it may need approval.
-3. Still to wire: `connectDeps.ts` REMOTE_COMMAND passes only
+3. Still to wire: `connect-deps.ts` REMOTE_COMMAND passes only
    `SWITCHBOARD_REMOTE=1 PORT=...`, so a desktop-provisioned VM is not yet
    phone-reachable automatically. Making REMOTE_COMMAND a function that
    injects `TCP_PORT` + the pairing token is the remaining step.
@@ -271,7 +271,7 @@ t3code's mobile "high" difficulty; we skip it). Chat-first.
 ### Phase 2 - Self-update (copy `someday`)
 
 - `expo-updates` OTA for JS changes (`runtimeVersion.policy: appVersion`).
-- Native changes: `selfUpdate.ts` (~30 lines) polls GitHub Releases `latest` on
+- Native changes: `self-update.ts` (~30 lines) polls GitHub Releases `latest` on
   the switchboard repo, semver-compares vs `Application.nativeApplicationVersion`,
   downloads the APK via `expo-file-system`, installs via
   `expo-intent-launcher` `INSTALL_PACKAGE` (needs `REQUEST_INSTALL_PACKAGES`).

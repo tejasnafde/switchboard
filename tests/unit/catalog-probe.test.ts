@@ -4,7 +4,7 @@ const execFile = vi.fn()
 const resolveProviderInstance = vi.fn()
 
 vi.mock('child_process', () => ({ execFile: (...args: unknown[]) => execFile(...args) }))
-vi.mock('../../src/main/db/providerInstances', () => ({ resolveProviderInstance: (...args: unknown[]) => resolveProviderInstance(...args) }))
+vi.mock('../../src/main/db/provider-instances', () => ({ resolveProviderInstance: (...args: unknown[]) => resolveProviderInstance(...args) }))
 vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
 vi.mock('../../src/main/provider/adapters/claude-adapter', () => ({ findClaudeBin: () => undefined, buildClaudeCliEnv: () => ({}) }))
 vi.mock('../../src/main/provider/adapters/codex-adapter', () => ({ findCodexPath: () => '/bin/codex', parseCodexModels: (r: { data: Array<{ id: string }> }) => r.data.map((m) => ({ id: m.id, label: m.id, tier: 'balanced' })), buildCodexCliEnv: () => ({}) }))

@@ -5,7 +5,7 @@
  * dimension math is the high-risk part and lives behind a pure boundary.
  */
 import { describe, it, expect } from 'vitest'
-import { computeTargetSize } from '../../src/renderer/services/imageDownscale'
+import { computeTargetSize } from '../../src/renderer/services/image-downscale'
 
 describe('computeTargetSize', () => {
   it('passes through when both dimensions are within budget', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { historyToItems } from '../../apps/mobile/src/lib/threadHistory'
+import { historyToItems } from '../../apps/mobile/src/lib/thread-history'
 import type { ChatMessage } from '../../src/shared/types'
 
 const message = (over: Partial<ChatMessage>): ChatMessage => ({

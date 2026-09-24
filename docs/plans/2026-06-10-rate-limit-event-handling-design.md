@@ -30,7 +30,7 @@ dropped.
 
 **Rationale:**
 - Zero changes to `provider-events.ts`, `ChatPanel.tsx`, `MessageBubble.tsx`, or
-  `exportMarkdown.ts` - the existing error bubble and red-status-dot rendering cover everything.
+  `export-markdown.ts` - the existing error bubble and red-status-dot rendering cover everything.
 - No IPC schema changes means no renderer-side risk.
 - `allowed_warning` handling (proactive near-limit toasts) is explicitly deferred - it can be a
   clean follow-up PR if needed. The user confirmed: only surface on hard rejection.
@@ -84,8 +84,8 @@ case 'rate_limit_event': {
 - `src/shared/provider-events.ts` - no new event types
 - `src/renderer/components/chat/ChatPanel.tsx` - existing `error` handler covers it
 - `src/renderer/components/chat/MessageBubble.tsx` - existing red error bubble covers it
-- `src/main/ipc/enrichDisplayBody.ts` - error messages already handled
-- `src/main/agent/exportMarkdown.ts` - error messages already export as plain text
+- `src/main/ipc/enrich-display-body.ts` - error messages already handled
+- `src/main/agent/export-markdown.ts` - error messages already export as plain text
 
 ## Tests
 

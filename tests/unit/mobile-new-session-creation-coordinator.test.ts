@@ -3,7 +3,7 @@ import type {
   WorktreeCreationRequest,
   WorktreeCreationSnapshot,
 } from '../../src/shared/worktree-creation'
-import { createNewSessionCreationCoordinator } from '../../apps/mobile/src/lib/newSessionCreation'
+import { createNewSessionCreationCoordinator } from '../../apps/mobile/src/lib/new-session-creation'
 
 const worktreeIntent = {
   connectionId: 'connection-1',

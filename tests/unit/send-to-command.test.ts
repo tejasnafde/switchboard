@@ -6,7 +6,7 @@
  * must name the candidates rather than pick one.
  */
 import { describe, it, expect } from 'vitest'
-import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger, sendToPickerItems } from '../../src/renderer/components/chat/sendToCommand'
+import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger, sendToPickerItems } from '../../src/renderer/components/chat/send-to-command'
 import { PEER_AGENT_SENT_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
 
 const sessions = [

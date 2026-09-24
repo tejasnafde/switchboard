@@ -12,7 +12,7 @@
 import { useMemo, useState } from 'react'
 import type { FileDiffAttachment } from '@shared/types'
 import { createRendererLogger } from '../../logger'
-import { buildFileDiff, hunkRows, applyHunkDecision, resolvedContent } from './fileDiffResolve'
+import { buildFileDiff, hunkRows, applyHunkDecision, resolvedContent } from './file-diff-resolve'
 
 const log = createRendererLogger('chat:file-diff-card')
 

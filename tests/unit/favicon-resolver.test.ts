@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import {
   resolveProjectFavicon,
   __clearFaviconCacheForTests,
-} from '../../src/main/projects/faviconResolver'
+} from '../../src/main/projects/favicon-resolver'
 
 let tmp: string
 

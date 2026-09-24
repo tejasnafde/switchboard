@@ -4,7 +4,7 @@
  * from t3code's helper of the same name.
  */
 import { describe, it, expect } from 'vitest'
-import { providerInstanceInitials } from '../../src/shared/providerInstanceInitials'
+import { providerInstanceInitials } from '../../src/shared/provider-instance-initials'
 
 describe('providerInstanceInitials', () => {
   it('returns first letter of two leading words, uppercased', () => {

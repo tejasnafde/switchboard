@@ -10,7 +10,7 @@
  * SECURITY: `security find-generic-password -w` prints the credential on
  * stdout, so no code path here may put child stdout into a returned message
  * or a log line. That is also why this does not reuse `runProbe` from
- * `ipc/providerInstances.ts`, whose callers surface stdout to the UI.
+ * `ipc/provider-instances.ts`, whose callers surface stdout to the UI.
  */
 
 import { execFile } from 'child_process'

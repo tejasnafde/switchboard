@@ -12,7 +12,7 @@
  * helper just decides "is this even path-shaped".
  */
 import { describe, it, expect } from 'vitest'
-import { looksLikeRepoPath, parseFilePathRef, formatFilePathRef } from '../../src/shared/filePathRef'
+import { looksLikeRepoPath, parseFilePathRef, formatFilePathRef } from '../../src/shared/file-path-ref'
 
 describe('looksLikeRepoPath', () => {
   it('accepts paths with at least one slash and a file extension', () => {

@@ -15,7 +15,7 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/lib/outboxModel.ts",
+        "apps/mobile/src/lib/outbox-model.ts",
         "apps/mobile/src/stores/outbox.ts",
         "tests/unit/mobile-outbox.test.ts"
       ]
@@ -39,7 +39,7 @@
       "status": "implemented",
       "evidence": [
         "src/main/db/database.ts",
-        "apps/mobile/src/lib/outboxStorage.ts"
+        "apps/mobile/src/lib/outbox-storage.ts"
       ]
     },
     "updateRelease": {

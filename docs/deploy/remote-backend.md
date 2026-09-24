@@ -29,8 +29,8 @@ On Connect the app:
 3. opens `ssh -L <localPort>:127.0.0.1:8765 <host> "PORT=8765 node $HOME/.switchboard-server/index.cjs"`
    and polls `ws://127.0.0.1:<localPort>` until the backend answers.
 
-Relevant code: `src/main/machines/provisioner.ts`, `provisionSetup.ts`,
-`provisionDeps.ts`, `connectDeps.ts`. The server bundle ships inside the app
+Relevant code: `src/main/machines/provisioner.ts`, `provision-setup.ts`,
+`provision-deps.ts`, `connect-deps.ts`. The server bundle ships inside the app
 (built by `npm run build:server`, included via `out/**`).
 
 ## Environment

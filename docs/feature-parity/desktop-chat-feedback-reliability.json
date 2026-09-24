@@ -10,7 +10,7 @@
         "src/renderer/components/chat/MessageList.tsx",
         "src/renderer/components/chat/ChatPanel.tsx",
         "src/renderer/components/chat/MessageBubble.tsx",
-        "src/renderer/services/desktopTurnSubmission.ts",
+        "src/renderer/services/desktop-turn-submission.ts",
         "src/renderer/stores/draft-store.ts",
         "tests/unit/desktop-pending-turn.test.ts",
         "tests/unit/draft-store-transaction.test.ts",

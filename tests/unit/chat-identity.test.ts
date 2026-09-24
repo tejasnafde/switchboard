@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chatIdentity } from '../../src/renderer/components/chat/chatIdentity'
+import { chatIdentity } from '../../src/renderer/components/chat/chat-identity'
 
 describe('chatIdentity', () => {
   it('builds a plain remote breadcrumb with secondary worktree identity', () => {

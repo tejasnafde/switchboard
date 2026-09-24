@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { renderSnippetHtml } from '../../src/renderer/components/searchSnippet'
+import { renderSnippetHtml } from '../../src/renderer/components/search-snippet'
 
 describe('renderSnippetHtml', () => {
   it('wraps a ** pair in a balanced, closed <mark>', () => {

@@ -20,7 +20,7 @@ import { describe, it, expect } from 'vitest'
 import {
   resolveVisibleLoginInstanceId,
   nextTermInstanceId,
-} from '../../src/renderer/shared/terminalLoginAccount'
+} from '../../src/renderer/shared/terminal-login-account'
 
 function inst(id: string, createdAt: number) {
   return { id, createdAt }

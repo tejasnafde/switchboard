@@ -3,7 +3,7 @@ import { Command } from 'cmdk'
 import { useLayoutStore } from '../stores/layout-store'
 import { useAgentStore } from '../stores/agent-store'
 import { useTerminalStore } from '../stores/terminal-store'
-import { sessionExecutionRootPath } from '../services/executionRoot'
+import { sessionExecutionRootPath } from '../services/execution-root'
 import { useThemeStore, type ThemeName } from '../stores/theme-store'
 import { createRendererLogger } from '../logger'
 

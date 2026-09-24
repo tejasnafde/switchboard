@@ -3,7 +3,7 @@
  * stacked on top, so the version alone does not say what is running.
  */
 import { describe, it, expect } from 'vitest'
-import { formatBuildStamp, type BuildFacts } from '../../apps/mobile/src/lib/buildInfo'
+import { formatBuildStamp, type BuildFacts } from '../../apps/mobile/src/lib/build-info'
 
 /** A production APK serving a downloaded bundle. */
 const OTA: BuildFacts = {

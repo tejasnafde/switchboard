@@ -19,7 +19,7 @@ import {
   projectOrganizationItems,
   reorderProjectsWithinWorkspace,
   reorderWorkspacesById,
-} from '@shared/workspaceOrganization'
+} from '@shared/workspace-organization'
 import { colorTokenForWorkspace } from './sidebar-helpers'
 
 const WORKSPACE_COLORS = [1, 2, 3, 4, 5, 6].map(

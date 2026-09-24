@@ -6,22 +6,22 @@ import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
 import { useMachineStore } from '../../stores/machine-store'
-import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotationMarker'
+import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotation-marker'
 import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
-import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage } from './sendToCommand'
-import { clearProviderRetry, upsertProviderRetry } from './providerRetry'
+import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage } from './send-to-command'
+import { clearProviderRetry, upsertProviderRetry } from './provider-retry'
 import { MessageList } from './MessageList'
 import { ChatInput, type ChatSendResult } from './ChatInput'
-import { chatIdentity } from './chatIdentity'
+import { chatIdentity } from './chat-identity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ForkLineageBanner } from './ForkLineageBanner'
 import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { isDraftSessionId } from '@shared/new-chat-draft'
 import { canSteer } from '@shared/turn-delivery'
-import { materializeDraft, takeFirstSend } from '../../services/draftChat'
+import { materializeDraft, takeFirstSend } from '../../services/draft-chat'
 import { ContextWindowMeter } from './ContextWindowMeter'
-import { SLASH_COMMANDS } from './slashCommands'
+import { SLASH_COMMANDS } from './slash-commands'
 import {
   onSessionRename,
   emitSessionRename,
@@ -30,7 +30,7 @@ import {
   onReducedProviderEvent,
 } from '../../services/session-events'
 import { notifyTurnCompleted } from '../../services/notifications'
-import { isAssistantStreamingEnabled } from '../../services/streamingPref'
+import { isAssistantStreamingEnabled } from '../../services/streaming-pref'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('chat:panel')
@@ -38,13 +38,13 @@ import {
   bufferContent,
   createStreamingBuffer,
   drainTurn,
-} from '../../services/streamingBuffer'
-import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
+} from '../../services/streaming-buffer'
+import { createContentCoalescer, type ContentCoalescer } from '../../services/content-coalescer'
 import {
   finishRuntimeEventLifecycle,
   messageLifecycle,
   prepareRuntimeEventLifecycle,
-} from '../../services/messageLifecycle'
+} from '../../services/message-lifecycle'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
 import {
   validateUserMessageImages,
@@ -61,8 +61,8 @@ import {
   submitProgrammaticTurn,
   submitDesktopUserTurn,
   type DesktopTurnSubmissionDependencies,
-} from '../../services/desktopTurnSubmission'
-import { downscaleImage } from '../../services/imageDownscale'
+} from '../../services/desktop-turn-submission'
+import { downscaleImage } from '../../services/image-downscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
 import {
@@ -71,13 +71,13 @@ import {
   SETTING_DEFAULT_RUNTIME_MODE,
 } from '@shared/session-defaults'
 import { useLayoutStore } from '../../stores/layout-store'
-import type { ChatSlot } from '../../services/chatWorkspace'
-import { focusComposer } from '../../services/composerRegistry'
+import type { ChatSlot } from '../../services/chat-workspace'
+import { focusComposer } from '../../services/composer-registry'
 import {
   cloneDraftPayload,
   requiresDraftTransferConfirmation,
   withDraftProvenance,
-} from '../../services/draftTransfer'
+} from '../../services/draft-transfer'
 import { providerKindFor } from '@shared/types'
 
 interface ChatPanelProps {

@@ -5,7 +5,7 @@
  * a running session.
  */
 
-import { getProviderInstanceFull } from '../../db/providerInstances'
+import { getProviderInstanceFull } from '../../db/provider-instances'
 import { resolveInstanceEnv } from '../instance-env'
 import { findCodexPath } from '../adapters/codex-adapter'
 import type { ProviderUsage } from '@shared/provider-usage'

@@ -153,9 +153,9 @@ everything else works.
 
 - `src/lib/api.ts` - SwitchboardClient: typed invoke/event wrapper over
   `src/shared/ws-transport` (imported from the repo root via `@shared`)
-- `src/lib/selfUpdate.ts` - APK self-update off GitHub Releases; `selfCheck()`
+- `src/lib/self-update.ts` - APK self-update off GitHub Releases; `selfCheck()`
   asserts the version comparison and release picking offline
-- `src/lib/otaUpdate.ts` - expo-updates OTA check on mount and on foreground
+- `src/lib/ota-update.ts` - expo-updates OTA check on mount and on foreground
 - `src/components/UpdateBanner.tsx` - bottom banner for both update lanes,
   mounted once in `App.tsx` over the navigator
 - `src/lib/google-auth.ts` - direct Google PKCE sign-in, keychain-backed token
@@ -206,7 +206,7 @@ Mobile releases are tagged `mobile-v<version>`, not `v<version>`. The Electron
 desktop app already owns `v*` (see `.github/workflows/release.yml`, currently at
 `v0.7.x`); sharing that namespace would collide on tag names and fire the
 desktop release workflow. Because desktop releases far outnumber mobile ones,
-`selfUpdate.ts` reads the releases *list* and picks the newest release carrying
+`self-update.ts` reads the releases *list* and picks the newest release carrying
 an `.apk` rather than calling `/releases/latest`, which would nearly always
 return a desktop release with no APK attached.
 

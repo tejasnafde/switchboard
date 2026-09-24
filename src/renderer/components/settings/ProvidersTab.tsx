@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AgentType, ProviderInstance } from '@shared/types'
 import type { ProviderUsage } from '@shared/provider-usage'
 import { agentLabel, defaultInstanceId } from '@shared/types'
-import { providerInstanceInitials } from '@shared/providerInstanceInitials'
+import { providerInstanceInitials } from '@shared/provider-instance-initials'
 import {
   oauthCreateDirCommand,
   oauthEnvName,
@@ -19,7 +19,7 @@ import type { ProviderInstanceUpsertInput } from '../../../preload'
 import {
   credentialHomeDisplay,
   defaultAuthModeForNewInstance,
-} from '../../shared/providerInstanceDisplay'
+} from '../../shared/provider-instance-display'
 import type { AgentProvider } from '@shared/types'
 import { AGENT_PROVIDERS } from '@shared/types'
 
@@ -400,7 +400,7 @@ function ProviderInstanceDialog({
   // (CODEX_HOME/CLAUDE_CONFIG_DIR): main carries that forward across a save
   // that omits it, because it is the profile's account identity and losing it
   // would silently move the profile onto the shared default account. See
-  // `envToStore` in main/db/providerInstances.ts - the invariant lives there,
+  // `envToStore` in main/db/provider-instances.ts - the invariant lives there,
   // not here, so it holds for every caller.
   const [envRows, setEnvRows] = useState<{ key: string; value: string }[]>(() => {
     if (instance && instance.envKeys.length > 0) {

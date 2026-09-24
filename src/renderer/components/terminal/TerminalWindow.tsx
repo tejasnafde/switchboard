@@ -3,7 +3,7 @@ import { useTerminalStore } from '../../stores/terminal-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { TerminalPane } from './TerminalPane'
 import { destroyTerminal, focusTerminal } from '../../services/terminal-registry'
-import { sessionExecutionRootPath } from '../../services/executionRoot'
+import { sessionExecutionRootPath } from '../../services/execution-root'
 import type { WindowState, PaneState } from '../../stores/terminal-store'
 
 interface TerminalWindowProps {

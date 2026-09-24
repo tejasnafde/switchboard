@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { detectAtTrigger, filterAtMatches } from '../../src/renderer/components/chat/atMention'
+import { detectAtTrigger, filterAtMatches } from '../../src/renderer/components/chat/at-mention'
 
 describe('detectAtTrigger', () => {
   it('fires at start of text', () => {

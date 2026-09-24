@@ -20,7 +20,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera'
 import { createLogger } from '@shared/logger'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { getSignedInEmail, importCredentials, parseCredentialBlob, signOut } from '../lib/google-auth'
-import { keyboardAvoidance } from '../lib/keyboardAvoidance'
+import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 
 const log = createLogger('screen:sign-in')
 

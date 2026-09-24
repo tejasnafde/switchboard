@@ -3,7 +3,7 @@
  * stored snapshot into the read-only display list.
  */
 import { describe, it, expect } from 'vitest'
-import { syncedAgoLabel, cachedProjects, projectsToSnapshot } from '../../src/renderer/components/sidebar/machineSnapshot'
+import { syncedAgoLabel, cachedProjects, projectsToSnapshot } from '../../src/renderer/components/sidebar/machine-snapshot'
 import type { MachineSnapshot } from '@shared/machines'
 import type { Project } from '@shared/types'
 

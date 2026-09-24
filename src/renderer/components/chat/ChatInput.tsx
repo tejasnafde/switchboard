@@ -22,7 +22,7 @@ import {
 } from '@shared/models'
 import { defaultInstanceId, type AgentType, type ProviderSkill } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
-import { describeRelocationOutcome } from '../../services/executionRootRelocation'
+import { describeRelocationOutcome } from '../../services/execution-root-relocation'
 import type { RelocationReason } from '@shared/execution-root-relocation'
 import { UnifiedProviderPicker } from './UnifiedProviderPicker'
 import { useSkillStore } from '../../stores/skill-store'
@@ -37,24 +37,24 @@ import {
   SLASH_COMMANDS,
   type SlashCommand,
   type SlashCommandContext,
-} from './slashCommands'
-import { detectAtTrigger, filterAtMatches } from './atMention'
-import { detectSendToTrigger, sendToPickerItems } from './sendToCommand'
-import { fuzzyScore } from '../../services/fuzzyScore'
+} from './slash-commands'
+import { detectAtTrigger, filterAtMatches } from './at-mention'
+import { detectSendToTrigger, sendToPickerItems } from './send-to-command'
+import { fuzzyScore } from '../../services/fuzzy-score'
 import { AtMentionMenu } from './AtMentionMenu'
 import { DraftWorkspaceChips } from './DraftWorkspaceChips'
 import { BranchPickerTrigger } from './BranchPicker'
-import { composerFooterLayout } from './composerFooterLayout'
+import { composerFooterLayout } from './composer-footer-layout'
 import { RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
-import { serializeBodyWithPills } from '../../services/chatInputBody'
+import { serializeBodyWithPills } from '../../services/chat-input-body'
 import {
   desktopComposerRecoveryAction,
   desktopComposerFingerprint,
   desktopPreparedTurns,
   desktopTurnAttempts,
-} from '../../services/desktopTurnSubmission'
+} from '../../services/desktop-turn-submission'
 import { onUserTurnAccepted } from '../../services/session-events'
-import { registerComposer } from '../../services/composerRegistry'
+import { registerComposer } from '../../services/composer-registry'
 import type { RuntimeMode } from '@shared/provider-events'
 
 

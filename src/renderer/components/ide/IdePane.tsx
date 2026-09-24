@@ -19,7 +19,7 @@ import {
   nextCommittedIdeBinding,
   sameIdeWorkspaceTarget,
   type IdeWorkspaceBinding,
-} from '../../services/ideWorkspaceBinding'
+} from '../../services/ide-workspace-binding'
 
 const log = createRendererLogger('ide:pane')
 

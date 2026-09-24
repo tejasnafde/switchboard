@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { clearProviderRetry, upsertProviderRetry } from '../../src/renderer/components/chat/providerRetry'
+import { clearProviderRetry, upsertProviderRetry } from '../../src/renderer/components/chat/provider-retry'
 import { useAgentStore } from '../../src/renderer/stores/agent-store'
 
 describe('provider retry status', () => {

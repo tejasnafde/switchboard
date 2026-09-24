@@ -5,7 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentStore } from '../../stores/agent-store'
 import { useSkillStore } from '../../stores/skill-store'
 import { useLayoutStore } from '../../stores/layout-store'
-import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from './turnPresentation'
+import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from './turn-presentation'
 
 interface MessageListProps {
   messages: ChatMessage[]

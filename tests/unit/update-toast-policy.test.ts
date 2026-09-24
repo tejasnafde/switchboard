@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shouldShowUpdateToast } from '../../src/renderer/components/updateToastPolicy'
+import { shouldShowUpdateToast } from '../../src/renderer/components/update-toast-policy'
 import type { UpdateStatus } from '@shared/update-status'
 
 describe('shouldShowUpdateToast', () => {

@@ -4,7 +4,7 @@ import {
   matchesArchivedQuery,
   selectArchivedPage,
   type ArchivedRow,
-} from '../../src/renderer/components/settings/archivedList'
+} from '../../src/renderer/components/settings/archived-list'
 
 const row = (id: string, title: string, project_path = '/Users/dev/code/acme-console'): ArchivedRow =>
   ({ id, title, project_path, updated_at: 1 })

@@ -9,7 +9,7 @@
  * and does not load under the host Node that runs vitest, so this file
  * mocks `'../../src/main/db/database'` with a minimal in-memory store.
  * The mock implements only the prepared-statement shapes that
- * providerInstances.ts uses.
+ * provider-instances.ts uses.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
@@ -75,7 +75,7 @@ function seedDefaults() {
   }
 }
 
-// SQL pattern matcher - tied to providerInstances.ts queries.
+// SQL pattern matcher - tied to provider-instances.ts queries.
 function prepare(sql: string) {
   const norm = sql.replace(/\s+/g, ' ').trim()
   return {
@@ -159,7 +159,7 @@ beforeEach(() => {
 })
 
 async function loadModule() {
-  return import('../../src/main/db/providerInstances')
+  return import('../../src/main/db/provider-instances')
 }
 
 describe('encryptEnv / decryptEnv', () => {

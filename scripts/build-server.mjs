@@ -27,7 +27,7 @@ await build({
   external: [...REMOTE_NATIVE_DEPS, ...REMOTE_NPM_DEPS, 'electron'],
   alias: { '@shared': resolve('src/shared') },
   // Lets the running server report its own version so the client's health
-  // probe (connectDeps.ts waitForHealth) can detect a stale/lingering
+  // probe (connect-deps.ts waitForHealth) can detect a stale/lingering
   // process that survived past a fresh deploy.
   define: { __SERVER_VERSION__: JSON.stringify(pkg.version) },
   logLevel: 'info',

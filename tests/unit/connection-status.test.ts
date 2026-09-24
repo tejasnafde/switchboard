@@ -3,7 +3,7 @@
  * main-process connection manager and the sidebar pip.
  */
 import { describe, it, expect } from 'vitest'
-import { nextConnectionStatus } from '../../src/main/machines/connectionStatus'
+import { nextConnectionStatus } from '../../src/main/machines/connection-status'
 
 describe('nextConnectionStatus', () => {
   it('connect moves offline/error -> connecting', () => {

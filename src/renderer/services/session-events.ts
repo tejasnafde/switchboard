@@ -4,7 +4,7 @@
  * edits and vice versa - without hoisting state or pulling in a store.
  */
 import type { RuntimeEvent } from '@shared/provider-events'
-import { createSingleOwnerEventReducer } from './providerEventReducerRegistry'
+import { createSingleOwnerEventReducer } from './provider-event-reducer-registry'
 import { useAgentStore } from '../stores/agent-store'
 import { writeMachineNotice } from './terminal-registry'
 import { createRendererLogger } from '../logger'

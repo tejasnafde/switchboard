@@ -4,7 +4,7 @@
  * No remoteUser -> the login user runs it, still through the same nvm wrapper.
  */
 import { describe, it, expect } from 'vitest'
-import { asUserScript, asUserUpload } from '../../src/main/machines/remoteExec'
+import { asUserScript, asUserUpload } from '../../src/main/machines/remote-exec'
 
 const b64 = (cmd: string) => {
   const m = cmd.match(/printf %s '([A-Za-z0-9+/=]+)'/)

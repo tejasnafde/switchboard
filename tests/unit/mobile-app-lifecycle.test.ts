@@ -5,7 +5,7 @@
  * after a two-second app switch throws away a healthy session.
  */
 import { describe, it, expect } from 'vitest'
-import { foregroundAction, BACKGROUND_RECONNECT_AFTER_MS } from '../../apps/mobile/src/lib/appLifecycle'
+import { foregroundAction, BACKGROUND_RECONNECT_AFTER_MS } from '../../apps/mobile/src/lib/app-lifecycle'
 
 describe('foregroundAction', () => {
   it('probes after a short absence, where the socket has probably survived', () => {

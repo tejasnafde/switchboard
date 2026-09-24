@@ -51,11 +51,11 @@ describe('terminal cwd entry points', () => {
   })
 
   it.each(TERMINAL_CWD_ENTRY_POINTS)('%s resolves the root through the shared helper', (file) => {
-    expect(source(file)).toMatch(/from '.*services\/executionRoot'/)
+    expect(source(file)).toMatch(/from '.*services\/execution-root'/)
   })
 
   it('keeps the helper as the only place the fallback is written', () => {
-    const helper = source('src/renderer/services/executionRoot.ts')
+    const helper = source('src/renderer/services/execution-root.ts')
     expect(helper).toContain('resolveExecutionRoot')
   })
 })

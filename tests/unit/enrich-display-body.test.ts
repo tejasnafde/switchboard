@@ -5,7 +5,7 @@
  * `(role='user', content)`.
  */
 import { describe, it, expect } from 'vitest'
-import { enrichMessagesWithDisplayBody } from '../../src/main/ipc/enrichDisplayBody'
+import { enrichMessagesWithDisplayBody } from '../../src/main/ipc/enrich-display-body'
 import type { ChatMessage } from '../../src/shared/types'
 import type { DisplayBodyEnrichment } from '../../src/main/db/database'
 

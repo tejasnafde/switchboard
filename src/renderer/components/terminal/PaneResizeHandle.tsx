@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import { showDragOverlay, hideDragOverlay } from '../../services/dragOverlay'
+import { showDragOverlay, hideDragOverlay } from '../../services/drag-overlay'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('terminal:pane-resize-handle')

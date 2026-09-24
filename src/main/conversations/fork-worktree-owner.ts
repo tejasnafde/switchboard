@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { slugifyForBranch } from '../../shared/branchSlug'
+import { slugifyForBranch } from '../../shared/branch-slug'
 import type {
   ForkConversationOutcome,
   ForkConversationRequest,

@@ -23,12 +23,12 @@ import {
   retryDelayMs,
   selectRejectedForEdit,
   type QueuedMessage,
-} from '../lib/outboxModel'
-import { loadQueued, removeQueued, saveQueued } from '../lib/outboxStorage'
+} from '../lib/outbox-model'
+import { loadQueued, removeQueued, saveQueued } from '../lib/outbox-storage'
 import { getClient } from './connections'
 import { chatCacheReady, useChatStore, threadKey } from './chat'
-import { prepareMobileHandoffTurn } from '../lib/handoffTurn'
-import { submitQueuedTurn } from '../lib/outboxDelivery'
+import { prepareMobileHandoffTurn } from '../lib/handoff-turn'
+import { submitQueuedTurn } from '../lib/outbox-delivery'
 
 const log = createLogger('store:outbox')
 

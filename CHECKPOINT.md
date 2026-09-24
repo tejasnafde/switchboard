@@ -50,12 +50,12 @@ Deliberately deferred, not forgotten:
 - src/main/provider/adapters/claude-adapter.ts (mcpServers + list-tool allow)
 - package.json (zod as a direct dependency)
 - tests/unit/claude-peer-tools.test.ts (new, 4 green)
-- src/renderer/components/chat/rotationMarker.ts (kind 'peer-agent')
-- src/renderer/components/chat/sendToCommand.ts (prefix from initiator)
+- src/renderer/components/chat/rotation-marker.ts (kind 'peer-agent')
+- src/renderer/components/chat/send-to-command.ts (prefix from initiator)
 - src/renderer/components/chat/MessageBubble.tsx (agent-send pill copy)
 - tests/unit/rotation-marker.test.ts (+2), tests/unit/send-to-command.test.ts
   (+1, fixture gained `initiator`)
-- src/renderer/components/chat/slashCommands.ts + tests/unit/slash-commands.test.ts
+- src/renderer/components/chat/slash-commands.ts + tests/unit/slash-commands.test.ts
   (/send-to description now says Claude can send one itself, +1 test)
 - CLAUDE.md (Cross-session messaging section, what's-working bullet, file tree)
 

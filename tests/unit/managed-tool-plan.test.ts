@@ -11,11 +11,11 @@
  * version, and carries its own marker.
  */
 import { describe, it, expect } from 'vitest'
-import { parseProbeOutput, type RemoteProbe } from '../../src/main/machines/remoteProbe'
-import { planManagedTools, managedToolsMarker } from '../../src/main/machines/managedToolPlan'
-import { planProvision } from '../../src/main/machines/provisionPlan'
-import { REMOTE_CODEX_VERSION, codexEnsureScript, claudeSymlinkScript, managedToolsMarkerScript } from '../../src/main/machines/provisionSetup'
-import { buildProbeCommand } from '../../src/main/machines/provisionCommands'
+import { parseProbeOutput, type RemoteProbe } from '../../src/main/machines/remote-probe'
+import { planManagedTools, managedToolsMarker } from '../../src/main/machines/managed-tool-plan'
+import { planProvision } from '../../src/main/machines/provision-plan'
+import { REMOTE_CODEX_VERSION, codexEnsureScript, claudeSymlinkScript, managedToolsMarkerScript } from '../../src/main/machines/provision-setup'
+import { buildProbeCommand } from '../../src/main/machines/provision-commands'
 import type { Machine } from '@shared/machines'
 
 const desired = { claudeSdkVersion: '0.2.141', codexVersion: '0.153.2' }
