@@ -49,6 +49,15 @@ describe('JsonlParser', () => {
     expect(message?.images).toHaveLength(1)
   })
 
+  it('keeps a literal image tag that has no image next to it', () => {
+    const message = normalizeCodexEvent({
+      type: 'response_item',
+      timestamp: '2026-09-01T00:00:00Z',
+      payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<image>' }] },
+    })
+    expect(message?.content).toBe('<image>')
+  })
+
   it('parses a complete assistant message', () => {
     const messages: unknown[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))

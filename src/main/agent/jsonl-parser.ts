@@ -296,11 +296,15 @@ const CODEX_IMAGE_WRAPPER = /^<\/?image\b[^>]*>$/
 function extractCodexText(content: unknown): string {
   if (!Array.isArray(content)) return ''
   return content
-    .map((block: Record<string, unknown>) => {
+    .map((block: Record<string, unknown>, index: number, blocks: Array<Record<string, unknown>>) => {
       const blockType = block.type as string | undefined
       if (blockType === 'input_text' || blockType === 'output_text' || blockType === 'text') {
-        // Codex brackets each attached image with `<image>` / `</image>` text blocks.
-        if (typeof block.text !== 'string' || CODEX_IMAGE_WRAPPER.test(block.text)) return ''
+        if (typeof block.text !== 'string') return ''
+        // Codex brackets each attached image with `<image>` / `</image>` text
+        // blocks. Drop a tag only when an image block sits right next to it,
+        // so a literal tag the user typed survives.
+        if (CODEX_IMAGE_WRAPPER.test(block.text)
+          && (blocks[index + 1]?.type === 'input_image' || blocks[index - 1]?.type === 'input_image')) return ''
         return block.text
       }
       return ''
