@@ -187,7 +187,9 @@ Connections) renders assistant text, tool calls and composer states on one
 screen, for states that are awkward to reach on purpose. It is NOT every feed
 row: `user`, `approval`, `question`, `plan`, `fileEdit`, `denial`, `error` and
 `notice` are absent, and `approval`/`question` are the two most stateful.
-Adding them means lifting their handlers out of `ThreadScreen` first. Its
+Adding them means lifting their handlers out of `ThreadScreen` first (the
+row components themselves live in `src/screens/ThreadFeedItems.tsx`, the
+screen's styles in `ThreadScreen.styles.ts`). Its
 loading and empty tiles are replicas against the gallery's own stylesheet, not
 the production path, so they would not have caught the upside-down loader
 (a `scaleY: -1` on `ThreadScreen`'s `emptyWrap` under the inverted `FlatList`).
