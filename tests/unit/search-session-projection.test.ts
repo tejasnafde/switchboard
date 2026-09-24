@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { projectLoadedSearchSession } from '../../src/renderer/services/searchSessionProjection'
+import { projectLoadedSearchSession } from '../../src/renderer/services/search-session-projection'
 
 describe('search session projection', () => {
   it('does not request native resume for a transcript-handoff fork', () => {

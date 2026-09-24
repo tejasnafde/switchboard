@@ -8,15 +8,15 @@
       "status": "implemented",
       "evidence": [
         "src/renderer/components/chat/ChatInput.tsx",
-        "src/renderer/components/chat/slashCommands.ts",
+        "src/renderer/components/chat/slash-commands.ts",
         "src/renderer/components/CommandPalette.tsx",
         "src/renderer/components/kanban/CardModal.tsx",
         "src/renderer/components/kanban/KanbanView.tsx",
         "src/renderer/App.tsx",
         "src/renderer/stores/agent-store.ts",
-        "src/renderer/services/desktopNewChatJournal.ts",
-        "src/renderer/services/openConversationAtAnchor.ts",
-        "src/renderer/components/kanban/cardLaunch.ts"
+        "src/renderer/services/desktop-new-chat-journal.ts",
+        "src/renderer/services/open-conversation-at-anchor.ts",
+        "src/renderer/components/kanban/card-launch.ts"
       ]
     },
     "reactNativeIos": {

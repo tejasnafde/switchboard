@@ -14,7 +14,7 @@
  *   - HTML entities decoded before path heuristic
  */
 import { describe, it, expect } from 'vitest'
-import { pickPillCandidates } from '../../src/renderer/services/messagePills'
+import { pickPillCandidates } from '../../src/renderer/services/message-pills'
 
 describe('pickPillCandidates', () => {
   it('returns empty for empty html', () => {

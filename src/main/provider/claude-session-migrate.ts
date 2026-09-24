@@ -10,7 +10,7 @@ import { homedir } from 'os'
 import { basename, dirname, join } from 'path'
 import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync } from 'fs'
 import { encodeClaudeProjectPath } from '../projects/session-scanner'
-import { listOauthDirsForAgent } from '../db/providerInstances'
+import { listOauthDirsForAgent } from '../db/provider-instances'
 import { listRemoteClaudeConfigDirs } from './remote-gate'
 import { createMainLogger as createLogger } from '../logger'
 import {

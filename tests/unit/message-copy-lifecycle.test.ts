@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
-import { createContentCoalescer } from '../../src/renderer/services/contentCoalescer'
+import { createContentCoalescer } from '../../src/renderer/services/content-coalescer'
 import {
   createMessageLifecycleTracker,
   finishRuntimeEventLifecycle,
   prepareRuntimeEventLifecycle,
-} from '../../src/renderer/services/messageLifecycle'
+} from '../../src/renderer/services/message-lifecycle'
 
 function content(messageId: string, text: string, append?: boolean): RuntimeEvent {
   return {

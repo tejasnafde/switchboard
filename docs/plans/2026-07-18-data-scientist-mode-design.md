@@ -154,7 +154,7 @@ Today code-server is local-only (spawned in the Electron main process; no IDE ha
   `--auth none` - same same-user trust boundary as PTYs, unreachable except via the tunnel).
   Binary download targets the remote's OS/arch; extend `provisioner.ts` to install it alongside
   the headless server, and seed sb-bridge + Jupyter extension there.
-- **Tunnel**: extend `sshTunnel.ts` to forward multiple ports on the one ssh process
+- **Tunnel**: extend `ssh-tunnel.ts` to forward multiple ports on the one ssh process
   (`-L wsPort -L codeServerPort -L jupyterPort`). Ports negotiated at connect via the existing
   connection manager handshake.
 - **Webview**: `IdePane` loads `http://127.0.0.1:<localForwardedPort>/?folder=<remote path>`.

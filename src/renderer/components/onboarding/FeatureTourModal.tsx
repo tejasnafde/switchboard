@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { FEATURE_TOUR_STEPS, TOUR_VERSION, type FeatureTourStep, type TryItAction } from './featureRegistry'
+import { FEATURE_TOUR_STEPS, TOUR_VERSION, type FeatureTourStep, type TryItAction } from './feature-registry'
 
 interface FeatureTourModalProps {
   open: boolean

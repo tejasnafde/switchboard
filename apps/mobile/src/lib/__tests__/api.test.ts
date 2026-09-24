@@ -10,7 +10,7 @@
  * `setConversationProviderInstanceId` is the DB-only repoint the phone needs
  * for the same "no live session yet" case the desktop's ChatPanel already
  * handles (`context-unavailable` from `switchInstance`) - see
- * profileRotation.test.ts for the ThreadScreen-side wiring.
+ * profile-rotation.test.ts for the ThreadScreen-side wiring.
  */
 import type { Transport } from '@shared/transport'
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'

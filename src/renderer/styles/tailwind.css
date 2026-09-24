@@ -27,7 +27,7 @@
 @source '../components/sidebar/PromptModal.tsx';
 @source '../components/kanban/CardModal.tsx';
 @source '../components/kanban/WorktreeManagerModal.tsx';
-@source '../components/kanban/kanbanModalClasses.ts';
+@source '../components/kanban/kanban-modal-classes.ts';
 @source '../components/SettingsModal.tsx';
 
 @theme inline {

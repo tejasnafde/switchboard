@@ -19,10 +19,10 @@ import { useMachineStore } from '../../stores/machine-store'
 import { useBookmarkStore } from '../../stores/bookmark-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { onSessionRename, emitSessionRename, onSessionCreated, onSessionActivity } from '../../services/session-events'
-import { bumpSessionActivity } from './sessionActivity'
-import { serializeConversationToMarkdown, suggestedExportFilename } from '../../services/exportMarkdown'
+import { bumpSessionActivity } from './session-activity'
+import { serializeConversationToMarkdown, suggestedExportFilename } from '../../services/export-markdown'
 import { SidebarFilter } from './SidebarFilter'
-import { decideDragOutcome } from './dragLogic'
+import { decideDragOutcome } from './drag-logic'
 import { WorkspaceManager } from './WorkspaceManager'
 import { PromptModal } from './PromptModal'
 import { MachineLayer } from './MachineLayer'
@@ -41,22 +41,22 @@ import {
   moveProjectToWorkspace,
   projectOrganizationItems,
   reorderWorkspacesById,
-} from '@shared/workspaceOrganization'
+} from '@shared/workspace-organization'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('sidebar')
 import type { Machine } from '@shared/machines'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { RecentSessionsSection } from './RecentSessionsSection'
-import { deriveRecentSessions, recentLiveSignal, type RecentLiveSession } from './recentSessions'
-import { countLabel, localMachineSummary } from './recentGroups'
+import { deriveRecentSessions, recentLiveSignal, type RecentLiveSession } from './recent-sessions'
+import { countLabel, localMachineSummary } from './recent-groups'
 import {
   DEFAULT_RECENT_SESSION_LIMIT,
   RECENT_SESSION_LIMIT_CHANGED,
   RECENT_SESSION_LIMIT_SETTING,
   parseRecentSessionLimit,
   type RecentSessionLimit,
-} from './recentSessionLimit'
+} from './recent-session-limit'
 
 import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/types'
 import { confirm } from '../ui/confirm'

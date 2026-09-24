@@ -3,11 +3,11 @@ import {
   isChatSessionDisplayed,
   removeRuntimeChatSession,
   selectRuntimeChatSession,
-} from '../services/chatWorkspaceRuntime'
+} from '../services/chat-workspace-runtime'
 import type { AgentStatus, AgentType, ChatMessage } from '@shared/types'
 import type { ReasoningEffort } from '@shared/models'
 import { createRendererLogger } from '../logger'
-import { mergeLiveSessions, toAgentStatus, toAgentType } from './liveSessionMerge'
+import { mergeLiveSessions, toAgentStatus, toAgentType } from './live-session-merge'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { PENDING_REQUEST_EVENT_TYPES, applyPendingRequestEvent, type PendingBlockingEvent } from '@shared/pending-requests'
 import type { RuntimeEvent } from '@shared/provider-events'

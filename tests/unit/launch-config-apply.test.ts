@@ -14,7 +14,7 @@
  * correct.
  */
 import { describe, it, expect } from 'vitest'
-import { planLaunchConfigSpawn, resolveLaunchConfigFallback } from '../../src/renderer/services/launchConfigPlanner'
+import { planLaunchConfigSpawn, resolveLaunchConfigFallback } from '../../src/renderer/services/launch-config-planner'
 import type { LaunchConfigFile, LaunchConfig } from '../../src/shared/launch-config'
 
 describe('planLaunchConfigSpawn - flat terminals', () => {

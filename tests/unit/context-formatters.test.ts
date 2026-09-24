@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest'
 import {
   formatFileViewerContext,
   formatChatMessageContext,
-} from '../../src/renderer/services/contextFormatters'
+} from '../../src/renderer/services/context-formatters'
 
 describe('formatFileViewerContext', () => {
   it('emits pill marker + fenced block', () => {

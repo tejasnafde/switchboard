@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeKanbanWorktreeCreation } from '../../src/renderer/components/kanban/kanbanWorktreePresentation'
+import { describeKanbanWorktreeCreation } from '../../src/renderer/components/kanban/kanban-worktree-presentation'
 import type { WorktreeCreationSnapshot } from '../../src/shared/worktree-creation'
 
 function snapshot(overrides: Partial<WorktreeCreationSnapshot>): WorktreeCreationSnapshot {

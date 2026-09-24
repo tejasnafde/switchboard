@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { classifyCloseFocus, type ClosestEl } from '../../src/renderer/closeFocus'
-import { resolveWorkspaceActionSession } from '../../src/renderer/services/workspaceRouting'
-import type { ChatWorkspaceState } from '../../src/renderer/services/chatWorkspace'
+import { classifyCloseFocus, type ClosestEl } from '../../src/renderer/close-focus'
+import { resolveWorkspaceActionSession } from '../../src/renderer/services/workspace-routing'
+import type { ChatWorkspaceState } from '../../src/renderer/services/chat-workspace'
 
 const state: ChatWorkspaceState = {
   primarySessionId: 'left',

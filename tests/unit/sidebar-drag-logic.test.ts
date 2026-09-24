@@ -8,7 +8,7 @@
  * indices so the caller can land the item at the correct visual slot.
  */
 import { describe, it, expect } from 'vitest'
-import { decideDragOutcome } from '../../src/renderer/components/sidebar/dragLogic'
+import { decideDragOutcome } from '../../src/renderer/components/sidebar/drag-logic'
 import type { Project } from '../../src/shared/types'
 
 function p(path: string, workspaceId: string | null = null): Project {

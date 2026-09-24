@@ -7,7 +7,7 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/services/chatWorkspace.ts",
+        "src/renderer/services/chat-workspace.ts",
         "src/renderer/stores/layout-store.ts",
         "src/renderer/App.tsx",
         "src/renderer/components/chat/ChatPanel.tsx",
@@ -42,7 +42,7 @@
         "src/preload/index.ts",
         "README.md",
         "docs/keybindings.md",
-        "src/renderer/components/onboarding/featureRegistry.ts"
+        "src/renderer/components/onboarding/feature-registry.ts"
       ]
     }
   },

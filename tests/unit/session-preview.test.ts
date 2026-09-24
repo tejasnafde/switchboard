@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sessionPreviewLine } from '../../src/renderer/services/sessionPreview'
+import { sessionPreviewLine } from '../../src/renderer/services/session-preview'
 import type { ChatMessage } from '@shared/types'
 
 function assistantMessage(content: string, id = 'm1', timestamp = 1): ChatMessage {

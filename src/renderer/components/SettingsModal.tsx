@@ -3,11 +3,11 @@ import { useThemeStore, type ThemeName } from '../stores/theme-store'
 import { useLayoutStore } from '../stores/layout-store'
 import { parseFollowUpDefault } from '@shared/turn-delivery'
 import { emitSessionRename } from '../services/session-events'
-import { FEATURE_TOUR_STEPS } from './onboarding/featureRegistry'
+import { FEATURE_TOUR_STEPS } from './onboarding/feature-registry'
 import type { UpdateStatus } from '@shared/update-status'
-import { updateRowView, updateStatusLabel } from './settings/updateRowModel'
-import { updateFooterCopy } from './settings/updateFooterCopy'
-import { selectArchivedPage, type ArchivedRow } from './settings/archivedList'
+import { updateRowView, updateStatusLabel } from './settings/update-row-model'
+import { updateFooterCopy } from './settings/update-footer-copy'
+import { selectArchivedPage, type ArchivedRow } from './settings/archived-list'
 import {
   parseLaunchConfigFile,
   serializeLaunchConfigFile,
@@ -16,7 +16,7 @@ import {
   type LaunchConfigFile,
   type WorktreeSetupConfig,
 } from '@shared/launch-config'
-import { launchConfigListReducer } from '../services/launchConfigListReducer'
+import { launchConfigListReducer } from '../services/launch-config-list-reducer'
 import {
   areNotificationsEnabled,
   setNotificationsEnabled,
@@ -27,12 +27,12 @@ import {
   getDefaultSessionEnvMode,
   setDefaultSessionEnvMode,
   type SessionEnvMode,
-} from '../services/sessionEnvMode'
+} from '../services/session-env-mode'
 import {
   isAssistantStreamingEnabled,
   setAssistantStreamingEnabled,
-} from '../services/streamingPref'
-import { isAnalyticsEnabled, setAnalyticsEnabled } from '../services/analyticsPref'
+} from '../services/streaming-pref'
+import { isAnalyticsEnabled, setAnalyticsEnabled } from '../services/analytics-pref'
 import {
   formatDiagnosticsReport,
   formatMb,
@@ -54,7 +54,7 @@ import {
   parseRecentSessionLimit,
   resolveLoadedRecentSessionLimit,
   type RecentSessionLimit,
-} from './sidebar/recentSessionLimit'
+} from './sidebar/recent-session-limit'
 import { confirm } from './ui/confirm'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { onEscapeFirst } from './ui/escape-first'
@@ -1158,7 +1158,7 @@ function IdeIdleTtlSetting() {
 /**
  * Toggle: stream assistant responses token-by-token (default ON) or
  * buffer until the turn completes and render the final reply in one
- * shot. The buffering policy lives in `streamingBuffer.ts`; the gate
+ * shot. The buffering policy lives in `streaming-buffer.ts`; the gate
  * is in ChatPanel's content / turn.completed handlers. Takes effect on
  * the next panel mount or session switch - flipping mid-turn doesn't
  * retroactively buffer in-flight content.

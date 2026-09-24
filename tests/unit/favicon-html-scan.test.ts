@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import {
   findFaviconHrefInHtml,
   resolveFaviconViaHtml,
-} from '../../src/main/projects/faviconHtmlScan'
+} from '../../src/main/projects/favicon-html-scan'
 
 let tmp: string
 

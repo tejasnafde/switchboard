@@ -4,7 +4,7 @@
  * live connection status (default offline).
  */
 import { describe, it, expect } from 'vitest'
-import { buildMachineList } from '../../src/renderer/components/sidebar/machineList'
+import { buildMachineList } from '../../src/renderer/components/sidebar/machine-list'
 import type { Machine } from '@shared/machines'
 
 const mk = (over: Partial<Machine>): Machine => ({

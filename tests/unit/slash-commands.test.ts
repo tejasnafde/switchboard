@@ -7,7 +7,7 @@ import {
   splitSkillMentions,
   commandInsertion,
   SLASH_COMMANDS,
-} from '../../src/renderer/components/chat/slashCommands'
+} from '../../src/renderer/components/chat/slash-commands'
 
 /**
  * Slash command trigger + registry tests.
@@ -281,7 +281,7 @@ describe('SLASH_COMMANDS registry', () => {
   })
 })
 
-import { mergeWithAgentSkills, skillsToSlashCommands } from '../../src/renderer/components/chat/slashCommands'
+import { mergeWithAgentSkills, skillsToSlashCommands } from '../../src/renderer/components/chat/slash-commands'
 import type { ProviderSkill } from '../../src/shared/types'
 
 describe('skillsToSlashCommands', () => {

@@ -23,7 +23,7 @@ import { describe, it, expect } from 'vitest'
 import {
   credentialHomeDisplay,
   defaultAuthModeForNewInstance,
-} from '../../src/renderer/shared/providerInstanceDisplay'
+} from '../../src/renderer/shared/provider-instance-display'
 
 describe('credentialHomeDisplay', () => {
   it('shows the explicit oauth_dir as a plain isolated path, no warning', () => {

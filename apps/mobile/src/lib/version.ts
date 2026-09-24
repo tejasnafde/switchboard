@@ -1,5 +1,5 @@
 /**
- * Version parsing for the APK update lane. Split from selfUpdate.ts, which
+ * Version parsing for the APK update lane. Split from self-update.ts, which
  * pulls in react-native and so cannot load in a node test.
  */
 

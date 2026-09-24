@@ -1,6 +1,6 @@
 /** summarizeSshError: pull the real cause out of noisy ssh/gcloud-IAP stderr. */
 import { describe, it, expect } from 'vitest'
-import { summarizeSshError } from '../../src/main/machines/sshError'
+import { summarizeSshError } from '../../src/main/machines/ssh-error'
 
 describe('summarizeSshError', () => {
   it('strips the gcloud IAP NumPy warning and surfaces the host-key cause (real captured stderr)', () => {

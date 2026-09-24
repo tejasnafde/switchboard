@@ -19,7 +19,7 @@
 import { homedir } from 'os'
 import { join } from 'path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { ProviderInstanceRow } from '../../src/main/db/providerInstances'
+import type { ProviderInstanceRow } from '../../src/main/db/provider-instances'
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => '/usr/local/bin/claude\n'),

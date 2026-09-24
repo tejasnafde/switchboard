@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readStateTargets } from '../../src/renderer/services/readState'
+import { readStateTargets } from '../../src/renderer/services/read-state'
 
 describe('dual-chat read-state routing', () => {
   it('marks both visible chats read but reports only the focused chat as viewed', () => {

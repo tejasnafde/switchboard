@@ -20,7 +20,7 @@ import {
   slugForBranch,
   slugForRepo,
   resolveSessionWorktreePath,
-} from '../../src/main/git/worktreePaths'
+} from '../../src/main/git/worktree-paths'
 
 describe('slugForBranch', () => {
   it('lowercases, replaces non-alnum with dashes, trims', () => {

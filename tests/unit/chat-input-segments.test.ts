@@ -11,7 +11,7 @@
  * surface only owns DOM concerns.
  */
 import { describe, it, expect } from 'vitest'
-import { parseBodyToSegments } from '../../src/renderer/services/chatInputBody'
+import { parseBodyToSegments } from '../../src/renderer/services/chat-input-body'
 
 describe('parseBodyToSegments', () => {
   it('returns a single text segment when the body contains no tokens', () => {

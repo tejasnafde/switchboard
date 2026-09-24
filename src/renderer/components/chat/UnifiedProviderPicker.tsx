@@ -37,21 +37,21 @@ import {
   type AgentType,
   type ProviderInstance,
 } from '@shared/types'
-import { providerInstanceInitials } from '@shared/providerInstanceInitials'
+import { providerInstanceInitials } from '@shared/provider-instance-initials'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { createTerminalAsync } from '../../services/terminal-registry'
 import { emitSessionCreated } from '../../services/session-events'
-import { terminalLoginAgentType } from '../../shared/terminalLogin'
-import { shouldShowInstanceRail } from '../../shared/instanceRailVisibility'
+import { terminalLoginAgentType } from '../../shared/terminal-login'
+import { shouldShowInstanceRail } from '../../shared/instance-rail-visibility'
 import {
   resolveVisibleLoginInstanceId,
   nextTermInstanceId,
-} from '../../shared/terminalLoginAccount'
-import { startTerminalSession } from '../../shared/terminalLoginStart'
+} from '../../shared/terminal-login-account'
+import { startTerminalSession } from '../../shared/terminal-login-start'
 import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
-import { filterModels, groupModelsByProvider } from './providerPickerModels'
+import { filterModels, groupModelsByProvider } from './provider-picker-models'
 
 interface UnifiedProviderPickerProps {
   agentType: AgentType

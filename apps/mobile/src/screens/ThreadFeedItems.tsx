@@ -8,8 +8,8 @@ import { summarizeTool, toolIcon } from '@shared/tool-summary'
 import { colors } from '../theme'
 import { Markdown } from '../components/Markdown'
 import type { FeedItem } from '../stores/chat'
-import { styles } from './ThreadScreen.styles'
-import type { HeldTurnActions } from '../lib/heldTurns'
+import { styles } from './thread-screen.styles'
+import type { HeldTurnActions } from '../lib/held-turns'
 
 // ─── Item renderers ────────────────────────────────────────────
 

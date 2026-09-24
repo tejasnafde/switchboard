@@ -7,7 +7,7 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/main/git/dependencyClone.ts",
+        "src/main/git/dependency-clone.ts",
         "src/main/worktree.ts",
         "src/main/worktree-creation/git-adapter.ts",
         "src/main/git/legacy-session-worktree-lease.ts",
@@ -28,7 +28,7 @@
     "sharedBackendApi": {
       "status": "implemented",
       "evidence": [
-        "src/main/git/dependencyClone.ts",
+        "src/main/git/dependency-clone.ts",
         "src/main/worktree-creation/git-adapter.ts",
         "src/main/git/legacy-session-worktree-lease.ts",
         "tests/unit/dependency-clone.test.ts"
@@ -53,7 +53,7 @@
       "npx vitest run tests/unit/worktree-creation-git-adapter.test.ts tests/unit/legacy-session-worktree-lease.test.ts tests/unit/fork-worktree-request.test.ts tests/unit/git-legacy-worktree-handler.test.ts: the real ExecFileGitWorktreeAdapter and GitLegacySessionWorktreeMaterializer, exercised against real git in temp fixture repos with no node_modules, still pass - confirming the added call is a true no-op when there is nothing to clone.",
       "npm run typecheck",
       "npm test",
-      "npx eslint src/main/git/dependencyClone.ts",
+      "npx eslint src/main/git/dependency-clone.ts",
       "npm run validate:feature-parity -- --base origin/main"
     ],
     "hardware": [

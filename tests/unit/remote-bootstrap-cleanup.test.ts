@@ -39,8 +39,8 @@ import {
   MANAGED_BIN_SHELL_DIR,
   BACKEND_CMDLINE_MATCH,
   IDE_CMDLINE_MATCH,
-} from '../../src/main/machines/remoteBootstrap'
-import { REMOTE_COMMAND } from '../../src/main/machines/connectDeps'
+} from '../../src/main/machines/remote-bootstrap'
+import { REMOTE_COMMAND } from '../../src/main/machines/connect-deps'
 
 describe('buildStaleProcessKill', () => {
   const frag = buildStaleProcessKill({ pidVar: 'P', cmdlineMatch: '$D/index.cjs', graceSeconds: 10 })

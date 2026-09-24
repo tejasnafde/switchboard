@@ -3,12 +3,12 @@ import {
   clearComposerRegistry,
   focusComposer,
   registerComposer,
-} from '../../src/renderer/services/composerRegistry'
+} from '../../src/renderer/services/composer-registry'
 import {
   cloneDraftPayload,
   withDraftProvenance,
   requiresDraftTransferConfirmation,
-} from '../../src/renderer/services/draftTransfer'
+} from '../../src/renderer/services/draft-transfer'
 
 afterEach(() => clearComposerRegistry())
 

@@ -4,7 +4,7 @@
  * platform-specific tooltip on an info affordance.
  */
 import { describe, it, expect } from 'vitest'
-import { updateFooterCopy } from '../../src/renderer/components/settings/updateFooterCopy'
+import { updateFooterCopy } from '../../src/renderer/components/settings/update-footer-copy'
 
 describe('updateFooterCopy', () => {
   it('gives macOS users only the Gatekeeper detail, xattr command included', () => {

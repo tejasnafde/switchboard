@@ -13,12 +13,12 @@
  * crossing accounts.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { ProviderInstanceRow } from '../../src/main/db/providerInstances'
+import type { ProviderInstanceRow } from '../../src/main/db/provider-instances'
 
 const resolveProviderInstance = vi.fn()
 const resolveInstanceEnv = vi.fn()
 
-vi.mock('../../src/main/db/providerInstances', () => ({
+vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (...args: unknown[]) => resolveProviderInstance(...args),
 }))
 

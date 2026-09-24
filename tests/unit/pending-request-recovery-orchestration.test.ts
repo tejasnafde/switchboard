@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { useAgentStore } from '../../src/renderer/stores/agent-store'
-import { recoverPendingRequests } from '../../src/renderer/services/pendingRequestRecovery'
+import { recoverPendingRequests } from '../../src/renderer/services/pending-request-recovery'
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
 
 function setWindowApi(getPendingRequests: (threadId: string) => Promise<PendingBlockingEvent[]>) {

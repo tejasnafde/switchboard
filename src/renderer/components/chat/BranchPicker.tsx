@@ -5,7 +5,7 @@
  *     composer toolbar. Shows the current branch (or `(detached)`)
  *     and opens the popover on click.
  *   - <BranchPickerPopover>: the search input + list. Sort/filter is
- *     pure-policy (branchPickerPolicy.ts, unit-tested). Selecting a ref
+ *     pure-policy (branch-picker-policy.ts, unit-tested). Selecting a ref
  *     calls `git.switchRef`; the surrounding ChatInput re-fetches the
  *     current branch on close.
  *
@@ -20,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createRendererLogger } from '../../logger'
 import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
-import { rankAndFilterRefs, decideSwitchAction, type Ref } from './branchPickerPolicy'
+import { rankAndFilterRefs, decideSwitchAction, type Ref } from './branch-picker-policy'
 
 const log = createRendererLogger('chat:branch-picker')
 

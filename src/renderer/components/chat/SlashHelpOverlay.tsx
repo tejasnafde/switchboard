@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { SLASH_COMMANDS } from './slashCommands'
+import { SLASH_COMMANDS } from './slash-commands'
 
 export function SlashHelpOverlay({ onClose }: { onClose: () => void }) {
   useEffect(() => {

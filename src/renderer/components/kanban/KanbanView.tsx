@@ -38,8 +38,8 @@ import {
 } from '@dnd-kit/core'
 import { useAgentStore } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
-import { sessionPreviewLine } from '../../services/sessionPreview'
-import { describeKanbanWorktreeCreation } from './kanbanWorktreePresentation'
+import { sessionPreviewLine } from '../../services/session-preview'
+import { describeKanbanWorktreeCreation } from './kanban-worktree-presentation'
 import { useLayoutStore } from '../../stores/layout-store'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 import type { RuntimeMode } from '@shared/provider-events'
@@ -47,7 +47,7 @@ import type { WorktreeCreationRecoveryAction } from '@shared/worktree-creation'
 import type { AgentStatus, Project, Workspace } from '@shared/types'
 import { CardModal } from './CardModal'
 import { WorktreeManagerModal } from './WorktreeManagerModal'
-import { launchCardChat } from './cardLaunch'
+import { launchCardChat } from './card-launch'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('kanban:view')
@@ -496,7 +496,7 @@ function CardTilePresentation({
   )
   // Live, in-memory preview (digest when the agent reported one, else a
   // raw truncated fallback) - same source as the sidebar Recents row. See
-  // sessionPreview.ts. Undefined for a card with no linked session, or one
+  // session-preview.ts. Undefined for a card with no linked session, or one
   // that has produced no assistant message yet this run.
   const previewLine = useAgentStore((s) =>
     card.conversationId

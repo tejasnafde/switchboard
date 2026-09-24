@@ -12,7 +12,7 @@
         "src/main/ipc/files.ts",
         "src/renderer/components/chat/ChatPanel.tsx",
         "src/renderer/components/chat/MarkdownWithCopyControls.tsx",
-        "src/renderer/services/desktopTurnSubmission.ts",
+        "src/renderer/services/desktop-turn-submission.ts",
         "tests/unit/desktop-image-send-contract.test.ts",
         "tests/unit/updater-error.test.ts",
         "tests/unit/code-block-copy-controls.test.ts",

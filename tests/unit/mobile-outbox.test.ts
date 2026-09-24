@@ -26,7 +26,7 @@ import {
   shouldRetry,
   MAX_RETRY_DELAY_MS,
   type QueuedMessage,
-} from '../../apps/mobile/src/lib/outboxModel'
+} from '../../apps/mobile/src/lib/outbox-model'
 import { TurnDeduper } from '../../src/shared/turn-dedupe'
 
 const base = {

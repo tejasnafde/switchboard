@@ -10,7 +10,7 @@
  * origin, the one send site the id-collapse change missed.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { buildTurn, ownTurn } from '../../apps/mobile/src/lib/turnSubmit'
+import { buildTurn, ownTurn } from '../../apps/mobile/src/lib/turn-submit'
 import {
   useChatStore,
   emptyThread,

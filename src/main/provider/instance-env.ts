@@ -4,7 +4,7 @@
  * and routing it through the IPC module would make those import in a cycle.
  */
 
-import type { ProviderInstanceRow } from '../db/providerInstances'
+import type { ProviderInstanceRow } from '../db/provider-instances'
 import { buildClaudeCliEnv } from './adapters/claude-adapter'
 import { buildCodexCliEnv } from './adapters/codex-adapter'
 import { applyEnvOverlay } from './env-overlay'

@@ -422,6 +422,24 @@ async function settle(win) {
     requestAnimationFrame(() => requestAnimationFrame(done))
   })))
   await win.waitForTimeout(250)
+  // A new row (for example the Queued bubble) makes the message list scroll to
+  // the bottom over several frames; a capture mid-scroll shifts every row. Wait
+  // until each list keeps the same scroll position for 5 frames (at most 3 s).
+  await win.evaluate(() => new Promise((done) => {
+    const lists = [...document.querySelectorAll('[data-message-list-scroll]')]
+    const read = () => lists.map((el) => `${el.scrollTop}/${el.scrollHeight}`).join(',')
+    let last = read()
+    let stableFrames = 0
+    const deadline = performance.now() + 3000
+    const tick = () => {
+      const now = read()
+      stableFrames = now === last ? stableFrames + 1 : 0
+      last = now
+      if (stableFrames >= 5 || performance.now() > deadline) done()
+      else requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }))
 }
 
 async function snapScreen(win, screen, theme, target, mask = []) {

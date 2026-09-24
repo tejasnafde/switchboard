@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { createRendererLogger } from '../../logger'
 import type { GoogleClientStatus } from '../../../main/google/client-config'
-import { googleClientUpdate, googleMintActionClass } from './googleMintPresentation'
+import { googleClientUpdate, googleMintActionClass } from './google-mint-presentation'
 
 const log = createRendererLogger('settings:google-mint')
 

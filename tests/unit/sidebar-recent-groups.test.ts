@@ -4,8 +4,8 @@ import {
   groupRecentSessions,
   localMachineSummary,
   recentDot,
-} from '../../src/renderer/components/sidebar/recentGroups'
-import type { RecentSessionStatus } from '../../src/renderer/components/sidebar/recentSessions'
+} from '../../src/renderer/components/sidebar/recent-groups'
+import type { RecentSessionStatus } from '../../src/renderer/components/sidebar/recent-sessions'
 
 const rows = (statuses: Array<RecentSessionStatus | undefined>) => statuses.map((status, id) => ({ id, status }))
 const ids = (result: ReturnType<typeof groupRecentSessions<{ id: number; status?: RecentSessionStatus }>>) =>

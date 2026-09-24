@@ -7,11 +7,11 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/main/machines/remoteBootstrap.ts",
-        "src/main/machines/managedToolPlan.ts",
+        "src/main/machines/remote-bootstrap.ts",
+        "src/main/machines/managed-tool-plan.ts",
         "src/main/machines/provisioner.ts",
-        "src/main/machines/provisionSetup.ts",
-        "src/main/machines/connectDeps.ts",
+        "src/main/machines/provision-setup.ts",
+        "src/main/machines/connect-deps.ts",
         "src/main/provider/managed-bin.ts",
         "src/main/provider/model-catalog.ts",
         "src/main/provider/adapters/claude-adapter.ts",
@@ -48,8 +48,8 @@
         "src/server/lifecycle.ts",
         "src/server/pidfile.ts",
         "src/main/backend/tcp-host.ts",
-        "src/main/machines/remoteProbe.ts",
-        "src/main/machines/provisionCommands.ts",
+        "src/main/machines/remote-probe.ts",
+        "src/main/machines/provision-commands.ts",
         "src/shared/models.ts",
         "tests/unit/server-pidfile-ownership.test.ts",
         "tests/unit/tcp-host.test.ts"
@@ -62,9 +62,9 @@
     "updateRelease": {
       "status": "implemented",
       "evidence": [
-        "src/main/machines/provisionPlan.ts",
+        "src/main/machines/provision-plan.ts",
         "src/main/machines/provisioner.ts",
-        "src/main/machines/provisionSetup.ts",
+        "src/main/machines/provision-setup.ts",
         "tests/unit/provisioner.test.ts"
       ]
     }
@@ -75,7 +75,7 @@
       "npx vitest run tests/unit/remote-bootstrap-cleanup.test.ts tests/unit/ui-ellipsis-literal.test.ts tests/unit/connect-deps.test.ts tests/unit/remote-model-catalog-refresh.test.ts tests/unit/claude-adapter-infer-tier.test.ts --maxWorkers=1 - all five files pass in full (72 passed, 3 skipped on darwin where /proc does not exist)",
       "bash -n syntax validation of the ACTUAL generated fragments (buildStaleProcessKill's real output and the full REMOTE_COMMAND), not a hand-written paraphrase",
       "a real bash execution of buildStaleProcessKill's own output (TERM -> bounded wait -> KILL) against a SIGTERM-ignoring child, Linux-only (skipped on darwin, where /proc does not exist) - remote-bootstrap-cleanup.test.ts. Extended to also model code-server's real launcher exec (`bin/code-server` execs into `lib/node`, confirmed against coder/code-server's own ci/build/code-server.sh): one Linux-only case backgrounds a process shaped like the POST-exec cmdline and asserts the actual generated fragment reaps it via the `$D/code-server/` prefix match, and a second asserts a genuinely unrelated process holding the recorded pid survives. A first version of the reap case baked the literal shell variable reference `$D` into the child's own argv, which a `bash -c '...'` child never expands (D is not exported to it) - so it could never have matched the guard's expanded pattern and would have reported a false REAPED-looking non-result regardless of whether the guard code was correct. Fixed to bake the same real, JS-computed temp-root string into both the child's argv and (via a real `D=` assignment) the guard's own expansion, and to guarantee cleanup of the TERM-ignoring background loop via a `trap ... EXIT` instead of a end-of-script kill line that `set -e` could skip. Both Linux-only cases, plus the pre-fix broken version and the pre-existing-bug (old launcher-path match) version for comparison, were then actually run inside a `bash:5` Docker container (not just bash -n or read as static shape): the fixed reap case prints REAPED with no leaked process, the survives case prints SURVIVED with no leaked process, and both the broken pre-fix test and the old launcher-path match reproduce the field bug (SURVIVED) as expected - this is now genuine Linux-process evidence, not shape-only reasoning, though still against a modeled cmdline rather than a real downloaded code-server binary (see notExercised)",
-      "connect-deps.test.ts's REMOTE_COMMAND describe block, covering pidfile-kill/recycled-pid-guard/bridge-token-export-ordering, was removed by an earlier refactor that moved most of that contract into remote-bootstrap-cleanup.test.ts, but its comment overclaimed full coverage: two checks - the token-minting command text (`/proc/sys/kernel/random/uuid` with the `/dev/urandom` + `tr -dc 'a-f0-9'` fallback) and the bridge port being exported but never `-L`-tunneled - had no replacement anywhere. Restored as two focused tests in connect-deps.test.ts (not remote-bootstrap-cleanup.test.ts, to keep this connectDeps.ts-specific concern, its REMOTE_BRIDGE_PORT constant, out of the builder-fragment file). No production code changed - remoteBootstrap.ts already had this exact behavior; only the missing test coverage was added back",
+      "connect-deps.test.ts's REMOTE_COMMAND describe block, covering pidfile-kill/recycled-pid-guard/bridge-token-export-ordering, was removed by an earlier refactor that moved most of that contract into remote-bootstrap-cleanup.test.ts, but its comment overclaimed full coverage: two checks - the token-minting command text (`/proc/sys/kernel/random/uuid` with the `/dev/urandom` + `tr -dc 'a-f0-9'` fallback) and the bridge port being exported but never `-L`-tunneled - had no replacement anywhere. Restored as two focused tests in connect-deps.test.ts (not remote-bootstrap-cleanup.test.ts, to keep this connectDeps.ts-specific concern, its REMOTE_BRIDGE_PORT constant, out of the builder-fragment file). No production code changed - remote-bootstrap.ts already had this exact behavior; only the missing test coverage was added back",
       "src/shared/models.ts's CLAUDE_MODELS provenance comment corrected from the stale 'Claude Code binary (2.1.220)' to '(2.1.260)', matching the CLI version this manifest already documents as verified below (the `@anthropic-ai/claude-agent-sdk` 0.3.260 upgrade's bundled-CLI `strings` scan) - the model id list itself was already correct for 2.1.260 and unchanged; only the stamp text was stale",
       "npx tsc --noEmit -p tsconfig.main.json, plus an ad hoc config extending it with src/server/** included (src/server is not wired into either shipped tsconfig) - both clean",
       "npx eslint over every changed source file - clean",

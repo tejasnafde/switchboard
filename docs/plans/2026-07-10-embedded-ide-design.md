@@ -24,7 +24,7 @@ Replace the hand-rolled Files pane (file tree + CodeMirror editor + LSP manager 
 - Binary: downloaded on first IDE-pane open to `userData/code-server/<version>/` from GitHub releases (platform/arch lookup table), extracted with `fetch` + system `tar` (zero new npm deps). `PATH` fallback (`code-server` on PATH) for devs. Not bundled in the dmg.
 - Spawn (one per app, lazy, killed on quit):
   `code-server --auth none --bind-addr 127.0.0.1:<port> --extensions-dir <userData>/code-server/extensions --user-data-dir <userData>/code-server/data`
-  Port pre-picked with the existing `allocatePort()` (`src/main/machines/connectDeps.ts`). On EADDRINUSE (code-server exits 1 cleanly), pick again and retry once.
+  Port pre-picked with the existing `allocatePort()` (`src/main/machines/connect-deps.ts`). On EADDRINUSE (code-server exits 1 cleanly), pick again and retry once.
 - Env at spawn: `SB_BRIDGE_PORT`, `SB_BRIDGE_TOKEN` for the bridge extension.
 - Extension seeding: copy bundled `resources/sb-bridge/` into the extensions dir; delete or rewrite `extensions.json` so the seeded extension is not "marked as removed". Idempotent.
 - TCC pre-flight: run `assertCwdReadable` (existing `src/main/path-access.ts`) against the target folder before serving it, including when reusing the running server for a new project.
@@ -54,7 +54,7 @@ Keybinding note: `cmd+l` overrides VS Code's default "Expand Line Selection". De
 ### 4. Renderer integration (existing seams, verified call sites)
 
 - Pill click -> open at line: `FileChip.tsx` / `MessageBubble.tsx` keep calling `layout-store.openInViewer(path, range)`. `openInViewer` is repurposed: flip `rightPaneMode` to `'files'`, then send `IdeChannels.OPEN` -> main -> bridge `open` routed by the session's project folder. `viewerLineRange`/`viewerFilePath`/editor-store nav plumbing dies.
-- `cmd+l` in the IDE -> chat: bridge `selection` -> main -> renderer event -> same path as the old file-viewer branch of `captureSelection()`: `formatFileViewerContext` -> `useDraftStore.addPill` -> `sb-pill-added` CustomEvent. The DOM-scraping file-viewer branch of `contextBridge.ts` is deleted; the formatter stays.
+- `cmd+l` in the IDE -> chat: bridge `selection` -> main -> renderer event -> same path as the old file-viewer branch of `captureSelection()`: `formatFileViewerContext` -> `useDraftStore.addPill` -> `sb-pill-added` CustomEvent. The DOM-scraping file-viewer branch of `context-bridge.ts` is deleted; the formatter stays.
 - `cmd+shift+E` keeps toggling the right pane. `cmd+P` global handler dies (VS Code has its own when focused). Nav-history keybindings die with the editor.
 - IPC: `IdeChannels = { STATUS: 'ide:status', OPEN: 'ide:open', SELECTION: 'ide:selection' }` following the existing `<Domain>Channels` pattern.
 
@@ -64,9 +64,9 @@ code-server 4.x has only `password | none` auth; no token mode. With `none`, any
 
 ## Deletion list (verified by import graph)
 
-DELETE: `src/renderer/components/files/` (all panes + `editor/` tree), `src/main/lsp/` + `src/main/ipc/lsp.ts`, renderer `lspClient` / `definitionProvider` / `grepSource` / `lspSource` / `referencesSource` / `symbolIndex`, `editor-store` + `editor_tabs` table + `EDITOR_TABS_*` IPC, `src/main/git/diffHunks.ts` + `git:file-diff`, `src/main/files/gitignore.ts` + `grep.ts`, files IPC handlers `LIST_DIR` / `READ_FILE` / `READ_BATCH` / `GREP_SYMBOL`, the file-viewer branch of `contextBridge.ts`, App.tsx nav-history + `cmd+P` blocks. 13 test files die with them; 2 more get pruned (`files-edge-cases`, `viewer-state-by-session`).
+DELETE: `src/renderer/components/files/` (all panes + `editor/` tree), `src/main/lsp/` + `src/main/ipc/lsp.ts`, renderer `lspClient` / `definitionProvider` / `grepSource` / `lspSource` / `referencesSource` / `symbolIndex`, `editor-store` + `editor_tabs` table + `EDITOR_TABS_*` IPC, `src/main/git/diffHunks.ts` + `git:file-diff`, `src/main/files/gitignore.ts` + `grep.ts`, files IPC handlers `LIST_DIR` / `READ_FILE` / `READ_BATCH` / `GREP_SYMBOL`, the file-viewer branch of `context-bridge.ts`, App.tsx nav-history + `cmd+P` blocks. 13 test files die with them; 2 more get pruned (`files-edge-cases`, `viewer-state-by-session`).
 
-KEEP (surviving consumers verified): `fuzzyScore.ts` MOVED to `src/renderer/services/` (atMention imports it), `listAllFiles` + `LIST_ALL` (ChatInput @-mentions), `writing.ts` + `WRITE_FILE` / `DELETE_FILE` (FileDiffCard accept/reject), `RESOLVE` (MessageBubble pill existence), `resolveWithinRepo`, `fileDiffResolve.ts` + `checkpoint.ts` (FileDiffCard is independent of diffHunks), layout-store `rightPaneMode` + repurposed `openInViewer`.
+KEEP (surviving consumers verified): `fuzzy-score.ts` MOVED to `src/renderer/services/` (atMention imports it), `listAllFiles` + `LIST_ALL` (ChatInput @-mentions), `writing.ts` + `WRITE_FILE` / `DELETE_FILE` (FileDiffCard accept/reject), `RESOLVE` (MessageBubble pill existence), `resolveWithinRepo`, `file-diff-resolve.ts` + `checkpoint.ts` (FileDiffCard is independent of diffHunks), layout-store `rightPaneMode` + repurposed `openInViewer`.
 
 ## Testing
 

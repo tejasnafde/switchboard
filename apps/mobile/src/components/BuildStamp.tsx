@@ -8,7 +8,7 @@ import React, { memo } from 'react'
 import { StyleSheet, Text } from 'react-native'
 import * as Application from 'expo-application'
 import * as Updates from 'expo-updates'
-import { formatBuildStamp } from '../lib/buildInfo'
+import { formatBuildStamp } from '../lib/build-info'
 import { colors, space, type } from '../theme'
 
 // Module constants, read once. These cannot change during a session, so there

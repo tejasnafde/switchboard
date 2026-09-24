@@ -6,7 +6,7 @@
  * .ts (not .tsx) modules are directly importable in tests.
  */
 import { describe, it, expect } from 'vitest'
-import { terminalLoginAgentType } from '../../src/renderer/shared/terminalLogin'
+import { terminalLoginAgentType } from '../../src/renderer/shared/terminal-login'
 
 describe('terminalLoginAgentType', () => {
   it('maps the "claude" CLI binary to claude-code', () => {

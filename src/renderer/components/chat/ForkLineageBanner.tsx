@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
-import { openConversationAtAnchor } from '../../services/openConversationAtAnchor'
+import { openConversationAtAnchor } from '../../services/open-conversation-at-anchor'
 
 export function forkResumeLabel(metadata: ForkLineageMetadata): string {
   return metadata.resumeMode === 'native' ? 'Native resume' : 'Transcript handoff'

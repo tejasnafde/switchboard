@@ -15,7 +15,7 @@
  *   - All actions return a fresh config - the reducer is pure.
  */
 import { describe, it, expect } from 'vitest'
-import { launchConfigListReducer } from '../../src/renderer/services/launchConfigListReducer'
+import { launchConfigListReducer } from '../../src/renderer/services/launch-config-list-reducer'
 import type { LaunchConfigFile } from '../../src/shared/launch-config'
 
 const seed: LaunchConfigFile = {

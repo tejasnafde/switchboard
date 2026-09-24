@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth } from './stores/layout-store'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from './stores/agent-store'
-import { classifyCloseFocus, type ClosestEl } from './closeFocus'
+import { classifyCloseFocus, type ClosestEl } from './close-focus'
 import { useBookmarkStore } from './stores/bookmark-store'
 import { useThemeStore } from './stores/theme-store'
 import { useTerminalStore } from './stores/terminal-store'
@@ -26,13 +26,13 @@ import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
 import { ConfirmHost, unlessConfirmOpen } from './components/ui/confirm'
-import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
-import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
+import { TOUR_VERSION, type TryItAction } from './components/onboarding/feature-registry'
+import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/context-bridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
-import { sessionExecutionRootPath } from './services/executionRoot'
+import { sessionExecutionRootPath } from './services/execution-root'
 import { emitSessionCreated, onProviderEvent, onSessionRename } from './services/session-events'
-import { initSharedReadState } from './services/readState'
-import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
+import { initSharedReadState } from './services/read-state'
+import { getDefaultSessionEnvMode } from './services/session-env-mode'
 import {
   createDesktopNewChatCoordinator,
   retainedWorktreeCreationKey,
@@ -40,22 +40,22 @@ import {
   shouldDismissDesktopWorktreeSnapshot,
   type DesktopNewChatCoordinator,
   type DesktopNewChatState,
-} from './services/desktopNewChatCreation'
-import { createDesktopNewChatJournal } from './services/desktopNewChatJournal'
+} from './services/desktop-new-chat-creation'
+import { createDesktopNewChatJournal } from './services/desktop-new-chat-journal'
 import { WorktreeCreationProgress } from './components/worktree/WorktreeCreationProgress'
 import type { WorktreeCreationRecoveryAction, WorktreeCreationSnapshot } from '@shared/worktree-creation'
 import { draftSessionId } from '@shared/new-chat-draft'
-import { parkFirstSend, peekFirstSend, setDraftMaterializer, takeFirstSend } from './services/draftChat'
+import { parkFirstSend, peekFirstSend, setDraftMaterializer, takeFirstSend } from './services/draft-chat'
 import { toAgentProvider, type SessionSummary, type ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
 import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionResumeId, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
-import { focusComposer } from './services/composerRegistry'
+import { focusComposer } from './services/composer-registry'
 import { useDraftStore } from './stores/draft-store'
-import { nextDualChatShortcutAction, shouldEvictReplacedSession } from './services/chatWorkspace'
+import { nextDualChatShortcutAction, shouldEvictReplacedSession } from './services/chat-workspace'
 import type { AgentProvider } from '@shared/types'
-import { recoverPendingRequests } from './services/pendingRequestRecovery'
-import { resolveGlobalKeydown } from './services/globalKeybindings'
+import { recoverPendingRequests } from './services/pending-request-recovery'
+import { resolveGlobalKeydown } from './services/global-keybindings'
 
 const log = createRendererLogger('app')
 

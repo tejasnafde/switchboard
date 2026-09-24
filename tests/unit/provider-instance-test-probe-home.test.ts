@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   exit: 1,
 }))
 
-vi.mock('../../src/main/db/providerInstances', () => ({
+vi.mock('../../src/main/db/provider-instances', () => ({
   listProviderInstances: vi.fn(() => []),
   resolveEffectiveOauthDir: vi.fn(() => null),
   upsertProviderInstance: vi.fn(),
@@ -72,7 +72,7 @@ class FakeHost implements BackendHost {
 }
 
 async function testInstance(id: string): Promise<{ ok: boolean; message: string }> {
-  const { registerProviderInstanceHandlers } = await import('../../src/main/ipc/providerInstances')
+  const { registerProviderInstanceHandlers } = await import('../../src/main/ipc/provider-instances')
   const host = new FakeHost()
   registerProviderInstanceHandlers(host)
   return host.invoke(ProviderInstanceChannels.TEST, id)

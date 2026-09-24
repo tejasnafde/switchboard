@@ -10,7 +10,7 @@ import {
   retryDesktopWorktreeCreation,
   shouldDismissDesktopWorktreeSnapshot,
   type DesktopNewChatIntent,
-} from '../../src/renderer/services/desktopNewChatCreation'
+} from '../../src/renderer/services/desktop-new-chat-creation'
 
 const intent: DesktopNewChatIntent = {
   projectPath: '/repo',

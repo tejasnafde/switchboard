@@ -3,7 +3,7 @@
  * Only real host aliases (no wildcards) with enough to connect are surfaced.
  */
 import { describe, it, expect } from 'vitest'
-import { parseSshConfig } from '../../src/main/machines/sshConfig'
+import { parseSshConfig } from '../../src/main/machines/ssh-config'
 
 describe('parseSshConfig', () => {
   it('extracts alias, hostName, user, and port from a block', () => {

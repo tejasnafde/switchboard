@@ -9,7 +9,7 @@
       "evidence": [
         "src/renderer/components/chat/DraftWorkspaceChips.tsx",
         "src/renderer/App.tsx",
-        "src/renderer/services/desktopNewChatCreation.ts",
+        "src/renderer/services/desktop-new-chat-creation.ts",
         "e2e/draft-new-chat.e2e.mjs"
       ]
     },

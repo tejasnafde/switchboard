@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolvePickerKeydown, type PickerKeyState } from '../../src/renderer/components/chat/pickerKeydown'
+import { resolvePickerKeydown, type PickerKeyState } from '../../src/renderer/components/chat/picker-keydown'
 
 const closed: PickerKeyState = { sendToMatches: null, atMatches: null, slashMatches: null }
 const k = (key: string, altKey = false) => ({ key, altKey })

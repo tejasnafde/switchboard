@@ -6,12 +6,12 @@
  * Codex id landed in `resolveProviderInstance`, which now THROWS instead of
  * silently substituting - so the new session failed to start at all.
  *
- * `resolveProviderInstance` itself (src/main/db/providerInstances.ts) stays
+ * `resolveProviderInstance` itself (src/main/db/provider-instances.ts) stays
  * untouched and strict; the fix is entirely in what `machineDefaults` reads,
  * so a same-kind conversation-history-less start never sees a foreign id.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { ProviderInstanceRow } from '../../src/main/db/providerInstances'
+import type { ProviderInstanceRow } from '../../src/main/db/provider-instances'
 import { defaultInstanceSettingKey, SETTING_DEFAULT_INSTANCE_ID } from '../../src/shared/session-defaults'
 
 const settings = new Map<string, string>()
@@ -34,7 +34,7 @@ function codexRow(overrides: Partial<ProviderInstanceRow> = {}): ProviderInstanc
   }
 }
 
-vi.mock('../../src/main/db/providerInstances', () => ({
+vi.mock('../../src/main/db/provider-instances', () => ({
   getProviderInstanceFull: vi.fn((id: string) => rows.get(id) ?? null),
 }))
 

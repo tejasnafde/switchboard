@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   durableForkKey,
   projectForkSession,
-} from '../../src/renderer/services/forkSession'
+} from '../../src/renderer/services/fork-session'
 
 describe('fork renderer session projection', () => {
   it('keys a durable fork intent by stable message identity and explicit checkout policy', () => {

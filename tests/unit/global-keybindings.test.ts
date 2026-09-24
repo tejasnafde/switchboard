@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveGlobalKeydown, type GlobalKeyInput } from '../../src/renderer/services/globalKeybindings'
+import { resolveGlobalKeydown, type GlobalKeyInput } from '../../src/renderer/services/global-keybindings'
 
 function key(k: string, mods: Partial<Omit<GlobalKeyInput, 'key'>> = {}): GlobalKeyInput {
   return { key: k, metaKey: true, ctrlKey: false, shiftKey: false, altKey: false, ...mods }

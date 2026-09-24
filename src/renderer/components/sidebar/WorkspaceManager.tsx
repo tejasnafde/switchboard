@@ -19,7 +19,7 @@ import {
   projectOrganizationItems,
   reorderProjectsWithinWorkspace,
   reorderWorkspacesById,
-} from '@shared/workspaceOrganization'
+} from '@shared/workspace-organization'
 import { colorTokenForWorkspace } from './sidebar-helpers'
 import { confirm } from '../ui/confirm'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'

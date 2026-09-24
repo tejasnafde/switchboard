@@ -9,7 +9,7 @@ import {
   rankAndFilterRefs,
   decideSwitchAction,
   type Ref,
-} from '../../src/renderer/components/chat/branchPickerPolicy'
+} from '../../src/renderer/components/chat/branch-picker-policy'
 
 const refs: Ref[] = [
   { name: 'main', sha: 'a', current: true, isRemote: false, worktreePath: null },

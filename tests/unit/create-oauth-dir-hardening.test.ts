@@ -56,7 +56,7 @@ vi.mock('../../src/main/provider/codex-session-dirs', () => ({
   codexCandidateDirs: () => [],
 }))
 
-vi.mock('../../src/main/db/providerInstances', () => ({
+vi.mock('../../src/main/db/provider-instances', () => ({
   listProviderInstances: vi.fn(() => []),
   upsertProviderInstance: vi.fn(),
   deleteProviderInstance: vi.fn(),
@@ -90,7 +90,7 @@ class FakeHost implements BackendHost {
 }
 
 async function createHandler(): Promise<FakeHost> {
-  const { registerProviderInstanceHandlers } = await import('../../src/main/ipc/providerInstances')
+  const { registerProviderInstanceHandlers } = await import('../../src/main/ipc/provider-instances')
   const host = new FakeHost()
   registerProviderInstanceHandlers(host)
   return host

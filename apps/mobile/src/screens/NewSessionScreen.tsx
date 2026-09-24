@@ -23,17 +23,17 @@ import { isRuntimeMode } from '@shared/session-defaults'
 import type { RootStackParamList } from '../../App'
 import { ModePicker } from '../components/ModePicker'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
-import { keyboardAvoidance } from '../lib/keyboardAvoidance'
+import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 import {
   createNewSessionCreationCoordinator,
   newSessionCreationActions,
   type MobileNewSessionCreationState,
   type ParentCheckoutRequest,
-} from '../lib/newSessionCreation'
-import { mobileNewSessionCreationStorage } from '../lib/newSessionCreationStorage'
+} from '../lib/new-session-creation'
+import { mobileNewSessionCreationStorage } from '../lib/new-session-creation-storage'
 import { agentTypeFor, profilesFor } from '../lib/profiles'
-import { buildTurn } from '../lib/turnSubmit'
-import { restoredWorktreeForm, shouldOfferWorktreeCreation } from '../lib/worktreeCapability'
+import { buildTurn } from '../lib/turn-submit'
+import { restoredWorktreeForm, shouldOfferWorktreeCreation } from '../lib/worktree-capability'
 import { useChatStore, threadKey } from '../stores/chat'
 import { getClient } from '../stores/connections'
 import { enqueue } from '../stores/outbox'

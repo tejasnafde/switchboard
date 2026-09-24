@@ -10,8 +10,8 @@
         "src/renderer/components/chat/SyntheticUserRow.tsx",
         "src/renderer/components/chat/MessageBubble.tsx",
         "src/renderer/components/chat/MessageList.tsx",
-        "src/renderer/services/sessionPreview.ts",
-        "src/renderer/services/desktopTurnSubmission.ts"
+        "src/renderer/services/session-preview.ts",
+        "src/renderer/services/desktop-turn-submission.ts"
       ]
     },
     "reactNativeIos": {
@@ -19,7 +19,7 @@
       "evidence": [
         "apps/mobile/src/components/SyntheticRow.tsx",
         "apps/mobile/src/components/__tests__/SyntheticRow.test.tsx",
-        "apps/mobile/src/lib/threadHistory.ts",
+        "apps/mobile/src/lib/thread-history.ts",
         "apps/mobile/src/stores/chat.ts",
         "apps/mobile/src/screens/ThreadScreen.tsx",
         "tests/unit/mobile-thread-history.test.ts"
@@ -55,7 +55,7 @@
       "status": "implemented",
       "evidence": [
         "apps/mobile/src/stores/chat.ts",
-        "apps/mobile/src/lib/threadHistory.ts",
+        "apps/mobile/src/lib/thread-history.ts",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/CachedThreadStateMapper.kt",
         "tests/unit/mobile-thread-history.test.ts"
       ]

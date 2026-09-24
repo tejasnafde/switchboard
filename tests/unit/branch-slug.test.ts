@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { makeBranchSlug, slugifyForBranch } from '@shared/branchSlug'
+import { makeBranchSlug, slugifyForBranch } from '@shared/branch-slug'
 
 describe('slugifyForBranch', () => {
   it.each([

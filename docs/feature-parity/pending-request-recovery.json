@@ -9,7 +9,7 @@
       "evidence": [
         "src/main/provider/provider-registry.ts",
         "src/preload/index.ts",
-        "src/renderer/services/pendingRequestRecovery.ts",
+        "src/renderer/services/pending-request-recovery.ts",
         "src/renderer/App.tsx",
         "tests/unit/provider-registry-pending-requests.test.ts",
         "tests/unit/pending-request-recovery-orchestration.test.ts",
@@ -20,7 +20,7 @@
       "status": "implemented",
       "evidence": [
         "apps/mobile/src/lib/api.ts",
-        "apps/mobile/src/lib/pendingRequestRecovery.ts",
+        "apps/mobile/src/lib/pending-request-recovery.ts",
         "apps/mobile/src/screens/ThreadScreen.tsx",
         "tests/unit/mobile-pending-request-recovery.test.ts"
       ]

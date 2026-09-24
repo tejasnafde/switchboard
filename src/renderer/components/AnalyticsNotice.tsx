@@ -9,7 +9,7 @@ import {
   markAnalyticsNoticeSeen,
   setAnalyticsEnabled,
   shouldShowAnalyticsNotice,
-} from '../services/analyticsPref'
+} from '../services/analytics-pref'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('component:analytics-notice')

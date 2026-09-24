@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSingleOwnerEventReducer } from '../../src/renderer/services/providerEventReducerRegistry'
+import { createSingleOwnerEventReducer } from '../../src/renderer/services/provider-event-reducer-registry'
 
 describe('provider event reducer registry', () => {
   it('subscribes once and delivers each event to exactly one mounted reducer', () => {

@@ -2,7 +2,7 @@ import type { BackendHost } from '../backend/host'
 import { getConversationById, getDb, listConversationSegments } from '../db/database'
 import { SqliteWorktreeCreationStore } from '../db/worktree-creation'
 import { SqliteConversationForkStore } from '../db/conversation-fork'
-import { getProviderInstanceFull } from '../db/providerInstances'
+import { getProviderInstanceFull } from '../db/provider-instances'
 import {
   createWorktreeCreationProgressSink,
   registerWorktreeCreationHandlers,

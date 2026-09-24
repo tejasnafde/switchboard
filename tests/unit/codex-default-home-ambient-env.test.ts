@@ -1,6 +1,6 @@
 /**
  * `resolveInstanceEnv` is the one seam session spawn (codex-adapter.ts),
- * the Settings "Test" probe (ipc/providerInstances.ts), and the usage probe
+ * the Settings "Test" probe (ipc/provider-instances.ts), and the usage probe
  * (usage/index.ts) all resolve a Codex instance's env through - see the
  * doc-comment on instance-env.ts. Behaviors 1 and 3 pin its contract for
  * CODEX_HOME:
@@ -16,7 +16,7 @@
 import { homedir } from 'os'
 import { join } from 'path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { ProviderInstanceRow } from '../../src/main/db/providerInstances'
+import type { ProviderInstanceRow } from '../../src/main/db/provider-instances'
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => '/usr/local/bin/codex\n'),

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import type { ChatMessage } from '../../src/shared/types'
 import { groupIntoTurns, roleLabel } from '../../src/renderer/components/chat/MessageList'
-import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from '../../src/renderer/components/chat/turnPresentation'
+import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from '../../src/renderer/components/chat/turn-presentation'
 
 const messageListSource = readFileSync(new URL('../../src/renderer/components/chat/MessageList.tsx', import.meta.url), 'utf8')
 

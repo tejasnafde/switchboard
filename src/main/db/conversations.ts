@@ -1,7 +1,7 @@
 import { createMainLogger as createLogger } from '../logger'
 import type { RuntimeMode } from '@shared/provider-events'
 import type { SessionSource } from '@shared/types'
-import type { ConversationSidebarRole } from './conversationSidebarRole'
+import type { ConversationSidebarRole } from './conversation-sidebar-role'
 import type { WorktreeCreationStatus } from '@shared/worktree-creation'
 import { commitConversationProfileSwitch } from './conversation-profile-commit'
 import { SqliteConversationForkStore } from './conversation-fork'

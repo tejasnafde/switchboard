@@ -212,5 +212,5 @@ env_encrypted, oauth_dir, config_json, enabled, …)`. `auth_mode` is
 instance at `startSession` (requested → default → any enabled), applies
 the env overlay (`env-overlay.ts`), and migrates Claude session JSONL
 across `oauth_dir` rotation (`claude-session-migrate.ts`). IPC lives in
-`ipc/providerInstances.ts`; UI in `UnifiedProviderPicker` +
+`ipc/provider-instances.ts`; UI in `UnifiedProviderPicker` +
 Settings → Providers.

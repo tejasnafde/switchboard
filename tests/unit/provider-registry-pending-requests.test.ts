@@ -10,7 +10,7 @@
  */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 
-vi.mock('../../src/main/db/providerInstances', () => ({
+vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({
     id: id ?? `${agentType}-default`,
     agentType,

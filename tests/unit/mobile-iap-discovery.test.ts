@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   selectAvailableIapTargets,
   type SavedIapTarget,
-} from '../../apps/mobile/src/lib/iapDiscovery'
+} from '../../apps/mobile/src/lib/iap-discovery'
 import type { SshIapTarget } from '@shared/machines'
 
 const discovered = (

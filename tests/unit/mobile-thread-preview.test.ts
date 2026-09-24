@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { threadPreviewLine } from '../../apps/mobile/src/lib/threadPreview'
+import { threadPreviewLine } from '../../apps/mobile/src/lib/thread-preview'
 import type { FeedItem } from '../../apps/mobile/src/stores/chat'
 
 function assistantText(text: string, id = 'm1'): FeedItem {

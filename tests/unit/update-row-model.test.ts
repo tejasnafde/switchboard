@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { updateRowView, updateStatusLabel } from '../../src/renderer/components/settings/updateRowModel'
+import { updateRowView, updateStatusLabel } from '../../src/renderer/components/settings/update-row-model'
 import type { UpdateStatus } from '../../src/shared/update-status'
 
 const downloaded: UpdateStatus = { kind: 'downloaded', version: '0.7.29' }

@@ -7,7 +7,7 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/services/desktopTurnSubmission.ts",
+        "src/renderer/services/desktop-turn-submission.ts",
         "src/renderer/components/chat/ChatInput.tsx",
         "src/renderer/components/chat/ChatPanel.tsx",
         "src/preload/index.ts",
@@ -19,8 +19,8 @@
       "status": "implemented",
       "evidence": [
         "apps/mobile/src/lib/api.ts",
-        "apps/mobile/src/lib/outboxDelivery.ts",
-        "apps/mobile/src/lib/outboxModel.ts",
+        "apps/mobile/src/lib/outbox-delivery.ts",
+        "apps/mobile/src/lib/outbox-model.ts",
         "apps/mobile/src/stores/outbox.ts",
         "apps/mobile/src/screens/ThreadScreen.tsx",
         "tests/unit/mobile-api-turn-compat.test.ts",
@@ -57,7 +57,7 @@
       "evidence": [
         "src/main/db/turn-acceptance.ts",
         "tests/unit/turn-acceptance-store.test.ts",
-        "apps/mobile/src/lib/outboxStorage.ts",
+        "apps/mobile/src/lib/outbox-storage.ts",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/RoomOutboxStore.kt"
       ]
     },

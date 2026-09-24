@@ -303,7 +303,7 @@ Add service/component tests covering:
 
 ### Green
 
-Rewrite `src/renderer/services/forkSession.ts` around the authoritative result. Update `MessageBubble.tsx` eligibility/menu/progress/confirmation wording and add a compact `ForkLineageBanner`. Extend agent/store/session hydration for fork metadata without creating another renderer source of truth.
+Rewrite `src/renderer/services/fork-session.ts` around the authoritative result. Update `MessageBubble.tsx` eligibility/menu/progress/confirmation wording and add a compact `ForkLineageBanner`. Extend agent/store/session hydration for fork metadata without creating another renderer source of truth.
 
 ### Verify
 

@@ -7,7 +7,7 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/services/desktopNewChatCreation.ts",
+        "src/renderer/services/desktop-new-chat-creation.ts",
         "src/renderer/components/worktree/WorktreeCreationProgress.tsx",
         "src/renderer/App.tsx",
         "src/renderer/stores/terminal-store.ts",
@@ -21,9 +21,9 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/lib/newSessionCreation.ts",
-        "apps/mobile/src/lib/newSessionCreationStorage.ts",
-        "apps/mobile/src/lib/worktreeCapability.ts",
+        "apps/mobile/src/lib/new-session-creation.ts",
+        "apps/mobile/src/lib/new-session-creation-storage.ts",
+        "apps/mobile/src/lib/worktree-capability.ts",
         "apps/mobile/src/screens/NewSessionScreen.tsx",
         "tests/unit/mobile-new-session-creation-coordinator.test.ts",
         "tests/unit/mobile-new-session-worktree-integration.test.ts",

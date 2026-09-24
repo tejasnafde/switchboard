@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { heldTurnActions, heldTurnFor, queueToggle } from '../../apps/mobile/src/lib/heldTurns'
+import { heldTurnActions, heldTurnFor, queueToggle } from '../../apps/mobile/src/lib/held-turns'
 
 describe('phone steer/queue toggle', () => {
   it('reads as it always did with the Steer default', () => {

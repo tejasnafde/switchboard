@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { prepareMobileHandoffTurn } from '../../apps/mobile/src/lib/handoffTurn'
+import { prepareMobileHandoffTurn } from '../../apps/mobile/src/lib/handoff-turn'
 
 describe('prepareMobileHandoffTurn', () => {
   it('injects bounded visible history when a profile restart left a pending handoff', async () => {

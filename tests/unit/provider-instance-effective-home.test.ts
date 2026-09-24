@@ -119,7 +119,7 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
   it('reports the canonical default for a plain default row of either kind', async () => {
     seedRow({ id: 'codex-default', agent_type: 'codex' })
     seedRow({ id: 'claude-code-default', agent_type: 'claude-code' })
-    const { listProviderInstances } = await import('../../src/main/db/providerInstances')
+    const { listProviderInstances } = await import('../../src/main/db/provider-instances')
     const byId = new Map(listProviderInstances().map((r) => [r.id, r]))
 
     expect(byId.get('codex-default')).toMatchObject({
@@ -134,7 +134,7 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
 
   it('canonicalizes an oauth_dir row but keeps the literal the user typed', async () => {
     seedRow({ id: 'codex-work', agent_type: 'codex', auth_mode: 'oauth_dir', oauth_dir: '~/.codex-work/' })
-    const { listProviderInstances } = await import('../../src/main/db/providerInstances')
+    const { listProviderInstances } = await import('../../src/main/db/provider-instances')
     const [row] = listProviderInstances()
 
     expect(row.oauthDir).toBe('~/.codex-work/')
@@ -148,7 +148,7 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
       env_encrypted: encrypted({ CODEX_HOME: '/tmp/legacy-codex' }),
       env_keys: JSON.stringify(['CODEX_HOME']),
     })
-    const { listProviderInstances } = await import('../../src/main/db/providerInstances')
+    const { listProviderInstances } = await import('../../src/main/db/provider-instances')
     const [row] = listProviderInstances()
 
     expect(row.effectiveOauthDirSource).toBe('unresolved')
@@ -162,7 +162,7 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
       env_encrypted: encrypted({ OPENAI_API_KEY: 'sk-x' }),
       env_keys: null, // predates the env_keys column - could be anything
     })
-    const { listProviderInstances } = await import('../../src/main/db/providerInstances')
+    const { listProviderInstances } = await import('../../src/main/db/provider-instances')
     expect(listProviderInstances()[0].effectiveOauthDirSource).toBe('unresolved')
     expect(decryptCalls.n).toBe(0)
   })
@@ -179,7 +179,7 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
       env_encrypted: Buffer.from(JSON.stringify({ CODEX_HOME: '  ' }), 'utf-8'),
       env_keys: JSON.stringify(['CODEX_HOME']),
     })
-    const { listProviderInstances } = await import('../../src/main/db/providerInstances')
+    const { listProviderInstances } = await import('../../src/main/db/provider-instances')
     expect(listProviderInstances()[0]).toMatchObject({
       effectiveOauthDir: CANONICAL_CODEX, effectiveOauthDirSource: 'default',
     })
@@ -191,7 +191,7 @@ describe('wire effectiveOauthDir - what the DB layer can say without decrypting'
       env_encrypted: encrypted({ OPENAI_API_KEY: 'sk-x' }),
       env_keys: JSON.stringify(['OPENAI_API_KEY']),
     })
-    const { listProviderInstances } = await import('../../src/main/db/providerInstances')
+    const { listProviderInstances } = await import('../../src/main/db/provider-instances')
     expect(listProviderInstances()[0]).toMatchObject({
       effectiveOauthDir: CANONICAL_CODEX, effectiveOauthDirSource: 'default',
     })
@@ -206,7 +206,7 @@ describe('resolveEffectiveOauthDir - the decrypting resolver behind the IPC laye
       env_encrypted: encrypted({ CODEX_HOME: '~/.codex-legacy/' }),
       env_keys: JSON.stringify(['CODEX_HOME']),
     })
-    const { resolveEffectiveOauthDir } = await import('../../src/main/db/providerInstances')
+    const { resolveEffectiveOauthDir } = await import('../../src/main/db/provider-instances')
 
     expect(resolveEffectiveOauthDir('codex-legacy')).toEqual({
       effectiveOauthDir: join(homedir(), '.codex-legacy'),
@@ -220,7 +220,7 @@ describe('resolveEffectiveOauthDir - the decrypting resolver behind the IPC laye
       env_encrypted: encrypted({ OPENAI_API_KEY: 'sk-x' }),
       env_keys: null,
     })
-    const { resolveEffectiveOauthDir } = await import('../../src/main/db/providerInstances')
+    const { resolveEffectiveOauthDir } = await import('../../src/main/db/provider-instances')
     expect(resolveEffectiveOauthDir('codex-ancient')).toEqual({
       effectiveOauthDir: CANONICAL_CODEX,
       effectiveOauthDirSource: 'default',
@@ -238,7 +238,7 @@ describe('resolveEffectiveOauthDir - the decrypting resolver behind the IPC laye
       env_encrypted: encrypted({ CODEX_HOME: '/tmp/overlay' }),
       env_keys: JSON.stringify(['CODEX_HOME']),
     })
-    const { resolveEffectiveOauthDir } = await import('../../src/main/db/providerInstances')
+    const { resolveEffectiveOauthDir } = await import('../../src/main/db/provider-instances')
     expect(resolveEffectiveOauthDir('codex-both')).toEqual({
       effectiveOauthDir: '/tmp/explicit',
       effectiveOauthDirSource: 'oauth_dir',
@@ -246,7 +246,7 @@ describe('resolveEffectiveOauthDir - the decrypting resolver behind the IPC laye
   })
 
   it('returns null for an unknown id rather than inventing a directory', async () => {
-    const { resolveEffectiveOauthDir } = await import('../../src/main/db/providerInstances')
+    const { resolveEffectiveOauthDir } = await import('../../src/main/db/provider-instances')
     expect(resolveEffectiveOauthDir('nope')).toBeNull()
   })
 })

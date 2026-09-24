@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { SlashCommand } from './slashCommands'
-import { filterSlashCommands } from './slashCommands'
+import type { SlashCommand } from './slash-commands'
+import { filterSlashCommands } from './slash-commands'
 
 interface SlashCommandMenuProps {
   query: string

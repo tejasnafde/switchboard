@@ -11,7 +11,7 @@ import {
   executionRootForSession,
   sessionExecutionRoot,
   sessionExecutionRootPath,
-} from '../../src/renderer/services/executionRoot'
+} from '../../src/renderer/services/execution-root'
 
 beforeEach(() => {
   useAgentStore.setState({ sessions: [], activeSessionId: null })

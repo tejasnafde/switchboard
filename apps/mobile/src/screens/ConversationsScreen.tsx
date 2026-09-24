@@ -23,12 +23,12 @@ import { isAgentType, type ConversationRow } from '@shared/types'
 import { formatRelativeTime } from '@shared/format'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
-import { keyboardAvoidance } from '../lib/keyboardAvoidance'
+import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
-import { conversationSourceLabel } from '../lib/conversationSource'
-import { threadPreviewLine } from '../lib/threadPreview'
+import { conversationSourceLabel } from '../lib/conversation-source'
+import { threadPreviewLine } from '../lib/thread-preview'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Conversations'>
 

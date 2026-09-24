@@ -2,7 +2,7 @@
  * Notification payload to Thread route, and the edge-swipe-back thresholds.
  */
 import { describe, it, expect } from 'vitest'
-import { threadRouteFromPush } from '../../apps/mobile/src/lib/pushRoute'
+import { threadRouteFromPush } from '../../apps/mobile/src/lib/push-route'
 import {
   shouldClaimEdgeSwipe,
   edgeSwipeCommits,

@@ -5,39 +5,39 @@ import { useTerminalStore } from '../../stores/terminal-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useMachineStore } from '../../stores/machine-store'
-import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotationMarker'
+import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotation-marker'
 import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
-import { parseSendTo, resolveSendToTarget } from './sendToCommand'
-import { reduceProviderEvent, upsertAssistantContent } from './providerEventReducer'
+import { parseSendTo, resolveSendToTarget } from './send-to-command'
+import { reduceProviderEvent, upsertAssistantContent } from './provider-event-reducer'
 import { MessageList } from './MessageList'
-import { changeModel, changeReasoningEffort, changeRuntimeMode } from './chatSessionSettings'
+import { changeModel, changeReasoningEffort, changeRuntimeMode } from './chat-session-settings'
 import { useChatSearch } from './useChatSearch'
 import { SlashHelpOverlay } from './SlashHelpOverlay'
 import { ChatInput, type ChatSendResult } from './ChatInput'
-import { chatIdentity } from './chatIdentity'
+import { chatIdentity } from './chat-identity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ForkLineageBanner } from './ForkLineageBanner'
 import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { isDraftSessionId } from '@shared/new-chat-draft'
 import { runningPlaceholder } from '@shared/turn-delivery'
-import { materializeDraft, takeFirstSend } from '../../services/draftChat'
+import { materializeDraft, takeFirstSend } from '../../services/draft-chat'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import {
   onSessionRename,
   emitSessionRename,
   onReducedProviderEvent,
 } from '../../services/session-events'
-import { isAssistantStreamingEnabled } from '../../services/streamingPref'
+import { isAssistantStreamingEnabled } from '../../services/streaming-pref'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('chat:panel')
-import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
+import { createContentCoalescer, type ContentCoalescer } from '../../services/content-coalescer'
 import {
   finishRuntimeEventLifecycle,
   messageLifecycle,
   prepareRuntimeEventLifecycle,
-} from '../../services/messageLifecycle'
+} from '../../services/message-lifecycle'
 import {
   validateUserMessageImages,
   type UserTurnSubmissionV1,
@@ -52,19 +52,19 @@ import {
   submitProgrammaticTurn,
   submitDesktopUserTurn,
   type DesktopTurnSubmissionDependencies,
-} from '../../services/desktopTurnSubmission'
-import { downscaleImage } from '../../services/imageDownscale'
+} from '../../services/desktop-turn-submission'
+import { downscaleImage } from '../../services/image-downscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type ChatMessage } from '@shared/types'
 import { defaultInstanceSettingKey } from '@shared/session-defaults'
 import { useLayoutStore } from '../../stores/layout-store'
-import type { ChatSlot } from '../../services/chatWorkspace'
-import { focusComposer } from '../../services/composerRegistry'
+import type { ChatSlot } from '../../services/chat-workspace'
+import { focusComposer } from '../../services/composer-registry'
 import {
   cloneDraftPayload,
   requiresDraftTransferConfirmation,
   withDraftProvenance,
-} from '../../services/draftTransfer'
+} from '../../services/draft-transfer'
 import { providerKindFor } from '@shared/types'
 import { confirm } from '../ui/confirm'
 

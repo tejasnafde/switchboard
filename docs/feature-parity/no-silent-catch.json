@@ -32,7 +32,7 @@
         "src/main/worktree-creation/worktree-creation-service.ts",
         "src/main/db/database.ts",
         "src/main/db/machines.ts",
-        "src/main/db/providerInstances.ts",
+        "src/main/db/provider-instances.ts",
         "src/server/index.ts"
       ]
     },

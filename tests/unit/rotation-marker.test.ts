@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseRotationMarker, ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX, PEER_AGENT_SENT_MARKER_PREFIX } from '../../src/renderer/components/chat/rotationMarker'
+import { parseRotationMarker, ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX, PEER_AGENT_SENT_MARKER_PREFIX } from '../../src/renderer/components/chat/rotation-marker'
 
 describe('parseRotationMarker', () => {
   it('parses the canonical "from → to" form', () => {

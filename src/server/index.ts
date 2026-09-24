@@ -21,7 +21,7 @@ import { registerFilesHandlers } from '../main/ipc/files'
 import { registerGitHandlers } from '../main/ipc/git'
 import { registerSttHandlers } from '../main/ipc/stt'
 import { registerKanbanHandlers } from '../main/ipc/kanban'
-import { registerProviderInstanceHandlers } from '../main/ipc/providerInstances'
+import { registerProviderInstanceHandlers } from '../main/ipc/provider-instances'
 import { registerTerminalHandlers } from '../main/ipc/terminal'
 import { ProviderRegistry } from '../main/provider/provider-registry'
 import { disposeUsageProbes } from '../main/provider/usage'
@@ -35,7 +35,7 @@ import { nodePidFileIo } from './pidfile'
 // version at bundle time so a live server can report what it's running.
 declare const __SERVER_VERSION__: string
 
-// Duplicated in src/main/machines/connectDeps.ts (that file can't import this
+// Duplicated in src/main/machines/connect-deps.ts (that file can't import this
 // one - it would boot a second WebSocketServer as a side effect). Keep the
 // two literals in sync.
 const SERVER_VERSION_CHANNEL = 'server:version'
@@ -43,7 +43,7 @@ const SERVER_VERSION_CHANNEL = 'server:version'
 const log = createLogger('server')
 
 // Same dir as the uploaded bundle. A lingering process from an ungraceful
-// tunnel drop can hold the port; connectDeps.ts REMOTE_COMMAND kills whatever
+// tunnel drop can hold the port; connect-deps.ts REMOTE_COMMAND kills whatever
 // pid is recorded here before launching a fresh server.
 /** Matches provisionCommands.REMOTE_SERVER_DIR, which is the shell form of this
  *  path and so cannot be imported here. */
@@ -156,7 +156,7 @@ attachPushNotifier(registry.bus)
 registry.registerIpcHandlers()
 
 // The workbench bridge, when the ssh bootstrap minted a token for us (see
-// machines/connectDeps.ts REMOTE_COMMAND). Absent env = this server was started
+// machines/connect-deps.ts REMOTE_COMMAND). Absent env = this server was started
 // by hand without a code-server alongside it, so there is nothing to bridge.
 // The port range is validated here rather than defended inside startBridgeHost:
 // `ws` throws synchronously on an out-of-range port, which would take the whole

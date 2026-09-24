@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useAgentStore } from '../../stores/agent-store'
-import { showDragOverlay, hideDragOverlay } from '../../services/dragOverlay'
-import { nextChatPresentation, shouldShowChatFocusIndicator, type ChatPresentation } from '../../services/chatWorkspace'
+import { showDragOverlay, hideDragOverlay } from '../../services/drag-overlay'
+import { nextChatPresentation, shouldShowChatFocusIndicator, type ChatPresentation } from '../../services/chat-workspace'
 import { ChatPanel } from './ChatPanel'
 
 export function ChatWorkspacePanels({

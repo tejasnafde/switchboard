@@ -6,12 +6,12 @@ vi.mock('../../src/renderer/services/notifications', () => ({
   notifyTurnCompleted: (opts: unknown) => notifyTurnCompleted(opts),
 }))
 
-import { reduceProviderEvent, upsertAssistantContent } from '../../src/renderer/components/chat/providerEventReducer'
+import { reduceProviderEvent, upsertAssistantContent } from '../../src/renderer/components/chat/provider-event-reducer'
 import { useAgentStore } from '../../src/renderer/stores/agent-store'
 import { useKanbanStore } from '../../src/renderer/stores/kanban-store'
 import { useSpendBlockStore } from '../../src/renderer/stores/spend-block-store'
 import { onSessionActivity, onSessionRename, onUserTurnAccepted } from '../../src/renderer/services/session-events'
-import type { ContentCoalescer } from '../../src/renderer/services/contentCoalescer'
+import type { ContentCoalescer } from '../../src/renderer/services/content-coalescer'
 
 const T = 'thread-1'
 const streaming = { streamingEnabled: true, coalescer: null }

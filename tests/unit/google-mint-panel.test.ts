@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   googleClientUpdate,
   googleMintActionClass,
-} from '../../src/renderer/components/settings/googleMintPresentation'
+} from '../../src/renderer/components/settings/google-mint-presentation'
 
 describe('Google mint panel presentation', () => {
   it('keeps the stored secret when the editor secret is blank', () => {

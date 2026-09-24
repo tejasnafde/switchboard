@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { missingPendingFeedItems, shownPendingKeys } from '../../apps/mobile/src/lib/pendingRequestRecovery'
+import { missingPendingFeedItems, shownPendingKeys } from '../../apps/mobile/src/lib/pending-request-recovery'
 import type { FeedItem } from '../../apps/mobile/src/stores/chat'
 import type { PendingBlockingEvent } from '../../src/shared/pending-requests'
 
