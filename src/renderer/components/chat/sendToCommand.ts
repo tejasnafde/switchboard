@@ -11,6 +11,7 @@ import type { RuntimePeerMessageEvent } from '@shared/provider-events'
 import type { ChatMessage } from '@shared/types'
 
 export const SEND_TO_USAGE = 'Use /send-to <session>: <message>'
+export const SEND_TO_EMPTY_MESSAGE = `Nothing to send. ${SEND_TO_USAGE}`
 
 export type SendToParse =
   | { ok: true; target: string; text: string }
@@ -43,7 +44,7 @@ export function parseSendTo(body: string): SendToParse | null {
   const target = rest.slice(0, colon).trim()
   const text = rest.slice(colon + 1).trim()
   if (!target) return { ok: false, error: `Name a session. ${SEND_TO_USAGE}` }
-  if (!text) return { ok: false, error: `Nothing to send. ${SEND_TO_USAGE}` }
+  if (!text) return { ok: false, error: SEND_TO_EMPTY_MESSAGE }
   return { ok: true, target, text }
 }
 
@@ -169,6 +170,15 @@ export interface SendToPickerSession {
   title?: string
   projectPath?: string
   machineId?: string
+  /** Set on a chat not yet started. The send path cannot target one. */
+  draft?: unknown
+}
+
+/** Chats a `/send-to` from `fromSessionId` can reach: same backend, started, not itself. */
+function pickerPeers<T extends SendToPickerSession>(sessions: ReadonlyArray<T>, fromSessionId: string): T[] {
+  const from = sessions.find((s) => s.id === fromSessionId)
+  return sessions.filter((s) =>
+    s.id !== fromSessionId && !s.draft && (s.machineId ?? 'local') === (from?.machineId ?? 'local'))
 }
 
 /**
@@ -183,9 +193,7 @@ export function sendToPickerItems(
   sessions: ReadonlyArray<SendToPickerSession>,
   fromSessionId: string,
 ): SendToPickerItem[] {
-  const from = sessions.find((s) => s.id === fromSessionId)
-  const rows = sessions
-    .filter((s) => s.id !== fromSessionId && (s.machineId ?? 'local') === (from?.machineId ?? 'local'))
+  const rows = pickerPeers(sessions, fromSessionId)
     .map((s) => ({
       id: s.id,
       // Both separators: a Windows projectPath left whole by a `/`-only split
@@ -198,4 +206,36 @@ export function sendToPickerItems(
     id: r.id,
     label: (counts.get(r.base) ?? 0) > 1 ? `${r.base} (${r.id.slice(0, 4)})` : r.base,
   }))
+}
+
+/**
+ * What a pick writes into the composer as the target. The title, so the user
+ * reads the chat's name, whenever `resolveSendToTarget` maps that title back
+ * to exactly this chat: its only case-insensitive exact match among the same
+ * peers, with no ':' (the first one ends the target), no leading '#' (read as
+ * an id) and no edge whitespace (trimmed off by `parseSendTo`). Otherwise the
+ * exact `#<id>`.
+ */
+export function sendToPickInsertion(
+  id: string,
+  sessions: ReadonlyArray<SendToPickerSession>,
+  fromSessionId: string,
+): string {
+  const title = sessions.find((s) => s.id === id)?.title
+  if (!title || title !== title.trim() || title.includes(':') || title.startsWith('#')) return `#${id}`
+  const lower = title.toLowerCase()
+  const same = pickerPeers(sessions, fromSessionId).filter((s) => s.title?.toLowerCase() === lower)
+  return same.length === 1 && same[0].id === id ? title : `#${id}`
+}
+
+/**
+ * Swap a picked title back to the picked chat's `#<id>` at send time, while
+ * the command still names that title. The title's uniqueness was checked at
+ * pick time, and an auto-title or a newly opened twin before the send would
+ * otherwise re-resolve it by fuzzy match.
+ */
+export function pinSendToTarget(body: string, pick: { id: string; title: string } | null): string {
+  const parsed = parseSendTo(body)
+  if (!pick || !parsed?.ok || parsed.target !== pick.title) return body
+  return `/send-to #${pick.id}: ${parsed.text}`
 }

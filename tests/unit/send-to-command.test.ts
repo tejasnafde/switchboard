@@ -6,7 +6,7 @@
  * must name the candidates rather than pick one.
  */
 import { describe, it, expect } from 'vitest'
-import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger, sendToPickerItems } from '../../src/renderer/components/chat/sendToCommand'
+import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger, sendToPickerItems, sendToPickInsertion, pinSendToTarget } from '../../src/renderer/components/chat/sendToCommand'
 import { PEER_AGENT_SENT_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
 
 const sessions = [
@@ -272,11 +272,58 @@ describe('sendToPickerItems', () => {
     ]
     expect(sendToPickerItems(mixed, 't1')).toEqual([])
   })
+
+  // The send path skips unstarted chats, so a picked one could only fail.
+  it('leaves out chats that have not started', () => {
+    const withDraft = [...withProjects, { id: 'd1', title: 'New chat', projectPath: '/p', draft: {} }]
+    expect(sendToPickerItems(withDraft, 't1').some((i) => i.id === 'd1')).toBe(false)
+  })
+})
+
+describe('sendToPickInsertion', () => {
+  const peers = [
+    { id: 'me', title: 'Sender' },
+    { id: 'a', title: 'Docs pass' },
+    { id: 'b', title: 'Issue 172' },
+    { id: 'c', title: 'issue 172' },
+    { id: 'd', title: 'Fix: login' },
+    { id: 'e', title: '#42 triage' },
+    { id: 'f', title: ' padded ' },
+    { id: 'g', title: undefined },
+    { id: 'r', title: 'Docs pass', machineId: 'vm-1' },
+    { id: 'n', title: 'Docs pass', draft: {} },
+  ]
+  const insert = (id: string) => sendToPickInsertion(id, peers, 'me')
+
+  // The user reads the name. Same-titled chats on another machine or not yet
+  // started are not candidates, so they do not force the id.
+  it('inserts the title when it names only this chat', () => {
+    expect(insert('a')).toBe('Docs pass')
+  })
+
+  it('falls back to the id when the title would not resolve to this chat alone', () => {
+    expect(insert('b')).toBe('#b') // case-insensitive twin
+    expect(insert('d')).toBe('#d') // ':' would end the target early
+    expect(insert('e')).toBe('#e') // read as an id
+    expect(insert('f')).toBe('#f') // trimmed by the parser
+    expect(insert('g')).toBe('#g') // no title
+  })
+
+  // The contract: whatever a pick inserts, sending it reaches that chat.
+  it('round-trips every pick through parse and resolve to the picked chat', () => {
+    const resolvable = peers.filter((s) => !s.draft).map((s) => ({ ...s, title: s.title ?? s.id }))
+    for (const s of peers.filter((p) => p.id !== 'me' && !p.draft && !p.machineId)) {
+      const parsed = parseSendTo(`/send-to ${insert(s.id)}: hello`)
+      expect(parsed).toMatchObject({ ok: true, text: 'hello' })
+      if (!parsed?.ok) continue
+      expect(resolveSendToTarget(parsed.target, resolvable, 'me')).toMatchObject({ ok: true, id: s.id })
+    }
+  })
 })
 
 describe('resolveSendToTarget by id', () => {
-  // The picker inserts `#<id>` rather than a title: two chats can share a
-  // title, and the pick has already decided which one the user meant.
+  // The picker falls back to `#<id>` when a title would not resolve back to
+  // the picked chat, and the id must then be exact.
   it('resolves an exact id reference', () => {
     expect(resolveSendToTarget('#t2', sessions, 't1')).toEqual({ ok: true, id: 't2', title: 'Docs pass' })
   })
@@ -313,5 +360,23 @@ describe('sendToPickerItems on Windows paths', () => {
       { id: 't2', title: 'Docs', projectPath: 'C:\\a\\proj\\' },
     ]
     expect(sendToPickerItems(win, 'sender')[0].label).toBe('Docs · proj')
+  })
+})
+
+describe('pinSendToTarget', () => {
+  const pick = { id: 'a', title: 'New chat' }
+
+  // The picked chat is renamed before the send: the title alone would now
+  // resolve by fuzzy match, possibly to another chat.
+  it('sends a still-picked title as the picked id', () => {
+    expect(pinSendToTarget('/send-to New chat: hello', pick)).toBe('/send-to #a: hello')
+    expect(resolveSendToTarget('#a', [{ id: 'me', title: 'Me' }, { id: 'a', title: 'Auth fix' }, { id: 'b', title: 'New chat 2' }], 'me'))
+      .toMatchObject({ ok: true, id: 'a' })
+  })
+
+  it('leaves the body alone once the user retargets it', () => {
+    expect(pinSendToTarget('/send-to Other: hello', pick)).toBe('/send-to Other: hello')
+    expect(pinSendToTarget('hello', pick)).toBe('hello')
+    expect(pinSendToTarget('/send-to New chat: hello', null)).toBe('/send-to New chat: hello')
   })
 })
