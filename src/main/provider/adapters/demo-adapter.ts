@@ -19,6 +19,8 @@
  *   - text mentions "render order" -> reasoning, interim text, a tool that
  *                           runs past the reload merge's 60s window, then the
  *                           answer (e2e/chat-render-order.e2e.mjs)
+ *   - text says "to-dos" -> a long markdown list with inline code and branch
+ *                           paths (e2e/message-overflow.e2e.mjs)
  *   - anything else      -> a short two-sentence reply
  *
  * With `SB_DEMO_CLAUDE_TRANSCRIPT_DIR` set, the claude adapter also appends a
@@ -94,6 +96,65 @@ interface DemoTurn {
   /** Set by interrupt or stop; a later message does not clear it. */
   cancelled: boolean
 }
+
+/** Long inline code and file-pill paths in lists (e2e/message-overflow.e2e.mjs). */
+const TODO_REPLY = `**Left to-dos**
+
+**Release path (in progress)**
+1. **#121, UI primitives:** Waiting for its last CI and CodeRabbit round. It may need one more merge from main after #122.
+2. **#120, naming rename:** Generate it again on the final main, check it, and merge it.
+3. **v0.8.68:** Ships everything merged since v0.8.67.
+
+**Broken or flaky tests**
+
+4. **\`code-copy-controls\` e2e:** It fails on main, at the tool-call click.
+5. **\`dual-chat-workspace\` e2e:** It is flaky, because the analytics notice sometimes covers a sidebar button.
+6. **\`machine-layer\` e2e:** It uses a stale selector.
+7. **Screenshot run:** The Playwright clock setup still fails about 1 run in 4.
+8. **Dependency-clone unit test:** It leaves a temp folder that cannot be read.
+9. **Local test gate:** Timing tests fail when many jobs run at once. I keep fewer jobs in parallel.
+
+**Known gaps in shipped features**
+
+10. **Task notifications:** The live Claude task notification is ignored, so its row appears only after a reload.
+11. **Chat order in old chats:** An old chat with a mid-turn steer can still show early text below the answer.
+12. **Reasoning on reload:** Reasoning is not saved, so it does not come back on reload.
+13. **Translucent glass:** Popover blur is not confirmed. The native-glass check needs Screen Recording permission and does not run in CI.
+
+**Staged behind flags (phone and Android)**
+
+14. The agent digest in the Android conversation list.
+15. The collapsed diff group on the phone and Android.
+16. The "Needs you" group on the phone and Android.
+17. The agent digest for OpenCode, which has no place for extra instructions.
+
+**UI polish, continuing**
+
+18. **More shadcn:** Menus, popovers and dialogs move to Radix, for example the provider picker, the branch picker, the slash menu and the command palette.
+19. **Inline styles:** Move a file off inline styles whenever we touch it anyway.
+
+**Deferred (in \`roadmap-deferred.md\`)**
+
+20. **Settled completion:** This needs peer-reply tracking in the backend first.
+21. **Full CoW sandboxes.**
+
+**Manual checks that nobody has run**
+
+22. Auto mode live, the update prompt, and the catalog probe on a remote VM.
+23. Pending-approval recovery with a real server restart.
+24. The agent digest and the sidebar "Needs you" group in a live Claude and Codex session.
+
+**Housekeeping**
+
+25. **Main checkout:** It is still on the merged branch \`chore/release-0.8.64\`.
+26. **\`feature-x\` worktree:** It is merged, but it has an uncommitted \`CLAUDE.md\` change.
+27. **Old PR #75** (\`fix/update-restart-idempotent\`): It is from before this session and is still open.
+
+Items 1 to 3 go first. I suggest items 4 to 8 next, as one test-reliability batch on the three allowed accounts. Tell me if you want a different order.
+
+\`\`\`sh
+gh pr view 75 --json state,mergeable,headRefName,baseRefName,statusCheckRollup --jq '.statusCheckRollup[].conclusion'
+\`\`\``
 
 const LONG_TOOL_MS = LEGACY_ID_MATCH_WINDOW_MS + 1_000
 
@@ -232,6 +293,8 @@ export class DemoAdapter implements ProviderAdapter {
       await this.say(threadId, turn, 'Interim note: checking the reload path first.')
       await this.tool(threadId, turn, 'Bash', { command: 'sleep 61' }, 'ok', undefined, LONG_TOOL_MS)
       await this.say(threadId, turn, 'Final answer: the order holds.')
+    } else if (/to-dos/i.test(message)) {
+      await this.say(threadId, turn, TODO_REPLY)
     } else {
       await this.say(
         threadId,
