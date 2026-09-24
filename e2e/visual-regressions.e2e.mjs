@@ -534,23 +534,34 @@ async function runThemeScreens() {
   const fixture = await prepareScreensFixture()
   for (const theme of THEMES) {
     fixture.restore()
-    const { win } = await launchSwitchboard({ userData: fixture.userData, demo: true })
+    const { instance, win } = await launchSwitchboard({ userData: fixture.userData, demo: true })
     win.on('pageerror', (error) => console.error(`renderer error: ${error.message}`))
-    // The fixed clock applies from the next navigation, so reload: every
-    // label, memoised or not, is then first computed from FROZEN_NOW.
-    // Playwright registers the clock as init scripts before it evaluates in
-    // the current page, and that evaluate can hit a page mid-navigation
-    // ("reading 'controller'"). The reload runs the init scripts anyway and
-    // the wait below proves the clock took.
-    await win.clock.setFixedTime(FROZEN_NOW).catch((error) => {
-      console.warn(`clock not applied to the current page, the reload applies it: ${error.message}`)
-    })
+    // Pin the renderer clock, then reload so every label, memoised or not,
+    // is first computed from FROZEN_NOW. Not win.clock.setFixedTime: it also
+    // evaluates in every page already open (webview guests included) and
+    // threw "reading 'controller'" whenever one was mid-navigation, leaving
+    // its init scripts half registered. An init script touches no live page.
+    await instance.context().addInitScript(pinDate, FROZEN_NOW)
     await win.reload()
     await win.waitForFunction((now) => !!window.api?.settings && Date.now() === now, FROZEN_NOW, { timeout: 20_000 })
     await win.addStyleTag({ content: FREEZE_CSS })
     await captureThemeScreens(win, theme)
     await closeApp()
   }
+}
+
+/** Init script: `Date.now()` and `new Date()` read `now`; timers keep running. */
+function pinDate(now) {
+  const RealDate = Date
+  function FixedDate(...args) {
+    if (!new.target) return new RealDate(now).toString()
+    return new RealDate(...(args.length ? args : [now]))
+  }
+  FixedDate.prototype = RealDate.prototype
+  FixedDate.now = () => now
+  FixedDate.parse = RealDate.parse
+  FixedDate.UTC = RealDate.UTC
+  globalThis.Date = FixedDate
 }
 
 async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) {
