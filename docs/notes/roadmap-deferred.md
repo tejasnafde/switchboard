@@ -11,7 +11,7 @@ queue. Captured here so they don't get lost when the next conversation
 boots fresh. Each section ends with a "what unblocks this" note so we
 know what would have to change to pull it into the active queue.
 
-Last refreshed: 2026-08-24.
+Last refreshed: 2026-09-24.
 
 ---
 
@@ -340,6 +340,64 @@ our code.
 **Do not start here.** Nothing above is a correctness problem, and the desktop
 floor is Electron regardless. The `effect` removal is the exception: it is one
 line, 33 MB, and carries no runtime risk because the import is type-only.
+
+## 8. Settled completion (don't call it "done" while an agent is waiting on a peer)
+
+**Shape.** Today "turn finished" - the system notification plus the sidebar
+going idle - fires the moment the model stops generating, even when the model
+stopped because it is waiting on a `/send-to` or `send_agent_message` reply
+from a peer session (see "Cross-session messaging" in AGENTS.md). The user
+gets a "done" signal for work that is not actually done; the real answer is
+still in flight on another session. Instead, a session with an outstanding
+peer message should show "waiting on `<peer>`" in the sidebar and in the
+status bar, and the turn-completed notification should be suppressed until
+the whole chain has settled - either the peer replies and this session's
+agent produces its own real completion, or the reply times out.
+
+The backend already has everything needed to detect this state: peer
+messages are tracked end-to-end by `ProviderRegistry.deliverPeerMessage` and
+the pure guards in `src/shared/peer-messaging.ts` (dedupe, hop depth,
+per-sender budget). What's missing is surfacing "this session sent a peer
+message and hasn't seen a reply yet" as UI state, and gating the existing
+`turn.completed` notification (`src/renderer/services/notifications.ts`) on
+it.
+
+**What unblocks this.** Agent-to-agent sends becoming common enough that
+early "done" notifications are a real annoyance - right now peer messaging is
+new and lightly used, so the wrong signal is a minor nuisance rather than a
+trust problem. Worth revisiting once `/send-to` and the Claude-only MCP
+peer-tools see regular use.
+
+## 9. Copy-on-write sandboxes (APFS clonefile instead of git worktrees)
+
+**Shape.** Git worktrees share the object DB but not the working tree, so
+`node_modules`, build caches, and `.env` files are absent in a fresh worktree
+and have to be recreated or cloned in per-card (see the worktree node_modules
+clone below). An APFS `clonefile()` copy of the whole project folder -
+`node_modules`, build caches and `.env` included - sidesteps that: the copy
+is created in about a second regardless of project size, consumes near-zero
+disk until files actually change (copy-on-write at the filesystem level, not
+git's object model), and the card workflow becomes Apply to project / Open
+diff / Discard instead of branch-and-merge. This is macOS APFS only (`cp -c`
+/ `clonefile(2)`); the nearest equivalent is Linux reflink on btrfs/XFS, and
+there is nothing comparable on Windows, so git worktrees stay as the
+cross-platform fallback rather than being replaced outright. Apply also needs
+its own merge step - "Discard" is a plain directory delete, but "Apply" has
+to reconcile the clone's changes back into the real project the same way a
+worktree's changes get merged back today, which is new work, not a side
+effect of the clone.
+
+Partly addressed already: the worktree `node_modules` clone (PR #107,
+`src/main/git/dependencyClone.ts`) solves the dependency-reinstall half of
+this problem for the existing git-worktree path, via `cloneDependencyDirsInBackground`.
+It does not touch worktree creation time or total disk use for the rest of
+the project tree - that's the part a full APFS clone would additionally buy.
+
+**What unblocks this.** The node_modules clone turning out not to be enough -
+either because worktree creation time (still a `git worktree add` plus a
+background dependency copy) or total disk use across many concurrent cards
+becomes a real complaint. Until then the existing worktree + dependency-clone
+path covers the common case at lower implementation risk.
 
 ## Researched, specced, not started (2026-08-09)
 
