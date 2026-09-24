@@ -94,6 +94,30 @@ class RemoteHistoryDecoderTest {
         )
     }
 
+    @Test
+    fun `a malformed changed-file card is dropped, not the whole history`() {
+        val loaded = RemoteDecoders.loadedSession(
+            obj(
+                "messages" to JsonArray(
+                    listOf(
+                        obj(
+                            "id" to JsonString("filediff_ab-1:src/a.ts"),
+                            "role" to JsonString("assistant"),
+                            "content" to JsonString(""),
+                            "timestamp" to JsonNumber("42"),
+                            "fileDiff" to obj("fileEditId" to JsonString("ab-1:src/a.ts")),
+                        ),
+                    ),
+                ),
+                "meta" to JsonNull,
+                "total" to JsonNumber("1"),
+                "truncated" to JsonBoolean(false),
+            ),
+        )
+
+        assertEquals(null, loaded.messages.single().fileDiff)
+    }
+
     private fun obj(vararg fields: Pair<String, app.switchboard.mobile.protocol.JsonValue>) =
         JsonObject(linkedMapOf(*fields))
 }

@@ -17,7 +17,7 @@ import { JsonlParser, type JsonlSource } from '../../src/main/agent/jsonl-parser
 import { mergeConversationMessages } from '../../src/main/agent/dedupe-messages'
 import { projectTurnPresentation } from '../../src/renderer/components/chat/turnPresentation'
 import { groupIntoTurns } from '../../src/renderer/components/chat/MessageList'
-import { fileDiffRowId, toolRowId } from '../../src/shared/turn-activity'
+import { fileDiffRowId, historyTailStart, storedToolOutput, STORED_TOOL_OUTPUT_MAX_CHARS, toolRowId } from '../../src/shared/turn-activity'
 import type { ChatMessage, ToolCall } from '../../src/shared/types'
 
 const at = (iso: string) => Date.parse(`2026-09-24T10:00:${iso}Z`)
@@ -36,7 +36,7 @@ function mirrorRows(tools: ToolCall[], toolAt: number[]): ChatMessage[] {
     { id: 'live_user', role: 'user', content: 'fix the state check', timestamp: at('00.005') },
     { id: 'live_text_1', role: 'assistant', content: 'Moving the state check ahead of the token exchange.', timestamp: at('03.100') },
     ...tools.map((call, i): ChatMessage => ({
-      id: toolRowId(call.id), role: 'assistant', content: '', timestamp: toolAt[i], toolCalls: [call],
+      id: toolRowId('t1', call.id), role: 'assistant', content: '', timestamp: toolAt[i], toolCalls: [call],
     })),
     { id: 'live_text_2', role: 'assistant', content: 'Done. Review the diff below.', timestamp: at('07.100') },
     {
@@ -105,13 +105,34 @@ describe('mirrored activity rows in the merge', () => {
       toolCalls: [{ id: 'toolu_a', name: 'Read', input: '{}' }],
     }
     const mirrored: ChatMessage[] = [
-      { id: toolRowId('toolu_b'), role: 'assistant', content: '', timestamp: 1500, toolCalls: [{ id: 'toolu_b', name: 'Bash', input: '{}' }] },
+      { id: toolRowId('t1', 'toolu_b'), role: 'assistant', content: '', timestamp: 1500, toolCalls: [{ id: 'toolu_b', name: 'Bash', input: '{}' }] },
       {
         id: fileDiffRowId('x-1:a.ts'), role: 'assistant', content: '', timestamp: 1600,
         fileDiff: { fileEditId: 'x-1:a.ts', repoRoot: '/r', relPath: 'a.ts', changeKind: 'add', oldContent: '', newContent: 'a', status: 'pending' },
       },
     ]
     const merged = mergeConversationMessages([diskTool], mirrored)
-    expect(merged.map((m) => m.id)).toEqual(['uuid-1', toolRowId('toolu_b'), fileDiffRowId('x-1:a.ts')])
+    expect(merged.map((m) => m.id)).toEqual(['uuid-1', toolRowId('t1', 'toolu_b'), fileDiffRowId('x-1:a.ts')])
+  })
+})
+
+describe('a history window', () => {
+  it('counts messages with text, so tool rows do not crowd out turns', () => {
+    const text = (id: string): ChatMessage => ({ id, role: 'assistant', content: id, timestamp: 0 })
+    const tool = (id: string): ChatMessage => ({ id, role: 'assistant', content: '', timestamp: 0, toolCalls: [{ id, name: 'Bash', input: '{}' }] })
+    const messages = [text('a'), tool('t1'), text('b'), tool('t2'), tool('t3'), text('c')]
+    expect(messages.slice(historyTailStart(messages, 2)).map((m) => m.id)).toEqual(['b', 't2', 't3', 'c'])
+    expect(historyTailStart(messages, 3)).toBe(0)
+  })
+})
+
+describe('a stored tool output', () => {
+  it('keeps a short output whole and the head and tail of a long one', () => {
+    expect(storedToolOutput('ok')).toBe('ok')
+    const long = `${'a'.repeat(STORED_TOOL_OUTPUT_MAX_CHARS)}${'b'.repeat(STORED_TOOL_OUTPUT_MAX_CHARS)}`
+    const stored = storedToolOutput(long)
+    expect(stored.startsWith('a')).toBe(true)
+    expect(stored.endsWith('b')).toBe(true)
+    expect(stored).toContain(`[${STORED_TOOL_OUTPUT_MAX_CHARS} chars not stored]`)
   })
 })

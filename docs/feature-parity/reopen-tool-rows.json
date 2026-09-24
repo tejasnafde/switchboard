@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "reopen-tool-rows",
-  "summary": "Reopening a chat (switch away and back, app restart, phone or Android thread open) keeps a finished turn's tool row and its changed-file cards. Both were built live in the renderer and never stored, the SQLite mirror held only assistant text, and the Codex transcript parser reads messages only, so a reload lost every changed-file card and, outside Claude, every tool row. The backend now mirrors both at turn end and the reload merge folds a mirrored tool call into Claude's transcript copy.",
+  "summary": "Reopening a chat (switch away and back, app restart, phone or Android thread open) keeps a finished turn's tool row and its changed-file cards. Both were built live in the renderer and never stored, the SQLite mirror held only assistant text, and the Codex transcript parser reads messages only, so a reload lost every changed-file card and, outside Claude, every tool row. The backend now mirrors both at turn end, the reload merge folds a mirrored tool call into Claude's transcript copy, a card's accept/reject is stored, and reverting a card is refused once its file has changed since the diff.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -40,9 +40,12 @@
         "src/main/notebooks/manager.ts",
         "src/main/agent/dedupe-messages.ts",
         "src/main/ipc/app.ts",
+        "src/main/ipc/files.ts",
+        "src/main/files/writing.ts",
         "tests/unit/assistant-mirror.test.ts",
         "tests/unit/reopen-tool-rows.test.ts",
-        "tests/unit/checkpoint-tracker.test.ts"
+        "tests/unit/checkpoint-tracker.test.ts",
+        "tests/unit/files-write.test.ts"
       ]
     },
     "storageDataMigration": {
@@ -55,14 +58,15 @@
     },
     "updateRelease": {
       "status": "not_applicable",
-      "reason": "One additive nullable column (messages.file_diff), added in place by the existing messages migration; an older build ignores it and reads the same rows. load-by-id only gains optional fileDiff and more toolCalls rows, which older phones and Android builds already skip or render. The phone change is JS-only and ships over OTA; Android ships in its next APK and until then shows mirrored tool rows but not changed-file rows from history."
+      "reason": "No migration: the card is stored as { fileDiff } in the existing messages.attachments_json column, where a fork already copies it, and tool rows use the existing tool_calls column. An older build reads the new rows as empty assistant rows it skips. load-by-id only gains optional fileDiff and more toolCalls rows, which older phones and Android builds skip or already render. files:write-file and files:delete-file gain an optional trailing argument an older backend ignores. The phone change is JS-only and ships over OTA; Android ships in its next APK and until then shows mirrored tool rows but not changed-file rows from history."
     }
   },
   "verification": {
     "automated": [
-      "e2e/reopen-tool-rows.e2e.mjs (demo adapter, a real edit in a git repo) failed on the unfixed build: with a Claude-shaped transcript the reopened turn showed 'Used 1 tool' without 'Changed 1 file', and with SQLite as the only history it showed neither, after both a switch away and back and a restart. It passes all six checks with the fix, and 'Used 1 tool' (not 2) shows the mirror and the transcript copy fold into one row.",
+      "e2e/reopen-tool-rows.e2e.mjs (demo adapter, a real edit in a git repo) failed on the unfixed build: with a Claude-shaped transcript the reopened turn showed 'Used 1 tool' without 'Changed 1 file', and with SQLite as the only history it showed neither, after both a switch away and back and a restart. It passes all twelve checks with the fix: 'Used 1 tool' (not 2) shows the mirror and the transcript copy fold into one row, Reject on a reopened card is refused after a later hand edit and leaves the file alone, goes through while the file still holds the agent's change, and the card still reads '↩ reverted' after another restart.",
       "tests/unit/reopen-tool-rows.test.ts parses redacted copies of a real Claude session JSONL and a real Codex rollout file, merges them with the rows the registry mirrors, and asserts the rendered turn: text, tools, text, files. Two of its cases fail against the old merge (a mirrored tool row was paired with an unrelated empty-content transcript row and dropped).",
-      "tests/unit/assistant-mirror.test.ts pins the tool and changed-file mirroring (start time, output, one row for a re-announced call, oversized cards skipped). tests/unit/checkpoint-tracker.test.ts pins that a second launch does not reuse a fileEditId.",
+      "tests/unit/assistant-mirror.test.ts pins the tool and changed-file mirroring: start time, capped output, one row for a re-announced call, cards stamped with the turn end even when the diff finishes later, oversized cards skipped. tests/unit/checkpoint-tracker.test.ts pins that a second launch does not reuse a fileEditId.",
+      "tests/unit/files-write.test.ts pins the write-back guard: a revert or delete goes through only while the file still holds what the agent wrote (line endings ignored), and an already absent file is still a successful delete. tests/unit/reopen-tool-rows.test.ts also pins that a history window counts only messages with text.",
       "e2e/chat-render-order.e2e.mjs still passes, so #117's ordering holds."
     ],
     "hardware": [
@@ -72,7 +76,9 @@
       "No live Claude, Codex or OpenCode turn was run end to end; the reproduction uses the demo adapter and redacted real transcript shapes.",
       "The phone and native Android were not run. The Android unit tests were not run locally (no JDK on this machine); android-native-ci runs them on the pull request.",
       "Deferred: turns from before this fix are not backfilled. Claude chats keep their transcript tool rows (still without outputs); Codex and OpenCode tool rows and every changed-file card from those turns stay lost. Parsing Codex's own tool-call items was left out because their ids have not been confirmed to match the app-server item ids the live stream uses, and a mismatch would show each call twice.",
-      "The per-turn duration on the 'Used N tools' row is not stored, so it is absent after a reload. Pre-existing and unchanged."
+      "The per-turn duration on the 'Used N tools' row is not stored, so it is absent after a reload. Pre-existing and unchanged.",
+      "Deferred: the phone and Android show a changed-file row from history without its accept/reject status (their live rows never had one either), so a card rejected on desktop still reads as applied there. Needs a status field on both feed items.",
+      "Deferred: a tool.completed that arrives after its turn.completed (an interrupt, or a Codex item finishing after the turn) is not mirrored, so that row reloads without its output."
     ]
   }
 }

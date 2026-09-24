@@ -138,7 +138,7 @@ describe('live assistant mirror', () => {
       expect(activity).toHaveLength(0)
       publish(turnEnd('t1'))
       expect(activity).toEqual([{
-        id: 'tool_call_1',
+        id: 'tool_t1:call_1',
         conversationId: 't1',
         timestamp: 1_000,
         toolCalls: [{ id: 'call_1', name: 'Bash', input: '{\n  "command": "ls"\n}', output: 'a.ts' }],
@@ -158,11 +158,20 @@ describe('live assistant mirror', () => {
       finishTurn: async () => [edit('a.ts', 'new'), edit('huge.bin', 'x'.repeat(3 * 1024 * 1024))],
       clear: () => {},
     }
-    publish(turnEnd('t1'))
-    await vi.waitFor(() => expect(activity).toHaveLength(1))
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(5_000)
+      publish(turnEnd('t1'))
+      // The diff finishes later; a message sent meanwhile must still sort after the cards.
+      vi.setSystemTime(9_000)
+      await vi.waitFor(() => expect(activity).toHaveLength(1))
+    } finally {
+      vi.useRealTimers()
+    }
     expect(activity[0]).toMatchObject({
       id: 'filediff_ab-1:a.ts',
       conversationId: 't1',
+      timestamp: 5_000,
       fileDiff: { relPath: 'a.ts', oldContent: 'old', newContent: 'new', status: 'pending' },
     })
   })

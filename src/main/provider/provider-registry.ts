@@ -57,7 +57,7 @@ import { defaultClaudeDir, prepareClaudeProfileSwitch } from './claude-session-m
 import { prepareCodexProfileSwitch } from './codex-session-migrate'
 import { remoteBlockedProviderLabel, remoteProviderLoginPrompt, remoteProviderConfigDir, checkRemoteProviderAuth } from './remote-gate'
 import type { AgentType, FileDiffAttachment, ToolCall } from '@shared/types'
-import { fileDiffRowId, toolInputText, toolRowId } from '@shared/turn-activity'
+import { fileDiffRowId, storedToolOutput, toolInputText, toolRowId } from '@shared/turn-activity'
 import type {
   ProviderAdapter,
   ProviderKind,
@@ -339,7 +339,7 @@ export class ProviderRegistry implements PeerToolHost {
       })
     } else if (event.type === 'tool.completed') {
       const pending = this.pendingToolCalls.get(event.threadId)?.get(event.toolId)
-      if (pending && event.output !== undefined) pending.call = { ...pending.call, output: event.output }
+      if (pending && event.output !== undefined) pending.call = { ...pending.call, output: storedToolOutput(event.output) }
     }
   }
 
@@ -359,15 +359,19 @@ export class ProviderRegistry implements PeerToolHost {
     this.pendingToolCalls.delete(threadId)
     for (const { call, at } of byTool?.values() ?? []) {
       try {
-        saveActivityMessageIfAbsent({ id: toolRowId(call.id), conversationId: threadId, timestamp: at, toolCalls: [call] })
+        saveActivityMessageIfAbsent({ id: toolRowId(threadId, call.id), conversationId: threadId, timestamp: at, toolCalls: [call] })
       } catch (err) {
         log.warn(`failed to mirror tool call ${call.id} for ${threadId}: ${err}`)
       }
     }
   }
 
-  /** Mirror one changed-file card as it is published. */
-  private mirrorFileEdit(event: RuntimeFileEditedEvent): void {
+  /**
+   * Mirror one changed-file card as it is published. Stamped with the turn's
+   * end, not now: the diff runs after it, and a message sent meanwhile would
+   * otherwise sort first and take the cards into the next turn on reload.
+   */
+  private mirrorFileEdit(event: RuntimeFileEditedEvent, turnEndedAt: number): void {
     const fileDiff: FileDiffAttachment = {
       fileEditId: event.fileEditId,
       repoRoot: event.repoRoot,
@@ -377,13 +381,13 @@ export class ProviderRegistry implements PeerToolHost {
       newContent: event.newContent,
       status: 'pending',
     }
-    const bytes = fileDiff.oldContent.length + fileDiff.newContent.length
-    if (bytes > MIRRORED_FILE_DIFF_MAX_CHARS) {
-      log.info(`not mirroring the ${event.relPath} diff card for ${event.threadId}: ${bytes} chars`)
+    const chars = fileDiff.oldContent.length + fileDiff.newContent.length
+    if (chars > MIRRORED_FILE_DIFF_MAX_CHARS) {
+      log.info(`not mirroring the ${event.relPath} diff card for ${event.threadId}: ${chars} chars`)
       return
     }
     try {
-      saveActivityMessageIfAbsent({ id: fileDiffRowId(event.fileEditId), conversationId: event.threadId, timestamp: Date.now(), fileDiff })
+      saveActivityMessageIfAbsent({ id: fileDiffRowId(event.fileEditId), conversationId: event.threadId, timestamp: turnEndedAt, fileDiff })
     } catch (err) {
       log.warn(`failed to mirror file edit ${event.fileEditId} for ${event.threadId}: ${err}`)
     }
@@ -691,7 +695,7 @@ export class ProviderRegistry implements PeerToolHost {
     // and forget; the cards land right after the turn.completed marker.
     if (event.type === 'turn.completed') {
       this.flushTurnMirror(event.threadId)
-      void this.emitFileEdits(event.threadId)
+      void this.emitFileEdits(event.threadId, Date.now())
     }
 
     // Provider-agnostic worktree-drift detection: all three adapters emit
@@ -847,7 +851,7 @@ export class ProviderRegistry implements PeerToolHost {
     return inflight
   }
 
-  private async emitFileEdits(threadId: string): Promise<void> {
+  private async emitFileEdits(threadId: string, turnEndedAt: number): Promise<void> {
     try {
       // Notebook hygiene: checkpoint diffs the mirror system already covers
       // (mirror-path events, engine-performed .ipynb writes) are dropped -
@@ -857,7 +861,7 @@ export class ProviderRegistry implements PeerToolHost {
         notebookManager.explainsFileEdit(ev)
       )
       for (const ev of [...events, ...notebookManager.drainTurnEdits(threadId)]) {
-        this.mirrorFileEdit(ev)
+        this.mirrorFileEdit(ev, turnEndedAt)
         this.bus.publish(ev)
       }
     } catch (err) {

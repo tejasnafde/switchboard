@@ -599,7 +599,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             break
           }
           appendMessage(tid, {
-            id: toolRowId(event.toolId),
+            id: toolRowId(tid, event.toolId),
             role: 'assistant',
             content: '',
             toolCalls: [{
@@ -991,10 +991,14 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       }
       // Rejecting an agent-*added* file means it shouldn't exist - delete it
       // rather than leaving a stray empty file (matches Cursor's revert).
+      // Only over what the agent wrote: a card reopened from history may be
+      // older than later edits to the same file.
       const writeBack =
         fd.changeKind === 'add' && status === 'rejected'
-          ? window.api.files.deleteFile(fd.repoRoot, fd.relPath)
-          : window.api.files.writeFile(fd.repoRoot, fd.relPath, contentToWrite)
+          ? window.api.files.deleteFile(fd.repoRoot, fd.relPath, { content: fd.newContent })
+          : window.api.files.writeFile(fd.repoRoot, fd.relPath, contentToWrite, undefined, {
+              content: fd.changeKind === 'delete' ? null : fd.newContent,
+            })
       let res: Awaited<typeof writeBack>
       try {
         res = await writeBack

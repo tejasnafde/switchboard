@@ -234,17 +234,21 @@ object RemoteDecoders {
         },
         displayBody = raw.string("displayBody"),
         pillsMeta = decodeMessagePills(raw.values["pillsMeta"]),
-        fileDiff = (raw.values["fileDiff"] as? JsonObject)?.let { diff ->
-            MessageFileDiff(
-                fileEditId = diff.stringRequired("fileEditId"),
-                repoRoot = diff.stringRequired("repoRoot"),
-                relPath = diff.stringRequired("relPath"),
-                changeKind = diff.stringRequired("changeKind"),
-                oldContent = diff.stringRequired("oldContent"),
-                newContent = diff.stringRequired("newContent"),
-            )
-        },
+        fileDiff = (raw.values["fileDiff"] as? JsonObject)?.let { messageFileDiff(it) },
     )
+
+    /** A malformed card is dropped rather than failing the whole thread load. */
+    private fun messageFileDiff(raw: JsonObject): MessageFileDiff? {
+        fun field(key: String) = (raw.values[key] as? JsonString)?.value
+        return MessageFileDiff(
+            fileEditId = field("fileEditId") ?: return null,
+            repoRoot = field("repoRoot") ?: return null,
+            relPath = field("relPath") ?: return null,
+            changeKind = field("changeKind") ?: return null,
+            oldContent = field("oldContent") ?: return null,
+            newContent = field("newContent") ?: return null,
+        )
+    }
 
     private fun sessionMeta(raw: JsonObject) = SessionMeta(
         id = raw.stringRequired("id"),

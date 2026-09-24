@@ -195,12 +195,8 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'pills_meta')) {
       db.exec('ALTER TABLE messages ADD COLUMN pills_meta TEXT')
     }
-    // Migration: a turn's changed-file card, so it survives a reload.
-    if (!cols.some((c) => c.name === 'file_diff')) {
-      db.exec('ALTER TABLE messages ADD COLUMN file_diff TEXT')
-    }
   } catch (err) {
-    log.warn('messages table migration failed (images/display_body/pills_meta/file_diff columns)', err)
+    log.warn('messages table migration failed (images/display_body/pills_meta columns)', err)
   }
 
   // Migration: add `archived` column to conversations if missing
@@ -1846,7 +1842,8 @@ export interface MessageRow {
   timestamp: number
   display_body: string | null
   pills_meta: string | null
-  file_diff?: string | null
+  /** Card attachments (`{ fileDiff }`); column added by ensureConversationForkSchema. */
+  attachments_json?: string | null
 }
 
 export function getMessagesForConversation(conversationId: string): MessageRow[] {
@@ -1884,8 +1881,14 @@ export function messageRowsToChatMessages(rows: MessageRow[]): ChatMessage[] {
     images: row.images ? tryParseJson(row.images) : undefined,
     displayBody: row.display_body ?? undefined,
     pillsMeta: row.pills_meta ? tryParseJson(row.pills_meta) : undefined,
-    ...(row.file_diff ? { fileDiff: tryParseJson(row.file_diff) } : {}),
+    ...fileDiffFromAttachments(row.attachments_json),
   }))
+}
+
+/** Only the changed-file card: the other fork attachments are live-only cards. */
+function fileDiffFromAttachments(json: string | null | undefined): Pick<ChatMessage, 'fileDiff'> {
+  const fileDiff = json ? tryParseJson<{ fileDiff?: FileDiffAttachment }>(json)?.fileDiff : undefined
+  return fileDiff ? { fileDiff } : {}
 }
 
 /** Pill enrichments for user messages, keyed by content. See
@@ -1958,10 +1961,30 @@ export function saveMessageIfAbsent(
   })
 }
 
+let activityStmts: { db: Database.Database; insert: Database.Statement; setStatus: Database.Statement } | null = null
+
+function activityMessageStmts(db: Database.Database) {
+  if (activityStmts?.db !== db) {
+    activityStmts = {
+      db,
+      insert: db.prepare(
+        `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, tool_calls, timestamp, attachments_json)
+         VALUES (?, ?, 'assistant', '', ?, ?, ?)`,
+      ),
+      setStatus: db.prepare(
+        `UPDATE messages SET attachments_json = json_set(attachments_json, '$.fileDiff.status', ?)
+          WHERE id = ? AND conversation_id = ? AND json_extract(attachments_json, '$.fileDiff') IS NOT NULL`,
+      ),
+    }
+  }
+  return activityStmts
+}
+
 /**
  * Mirror one of a turn's tool or changed-file rows, if that id is absent.
  * The renderer builds these rows live and never saves them, so without this a
- * reload shows neither (only Claude's transcript keeps its tool calls).
+ * reload shows neither (only Claude's transcript keeps its tool calls). The
+ * card goes in `attachments_json`, where a fork already copies it.
  */
 export function saveActivityMessageIfAbsent(row: {
   id: string
@@ -1975,20 +1998,17 @@ export function saveActivityMessageIfAbsent(row: {
     log.warn(`saveActivityMessageIfAbsent: conversation ${row.conversationId} not found, skipping`)
     return false
   }
-  return db.prepare(
-    `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, tool_calls, timestamp, file_diff)
-     VALUES (?, ?, 'assistant', '', ?, ?, ?)`,
-  ).run(
+  return activityMessageStmts(db).insert.run(
     row.id,
     row.conversationId,
     row.toolCalls ? JSON.stringify(row.toolCalls) : null,
     row.timestamp,
-    row.fileDiff ? JSON.stringify(row.fileDiff) : null,
+    row.fileDiff ? JSON.stringify({ fileDiff: row.fileDiff }) : null,
   ).changes > 0
 }
 
 /**
- * Record the user's accept/reject on a mirrored changed-file card. Looked up
+ * Record the user's accept/reject on a stored changed-file card. Looked up
  * across the thread family: the sidebar may hand back a rotated session id.
  */
 export function setFileDiffStatus(
@@ -1996,11 +2016,8 @@ export function setFileDiffStatus(
   messageId: string,
   status: FileDiffAttachment['status'],
 ): boolean {
-  const stmt = getDb().prepare(
-    `UPDATE messages SET file_diff = json_set(file_diff, '$.status', ?)
-      WHERE id = ? AND conversation_id = ? AND file_diff IS NOT NULL`,
-  )
-  return threadFamilyIds(conversationId).some((id) => stmt.run(status, messageId, id).changes > 0)
+  const { setStatus } = activityMessageStmts(getDb())
+  return threadFamilyIds(conversationId).some((id) => setStatus.run(status, messageId, id).changes > 0)
 }
 
 export function getSystemMarkerMessages(conversationId: string): Array<{

@@ -114,3 +114,39 @@ describe('writeFileSafe - EOL preservation', () => {
     expect(readFileSync(abs, 'utf8')).toBe('a\nb\nc\n')
   })
 })
+
+describe('writeFileSafe / deleteFileSafe - expected content', () => {
+  // A diff card reopened from history can be older than later edits to its
+  // file. Reverting it must not undo them.
+  it('reverts when the file still holds what the agent wrote, whatever its line endings', async () => {
+    const abs = join(tmp, 'a.ts')
+    writeFileSync(abs, 'agent\r\nwrote\r\n')
+    const res = await writeFileSafe(abs, 'old\n', { expectedContent: 'agent\nwrote\n' })
+    expect(res.ok).toBe(true)
+    expect(readFileSync(abs, 'utf8')).toBe('old\r\n')
+  })
+
+  it('refuses when the file changed since', async () => {
+    const abs = join(tmp, 'a.ts')
+    writeFileSync(abs, 'later edit\n')
+    const res = await writeFileSafe(abs, 'old\n', { expectedContent: 'agent wrote\n' })
+    expect(res).toMatchObject({ ok: false, conflict: true })
+    expect(readFileSync(abs, 'utf8')).toBe('later edit\n')
+  })
+
+  it('restores a deleted file only while it is still absent', async () => {
+    const abs = join(tmp, 'gone.ts')
+    expect((await writeFileSafe(abs, 'old\n', { expectedContent: null })).ok).toBe(true)
+    expect((await writeFileSafe(abs, 'older\n', { expectedContent: null })).ok).toBe(false)
+    expect(readFileSync(abs, 'utf8')).toBe('old\n')
+  })
+
+  it('deletes an added file only if unchanged, and an absent one is still fine', async () => {
+    const abs = join(tmp, 'added.ts')
+    writeFileSync(abs, 'reworked\n')
+    expect((await deleteFileSafe(abs, 'agent wrote\n')).ok).toBe(false)
+    expect(readFileSync(abs, 'utf8')).toBe('reworked\n')
+    expect((await deleteFileSafe(abs, 'reworked\n')).ok).toBe(true)
+    expect((await deleteFileSafe(abs, 'reworked\n')).ok).toBe(true)
+  })
+})

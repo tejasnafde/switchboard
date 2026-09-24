@@ -1,4 +1,5 @@
 import type { ChatMessage, ToolCall } from '@shared/types'
+import { isActivityRow } from '@shared/turn-activity'
 
 /**
  * Collapse the same message arriving from more than one source. `load-by-id`
@@ -128,11 +129,6 @@ export function mergeConversationMessages(
   }
 
   return [...disk, ...databaseOnly].sort((a, b) => a.timestamp - b.timestamp)
-}
-
-/** A mirrored tool or changed-file row: no text of its own. */
-function isActivityRow(message: ChatMessage): boolean {
-  return !message.content && (!!message.toolCalls?.length || !!message.fileDiff)
 }
 
 /** The disk message already holding every one of this row's tool calls. */

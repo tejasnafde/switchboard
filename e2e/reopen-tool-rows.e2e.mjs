@@ -9,10 +9,12 @@
  * back (the idle chat is evicted and reloaded from history) and a full app
  * restart. Both run once with a Claude-shaped transcript on disk and once
  * with SQLite as the only history, which is what OpenCode (and any provider
- * whose transcript is gone) reloads from. Takes ~60s. Temp dirs are removed.
+ * whose transcript is gone) reloads from. The reopened card's Reject must
+ * refuse to undo a later edit, and its decision must survive a restart.
+ * Takes ~90s. Temp dirs are removed.
  */
 import { _electron as electron } from 'playwright'
-import { mkdtempSync, mkdirSync, rmSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -26,9 +28,11 @@ process.on('exit', () => { for (const d of scratch) rmSync(d, { recursive: true,
 const results = []
 const check = (name, ok, detail = '') => { results.push({ ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`) }
 
+const ORIGINAL = 'export async function exchangeCode(code: string) {\n  return code\n}\n'
+
 function makeRepo(cwd) {
   mkdirSync(join(cwd, 'src', 'api'), { recursive: true })
-  writeFileSync(join(cwd, 'src', 'api', 'auth.ts'), 'export async function exchangeCode(code: string) {\n  return code\n}\n')
+  writeFileSync(join(cwd, 'src', 'api', 'auth.ts'), ORIGINAL)
   const identity = ['-c', 'user.email=e2e@switchboard.local', '-c', 'user.name=e2e']
   execFileSync('git', ['init', '-q'], { cwd })
   execFileSync('git', [...identity, 'add', '.'], { cwd })
@@ -128,8 +132,33 @@ async function scenario(mode) {
     await open('fix the state check')
     const restarted = await settle()
     check(`[${mode}] after a restart, both rows are still there`, restarted === expected, restarted)
+
+    // The reopened card can be older than later edits to its file.
+    const authFile = join(project, 'src', 'api', 'auth.ts')
+    const agentWrote = readFileSync(authFile, 'utf8')
+    const files = () => win.locator('.turn-files:visible').first()
+    await files().locator('.turn-files-toggle').click()
+    const rejectAll = () => files().getByRole('button', { name: 'Reject all', exact: true })
+    await rejectAll().waitFor({ timeout: 5000 })
+    writeFileSync(authFile, 'edited by hand\n')
+    await rejectAll().click()
+    await files().getByText('changed on disk after the diff was captured').waitFor({ timeout: 5000 })
+    check(`[${mode}] rejecting a reopened card after a later edit is refused`, readFileSync(authFile, 'utf8') === 'edited by hand\n')
+
+    writeFileSync(authFile, agentWrote)
+    await rejectAll().click()
+    await files().getByText('↩ reverted').waitFor({ timeout: 5000 })
+    check(`[${mode}] rejecting it while the file holds the agent's change reverts it`, readFileSync(authFile, 'utf8') === ORIGINAL)
+
+    await app.close()
+    ;({ app, win } = await launch())
+    await open('fix the state check')
+    await settle()
+    await files().locator('.turn-files-toggle').click()
+    const kept = await files().getByText('↩ reverted').waitFor({ timeout: 5000 }).then(() => true, () => false)
+    check(`[${mode}] after another restart, the card remembers it was reverted`, kept)
   } catch (e) {
-    check(`[${mode}] unexpected error`, false, e.message.split('\n')[0])
+    check(`[${mode}] unexpected error`, false, e.message.split('\n').slice(0, 3).join(' / '))
     await win.screenshot({ path: join(tmpdir(), `sb-toolrow-error-${mode}.png`) }).catch(() => {})
   } finally {
     await app.close().catch(() => {})
