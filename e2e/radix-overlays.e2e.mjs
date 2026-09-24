@@ -55,6 +55,9 @@ const focused = () => win.evaluate(() => {
 // Radix restores focus a task after the overlay unmounts, so poll for it.
 const focusSettlesOn = (predicate) => win.waitForFunction(predicate, null, { timeout: 2000 }).then(() => true, () => false)
 const focusIsTrigger = (title) => focusSettlesOn(`document.activeElement?.getAttribute('title')?.includes(${JSON.stringify(title)})`)
+// Radix attaches its outside-pointer listener a task after the layer mounts;
+// a click that lands sooner than a person could click is not "outside" yet.
+const clickOutside = async (x, y) => { await win.waitForTimeout(100); await win.mouse.click(x, y) }
 const hidden = async (locator) => locator.waitFor({ state: 'hidden', timeout: 3000 }).then(() => true, () => false)
 
 async function openConversation(title) {
@@ -205,8 +208,53 @@ async function quickPrompt() {
   check('quick prompt: focus returns to the composer', await composerHasFocus())
   await win.keyboard.press('Meta+K')
   await prompt.waitFor({ state: 'visible' })
-  await win.mouse.click(8, 400)
+  await clickOutside(8, 400)
   check('quick prompt: an outside click closes it', await hidden(prompt))
+}
+
+async function kanbanModals() {
+  await win.getByRole('button', { name: 'Board', exact: true }).click()
+  await win.getByText('Trace webhook retries', { exact: true }).first().click()
+  const card = win.getByRole('dialog', { name: 'Edit card' })
+  await card.waitFor({ state: 'visible' })
+  check('card: title has focus', (await focused())?.placeholder === 'What needs doing?')
+  const surface = await card.evaluate((el) => getComputedStyle(el).backgroundColor)
+  check('card: surface is opaque', !/rgba\(.*, 0\)$/.test(surface) && surface !== 'transparent', surface)
+
+  // Cancelling this confirm changes nothing, so it is safe to open.
+  await card.getByRole('button', { name: 'Detach', exact: true }).dispatchEvent('click')
+  const confirmDialog = win.getByRole('alertdialog', { name: 'Delete this worktree?' })
+  await confirmDialog.waitFor({ state: 'visible' })
+  await win.keyboard.press('Escape')
+  check('card: Escape answers only the confirm on top', await hidden(confirmDialog) && await card.isVisible())
+
+  await win.keyboard.press('Escape')
+  check('card: Escape closes it', await hidden(card))
+
+  await win.getByText('Choose empty-state copy', { exact: true }).first().click()
+  await card.waitFor({ state: 'visible' })
+  await win.keyboard.press('Meta+A')
+  await win.keyboard.type('Pick the empty-state copy')
+  await win.keyboard.press('Meta+Enter')
+  check('card: Cmd+Enter saves and closes it', await hidden(card))
+  check('card: the saved title shows on the board', await win.getByText('Pick the empty-state copy', { exact: true }).first()
+    .waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false))
+
+  await win.getByTitle(/^Create card/).click()
+  const newCard = win.getByRole('dialog', { name: 'New card' })
+  await newCard.waitFor({ state: 'visible' })
+  await clickOutside(8, 400)
+  check('card: an outside click closes it', await hidden(newCard))
+
+  await win.locator('select[title="Filter by project"]').selectOption({ label: 'acme-console' })
+  await win.getByTitle('Manage git worktrees for this project').click()
+  const worktrees = win.getByRole('dialog', { name: /^Worktrees - / })
+  await worktrees.waitFor({ state: 'visible' })
+  await win.keyboard.press('Escape')
+  check('worktrees: Escape closes it', await hidden(worktrees))
+  check('worktrees: focus returns to its button', await focusIsTrigger('Manage git worktrees'))
+  await win.locator('select[title="Filter by project"]').selectOption({ index: 0 })
+  await win.getByRole('button', { name: 'Chats', exact: true }).click()
 }
 
 await openConversation('Debug auth callback')
@@ -216,6 +264,7 @@ await commandPalette()
 await sessionPicker()
 await searchModal()
 await quickPrompt()
+await kanbanModals()
 
 await app.close()
 const failed = results.filter((ok) => !ok).length
