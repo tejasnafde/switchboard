@@ -91,6 +91,17 @@ data class ChatMessage(
     val images: List<MessageImage> = emptyList(),
     val displayBody: String? = null,
     val pillsMeta: Map<String, MessagePill> = emptyMap(),
+    val fileDiff: MessageFileDiff? = null,
+)
+
+/** A turn's changed-file card, mirrored by the backend so history keeps it. */
+data class MessageFileDiff(
+    val fileEditId: String,
+    val repoRoot: String,
+    val relPath: String,
+    val changeKind: String,
+    val oldContent: String,
+    val newContent: String,
 )
 
 data class MessageToolCall(

@@ -1,5 +1,6 @@
 import type { RuntimeEvent } from '@shared/provider-events'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
+import { fileDiffRowId, toolInputText, toolRowId } from '@shared/turn-activity'
 import { defaultModelSettingKey } from '@shared/session-defaults'
 import type { AgentStatus, ChatMessage } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
@@ -115,19 +116,19 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       if (existing) {
         updateMessage(tid, existing.id, {
           toolCalls: existing.toolCalls?.map((tc) => tc.id === event.toolId
-            ? { ...tc, name: event.toolName, input: typeof event.input === 'string' ? event.input : JSON.stringify(event.input, null, 2) }
+            ? { ...tc, name: event.toolName, input: toolInputText(event.input) }
             : tc),
         })
         break
       }
       appendMessage(tid, {
-        id: `tool_${event.toolId}`,
+        id: toolRowId(tid, event.toolId),
         role: 'assistant',
         content: '',
         toolCalls: [{
           id: event.toolId,
           name: event.toolName,
-          input: typeof event.input === 'string' ? event.input : JSON.stringify(event.input, null, 2),
+          input: toolInputText(event.input),
         }],
         timestamp: Date.now(),
       })
@@ -376,7 +377,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
     case 'file.edited': {
       // One diff card per file changed during the turn (git-checkpoint
       // derived). Coalesce re-edits of the same file within a turn by id.
-      const id = `filediff_${event.fileEditId}`
+      const id = fileDiffRowId(event.fileEditId)
       const sessions = useAgentStore.getState().sessions
       const session = sessions.find((s) => s.id === tid)
       const existing = session?.messages.find((m) => m.id === id)

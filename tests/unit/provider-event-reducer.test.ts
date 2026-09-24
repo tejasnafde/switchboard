@@ -100,7 +100,7 @@ describe('reduceProviderEvent (desktop)', () => {
 
   it('tool.started appends a tool bubble, and a repeat updates it in place', () => {
     reduce({ type: 'tool.started', toolId: 't1', toolName: 'Read', input: { a: 1 } })
-    expect(messages()).toMatchObject([{ id: 'tool_t1', role: 'assistant', toolCalls: [{ id: 't1', name: 'Read', input: '{\n  "a": 1\n}' }] }])
+    expect(messages()).toMatchObject([{ id: `tool_${T}:t1`, role: 'assistant', toolCalls: [{ id: 't1', name: 'Read', input: '{\n  "a": 1\n}' }] }])
     reduce({ type: 'tool.started', toolId: 't1', toolName: 'Write', input: 'raw' })
     expect(messages()).toHaveLength(1)
     expect(messages()[0].toolCalls).toEqual([{ id: 't1', name: 'Write', input: 'raw' }])

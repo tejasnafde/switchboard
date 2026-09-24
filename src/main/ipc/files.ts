@@ -102,14 +102,24 @@ export function registerFilesHandlers(host: BackendHost): void {
 
   host.handle(
     FilesChannels.WRITE_FILE,
-    async (repoRoot: string, subPath: string, content: string, expectedMtimeMs?: number) => {
+    async (
+      repoRoot: string,
+      subPath: string,
+      content: string,
+      expectedMtimeMs?: number | null,
+      expected?: { content: string | null } | null,
+    ) => {
       try {
         if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) {
           return { ok: false, error: `File too large to write (cap ${MAX_WRITE_BYTES} bytes)` }
         }
         const abs = await resolveWithinRepo(repoRoot, subPath)
         await assertRemoteMutationAllowed(abs)
-        const res = await writeFileSafe(abs, content, { expectedMtimeMs })
+        // A JSON transport sends an omitted argument as null.
+        const res = await writeFileSafe(abs, content, {
+          expectedMtimeMs: expectedMtimeMs ?? undefined,
+          expectedContent: expected?.content,
+        })
         return res
       } catch (err) {
         log.warn('write-file failed', { repoRoot, subPath, err: (err as Error).message })
@@ -118,11 +128,11 @@ export function registerFilesHandlers(host: BackendHost): void {
     },
   )
 
-  host.handle(FilesChannels.DELETE_FILE, async (repoRoot: string, subPath: string) => {
+  host.handle(FilesChannels.DELETE_FILE, async (repoRoot: string, subPath: string, expected?: { content: string } | null) => {
     try {
       const abs = await resolveWithinRepo(repoRoot, subPath)
       await assertRemoteMutationAllowed(abs)
-      return await deleteFileSafe(abs)
+      return await deleteFileSafe(abs, expected?.content)
     } catch (err) {
       log.warn('delete-file failed', { repoRoot, subPath, err: (err as Error).message })
       return { ok: false, error: (err as Error).message }
