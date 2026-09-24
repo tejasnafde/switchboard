@@ -62,23 +62,23 @@ describe('confirm', () => {
     opener.remove()
   })
 
-  it('returns focus to the second opener when a confirm opens right after another closes', async () => {
-    const first = document.createElement('button')
-    const second = document.createElement('button')
-    document.body.append(first, second)
-    first.focus()
-    const a = await ask({ title: 'First?' })
-    // Cancel and open the next one before Radix's deferred close runs.
-    act(() => button('Cancel').click())
-    second.focus()
-    const b = await ask({ title: 'Second?' })
-    await a.answer
-    await new Promise((done) => setTimeout(done, 20))
+  it('keeps the original return target when a confirm is chained from the previous answer', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    let second!: Promise<boolean>
+    const { answer } = await ask({ title: 'First?' })
+    const chained = answer.then(() => { second = confirm({ title: 'Second?' }); return second })
     await act(async () => button('Cancel').click())
-    await b.answer
-    await vi.waitFor(() => expect(document.activeElement).toBe(second))
-    first.remove()
-    second.remove()
+    await act(async () => { await answer; await Promise.resolve() })
+    await vi.waitFor(() => expect(dialog()?.textContent).toContain('Second?'))
+    // The first close must not pull focus out of the second dialog.
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(dialog()?.contains(document.activeElement)).toBe(true)
+    await act(async () => button('Cancel').click())
+    await chained
+    await vi.waitFor(() => expect(document.activeElement).toBe(opener))
+    opener.remove()
   })
 
   it('falls back to the composer when the opener was removed', async () => {

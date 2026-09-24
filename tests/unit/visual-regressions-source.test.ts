@@ -38,14 +38,14 @@ describe('visual regression harness safety', () => {
     expect(source).toContain("const THEMES = ['Dark', 'Light', 'Translucent']")
     const screens = [...source.matchAll(/snapScreen\(win, '([a-z-]+)'/g)].map((match) => match[1])
     expect(new Set(screens)).toEqual(new Set([
-      'chat', 'sidebar', 'sidebar-needs-you', 'command-palette', 'provider-picker', 'settings', 'kanban', 'approval', 'composer-running', 'confirm-dialog',
+      'chat', 'sidebar', 'sidebar-needs-you', 'command-palette', 'provider-picker', 'settings', 'kanban', 'approval', 'composer-running', 'chat-narrow', 'confirm-dialog',
     ]))
     const run = source.slice(source.indexOf('async function runThemeScreens'))
     expect(run).toMatch(/for \(const theme of THEMES\) \{\s*fixture\.restore\(\)/)
   })
 
   it('freezes what varies between runs before capturing', () => {
-    expect(source).toContain('win.clock.setFixedTime(FROZEN_NOW)')
+    expect(source).toContain('addInitScript(pinDate, FROZEN_NOW)')
     expect(source).toContain("TZ: 'UTC'")
     expect(source).toContain('--force-device-scale-factor=1')
     expect(source).toMatch(/animation: none !important/)

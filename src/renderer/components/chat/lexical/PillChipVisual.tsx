@@ -38,7 +38,8 @@ const CHIP_STYLE: CSSProperties = {
   verticalAlign: 'baseline',
   lineHeight: '1.4',
   whiteSpace: 'nowrap',
-  maxWidth: '260px',
+  // Never wider than the line it sits in, or a narrow pane scrolls sideways.
+  maxWidth: 'min(260px, 100%)',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
 }
@@ -52,7 +53,7 @@ export function PillChipVisual({ label, kind, selectable = true, trailing, rootP
       style={{ ...CHIP_STYLE, userSelect: selectable ? 'text' : 'none' }}
     >
       <span style={{ width: 4, height: 4, borderRadius: '50%', background: tint, flexShrink: 0 }} />
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
       {trailing}
     </span>
   )

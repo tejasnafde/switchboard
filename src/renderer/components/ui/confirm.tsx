@@ -36,12 +36,15 @@ const current = (): PendingConfirm | undefined => queue[0]
 // The host has no trigger element, so Radix has nothing to hand focus back to.
 // Remember what was focused when the first request opened, and restore it when
 // the last one closes. If that element is gone, fall back to the composer.
+// settle() schedules the restore itself: Radix's close-focus callback does not
+// always fire, because the content unmounts in the same render that closes it.
 let returnFocus: HTMLElement | null = null
+let restorePending = false
 
 function restoreFocus(): void {
-  // Radix calls this a task after the dialog closes. A confirm opened in that
-  // gap owns returnFocus now and will restore it when it closes.
-  if (queue.length > 0) return
+  // A confirm chained from the last one's answer is on screen: its own close restores.
+  if (!restorePending || queue.length > 0) return
+  restorePending = false
   const target = focusReturnTarget(returnFocus)
   returnFocus = null
   target?.focus()
@@ -52,6 +55,11 @@ function settle(request: PendingConfirm, confirmed: boolean): void {
   // not answer the request that has just moved to the front.
   if (queue[0] !== request) return
   queue.shift()
+  if (queue.length === 0 && typeof document !== 'undefined') {
+    restorePending = true
+    // After React commits the close, so the dialog cannot take focus back.
+    setTimeout(restoreFocus, 0)
+  }
   request.resolve(confirmed)
   for (const listener of listeners) listener()
 }
@@ -79,7 +87,13 @@ if (typeof window !== 'undefined') window.addEventListener('keydown', holdKeysWh
 export function confirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     if (queue.length === 0 && typeof document !== 'undefined') {
-      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      if (restorePending) {
+        // Chained from the previous answer before its restore ran: keep the
+        // original return target, and let this confirm's close restore it.
+        restorePending = false
+      } else {
+        returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      }
     }
     queue.push({ ...options, resolve })
     for (const listener of listeners) listener()

@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "radix-overlays",
-  "summary": "Moves the desktop renderer's hand-built overlays onto shadcn/Radix primitives: the provider picker and branch picker onto Popover; the command palette, session picker, search, quick prompt, sidebar text prompt, kanban card and worktree dialogs, the sidebar organizer and Settings onto Dialog. Radix now owns positioning, outside click, Escape, focus trapping and stacking under the in-app confirm; a shared DialogContent returns focus to whatever had it on open, or to the composer. Along the way the kanban card and worktree dialogs get an opaque surface (they painted an undefined var(--bg) and the board showed through), Escape in the provider picker's custom model field and in Settings' launch-config name fields backs out of the field instead of closing the overlay, and a race in the in-app confirm that dropped the next confirm's focus target is fixed. Each converted component moves its inline styles to Tailwind classes or global.css. The slash-command and @-mention menus are left as they are: they have no focus or dismissal plumbing to replace, and Radix's Escape and outside-pointer handling would fight the Lexical key handling that drives them.",
+  "summary": "Moves the desktop renderer's hand-built overlays onto shadcn/Radix primitives: the provider picker and branch picker onto Popover; the command palette, session picker, search, quick prompt, sidebar text prompt, kanban card and worktree dialogs, the sidebar organizer and Settings onto Dialog. Radix now owns positioning, outside click, Escape, focus trapping and stacking under the in-app confirm; a shared DialogContent returns focus to whatever had it on open, or to the composer. Along the way the kanban card and worktree dialogs get an opaque surface (they painted an undefined var(--bg) and the board showed through), Escape in the provider picker's custom model field and in Settings' launch-config name fields backs out of the field instead of closing the overlay. Each converted component moves its inline styles to Tailwind classes or global.css. The slash-command and @-mention menus are left as they are: they have no focus or dismissal plumbing to replace, and Radix's Escape and outside-pointer handling would fight the Lexical key handling that drives them.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -28,7 +28,6 @@
         "src/renderer/components/ui/focus-return.ts",
         "src/renderer/components/ui/confirm.tsx",
         "tests/unit/focus-return.test.ts",
-        "tests/unit/confirm-dialog.test.ts",
         "tests/unit/tailwind-sources.test.ts",
         "tests/unit/workspace-organizer-source.test.ts",
         "e2e/radix-overlays.e2e.mjs",
@@ -59,7 +58,7 @@
   },
   "verification": {
     "automated": [
-      "npm run typecheck and npm test pass, including provider-picker-models (model filter and grouping moved out of the picker), focus-return, a new confirm-dialog case for back-to-back confirms that failed on every run before the fix, and tailwind-sources (fails when a Tailwind-styled file is missing from the @source list).",
+      "npm run typecheck and npm test pass, including provider-picker-models (model filter and grouping moved out of the picker), focus-return (the shared return-focus target for dialogs and the confirm), and tailwind-sources (fails when a Tailwind-styled file is missing from the @source list).",
       "e2e/radix-overlays.e2e.mjs (61 checks) drives every converted overlay in the built app: focus on open, filtering and list keys, Escape closing only the top layer (including a confirm over the card dialog and the organizer's name field), outside click, Cmd+Enter in the card dialog, Tab staying inside, Escape backing out of the custom model and launch-config fields, Space in the session picker, and focus returning to the opener or composer, including after a palette command and after Settings opened from the palette.",
       "e2e/dual-chat-workspace.e2e.mjs passes (55 checks) after being ported from native dialog events to the in-app confirm that #121 introduced; it failed on main before this change.",
       "SB_VISUAL_SCOPE=screens passed twice in a row. Only the three command-palette baselines changed, on purpose (the old backdrop stretched the palette to its max-height, leaving a blank strip); provider-picker, Settings and every other screen match unchanged in Dark, Light and Translucent.",
