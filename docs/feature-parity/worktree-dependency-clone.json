@@ -13,7 +13,6 @@
         "src/main/git/legacy-session-worktree-lease.ts",
         "tests/unit/dependency-clone.test.ts",
         "tests/unit/worktree.test.ts",
-        "tests/unit/create-session-worktree.test.ts",
         "tests/unit/worktree-creation-git-adapter.test.ts",
         "tests/unit/legacy-session-worktree-lease.test.ts"
       ]
