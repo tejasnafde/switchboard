@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,6 +41,25 @@ function settle(request: PendingConfirm, confirmed: boolean): void {
   for (const listener of listeners) listener()
 }
 
+// While a confirm is open it owns the keyboard, as window.confirm did. Escape
+// answers it: the host modals close on any Escape, some from a window capture
+// listener that would run before Radix's document one. App shortcuts wait: a
+// chat switch or a ⌘L append under the dialog changes what the answer acts on.
+// Registered at module load so it runs ahead of every component's listener.
+function holdKeysWhileOpen(event: KeyboardEvent): void {
+  const pending = current()
+  if (!pending) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    // A held Escape must not also cancel the confirm queued behind this one.
+    if (!event.repeat) settle(pending, false)
+    return
+  }
+  if (event.metaKey || event.ctrlKey) event.stopImmediatePropagation()
+}
+if (typeof window !== 'undefined') window.addEventListener('keydown', holdKeysWhileOpen, true)
+
 /** In-app replacement for window.confirm. Resolves true on confirm, false on cancel or Escape. Needs <ConfirmHost /> mounted. */
 export function confirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
@@ -56,21 +75,6 @@ export function isConfirmOpen(): boolean {
 
 export function ConfirmHost() {
   const request = useSyncExternalStore(subscribe, current)
-  // The modals that open a confirm close on any Escape, some from a window
-  // capture listener that runs before Radix's document one. This listener is
-  // registered at app mount, ahead of theirs, so the dialog answers Escape and
-  // the event ends here.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const open = current()
-      if (event.key !== 'Escape' || !open) return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      settle(open, false)
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [])
   return (
     <AlertDialog open={!!request} onOpenChange={(open) => { if (!open && request) settle(request, false) }}>
       {request && (

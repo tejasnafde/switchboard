@@ -121,7 +121,7 @@ function tryParseJson<T>(s: string): T | undefined {
   try {
     return JSON.parse(s) as T
   } catch (err) {
-    log.debug('stored message JSON did not parse', err)
+    log.warn('stored message JSON did not parse', err)
     return undefined
   }
 }

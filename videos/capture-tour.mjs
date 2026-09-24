@@ -354,9 +354,11 @@ const scenes = {
     // Switching kills panes that printed in the last 30s, so the app may ask
     // first. Answer yes, as a user would.
     const ask = win.getByRole('alertdialog', { name: /^Switch to launch config/ })
-    if (await ask.waitFor({ state: 'visible', timeout: 1500 }).then(() => true, () => false)) {
-      await ask.getByRole('button', { name: 'OK', exact: true }).click()
-    }
+    const first = await Promise.race([
+      ask.waitFor({ state: 'visible', timeout: 10_000 }).then(() => 'ask'),
+      chip.filter({ hasText: /backend/ }).waitFor({ timeout: 10_000 }).then(() => 'switched'),
+    ])
+    if (first === 'ask') await ask.getByRole('button', { name: 'OK', exact: true }).click()
     await pause(win, 3600)
   },
 

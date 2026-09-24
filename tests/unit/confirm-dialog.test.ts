@@ -66,8 +66,8 @@ describe('confirm', () => {
   })
 
   it('keeps Escape from the modal that opened it', async () => {
-    // Registered after ConfirmHost, like a Settings or WorkspaceManager modal
-    // opened later, in both phases those modals use.
+    // Registered after confirm's own listener, like a Settings or
+    // WorkspaceManager modal opened later, in both phases those modals use.
     const hostSaw: string[] = []
     const onCapture = () => hostSaw.push('window capture')
     const onBubble = () => hostSaw.push('window bubble')
@@ -88,6 +88,41 @@ describe('confirm', () => {
       window.removeEventListener('keydown', onCapture, true)
       window.removeEventListener('keydown', onBubble)
     }
+  })
+
+  it('holds app shortcuts back while open', async () => {
+    const appSaw: string[] = []
+    const onShortcut = (event: KeyboardEvent) => appSaw.push(event.key)
+    window.addEventListener('keydown', onShortcut, true)
+    try {
+      const { answer } = await ask({ title: 'Replace the current draft with the failed message?' })
+      // ⌘2 switches chats and ⌘L appends to a draft; either would change what the answer acts on.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '2', metaKey: true }))
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', ctrlKey: true }))
+      expect(appSaw).toEqual([])
+      await act(async () => button('Cancel').click())
+      await expect(answer).resolves.toBe(false)
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '2', metaKey: true }))
+      expect(appSaw).toEqual(['2'])
+    } finally {
+      window.removeEventListener('keydown', onShortcut, true)
+    }
+  })
+
+  it('does not let a held Escape cancel the confirm queued behind', async () => {
+    const { answer: first } = await ask({ title: 'First?' })
+    const { answer: second } = await ask({ title: 'Second?' })
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    await expect(first).resolves.toBe(false)
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', repeat: true }))
+    })
+    expect(dialog()?.textContent).toContain('Second?')
+    await act(async () => button('Cancel').click())
+    await expect(second).resolves.toBe(false)
   })
 
   it('shows one dialog at a time and answers each request on its own', async () => {

@@ -82,17 +82,22 @@ interface ChatPanelProps {
   onOpenBeside?: () => void
 }
 
+function slotSessions(
+  state: { primarySessionId: string | null; secondarySessionId: string | null },
+  chatSlot: ChatSlot | undefined,
+): { own: string | null; other: string | null } {
+  if (chatSlot === 'primary') return { own: state.primarySessionId, other: state.secondarySessionId }
+  if (chatSlot === 'secondary') return { own: state.secondarySessionId, other: state.primarySessionId }
+  return { own: null, other: null }
+}
+
 export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFocusIndicator = false, onClose, onOpenBeside }: ChatPanelProps = {}) {
   const [agentType, setAgentType] = useState<AgentType>('claude-code')
   const [editingTitle, setEditingTitle] = useState(false)
   const [editTitleValue, setEditTitleValue] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
 
-  const slotSessionId = useLayoutStore((state) => {
-    if (chatSlot === 'primary') return state.primarySessionId
-    if (chatSlot === 'secondary') return state.secondarySessionId
-    return null
-  })
+  const slotSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).own)
   const focusedChatSlot = useLayoutStore((state) => state.focusedChatSlot)
   const focusChatSlot = useLayoutStore((state) => state.focusChatSlot)
   const activeSession = useAgentStore((s) => {
@@ -147,11 +152,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const projectPath = activeSession?.projectPath
   const resumeSessionId = activeSession?.resumeSessionId
   const chatTitle = activeSession?.title ?? 'New conversation'
-  const otherSessionId = useLayoutStore((state) => {
-    if (chatSlot === 'primary') return state.secondarySessionId
-    if (chatSlot === 'secondary') return state.primarySessionId
-    return null
-  })
+  const otherSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).other)
   const hasDraftPayload = useDraftStore((state) => Boolean(sessionId && (
     state.drafts[sessionId]
     || state.pillsBySession[sessionId]?.length
@@ -184,13 +185,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     ].filter(Boolean)
     if (title && !(await confirm({ title, body, confirmLabel: 'Copy' }))) return
     // Either panel can switch chats while the dialog is open.
-    if (title) {
-      const { primarySessionId, secondarySessionId } = useLayoutStore.getState()
-      const [slotNow, otherNow] = chatSlot === 'primary'
-        ? [primarySessionId, secondarySessionId]
-        : [secondarySessionId, primarySessionId]
-      if ((sessionIdOverride ?? slotNow) !== sessionId || otherNow !== otherSessionId) return
-    }
+    const now = slotSessions(useLayoutStore.getState(), chatSlot)
+    if ((sessionIdOverride ?? now.own) !== sessionId || now.other !== otherSessionId) return
     const clone = cloneDraftPayload(source, {
       nextId: () => crypto.randomUUID(),
       createPreviewUrl: (file) => URL.createObjectURL(file),
