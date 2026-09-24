@@ -91,7 +91,8 @@ try {
   await newChat('check the render order')
   await replied('Final answer', 120_000)
   const live = await markerOrder()
-  check('the live turn ends with the final answer', live.endsWith('final'), live)
+  // Exact, so a duplicate or missing message cannot become the baseline below.
+  check('the live turn shows the interim text once, then the final answer', live === 'interim,final', live)
 
   await newChat('hello there')
   await replied('Two focused tests', 30_000)

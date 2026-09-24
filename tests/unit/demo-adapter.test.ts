@@ -151,6 +151,27 @@ describe('DemoAdapter (tour recorder script)', () => {
     expect(events.filter((e) => e.type === 'turn.completed')).toHaveLength(1)
   }, 20_000)
 
+  it('a tool interrupted mid-wait does not resume once the next turn starts', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Move the state check ahead of the exchange.', 'sandbox')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'tool.started' && e.toolName === 'Edit')) throw new Error('no tool yet')
+    }, { timeout: 15_000, interval: 10 })
+    await adapter.interruptTurn('t1')
+    await adapter.sendTurn('t1', 'What do the tests cover?', 'sandbox')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+    }, { timeout: 15_000, interval: 50 })
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+
+    expect(events.some((e) => e.type === 'tool.completed')).toBe(false)
+    expect(readFileSync(join(cwd, 'src', 'api', 'auth.ts'), 'utf8')).toContain('exchangeCode() {}')
+    const text = (events.filter((e) => e.type === 'content') as Array<{ text: string }>).map((c) => c.text).join('')
+    expect(text).not.toMatch(/Done\. The callback/)
+  }, 20_000)
+
   it('exposes one scripted adapter per provider kind', () => {
     const map = demoAdapters()
     expect([...map.keys()].sort()).toEqual(['claude', 'codex', 'opencode'])
