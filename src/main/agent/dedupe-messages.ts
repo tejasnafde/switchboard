@@ -126,23 +126,25 @@ export function mergeConversationMessages(
 /**
  * Every user message's time, paired with the start of the turn it opens. The
  * SQLite and transcript copies of one user message are stamped apart, so a
- * copy that follows an equal one within the skew opens the same turn, which
- * starts at the earlier copy.
+ * copy that directly follows an equal one within the skew opens the same
+ * turn, which starts at the earlier copy. Any other user message between the
+ * two makes them separate turns.
  */
 function userTurnStarts(messages: ChatMessage[]): Array<{ timestamp: number; turnStart: number }> {
   const users = messages
     .filter((message) => message.role === 'user')
     .sort((a, b) => a.timestamp - b.timestamp)
-  const lastByContent = new Map<string, { timestamp: number; turnStart: number }>()
-  return users.map((message) => {
-    const previous = lastByContent.get(message.content)
-    const turnStart = previous && message.timestamp - previous.timestamp <= USER_COPY_SKEW_MS
-      ? previous.turnStart
+  const entries: Array<{ timestamp: number; turnStart: number }> = []
+  users.forEach((message, index) => {
+    const previous = users[index - 1]
+    const turnStart = previous
+      && previous.content === message.content
+      && message.timestamp - previous.timestamp <= USER_COPY_SKEW_MS
+      ? entries[index - 1].turnStart
       : message.timestamp
-    const entry = { timestamp: message.timestamp, turnStart }
-    lastByContent.set(message.content, entry)
-    return entry
+    entries.push({ timestamp: message.timestamp, turnStart })
   })
+  return entries
 }
 
 function cloneMessage(message: ChatMessage): ChatMessage {
