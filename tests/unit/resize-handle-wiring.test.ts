@@ -131,7 +131,7 @@ describe('resize handles: stuck-drag hardening', () => {
   })
 
   it('ChatSplitHandle handles pointercancel + lostpointercapture + overlay', () => {
-    const src = read('../../src/renderer/App.tsx')
+    const src = read('../../src/renderer/components/chat/ChatWorkspacePanels.tsx')
     expect(src).toContain('onPointerCancel={() => endDrag()}')
     expect(src).toContain('onLostPointerCapture={() => endDrag()}')
     // and a window blur fallback for the dual-chat divider

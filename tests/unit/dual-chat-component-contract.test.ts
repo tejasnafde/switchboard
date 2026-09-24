@@ -7,6 +7,7 @@ const read = (path: string) => readFileSync(resolve(__dirname, path), 'utf8')
 describe('dual-chat component contract', () => {
   const app = read('../../src/renderer/App.tsx')
   const panel = read('../../src/renderer/components/chat/ChatPanel.tsx')
+  const workspace = read('../../src/renderer/components/chat/ChatWorkspacePanels.tsx')
   const input = read('../../src/renderer/components/chat/ChatInput.tsx')
   const statusBar = read('../../src/renderer/components/StatusBar.tsx')
   const sidebar = read('../../src/renderer/components/sidebar/Sidebar.tsx')
@@ -41,10 +42,10 @@ describe('dual-chat component contract', () => {
   })
 
   it('keeps both slot panels mounted and changes only their presentation', () => {
-    expect(app).toContain('data-chat-workspace')
-    expect(app).toContain('chatSlot="primary"')
-    expect(app).toContain('chatSlot="secondary"')
-    expect(app).toContain('data-chat-presentation={chatPresentation}')
+    expect(workspace).toContain('data-chat-workspace')
+    expect(workspace).toContain('chatSlot="primary"')
+    expect(workspace).toContain('chatSlot="secondary"')
+    expect(workspace).toContain('data-chat-presentation={chatPresentation}')
     expect(app).toContain("display: activeTerminalPaneId ? 'none' : 'flex'")
     expect(app).not.toMatch(/activeTerminalPaneId\s*\?\s*\(\s*<TerminalSessionPane/)
   })

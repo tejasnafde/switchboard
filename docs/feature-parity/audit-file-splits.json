@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "audit-file-splits",
+  "summary": "Refactor only, behaviour unchanged: the audit's large-file splits L1 to L7. Code moves out of ChatPanel.tsx, App.tsx, ChatInput.tsx, provider-registry.ts, database.ts and the mobile ThreadScreen.tsx into new modules, and two keydown chains become pure resolvers that keep their branch order.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Pure moves inside src/renderer and src/main. The moved blocks are byte-identical apart from imports, and the two resolvers keep the old first-match order. No UI, shortcut or IPC behaviour changes."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "ThreadScreen's feed rows and StyleSheet move verbatim into ThreadFeedItems.tsx and ThreadScreen.styles.ts. JS-only change, rendering unchanged."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "apps/android is not touched, and it does not import any of the moved TypeScript modules."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No channel, event or wire type changes. database.ts re-exports every moved function, so every backend import path and signature is unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "migrate() is not touched and keeps its step order. The moved CRUD functions run the same SQL against the same schema."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No native module, permission or version change. The mobile change is JS-only and ships on the normal OTA lane."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test",
+      "npm test --prefix apps/mobile",
+      "npm run build:fast && npm run postbuild",
+      "node e2e/queue-steer.e2e.mjs, draft-new-chat, ds-mode, backend-host"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The mobile app was not run on a device; the feed rows are covered by the jest feed-item test only.",
+      "e2e/resize.e2e.mjs skips unless SB_RESIZE_E2E=1 and was not enabled."
+    ]
+  }
+}
