@@ -14,11 +14,8 @@
         "src/renderer/styles/global.css",
         "src/renderer/components/chat/ChatInput.tsx",
         "src/renderer/App.tsx",
-        "electron.vite.config.ts",
-        "components.json",
         "e2e/visual-regressions.e2e.mjs",
         "e2e/snapshots",
-        "videos/capture-tour.mjs",
         "tests/unit/confirm-dialog.test.ts",
         "tests/unit/visual-regressions-source.test.ts"
       ]
