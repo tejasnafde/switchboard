@@ -10,6 +10,7 @@
  * ordinary reconnect/thread-open, and appends whatever card it is missing.
  */
 import type {
+  RuntimeEvent,
   RuntimePlanProposedEvent,
   RuntimeQuestionAskedEvent,
   RuntimeRequestOpenedEvent,
@@ -43,4 +44,48 @@ export function missingPendingRequests(
   shownKeys: ReadonlySet<string>,
 ): PendingBlockingEvent[] {
   return pending.filter((event) => !shownKeys.has(pendingRequestKey(event)))
+}
+
+/** The event types `applyPendingRequestEvent` can act on. */
+export const PENDING_REQUEST_EVENT_TYPES: ReadonlySet<RuntimeEvent['type']> = new Set([
+  'request.opened', 'question.asked', 'plan.proposed', 'request.closed', 'question.answered', 'status', 'user.message',
+])
+
+/**
+ * A client's copy of one thread's open cards, advanced by a live event. The
+ * same rules as the registry's own record in `provider-registry.ts`
+ * `publish()`: an open event adds (or replaces) its card, the matching close
+ * removes it, a provider that errored or stopped leaves nothing open, and a
+ * plan stays until the user sends the next turn. Returns `current` itself
+ * when the event changes nothing.
+ *
+ * ponytail: any `user.message` clears plans, where the registry clears them
+ * only for a human-initiated turn. A queued follow-up sent while a plan is
+ * open would hide it here until the next `GET_PENDING_REQUESTS` re-seed.
+ */
+export function applyPendingRequestEvent(
+  current: readonly PendingBlockingEvent[],
+  event: RuntimeEvent,
+): readonly PendingBlockingEvent[] {
+  switch (event.type) {
+    case 'request.opened':
+    case 'question.asked':
+    case 'plan.proposed': {
+      const key = pendingRequestKey(event)
+      return [...current.filter((open) => pendingRequestKey(open) !== key), event]
+    }
+    case 'request.closed':
+    case 'question.answered': {
+      const next = current.filter((open) => open.type === 'plan.proposed' || open.requestId !== event.requestId)
+      return next.length === current.length ? current : next
+    }
+    case 'status':
+      return (event.status === 'error' || event.status === 'stopped') && current.length > 0 ? [] : current
+    case 'user.message': {
+      const next = current.filter((open) => open.type !== 'plan.proposed')
+      return next.length === current.length ? current : next
+    }
+    default:
+      return current
+  }
 }

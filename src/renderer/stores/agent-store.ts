@@ -9,6 +9,8 @@ import type { ReasoningEffort } from '@shared/models'
 import { createRendererLogger } from '../logger'
 import { mergeLiveSessions, toAgentStatus, toAgentType } from './liveSessionMerge'
 import type { LiveSessionSummary } from '@shared/live-sessions'
+import { PENDING_REQUEST_EVENT_TYPES, applyPendingRequestEvent, type PendingBlockingEvent } from '@shared/pending-requests'
+import type { RuntimeEvent } from '@shared/provider-events'
 import { isRuntimeMode } from '@shared/session-defaults'
 import { isDraftSessionId, type DraftChatOptions } from '@shared/new-chat-draft'
 import type {
@@ -78,6 +80,13 @@ interface AgentSession {
   resumeSessionId?: string
   /** Number of unread assistant messages (incremented when not active) */
   unreadCount: number
+  /**
+   * Approval/question/plan cards the backend holds open for this thread,
+   * seeded from `provider.getPendingRequests` and advanced by live events.
+   * Kept apart from `messages` so an unopened chat can say it needs you
+   * without gaining messages, which would skip its history load.
+   */
+  pendingRequests?: readonly PendingBlockingEvent[]
   /** Display title (user-editable, auto-generated from first message) */
   title?: string
   /** Permission mode for this session (sandbox / accept-edits / full-access / plan) */
@@ -175,6 +184,8 @@ interface AgentStore {
   setMessages: (sessionId: string, messages: ChatMessage[]) => void
   clearMessages: (sessionId: string) => void
   setConversationId: (sessionId: string, conversationId: string) => void
+  setPendingRequests: (sessionId: string, pending: readonly PendingBlockingEvent[]) => void
+  trackPendingRequestEvent: (event: RuntimeEvent) => void
   getActiveSession: () => AgentSession | undefined
   getUnreadCount: (sessionId: string) => number
   setTitle: (sessionId: string, title: string) => void
@@ -310,11 +321,12 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   resetRunningSessionsForMachine: (machineId) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.machineId === machineId && (s.status === 'running' || s.status === 'thinking')
-          ? { ...s, status: 'idle' }
-          : s,
-      ),
+      sessions: state.sessions.map((s) => {
+        if (s.machineId !== machineId) return s
+        // The remote server died with the tunnel, and every open card with it.
+        const cleared = s.pendingRequests?.length ? { ...s, pendingRequests: [] } : s
+        return s.status === 'running' || s.status === 'thinking' ? { ...cleared, status: 'idle' } : cleared
+      }),
     })),
 
   adoptLiveSessions: (live, machineId) =>
@@ -403,6 +415,29 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         s.id === sessionId ? { ...s, conversationId } : s
       ),
     })),
+
+  setPendingRequests: (sessionId, pending) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, pendingRequests: pending } : s
+      ),
+    })),
+
+  trackPendingRequestEvent: (event) => {
+    if (!PENDING_REQUEST_EVENT_TYPES.has(event.type)) return
+    set((state) => {
+      let changed = false
+      const sessions = state.sessions.map((s) => {
+        if (s.id !== event.threadId) return s
+        const current = s.pendingRequests ?? []
+        const next = applyPendingRequestEvent(current, event)
+        if (next === current) return s
+        changed = true
+        return { ...s, pendingRequests: next }
+      })
+      return changed ? { sessions } : state
+    })
+  },
 
   getActiveSession: () => {
     const { sessions, activeSessionId } = get()

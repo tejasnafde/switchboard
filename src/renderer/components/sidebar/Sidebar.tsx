@@ -49,6 +49,8 @@ import type { Machine } from '@shared/machines'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { RecentSessionsSection } from './RecentSessionsSection'
 import { deriveRecentSessions, type RecentLiveSession } from './recentSessions'
+import { countLabel, localMachineSummary } from './recentGroups'
+import { pendingRequestKey } from '@shared/pending-requests'
 import {
   DEFAULT_RECENT_SESSION_LIMIT,
   RECENT_SESSION_LIMIT_CHANGED,
@@ -138,12 +140,13 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   const machineProjects = useMachineStore((s) => s.projects)
   const [recentLimit, setRecentLimit] = useState<RecentSessionLimit>(DEFAULT_RECENT_SESSION_LIMIT)
   const [recentLiveSessions, setRecentLiveSessions] = useState<RecentLiveSession[]>(() =>
-    useAgentStore.getState().sessions.map(({ id, machineId, status, messages, unreadCount }) => ({
+    useAgentStore.getState().sessions.map(({ id, machineId, status, messages, unreadCount, pendingRequests }) => ({
       id,
       machineId,
       status,
       messages,
       unreadCount,
+      pendingRequests,
     })),
   )
   const recentSignalRef = useRef('')
@@ -152,17 +155,17 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   // React and update the sidebar only when recents-relevant state changes, so
   // a streaming answer never re-renders the whole machine/workspace tree.
   useEffect(() => useAgentStore.subscribe((state) => {
-    const next = state.sessions.map(({ id, machineId, status, messages, unreadCount }) => ({
+    const next = state.sessions.map(({ id, machineId, status, messages, unreadCount, pendingRequests }) => ({
       id,
       machineId,
       status,
       messages,
       unreadCount,
+      pendingRequests,
     }))
     const signal = next.map((session) => {
-      const pendingApproval = session.messages.some((message) => message.approval?.status === 'pending')
-      const pendingQuestion = session.messages.some((message) => message.question?.status === 'pending')
-      return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pendingApproval ? 1 : 0}:${pendingQuestion ? 1 : 0}:${session.unreadCount ?? 0}`
+      const pending = (session.pendingRequests ?? []).map(pendingRequestKey).join(',')
+      return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pending}:${session.unreadCount ?? 0}`
     }).join('|')
     if (signal === recentSignalRef.current) return
     recentSignalRef.current = signal
@@ -283,6 +286,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       if (prev.find((p) => p.path === project.path)) return prev
       return [...prev, project]
     })
+    // The new project would otherwise land inside the folded This Mac row.
+    const layout = useLayoutStore.getState()
+    if (!layout.sidebarLocalTreeExpanded) layout.toggleSidebarLocalTree()
   }, [])
 
   const handleScan = useCallback(async (projectPath: string) => {
@@ -971,6 +977,8 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
           />
         )}
         <MachineLayer
+          localSummary={localMachineSummary(workspaces.length, projects.length)}
+          forceLocalExpanded={isFiltering}
           onEditMachine={(machine) => setEditMachine(machine)}
           onOpenRemoteSession={(machineId, projectPath, session) => onSessionSelect?.(session, projectPath, machineId)}
           onNewRemoteChat={(machineId, projectPath) => onNewChat?.(projectPath, machineId)}
@@ -1027,9 +1035,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                       />
                       <span
                         className="sidebar-workspace-count"
-                        title={`${group.projects.length} project${group.projects.length === 1 ? '' : 's'}, ${sessionTotal} thread${sessionTotal === 1 ? '' : 's'}`}
+                        title={countLabel(sessionTotal, 'thread')}
                       >
-                        {group.projects.length}{'·'}{sessionTotal}
+                        {countLabel(group.projects.length, 'project')}
                       </span>
                     </button>
                     {workspace && (

@@ -14,6 +14,33 @@ describe('recoverPendingRequests (desktop orchestration)', () => {
     useAgentStore.setState({ sessions: [] })
   })
 
+  it('records an unopened chat as waiting without giving it messages', async () => {
+    const opened: PendingBlockingEvent = { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' }
+    setWindowApi(vi.fn(() => Promise.resolve([opened])))
+    useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle' })
+
+    await recoverPendingRequests('t1', { cards: false })
+
+    const session = useAgentStore.getState().sessions.find((s) => s.id === 't1')
+    expect(session?.pendingRequests).toEqual([opened])
+    expect(session?.messages).toEqual([])
+  })
+
+  it('advances the recorded cards from live events for that thread only', () => {
+    useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle' })
+    const store = () => useAgentStore.getState()
+    store().trackPendingRequestEvent({ type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' })
+    store().trackPendingRequestEvent({ type: 'request.opened', threadId: 'other', requestId: 'r2', requestType: 'command', toolName: 'Bash', detail: 'ls' })
+    expect(store().sessions[0].pendingRequests?.map((e) => e.type)).toEqual(['request.opened'])
+
+    const before = store().sessions
+    store().trackPendingRequestEvent({ type: 'content', threadId: 't1', messageId: 'm', streamKind: 'assistant', text: 'x' } as never)
+    expect(store().sessions).toBe(before)
+
+    store().trackPendingRequestEvent({ type: 'request.closed', threadId: 't1', requestId: 'r1', decision: 'approve' })
+    expect(store().sessions[0].pendingRequests).toEqual([])
+  })
+
   it('appends a missing card to an already-loaded session', async () => {
     const getPendingRequests = vi.fn(() => Promise.resolve<PendingBlockingEvent[]>([
       { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' },

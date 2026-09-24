@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { paneMaxWidth, useLayoutStore } from '../../src/renderer/stores/layout-store'
 
 /**
@@ -160,5 +160,25 @@ describe('file diff cards opt-in', () => {
     expect(useLayoutStore.getState().showFileDiffCards).toBe(true)
     useLayoutStore.getState().setShowFileDiffCards(false)
     expect(useLayoutStore.getState().showFileDiffCards).toBe(false)
+  })
+})
+
+describe('sidebar tree disclosure', () => {
+  it('starts with This Mac and the offline machines folded, and persists each toggle', () => {
+    const set = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('window', { api: { settings: { set } } })
+    try {
+      expect(useLayoutStore.getState().sidebarLocalTreeExpanded).toBe(false)
+      expect(useLayoutStore.getState().sidebarOfflineMachinesExpanded).toBe(false)
+      useLayoutStore.getState().toggleSidebarLocalTree()
+      useLayoutStore.getState().toggleSidebarOfflineMachines()
+      expect(useLayoutStore.getState().sidebarLocalTreeExpanded).toBe(true)
+      expect(useLayoutStore.getState().sidebarOfflineMachinesExpanded).toBe(true)
+      expect(set).toHaveBeenCalledWith('sidebar.localTreeExpanded', 'true')
+      expect(set).toHaveBeenCalledWith('sidebar.offlineMachinesExpanded', 'true')
+    } finally {
+      vi.unstubAllGlobals()
+      useLayoutStore.setState({ sidebarLocalTreeExpanded: false, sidebarOfflineMachinesExpanded: false })
+    }
   })
 })

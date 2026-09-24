@@ -57,6 +57,7 @@ try {
   await win.waitForFunction(() => !!window.api?.ide?.ensure, null, { timeout: 20_000 })
   await win.evaluate((dir) => window.api.routing.invokeOn('local', 'app:add-project-path', dir), project)
   await win.evaluate(() => window.api.settings.set('tour.autoplay', 'false'))
+  await win.evaluate(() => window.api.settings.set('sidebar.localTreeExpanded', 'true'))
   // Suppress the first-run analytics notice; it overlays the composer.
   await win.evaluate(() => window.api.settings.set('analytics.noticeSeen', 'true'))
   await win.reload()
