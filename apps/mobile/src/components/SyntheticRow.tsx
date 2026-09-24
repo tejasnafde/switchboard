@@ -16,14 +16,16 @@ const TONE_COLOR: Record<SyntheticTone, string> = {
   muted: colors.textFaint,
 }
 
-/** Compact row for a provider-generated user-role block. Tap shows ids and paths. */
+/** Compact row for a provider-generated user-role block. Tap shows ids and paths, or full output. */
 export function SyntheticRow({ part }: { part: SyntheticUserPart }) {
   const [open, setOpen] = useState(false)
   const label = syntheticPartLabel(part)
   const detail = syntheticPartDetail(part)
+  // Command output can run to many lines; the clamp lifts on tap.
+  const expandable = !!detail || part.kind === 'command-output'
   return (
     <Pressable
-      disabled={!detail}
+      disabled={!expandable}
       onPress={() => setOpen((v) => !v)}
       accessibilityLabel={label}
       style={styles.row}

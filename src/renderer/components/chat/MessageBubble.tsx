@@ -58,6 +58,12 @@ interface MessageBubbleProps {
   onFileDiffResolve?: (messageId: string, status: FileDiffResolveStatus, contentToWrite: string | null) => void | Promise<void>
   /** The containing turn already presents duration in its compact activity summary. */
   hideTurnDuration?: boolean
+  /**
+   * What the user typed after provider-generated blocks were split off into
+   * rows. Display, copy and bookmarks use it; forks keep the whole message,
+   * because the fork anchor digests every field.
+   */
+  typedText?: string
 }
 
 export function resolveBubbleProjectPath(
@@ -96,7 +102,8 @@ function resolveFileCached(projectPath: string, path: string): Promise<boolean> 
   return cached
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve, hideTurnDuration = false }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve, hideTurnDuration = false, typedText }: MessageBubbleProps) {
+  const body = typedText ?? message.content
   // Drives both markdownContent's stripDigest call below and the file-pill
   // enhancement effect further down - a still-streaming message hides a
   // trailing partial <agent_digest> tag; a finished one only strips
@@ -243,17 +250,18 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
 
   // Provider-generated user-role blocks (task notifications, interrupts)
   // render as compact rows; whatever the user actually typed after them
-  // keeps its bubble. displayBody is always what the user typed.
-  const synthetic = isUser && message.displayBody === undefined
+  // keeps its bubble. displayBody, when set, is already what the user typed.
+  const synthetic = isUser && message.displayBody === undefined && typedText === undefined
     ? splitSyntheticUserText(message.content)
     : null
   if (synthetic) {
     return (
       <>
         {synthetic.parts.map((part, i) => <SyntheticUserRow key={i} part={part} />)}
-        {synthetic.userText && (
+        {(synthetic.userText !== '' || !!message.images?.length) && (
           <MessageBubble
-            message={{ ...message, displayBody: synthetic.userText }}
+            message={message}
+            typedText={synthetic.userText}
             sessionId={sessionId}
             knownSkillNames={knownSkillNames}
             onApproval={onApproval}
@@ -345,7 +353,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   }
 
   const handleCopy = () => {
-    const text = stripDigest(message.content || '', { streaming: isMutable })
+    const text = stripDigest(body || '', { streaming: isMutable })
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
@@ -358,7 +366,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     const store = useBookmarkStore.getState()
     if (isBookmarked && bookmarkId) {
       void store.remove(bookmarkId)
-    } else if (sessionId && message.content) {
+    } else if (sessionId && body) {
       const agentSession = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
       void store.save({
         sessionId,
@@ -366,7 +374,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         sessionTitle: agentSession?.title ?? 'Untitled',
         agentType: agentSession?.type ?? 'claude-code',
         messageRole: message.role as 'user' | 'assistant',
-        content: message.content,
+        content: body,
         messageTimestamp: message.timestamp,
       })
     }
@@ -402,7 +410,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           // Diff cards read better spanning the full chat column rather than
           // shrinking to content in the flex-start column.
           width: message.fileDiff ? '100%' : undefined,
-          padding: message.content ? '10px 14px' : '0',
+          padding: body ? '10px 14px' : '0',
           borderRadius: 'var(--radius)',
           background: isUser
             ? 'var(--bg-tertiary)'
@@ -410,7 +418,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
               ? 'rgba(248, 81, 73, 0.08)'
               : isSystem
                 ? 'rgba(210, 153, 34, 0.08)'
-                : message.content ? 'var(--bg-secondary)' : 'transparent',
+                : body ? 'var(--bg-secondary)' : 'transparent',
           border: isError
             ? '1px solid rgba(248, 81, 73, 0.35)'
             : isSystem
@@ -422,7 +430,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         }}
       >
         {/* Render markdown for assistant, plain text for user */}
-        {message.content && (isUser ? (
+        {body && (isUser ? (
           <div style={{
             whiteSpace: 'pre-wrap',
             overflowWrap: 'anywhere',
@@ -438,11 +446,11 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
               // prompt like `/deslop then /review` round-trips as two
               // chips. Unwrap the SDK's `<command-message>...
               // </command-args>` XML blob (JSONL reload) before scanning.
-              if (!knownSkillNames?.size) return message.content
-              const wrapper = parseSlashCommandWrapper(message.content)
-              const body = wrapper ? `/${wrapper.name}${wrapper.rest}` : message.content
-              const segments = splitSkillMentions(body, knownSkillNames)
-              if (!segments.some((s) => s.type === 'skill')) return message.content
+              if (!knownSkillNames?.size) return body
+              const wrapper = parseSlashCommandWrapper(body)
+              const unwrapped = wrapper ? `/${wrapper.name}${wrapper.rest}` : body
+              const segments = splitSkillMentions(unwrapped, knownSkillNames)
+              if (!segments.some((s) => s.type === 'skill')) return body
               return segments.map((seg, i) =>
                 seg.type === 'skill'
                   ? <SkillChip key={i} name={seg.name} />
@@ -466,7 +474,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             display: 'flex',
             gap: '6px',
             flexWrap: 'wrap',
-            marginTop: message.content ? '8px' : '0',
+            marginTop: body ? '8px' : '0',
           }}>
             {message.images.map((img, i) => (
               <div
@@ -635,7 +643,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           overlap message text. Low opacity at rest; full on bubble-row
           hover (via `.message-bubble-row:hover` CSS rule). Leaves room
           here for future actions (edit, retry, thread, etc). */}
-      {message.content && !message.deliveryState && (
+      {body && !message.deliveryState && (
         <div
           className="message-actions"
           style={{
@@ -648,7 +656,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             transition: 'opacity 0.12s',
           }}
         >
-          {sessionId && <ForwardMenu content={message.content} sourceSessionId={sessionId} />}
+          {sessionId && <ForwardMenu content={body} sourceSessionId={sessionId} />}
           <button
             onClick={handleBookmark}
             title={isBookmarked ? 'Remove from saved' : 'Save for later'}

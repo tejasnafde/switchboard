@@ -1317,7 +1317,8 @@ private fun SyntheticRow(row: ThreadRowPresentation.Synthetic) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .then(
-                if (row.detail != null) {
+                // Command output can run to many lines; the clamp lifts on tap.
+                if (row.detail != null || row.monospace) {
                     Modifier.clickable(role = Role.Button) { expanded = !expanded }
                 } else {
                     Modifier

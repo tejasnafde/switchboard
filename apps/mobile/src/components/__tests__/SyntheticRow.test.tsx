@@ -20,3 +20,14 @@ describe('SyntheticRow', () => {
     expect(v.texts().join('\n')).toContain('Output: /tmp/tasks/b1.output')
   })
 })
+
+describe('SyntheticRow command output', () => {
+  it('lifts the two-line clamp on tap', () => {
+    const text = 'line 1\nline 2\nline 3'
+    const v = renderComponent(<SyntheticRow part={{ kind: 'command-output', text, isError: false }} />)
+    const shown = () => v.root.find((n) => typeof n.type === 'string' && n.props.children === text)
+    expect(shown().props.numberOfLines).toBe(2)
+    act(() => v.byLabel(text).props.onPress())
+    expect(shown().props.numberOfLines).toBeUndefined()
+  })
+})

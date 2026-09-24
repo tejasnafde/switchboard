@@ -62,13 +62,16 @@
       "tests/unit/jsonl-parser.test.ts pins that isMeta user entries are dropped on reload, that a task notification survives to the renderer, and that Codex <image> wrapper blocks are stripped.",
       "tests/unit/mobile-thread-history.test.ts pins that phone history maps a notification to its own row and keeps the typed remainder as a user bubble.",
       "apps/mobile jest: SyntheticRow renders the label, never the XML, and shows ids on tap.",
-      "apps/android JUnit: SyntheticUserMessageTest covers the Kotlin port and that ThreadPresenter.rows turns a notification into a Synthetic row instead of a user bubble."
+      "apps/android JUnit: SyntheticUserMessageTest covers the Kotlin port and that ThreadPresenter.rows turns a notification into a Synthetic row instead of a user bubble.",
+      "An independent review of the diff found three confirmed bugs, all fixed: forking from the typed part of a mixed message failed the anchor digest (the remainder is now a render-only prop), an image on a generated-only message was hidden on desktop, and multi-line command output was clamped to two lines with no way to expand on the phone and Android."
     ],
     "hardware": [],
     "notExercised": [
       "No surface was driven by hand; the rows were checked through unit and component tests only.",
       "Live path: the Claude adapter ignores the SDK's system/task_notification message, so a notification does not appear live on any surface and only appears once the transcript is reloaded. Surfacing it live needs a new runtime event on every client.",
-      "Claude's <command-message> slash wrapper is still unwrapped only on desktop; mobile and Android keep showing it as text."
+      "Claude's <command-message> slash wrapper is still unwrapped only on desktop; mobile and Android keep showing it as text.",
+      "Deferred review finding: Android splits FeedItem.User text even when it came from a typed displayBody, where desktop and mobile never split one. Only a typed message that itself starts with a provider marker (for example \"[Request interrupted by user\") renders differently; FeedItem.User would need a flag to fix it.",
+      "Deferred review finding (existed before this change): a sent turn made only of context blocks is dropped by visibleUserMessageText, so its optimistic bubble never clears its pending state. The context-only list is now longer (system-reminder, skill, caveat), but the case needs a user to paste only such blocks."
     ]
   }
 }
