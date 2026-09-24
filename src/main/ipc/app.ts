@@ -3,6 +3,7 @@ import { stat } from 'fs/promises'
 import { notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { historyTail } from '@shared/turn-activity'
+import { parseFollowSuggestionMode } from '@shared/follow-suggestions'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions } from '../projects/session-scanner'
 import { projectManagedRootSessions, sessionSummaryToConversationRow } from './terminal-sessions'
@@ -39,6 +40,7 @@ import {
   getConversationForkMetadata,
   getConversationRuntimeMode,
   setConversationRuntimeMode,
+  setConversationFollowSuggestions,
   getConversationProviderInstanceId,
   setConversationProviderInstanceId,
   getConversationModel,
@@ -526,6 +528,9 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   host.handle(AppChannels.SET_CONVERSATION_RUNTIME_MODE, (id: string, mode: string) => {
     setConversationRuntimeMode(id, mode)
     return { ok: true }
+  })
+  host.handle(AppChannels.SET_CONVERSATION_FOLLOW_SUGGESTIONS, (id: string, mode: unknown) => {
+    return { ok: setConversationFollowSuggestions(id, parseFollowSuggestionMode(mode)) }
   })
 
   // Per-conversation provider-instance id. Symmetric with runtime mode:

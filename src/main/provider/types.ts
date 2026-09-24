@@ -120,7 +120,27 @@ export interface ProviderAdapter {
     images?: Array<{ url: string; mimeType?: string }>,
     /** Mid-turn: `queue` holds the message until the running turn ends. */
     delivery?: TurnDelivery,
+    /**
+     * With `queue`: the id a held message is known by (its chat row id). An
+     * adapter that holds the message emits `turn.queued` with it, and
+     * `turn.dequeued` once the message leaves the queue for any reason.
+     */
+    queuedId?: string,
   ): Promise<void>
+
+  /**
+   * Take back a held message before it runs. Resolves true when it was still
+   * queued (and `turn.dequeued` 'cancelled' was emitted), false when it had
+   * already left the queue.
+   */
+  cancelQueuedTurn?(threadId: string, queuedId: string): Promise<boolean>
+
+  /**
+   * Steer a held message into the running turn now. Same result contract as
+   * `cancelQueuedTurn`, with reason 'promoted'. Absent where the provider
+   * cannot take a mid-turn message.
+   */
+  promoteQueuedTurn?(threadId: string, queuedId: string): Promise<boolean>
 
   /**
    * Interrupt the current turn (cancel in-progress work).

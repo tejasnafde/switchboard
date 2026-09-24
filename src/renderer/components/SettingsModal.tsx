@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useThemeStore, type ThemeName } from '../stores/theme-store'
 import { useLayoutStore } from '../stores/layout-store'
+import { parseFollowUpDefault } from '@shared/turn-delivery'
 import { emitSessionRename } from '../services/session-events'
 import { FEATURE_TOUR_STEPS } from './onboarding/featureRegistry'
 import type { UpdateStatus } from '@shared/update-status'
@@ -418,6 +419,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               <SettingsSection title="Threads">
                 <DefaultEnvModeToggle />
                 <RecentConversationsSetting />
+                <FollowUpDefaultSetting />
               </SettingsSection>
 
               {/* Embedded IDE - idle shutdown TTL */}
@@ -1016,6 +1018,42 @@ function DefaultEnvModeToggle() {
       >
         <option value="local">Local (project root)</option>
         <option value="worktree">New worktree</option>
+      </select>
+    </div>
+  )
+}
+
+/** Steer or Queue: what Enter does while the agent works. See `layout-store.followUpDefault`. */
+function FollowUpDefaultSetting() {
+  const value = useLayoutStore((s) => s.followUpDefault)
+  const setValue = useLayoutStore((s) => s.setFollowUpDefault)
+  return (
+    <div style={{ marginTop: '16px' }}>
+      <div style={{ fontSize: '12.5px', color: 'var(--text-primary)', marginBottom: '4px' }}>
+        Follow-up while the agent works
+      </div>
+      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+        What Enter does with a message sent mid-turn. <strong>Steer</strong> hands it to the agent at its
+        next step; <strong>Queue</strong> holds it until the turn ends. ⌥Enter does the other one.
+        OpenCode always queues.
+      </div>
+      <select
+        aria-label="Follow-up while the agent works"
+        value={value}
+        onChange={(event) => setValue(parseFollowUpDefault(event.target.value))}
+        style={{
+          background: 'var(--bg-tertiary)',
+          color: 'var(--text-primary)',
+          border: '1px solid var(--border)',
+          borderRadius: '4px',
+          padding: '4px 8px',
+          fontSize: '12px',
+          cursor: 'pointer',
+          outline: 'none',
+        }}
+      >
+        <option value="steer">Steer</option>
+        <option value="queue">Queue</option>
       </select>
     </div>
   )

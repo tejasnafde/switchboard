@@ -29,6 +29,8 @@ import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
 import { getSignedInEmail, warmUpGoogleAuth } from '../lib/google-auth'
 import { initialsFromEmail } from '../lib/account'
 import { BuildStamp } from '../components/BuildStamp'
+import { usePrefsStore } from '../stores/prefs'
+import type { TurnDelivery } from '@shared/turn-delivery'
 import { chatCacheReady } from '../stores/chat'
 import { useConnectionsStore, secretsReady, type ConnectionConfig, type ConnectionStatus } from '../stores/connections'
 
@@ -245,6 +247,7 @@ export default function ConnectionsScreen() {
       }
       ListFooterComponent={
         <View>
+          <FollowUpDefaultSetting />
           <BuildStamp />
           {__DEV__ && (
             <Pressable onPress={() => navigation.navigate('DevGallery')} style={styles.devLink}>
@@ -268,6 +271,19 @@ export default function ConnectionsScreen() {
 
 const styles = StyleSheet.create({
   devLink: { alignItems: 'center', paddingVertical: space.sm },
+  followUp: { marginTop: space.lg, marginBottom: space.sm, gap: space.xs },
+  followUpLabel: { color: colors.textDim, ...type.monoSm },
+  followUpOptions: { flexDirection: 'row', gap: space.sm },
+  followUpOption: {
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  followUpOptionOn: { borderColor: colors.accent, backgroundColor: colors.accentWash },
+  followUpOptionText: { color: colors.textDim, ...type.bodySm },
+  followUpOptionTextOn: { color: colors.accent },
   devLinkText: { color: colors.textFaint, ...type.monoSm },
   list: {
     paddingHorizontal: space.lg,
@@ -436,3 +452,38 @@ const styles = StyleSheet.create({
     color: '#08131f',
   },
 })
+
+/**
+ * This device's "Follow-up while the agent works": what a send does while a
+ * turn runs. The composer's chip flips it for one send.
+ */
+function FollowUpDefaultSetting() {
+  const value = usePrefsStore((s) => s.followUpDefault)
+  const setValue = usePrefsStore((s) => s.setFollowUpDefault)
+  const options: Array<{ value: TurnDelivery; label: string }> = [
+    { value: 'steer', label: 'Steer' },
+    { value: 'queue', label: 'Queue' },
+  ]
+  return (
+    <View style={styles.followUp}>
+      <Text style={styles.followUpLabel}>Follow-up while the agent works</Text>
+      <View style={styles.followUpOptions} accessibilityRole="radiogroup">
+        {options.map((option) => {
+          const on = option.value === value
+          return (
+            <Pressable
+              key={option.value}
+              onPress={() => setValue(option.value)}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: on }}
+              testID={`follow-up-${option.value}`}
+              style={[styles.followUpOption, on && styles.followUpOptionOn]}
+            >
+              <Text style={[styles.followUpOptionText, on && styles.followUpOptionTextOn]}>{option.label}</Text>
+            </Pressable>
+          )
+        })}
+      </View>
+    </View>
+  )
+}

@@ -31,6 +31,7 @@ import { buildForwardedContext, forwardingSource, forwardingTargets } from '../.
 import { focusComposer } from '../../services/composerRegistry'
 import { createRendererLogger } from '../../logger'
 import { confirm } from '../ui/confirm'
+import { QueuedTurnBar } from './QueuedTurnBar'
 
 const log = createRendererLogger('chat:message-bubble')
 
@@ -203,6 +204,15 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     }, POST_PROCESS_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [markdownContent, isMutable, sessionId])
+
+  // Held by the backend until the running turn ends (see QueuedTurnBar).
+  // The provider of the session holding it, or null when it is not held.
+  const queuedProvider = useAgentStore((st) => {
+    if (message.role !== 'user' || sessionId === undefined) return null
+    const session = st.sessions.find((x) => x.id === sessionId)
+    return session?.queuedTurns?.[message.id] ? session.type : null
+  })
+  const queued = queuedProvider !== null
 
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
@@ -394,7 +404,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         // Skip the menu for system / error messages - they aren't fork
         // anchors. Image-lightbox right-click is portal'd to body and
         // doesn't bubble through this handler, so it stays unaffected.
-        if (message.deliveryState || !isForkableForkMessage(message)) return
+        if (message.deliveryState || queued || !isForkableForkMessage(message)) return
         e.preventDefault()
         setForkMenu({ x: e.clientX, y: e.clientY })
         setForkError(null)
@@ -417,18 +427,22 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           width: message.fileDiff ? '100%' : undefined,
           padding: body ? '10px 14px' : '0',
           borderRadius: 'var(--radius)',
-          background: isUser
-            ? 'var(--bg-tertiary)'
+          background: queued
+            ? 'transparent'
+            : isUser
+              ? 'var(--bg-tertiary)'
+              : isError
+                ? 'rgba(248, 81, 73, 0.08)'
+                : isSystem
+                  ? 'rgba(210, 153, 34, 0.08)'
+                  : body ? 'var(--bg-secondary)' : 'transparent',
+          border: queued
+            ? '1px dashed var(--border)'
             : isError
-              ? 'rgba(248, 81, 73, 0.08)'
+              ? '1px solid rgba(248, 81, 73, 0.35)'
               : isSystem
-                ? 'rgba(210, 153, 34, 0.08)'
-                : body ? 'var(--bg-secondary)' : 'transparent',
-          border: isError
-            ? '1px solid rgba(248, 81, 73, 0.35)'
-            : isSystem
-              ? '1px solid rgba(210, 153, 34, 0.35)'
-              : 'none',
+                ? '1px solid rgba(210, 153, 34, 0.35)'
+                : 'none',
           fontSize: '13px',
           lineHeight: 1.6,
           position: 'relative',
@@ -628,6 +642,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             </button>
           </div>
         )}
+        {queued && sessionId && <QueuedTurnBar sessionId={sessionId} messageId={message.id} provider={queuedProvider} />}
       </div>
 
       {message.deliveryState && (
@@ -648,7 +663,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           overlap message text. Low opacity at rest; full on bubble-row
           hover (via `.message-bubble-row:hover` CSS rule). Leaves room
           here for future actions (edit, retry, thread, etc). */}
-      {body && !message.deliveryState && (
+      {body && !message.deliveryState && !queued && (
         <div
           className="message-actions"
           style={{

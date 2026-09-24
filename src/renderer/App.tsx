@@ -297,11 +297,15 @@ export function App() {
   }, [])
 
   // Open approval/question/plan cards per thread, for the sidebar's "Needs
-  // you". Here rather than in ChatPanel: it must see events for chats no
-  // panel shows.
+  // you", and queued messages. Here rather than in ChatPanel: it must see
+  // events for chats no panel shows.
   useEffect(() => {
     if (!window.api.provider?.onEvent) return
-    return onProviderEvent((event) => useAgentStore.getState().trackPendingRequestEvent(event))
+    return onProviderEvent((event) => {
+      const store = useAgentStore.getState()
+      store.trackPendingRequestEvent(event)
+      store.trackQueuedTurnEvent(event)
+    })
   }, [])
 
   // Machine registry (remote SSH hosts) - hydrate once on launch.

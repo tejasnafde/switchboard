@@ -25,7 +25,7 @@ import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, RuntimeMode } from '@shared/provider-events'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
-import { canSteer } from '@shared/turn-delivery'
+import { canSteer, type QueuedTurnSummary } from '@shared/turn-delivery'
 import { providerKindFor, type ProviderInstance, type ProviderSkill } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
@@ -71,8 +71,9 @@ import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 import { outboxPresentation, recoverRejectedDraft } from '../lib/outboxModel'
 import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversationFork'
-import { ApprovalItem, FileEditItem, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
+import { ApprovalItem, FileEditItem, HeldTurnBar, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
 import { styles } from './ThreadScreen.styles'
+import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/heldTurns'
 
 /** How much of a long thread to pull on open. The feed says when it is a window. */
 const HISTORY_WINDOW = 250
@@ -98,8 +99,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const headerHeight = useHeaderHeight()
   const insets = useSafeAreaInsets()
   const [draft, setDraft] = useState('')
-  // True when the next send should wait for the running turn instead of steering it.
-  const [queueNext, setQueueNext] = useState(false)
+  // True when the next send should do the opposite of the device's follow-up
+  // default (steer instead of queue, or queue instead of steer).
+  const [flipNext, setFlipNext] = useState(false)
+  const followUpDefault = usePrefsStore((s) => s.followUpDefault)
+  const toggle = queueToggle(followUpDefault, flipNext)
   // The focus-effect cleanup closes over its first render, so it reads the
   // latest text from a ref rather than a stale `draft`.
   const draftRef = useRef('')
@@ -275,6 +279,24 @@ export default function ThreadScreen({ route, navigation }: Props) {
             for (const event of missingPendingFeedItems(pending, items)) {
               useChatStore.getState().ingestNow(connectionId, event)
             }
+          }
+        } catch (err) {
+          reportError(err)
+        }
+      }
+      // Same for messages the backend still holds: re-list them, so the
+      // Queued rows survive a reload or a resume gap.
+      if (client.supportsCapability('turn_queue_controls_v1') === true) {
+        try {
+          // A live event that lands while the backend answers makes the answer
+          // stale; ask again rather than undo it.
+          const revisionOf = () => useChatStore.getState().threads[key]?.heldRevision ?? 0
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const revision = revisionOf()
+            const held = await client.listQueuedTurns(threadId)
+            if (revisionOf() !== revision) continue
+            useChatStore.getState().setHeldTurns(key, held)
+            break
           }
         } catch (err) {
           reportError(err)
@@ -501,9 +523,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
       images,
       runtimeMode: thread.runtimeMode,
       titleCandidate,
-      whenIdle: queueNext && !textOverride,
+      whenIdle: toggle.queues && !textOverride,
     })
-    setQueueNext(false)
+    setFlipNext(false)
     // Title from the first message, as the desktop does. `isNew` matters: an
     // existing chat whose items were emptied by /clear, or one whose history
     // has not loaded yet, also has no user items - titling those would
@@ -687,12 +709,48 @@ export default function ThreadScreen({ route, navigation }: Props) {
     ])
   }, [connectionId, navigation, reportError, threadId])
 
+  // Held messages only come from a backend that can act on them, but the
+  // controls check too, rather than offer buttons whose channel is missing.
+  const canControlQueue = getClient(connectionId)?.supportsCapability('turn_queue_controls_v1') === true
+
+  // A refused Send now / Cancel belongs on its row: reporting it as a thread
+  // error would mark a still-running thread as failed and hide Stop.
+  const [heldErrors, setHeldErrors] = useState<Record<string, string>>({})
+  const actOnHeld = useCallback(async (held: QueuedTurnSummary, action: 'promote' | 'cancel') => {
+    const client = getClient(connectionId)
+    if (!client) return
+    const showOnRow = (message: string | undefined) =>
+      setHeldErrors((current) => {
+        const next = { ...current }
+        if (message) next[held.messageId] = message
+        else delete next[held.messageId]
+        return next
+      })
+    showOnRow(undefined)
+    try {
+      const result = action === 'promote'
+        ? await client.promoteQueuedTurn(threadId, held.messageId)
+        : await client.cancelQueuedTurn(threadId, held.messageId)
+      if (!result.ok) {
+        log.warn(`${action} of held message ${held.messageId} refused: ${result.message}`)
+        showOnRow(result.message)
+        return
+      }
+      // The bubble goes on the backend's turn.dequeued; the text comes back here.
+      if (action === 'cancel') setDraft((current) => (current ? `${current}\n\n${result.turn.text}` : result.turn.text))
+    } catch (err) {
+      log.warn(`${action} of held message ${held.messageId} failed`, err)
+      showOnRow(err instanceof Error ? err.message : String(err))
+    }
+  }, [connectionId, threadId])
+
   const renderItem = useCallback(
     ({ item }: { item: FeedItem }) => {
       switch (item.kind) {
         case 'user':
           const queued = queuedByBubbleId.get(item.id)
           const delivery = queued ? outboxPresentation(queued) : null
+          const held = canControlQueue ? heldTurnFor(thread.heldTurns, item.id) : undefined
           return (
             <View style={styles.userRow}>
               <Pressable
@@ -706,7 +764,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
                   const message = forkMessagesRef.current.get(item.id)
                   if (message) forkFromMessage(message)
                 }}
-                style={styles.userBubble}
+                style={[styles.userBubble, held && styles.heldBubble]}
               >
                 {item.images?.map((url, i) => (
                   <Pressable key={`${item.id}-img-${i}`} onPress={() => setLightbox(url)}>
@@ -725,6 +783,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
                       ? ' - tap to edit'
                       : delivery.state === 'ambiguous' ? ' - tap to resolve' : ''}
                   </Text>
+                )}
+                {held && (
+                  <HeldTurnBar
+                    actions={heldTurnActions(thread.provider ?? provider)}
+                    error={heldErrors[held.messageId]}
+                    onPromote={() => void actOnHeld(held, 'promote')}
+                    onCancel={() => void actOnHeld(held, 'cancel')}
+                  />
                 )}
               </Pressable>
             </View>
@@ -779,6 +845,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
       editRejected,
       resolveAmbiguous,
       forkFromMessage,
+      canControlQueue,
+      thread.heldTurns,
+      thread.provider,
+      provider,
+      actOnHeld,
+      heldErrors,
     ],
   )
 
@@ -1037,16 +1109,16 @@ export default function ThreadScreen({ route, navigation }: Props) {
         <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
         {isRunning && canSteer(thread.provider ?? provider) && (
           <Pressable
-            onPress={() => setQueueNext((v) => !v)}
+            onPress={() => setFlipNext((v) => !v)}
             accessibilityRole="switch"
-            accessibilityState={{ checked: queueNext }}
-            accessibilityLabel="Send after this turn instead of steering it"
+            accessibilityState={{ checked: flipNext }}
+            accessibilityLabel={toggle.accessibilityLabel}
             testID="queue-next-toggle"
-            style={[styles.queueChip, queueNext && styles.queueChipOn]}
+            style={[styles.queueChip, toggle.queues && styles.queueChipOn]}
             hitSlop={6}
           >
-            <Text style={[styles.queueChipText, queueNext && styles.queueChipTextOn]}>
-              {queueNext ? 'Sends after this turn' : 'Steering the running turn · tap to queue'}
+            <Text style={[styles.queueChipText, toggle.queues && styles.queueChipTextOn]}>
+              {toggle.label}
             </Text>
           </Pressable>
         )}
@@ -1056,7 +1128,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder={isRunning ? (canSteer(thread.provider ?? provider) && !queueNext ? 'Steer the agent…' : 'Queue a follow-up…') : 'Message the agent…'}
+            placeholder={isRunning ? (canSteer(thread.provider ?? provider) && !toggle.queues ? 'Steer the agent…' : 'Queue a follow-up…') : 'Message the agent…'}
             placeholderTextColor={colors.textFaint}
             multiline
           />

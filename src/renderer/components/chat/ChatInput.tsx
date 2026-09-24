@@ -12,7 +12,10 @@ import {
   type ImageAttachment,
 } from '../../stores/draft-store'
 import { coversFor, reconcileSelectedModel } from '@shared/model-reconcile'
-import { canSteer, waitsForIdle, type TurnDelivery } from '@shared/turn-delivery'
+import { followUpDelivery, sendAction, waitsForIdle, type TurnDelivery } from '@shared/turn-delivery'
+import { followOffNotice, followSuggestionView, type FollowSuggestionMode } from '@shared/follow-suggestions'
+import { useLayoutStore } from '../../stores/layout-store'
+import { ArrowUpIcon, StopSquareIcon } from './chatIcons'
 import {
   modelsForAgent,
   REASONING_EFFORTS,
@@ -145,6 +148,16 @@ interface ChatInputProps {
 }
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
+
+/** The text-link buttons in the drift chip and its "off" line. */
+const driftLinkStyle = {
+  cursor: 'pointer',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--accent, #4a7dff)',
+  padding: 0,
+  fontSize: 11,
+} as const
 
 // Module-level constant - referential equality across renders so the
 // `pills` selector doesn't fabricate a new array when a session has
@@ -532,6 +545,14 @@ export function ChatInput({
       )
     : 'send'
   const composerErrorColor = recovery?.ambiguous ? 'var(--warning)' : 'var(--error)'
+  const followUpDefault = useLayoutStore((s) => s.followUpDefault)
+  const sendButton = isSubmitting
+    ? { label: 'Sending', tooltip: 'Sending…' }
+    : recoveryAction === 'retry-safe'
+      ? { label: 'Retry safely', tooltip: 'Retry safely (Enter)' }
+      : recoveryAction === 'retry'
+        ? { label: 'Retry', tooltip: 'Retry (Enter)' }
+        : sendAction(agentType, isRunning, followUpDefault)
   const canRestore = Boolean(recovery && (!recovery.restored || recovery.collisionPayload))
   // `sendError` clears on the next edit. A recovery outlives edits, so its
   // error shows only while it still offers Restore: once the failed text is
@@ -1029,6 +1050,19 @@ export function ChatInput({
 
   const followDrift = () => {
     if (driftSuggestion) swapWorktreePointer(driftSuggestion.worktreePath, driftSuggestion.branch, 'drift-follow')
+  }
+
+  const driftView = driftSuggestion
+    ? followSuggestionView(driftSuggestion.followSuggestions ?? 'auto', driftSuggestion.workedWorktrees ?? 0)
+    : null
+
+  /** "Not in this chat" / "Turn back on": saved with the conversation on its backend. */
+  const setFollowSuggestions = (mode: FollowSuggestionMode) => {
+    if (!sessionId || !driftSuggestion) return
+    useAgentStore.getState().setDriftSuggestion(sessionId, { ...driftSuggestion, followSuggestions: mode })
+    window.api.app.setConversationFollowSuggestions(sessionId, mode).catch((err: unknown) => {
+      log.warn('could not save the Follow suggestion setting', err)
+    })
   }
 
   // Lazy-load the file list the first time the user opens `@`. Cached on
@@ -1533,7 +1567,7 @@ export function ChatInput({
             value={value}
             onChange={handleEditorChange}
             onCaretChange={handleEditorCaret}
-            onEnter={({ altKey }) => { void handleSend(altKey ? 'queue' : 'steer') }}
+            onEnter={({ altKey }) => { void handleSend(followUpDelivery(followUpDefault, altKey)) }}
             onPasteFiles={addImages}
             pillsById={pillsById}
             placeholder={placeholder}
@@ -1541,35 +1575,24 @@ export function ChatInput({
           />
         </div>
         {isRunning && onInterrupt && (
-          <Button variant="destructive" onClick={onInterrupt} title="Stop the current turn (⌘⌫)">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12" rx="1" />
-            </svg>
-            Stop
-          </Button>
-        )}
-        {isRunning && canSteer(agentType) && (
           <Button
-            variant="secondary"
-            onClick={() => { void handleSend('queue') }}
-            disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
-            title="Send after this turn ends (⌥Enter)"
+            variant="destructive-outline"
+            size="icon-round"
+            onClick={onInterrupt}
+            aria-label="Stop"
+            title="Stop the current turn (⌘⌫)"
           >
-            Queue
+            <StopSquareIcon />
           </Button>
         )}
         <Button
-          onClick={() => { void handleSend('steer') }}
+          size="icon-round"
+          onClick={() => { void handleSend(followUpDefault) }}
           disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
-          title={isRunning ? (canSteer(agentType) ? 'Steer: the agent reads this at its next step (Enter)' : 'Sends after this turn ends') : undefined}
+          aria-label={sendButton.label}
+          title={sendButton.tooltip}
         >
-          {isSubmitting
-            ? 'Sending…'
-            : recoveryAction === 'retry-safe'
-              ? 'Retry safely'
-              : recoveryAction === 'retry'
-                ? 'Retry'
-                : isRunning ? (canSteer(agentType) ? 'Steer' : 'Queue') : 'Send'}
+          <ArrowUpIcon />
         </Button>
       </div>
 
@@ -1636,9 +1659,10 @@ export function ChatInput({
           </select>
         )}
 
-        {driftSuggestion && (
+        {driftSuggestion && driftView && (
           <span
             data-drift-banner
+            data-drift-view={driftView.kind}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -1647,26 +1671,46 @@ export function ChatInput({
               whiteSpace: 'nowrap',
               maxWidth: '100%',
               fontSize: 11,
-              color: 'var(--text-secondary)',
+              color: driftView.kind === 'off' ? 'var(--text-muted)' : 'var(--text-secondary)',
               background: 'var(--bg-tertiary)',
               border: '1px solid var(--border)',
               borderRadius: 4,
               padding: '3px 8px',
             }}
           >
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              Agent is working in <strong>{driftSuggestion.branch}</strong>
-            </span>
-            <button
-              type="button"
-              onClick={followDrift}
-              style={{ cursor: 'pointer', border: 'none', background: 'var(--accent, #4a7dff)', color: '#fff', borderRadius: 3, padding: '2px 8px', fontSize: 11 }}
-            >
-              Follow
-            </button>
+            {driftView.kind === 'chip' ? (
+              <>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Agent is working in <strong>{driftSuggestion.branch}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={followDrift}
+                  style={{ cursor: 'pointer', border: 'none', background: 'var(--accent, #4a7dff)', color: '#fff', borderRadius: 3, padding: '2px 8px', fontSize: 11 }}
+                >
+                  Follow
+                </button>
+                <button
+                  type="button"
+                  title="Stop suggesting a branch to follow in this chat"
+                  onClick={() => setFollowSuggestions('muted')}
+                  style={driftLinkStyle}
+                >
+                  Not in this chat
+                </button>
+              </>
+            ) : (
+              <>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{followOffNotice(driftView)}</span>
+                <button type="button" onClick={() => setFollowSuggestions('on')} style={driftLinkStyle}>
+                  Turn back on
+                </button>
+              </>
+            )}
             <button
               type="button"
               title="Dismiss"
+              aria-label="Dismiss"
               onClick={() => sessionId && useAgentStore.getState().setDriftSuggestion(sessionId, null)}
               style={{ cursor: 'pointer', border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: 12 }}
             >
@@ -1724,11 +1768,10 @@ export function ChatInput({
           </span>
         )}
 
-        {footerLayout.showHint && (
+        {/* Idle only: while a turn runs, the send button's tooltip names the keys. */}
+        {footerLayout.showHint && !isRunning && (
           <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            {isRunning && canSteer(agentType)
-              ? 'Enter steer · ⌥Enter queue · Shift+Enter newline'
-              : 'Enter send · Shift+Enter newline'}
+            Enter send · Shift+Enter newline
           </span>
         )}
       </div>

@@ -1,0 +1,115 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "composer-follow-ups",
+  "summary": "Five composer follow-ups. (1) The desktop composer's Stop / Queue / Steer / Send text buttons become two 28px round icon buttons, Stop only while a turn runs; the send arrow does the follow-up default mid-turn and its tooltip names both keys. (2) A 'Follow-up while the agent works: Steer / Queue' setting (desktop settings DB key chat.followUpDefault, default Steer; phone prefs per device) decides what Enter does, and Alt/Option+Enter (the phone's chip) does the other. (3) A message the backend holds until the running turn ends is announced (turn.queued / turn.dequeued), listed (provider:list-queued-turns) and can be sent into the running turn now (provider:promote-queued-turn) or taken back (provider:cancel-queued-turn), behind the turn_queue_controls_v1 capability; desktop and phone show it as a dashed Queued bubble with Send now and Cancel. Claude withdraws its priority 'later' message with the SDK's cancelAsyncMessage, Codex splices its queue and promotes with turn/steer, OpenCode can only cancel. The registry releases a cancelled message's outstanding turn, and a promoted one's only where the steer joins the running turn (Codex). (4) The Recents group count is plain grey text. (5) The drift chip gains 'Not in this chat' (per conversation, resolved through resolveRootThreadId), and a chat that has worked in more than two worktrees shows a one-line notice with Turn back on instead.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/chat/QueuedTurnBar.tsx",
+        "src/renderer/components/chat/chatIcons.tsx",
+        "src/renderer/components/ui/button.tsx",
+        "src/renderer/components/SettingsModal.tsx",
+        "src/renderer/components/sidebar/RecentSessionsSection.tsx",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/stores/layout-store.ts",
+        "src/renderer/services/pendingRequestRecovery.ts",
+        "e2e/queue-steer.e2e.mjs",
+        "e2e/visual-regressions.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/ConnectionsScreen.tsx",
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/stores/prefs.ts",
+        "apps/mobile/src/lib/heldTurns.ts",
+        "apps/mobile/src/screens/__tests__/heldTurnBar.test.tsx",
+        "tests/unit/mobile-held-turns.test.ts",
+        "tests/unit/mobile-chat-store.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "android_composer_follow_ups",
+      "followUpRelease": "Native Android composer moves to the submit-user-turn envelope with steer/queue delivery, the per-device follow-up default and Queued rows with Send now and Cancel. Until then it decodes turn.queued / turn.dequeued (no unsupported-event notices, and a cancel from another client removes the bubble) and sends mid-turn messages as before.",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadEventDecoder.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/turn-delivery.ts",
+        "src/shared/queued-turns.ts",
+        "src/shared/follow-suggestions.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/ws-protocol.ts",
+        "src/main/provider/queued-turn-ledger.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/types.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/provider/adapters/demo-adapter.ts",
+        "src/main/ipc/app.ts",
+        "src/preload/index.ts",
+        "apps/mobile/src/lib/api.ts",
+        "tests/unit/provider-registry-queued-turns.test.ts",
+        "tests/unit/claude-adapter-queue.test.ts",
+        "tests/unit/codex-adapter.test.ts",
+        "tests/unit/opencode-acp-adapter.test.ts",
+        "tests/unit/demo-adapter-queue.test.ts",
+        "tests/unit/queued-turns.test.ts",
+        "tests/unit/turn-delivery.test.ts",
+        "tests/unit/follow-suggestions.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "src/main/db/conversations.ts",
+        "src/main/db/messages.ts",
+        "apps/mobile/src/stores/prefs.ts",
+        "apps/mobile/src/stores/chat.ts",
+        "tests/unit/conversation-rotation-fallback.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/ws-protocol.ts",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test",
+      "npm test --prefix apps/mobile and cd apps/mobile && npx tsc --noEmit",
+      "cd apps/android && ./gradlew testDebugUnitTest",
+      "npm run build:fast && node e2e/queue-steer.e2e.mjs (3 runs: the send button steers and its tooltip names both keys, Alt+Enter shows a Queued bubble that runs as its own second turn in order start,end,start,end; behind an approval, Send now steers a queued message into the running turn and Cancel returns another to the composer and deletes its stored row)",
+      "SB_VISUAL_SCOPE=screens node e2e/visual-regressions.e2e.mjs (2 runs; chat, approval, composer-running and sidebar-needs-you re-baselined and queued-message added, in Dark, Light and Translucent)",
+      "Claude SDK probe (Haiku): a priority 'later' message with a uuid, cancelled with query.cancelAsyncMessage while the first turn ran, returned true and never ran; the same run without the cancel ran it as a second turn"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The phone's Queued row, Send now, Cancel and the follow-up setting were not tapped on a device; they are covered by vitest (rules, store) and jest (render).",
+      "Promote and cancel against live Codex and OpenCode binaries; they are covered by the adapters' unit tests over their mocked wire.",
+      "Cancelling a queued message that carried images puts back its text only; the images are not restored to the composer.",
+      "The Follow chip's 'Not in this chat' and the more-than-two-worktrees notice were not driven in the app; the rule and the storage are unit-tested."
+    ]
+  }
+}

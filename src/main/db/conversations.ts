@@ -8,6 +8,7 @@ import { SqliteConversationForkStore } from './conversation-fork'
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
 import type { AgentProvider } from '@shared/types'
 import { getDb } from './database'
+import { parseFollowSuggestionMode, recordWorkedWorktree, type FollowSuggestionMode } from '@shared/follow-suggestions'
 
 const log = createLogger('db')
 
@@ -731,6 +732,56 @@ export function setConversationRuntimeMode(id: string, mode: string): void {
   getDb().prepare(
     'UPDATE conversations SET runtime_mode = ?, updated_at = ? WHERE id = ?'
   ).run(mode, Date.now(), resolveRootThreadId(id))
+}
+
+export interface ConversationFollowSuggestions {
+  mode: FollowSuggestionMode
+  /** Distinct worktree paths the conversation has worked in. */
+  workedWorktrees: readonly string[]
+}
+
+function parseWorkedWorktrees(value: string | null | undefined): readonly string[] {
+  if (!value) return []
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : []
+  } catch (err) {
+    log.warn('worked_worktrees is not valid JSON, starting over', err)
+    return []
+  }
+}
+
+/**
+ * The Follow chip's per-conversation state. Resolves through
+ * `resolveRootThreadId` like every per-conversation setting (see AGENTS.md).
+ */
+export function getConversationFollowSuggestions(id: string): ConversationFollowSuggestions {
+  const row = getDb().prepare(
+    'SELECT follow_suggestions, worked_worktrees FROM conversations WHERE id = ?'
+  ).get(resolveRootThreadId(id)) as { follow_suggestions: string | null; worked_worktrees: string | null } | undefined
+  return {
+    mode: parseFollowSuggestionMode(row?.follow_suggestions),
+    workedWorktrees: parseWorkedWorktrees(row?.worked_worktrees),
+  }
+}
+
+/** Leaves `updated_at` alone: a display preference must not reorder the sidebar. */
+export function setConversationFollowSuggestions(id: string, mode: FollowSuggestionMode): boolean {
+  return getDb().prepare(
+    'UPDATE conversations SET follow_suggestions = ? WHERE id = ?'
+  ).run(mode === 'auto' ? null : mode, resolveRootThreadId(id)).changes > 0
+}
+
+/** Add the worktrees a drift check saw the agent in; returns the new state. */
+export function recordConversationWorkedWorktrees(id: string, paths: readonly string[]): ConversationFollowSuggestions {
+  const current = getConversationFollowSuggestions(id)
+  const worked = paths.reduce(recordWorkedWorktree, current.workedWorktrees)
+  if (worked !== current.workedWorktrees) {
+    getDb().prepare(
+      'UPDATE conversations SET worked_worktrees = ? WHERE id = ?'
+    ).run(JSON.stringify(worked), resolveRootThreadId(id))
+  }
+  return { mode: current.mode, workedWorktrees: worked }
 }
 
 /**

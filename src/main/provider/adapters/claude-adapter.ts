@@ -12,6 +12,7 @@ import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { execSync, execFile } from 'child_process'
+import { randomUUID } from 'crypto'
 import { inferModelTier } from '@shared/models'
 import { accessSync, constants, existsSync } from 'fs'
 import { homedir } from 'os'
@@ -131,6 +132,28 @@ const log = createLogger('provider:claude')
 
 // SDK types - dynamic import at runtime
 type SDKQuery = import('@anthropic-ai/claude-agent-sdk').Query
+/**
+ * `cancelAsyncMessage` (control request `cancel_async_message`) is on the
+ * SDK's query object but not in its public typings: it drops a `later`
+ * message from the CLI's command queue by uuid, and resolves false once the
+ * message has left that queue to run.
+ */
+type CancellableQuery = SDKQuery & { cancelAsyncMessage?: (messageUuid: string) => Promise<boolean> }
+
+/** A message sent with `priority: 'later'`, waiting for the running turn to end. */
+interface QueuedClaudeTurn {
+  /** The registry's id for it (its chat row); absent on callers that pass none. */
+  id?: string
+  /** The SDK message uuid, which is what the CLI can cancel it by. */
+  uuid: string
+  message: string
+  runtimeMode?: RuntimeMode
+  images?: Array<{ url: string; mimeType?: string }>
+  /** The pushed message itself, to take it back while the SDK has not read it. */
+  sdkMessage: SDKUserMessage
+  /** A cancel is in flight; a turn end waits for its result before starting anything. */
+  withdrawing?: boolean
+}
 type SDKMessage = import('@anthropic-ai/claude-agent-sdk').SDKMessage
 type SDKUserMessage = import('@anthropic-ai/claude-agent-sdk').SDKUserMessage
 type SDKOptions = import('@anthropic-ai/claude-agent-sdk').Options
@@ -427,6 +450,14 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
   private waiting: Array<(result: IteratorResult<SDKUserMessage>) => void> = []
   private closed = false
 
+  /** Take back a message the SDK has not read yet. */
+  remove(message: SDKUserMessage): boolean {
+    const index = this.buffer.indexOf(message)
+    if (index < 0) return false
+    this.buffer.splice(index, 1)
+    return true
+  }
+
   push(message: SDKUserMessage): void {
     if (this.closed) return
     const waiter = this.waiting.shift()
@@ -580,8 +611,10 @@ interface ActiveSession {
    * the user hasn't sent yet.
    */
   turnStartedAt: number | null
-  /** Runtime modes of messages sent with `priority: 'later'`, oldest first; one per queued turn. */
-  queuedModes: Array<RuntimeMode | undefined>
+  /** Messages sent with `priority: 'later'`, oldest first; one per queued turn. */
+  queuedTurns: QueuedClaudeTurn[]
+  /** A turn ended while the head of the queue was being cancelled; start the next once that settles. */
+  startAfterWithdraw?: boolean
   /**
    * Effective model id from the last `getContextUsage()` poll, e.g.
    * `claude-fable-5`. The rejection payload never carries the model, yet the
@@ -712,7 +745,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       skills: [],
       models: opts.knownModels?.length ? { models: opts.knownModels, identity: claudeExecutableIdentity() } : null,
       turnStartedAt: null,
-      queuedModes: [],
+      queuedTurns: [],
       lastKnownModel: null,
       instanceEnv: opts.resolvedEnv ?? {},
       instanceOauthDir: opts.resolvedOauthDir ?? null,
@@ -735,6 +768,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
     delivery?: TurnDelivery,
+    queuedId?: string,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) throw new Error(`Session ${threadId} not found`)
@@ -794,17 +828,22 @@ export class ClaudeAdapter implements ProviderAdapter {
     // { type: 'user', message: MessageParam, parent_tool_use_id: string | null }
     // Mid-turn, the SDK reads a message at the next tool boundary (a steer).
     // `later` holds it until the running turn ends: measured, a separate turn.
+    // A queued message carries a uuid, which is what lets it be cancelled.
+    const uuid = queued ? randomUUID() : undefined
     const userMsg: SDKUserMessage = {
       type: 'user',
       message: { role: 'user', content },
       parent_tool_use_id: null,
-      ...(queued ? { priority: 'later' as const } : {}),
+      ...(queued ? { priority: 'later' as const, uuid } : {}),
     } as SDKUserMessage
     active.prompt.push(userMsg)
     // A queued message leaves the running turn's clock and watchdog alone
     // (it may be suspended on an approval). Its own turn starts when that
     // one ends, in startQueuedTurn.
-    if (queued) active.queuedModes.push(runtimeMode)
+    if (queued && uuid) {
+      active.queuedTurns.push({ id: queuedId, uuid, message, runtimeMode, images, sdkMessage: userMsg })
+      if (queuedId) active.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
+    }
 
     // If we haven't started the SDK query yet, kick it off now
     if (!active.draining) {
@@ -1259,10 +1298,16 @@ export class ClaudeAdapter implements ProviderAdapter {
    * later send starts a fresh prompt queue.
    */
   private dropQueuedTurns(threadId: string, active: ActiveSession): void {
-    if (active.queuedModes.length === 0) return
-    const count = active.queuedModes.length
-    active.queuedModes = []
+    // Nothing is left to start once a withdrawal settles.
+    active.startAfterWithdraw = false
+    if (active.queuedTurns.length === 0) return
+    const dropped = active.queuedTurns
+    const count = dropped.length
+    active.queuedTurns = []
     active.prompt = new PromptQueue()
+    for (const turn of dropped) {
+      if (turn.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: turn.id, reason: 'dropped' })
+    }
     log.warn(`dropping ${count} queued message(s): the query stopped before they ran`, { threadId })
     active.onEvent({
       type: 'error',
@@ -1272,14 +1317,90 @@ export class ClaudeAdapter implements ProviderAdapter {
     for (let i = 0; i < count; i++) active.onEvent({ type: 'turn.completed', threadId })
   }
 
+  async cancelQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
+    const active = this.sessions.get(threadId)
+    const turn = active?.queuedTurns.find((t) => t.id === queuedId)
+    if (!active || !turn || !(await this.withdrawQueuedTurn(threadId, active, turn))) return false
+    active.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'cancelled' })
+    return true
+  }
+
+  /**
+   * Withdraw the `later` message and send the same content as a steer, which
+   * the SDK reads at the running turn's next tool boundary. If the turn ended
+   * meanwhile the steer simply starts a turn, as any send to an idle session.
+   */
+  async promoteQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
+    const active = this.sessions.get(threadId)
+    const turn = active?.queuedTurns.find((t) => t.id === queuedId)
+    if (!active || !turn || !(await this.withdrawQueuedTurn(threadId, active, turn))) return false
+    try {
+      // No runtime mode: the steer joins the running turn, whose mode stands.
+      await this.sendTurn(threadId, turn.message, undefined, turn.images)
+    } catch (err) {
+      // Withdrawn from both queues and not sent: say so, and end its turn.
+      active.onEvent({ type: 'error', threadId, message: 'A queued message could not be sent now. Send it again.' })
+      active.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'dropped' })
+      active.onEvent({ type: 'turn.completed', threadId })
+      throw err
+    }
+    active.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'promoted' })
+    return true
+  }
+
+  /**
+   * Take a queued message out of both queues it can be in: ours, when the SDK
+   * has not read it yet, or the CLI's command queue. False when it already
+   * left to run as a turn.
+   */
+  private async withdrawQueuedTurn(threadId: string, active: ActiveSession, turn: QueuedClaudeTurn): Promise<boolean> {
+    let withdrawn = active.prompt.remove(turn.sdkMessage)
+    if (!withdrawn) {
+      const query = active.query as CancellableQuery | null
+      if (!query?.cancelAsyncMessage) {
+        log.warn(`cannot withdraw a queued message on ${threadId}: the query offers no cancelAsyncMessage`)
+        return false
+      }
+      turn.withdrawing = true
+      try {
+        withdrawn = await query.cancelAsyncMessage(turn.uuid)
+      } catch (err) {
+        // Unknown outcome: the CLI keeps what it could not cancel, so the
+        // message still runs, and a turn end waiting on this starts it.
+        log.warn(`cancelAsyncMessage failed on ${threadId}; treating the message as not withdrawn`, err)
+        withdrawn = false
+      } finally {
+        turn.withdrawing = false
+      }
+    }
+    if (withdrawn) {
+      const index = active.queuedTurns.indexOf(turn)
+      if (index >= 0) active.queuedTurns.splice(index, 1)
+    }
+    if (active.startAfterWithdraw) {
+      active.startAfterWithdraw = false
+      this.startQueuedTurn(active)
+    }
+    return withdrawn
+  }
+
   /**
    * The running turn ended. A message queued with `priority: 'later'` now
    * starts as its own turn: give it a clock and a watchdog, and apply the
    * runtime mode it was sent with. Called from every path that ends a turn.
    */
   private startQueuedTurn(active: ActiveSession): void {
-    if (active.queuedModes.length === 0) return
-    const mode = active.queuedModes.shift()
+    // The CLI runs the head of its queue. If that one is being cancelled,
+    // only the cancel result says which message runs now, so wait for it.
+    const head = active.queuedTurns[0]
+    if (!head) return
+    if (head.withdrawing) {
+      active.startAfterWithdraw = true
+      return
+    }
+    const next = active.queuedTurns.shift()!
+    const mode = next.runtimeMode
+    if (next.id) active.onEvent({ type: 'turn.dequeued', threadId: active.session.threadId, messageId: next.id, reason: 'started' })
     active.turnStartedAt = Date.now()
     active.watchdog.turnStarted(Date.now())
     if (mode && mode !== active.session.runtimeMode) {
@@ -1393,6 +1514,7 @@ export class ClaudeAdapter implements ProviderAdapter {
   async stopSession(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
+    active.startAfterWithdraw = false
 
     // Reap the spawned `claude` CLI subprocess - closing the queue + aborting
     // doesn't kill it, so each stopped session would leak an OS process.

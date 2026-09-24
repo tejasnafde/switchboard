@@ -381,6 +381,28 @@ describe('OpenCode queued turns', () => {
     expect(prompt.mock.calls[1][0].prompt).toEqual([{ type: 'text', text: 'queued' }])
   })
 
+  it('takes a held message back on cancel, so the prompt ending starts nothing', async () => {
+    const adapter = new OpencodeAcpAdapter()
+    let finishFirst!: () => void
+    const prompt = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = () => resolve({}) }))
+      .mockImplementation(() => Promise.resolve({}))
+    const active = fakeSession({ prompt })
+    ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
+
+    await adapter.sendTurn(tid, 'first')
+    await adapter.sendTurn(tid, 'never mind', undefined, undefined, 'queue', 'remote_q1')
+    expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.queued', threadId: tid, messageId: 'remote_q1' })
+    await expect(adapter.cancelQueuedTurn(tid, 'remote_q1')).resolves.toBe(true)
+    expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: tid, messageId: 'remote_q1', reason: 'cancelled' })
+
+    finishFirst()
+    await vi.waitFor(() => expect(active.inFlightPrompt).toBeNull())
+    expect(prompt).toHaveBeenCalledTimes(1)
+    // OpenCode cannot steer, so there is nothing to promote with.
+    expect((adapter as { promoteQueuedTurn?: unknown }).promoteQueuedTurn).toBeUndefined()
+  })
+
   it('ends a prompt that fails in flight with turn.completed', async () => {
     const adapter = new OpencodeAcpAdapter()
     const prompt = vi.fn(() => Promise.reject(new Error('transport lost')))

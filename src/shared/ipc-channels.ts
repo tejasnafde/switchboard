@@ -40,6 +40,8 @@ export const AppChannels = {
   LIST_ANCESTRY: 'app:list-ancestry',
   GET_CONVERSATION_RUNTIME_MODE: 'app:get-conversation-runtime-mode',
   SET_CONVERSATION_RUNTIME_MODE: 'app:set-conversation-runtime-mode',
+  /** Per-conversation Follow-chip setting (`FollowSuggestionMode`). */
+  SET_CONVERSATION_FOLLOW_SUGGESTIONS: 'app:set-conversation-follow-suggestions',
   GET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:get-conversation-provider-instance-id',
   SET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:set-conversation-provider-instance-id',
   GET_CONVERSATION_MODEL: 'app:get-conversation-model',
@@ -307,6 +309,15 @@ export const ProviderChannels = {
    * missing. Gated behind the `pending_requests_v1` backend capability.
    */
   GET_PENDING_REQUESTS: 'provider:get-pending-requests',
+  /**
+   * Messages the backend holds until the running turn ends (`QueuedTurnSummary[]`),
+   * for a client that opens a thread or re-seeds after a resume gap. Promote
+   * sends one into the running turn now; cancel takes it back. All three are
+   * gated behind the `turn_queue_controls_v1` backend capability.
+   */
+  LIST_QUEUED_TURNS: 'provider:list-queued-turns',
+  PROMOTE_QUEUED_TURN: 'provider:promote-queued-turn',
+  CANCEL_QUEUED_TURN: 'provider:cancel-queued-turn',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
   /**

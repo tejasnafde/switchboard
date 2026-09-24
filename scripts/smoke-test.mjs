@@ -75,7 +75,11 @@ const child = spawn(command, args, {
   env: electronEnv,
 })
 
-const TIMEOUT_MS = 30_000
+// Under xvfb a cold runner can take most of 30s just to bring up the X
+// server and Chromium: CI run 35994904488 reached app.whenReady() at 29.2s
+// and was killed before it could exit. The check is whether main boots, not
+// how fast a shared runner is, so give xvfb the headroom.
+const TIMEOUT_MS = needsXvfb ? 90_000 : 30_000
 const timer = setTimeout(() => {
   console.error(`[smoke-test] timed out after ${TIMEOUT_MS}ms - main never reached app.whenReady()`)
   child.kill('SIGKILL')

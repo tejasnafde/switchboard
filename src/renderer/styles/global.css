@@ -787,23 +787,11 @@ html, body, #root {
 }
 
 .sidebar-recent-count {
-  min-width: 16px;
-  padding: 0 5px;
-  border-radius: 999px;
-  font-size: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
   line-height: 15px;
-  text-align: center;
   font-variant-numeric: tabular-nums;
-}
-
-.sidebar-recent-count[data-group='needs-you'] {
-  color: var(--error);
-  background: color-mix(in srgb, var(--error) 16%, transparent);
-}
-
-.sidebar-recent-count[data-group='working'] {
-  color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 16%, transparent);
 }
 
 .sidebar-recent-row {
@@ -856,22 +844,10 @@ html, body, #root {
 .sidebar-recent-dot[data-dot='finished'] { background: var(--success); }
 
 /* Translucent shows whatever sits behind the window, and a red or amber dot
-   on a warm wallpaper disappears. A light ring and solid count pills keep
-   both readable on any backdrop. */
+   on a warm wallpaper disappears. A light ring keeps it readable on any
+   backdrop. */
 .theme-translucent .sidebar-recent-dot:not([data-dot='idle']) {
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85);
-}
-
-.theme-translucent .sidebar-recent-count[data-group] {
-  color: #fff;
-}
-
-.theme-translucent .sidebar-recent-count[data-group='needs-you'] {
-  background: var(--error);
-}
-
-.theme-translucent .sidebar-recent-count[data-group='working'] {
-  background: color-mix(in srgb, var(--warning) 85%, #000);
 }
 
 .sidebar-recent-title {

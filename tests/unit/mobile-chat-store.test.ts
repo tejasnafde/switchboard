@@ -259,3 +259,31 @@ describe('user.message echo', () => {
     expect(useChatStore.getState().threads[KEY]?.items ?? []).toHaveLength(0)
   })
 })
+
+describe('messages the backend holds', () => {
+  const held = { threadId: THREAD, messageId: 'remote_q', text: 'later', queuedAt: 1 }
+  const heldTurns = () => useChatStore.getState().threads[KEY]?.heldTurns ?? {}
+
+  it('marks a queued message and unmarks it when it runs', () => {
+    useChatStore.getState().addUserMessage(KEY, 'later', [], 'remote_q')
+    ingest({ type: 'turn.queued', ...held })
+    expect(heldTurns()).toEqual({ remote_q: held })
+    ingest({ type: 'turn.dequeued', threadId: THREAD, messageId: 'remote_q', reason: 'started' })
+    expect(heldTurns()).toEqual({})
+    expect(items().map((i) => i.id)).toEqual(['remote_q'])
+  })
+
+  it('drops the bubble of a cancelled message, live or from history', () => {
+    useChatStore.getState().addUserMessage(KEY, 'later', [], 'h-remote_q')
+    ingest({ type: 'turn.queued', ...held })
+    ingest({ type: 'turn.dequeued', threadId: THREAD, messageId: 'remote_q', reason: 'cancelled' })
+    expect(items()).toEqual([])
+  })
+
+  it('re-lists from the backend and never caches what it holds', async () => {
+    useChatStore.getState().setHeldTurns(KEY, [held])
+    expect(Object.keys(heldTurns())).toEqual(['remote_q'])
+    const { prunePersistedThreads } = await import('../../apps/mobile/src/stores/chat')
+    expect(prunePersistedThreads(useChatStore.getState().threads)[KEY]).not.toHaveProperty('heldTurns')
+  })
+})

@@ -32,6 +32,8 @@ const conversations = new Map<string, {
   last_read_at?: number | null
   pending_handoff_from?: string | null
   title?: string | null
+  follow_suggestions?: string | null
+  worked_worktrees?: string | null
 }>()
 
 vi.mock('better-sqlite3', () => {
@@ -75,6 +77,10 @@ vi.mock('better-sqlite3', () => {
           if (/SELECT pending_handoff_from FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
             return row ? { pending_handoff_from: row.pending_handoff_from ?? null } : undefined
+          }
+          if (/SELECT follow_suggestions, worked_worktrees FROM conversations WHERE id = \?/.test(sql)) {
+            const row = conversations.get(args[0] as string)
+            return row ? { follow_suggestions: row.follow_suggestions ?? null, worked_worktrees: row.worked_worktrees ?? null } : undefined
           }
           if (/SELECT agent_type FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
@@ -135,6 +141,20 @@ vi.mock('better-sqlite3', () => {
             row.last_read_at = at
             return { changes: 1 }
           }
+          if (/UPDATE conversations SET follow_suggestions = \?/.test(sql)) {
+            const [mode, id] = args as [string | null, string]
+            const row = conversations.get(id)
+            if (!row) return { changes: 0 }
+            row.follow_suggestions = mode
+            return { changes: 1 }
+          }
+          if (/UPDATE conversations SET worked_worktrees = \?/.test(sql)) {
+            const [worked, id] = args as [string, string]
+            const row = conversations.get(id)
+            if (!row) return { changes: 0 }
+            row.worked_worktrees = worked
+            return { changes: 1 }
+          }
           if (/UPDATE conversations SET pending_handoff_from = \?/.test(sql)) {
             const [from, , id] = args as [string | null, number, string]
             const row = conversations.get(id)
@@ -189,6 +209,9 @@ const {
   setConversationPendingHandoff,
   setConversationProviderSelection,
   updateConversationTitle,
+  getConversationFollowSuggestions,
+  setConversationFollowSuggestions,
+  recordConversationWorkedWorktrees,
 } = await import('../../src/main/db/database')
 
 beforeEach(() => {
@@ -392,5 +415,27 @@ describe('rename survives Claude session-id rotation', () => {
     expect(updateConversationTitle('uuid-abc', 'New')).toBe(true)
     expect(conversations.get('agent_123')?.title).toBe('New')
     expect(conversations.has('uuid-abc')).toBe(false)
+  })
+})
+
+describe('Follow-chip setting survives Claude session-id rotation', () => {
+  it('writes and reads the mode through a rotated UUID on the synthetic parent row', () => {
+    conversations.set('agent_123', {})
+    threadSessions.set('uuid-abc', 'agent_123')
+    expect(setConversationFollowSuggestions('uuid-abc', 'muted')).toBe(true)
+    expect(conversations.get('agent_123')?.follow_suggestions).toBe('muted')
+    expect(conversations.has('uuid-abc')).toBe(false)
+    expect(getConversationFollowSuggestions('uuid-abc').mode).toBe('muted')
+    setConversationFollowSuggestions('uuid-abc', 'auto')
+    expect(conversations.get('agent_123')?.follow_suggestions).toBeNull()
+  })
+
+  it('records distinct worked worktrees on the root row', () => {
+    conversations.set('agent_123', {})
+    threadSessions.set('uuid-abc', 'agent_123')
+    recordConversationWorkedWorktrees('uuid-abc', ['/repo', '/wt/a'])
+    const state = recordConversationWorkedWorktrees('agent_123', ['/repo', '/wt/b'])
+    expect(state.workedWorktrees).toEqual(['/repo', '/wt/a', '/wt/b'])
+    expect(JSON.parse(conversations.get('agent_123')?.worked_worktrees ?? '[]')).toHaveLength(3)
   })
 })

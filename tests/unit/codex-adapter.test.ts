@@ -1753,6 +1753,84 @@ describe('CodexAdapter', () => {
     })
   })
 
+  it('announces a held message and takes it back on cancel, so the turn end starts nothing', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.sendTurn('thread-1', 'never mind this', undefined, undefined, 'queue', 'remote_q1')
+    expect(onEvent).toHaveBeenCalledWith({ type: 'turn.queued', threadId: 'thread-1', messageId: 'remote_q1' })
+
+    await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(true)
+    await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(false)
+    expect(onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'cancelled' })
+
+    writes.length = 0
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
+    }) + '\n')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(writes.map((w) => JSON.parse(w)).some((m) => m.method === 'turn/start')).toBe(false)
+  })
+
+  it('promotes a held message with turn/steer into the running turn', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.sendTurn('thread-1', 'also check the parser', undefined, undefined, 'queue', 'remote_q1')
+    writes.length = 0
+
+    await expect(adapter.promoteQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(true)
+    const frames = writes.map((w) => JSON.parse(w))
+    expect(frames.find((m) => m.method === 'turn/steer')?.params).toMatchObject({
+      expectedTurnId: 'turn-1',
+      input: [{ type: 'text', text: 'also check the parser' }],
+    })
+    expect(frames.some((m) => m.method === 'turn/start')).toBe(false)
+    expect(onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'promoted' })
+  })
+
+  it('drops what it holds, and ends each accepted turn, when the process exits', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.sendTurn('thread-1', 'never runs', undefined, undefined, 'queue', 'remote_q1')
+    onEvent.mockClear()
+    lastChild?.emit('close', 1)
+
+    const events = onEvent.mock.calls.map(([e]) => e)
+    expect(events).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'dropped' })
+    expect(events.filter((e) => e.type === 'turn.completed')).toHaveLength(1)
+    await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(false)
+  })
+
+  it('says a queued message started when the turn ahead of it ends', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.sendTurn('thread-1', 'next', undefined, undefined, 'queue', 'remote_q1')
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
+    }) + '\n')
+    await vi.waitFor(() => expect(onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' }))
+    await expect(adapter.promoteQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(false)
+  })
+
   it('waits for an in-flight turn start response before steering a follow-up', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

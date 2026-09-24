@@ -82,6 +82,8 @@ interface DemoSession {
   runtimeMode: RuntimeMode
   /** Runs still going. A steer starts a second one beside the first. */
   turns: Set<DemoTurn>
+  /** Queued messages that have not started, oldest first. */
+  queued: DemoQueuedTurn[]
   /** Approvals a script is blocked on, by request id. */
   approvals: Map<string, (decision: ApprovalDecision | 'cancelled') => void>
   /** Claude-shaped transcript this session appends to, when enabled. */
@@ -95,6 +97,11 @@ interface DemoTurn {
   scriptedMs: number
   /** Set by interrupt or stop; a later message does not clear it. */
   cancelled: boolean
+}
+
+interface DemoQueuedTurn {
+  id?: string
+  message: string
 }
 
 /** Long inline code and file-pill paths in lists (e2e/message-overflow.e2e.mjs). */
@@ -173,6 +180,7 @@ export class DemoAdapter implements ProviderAdapter {
       runtimeMode: opts.runtimeMode ?? 'sandbox',
       running: Promise.resolve(),
       turns: new Set(),
+      queued: [],
       approvals: new Map(),
     }
     const transcriptRoot = process.env.SB_DEMO_CLAUDE_TRANSCRIPT_DIR
@@ -204,18 +212,58 @@ export class DemoAdapter implements ProviderAdapter {
     runtimeMode?: RuntimeMode,
     _images?: Array<{ url: string; mimeType?: string }>,
     delivery?: TurnDelivery,
+    queuedId?: string,
   ): Promise<void> {
     const session = this.sessions.get(threadId)
     if (!session) throw new Error(`No demo session: ${threadId}`)
     if (runtimeMode) session.runtimeMode = runtimeMode
-    // Like the real adapters: a queued message runs after the current script.
-    const previous = delivery === 'queue' ? session.running : Promise.resolve()
-    const task = previous.then(() => this.run(threadId, session, message)).catch((err) => {
+    // Like the real adapters: a queued message waits for the current script,
+    // and can be cancelled or promoted until then.
+    if (delivery === 'queue' && (session.turns.size > 0 || session.queued.length > 0)) {
+      const entry: DemoQueuedTurn = { id: queuedId, message }
+      session.queued.push(entry)
+      if (queuedId) session.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
+      session.running = this.guard(threadId, session, session.running.then(() => {
+        const index = session.queued.indexOf(entry)
+        if (index < 0) return
+        session.queued.splice(index, 1)
+        if (entry.id) session.onEvent({ type: 'turn.dequeued', threadId, messageId: entry.id, reason: 'started' })
+        return this.run(threadId, session, message)
+      }))
+      return
+    }
+    session.running = this.guard(threadId, session, this.run(threadId, session, message))
+  }
+
+  private guard(threadId: string, session: DemoSession, task: Promise<void>): Promise<void> {
+    return task.catch((err) => {
       log.error('demo script failed', err)
       session.onEvent({ type: 'error', threadId, message: err instanceof Error ? err.message : String(err) })
       session.onEvent({ type: 'status', threadId, status: 'idle' })
     })
-    session.running = task
+  }
+
+  private takeQueued(session: DemoSession | undefined, queuedId: string): DemoQueuedTurn | null {
+    const index = session?.queued.findIndex((entry) => entry.id === queuedId) ?? -1
+    if (!session || index < 0) return null
+    return session.queued.splice(index, 1)[0]
+  }
+
+  async cancelQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
+    const session = this.sessions.get(threadId)
+    if (!session || !this.takeQueued(session, queuedId)) return false
+    session.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'cancelled' })
+    return true
+  }
+
+  /** Runs the message beside the current script, which is what a steer is here. */
+  async promoteQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
+    const session = this.sessions.get(threadId)
+    const entry = this.takeQueued(session, queuedId)
+    if (!session || !entry) return false
+    session.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'promoted' })
+    void this.guard(threadId, session, this.run(threadId, session, entry.message))
+    return true
   }
 
   private async run(threadId: string, session: DemoSession, message: string): Promise<void> {
@@ -374,6 +422,9 @@ export class DemoAdapter implements ProviderAdapter {
     const session = this.sessions.get(threadId)
     for (const turn of session?.turns ?? []) turn.cancelled = true
     for (const resolve of session?.approvals.values() ?? []) resolve('cancelled')
+    for (const entry of session?.queued.splice(0) ?? []) {
+      if (entry.id) session?.onEvent({ type: 'turn.dequeued', threadId, messageId: entry.id, reason: 'dropped' })
+    }
     this.sessions.delete(threadId)
   }
 

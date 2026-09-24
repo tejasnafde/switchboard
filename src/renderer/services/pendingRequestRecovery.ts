@@ -81,6 +81,7 @@ export function pendingRequestToChatMessage(event: PendingBlockingEvent, timesta
  * that answer older than the store, so it is discarded and asked again.
  */
 export async function recoverPendingRequests(threadId: string, { cards = true } = {}, attempt = 1): Promise<void> {
+  if (attempt === 1) void recoverQueuedTurns(threadId)
   const getPendingRequests = window.api.provider?.getPendingRequests
   if (!getPendingRequests) return
   const revisionOf = () => useAgentStore.getState().sessions.find((s) => s.id === threadId)?.pendingRequestRevision ?? 0
@@ -104,5 +105,36 @@ export async function recoverPendingRequests(threadId: string, { cards = true } 
     }
   } catch (err) {
     log.warn(`pending request recovery failed for ${threadId}`, err)
+  }
+}
+
+/**
+ * Ask the backend which of this thread's messages it still holds until the
+ * running turn ends, so the queued rows survive a reload or a resume gap.
+ * Every caller of `recoverPendingRequests` wants this too, so it runs from
+ * there.
+ */
+async function recoverQueuedTurns(threadId: string, attempt = 1): Promise<void> {
+  const revisionOf = () => useAgentStore.getState().sessions.find((s) => s.id === threadId)?.queuedTurnRevision ?? 0
+  try {
+    const revision = revisionOf()
+    const turns = await window.api.provider.listQueuedTurns(threadId) ?? []
+    const session = useAgentStore.getState().sessions.find((s) => s.id === threadId)
+    if (!session || (turns.length === 0 && !session.queuedTurns)) return
+    // A live queued/dequeued event landed while the backend answered: the
+    // answer is older than the store, so ask again rather than undo it.
+    if (revisionOf() !== revision) {
+      if (attempt < MAX_RECOVERY_ATTEMPTS) return recoverQueuedTurns(threadId, attempt + 1)
+      log.warn(`queued turn recovery for ${threadId} kept racing live events; keeping the live state`)
+      return
+    }
+    useAgentStore.getState().setQueuedTurns(threadId, turns)
+  } catch (err) {
+    // A backend from before turn_queue_controls_v1 has no such channel.
+    if (/no handler/i.test(err instanceof Error ? err.message : String(err))) {
+      log.debug(`backend for ${threadId} cannot list queued turns`, err)
+      return
+    }
+    log.warn(`queued turn recovery failed for ${threadId}`, err)
   }
 }

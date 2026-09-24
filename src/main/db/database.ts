@@ -505,6 +505,17 @@ function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE conversations ADD COLUMN origin_source TEXT')
   }
 
+  // Migration (2026-09-24): the Follow chip per conversation. `follow_suggestions`
+  // is the user's choice (NULL = auto); `worked_worktrees` a JSON array of the
+  // distinct worktrees drift checks saw the agent in, which turns the chip off
+  // on its own for a chat that has worked in more than two.
+  if (!convCols.some((c) => c.name === 'follow_suggestions')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN follow_suggestions TEXT')
+  }
+  if (!convCols.some((c) => c.name === 'worked_worktrees')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN worked_worktrees TEXT')
+  }
+
   // Rebuild FTS index from existing messages
   try {
     const ftsCount = (db.prepare('SELECT count(*) as c FROM messages_fts').get() as { c: number } | undefined)?.c ?? 0

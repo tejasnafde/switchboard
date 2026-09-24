@@ -23,7 +23,7 @@ export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SES
           <div className="sidebar-section-label">
             <span>{group.label}</span>
             {group.key !== 'done' && (
-              <span className="sidebar-recent-count" data-group={group.key}>{group.items.length}</span>
+              <span className="sidebar-recent-count">{group.items.length}</span>
             )}
           </div>
           {group.items.map((item) => {

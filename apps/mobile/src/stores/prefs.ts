@@ -7,6 +7,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { RuntimeMode } from '@shared/provider-events'
+import type { TurnDelivery } from '@shared/turn-delivery'
 
 /** Bounded: the map is persisted, so it cannot grow per thread ever opened. */
 export const MAX_REMEMBERED_THREADS = 200
@@ -73,6 +74,9 @@ interface PrefsState {
   defaultMode: RuntimeMode
   /** Workspace ids the user collapsed on the Projects screen. */
   collapsedWorkspaces: string[]
+  /** What a send does while the agent works (desktop's "Follow-up" setting, per device). */
+  followUpDefault: TurnDelivery
+  setFollowUpDefault: (value: TurnDelivery) => void
   rememberMode: (key: string, mode: RuntimeMode) => void
   rememberModel: (key: string, model: string) => void
   rememberDraft: (key: string, draft: string) => void
@@ -86,6 +90,9 @@ export const usePrefsStore = create<PrefsState>()(
       threads: {},
       defaultMode: 'sandbox',
       collapsedWorkspaces: [],
+      followUpDefault: 'steer',
+
+      setFollowUpDefault: (value) => set({ followUpDefault: value }),
 
       rememberMode: (key, mode) =>
         set((s) => ({

@@ -270,6 +270,8 @@ data class RuntimeEventPayload(
             "thread.read",
             "peer.message",
             "todo.updated",
+            "turn.queued",
+            "turn.dequeued",
         )
 
         fun parse(raw: JsonObject): RuntimeEventPayload? {

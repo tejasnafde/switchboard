@@ -52,8 +52,8 @@ describe('RecentSessionsSection', () => {
 
     expect(markup.indexOf('Needs you')).toBeLessThan(markup.indexOf('>Working<'))
     expect(markup.indexOf('>Working<')).toBeLessThan(markup.indexOf('Done recently'))
-    expect(markup).toContain('data-group="needs-you">1</span>')
-    expect(markup).toContain('data-group="working">1</span>')
+    // Plain counts: the row dot carries the colour, the count does not.
+    expect(markup.match(/<span class="sidebar-recent-count">1<\/span>/g)).toHaveLength(2)
     expect(markup).toContain('data-dot="idle"')
   })
 

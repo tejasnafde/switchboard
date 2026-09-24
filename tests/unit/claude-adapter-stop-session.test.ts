@@ -26,7 +26,7 @@ function makeActive(query: unknown) {
     currentMessageId: null,
     draining: false,
     turnStartedAt: null,
-    queuedModes: [],
+    queuedTurns: [],
     skills: [],
     instanceEnv: {},
     instanceOauthDir: null,

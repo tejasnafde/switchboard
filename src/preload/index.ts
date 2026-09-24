@@ -207,6 +207,8 @@ const api = {
       transport.invoke(AppChannels.GET_CONVERSATION_RUNTIME_MODE, id),
     setConversationRuntimeMode: (id: string, mode: RuntimeMode): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_RUNTIME_MODE, id, mode),
+    setConversationFollowSuggestions: (id: string, mode: import('@shared/follow-suggestions').FollowSuggestionMode): Promise<{ ok: boolean }> =>
+      transport.invoke(AppChannels.SET_CONVERSATION_FOLLOW_SUGGESTIONS, id, mode),
     getConversationProviderInstanceId: (id: string): Promise<{ instanceId: string | null }> =>
       transport.invoke(AppChannels.GET_CONVERSATION_PROVIDER_INSTANCE_ID, id),
     setConversationProviderInstanceId: (id: string, instanceId: string): Promise<{ ok: boolean }> =>
@@ -644,6 +646,16 @@ const api = {
      */
     getPendingRequests: (threadId: string): Promise<import('@shared/pending-requests').PendingBlockingEvent[]> =>
       transport.invoke(ProviderChannels.GET_PENDING_REQUESTS, threadId),
+
+    /** Messages the backend holds until the running turn ends. See `ProviderChannels.LIST_QUEUED_TURNS`. */
+    listQueuedTurns: (threadId: string): Promise<import('@shared/turn-delivery').QueuedTurnSummary[]> =>
+      transport.invoke(ProviderChannels.LIST_QUEUED_TURNS, threadId),
+    /** Steer a queued message into the running turn now. */
+    promoteQueuedTurn: (threadId: string, messageId: string): Promise<import('@shared/turn-delivery').QueuedTurnActionResult> =>
+      transport.invoke(ProviderChannels.PROMOTE_QUEUED_TURN, threadId, messageId),
+    /** Take a queued message back before it runs. */
+    cancelQueuedTurn: (threadId: string, messageId: string): Promise<import('@shared/turn-delivery').QueuedTurnActionResult> =>
+      transport.invoke(ProviderChannels.CANCEL_QUEUED_TURN, threadId, messageId),
 
     /**
      * Fetch the agent-defined slash commands/skills for a session

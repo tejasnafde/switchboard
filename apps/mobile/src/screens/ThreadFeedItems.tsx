@@ -9,6 +9,7 @@ import { colors } from '../theme'
 import { Markdown } from '../components/Markdown'
 import type { FeedItem } from '../stores/chat'
 import { styles } from './ThreadScreen.styles'
+import type { HeldTurnActions } from '../lib/heldTurns'
 
 // ─── Item renderers ────────────────────────────────────────────
 
@@ -274,3 +275,58 @@ export const FileEditItem = memo(function FileEditItem({
     </View>
   )
 })
+
+/**
+ * The foot of a user bubble the backend holds until the running turn ends:
+ * a Queued chip, Send now (steer it in) and Cancel (text back to the composer).
+ */
+export function HeldTurnBar({
+  actions,
+  error,
+  onPromote,
+  onCancel,
+}: {
+  actions: HeldTurnActions
+  /** Why the last Send now / Cancel was refused, shown in place of the hint. */
+  error?: string
+  onPromote: () => void
+  onCancel: () => void
+}) {
+  return (
+    <View style={styles.heldBar}>
+      <View style={styles.heldChip}>
+        <Ionicons name="time-outline" size={11} color={colors.textDim} />
+        <Text style={styles.heldChipText}>Queued</Text>
+      </View>
+      <Text
+        style={[styles.heldHint, error !== undefined && styles.deliveryFailed]}
+        numberOfLines={2}
+        accessibilityLiveRegion="polite"
+      >
+        {error ?? actions.hint}
+      </Text>
+      <Pressable
+        onPress={onPromote}
+        disabled={!actions.canPromote}
+        accessibilityRole="button"
+        accessibilityLabel="Send now"
+        accessibilityState={{ disabled: !actions.canPromote }}
+        testID="held-send-now"
+        hitSlop={8}
+        style={[styles.heldAction, !actions.canPromote && styles.heldActionDisabled]}
+      >
+        <Ionicons name="arrow-up" size={15} color={colors.textDim} />
+      </Pressable>
+      <Pressable
+        onPress={onCancel}
+        accessibilityRole="button"
+        accessibilityLabel="Cancel"
+        testID="held-cancel"
+        hitSlop={8}
+        style={styles.heldAction}
+      >
+        <Ionicons name="close" size={15} color={colors.textDim} />
+      </Pressable>
+    </View>
+  )
+}

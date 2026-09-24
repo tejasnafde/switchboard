@@ -21,6 +21,7 @@ import type {
 } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
+import type { QueuedTurnActionResult, QueuedTurnSummary } from '@shared/turn-delivery'
 import type { AgentType, Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
 import type {
@@ -325,6 +326,19 @@ export class SwitchboardClient {
    */
   getPendingRequests(threadId: string): Promise<PendingBlockingEvent[]> {
     return this.transport.invoke(ProviderChannels.GET_PENDING_REQUESTS, threadId)
+  }
+
+  /** Messages the backend holds until the running turn ends. Needs `turn_queue_controls_v1`. */
+  listQueuedTurns(threadId: string): Promise<QueuedTurnSummary[]> {
+    return this.transport.invoke(ProviderChannels.LIST_QUEUED_TURNS, threadId)
+  }
+
+  promoteQueuedTurn(threadId: string, messageId: string): Promise<QueuedTurnActionResult> {
+    return this.transport.invoke(ProviderChannels.PROMOTE_QUEUED_TURN, threadId, messageId)
+  }
+
+  cancelQueuedTurn(threadId: string, messageId: string): Promise<QueuedTurnActionResult> {
+    return this.transport.invoke(ProviderChannels.CANCEL_QUEUED_TURN, threadId, messageId)
   }
 
   interrupt(threadId: string): Promise<void> {

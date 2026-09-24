@@ -48,6 +48,35 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun queuedMessageEventsStayOutOfTheFeedAndACancelRemovesTheBubble() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = ingest(state, "mac-a", 1, 1, event("user.message", "text" to s("later"), "origin" to s("q"), "at" to n(1)))
+        state = ingest(state, "mac-a", 1, 2, event("turn.queued", "messageId" to s("remote_q"), "text" to s("later"), "queuedAt" to n(1)))
+        var feed = state.thread("mac-a", "thread-1")!!.feed
+        assertEquals(listOf("remote_q"), feed.filterIsInstance<FeedItem.User>().map { it.id })
+        assertTrue(feed.none { it is FeedItem.RawNotice })
+
+        state = ingest(state, "mac-a", 1, 3, event("turn.dequeued", "messageId" to s("remote_q"), "reason" to s("cancelled")))
+        feed = state.thread("mac-a", "thread-1")!!.feed
+        assertTrue(feed.none { it is FeedItem.User })
+        assertTrue(feed.none { it is FeedItem.RawNotice })
+    }
+
+    @Test
+    fun aCancelFromAnotherClientRemovesTheHistoryRowToo() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = reduce(
+            state,
+            ThreadAction.InstallSnapshot(
+                ThreadEventScope("mac-a", 1),
+                ThreadSnapshot("thread-1", listOf(FeedItem.User("h-remote_q", "later", 1))),
+            ),
+        )
+        state = ingest(state, "mac-a", 1, 1, event("turn.dequeued", "messageId" to s("remote_q"), "reason" to s("cancelled")))
+        assertTrue(state.thread("mac-a", "thread-1")!!.feed.none { it is FeedItem.User })
+    }
+
+    @Test
     fun syntheticContextUserMessageIsNotRendered() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         state = ingest(

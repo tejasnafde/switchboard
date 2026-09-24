@@ -1,8 +1,11 @@
 /**
  * Queue vs steer, against the built app (npm run build:fast) with the demo
- * adapter and an isolated profile: while a turn runs, the composer offers
- * Steer and Queue; Alt+Enter queues; the queued message shows as a chip and
- * is sent as its own turn once the running one ends. Temp dirs are removed.
+ * adapter and an isolated profile: while a turn runs, the composer's round
+ * send button steers (the default) and names Alt+Enter for queue in its
+ * tooltip; Alt+Enter queues; the queued message shows as a Queued bubble and
+ * is sent as its own turn once the running one ends. Then, behind a turn
+ * held open on an approval: Send now steers a queued message into it, and
+ * Cancel takes one back into the composer. Temp dirs are removed.
  */
 import { _electron as electron } from 'playwright'
 import { mkdtempSync, rmSync, realpathSync } from 'node:fs'
@@ -10,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { prepareElectronTestRuntime } from './electron-runtime.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
@@ -19,9 +23,13 @@ const userData = mk('sb-queue-ud-')
 const project = realpathSync(mk('sb-queue-proj-'))
 const db = join(userData, 'data', 'switchboard.db')
 const q = (sql) => execFileSync('sqlite3', [db, sql]).toString().trim()
+// An isolated copy with Electron-ABI natives, so the repo's node_modules can
+// stay on the Node ABI that vitest needs.
+const runtime = await prepareElectronTestRuntime({ repoRoot })
+process.on('exit', () => runtime.cleanup())
 
 async function launch() {
-  const app = await electron.launch({ args: ['.'], cwd: repoRoot, timeout: 30_000,
+  const app = await electron.launch({ args: [runtime.appPath], cwd: repoRoot, timeout: 30_000,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SHELL: '/bin/sh' } })
   const win = await app.firstWindow({ timeout: 20_000 })
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
@@ -62,9 +70,13 @@ try {
   await editor.click()
   await win.keyboard.type('first message')
   await win.keyboard.press('Enter')
-  await win.getByRole('button', { name: 'Steer', exact: true }).waitFor({ timeout: 15_000 })
-  check('while running, the primary action is Steer', true)
-  check('while running, a Queue action is offered', await win.getByRole('button', { name: 'Queue', exact: true }).count() === 1)
+  const send = win.getByRole('button', { name: 'Steer', exact: true })
+  await send.waitFor({ timeout: 15_000 })
+  check('while running, the send button steers', true)
+  const tooltip = await send.getAttribute('title')
+  check('its tooltip names both keys', tooltip === 'Steer (Enter) · Queue (⌥Enter)', String(tooltip))
+  check('a round Stop button shows while running', await win.getByRole('button', { name: 'Stop', exact: true }).count() === 1)
+  check('there is no separate Queue button', await win.getByRole('button', { name: 'Queue', exact: true }).count() === 0)
   await editor.click()
   await win.keyboard.type('queued message')
   await win.keyboard.press('Alt+Enter')
@@ -72,6 +84,9 @@ try {
   // after the first. Two turn completions in a row prove it was not steered.
   await win.getByText('queued message').first().waitFor({ timeout: 5000 })
   check('Alt+Enter posts the message at once (the backend holds it)', true)
+  const queuedChip = await win.locator('[data-queued-turn]').getByText('Queued', { exact: true })
+    .waitFor({ timeout: 5000 }).then(() => true, () => false)
+  check('the held message shows as a Queued bubble', queuedChip)
   // Two finished turns, polled: the button can read Send between the two.
   const twoTurns = await win.waitForFunction(() => document.body.innerText.split('Worked for').length - 1 >= 2, null, { timeout: 30_000 })
     .then(() => true, () => false)
@@ -83,6 +98,46 @@ try {
   await win.waitForTimeout(1000)
   const users = q(`SELECT count(*) FROM messages WHERE role = 'user';`)
   check('both user turns are recorded', Number(users) === 2, `user rows: ${users}`)
+  check('the Queued bubble is gone once it ran', await win.locator('[data-queued-turn]').count() === 0)
+
+  // A turn held open on an approval, so the queue stays put while we act on it.
+  await editor.click()
+  await win.keyboard.type('run the tests')
+  await win.keyboard.press('Enter')
+  await win.getByText('npm test').first().waitFor({ timeout: 15_000 })
+  const replies = () => win.evaluate(() => document.body.innerText.split('Two focused tests cover it').length - 1)
+  const repliesBefore = await replies()
+
+  await editor.click()
+  await win.keyboard.type('steer this in')
+  await win.keyboard.press('Alt+Enter')
+  const steerRow = win.locator('[data-queued-turn]')
+  await steerRow.waitFor({ timeout: 5000 })
+  await steerRow.getByRole('button', { name: 'Send now', exact: true }).click()
+  const promoted = await steerRow.waitFor({ state: 'detached', timeout: 5000 }).then(() => true, () => false)
+  check('Send now takes the message out of the queue', promoted)
+  // It runs while the approval still holds the first turn open: a steer, not a queue.
+  const steered = await win.waitForFunction(
+    (before) => document.body.innerText.split('Two focused tests cover it').length - 1 > before,
+    repliesBefore, { timeout: 15_000 },
+  ).then(() => true, () => false)
+  check('the promoted message runs inside the running turn', steered)
+
+  await editor.click()
+  await win.keyboard.type('take this back')
+  await win.keyboard.press('Alt+Enter')
+  const cancelRow = win.locator('[data-queued-turn]')
+  await cancelRow.waitFor({ timeout: 5000 })
+  await cancelRow.getByRole('button', { name: 'Cancel', exact: true }).click()
+  const removed = await win.locator('.message-bubble', { hasText: 'take this back' }).first()
+    .waitFor({ state: 'detached', timeout: 5000 }).then(() => true, () => false)
+  const composerText = (await editor.innerText()).trim()
+  check('Cancel puts the text back in the composer', composerText === 'take this back', JSON.stringify(composerText))
+  check('the cancelled bubble leaves the chat', await win.locator('[data-queued-turn]').count() === 0 && removed)
+  await win.waitForTimeout(500)
+  const cancelledRows = q(`SELECT count(*) FROM messages WHERE role = 'user' AND content = 'take this back';`)
+  check('the cancelled message is not stored', Number(cancelledRows) === 0, `rows: ${cancelledRows}`)
+  await win.getByRole('button', { name: /Deny/ }).first().click().catch(() => {})
 } catch (e) {
   check('unexpected error', false, e.message.split('\n')[0])
   await win.screenshot({ path: '/tmp/sb-queue-error.png' }).catch(() => {})
