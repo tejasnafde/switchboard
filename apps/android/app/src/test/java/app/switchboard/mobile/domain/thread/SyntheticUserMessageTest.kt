@@ -60,9 +60,17 @@ class SyntheticUserMessageTest {
 
     @Test
     fun `presenter renders a notification row instead of a user bubble`() {
-        val rows = ThreadPresenter.rows(FeedItem.User(id = "h-1", text = failed, at = 1))
+        val rows = ThreadPresenter.rows(FeedItem.User(id = "h-1", text = failed, at = 1, fromTranscript = true))
         val row = rows.single() as ThreadRowPresentation.Synthetic
         assertEquals("h-1-s0", row.key)
         assertEquals(SyntheticTone.ERROR, row.tone)
     }
+
+    @Test
+    fun `typed text that starts with a marker stays a user bubble`() {
+        val typed = FeedItem.User(id = "remote_1", text = "[Request interrupted by user] why did you stop?", at = 1)
+        val row = ThreadPresenter.rows(typed).single() as ThreadRowPresentation.User
+        assertEquals(typed, row.source)
+    }
+
 }

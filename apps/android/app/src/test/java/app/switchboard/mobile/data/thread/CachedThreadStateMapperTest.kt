@@ -51,6 +51,21 @@ class CachedThreadStateMapperTest {
     }
 
     @Test
+    fun `user rows keep their transcript flag, and legacy rows fall back to history ids`() {
+        val rows = listOf(
+            """{"kind":"user","id":"h-old","text":"[Request interrupted by user]","at":1}""",
+            """{"kind":"user","id":"h-typed","text":"[Request interrupted by user] typed","at":2,"fromTranscript":false}""",
+            """{"kind":"user","id":"remote_1","text":"hi","at":3}""",
+        ).mapIndexed { index, raw -> CachedFeedRowEntity("mac:thread-1", "row-$index", index, raw) }
+        val restored = CachedThreadStateMapper.from(
+            snapshot(CachedThreadEntity("mac:thread-1", "{}"), rows),
+            "mac",
+            "thread-1",
+        )!!
+        assertEquals(listOf(true, false, false), restored.feed.map { (it as FeedItem.User).fromTranscript })
+    }
+
+    @Test
     fun `never returns another machine thread and ignores corrupt feed rows`() {
         val snapshot = snapshot(
             thread = CachedThreadEntity("mac:thread-1", "{}"),

@@ -210,6 +210,12 @@ sealed interface FeedItem {
         val at: Long,
         val images: List<MessageImage> = emptyList(),
         val pillsMeta: Map<String, MessagePill> = emptyMap(),
+        /**
+         * Raw provider transcript text (history content with no typed displayBody).
+         * Only this is split into synthetic rows, so a typed message that starts
+         * with a marker such as "[Request interrupted by user]" stays a bubble.
+         */
+        val fromTranscript: Boolean = false,
     ) : FeedItem
     data class Text(
         override val id: String,

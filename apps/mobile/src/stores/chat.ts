@@ -21,6 +21,7 @@ import type {
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
 import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
 import type { SyntheticUserPart } from '@shared/synthetic-message'
+import { splitLegacyCachedItems } from '../lib/threadHistory'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -552,6 +553,17 @@ export const useChatStore = create<ChatState>()(
     {
       name: 'sb-chat-cache',
       storage: createJSONStorage(() => cacheStorage),
+      // 1: history user rows are split into synthetic rows (splitLegacyCachedItems).
+      version: 1,
+      migrate: (persisted, version) => {
+        const state = persisted as { threads?: Record<string, ThreadState> }
+        if (version >= 1 || !state?.threads) return state
+        return {
+          threads: Object.fromEntries(
+            Object.entries(state.threads).map(([key, t]) => [key, { ...t, items: splitLegacyCachedItems(t.items ?? []) }]),
+          ),
+        }
+      },
       // Only the feeds. activeKey and staleGeneration describe this run.
       partialize: (s) => ({ threads: prunePersistedThreads(s.threads) }),
       onRehydrateStorage: () => (state) => {

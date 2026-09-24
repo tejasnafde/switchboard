@@ -334,9 +334,9 @@ object ThreadPresenter {
         )
     }
 
-    /** Like [row], but splits provider-generated blocks off a user message into their own rows. */
+    /** Like [row], but splits provider-generated blocks off transcript user text into their own rows. */
     fun rows(item: FeedItem): List<ThreadRowPresentation> {
-        if (item !is FeedItem.User) return listOf(row(item))
+        if (item !is FeedItem.User || !item.fromTranscript) return listOf(row(item))
         val split = SyntheticUserMessage.split(item.text) ?: return listOf(row(item))
         return buildList {
             split.parts.forEachIndexed { index, part ->

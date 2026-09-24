@@ -31,7 +31,11 @@
         "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadModels.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/SyntheticUserMessageTest.kt"
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/SyntheticUserMessageTest.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSnapshotStore.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/CachedThreadStateMapper.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/LoadedSessionSnapshotMapperTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -46,8 +50,13 @@
       ]
     },
     "storageDataMigration": {
-      "status": "not_applicable",
-      "reason": "Nothing stored changes. Transcripts and cached feeds keep the raw text and every surface splits it at render time, so old and new clients read the same data."
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/lib/threadHistory.ts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/CachedThreadStateMapper.kt",
+        "tests/unit/mobile-thread-history.test.ts"
+      ]
     },
     "updateRelease": {
       "status": "implemented",
@@ -63,15 +72,16 @@
       "tests/unit/mobile-thread-history.test.ts pins that phone history maps a notification to its own row and keeps the typed remainder as a user bubble.",
       "apps/mobile jest: SyntheticRow renders the label, never the XML, and shows ids on tap.",
       "apps/android JUnit: SyntheticUserMessageTest covers the Kotlin port and that ThreadPresenter.rows turns a notification into a Synthetic row instead of a user bubble.",
-      "An independent review of the diff found three confirmed bugs, all fixed: forking from the typed part of a mixed message failed the anchor digest (the remainder is now a render-only prop), an image on a generated-only message was hidden on desktop, and multi-line command output was clamped to two lines with no way to expand on the phone and Android."
+      "An independent review of the diff found three confirmed bugs, all fixed: forking from the typed part of a mixed message failed the anchor digest (the remainder is now a render-only prop), an image on a generated-only message was hidden on desktop, and multi-line command output was clamped to two lines with no way to expand on the phone and Android.",
+      "CodeRabbit follow-up: only provider transcript text is classified. Android FeedItem.User carries fromTranscript (set for history content with no typed displayBody, persisted in the offline cache), and mobile splits only when displayBody is absent; tests on both surfaces pin that a typed \"[Request interrupted by user] ...\" stays a user bubble. Mobile caches written before synthetic rows are migrated (tests/unit/mobile-thread-history.test.ts)."
     ],
     "hardware": [],
     "notExercised": [
       "No surface was driven by hand; the rows were checked through unit and component tests only.",
       "Live path: the Claude adapter ignores the SDK's system/task_notification message, so a notification does not appear live on any surface and only appears once the transcript is reloaded. Surfacing it live needs a new runtime event on every client.",
       "Claude's <command-message> slash wrapper is still unwrapped only on desktop; mobile and Android keep showing it as text.",
-      "Deferred review finding: Android splits FeedItem.User text even when it came from a typed displayBody, where desktop and mobile never split one. Only a typed message that itself starts with a provider marker (for example \"[Request interrupted by user\") renders differently; FeedItem.User would need a flag to fix it.",
-      "Deferred review finding (existed before this change): a sent turn made only of context blocks is dropped by visibleUserMessageText, so its optimistic bubble never clears its pending state. The context-only list is now longer (system-reminder, skill, caveat), but the case needs a user to paste only such blocks."
+      "Deferred review finding (existed before this change): a sent turn made only of context blocks is dropped by visibleUserMessageText, so its optimistic bubble never clears its pending state. The context-only list is now longer (system-reminder, skill, caveat), but the case needs a user to paste only such blocks.",
+      "Caches written before this change never recorded whether a row's text was typed, so their history user rows (h- ids) are treated as transcript on first launch: mobile migrates them once (persist version 1) and Android decodes them that way. A typed history message that starts with a marker is misread in that offline snapshot until the next history load reseeds it. A React Native cache imported into native Android drops its synthetic rows, since Android has no cached kind for them; the next history load restores them."
     ]
   }
 }
