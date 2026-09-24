@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import { useMachineStore } from '../stores/machine-store'
 import { cn } from '../lib/utils'
@@ -72,6 +72,8 @@ export function SessionPickerModal({
     if (open) setActiveIdx(0)
   }, [open])
 
+  const contentRef = useRef<HTMLDivElement>(null)
+
   // Escape is the dialog's; focus stays inside it, so the list keys can live
   // on the content instead of a window listener.
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -81,7 +83,7 @@ export function SessionPickerModal({
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setActiveIdx((i) => Math.max(i - 1, 0))
-    } else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       const pick = candidates[activeIdx]
       if (pick) {
@@ -94,8 +96,15 @@ export function SessionPickerModal({
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
       <DialogContent
+        ref={contentRef}
         aria-describedby={undefined}
         onKeyDown={onKeyDown}
+        // Focus the dialog, not the first row: the arrow keys move a highlight,
+        // and a focused row would take Space for itself.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          contentRef.current?.focus()
+        }}
         overlayClassName="z-[1200]"
         className="sb-floating-surface inset-x-0 top-[18vh] z-[1200] mx-auto flex max-h-[60vh] w-[min(520px,92vw)] flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--border)] shadow-[0_10px_40px_rgba(0,0,0,0.4)]!"
       >
