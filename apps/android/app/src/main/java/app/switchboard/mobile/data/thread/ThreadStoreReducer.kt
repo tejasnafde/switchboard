@@ -246,13 +246,14 @@ object ThreadStoreReducer {
             is ThreadEventPayload.Content -> content(withJournal, event, isViewing)
             is ThreadEventPayload.UserMessage -> {
                 val text = UserMessageVisibility.visibleText(event.text, event.displayBody)
-                    ?: return withJournal
+                // Context-only text is hidden, but images sent with it still show.
+                if (text == null && event.images.isEmpty()) return withJournal
                 withJournal.copy(
                     feed = upsert(
                         withJournal.feed,
                         FeedItem.User(
                             "remote_${event.origin ?: event.at}",
-                            text,
+                            text.orEmpty(),
                             event.at,
                             event.images,
                             event.pillsMeta,

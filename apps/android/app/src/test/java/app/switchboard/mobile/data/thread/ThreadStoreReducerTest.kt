@@ -64,6 +64,26 @@ class ThreadStoreReducerTest {
         assertTrue(state.thread("mac-a", "thread-1")!!.feed.isEmpty())
     }
     @Test
+    fun contextOnlyUserMessageKeepsItsImagesWithEmptyText() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = ingest(
+            state,
+            "mac-a",
+            1,
+            1,
+            event(
+                "user.message",
+                "text" to s("<environment_context>\n<cwd>/repo</cwd>\n</environment_context>"),
+                "images" to arr(obj("url" to s("data:image/png;base64,AAA"))),
+                "at" to n(1),
+            ),
+        )
+        val user = state.thread("mac-a", "thread-1")!!.feed.filterIsInstance<FeedItem.User>().single()
+        assertEquals("", user.text)
+        assertEquals("data:image/png;base64,AAA", user.images.single().url)
+    }
+
+    @Test
     fun identicalThreadIdsAreIsolatedByConnectionAndStaleGenerationsAreIgnored() {
         var state = ThreadStoreState()
         state = reduce(state, ThreadAction.Activate("mac-a", 4))
