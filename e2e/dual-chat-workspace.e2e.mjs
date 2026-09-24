@@ -431,6 +431,7 @@ try {
   await resolutionFailureComposer.fill('Newest draft typed while resolving')
   await resolutionFailurePanel.getByText('Fixture could not resolve the earlier delivery').waitFor({ timeout: 2_000 })
   await resolutionWarning.stop()
+  assert(resolutionWarning.count === 1, 'sending an edit over an unresolved delivery asks first')
   assert(
     (await resolutionFailureComposer.textContent())?.includes('Newest draft typed while resolving'),
     'failed ambiguity resolution preserves text typed during the round trip',
@@ -439,7 +440,8 @@ try {
   await resolutionFailurePanel.locator('[data-composer-recovery] button', { hasText: 'Restore' }).click()
   await restoreBlockedPayload.answered()
   await restoreBlockedPayload.stop()
-  await resolutionFailureComposer.getByText('Edited payload blocked by recovery').waitFor({ timeout: 2_000 }).catch(() => {})
+  assert(restoreBlockedPayload.count === 1, 'restoring over a newer draft asks first')
+  await resolutionFailureComposer.getByText('Edited payload blocked by recovery').waitFor({ timeout: 2_000 })
   assert(
     (await resolutionFailureComposer.textContent())?.includes('Edited payload blocked by recovery'),
     'failed ambiguity resolution keeps the detached submitted payload recoverable',
@@ -457,6 +459,7 @@ try {
   await notFoundWarning.answered()
   await notFoundPanel.getByText('Edited request after missing row').waitFor({ timeout: 2_000 })
   await notFoundWarning.stop()
+  assert(notFoundWarning.count === 1, 'sending an edit after a missing delivery row asks first')
   await notFoundPanel.locator('[data-composer-send-error]').waitFor({ state: 'detached', timeout: 2_000 })
   assert(
     (await app.evaluate(() => globalThis.__sbIdleResolutionNotFoundOrigins)).length === 2,

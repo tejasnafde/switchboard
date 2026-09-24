@@ -58,6 +58,7 @@ const focusIsTrigger = (title) => focusSettlesOn(`document.activeElement?.getAtt
 // Radix attaches its outside-pointer listener a task after the layer mounts;
 // a click that lands sooner than a person could click is not "outside" yet.
 const clickOutside = async (x, y) => { await win.waitForTimeout(100); await win.mouse.click(x, y) }
+const composerHasFocus = () => focusSettlesOn(`document.activeElement?.getAttribute('aria-label') === 'Chat message'`)
 const hidden = async (locator) => locator.waitFor({ state: 'hidden', timeout: 3000 }).then(() => true, () => false)
 
 async function openConversation(title) {
@@ -82,6 +83,10 @@ async function providerPicker() {
 
   await trigger.click()
   await picker.waitFor({ state: 'visible' })
+  await picker.getByRole('button').filter({ hasText: /^Custom model id/ }).click()
+  await win.keyboard.press('Escape')
+  check('provider picker: Escape leaves the custom model field, not the picker',
+    await picker.isVisible() && await picker.getByPlaceholder('provider/model-id').count() === 0)
   await picker.getByRole('button').filter({ hasText: /^Custom model id/ }).click()
   await win.keyboard.type('acme/model-x')
   await win.keyboard.press('Enter')
@@ -138,6 +143,15 @@ async function commandPalette() {
   await win.keyboard.press('Meta+Shift+P')
   check('palette: its shortcut toggles it closed', await hidden(palette))
 
+  for (let i = 0; i < 2; i++) {
+    await win.keyboard.press('Meta+Shift+P')
+    await palette.waitFor({ state: 'visible' })
+    await win.keyboard.type('toggle terminal')
+    await win.keyboard.press('Enter')
+    await hidden(palette)
+  }
+  check('palette: focus returns to the composer after a command that opens nothing', await composerHasFocus())
+
   await win.keyboard.press('Meta+Shift+P')
   await palette.waitFor({ state: 'visible' })
   await win.keyboard.type('open settings')
@@ -148,6 +162,7 @@ async function commandPalette() {
     await win.waitForTimeout(300).then(() => win.evaluate(() => document.activeElement?.getAttribute('aria-label') !== 'Chat message')))
   await win.keyboard.press('Escape')
   check('palette: Escape then closes Settings', await hidden(settings))
+  check('palette: closing Settings opened from it returns focus to the composer', await composerHasFocus())
 }
 
 async function sessionPicker() {
@@ -167,14 +182,13 @@ async function sessionPicker() {
 
   await openBeside.click()
   await picker.waitFor({ state: 'visible' })
+  check('session picker: the dialog, not a row, has focus', await win.evaluate(() => document.activeElement?.getAttribute('role') === 'dialog'))
   await win.keyboard.press('ArrowDown')
   await win.keyboard.press('ArrowUp')
-  await win.keyboard.press('Enter')
-  check('session picker: Enter picks the highlighted chat', await hidden(picker))
+  await win.keyboard.press(' ')
+  check('session picker: Space picks the highlighted chat', await hidden(picker))
   check('session picker: the pick opens beside', await win.locator('.chat-identity-title').filter({ hasText: 'Compare retry strategies' }).first().waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false))
 }
-
-const composerHasFocus = () => focusSettlesOn(`document.activeElement?.getAttribute('aria-label') === 'Chat message'`)
 
 async function searchModal() {
   await win.locator('.chat-composer [aria-label="Chat message"]').first().click()
@@ -282,6 +296,12 @@ async function settingsDialog() {
   const settings = win.getByRole('dialog', { name: 'Settings' })
   await settings.waitFor({ state: 'visible' })
   check('settings: focus moves into it', await focusSettlesOn(`!!document.activeElement?.closest('.settings-modal-content')`))
+  await settings.getByRole('button', { name: 'Launch Configs', exact: true }).click()
+  await settings.getByRole('button', { name: '+ new launch config' }).click()
+  await settings.getByPlaceholder('launch config name').waitFor({ state: 'visible' })
+  await win.keyboard.press('Escape')
+  check('settings: Escape cancels a launch-config name field, not Settings',
+    await settings.getByPlaceholder('launch config name').count() === 0 && await settings.isVisible())
   for (let i = 0; i < 12; i++) await win.keyboard.press('Tab')
   check('settings: Tab stays inside it', await win.evaluate(() => !!document.activeElement?.closest('.settings-modal-content')))
   await win.keyboard.press('Escape')
