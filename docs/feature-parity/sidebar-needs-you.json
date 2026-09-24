@@ -26,7 +26,6 @@
         "e2e/ds-flow.e2e.mjs",
         "e2e/ide-syntax.e2e.mjs",
         "e2e/ide-workflow.e2e.mjs",
-        "videos/capture-tour.mjs",
         "tests/unit/sidebar-recent-groups.test.ts",
         "tests/unit/sidebar-recents.test.ts",
         "tests/unit/sidebar-recents-render.test.ts",
