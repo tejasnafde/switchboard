@@ -31,6 +31,8 @@ enum class ThreadEventKind {
     ThreadRead,
     PeerMessage,
     TodoUpdated,
+    TurnQueued,
+    TurnDequeued,
     Extension,
     Malformed,
 }
@@ -158,6 +160,10 @@ sealed interface ThreadEventPayload {
         val at: Long,
     ) : ThreadEventPayload
     data class TodoUpdated(val todoId: String, val items: List<TodoEntry>) : ThreadEventPayload
+    /** A message the backend holds until the running turn ends; `messageId` is its user row id. */
+    data class TurnQueued(val messageId: String) : ThreadEventPayload
+    /** It left the queue: started, promoted, cancelled or dropped. */
+    data class TurnDequeued(val messageId: String, val reason: String) : ThreadEventPayload
 }
 
 object UserMessageVisibility {

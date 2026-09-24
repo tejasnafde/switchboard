@@ -129,6 +129,10 @@ object ThreadEventDecoder {
                     TodoEntry(value.requiredString("text"), value.requiredString("status"))
                 },
             )
+            "turn.queued" -> ThreadEventKind.TurnQueued to ThreadEventPayload.TurnQueued(raw.requiredString("messageId"))
+            "turn.dequeued" -> ThreadEventKind.TurnDequeued to ThreadEventPayload.TurnDequeued(
+                raw.requiredString("messageId"), raw.requiredString("reason"),
+            )
             else -> null
         }
 

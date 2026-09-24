@@ -414,6 +414,15 @@ object ThreadStoreReducer {
             is ThreadEventPayload.TodoUpdated -> withJournal.copy(
                 feed = upsert(withJournal.feed, FeedItem.Todo("todo-${event.todoId}", event.todoId, event.items)),
             )
+            // Showing a held message as Queued is staged (android_composer_follow_ups);
+            // decoding it keeps it out of the feed as an unsupported-event notice.
+            is ThreadEventPayload.TurnQueued -> withJournal
+            // A message another client took back never reached the agent.
+            is ThreadEventPayload.TurnDequeued -> if (event.reason == "cancelled") {
+                withJournal.copy(feed = withJournal.feed.filterNot { it is FeedItem.User && it.id == event.messageId })
+            } else {
+                withJournal
+            }
         }
     }
 

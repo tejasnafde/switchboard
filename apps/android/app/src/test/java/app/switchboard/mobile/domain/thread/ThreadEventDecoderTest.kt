@@ -74,6 +74,8 @@ class ThreadEventDecoderTest {
             event("thread.read", "at" to n(80)) to ThreadEventKind.ThreadRead,
             event("peer.message", "direction" to s("received"), "initiator" to s("agent"), "messageId" to s("peer-1"), "peerThreadId" to s("other"), "peerLabel" to s("Other"), "text" to s("hello"), "at" to n(90)) to ThreadEventKind.PeerMessage,
             event("todo.updated", "todoId" to s("todo-1"), "items" to arr(obj("text" to s("Ship"), "status" to s("in_progress")))) to ThreadEventKind.TodoUpdated,
+            event("turn.queued", "messageId" to s("remote_q"), "text" to s("later"), "queuedAt" to n(5)) to ThreadEventKind.TurnQueued,
+            event("turn.dequeued", "messageId" to s("remote_q"), "reason" to s("cancelled")) to ThreadEventKind.TurnDequeued,
         )
 
         fixtures.forEach { (raw, kind) ->
