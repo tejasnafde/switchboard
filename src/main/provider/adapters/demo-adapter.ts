@@ -16,11 +16,21 @@
  *   - text mentions the state check -> a real edit to src/api/auth.ts in the
  *                           session cwd, so the registry's git checkpoint
  *                           emits a genuine `file.edited` (FileDiffCard)
+ *   - text mentions "render order" -> reasoning, interim text, a tool that
+ *                           runs past the reload merge's 60s window, then the
+ *                           answer (e2e/chat-render-order.e2e.mjs)
  *   - anything else      -> a short two-sentence reply
+ *
+ * With `SB_DEMO_CLAUDE_TRANSCRIPT_DIR` set, the claude adapter also appends a
+ * Claude Code shaped JSONL under that config dir, so a reload exercises the
+ * same disk + SQLite merge a real Claude chat does.
  */
 import type { TurnDelivery } from '@shared/turn-delivery'
-import { existsSync, writeFileSync } from 'fs'
+import { randomUUID } from 'crypto'
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { encodeClaudeProjectPath } from '../../projects/session-scanner'
+import { LEGACY_ID_MATCH_WINDOW_MS } from '../../agent/dedupe-messages'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../types'
 import type {
   ApprovalDecision,
@@ -72,6 +82,8 @@ interface DemoSession {
   turns: Set<DemoTurn>
   /** Approvals a script is blocked on, by request id. */
   approvals: Map<string, (decision: ApprovalDecision | 'cancelled') => void>
+  /** Claude-shaped transcript this session appends to, when enabled. */
+  transcript?: string
 }
 
 /** One script run. */
@@ -82,6 +94,8 @@ interface DemoTurn {
   /** Set by interrupt or stop; a later message does not clear it. */
   cancelled: boolean
 }
+
+const LONG_TOOL_MS = LEGACY_ID_MATCH_WINDOW_MS + 1_000
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -99,6 +113,12 @@ export class DemoAdapter implements ProviderAdapter {
       running: Promise.resolve(),
       turns: new Set(),
       approvals: new Map(),
+    }
+    const transcriptRoot = process.env.SB_DEMO_CLAUDE_TRANSCRIPT_DIR
+    if (transcriptRoot && this.provider === 'claude') {
+      const dir = join(transcriptRoot, 'projects', encodeClaudeProjectPath(opts.cwd))
+      mkdirSync(dir, { recursive: true })
+      session.transcript = join(dir, `demo-${opts.threadId}.jsonl`)
     }
     this.sessions.set(opts.threadId, session)
     onEvent({ type: 'status', threadId: opts.threadId, status: 'connecting' })
@@ -156,6 +176,8 @@ export class DemoAdapter implements ProviderAdapter {
     const emit = (event: RuntimeEvent): void => {
       if (!turn.cancelled) session.onEvent(event)
     }
+    // Written when the message runs, as Claude does for a queued one.
+    this.record(session, 'user', [{ type: 'text', text: message }])
     emit({ type: 'status', threadId, status: 'running' })
     await this.pause(turn, 500)
 
@@ -204,6 +226,12 @@ export class DemoAdapter implements ProviderAdapter {
         turn,
         'Done. The callback now rejects an expired state before any network call. Review the diff below and accept or reject each hunk.',
       )
+    } else if (/render order/i.test(message)) {
+      emit({ type: 'content', threadId, messageId: `demo_think_${++this.seq}`, streamKind: 'reasoning', text: 'Weighing where the order could break.' })
+      await sleep(300)
+      await this.say(threadId, turn, 'Interim note: checking the reload path first.')
+      await this.tool(threadId, turn, 'Bash', { command: 'sleep 61' }, 'ok', undefined, LONG_TOOL_MS)
+      await this.say(threadId, turn, 'Final answer: the order holds.')
     } else {
       await this.say(
         threadId,
@@ -234,6 +262,7 @@ export class DemoAdapter implements ProviderAdapter {
       session.onEvent({ type: 'content', threadId, messageId, streamKind: 'assistant', text: chunk, append: i > 0 })
       await this.pause(turn, 28)
     }
+    this.record(session, 'assistant', [{ type: 'text', text }])
     await this.pause(turn, 320)
   }
 
@@ -244,15 +273,26 @@ export class DemoAdapter implements ProviderAdapter {
     input: unknown,
     output?: string,
     sideEffect?: () => void,
+    durationMs = 520,
   ): Promise<void> {
     const { session } = turn
     if (turn.cancelled) return
     const toolId = `demo_tool_${++this.seq}`
     session.onEvent({ type: 'tool.started', threadId, toolId, toolName, input })
-    await this.pause(turn, 520)
+    this.record(session, 'assistant', [{ type: 'tool_use', id: toolId, name: toolName, input }])
+    await this.pause(turn, durationMs)
+    // An interrupt during the wait ends the tool here, not after its effect.
+    if (turn.cancelled) return
     sideEffect?.()
     session.onEvent({ type: 'tool.completed', threadId, toolId, output })
     await this.pause(turn, 260)
+  }
+
+  /** One transcript line, stamped when written, as Claude Code does. */
+  private record(session: DemoSession, type: 'user' | 'assistant', content: unknown[]): void {
+    if (!session.transcript) return
+    const line = { type, uuid: randomUUID(), timestamp: new Date().toISOString(), message: { role: type, content } }
+    appendFileSync(session.transcript, `${JSON.stringify(line)}\n`)
   }
 
   async interruptTurn(threadId: string): Promise<void> {

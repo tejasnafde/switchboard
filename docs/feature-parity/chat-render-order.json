@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chat-render-order",
+  "summary": "A reloaded chat (switch away and back, reopen, phone thread open) shows messages in the order they arrived. The backend mirrored every assistant message of a turn to SQLite stamped with the turn END, so an interim text streamed over 60s earlier missed its JSONL twin in the reload merge and came back a second time, below the final answer.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/App.tsx",
+        "src/main/provider/adapters/demo-adapter.ts",
+        "e2e/chat-render-order.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No client change needed. ThreadScreen renders app:load-session-by-id in the order the backend returns it and re-sorts nothing, so it inherits the backend fix. The live stream path was never affected, only the reload merge."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No client change needed. SwitchboardRemoteClient loads history through the same app:load-session-by-id handler and keeps the backend's order, so it inherits the backend fix. The live stream path was never affected, only the reload merge."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/provider-registry.ts",
+        "src/main/agent/dedupe-messages.ts",
+        "tests/unit/assistant-mirror.test.ts",
+        "tests/unit/dedupe-messages.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "tests/unit/dedupe-messages.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No schema, wire or channel change. Rows already stamped with the turn end are repaired at read time by the merge (a mirror row may match its JSONL twin anywhere in the same turn), so no migration runs and a downgrade reads the same rows."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/dedupe-messages.test.ts replays timestamps from a real Claude turn: mirror rows stamped at turn end matched their JSONL copies 94s and 191s earlier and return in arrival order; an equal message from an earlier turn is still kept separate.",
+      "tests/unit/assistant-mirror.test.ts pins that each mirrored message is stamped with its last chunk, not the flush time. tests/unit/dedupe-messages.test.ts also pins that a SQLite user row ends the previous turn when the transcript lacks that user line.",
+      "e2e/chat-render-order.e2e.mjs (demo adapter writing a Claude-shaped transcript, a 61s tool call) failed on the unfixed build with live=interim,final reloaded=interim,final,interim, and passes with the fix."
+    ],
+    "hardware": [
+      "Confirmed against the user's own SQLite database and Claude transcript, read-only: three assistant rows of one turn shared a single turn-end timestamp while their JSONL lines were 191s, 94s and 0.2s earlier."
+    ],
+    "notExercised": [
+      "No live Claude or Codex turn was run end to end; the reproduction uses the demo adapter and real recorded timestamps.",
+      "The phone and native Android were not run; they consume the backend order unchanged.",
+      "Deferred: in a chat stored before this fix, interim text written before a mid-turn steer still comes back as a SQLite-only row after the final answer, because the steer counts as the start of the turn. New turns are unaffected: their rows carry last-chunk timestamps.",
+      "Reasoning text is not persisted by any provider path (JSONL parser skips thinking, the mirror skips reasoning), so it is absent after a reload. That is pre-existing and unchanged here, not a reordering."
+    ]
+  }
+}
