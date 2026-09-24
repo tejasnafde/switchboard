@@ -215,7 +215,7 @@ try {
   await emit({ type: 'tool.completed', threadId: conversationId, toolId: 'tool-e2e', output: Array.from({ length: 80 }, (_, index) => `tool output ${index}`).join('\n') })
   const activity = win.locator('details.turn-activity').last()
   await activity.locator('summary').click()
-  const toolTrigger = win.locator('.tool-call-trigger').filter({ hasText: 'Bash' }).last()
+  const toolTrigger = win.getByRole('button', { name: /printf fixture/ }).last()
   await toolTrigger.click()
   const toolBlock = win.locator('.tool-code-block').last()
   const toolbar = toolBlock.locator('.tool-code-toolbar')

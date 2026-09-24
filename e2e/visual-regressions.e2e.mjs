@@ -5,7 +5,7 @@
  * Two phases, both on by default (SB_VISUAL_SCOPE=behaviour|screens runs one):
  *   - behaviour: translucent-theme assertions (native glass transmission,
  *     fullscreen fallback, sidebar Recents/Saved/organizer) on its own fixture.
- *   - screens: nine key screens in Dark, Light and Translucent, captured
+ *   - screens: ten key screens in Dark, Light and Translucent, captured
  *     against the seeded tour workspace with the scripted demo provider
  *     (SB_DEMO_ADAPTER=1) and pixel-compared with the baselines in
  *     e2e/snapshots/<screen>-<theme>-<platform>.png.
@@ -553,29 +553,57 @@ async function captureThemeScreens(win, theme) {
   await win.keyboard.press('Alt+Enter')
   await win.locator('[data-queued-turn]').waitFor({ state: 'visible', timeout: 10_000 })
   await snapScreen(win, 'queued-message', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
+
+  // A long list reply in the narrowest window, scrolled to its last list,
+  // where the two-digit markers are.
+  await openConversation(win, FINISHED_CHAT)
+  await editor.click()
+  await win.keyboard.type('List the to-dos.')
+  await win.keyboard.press('Enter')
+  await win.getByText('Items 1 to 3 go first').waitFor({ state: 'visible', timeout: 60_000 })
+  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(800, 720))
+  await settle(win)
+  // The seeded user message carries pill chips, the reply long inline code.
+  const list = win.locator('[data-message-list-scroll]').first()
+  const sideways = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
+  if (sideways > 0) screenFailures.push(`chat-narrow-${theme.toLowerCase()}: the message list scrolls ${sideways}px sideways`)
+  await win.locator('.markdown-content ol').last().evaluate((ol) => ol.scrollIntoView({ block: 'start' }))
+  await snapScreen(win, 'chat-narrow', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
 }
 
 async function runThemeScreens() {
   const fixture = await prepareScreensFixture()
   for (const theme of THEMES) {
     fixture.restore()
-    const { win } = await launchSwitchboard({ userData: fixture.userData, demo: true })
+    const { instance, win } = await launchSwitchboard({ userData: fixture.userData, demo: true })
     win.on('pageerror', (error) => console.error(`renderer error: ${error.message}`))
-    // The fixed clock applies from the next navigation, so reload: every
-    // label, memoised or not, is then first computed from FROZEN_NOW.
-    // Playwright registers the clock as init scripts before it evaluates in
-    // the current page, and that evaluate can hit a page mid-navigation
-    // ("reading 'controller'"). The reload runs the init scripts anyway and
-    // the wait below proves the clock took.
-    await win.clock.setFixedTime(FROZEN_NOW).catch((error) => {
-      console.warn(`clock not applied to the current page, the reload applies it: ${error.message}`)
-    })
+    // Pin the renderer clock, then reload so every label, memoised or not,
+    // is first computed from FROZEN_NOW. Not win.clock.setFixedTime: it also
+    // evaluates in every page already open (webview guests included) and
+    // threw "reading 'controller'" whenever one was mid-navigation, leaving
+    // its init scripts half registered. An init script touches no live page.
+    await instance.context().addInitScript(pinDate, FROZEN_NOW)
     await win.reload()
     await win.waitForFunction((now) => !!window.api?.settings && Date.now() === now, FROZEN_NOW, { timeout: 20_000 })
     await win.addStyleTag({ content: FREEZE_CSS })
     await captureThemeScreens(win, theme)
     await closeApp()
   }
+}
+
+/** Init script: `Date.now()` and `new Date()` read `now`; timers keep running. */
+function pinDate(now) {
+  const RealDate = Date
+  function FixedDate(...args) {
+    if (!new.target) return new RealDate(now).toString()
+    return new RealDate(...(args.length ? args : [now]))
+  }
+  FixedDate.prototype = RealDate.prototype
+  FixedDate.now = () => now
+  FixedDate.parse = RealDate.parse
+  FixedDate.UTC = RealDate.UTC
+  globalThis.Date = FixedDate
 }
 
 async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) {

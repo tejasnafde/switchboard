@@ -668,6 +668,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           className="message-actions"
           style={{
             display: 'flex',
+            // Wraps in a narrow pane instead of widening the row, which gave
+            // the whole message list a horizontal scrollbar.
+            flexWrap: 'wrap',
             gap: '4px',
             marginTop: '2px',
             paddingRight: isUser ? '2px' : 0,

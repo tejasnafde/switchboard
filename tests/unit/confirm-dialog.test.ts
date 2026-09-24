@@ -66,6 +66,25 @@ describe('confirm', () => {
     opener.remove()
   })
 
+  it('keeps the original return target when a confirm is chained from the previous answer', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    let second!: Promise<boolean>
+    const { answer } = await ask({ title: 'First?' })
+    const chained = answer.then(() => { second = confirm({ title: 'Second?' }); return second })
+    await act(async () => button('Cancel').click())
+    await act(async () => { await answer; await Promise.resolve() })
+    await vi.waitFor(() => expect(dialog()?.textContent).toContain('Second?'))
+    // The first close must not pull focus out of the second dialog.
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(dialog()?.contains(document.activeElement)).toBe(true)
+    await act(async () => button('Cancel').click())
+    await chained
+    await vi.waitFor(() => expect(document.activeElement).toBe(opener))
+    opener.remove()
+  })
+
   it('falls back to the composer when the opener was removed', async () => {
     const opener = document.createElement('button')
     document.body.append(opener)
