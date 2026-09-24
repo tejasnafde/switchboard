@@ -239,3 +239,13 @@ export function pinSendToTarget(body: string, pick: { id: string; title: string 
   if (!pick || !parsed?.ok || parsed.target !== pick.title) return body
   return `/send-to #${pick.id}: ${parsed.text}`
 }
+
+/**
+ * The pick to keep once a send settles. A delivered command has used its
+ * pick, and keeping it would pin a later `/send-to` with the same title to
+ * this chat. A failed send keeps it so the retry reaches the same chat. A
+ * newer pick made while the send was in flight is never dropped.
+ */
+export function sendToPickAfterSend<T>(current: T | null, sent: T | null, accepted: boolean): T | null {
+  return accepted && sent && current === sent ? null : current
+}

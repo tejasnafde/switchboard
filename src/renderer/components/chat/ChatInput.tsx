@@ -41,7 +41,7 @@ import {
   type SlashCommandContext,
 } from './slashCommands'
 import { detectAtTrigger, filterAtMatches } from './atMention'
-import { detectSendToTrigger, pinSendToTarget, SEND_TO_EMPTY_MESSAGE, sendToPickerItems, sendToPickInsertion } from './sendToCommand'
+import { detectSendToTrigger, pinSendToTarget, SEND_TO_EMPTY_MESSAGE, sendToPickAfterSend, sendToPickerItems, sendToPickInsertion } from './sendToCommand'
 import { fuzzyScore } from '../../services/fuzzyScore'
 import { AtMentionMenu } from './AtMentionMenu'
 import { DraftWorkspaceChips } from './DraftWorkspaceChips'
@@ -782,6 +782,7 @@ export function ChatInput({
     if (!result.accepted && origin && acceptedOriginsRef.current.delete(origin)) {
       result = { accepted: true }
     }
+    sendToPickRef.current = sendToPickAfterSend(sendToPickRef.current, pick, result.accepted)
     if (origin) {
       pendingOriginsRef.current.delete(origin)
       acceptedOriginsRef.current.delete(origin)

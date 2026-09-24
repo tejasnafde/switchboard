@@ -6,7 +6,7 @@
  * must name the candidates rather than pick one.
  */
 import { describe, it, expect } from 'vitest'
-import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger, sendToPickerItems, sendToPickInsertion, pinSendToTarget } from '../../src/renderer/components/chat/sendToCommand'
+import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger, sendToPickerItems, sendToPickInsertion, pinSendToTarget, sendToPickAfterSend } from '../../src/renderer/components/chat/sendToCommand'
 import { PEER_AGENT_SENT_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
 
 const sessions = [
@@ -378,5 +378,26 @@ describe('pinSendToTarget', () => {
     expect(pinSendToTarget('/send-to Other: hello', pick)).toBe('/send-to Other: hello')
     expect(pinSendToTarget('hello', pick)).toBe('hello')
     expect(pinSendToTarget('/send-to New chat: hello', null)).toBe('/send-to New chat: hello')
+  })
+})
+
+describe('sendToPickAfterSend', () => {
+  const pick = { sessionId: 's1', id: 'a1', title: 'Auth' }
+
+  it('drops the pick once its send is delivered, so a later /send-to with the same title is not pinned to it', () => {
+    const after = sendToPickAfterSend(pick, pick, true)
+    expect(after).toBeNull()
+    expect(pinSendToTarget('/send-to Auth: again', after)).toBe('/send-to Auth: again')
+  })
+
+  it('keeps the pick when the send fails, so the retry still reaches the picked chat', () => {
+    const after = sendToPickAfterSend(pick, pick, false)
+    expect(after).toBe(pick)
+    expect(pinSendToTarget('/send-to Auth: retry', after)).toBe('/send-to #a1: retry')
+  })
+
+  it('keeps a newer pick made while the send was in flight', () => {
+    const newer = { sessionId: 's1', id: 'b2', title: 'Billing' }
+    expect(sendToPickAfterSend(newer, pick, true)).toBe(newer)
   })
 })
