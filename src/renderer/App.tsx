@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth } from './stores/layout-store'
-import { showDragOverlay, hideDragOverlay } from './services/dragOverlay'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from './stores/agent-store'
 import { classifyCloseFocus, type ClosestEl } from './closeFocus'
 import { useBookmarkStore } from './stores/bookmark-store'
@@ -10,7 +9,8 @@ import { useMachineStore } from './stores/machine-store'
 import { useTerminalLifecycle } from './hooks/useTerminalLifecycle'
 import { ResizeHandle } from './components/layout/ResizeHandle'
 import { Sidebar } from './components/sidebar/Sidebar'
-import { ChatPanel } from './components/chat/ChatPanel'
+import { ChatWorkspacePanels } from './components/chat/ChatWorkspacePanels'
+import { ViewToggle } from './components/layout/ViewToggle'
 import { TerminalSessionPane } from './components/terminal/TerminalSessionPane'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { IdePane } from './components/ide/IdePane'
@@ -51,9 +51,10 @@ import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgent
 import { createRendererLogger } from './logger'
 import { focusComposer } from './services/composerRegistry'
 import { useDraftStore } from './stores/draft-store'
-import { nextChatPresentation, nextDualChatShortcutAction, shouldEvictReplacedSession, shouldShowChatFocusIndicator, type ChatPresentation } from './services/chatWorkspace'
+import { nextDualChatShortcutAction, shouldEvictReplacedSession } from './services/chatWorkspace'
 import type { AgentProvider } from '@shared/types'
 import { recoverPendingRequests } from './services/pendingRequestRecovery'
+import { resolveGlobalKeydown } from './services/globalKeybindings'
 
 const log = createRendererLogger('app')
 
@@ -1115,22 +1116,23 @@ export function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey) {
-        if (e.key === 'b' || e.key === 'B') {
+      const action = resolveGlobalKeydown(e)
+      if (!action) return
+      switch (action.type) {
+        case 'toggle-sidebar':
           e.preventDefault()
           toggleSidebar()
-        }
-        // ⌘+Shift+J - data scientist mode: workbench center, chat docked right
-        else if ((e.key === 'j' || e.key === 'J') && e.shiftKey) {
+          break
+        case 'toggle-data-science':
           e.preventDefault()
           useLayoutStore.getState().toggleDataScienceMode()
           if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
-        } else if (e.key === 'j' || e.key === 'J') {
+          break
+        case 'toggle-terminal':
           e.preventDefault()
           toggleTerminal()
-        }
-        // ⌘+Shift+E - toggle right pane: terminal ↔ files
-        else if ((e.key === 'e' || e.key === 'E') && e.shiftKey) {
+          break
+        case 'toggle-right-pane': {
           e.preventDefault()
           toggleRightPaneMode()
           if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
@@ -1141,35 +1143,29 @@ export function App() {
             const pid = sid ? useTerminalStore.getState().getActivePaneId(sid) : null
             if (pid) setTimeout(() => focusTerminal(pid), 40)
           }
+          break
         }
-        // ⌘+Shift+K - toggle top-level app view (chats ↔ kanban board)
-        else if ((e.key === 'k' || e.key === 'K') && e.shiftKey) {
+        case 'toggle-app-view':
           e.preventDefault()
           useLayoutStore.getState().toggleAppView()
-        }
-        // ⌘+Shift+O - new chat: pick the project, then a draft opens
-        else if ((e.key === 'o' || e.key === 'O') && e.shiftKey) {
+          break
+        case 'new-chat':
           e.preventDefault()
           setNewChatPickerOpen(true)
-        }
-        // ⌘+Shift+P - command palette
-        else if ((e.key === 'p' || e.key === 'P') && e.shiftKey) {
+          break
+        case 'toggle-palette':
           e.preventDefault()
           setPaletteOpen((prev) => !prev)
-        }
-        // ⌘+Shift+F - search across conversations
-        else if ((e.key === 'f' || e.key === 'F') && e.shiftKey) {
+          break
+        case 'toggle-search':
           e.preventDefault()
           setSearchOpen((prev) => !prev)
-        }
-        // ⌘+⇧+T - new window in a new row (below)
-        // ⌘+T    - new window in the same row (right of active)
-        //
+          break
         // Previously: silently did nothing when `activeSessionId` was
         // null - a bad UX that made the shortcut feel broken. Now:
         // falls back to the first available session; if none exist,
         // logs a helpful console warning so devtools shows the reason.
-        else if (e.key.toLowerCase() === 't') {
+        case 'new-terminal-window': {
           e.preventDefault()
           const agentState = useAgentStore.getState()
           let sid = useLayoutStore.getState().companionSessionId()
@@ -1187,24 +1183,21 @@ export function App() {
           const ids = st.getAllWindowIds(sid)
           const label = `Terminal ${ids.length + 1}`
           const cwd = sessionExecutionRootPath(sid)
-          const direction: 'column' | 'row' = e.shiftKey ? 'column' : 'row'
           const ref = ids.length === 0
             ? st.addWindow(sid, { label, cwd })
-            : st.splitActiveWindow(sid, direction, { label, cwd })
+            : st.splitActiveWindow(sid, action.direction, { label, cwd })
           if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
           if (ref) setTimeout(() => focusTerminal(ref.paneId), 80)
+          break
         }
-        // ⌘+Shift+| - toggle dual-chat mode (opens rightmost inactive
-        // session on the right, or closes if already dual). When opening,
-        // pick the most-recent session that isn't the currently active one.
-        //
-        else if (e.key === '|' || (e.key === '\\' && e.shiftKey)) {
+        // Opens the most-recent other session on the right, or closes if already dual.
+        case 'toggle-dual-chat':
           e.preventDefault()
           toggleDualChatWorkspace(() => setSessionPickerOpen(true))
-        }
-        // ⌘+Backspace - interrupt the current agent turn. xterm's helper
-        // textarea counts as text input so ⌘+Delete keeps its line-kill behavior.
-        else if (e.key === 'Backspace' && !e.shiftKey && !e.altKey) {
+          break
+        // xterm's helper textarea counts as text input so ⌘+Delete keeps its
+        // line-kill behavior.
+        case 'interrupt': {
           const sid = useLayoutStore.getState().focusedChatSessionId()
           const s = useAgentStore.getState().sessions.find((x) => x.id === sid)
           if (s && (s.status === 'running' || s.status === 'thinking')) {
@@ -1221,11 +1214,10 @@ export function App() {
               })
             }
           }
+          break
         }
-        // ⌘+L - context bridge: append active terminal selection to the
-        // chat draft. User types their question after the pasted context
-        // and hits Send as normal.
-        else if ((e.key === 'l' || e.key === 'L') && !e.shiftKey) {
+        // User types their question after the pasted context and hits Send as normal.
+        case 'context-bridge': {
           e.preventDefault()
           // Routes by `data-context-source` on the selection's anchor:
           // terminal | file-viewer | chat-message. Falls back to legacy
@@ -1234,15 +1226,14 @@ export function App() {
           if (!appended) {
             log.info('⌘L: no selection - select text in a terminal, file viewer, or chat message first')
           }
+          break
         }
-        // ⌘+K - quick prompt: open the floating prompt bar. Pre-fills
-        // with the current terminal selection as context (if any).
-        else if (e.key === 'k' || e.key === 'K') {
+        // Pre-fills with the current terminal selection as context (if any).
+        case 'quick-prompt':
           e.preventDefault()
           setQuickPromptOpen(true)
-        }
-        // ⌘+\ - new tab in the active window
-        else if (e.key === '\\' && !e.shiftKey) {
+          break
+        case 'new-terminal-tab': {
           const sid = useLayoutStore.getState().companionSessionId()
           if (sid) {
             e.preventDefault()
@@ -1253,50 +1244,39 @@ export function App() {
             if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
             if (pid) setTimeout(() => focusTerminal(pid), 80)
           }
+          break
         }
-        // ⌘+⇧+] - next tab in active window
-        else if (e.key === '}' || (e.key === ']' && e.shiftKey)) {
+        case 'cycle-tab': {
           const sid = useLayoutStore.getState().companionSessionId()
           if (sid) {
             e.preventDefault()
-            useTerminalStore.getState().cyclePane(sid, 'next')
+            useTerminalStore.getState().cyclePane(sid, action.direction)
             const pid = useTerminalStore.getState().getActivePaneId(sid)
             if (pid) setTimeout(() => focusTerminal(pid), 40)
           }
+          break
         }
-        // ⌘+⇧+[ - prev tab in active window
-        else if (e.key === '{' || (e.key === '[' && e.shiftKey)) {
-          const sid = useLayoutStore.getState().companionSessionId()
-          if (sid) {
-            e.preventDefault()
-            useTerminalStore.getState().cyclePane(sid, 'prev')
-            const pid = useTerminalStore.getState().getActivePaneId(sid)
-            if (pid) setTimeout(() => focusTerminal(pid), 40)
-          }
-        }
-        // ⌘+⌥+Arrow - navigate between windows directionally
-        else if (e.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        case 'focus-direction': {
           const sid = useLayoutStore.getState().companionSessionId()
           if (!sid) return
           e.preventDefault()
-          const dirMap = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' } as const
-          useTerminalStore.getState().focusDirection(sid, dirMap[e.key as keyof typeof dirMap])
+          useTerminalStore.getState().focusDirection(sid, action.direction)
           const pid = useTerminalStore.getState().getActivePaneId(sid)
           if (pid) setTimeout(() => focusTerminal(pid), 40)
+          break
         }
-        // ⌘+1..9 - focus window by index
-        else if (e.key >= '1' && e.key <= '9') {
+        case 'focus-window': {
           const sid = useLayoutStore.getState().companionSessionId()
           if (sid) {
-            const index = parseInt(e.key) - 1
             const ids = useTerminalStore.getState().getAllWindowIds(sid)
-            if (index < ids.length) {
+            if (action.index < ids.length) {
               e.preventDefault()
-              useTerminalStore.getState().focusWindowByIndex(sid, index)
+              useTerminalStore.getState().focusWindowByIndex(sid, action.index)
               const pid = useTerminalStore.getState().getActivePaneId(sid)
               if (pid) setTimeout(() => focusTerminal(pid), 50)
             }
           }
+          break
         }
       }
     }
@@ -1623,287 +1603,5 @@ export function App() {
       <UpdateToast />
       <AnalyticsNotice />
     </div>
-  )
-}
-
-/**
- * Segmented "Chats / Board" toggle in the title bar. Mirrors ⌘⇧K so the
- * mode swap is discoverable without the keyboard shortcut. Sits inside
- * the drag region but opts out via WebkitAppRegion: 'no-drag' so clicks
- * land on the buttons.
- */
-function ViewToggle(): React.ReactElement {
-  const appView = useLayoutStore((s) => s.appView)
-  const setAppView = useLayoutStore((s) => s.setAppView)
-  const baseBtn: React.CSSProperties = {
-    background: 'none',
-    border: 'none',
-    padding: '3px 10px',
-    fontSize: '11px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-    borderRadius: '4px',
-    WebkitAppRegion: 'no-drag',
-    transition: 'background 0.12s, color 0.12s',
-  }
-  const activeBtn: React.CSSProperties = {
-    ...baseBtn,
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
-  }
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        border: '1px solid var(--border)',
-        borderRadius: '6px',
-        padding: '2px',
-        gap: '2px',
-        cursor: 'pointer',
-        WebkitAppRegion: 'no-drag',
-      }}
-      title="Toggle Chats ↔ Board (⌘⇧K)"
-    >
-      <button
-        type="button"
-        style={appView === 'chats' ? activeBtn : baseBtn}
-        onClick={() => setAppView('chats')}
-      >
-        Chats
-      </button>
-      <button
-        type="button"
-        style={appView === 'kanban' ? activeBtn : baseBtn}
-        onClick={() => setAppView('kanban')}
-      >
-        Board
-      </button>
-    </span>
-  )
-}
-
-function ChatWorkspacePanels({
-  dataScienceMode,
-  onOpenBeside,
-}: {
-  dataScienceMode: boolean
-  onOpenBeside: () => void
-}) {
-  const chatSplitRatio = useLayoutStore((s) => s.chatSplitRatio)
-  const setChatSplitRatio = useLayoutStore((s) => s.setChatSplitRatio)
-  const primarySessionId = useLayoutStore((s) => s.primarySessionId)
-  const secondarySessionId = useLayoutStore((s) => s.secondarySessionId)
-  const focusedSlot = useLayoutStore((s) => s.focusedChatSlot)
-  const focusChatSlot = useLayoutStore((s) => s.focusChatSlot)
-  const closeChatSlot = useLayoutStore((s) => s.closeChatSlot)
-  const workspaceRef = useRef<HTMLDivElement>(null)
-  const leftRef = useRef<HTMLDivElement>(null)
-  const rightRef = useRef<HTMLDivElement>(null)
-  const [workspaceWidth, setWorkspaceWidth] = useState(1000)
-  const [splitDragging, setSplitDragging] = useState(false)
-  const [chatPresentation, setChatPresentation] = useState<ChatPresentation>(
-    dataScienceMode ? 'tabs' : 'split',
-  )
-  const primaryLabel = useAgentStore((state) =>
-    state.sessions.find((session) => session.id === primarySessionId)?.title ?? 'Primary chat',
-  )
-  const secondaryLabel = useAgentStore((state) =>
-    state.sessions.find((session) => session.id === secondarySessionId)?.title ?? 'Secondary chat',
-  )
-
-  useEffect(() => {
-    const element = workspaceRef.current
-    if (!element) return
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width
-      if (typeof width === 'number') setWorkspaceWidth(width)
-    })
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [])
-
-  useEffect(() => {
-    setChatPresentation((current) =>
-      nextChatPresentation(current, workspaceWidth, dataScienceMode, splitDragging),
-    )
-  }, [workspaceWidth, dataScienceMode, splitDragging])
-
-  const dual = secondarySessionId !== null
-  const tabbed = dual && chatPresentation === 'tabs'
-  const showFocusIndicator = shouldShowChatFocusIndicator(dual, chatPresentation)
-
-  return (
-    <div
-      ref={workspaceRef}
-      data-chat-workspace
-      data-chat-presentation={chatPresentation}
-      style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0 }}
-    >
-      {tabbed && (
-        <div className="chat-workspace-tabs" role="tablist" aria-label="Chats side by side">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={focusedSlot === 'primary'}
-            onClick={() => focusChatSlot('primary')}
-          >
-            {primaryLabel}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={focusedSlot === 'secondary'}
-            onClick={() => focusChatSlot('secondary')}
-          >
-            {secondaryLabel}
-          </button>
-        </div>
-      )}
-      <div style={{ flex: '1 1 0%', minHeight: 0, minWidth: 0, display: 'flex' }}>
-      <div
-        ref={leftRef}
-        data-chat-slot-wrapper="primary"
-        style={{
-          flex: dual && !tabbed ? `${chatSplitRatio} 1 0%` : '1 1 0%',
-          display: tabbed && focusedSlot !== 'primary' ? 'none' : 'flex',
-          minWidth: 0,
-          overflow: 'hidden',
-        }}
-      >
-        <ChatPanel
-          chatSlot="primary"
-          visible={!tabbed || focusedSlot === 'primary'}
-          showFocusIndicator={showFocusIndicator}
-          onClose={dual ? () => closeChatSlot('primary') : undefined}
-          onOpenBeside={onOpenBeside}
-        />
-      </div>
-      {dual && !tabbed && (
-        <ChatSplitHandle
-          leftRef={leftRef}
-          rightRef={rightRef}
-          initialRatio={chatSplitRatio}
-          onCommit={setChatSplitRatio}
-          onDraggingChange={setSplitDragging}
-        />
-      )}
-      <div
-        ref={rightRef}
-        data-chat-slot-wrapper="secondary"
-        style={{
-          flex: !tabbed ? `${1 - chatSplitRatio} 1 0%` : '1 1 0%',
-          display: !dual || (tabbed && focusedSlot !== 'secondary') ? 'none' : 'flex',
-          minWidth: 0,
-          overflow: 'hidden',
-        }}
-      >
-        <ChatPanel
-          chatSlot="secondary"
-          visible={dual && (!tabbed || focusedSlot === 'secondary')}
-          showFocusIndicator={showFocusIndicator}
-          onClose={() => closeChatSlot('secondary')}
-          onOpenBeside={onOpenBeside}
-        />
-      </div>
-      </div>
-    </div>
-  )
-}
-
-/**
- * Drag handle between two ChatPanels. Writes flex-grow directly to the
- * two panel DOM nodes during drag (no React re-renders). Commits the
- * final ratio to the store on pointerup.
- */
-function ChatSplitHandle({
-  leftRef,
-  rightRef,
-  initialRatio,
-  onCommit,
-  onDraggingChange,
-}: {
-  leftRef: React.RefObject<HTMLDivElement | null>
-  rightRef: React.RefObject<HTMLDivElement | null>
-  initialRatio: number
-  onCommit: (ratio: number) => void
-  onDraggingChange?: (dragging: boolean) => void
-}) {
-  const activePointerRef = useRef<number | null>(null)
-  const currentRatioRef = useRef(initialRatio)
-  const handleElRef = useRef<HTMLDivElement | null>(null)
-
-  // Single idempotent teardown so the divider can never get stuck in resize
-  // mode. Called from pointerup, pointercancel, lostpointercapture (pointer
-  // crossed into a ChatPanel webview and capture was yanked), and window blur.
-  const endDrag = useCallback(() => {
-    if (activePointerRef.current === null) return
-    const el = handleElRef.current
-    // releasePointerCapture throws routinely (capture already lost/yanked by a
-    // webview) - this is the expected, high-frequency case, not a bug.
-    // eslint-disable-next-line no-restricted-syntax -- see comment above
-    if (el) { try { el.releasePointerCapture(activePointerRef.current) } catch { /* ignore */ } }
-    activePointerRef.current = null
-    onDraggingChange?.(false)
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    hideDragOverlay()
-    onCommit(currentRatioRef.current)
-  }, [onCommit, onDraggingChange])
-
-  useEffect(() => {
-    const onBlur = () => endDrag()
-    window.addEventListener('blur', onBlur)
-    return () => {
-      window.removeEventListener('blur', onBlur)
-      // Unmounted mid-drag: clear the stuck cursor / overlay.
-      if (activePointerRef.current !== null) {
-        activePointerRef.current = null
-        onDraggingChange?.(false)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        hideDragOverlay()
-      }
-    }
-  }, [endDrag, onDraggingChange])
-
-  return (
-    <div
-      ref={handleElRef}
-      style={{
-        width: '4px',
-        flexShrink: 0,
-        cursor: 'col-resize',
-        background: 'var(--border)',
-        position: 'relative',
-        touchAction: 'none',
-      }}
-      onPointerDown={(e) => {
-        // setPointerCapture can throw for an already-released pointer id;
-        // routine, not worth logging.
-        // eslint-disable-next-line no-restricted-syntax -- see comment above
-        try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* ignore */ }
-        activePointerRef.current = e.pointerId
-        onDraggingChange?.(true)
-        document.body.style.cursor = 'col-resize'
-        document.body.style.userSelect = 'none'
-        showDragOverlay('col-resize')
-      }}
-      onPointerMove={(e) => {
-        if (activePointerRef.current !== e.pointerId) return
-        const row = (e.currentTarget as HTMLElement).parentElement
-        if (!row) return
-        const rect = row.getBoundingClientRect()
-        const local = e.clientX - rect.left
-        const ratio = Math.max(0.2, Math.min(0.8, local / rect.width))
-        currentRatioRef.current = ratio
-        // Direct DOM writes - no React re-render during drag.
-        if (leftRef.current) leftRef.current.style.flex = `${ratio} 1 0%`
-        if (rightRef.current) rightRef.current.style.flex = `${1 - ratio} 1 0%`
-      }}
-      onPointerUp={() => endDrag()}
-      onPointerCancel={() => endDrag()}
-      onLostPointerCapture={() => endDrag()}
-    />
   )
 }

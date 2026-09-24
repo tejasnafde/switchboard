@@ -8,6 +8,7 @@
       "status": "implemented",
       "evidence": [
         "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/providerEventReducer.ts",
         "src/preload/index.ts",
         "src/main/provider/adapters/demo-adapter.ts",
         "e2e/reopen-tool-rows.e2e.mjs"
@@ -45,13 +46,14 @@
         "tests/unit/assistant-mirror.test.ts",
         "tests/unit/reopen-tool-rows.test.ts",
         "tests/unit/checkpoint-tracker.test.ts",
-        "tests/unit/files-write.test.ts"
+        "tests/unit/files-write.test.ts",
+        "tests/unit/provider-event-reducer.test.ts"
       ]
     },
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/main/db/database.ts",
+        "src/main/db/messages.ts",
         "tests/fixtures/reopen-tool-rows/claude-session.jsonl",
         "tests/fixtures/reopen-tool-rows/codex-rollout.jsonl"
       ]

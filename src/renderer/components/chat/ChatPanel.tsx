@@ -1,16 +1,18 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
+import { useAgentStore, type RuntimeMode } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
-import { useSpendBlockStore } from '../../stores/spend-block-store'
 import { useMachineStore } from '../../stores/machine-store'
 import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotationMarker'
 import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
-import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage } from './sendToCommand'
-import { clearProviderRetry, upsertProviderRetry } from './providerRetry'
+import { parseSendTo, resolveSendToTarget } from './sendToCommand'
+import { reduceProviderEvent, upsertAssistantContent } from './providerEventReducer'
 import { MessageList } from './MessageList'
+import { changeModel, changeReasoningEffort, changeRuntimeMode } from './chatSessionSettings'
+import { useChatSearch } from './useChatSearch'
+import { SlashHelpOverlay } from './SlashHelpOverlay'
 import { ChatInput, type ChatSendResult } from './ChatInput'
 import { chatIdentity } from './chatIdentity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
@@ -19,40 +21,28 @@ import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { isDraftSessionId } from '@shared/new-chat-draft'
 import { canSteer } from '@shared/turn-delivery'
-import { fileDiffRowId, toolInputText, toolRowId } from '@shared/turn-activity'
 import { materializeDraft, takeFirstSend } from '../../services/draftChat'
 import { ContextWindowMeter } from './ContextWindowMeter'
-import { SLASH_COMMANDS } from './slashCommands'
 import {
   onSessionRename,
   emitSessionRename,
-  emitSessionActivity,
-  emitUserTurnAccepted,
   onReducedProviderEvent,
 } from '../../services/session-events'
-import { notifyTurnCompleted } from '../../services/notifications'
 import { isAssistantStreamingEnabled } from '../../services/streamingPref'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('chat:panel')
-import {
-  bufferContent,
-  createStreamingBuffer,
-  drainTurn,
-} from '../../services/streamingBuffer'
 import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
 import {
   finishRuntimeEventLifecycle,
   messageLifecycle,
   prepareRuntimeEventLifecycle,
 } from '../../services/messageLifecycle'
-import { applyContentText, type ContentChunk } from '@shared/content-stream'
 import {
   validateUserMessageImages,
   type UserTurnSubmissionV1,
 } from '@shared/provider-events'
 import {
-  acceptedDesktopUserMessage,
   desktopComposerFingerprint,
   desktopPreparedTurns,
   desktopRecoveryResolutionAllowsSend,
@@ -65,12 +55,8 @@ import {
 } from '../../services/desktopTurnSubmission'
 import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
-import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
-import {
-  defaultInstanceSettingKey,
-  defaultModelSettingKey,
-  SETTING_DEFAULT_RUNTIME_MODE,
-} from '@shared/session-defaults'
+import { defaultInstanceId, agentLabel, type AgentType, type ChatMessage } from '@shared/types'
+import { defaultInstanceSettingKey } from '@shared/session-defaults'
 import { useLayoutStore } from '../../stores/layout-store'
 import type { ChatSlot } from '../../services/chatWorkspace'
 import { focusComposer } from '../../services/composerRegistry'
@@ -93,35 +79,6 @@ interface ChatPanelProps {
   /** Optional close button for the right-hand panel in dual mode. */
   onClose?: () => void
   onOpenBeside?: () => void
-}
-
-/**
- * Window-wide, not per panel: exactly one mounted panel claims each event, so
- * with streaming off the whole reply died with the claiming panel when this was
- * per-instance.
- */
-const streamingBuffer = createStreamingBuffer()
-
-/**
- * Update a streamed assistant message if it exists, else append a fresh bubble.
- * Shared by the streaming-ON coalescer commit and the streaming-OFF drainTurn
- * flush so the two paths cannot drift.
- */
-function upsertAssistantContent(threadId: string, messageId: string, chunk: ContentChunk): void {
-  const store = useAgentStore.getState()
-  const session = store.sessions.find((s) => s.id === threadId)
-  const existing = session?.messages.find((m) => m.id === messageId)
-  const text = applyContentText(existing?.content, chunk)
-  if (existing) {
-    store.updateMessage(threadId, messageId, { content: text })
-  } else {
-    store.appendMessage(threadId, {
-      id: messageId,
-      role: 'assistant',
-      content: text,
-      timestamp: Date.now(),
-    })
-  }
 }
 
 export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFocusIndicator = false, onClose, onOpenBeside }: ChatPanelProps = {}) {
@@ -149,8 +106,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const updateStatus = useAgentStore((s) => s.updateStatus)
   const setTitle = useAgentStore((s) => s.setTitle)
   const storeSetRuntimeMode = useAgentStore((s) => s.setRuntimeMode)
-  const storeSetModel = useAgentStore((s) => s.setModel)
-  const storeSetReasoningEffort = useAgentStore((s) => s.setReasoningEffort)
   const storeSetAgentType = useAgentStore((s) => s.setAgentType)
   const storeSetInstanceId = useAgentStore((s) => s.setInstanceId)
   const clearMessages = useAgentStore((s) => s.clearMessages)
@@ -160,14 +115,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const agentStartedRef = useRef<Set<string>>(new Set())
   const [slashHelpOpen, setSlashHelpOpen] = useState(false)
 
-  // ── In-pane ⌘F search ────────────────────────────────────────────
-  // Filters this panel's messages by substring and steps through them.
-  // Reuses `requestScrollToMessage` (the same plumbing ⌘⇧F uses) so
-  // the virtualizer can land on the right row + flash-highlight it.
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchIdx, setSearchIdx] = useState(0)
-  const requestScrollToMessage = useAgentStore((s) => s.requestScrollToMessage)
 
   const messages = activeSession?.messages ?? []
   const status = activeSession?.status ?? 'idle'
@@ -266,58 +213,21 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
 
   const handleRuntimeModeChange = useCallback((mode: RuntimeMode) => {
     if (!sessionId) return
-    storeSetRuntimeMode(sessionId, mode)
-    // Propagate to active provider session if running
-    ;window.api.provider?.setRuntimeMode?.(sessionId, mode).catch((err: unknown) => {
-      log.warn(`setRuntimeMode failed for ${sessionId} - live provider session may not have applied it`, err)
-    })
-    // Persist as the per-conversation source of truth so reopening this
-    // chat (sidebar, kanban card click, ⌘⇧F search jump) restores the
-    // selection instead of falling back to the hardcoded default.
-    window.api.app?.setConversationRuntimeMode?.(sessionId, mode).catch((err: unknown) => {
-      log.warn(`setConversationRuntimeMode failed for ${sessionId}`, err)
-    })
-    // Also remember as the user-level default so brand-new sessions seed
-    // with this mode instead of always reverting to 'sandbox'.
-    setStoreDefaultRuntimeMode(mode)
-    window.api.settings
-      ?.set?.(SETTING_DEFAULT_RUNTIME_MODE, mode)
-      .catch((err: unknown) => log.warn('could not save the default runtime mode', err))
-  }, [sessionId, storeSetRuntimeMode])
+    changeRuntimeMode(sessionId, mode)
+  }, [sessionId])
 
   const handleModelChange = useCallback((m: string) => {
     if (!sessionId) return
-    storeSetModel(sessionId, m)
-    // Propagate to the running provider session (opencode reads this per
-    // turn; Claude/Codex no-op). Without this, the adapter keeps using
-    // whatever model was passed at startSession forever.
-    window.api.provider.setModel?.(sessionId, m).catch((err: unknown) => {
-      log.warn(`setModel failed for ${sessionId} - live provider session may not have applied it`, err)
-    })
-    // Persist as the per-conversation source of truth so reopening this
-    // chat (sidebar, kanban card click) restores the pin instead of losing
-    // it the moment the live session object stops matching session.id.
-    window.api.app?.setConversationModel?.(sessionId, m).catch((err: unknown) => {
-      log.warn(`setConversationModel failed for ${sessionId}`, err)
-    })
-    // And as the machine default, so a session started from anywhere else -
-    // notably the phone, which cannot see this window - opens on the same
-    // model instead of whatever the provider CLI picks.
-    window.api.settings
-      ?.set?.(defaultModelSettingKey(agentType), m)
-      .catch((err: unknown) => log.warn('could not save the default model', err))
+    changeModel(sessionId, agentType, m)
     // `agentType` is read above, so it belongs here: without it the callback
     // keeps the agent it was created with and files the model under the wrong
     // one after a provider switch.
-  }, [sessionId, storeSetModel, agentType])
+  }, [sessionId, agentType])
 
   const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {
     if (!sessionId) return
-    storeSetReasoningEffort(sessionId, effort)
-    window.api.app.setConversationReasoningEffort(sessionId, effort).catch((err: unknown) => {
-      log.warn(`setConversationReasoningEffort failed for ${sessionId}`, err)
-    })
-  }, [sessionId, storeSetReasoningEffort])
+    changeReasoningEffort(sessionId, effort)
+  }, [sessionId])
 
   useEffect(() => {
     if (activeSession?.type) {
@@ -534,402 +444,14 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         (threadId) => contentCoalescerRef.current?.flushThread(threadId),
       )
 
-      switch (event.type) {
-        // This canonical event is the only point where Desktop presents the
-        // user turn as sent. Mobile outboxes may already have a pending bubble;
-        // the shared origin id collapses their accepted echo onto it.
-        case 'user.message': {
-          if (event.handoffMarker) {
-            appendMessage(tid, {
-              id: event.handoffMarker.id,
-              role: 'system',
-              content: event.handoffMarker.text,
-              timestamp: event.at - 1,
-            })
-          }
-          const acceptedMessage = acceptedDesktopUserMessage(event)
-          if (acceptedMessage) {
-            const existing = useAgentStore.getState().sessions
-              .find((session) => session.id === tid)?.messages
-              .some((message) => message.id === acceptedMessage.id)
-            if (existing) {
-              updateMessage(tid, acceptedMessage.id, {
-                ...acceptedMessage,
-                deliveryState: undefined,
-              })
-            } else {
-              appendMessage(tid, acceptedMessage)
-            }
-          }
-          emitSessionActivity(tid, event.at)
-          if (event.conversationTitle) {
-            setTitle(tid, event.conversationTitle)
-            emitSessionRename(tid, event.conversationTitle)
-          }
-          if (event.origin) emitUserTurnAccepted(tid, event.origin)
-          break
-        }
-        case 'content': {
-          const chunk = { text: event.text, append: event.append }
-          if (!streamingEnabledRef.current) {
-            bufferContent(streamingBuffer, tid, event.messageId, chunk)
-            break
-          }
-          contentCoalescerRef.current?.push(tid, event.messageId, chunk)
-          break
-        }
-        case 'peer.message': {
-          // Both sides render live. The backend persisted the same ids, so
-          // appendMessage's id-idempotency collapses the stored row onto this
-          // bubble instead of showing the delivery twice after a reload.
-          const ownLabel = useAgentStore.getState().sessions.find((s) => s.id === tid)?.title ?? tid
-          appendMessage(tid, peerMessageToChatMessage(event, ownLabel))
-          break
-        }
-        case 'tool.started': {
-          const existing = useAgentStore.getState().sessions
-            .find((s) => s.id === tid)?.messages
-            .find((m) => m.toolCalls?.some((tc) => tc.id === event.toolId))
-          if (existing) {
-            updateMessage(tid, existing.id, {
-              toolCalls: existing.toolCalls?.map((tc) => tc.id === event.toolId
-                ? { ...tc, name: event.toolName, input: toolInputText(event.input) }
-                : tc),
-            })
-            break
-          }
-          appendMessage(tid, {
-            id: toolRowId(tid, event.toolId),
-            role: 'assistant',
-            content: '',
-            toolCalls: [{
-              id: event.toolId,
-              name: event.toolName,
-              input: toolInputText(event.input),
-            }],
-            timestamp: Date.now(),
-          })
-          break
-        }
-        case 'tool.completed': {
-          const sessions = useAgentStore.getState().sessions
-          const session = sessions.find((s) => s.id === tid)
-          const toolMsg = session?.messages.find((m) =>
-            m.toolCalls?.some((tc) => tc.id === event.toolId)
-          )
-          if (toolMsg) {
-            updateMessage(tid, toolMsg.id, {
-              toolCalls: toolMsg.toolCalls?.map((tc) =>
-                tc.id === event.toolId ? { ...tc, output: event.output } : tc
-              ),
-            })
-          }
-          break
-        }
-        case 'tool.denied': {
-          // Policy-level denial (e.g. Plan mode blocked a Write). Render as
-          // a denial pill in the chat stream so the user sees the block.
-          appendMessage(tid, {
-            id: `denied_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            role: 'system',
-            content: '',
-            timestamp: Date.now(),
-            denial: {
-              toolName: event.toolName,
-              reason: event.reason,
-              mode: event.mode,
-            },
-          })
-          break
-        }
-        case 'request.opened': {
-          appendMessage(tid, {
-            id: `approval_${event.requestId}`,
-            role: 'assistant',
-            content: '',
-            approval: {
-              toolName: event.toolName,
-              detail: event.detail,
-              status: 'pending',
-            },
-            timestamp: Date.now(),
-          })
-          break
-        }
-        case 'request.closed': {
-          const sessions = useAgentStore.getState().sessions
-          const session = sessions.find((s) => s.id === tid)
-          const approvalMsg = session?.messages.find((m) => m.id === `approval_${event.requestId}`)
-          if (approvalMsg?.approval) {
-            updateMessage(tid, approvalMsg.id, {
-              approval: {
-                ...approvalMsg.approval,
-                status: event.decision === 'approve' ? 'accepted' : 'rejected',
-              },
-            })
-          }
-          break
-        }
-        case 'turn.completed': {
-          clearProviderRetry(tid)
-          // Flush buffered content if streaming was off this turn.
-          if (!streamingEnabledRef.current) {
-            const drained = drainTurn(streamingBuffer, tid)
-            for (const entry of drained) {
-              // The buffer already folded every chunk, so this is the whole
-              // body and replaces rather than extends.
-              upsertAssistantContent(tid, entry.messageId, { text: entry.text })
-            }
-          }
-          // Token usage comes from context_window events only - this event's
-          // usedTokens is input_tokens sans cache reads, misleadingly tiny.
-          // Stamp wall-clock duration on the last assistant message so the
-          // bubble can render "Worked for X.Xs" Cursor-style.
-          if (event.durationMs !== undefined) {
-            const store = useAgentStore.getState()
-            const sessForDur = store.sessions.find((s) => s.id === tid)
-            if (sessForDur) {
-              for (let i = sessForDur.messages.length - 1; i >= 0; i--) {
-                if (sessForDur.messages[i].role === 'assistant') {
-                  store.updateMessage(tid, sessForDur.messages[i].id, {
-                    turnDurationMs: event.durationMs,
-                  })
-                  break
-                }
-              }
-            }
-          }
-          // Native OS notification if user isn't looking at this chat.
-          const store = useAgentStore.getState()
-          const sess = store.sessions.find((s) => s.id === tid)
-          if (sess) {
-            const projectName = sess.projectPath?.split('/').pop()
-            const agentLabel = sess.type === 'codex' ? 'Codex' : sess.type === 'opencode' ? 'OpenCode' : 'Claude Code'
-            void notifyTurnCompleted({
-              sessionTitle: sess.title ?? 'New conversation',
-              projectName,
-              agentLabel,
-              threadId: tid,
-              displayedSessionIds: useLayoutStore.getState().displayedChatSessionIds(),
-              onClick: () => useLayoutStore.getState().selectChatSession(tid),
-            })
-          }
-          break
-        }
-        case 'turn.retrying': {
-          upsertProviderRetry(tid, event.message)
-          break
-        }
-        case 'context_window': {
-          // Real context usage from SDK - reflects compaction too
-          useAgentStore.getState().setTokenUsage(tid, {
-            usedTokens: event.usedTokens,
-            maxTokens: event.maxTokens ?? null,
-          })
-          // ACP adapters (currently OpenCode) also forward cumulative cost
-          // here. Push it onto the session so StatusBar can display it.
-          if (typeof event.costUsd === 'number') {
-            useAgentStore.getState().setCostUsd(tid, event.costUsd)
-          }
-          // Lets the picker name the model instead of showing "Default".
-          if (event.model) {
-            useAgentStore.getState().setResolvedModel(tid, event.model)
-          }
-          break
-        }
-        case 'session.provider': {
-          useAgentStore.getState().setInstanceId(tid, event.instanceId ?? undefined)
-          break
-        }
-        case 'spend.blocked': {
-          // ChatInput warns on this pair before the next send.
-          if (event.model) {
-            useSpendBlockStore.getState().record({
-              instanceId: event.instanceId,
-              model: event.model,
-              reason: event.reason,
-              scope: event.scope,
-              resetsAtMs: event.resetsAtMs,
-            })
-          }
-          break
-        }
-        case 'model.unavailable': {
-          // The adapter already switched to the default; clear the stored pick
-          // so reopening the chat does not bring the retired model back. A
-          // newer pick made before this event arrived is left alone.
-          const current = useAgentStore.getState().sessions.find((s) => s.id === tid)
-          if (current?.model === event.model) {
-            useAgentStore.getState().setModel(tid, '')
-            window.api.app.setConversationModel?.(tid, '').catch((err: unknown) => log.warn('clear retired model failed', err))
-          }
-          // And the machine default, or every new chat would start on it again.
-          if (current && current.type !== 'terminal') {
-            const key = defaultModelSettingKey(current.type)
-            void window.api.settings?.get?.(key).then((stored: string | null) => {
-              if (stored === event.model) return window.api.settings?.set?.(key, '')
-            }).catch((err: unknown) => log.warn('clear retired default model failed', err))
-          }
-          appendMessage(tid, {
-            id: `model_unavailable_${Date.now()}`,
-            role: 'system',
-            content: `${event.model} is not available on this account any more. This chat now uses the default model.`,
-            timestamp: Date.now(),
-          })
-          break
-        }
-        case 'model.variants': {
-          // Agent-reported variant set for the currently selected model
-          // (OpenCode ACP). Drives the chip group next to the model picker.
-          useAgentStore.getState().setVariants(tid, event.availableVariants, event.currentVariant)
-          break
-        }
-        case 'plan.proposed': {
-          appendMessage(tid, {
-            id: `plan_${event.planId}`,
-            role: 'assistant',
-            content: '',
-            timestamp: Date.now(),
-            plan: { id: event.planId, markdown: event.planMarkdown },
-          })
-          break
-        }
-        case 'todo.updated': {
-          // Replaced in place, not appended: Codex re-sends the whole list on
-          // every step change, so appending would stack a card per update.
-          const todoMsgId = `todo_${event.todoId}`
-          const store = useAgentStore.getState()
-          const has = store.sessions.find((s) => s.id === tid)?.messages
-            .some((m) => m.id === todoMsgId)
-          if (has) {
-            updateMessage(tid, todoMsgId, { todos: { id: event.todoId, items: event.items } })
-          } else {
-            appendMessage(tid, {
-              id: todoMsgId,
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-              todos: { id: event.todoId, items: event.items },
-            })
-          }
-          break
-        }
-        case 'question.asked': {
-          appendMessage(tid, {
-            id: `question_${event.requestId}`,
-            role: 'assistant',
-            content: '',
-            timestamp: Date.now(),
-            question: {
-              requestId: event.requestId,
-              questions: event.questions,
-              status: 'pending',
-            },
-          })
-          // If this session is linked to a kanban card, surface the wait
-          // on the board: in_progress → needs_input. Only auto-promote
-          // from in_progress so we don't disturb backlog/done cards.
-          const askedCard = useKanbanStore.getState().findByConversationId(tid)
-          if (askedCard?.status === 'in_progress') {
-            void useKanbanStore.getState().update(askedCard.id, { status: 'needs_input' })
-          }
-          break
-        }
-        case 'question.answered': {
-          const sessions = useAgentStore.getState().sessions
-          const session = sessions.find((s) => s.id === tid)
-          const qMsg = session?.messages.find((m) => m.id === `question_${event.requestId}`)
-          if (qMsg?.question) {
-            updateMessage(tid, qMsg.id, {
-              question: { ...qMsg.question, status: 'answered', answers: event.answers },
-            })
-          }
-          // Reverse the auto-promotion from question.asked.
-          const answeredCard = useKanbanStore.getState().findByConversationId(tid)
-          if (answeredCard?.status === 'needs_input') {
-            void useKanbanStore.getState().update(answeredCard.id, { status: 'in_progress' })
-          }
-          break
-        }
-        case 'file.edited': {
-          // One diff card per file changed during the turn (git-checkpoint
-          // derived). Coalesce re-edits of the same file within a turn by id.
-          const id = fileDiffRowId(event.fileEditId)
-          const sessions = useAgentStore.getState().sessions
-          const session = sessions.find((s) => s.id === tid)
-          const existing = session?.messages.find((m) => m.id === id)
-          const fileDiff = {
-            fileEditId: event.fileEditId,
-            repoRoot: event.repoRoot,
-            relPath: event.relPath,
-            changeKind: event.changeKind,
-            oldContent: event.oldContent,
-            newContent: event.newContent,
-            status: 'pending' as const,
-          }
-          if (existing) {
-            updateMessage(tid, id, { fileDiff })
-          } else {
-            appendMessage(tid, { id, role: 'assistant', content: '', timestamp: Date.now(), fileDiff })
-          }
-          break
-        }
-        case 'session.execution-root-changed': {
-        // The backend COMMITTED a move: the provider is already running
-        // there. Unlike `worktree.drift` this is not a suggestion, and unlike
-        // the old pointer write it is revision-guarded, so a late event from
-        // a client that was asleep cannot drag the chip backwards.
-        useAgentStore.getState().applyExecutionRoot(tid, {
-          path: event.to.path,
-          branch: event.to.branch,
-          revision: event.revision,
-          isWorktree: event.to.isWorktree,
-        })
-        break
-      }
-      case 'worktree.drift': {
-          // Suggestion only - swapping the pointer is the user's call (three
-          // agents in three worktrees would ping-pong an auto-swap).
-          // Already-followed worktrees are skipped (per-turn re-arm would
-          // otherwise re-suggest where you are).
-          //
-          // Remote sessions used to be dropped here, because following meant
-          // writing a remote absolute path into local routing. Relocation is
-          // now a request to the backend that OWNS the path: this renderer
-          // holds the suggestion, hands it straight back to the same machine,
-          // and never interprets it. So remote drift is followable now.
-          const drifted = useAgentStore.getState().sessions.find((s) => s.id === tid)
-          if (drifted?.worktreePath === event.worktreePath) break
-          useAgentStore.getState().setDriftSuggestion(tid, {
-            worktreePath: event.worktreePath,
-            branch: event.branch,
-          })
-          break
-        }
-        case 'error': {
-          clearProviderRetry(tid)
-          const errMsg: ChatMessage = {
-            id: `error_${Date.now()}`,
-            role: 'system',
-            content: `Error: ${event.message}`,
-            timestamp: Date.now(),
-          }
-          appendMessage(tid, errMsg)
-          // Persisted by the registry, not here: this listener only exists when
-          // a desktop window is attached, so a phone talking to a headless
-          // server lost the card on reload.
-          break
-        }
-        case 'status': {
-          updateStatus(tid, event.status as AgentStatus)
-          if (event.status !== 'running') clearProviderRetry(tid)
-          break
-        }
-      }
+      reduceProviderEvent(event, {
+        streamingEnabled: streamingEnabledRef.current,
+        coalescer: contentCoalescerRef.current,
+      })
       finishRuntimeEventLifecycle(event, messageLifecycle)
     })
     return () => removeProvider()
-  }, [appendMessage, updateMessage, updateStatus, setTitle])
+  }, [])
 
   // ── Approval handler ──────────────────────────────────────────
   // Rejections propagate to the card so it can re-enable its buttons.
@@ -1461,114 +983,15 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   )
   handleSendRef.current = handleSend
 
-  // ── In-pane search: compute matching message ids (substring on text) ──
-  const searchMatches = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return [] as string[]
-    return messages
-      .filter((m) => {
-        // Search the user-visible text content. Tool calls / images aren't
-        // included; the global ⌘⇧F covers FTS over the full DB.
-        if (typeof m.content === 'string' && m.content.toLowerCase().includes(q)) return true
-        return false
-      })
-      .map((m) => m.id)
-  }, [searchQuery, messages])
-
-  // Whenever the query or message list changes, clamp the cursor and
-  // ask MessageList to jump to the current match.
-  useEffect(() => {
-    if (!searchOpen) return
-    if (searchMatches.length === 0) return
-    const safe = ((searchIdx % searchMatches.length) + searchMatches.length) % searchMatches.length
-    if (safe !== searchIdx) {
-      setSearchIdx(safe)
-      return
-    }
-    if (sessionId) requestScrollToMessage(sessionId, searchMatches[safe], searchQuery)
-  }, [searchOpen, searchMatches, searchIdx, sessionId, searchQuery, requestScrollToMessage])
-
-  const handleChatSearchQuery = useCallback((q: string) => {
-    setSearchQuery(q)
-    setSearchIdx(0)
-  }, [])
-  const handleChatSearchNext = useCallback(() => {
-    setSearchIdx((i) => i + 1)
-  }, [])
-  const handleChatSearchPrev = useCallback(() => {
-    setSearchIdx((i) => i - 1)
-  }, [])
-  const handleChatSearchClose = useCallback(() => {
-    setSearchOpen(false)
-    setSearchQuery('')
-    setSearchIdx(0)
-    // Strip any <mark class="sb-search-mark"> we injected so the chat
-    // returns to its normal rendering.
-    document.querySelectorAll('mark.sb-search-mark').forEach((m) => {
-      const parent = m.parentNode
-      if (!parent) return
-      while (m.firstChild) parent.insertBefore(m.firstChild, m)
-      parent.removeChild(m)
-      parent.normalize()
-    })
-  }, [])
-
-  // ⌘F intercept - uses a document-level capture listener instead of an
-  // onKeyDownCapture on the wrapper, because the wrapper is only on the
-  // capture path when document.activeElement is INSIDE this panel. After
-  // the user clicks the chat title, sidebar, or anywhere ambiguous the
-  // active element falls back to <body> and a wrapper-attached handler
-  // never fires. Document-level lets us scope via a ref check + a
-  // "default panel" fallback (matches activeSessionId).
-  const panelRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Accept ⌘F on macOS or Ctrl+F on Windows/Linux. Reject combos
-      // that include both (Ctrl+Cmd+F is the macOS fullscreen toggle).
-      const cmd = e.metaKey && !e.ctrlKey
-      const ctrl = e.ctrlKey && !e.metaKey
-      if (!((cmd || ctrl) && !e.altKey && !e.shiftKey)) return
-      if (e.key !== 'f' && e.key !== 'F') return
-      const el = panelRef.current
-      if (!el) return
-      const active = document.activeElement as Element | null
-      const inThisPanel = !!active && el.contains(active)
-      // If focus is inside ANOTHER chat panel (dual-chat mode), don't
-      // steal - that panel's listener will handle it.
-      const inAnyChatPanel = !!active && !!active.closest('[data-chat-panel="true"]')
-      // If focus is inside a terminal (xterm), the terminal pane will
-      // claim ⌘F via its own listener - bail so we don't double-trigger.
-      const inTerminal = !!active && (
-        active.classList.contains('xterm-helper-textarea') ||
-        !!active.closest('.xterm') ||
-        !!active.closest('[data-terminal-pane="true"]')
-      )
-      // If focus is inside the CM6 file editor, let it handle ⌘F natively
-      // via its own searchKeymap binding - bail so we don't steal it.
-      const inFileViewer = !!active && !!active.closest('[data-context-source="file-viewer"]')
-      if (inTerminal || inFileViewer) return
-      if (!inThisPanel) {
-        if (inAnyChatPanel) return
-        // Focus is somewhere neutral (body, sidebar, etc). Only the
-        // "default" (active-session) panel should claim ⌘F so dual-chat
-        // doesn't double-trigger.
-        const isDefault = chatSlot === 'primary' || (chatSlot == null && sessionIdOverride == null)
-        if (!isDefault) return
-      }
-      e.preventDefault()
-      e.stopPropagation()
-      setSearchOpen(true)
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [sessionIdOverride, chatSlot])
-
-  const chatSearchMatchInfo = searchOpen
-    ? {
-        current: searchMatches.length === 0 ? 0 : (searchIdx % searchMatches.length + searchMatches.length) % searchMatches.length + 1,
-        total: searchMatches.length,
-      }
-    : null
+  const {
+    panelRef,
+    searchOpen,
+    chatSearchMatchInfo,
+    handleChatSearchQuery,
+    handleChatSearchNext,
+    handleChatSearchPrev,
+    handleChatSearchClose,
+  } = useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot })
 
   return (
     <div
@@ -1889,106 +1312,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       {slashHelpOpen && (
         <SlashHelpOverlay onClose={() => setSlashHelpOpen(false)} />
       )}
-    </div>
-  )
-}
-
-function SlashHelpOverlay({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1200,
-        background: 'rgba(0, 0, 0, 0.55)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '40px',
-      }}
-    >
-      <div
-        className="sb-floating-surface"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '520px',
-          maxWidth: '100%',
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          boxShadow: '0 16px 48px rgba(0, 0, 0, 0.5)',
-          overflow: 'hidden',
-        }}
-      >
-        <div style={{
-          padding: '10px 14px',
-          borderBottom: '1px solid var(--border)',
-          fontSize: '12px',
-          fontWeight: 600,
-          color: 'var(--text-primary)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <span>Slash Commands</span>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              fontSize: '14px',
-              cursor: 'pointer',
-            }}
-          >
-            ×
-          </button>
-        </div>
-        <div style={{ padding: '6px 0' }}>
-          {SLASH_COMMANDS.map((cmd) => (
-            <div key={cmd.name} style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              gap: '12px',
-              padding: '7px 14px',
-              fontSize: '12.5px',
-            }}>
-              <span style={{
-                fontFamily: 'var(--font-mono)',
-                fontWeight: 600,
-                color: 'var(--accent)',
-                minWidth: '80px',
-              }}>
-                /{cmd.name}
-              </span>
-              <span style={{ color: 'var(--text-secondary)' }}>
-                {cmd.description}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div style={{
-          padding: '8px 14px',
-          borderTop: '1px solid var(--border)',
-          fontSize: '10.5px',
-          color: 'var(--text-muted)',
-        }}>
-          Type <kbd style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '10px',
-            padding: '0 4px',
-            background: 'var(--bg-tertiary)',
-            borderRadius: '3px',
-          }}>/</kbd> at the start of a line to open the inline menu.
-        </div>
-      </div>
     </div>
   )
 }
