@@ -118,6 +118,11 @@ async function launch(userData, recordDir) {
     timeout: 30_000,
   })
   const win = await app.firstWindow({ timeout: 20_000 })
+  // Electron shows window.confirm as a native macOS alert, which Playwright can
+  // neither see nor click, so a run that reaches one hangs for ever. Accept it.
+  const acceptConfirm = () => { window.confirm = () => true }
+  await app.context().addInitScript(acceptConfirm)
+  await win.evaluate(acceptConfirm)
   win.on('pageerror', (error) => console.error(`renderer error: ${error.message}`))
   win.on('console', (message) => {
     if (message.type() === 'error') console.error(`renderer console: ${message.text()}`)

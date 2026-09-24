@@ -1,0 +1,37 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "preview-plain-text",
+  "summary": "Session previews (desktop sidebar Recents, kanban card tiles, phone conversation list) show plain text: markdown markup such as backticks, asterisks, links and code fences no longer appears raw.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": ["tests/unit/turn-preview.test.ts"]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": ["tests/unit/mobile-thread-preview.test.ts"]
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The Android conversation list shows no assistant-text preview yet; that preview is staged behind agent_digest_android_list_preview and will use the same plain-text rule when it ships."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": ["src/shared/turn-preview.ts"]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Render-time transformation only. Stored message text is unchanged."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Unconditional display fix with no flag, package identity, signing, update-channel or rollout change."
+    }
+  },
+  "verification": {
+    "automated": ["npx vitest run tests/unit/turn-preview.test.ts tests/unit/mobile-thread-preview.test.ts", "npm run typecheck", "npm test"],
+    "hardware": [],
+    "notExercised": ["Not checked in a running app with live Claude or Codex replies."]
+  }
+}

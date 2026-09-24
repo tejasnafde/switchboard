@@ -538,7 +538,13 @@ async function runThemeScreens() {
     win.on('pageerror', (error) => console.error(`renderer error: ${error.message}`))
     // The fixed clock applies from the next navigation, so reload: every
     // label, memoised or not, is then first computed from FROZEN_NOW.
-    await win.clock.setFixedTime(FROZEN_NOW)
+    // Playwright registers the clock as init scripts before it evaluates in
+    // the current page, and that evaluate can hit a page mid-navigation
+    // ("reading 'controller'"). The reload runs the init scripts anyway and
+    // the wait below proves the clock took.
+    await win.clock.setFixedTime(FROZEN_NOW).catch((error) => {
+      console.warn(`clock not applied to the current page, the reload applies it: ${error.message}`)
+    })
     await win.reload()
     await win.waitForFunction((now) => !!window.api?.settings && Date.now() === now, FROZEN_NOW, { timeout: 20_000 })
     await win.addStyleTag({ content: FREEZE_CSS })
@@ -568,6 +574,11 @@ async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) 
   })
   app = instance
   const win = await instance.firstWindow({ timeout: 20_000 })
+  // Electron shows window.confirm as a native macOS alert, which Playwright can
+  // neither see nor click, so a run that reaches one hangs for ever. Accept it.
+  const acceptConfirm = () => { window.confirm = () => true }
+  await instance.context().addInitScript(acceptConfirm)
+  await win.evaluate(acceptConfirm)
   if (demo) {
     await instance.evaluate(({ BrowserWindow }, size) => {
       BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size })

@@ -113,11 +113,43 @@ describe('DemoAdapter (tour recorder script)', () => {
     await vi.waitFor(() => {
       if (!events.some((e) => e.type === 'turn.completed')) throw new Error('first turn still running')
     }, { timeout: 10_000, interval: 50 })
+    // The second approval is still open, so the session must not read idle.
+    const lastStatus = (): string | undefined => events.filter((e) => e.type === 'status').at(-1)?.status
+    expect(lastStatus()).toBe('running')
     await adapter.respondToRequest('t1', opened()[1], 'deny')
     await vi.waitFor(() => {
       if (events.filter((e) => e.type === 'turn.completed').length < 2) throw new Error('second turn still running')
     }, { timeout: 10_000, interval: 50 })
+    expect(lastStatus()).toBe('idle')
   }, 30_000)
+
+  it('an explicit run request wins over edit keywords in the same message', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Run the tests to validate the state fix', 'sandbox')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no approval yet')
+    }, { timeout: 5_000, interval: 50 })
+    expect(events.some((e) => e.type === 'tool.started' && e.toolName === 'Edit')).toBe(false)
+    expect(readFileSync(join(cwd, 'src', 'api', 'auth.ts'), 'utf8')).toContain('exchangeCode() {}')
+    await adapter.interruptTurn('t1')
+  }, 20_000)
+
+  it('an interrupt before the approval opens never registers it, so a queued turn still runs', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
+    // Still inside the opening pause, before the approval exists.
+    await adapter.interruptTurn('t1')
+    await adapter.sendTurn('t1', 'What do the tests cover?', 'sandbox', undefined, 'queue')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('queued turn never ran')
+    }, { timeout: 15_000, interval: 50 })
+    expect(events.some((e) => e.type === 'request.opened')).toBe(false)
+    expect(events.filter((e) => e.type === 'turn.completed')).toHaveLength(1)
+  }, 20_000)
 
   it('exposes one scripted adapter per provider kind', () => {
     const map = demoAdapters()
