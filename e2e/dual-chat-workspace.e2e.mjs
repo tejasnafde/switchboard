@@ -37,6 +37,43 @@ function assert(condition, message) {
   console.log(`✓ ${message}`)
 }
 
+/**
+ * The composer asks through the in-app confirm (components/ui/confirm), not
+ * window.confirm, so there is no native dialog event to wait for. Answers every
+ * confirm that opens until stop(), and counts them.
+ */
+function answerConfirms(win, accept) {
+  const dialog = win.getByRole('alertdialog')
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 50))
+  let count = 0
+  let stopped = false
+  let failure = null
+  const loop = (async () => {
+    while (!stopped) {
+      if (!(await dialog.isVisible().catch(() => false))) {
+        await tick()
+        continue
+      }
+      const button = accept ? dialog.getByRole('button').last() : dialog.getByRole('button', { name: 'Cancel', exact: true })
+      await button.click()
+      await dialog.waitFor({ state: 'hidden', timeout: 2_000 })
+      count += 1
+    }
+  })().catch((error) => { failure = error })
+  return {
+    get count() { return count },
+    /** Resolves once a confirm has been answered and closed, or after 3s without one. */
+    async answered() {
+      for (let waited = 0; count === 0 && waited < 3_000; waited += 50) await tick()
+    },
+    async stop() {
+      stopped = true
+      await loop
+      if (failure) throw failure
+    },
+  }
+}
+
 async function selectSidebarSession(win, title, sessionId) {
   const projectThread = win.locator('.sidebar-thread-main', { hasText: title })
   if (await projectThread.count() > 0 && await projectThread.first().isVisible()) {
@@ -356,27 +393,18 @@ try {
     await collisionPanel.locator('[data-composer-recovery] button', { hasText: 'Restore' }).count() === 1,
     'colliding rollback exposes an explicit Restore action',
   )
-  let discardWarningCount = 0
-  const acceptDiscardWarning = async (dialog) => {
-    discardWarningCount += 1
-    await dialog.accept()
-  }
-  win.on('dialog', acceptDiscardWarning)
+  const discardWarning = answerConfirms(win, true)
   await collisionComposer.press('Enter')
+  await discardWarning.answered()
   await collisionPanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
-  win.off('dialog', acceptDiscardWarning)
-  assert(discardWarningCount === 1, 'newer draft requires confirmation before discarding a failed payload')
+  await discardWarning.stop()
+  assert(discardWarning.count === 1, 'newer draft requires confirmation before discarding a failed payload')
   await collisionComposer.fill('Corrected auto-restored failure')
-  let unexpectedRestoredWarning = false
-  const dismissUnexpectedRestoredWarning = async (dialog) => {
-    unexpectedRestoredWarning = true
-    await dialog.dismiss()
-  }
-  win.on('dialog', dismissUnexpectedRestoredWarning)
+  const unexpectedRestoredWarning = answerConfirms(win, false)
   await collisionComposer.press('Enter')
   await win.waitForTimeout(250)
-  win.off('dialog', dismissUnexpectedRestoredWarning)
-  assert(!unexpectedRestoredWarning, 'editing an auto-restored definite failure sends without a false discard warning')
+  await unexpectedRestoredWarning.stop()
+  assert(unexpectedRestoredWarning.count === 0, 'editing an auto-restored definite failure sends without a false discard warning')
 
   await selectSidebarSession(win, 'Idle Acceptance Race', 'idle-acceptance-race')
   const racePanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-acceptance-race"]')
@@ -397,20 +425,21 @@ try {
   await resolutionFailureComposer.press('Enter')
   await resolutionFailurePanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
   await resolutionFailureComposer.fill('Edited payload blocked by recovery')
-  const acceptResolutionWarning = async (dialog) => dialog.accept()
-  win.on('dialog', acceptResolutionWarning)
+  const resolutionWarning = answerConfirms(win, true)
   await resolutionFailureComposer.press('Enter')
+  await resolutionWarning.answered()
   await resolutionFailureComposer.fill('Newest draft typed while resolving')
   await resolutionFailurePanel.getByText('Fixture could not resolve the earlier delivery').waitFor({ timeout: 2_000 })
-  win.off('dialog', acceptResolutionWarning)
+  await resolutionWarning.stop()
   assert(
     (await resolutionFailureComposer.textContent())?.includes('Newest draft typed while resolving'),
     'failed ambiguity resolution preserves text typed during the round trip',
   )
-  const restoreBlockedPayload = async (dialog) => dialog.accept()
-  win.on('dialog', restoreBlockedPayload)
+  const restoreBlockedPayload = answerConfirms(win, true)
   await resolutionFailurePanel.locator('[data-composer-recovery] button', { hasText: 'Restore' }).click()
-  win.off('dialog', restoreBlockedPayload)
+  await restoreBlockedPayload.answered()
+  await restoreBlockedPayload.stop()
+  await resolutionFailureComposer.getByText('Edited payload blocked by recovery').waitFor({ timeout: 2_000 }).catch(() => {})
   assert(
     (await resolutionFailureComposer.textContent())?.includes('Edited payload blocked by recovery'),
     'failed ambiguity resolution keeps the detached submitted payload recoverable',
@@ -423,11 +452,11 @@ try {
   await notFoundComposer.press('Enter')
   await notFoundPanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
   await notFoundComposer.fill('Edited request after missing row')
-  const acceptNotFoundWarning = async (dialog) => dialog.accept()
-  win.on('dialog', acceptNotFoundWarning)
+  const notFoundWarning = answerConfirms(win, true)
   await notFoundComposer.press('Enter')
+  await notFoundWarning.answered()
   await notFoundPanel.getByText('Edited request after missing row').waitFor({ timeout: 2_000 })
-  win.off('dialog', acceptNotFoundWarning)
+  await notFoundWarning.stop()
   await notFoundPanel.locator('[data-composer-send-error]').waitFor({ state: 'detached', timeout: 2_000 })
   assert(
     (await app.evaluate(() => globalThis.__sbIdleResolutionNotFoundOrigins)).length === 2,
@@ -459,17 +488,12 @@ try {
     !(await ambiguousComposer.textContent())?.includes('Ambiguous message awaiting confirmation'),
     'late canonical acceptance clears an unchanged restored draft while hidden',
   )
-  let unexpectedRecoveryDialog = false
-  const dismissUnexpectedRecoveryDialog = async (dialog) => {
-    unexpectedRecoveryDialog = true
-    await dialog.dismiss()
-  }
-  win.on('dialog', dismissUnexpectedRecoveryDialog)
+  const unexpectedRecoveryDialog = answerConfirms(win, false)
   await ambiguousComposer.fill('Message after late acceptance')
   await ambiguousComposer.press('Enter')
   await win.waitForTimeout(250)
-  win.off('dialog', dismissUnexpectedRecoveryDialog)
-  assert(!unexpectedRecoveryDialog, 'late acceptance clears stale recovery state before the next send')
+  await unexpectedRecoveryDialog.stop()
+  assert(unexpectedRecoveryDialog.count === 0, 'late acceptance clears stale recovery state before the next send')
 
   await selectSidebarSession(win, 'Idle Edited Ambiguous', 'idle-edited-ambiguous')
   const editedPanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-edited-ambiguous"]')
@@ -478,16 +502,12 @@ try {
   await editedComposer.press('Enter')
   await editedPanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
   await editedComposer.fill('Edited message after ambiguity')
-  let editedWarningCount = 0
-  const acceptEditedWarning = async (dialog) => {
-    editedWarningCount += 1
-    await dialog.accept()
-  }
-  win.on('dialog', acceptEditedWarning)
+  const editedWarning = answerConfirms(win, true)
   await editedComposer.press('Enter')
+  await editedWarning.answered()
   await editedPanel.locator('[data-message-list-scroll]').getByText('Edited message after ambiguity').waitFor({ timeout: 3_000 })
-  win.off('dialog', acceptEditedWarning)
-  assert(editedWarningCount === 1, 'edited ambiguous delivery requires exactly one warning')
+  await editedWarning.stop()
+  assert(editedWarning.count === 1, 'edited ambiguous delivery requires exactly one warning')
   const editedOrigins = await app.evaluate(() => globalThis.__sbIdleEditedAmbiguousOrigins)
   assert(
     editedOrigins.length === 3
