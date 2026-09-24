@@ -1,0 +1,62 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ui-primitives-confirm",
+  "summary": "Adds shadcn/ui primitives to the desktop renderer (Tailwind 4 utilities without preflight or a default theme, scanned from src/renderer/components/ui only, with shadcn tokens mapped onto the existing theme variables) and uses them in two places: a Button that gives the composer's Stop, Queue, Steer and Send one height, and one promise-based AlertDialog confirm that replaces all 16 native window.confirm calls in the renderer with the same wording. The native alert blocked the renderer and could not be driven by Playwright; the in-app one is reachable by role and name.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/ui/button.tsx",
+        "src/renderer/components/ui/alert-dialog.tsx",
+        "src/renderer/components/ui/confirm.tsx",
+        "src/renderer/styles/tailwind.css",
+        "src/renderer/styles/global.css",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/App.tsx",
+        "electron.vite.config.ts",
+        "components.json",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots",
+        "videos/capture-tour.mjs",
+        "tests/unit/confirm-dialog.test.ts",
+        "tests/unit/visual-regressions-source.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Every changed file is in the Electron renderer, its Vite config or the desktop e2e harness. apps/mobile does not import src/renderer, does not load Tailwind or Radix (React Native has no DOM for them), and has no window.confirm to replace: its destructive prompts already use React Native's Alert.alert, which is non-blocking."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "apps/android is a Compose app with its own dialogs and composer; it shares no renderer code, CSS or components with the desktop, and no file under apps/android changed."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No IPC channel, event, wire frame or src/shared file changed. Every confirmed action calls the same window.api method as before, with the same arguments, after the user answers."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, settings key or stored data change. The confirm queue lives in renderer memory only and is empty on reload."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link or update channel change. The new dependencies (Radix, class-variance-authority, clsx, tailwind-merge) are bundled into the renderer by Vite; Tailwind and its Vite plugin are build-time only. build:fast and the post-build smoke test pass."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and npm test pass, including tests/unit/confirm-dialog.test.ts (resolves true on the action, false on Cancel, false on Escape, one dialog at a time with a queued second request answered independently).",
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual passed twice in a row. The 18 baselines for chat, sidebar, command palette, provider picker, Settings and kanban match main's unchanged; only composer-running and approval (both show the running composer's buttons) were refreshed, and confirm-dialog was added, in all three themes.",
+      "grep -rn 'window.confirm' src/renderer finds only the doc comment on the replacement."
+    ],
+    "hardware": [
+      "Every refreshed and new baseline PNG was opened and inspected by eye on this Mac (Apple Silicon) in Dark, Light and Translucent before commit."
+    ],
+    "notExercised": [
+      "The behaviour phase (native glass transmission) was not run: it needs Screen Recording permission this session does not have. No translucency rule changed besides the reuse of the existing sb-floating-surface class on the dialog.",
+      "Only the remove-project confirm is driven end to end in e2e; the other 15 call sites are covered by typecheck and by sharing the one helper.",
+      "Mobile and Android were not exercised; no files there changed."
+    ]
+  }
+}
