@@ -5,7 +5,7 @@
  * Two phases, both on by default (SB_VISUAL_SCOPE=behaviour|screens runs one):
  *   - behaviour: translucent-theme assertions (native glass transmission,
  *     fullscreen fallback, sidebar Recents/Saved/organizer) on its own fixture.
- *   - screens: nine key screens in Dark, Light and Translucent, captured
+ *   - screens: ten key screens in Dark, Light and Translucent, captured
  *     against the seeded tour workspace with the scripted demo provider
  *     (SB_DEMO_ADAPTER=1) and pixel-compared with the baselines in
  *     e2e/snapshots/<screen>-<theme>-<platform>.png.
@@ -528,6 +528,23 @@ async function captureThemeScreens(win, theme) {
   await sidebar.locator('.sidebar-recent-group[data-group="needs-you"]').waitFor({ state: 'visible' })
   await snapScreen(win, 'sidebar-needs-you', theme, sidebar)
   await snapScreen(win, 'composer-running', theme, win.locator('.chat-composer').first())
+
+  // A long list reply in the narrowest window, scrolled to its last list,
+  // where the two-digit markers are.
+  await openConversation(win, FINISHED_CHAT)
+  await editor.click()
+  await win.keyboard.type('List the to-dos.')
+  await win.keyboard.press('Enter')
+  await win.getByText('Items 1 to 3 go first').waitFor({ state: 'visible', timeout: 60_000 })
+  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(800, 720))
+  await settle(win)
+  // The seeded user message carries pill chips, the reply long inline code.
+  const list = win.locator('[data-message-list-scroll]').first()
+  const sideways = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
+  if (sideways > 0) screenFailures.push(`chat-narrow-${theme.toLowerCase()}: the message list scrolls ${sideways}px sideways`)
+  await win.locator('.markdown-content ol').last().evaluate((ol) => ol.scrollIntoView({ block: 'start' }))
+  await snapScreen(win, 'chat-narrow', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
 }
 
 async function runThemeScreens() {
