@@ -352,6 +352,10 @@ function HydrationPlugin({
   // → `setValue` → React re-render → this effect → `$populateFromBody`)
   // would land the caret at offset 0 every time, because Lexical's
   // default selection after a fresh root population is the start.
+  //
+  // An empty editor has no position worth keeping, so text written into one
+  // (a failed send restoring its body) gets the caret at its end. Restoring
+  // the empty editor's offset 0 put it before `/send-to`.
   useEffect(() => {
     if (value === lastValueRef.current) return
     const current = serializeEditorToBody(editor)
@@ -360,7 +364,7 @@ function HydrationPlugin({
     const priorCaret = caretOffsetFromSelection(editor)
     editor.update(() => {
       $populateFromBody(value, pillsById)
-      if (priorCaret !== null) $selectAtOffset(priorCaret)
+      if (priorCaret !== null) $selectAtOffset(current === '' ? value.length : priorCaret)
     })
   }, [value, pillsById, editor])
 
