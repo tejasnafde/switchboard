@@ -338,7 +338,7 @@ Traps:
 ### Git tooling + worktrees
 
 - `ipc/git.ts` (`GitChannels`): `list-refs` (locals + remotes, annotated with current/sha/worktreePath), `switch-ref` (validated, rejects `-`/`..`/control chars), `current-branch`, `file-diff` (parses `git diff HEAD` into add/del/mod gutter hunks - `git/diffHunks.ts`), `create-session-worktree`.
-- `worktree.ts` manages three creation flows: **kanban card** (`<repo>/.switchboard/worktrees/<slug>-<id>`, branch `kanban/<slug>-<id>`), **fork-from-message** (`<repo>/.switchboard/worktrees/<base>`, branch `fork/<name>`, collision-retry `-2`…`-20`), **session** (`$userData/worktrees/<repoSlug>-<hash>/<branchSlug>`, branch `sb/<slug>`). Plus `removeWorktree`, `listWorktrees`, `findStaleWorktrees`.
+- Worktree **creation** lives in two places, not in `worktree.ts`: `worktree-creation/git-adapter.ts` drives the transactional flow behind `KanbanChannels.CREATE_WORKTREE` (kanban card, `<repo>/.switchboard/worktrees/<slug>-<id>`, branch `kanban/<slug>-<id>`) and behind conversation forking (fork-to-worktree, `fork/<name>`); `git/legacy-session-worktree-lease.ts` drives `GitChannels.CREATE_SESSION_WORKTREE` (session worktrees, `$userData/worktrees/<repoSlug>-<hash>/<branchSlug>`, branch `sb/<slug>`). `worktree.ts` itself only lists, finds-stale, and removes worktrees now (`removeWorktree`, `listWorktrees`, `findStaleWorktrees`) - its own creation functions were dead code with no production caller and were deleted.
 - Worktrees live under `.switchboard/worktrees/` deliberately - avoids re-tripping the macOS TCC trap on `~/Desktop`-rooted repos and centralizes cleanup.
 
 ### Conversation forking (`conversations/fork.ts`, `shared/conversation-fork.ts`)
@@ -444,11 +444,28 @@ Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file
 - `provider-adapter-tool-filter.test.ts` - `CUSTOM_UI_TOOLS` set membership
 - `jsonl-parser.test.ts` / `jsonl-truncate.test.ts` - Claude + Codex schemas, historical images, fork truncation
 - `provider-instances-db.test.ts` / `*-instance-env.test.ts` - multi-instance credentials + env overlay
-- `worktree.test.ts` / `create-session-worktree.test.ts` / `worktree-paths.test.ts` - worktree flows + collision retry
+- `worktree.test.ts` / `worktree-paths.test.ts` - worktree list/find-stale/remove + deterministic session worktree paths
 - `code-server-manager-*.test.ts` / `ide-bridge-server.test.ts` / `sb-bridge-protocol.test.ts` - embedded IDE: manager lifecycle, bridge routing, extension protocol
 - `at-mention.test.ts` / `render-pill-body.test.ts` / `draft-pills.test.ts` - Lexical pills + @-mentions
 - `kanban-store.test.ts` / `card-launch.test.ts` / `kanban-archive-side-effect.test.ts` - kanban
 - `favicon-resolver.test.ts` / `favicon-html-scan.test.ts` / `favicon-protocol.test.ts` - favicons
+
+### Screenshot regression tests (every theme)
+
+`npm run test:e2e:visual` (after `npm run build:fast`) has two phases. The
+**screens** phase captures eight screens (chat after a finished turn, the
+running composer, sidebar, kanban, Settings, command palette, provider picker,
+approval card) in Dark, Light and Translucent against the tour's seeded
+workspace (`e2e/fixtures/demo-workspace.mjs`) with `SB_DEMO_ADAPTER=1`, and
+compares them with `e2e/snapshots/<screen>-<theme>-darwin.png`. The CI job
+`Visual regressions (macOS)` runs it on every PR; on failure the actual and
+diff PNGs are in the `visual-regressions` artifact (locally:
+`e2e/artifacts/visual/`).
+
+- A deliberate visual change: `SB_VISUAL_SCOPE=screens SB_UPDATE_SNAPSHOTS=1 npm run test:e2e:visual`, then Read every changed PNG before committing it. Never refresh baselines to make a red run green without looking.
+- Everything that varies is pinned: renderer clock (`FROZEN_NOW`, UTC), 1x scale, sRGB, window size, animations and caret, the demo turn's duration (scripted, not wall-clock). Turn timestamps are masked because the main process stamps them. A new source of drift must be pinned the same way, not absorbed by raising the tolerance.
+- Translucent is compared as the app's own pixels flattened over a fixed two-colour backdrop, because the real desktop behind the window is never the same twice.
+- The **behaviour** phase (native glass transmission, fullscreen fallback) reads the real screen with `screencapture`: it needs Screen Recording permission for the terminal and does not work on the CI runner, so run it locally (`SB_VISUAL_SCOPE=behaviour`) before merging anything that touches translucency.
 
 ### E2E temp-dir cleanup (MANDATORY)
 
@@ -478,9 +495,10 @@ src/
 │   │   ├── projects.ts · conversations.ts (+ thread ancestry, archive) · messages.ts · settings.ts (+ session layouts) · kanban.ts · bookmarks.ts
 │   │   └── providerInstances.ts       # provider_instances CRUD (safeStorage-encrypted env)
 │   ├── files/                         # listing (gitignore-annotated) · writing (atomic+conflict) · gitignore matcher
-│   ├── git/                           # diffHunks (gutter) · refs · worktreePaths · checkpoint (diff review)
+│   ├── git/                           # diffHunks (gutter) · refs · worktreePaths · checkpoint (diff review) · legacy-session-worktree-lease (session worktree creation)
 │   ├── ide/                           # code-server-manager · binary (download) · bridge-server (ws)
-│   ├── worktree.ts                    # kanban / fork / session worktree creation + cleanup
+│   ├── worktree-creation/             # git-adapter.ts - transactional kanban/fork worktree creation
+│   ├── worktree.ts                    # worktree list / find-stale / remove (creation lives elsewhere, see above)
 │   ├── ipc/
 │   │   ├── terminal.ts · app.ts       # PTY · projects/sessions/archive/fork
 │   │   ├── files.ts · git.ts · ide.ts · kanban.ts # files + git + IDE + kanban IPC

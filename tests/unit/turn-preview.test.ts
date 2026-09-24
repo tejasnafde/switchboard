@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { turnPreviewLine, type PreviewMessage } from '../../src/shared/turn-preview'
+import { plainPreviewText, turnPreviewLine, type PreviewMessage } from '../../src/shared/turn-preview'
 
 function user(text: string): PreviewMessage {
   return { text, isAssistant: false, isUser: true }
@@ -105,5 +105,41 @@ describe('turnPreviewLine', () => {
   it('hides a streaming partial tag from the raw fallback', () => {
     const messages = [user('start'), assistant('Working on it. <agent_di')]
     expect(turnPreviewLine(messages)).toBe('Working on it.')
+  })
+})
+
+describe('plainPreviewText', () => {
+  it('drops inline code, bold, italic and link markup but keeps the words', () => {
+    expect(plainPreviewText('`pos_gatepass` is a **column**, see [docs](https://x.y) and _this_'))
+      .toBe('pos_gatepass is a column, see docs and this')
+  })
+
+  it('drops fenced code, including a block that is still streaming', () => {
+    expect(plainPreviewText('Fixed it:\n```ts\nconst a = 1\n```\nDone')).toBe('Fixed it: Done')
+    expect(plainPreviewText('Running:\n```sh\nnpm te')).toBe('Running:')
+  })
+
+  it('closes a fence only at a matching fence line, and handles tilde fences', () => {
+    expect(plainPreviewText('Before\n```md\nsee ```not-a-close here\n```\nAfter')).toBe('Before After')
+    expect(plainPreviewText('Before\n~~~\ncode\n~~~\nAfter')).toBe('Before After')
+    expect(plainPreviewText('Before\n````\n```\ninner\n```\n````\nAfter')).toBe('Before After')
+  })
+
+  it('falls back to the raw text when a digest is only a code block', () => {
+    const msg = { text: 'Real text here <agent_digest>\n```\ncode\n```\n</agent_digest>', isAssistant: true, isUser: false }
+    expect(turnPreviewLine([msg])).toBe('Real text here')
+  })
+
+  it('drops heading, quote and list markers and joins lines', () => {
+    expect(plainPreviewText('## Summary\n> note\n- one\n1. two')).toBe('Summary note one two')
+  })
+
+  it('leaves snake_case and multiplication alone', () => {
+    expect(plainPreviewText('set max_retry_count to 2 * 3')).toBe('set max_retry_count to 2 * 3')
+  })
+
+  it('is applied to the raw fallback preview', () => {
+    expect(turnPreviewLine([{ text: 'The counts mean **projects**', isAssistant: true, isUser: false }]))
+      .toBe('The counts mean projects')
   })
 })
