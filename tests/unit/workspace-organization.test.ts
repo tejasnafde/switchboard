@@ -3,7 +3,7 @@ import {
   moveProjectToWorkspace,
   reorderProjectsWithinWorkspace,
   reorderWorkspacesById,
-} from '../../src/shared/workspaceOrganization'
+} from '../../src/shared/workspace-organization'
 import type { Project, Workspace } from '../../src/shared/types'
 
 const workspace = (id: string, sortOrder: number): Workspace => ({

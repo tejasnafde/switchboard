@@ -232,7 +232,7 @@ export function getOrCreateTerminal(
 /**
  * Awaited sibling of `getOrCreateTerminal`, used only by the Terminal-tab
  * "Start Terminal Session" login flow (via startTerminalSession in
- * terminalLoginStart.ts). Resolving `loginInstance` to a real credential
+ * terminal-login-start.ts). Resolving `loginInstance` to a real credential
  * env happens in main BEFORE the PTY spawns (see terminal-login-env.ts) -
  * a missing/disabled/wrong-kind instance rejects the `terminal:create` call
  * rather than opening an unscoped shell. That rejection must not leave a

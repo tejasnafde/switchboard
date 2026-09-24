@@ -1,13 +1,13 @@
 /** Probe a remote, and if needed upload the server bundle + npm-install it. */
 import type { Machine } from '@shared/machines'
-import { buildProbeCommand, buildRemoteShellCommand, REMOTE_SERVER_DIR } from './provisionCommands'
-import { parseProbeOutput } from './remoteProbe'
-import { planProvision, type ProvisionAction } from './provisionPlan'
-import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, codexEnsureScript, versionMarkerScript, managedToolsMarkerScript, codeServerEnsureScript, bridgeSeedScript, bridgeMarker, REMOTE_CODEX_VERSION, type BridgeFile } from './provisionSetup'
-import { planManagedTools, type ManagedToolPlan } from './managedToolPlan'
+import { buildProbeCommand, buildRemoteShellCommand, REMOTE_SERVER_DIR } from './provision-commands'
+import { parseProbeOutput } from './remote-probe'
+import { planProvision, type ProvisionAction } from './provision-plan'
+import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, codexEnsureScript, versionMarkerScript, managedToolsMarkerScript, codeServerEnsureScript, bridgeSeedScript, bridgeMarker, REMOTE_CODEX_VERSION, type BridgeFile } from './provision-setup'
+import { planManagedTools, type ManagedToolPlan } from './managed-tool-plan'
 import { CODE_SERVER_VERSION } from '../ide/code-server-manager'
-import { asUserScript, asUserUpload } from './remoteExec'
-import { summarizeSshError } from './sshError'
+import { asUserScript, asUserUpload } from './remote-exec'
+import { summarizeSshError } from './ssh-error'
 
 export interface ProcRunner {
   // stdin is either an inline string (small payloads like package.json) or a
@@ -153,7 +153,7 @@ export async function provisionRemote(
       // is NOT what's on disk, and no install happened this connect - relinking
       // would "succeed" against the stale package and the tools marker would
       // then claim a version we never actually installed. That silent
-      // convergence lie is exactly what managedToolPlan.ts's marker exists to
+      // convergence lie is exactly what managed-tool-plan.ts's marker exists to
       // prevent, so leave it unconverged here instead: the next connect that
       // takes the full install path (an app version bump, which is what changes
       // this pin) will install the real thing.

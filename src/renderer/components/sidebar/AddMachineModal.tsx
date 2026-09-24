@@ -8,8 +8,8 @@
 import { useEffect, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { useMachineStore } from '../../stores/machine-store'
-import { filterSshHosts } from './sshHostFilter'
-import { isDuplicateMachine, parsePort, partitionSshHosts } from './addMachineValidation'
+import { filterSshHosts } from './ssh-host-filter'
+import { isDuplicateMachine, parsePort, partitionSshHosts } from './add-machine-validation'
 import { createRendererLogger } from '../../logger'
 import type { SshHost, Machine, MachineInput } from '@shared/machines'
 

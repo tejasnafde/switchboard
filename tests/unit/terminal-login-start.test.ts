@@ -18,7 +18,7 @@
  * Electron IPC.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { startTerminalSession } from '../../src/renderer/shared/terminalLoginStart'
+import { startTerminalSession } from '../../src/renderer/shared/terminal-login-start'
 
 function makeDeps(overrides: Partial<Parameters<typeof startTerminalSession>[0]> = {}) {
   return {

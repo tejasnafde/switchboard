@@ -14,8 +14,8 @@
         "src/renderer/components/chat/ChatInput.tsx",
         "src/renderer/components/sidebar/Sidebar.tsx",
         "src/renderer/components/sidebar/MachineLayer.tsx",
-        "src/renderer/services/draftChat.ts",
-        "src/renderer/services/desktopNewChatCreation.ts",
+        "src/renderer/services/draft-chat.ts",
+        "src/renderer/services/desktop-new-chat-creation.ts",
         "src/renderer/stores/agent-store.ts",
         "tests/unit/new-chat-draft.test.ts"
       ]

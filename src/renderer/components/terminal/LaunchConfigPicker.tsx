@@ -24,7 +24,7 @@ import { parseLaunchConfigFile } from '@shared/launch-config'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { applyLaunchConfig, clearLaunchConfigPin, saveCurrentLayoutAsLaunchConfig } from '../../hooks/useTerminalLifecycle'
-import { sortLaunchConfigsByRecency } from '../../services/launchConfigUsage'
+import { sortLaunchConfigsByRecency } from '../../services/launch-config-usage'
 
 /** Outline star - fills only when "active" (currently-pinned). */
 function StarIcon({ filled }: { filled: boolean }) {

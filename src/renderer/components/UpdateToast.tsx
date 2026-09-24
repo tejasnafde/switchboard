@@ -6,7 +6,7 @@
  */
 import { useEffect, useState, useCallback } from 'react'
 import type { UpdateStatus } from '@shared/update-status'
-import { shouldShowUpdateToast } from './updateToastPolicy'
+import { shouldShowUpdateToast } from './update-toast-policy'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('component:update-toast')

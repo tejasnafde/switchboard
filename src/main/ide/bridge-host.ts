@@ -3,7 +3,7 @@
  *
  * Why a separate entry point from ipc/ide.ts: that module owns the local
  * workbench LIFECYCLE (binary download, CodeServerManager, idle shutdown), none
- * of which a remote has - the ssh bootstrap in machines/connectDeps.ts spawns
+ * of which a remote has - the ssh bootstrap in machines/connect-deps.ts spawns
  * code-server and hands both processes a shared SB_BRIDGE_TOKEN. The wire
  * behaviour they DO share lives in bridge-channels.ts, so there is one
  * implementation of it.
@@ -49,7 +49,7 @@ export function startBridgeHost(opts: BridgeHostOptions): BridgeServer {
   bridge = new BridgeServer(wss, token, callbacks)
 
   // First-run defaults, same as the local boot() does. Backfills keys added in
-  // later app versions too, which the install-time seed in provisionSetup.ts
+  // later app versions too, which the install-time seed in provision-setup.ts
   // cannot: it writes once, when code-server is first downloaded.
   void patchWorkbenchSettings(settingsPath(), {}, log)
 

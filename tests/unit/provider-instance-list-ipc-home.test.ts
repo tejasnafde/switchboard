@@ -18,7 +18,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const listMock = vi.hoisted(() => vi.fn())
 const resolveMock = vi.hoisted(() => vi.fn())
 
-vi.mock('../../src/main/db/providerInstances', () => ({
+vi.mock('../../src/main/db/provider-instances', () => ({
   listProviderInstances: listMock,
   resolveEffectiveOauthDir: resolveMock,
   upsertProviderInstance: vi.fn(),
@@ -78,7 +78,7 @@ function wire(over: Partial<WireLike> & { id: string }): WireLike {
 }
 
 async function host(): Promise<FakeHost> {
-  const { registerProviderInstanceHandlers } = await import('../../src/main/ipc/providerInstances')
+  const { registerProviderInstanceHandlers } = await import('../../src/main/ipc/provider-instances')
   const h = new FakeHost()
   registerProviderInstanceHandlers(h)
   return h

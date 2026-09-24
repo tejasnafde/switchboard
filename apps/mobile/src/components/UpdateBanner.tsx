@@ -5,7 +5,7 @@
  * overlays every screen and survives navigation. It renders nothing at all when
  * there is no update, which is the normal case.
  *
- * Two lanes, both surfaced here (see src/lib/selfUpdate.ts and src/lib/otaUpdate.ts):
+ * Two lanes, both surfaced here (see src/lib/self-update.ts and src/lib/ota-update.ts):
  * - APK: a newer native binary on GitHub Releases. Download plus an install prompt.
  * - OTA: a newer JS bundle, already downloaded. Just needs a restart.
  *
@@ -16,8 +16,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 import { createLogger } from '@shared/logger'
 import { colors, fonts, radius, space, type } from '../theme'
-import { checkForApkUpdate, downloadAndInstall, type ApkUpdate } from '../lib/selfUpdate'
-import { useOtaUpdate } from '../lib/otaUpdate'
+import { checkForApkUpdate, downloadAndInstall, type ApkUpdate } from '../lib/self-update'
+import { useOtaUpdate } from '../lib/ota-update'
 
 const log = createLogger('mobile:update-banner')
 

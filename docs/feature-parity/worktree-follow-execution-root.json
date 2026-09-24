@@ -7,8 +7,8 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/services/executionRoot.ts",
-        "src/renderer/services/executionRootRelocation.ts",
+        "src/renderer/services/execution-root.ts",
+        "src/renderer/services/execution-root-relocation.ts",
         "src/renderer/components/chat/ChatInput.tsx",
         "src/renderer/components/chat/ChatPanel.tsx",
         "src/renderer/stores/agent-store.ts",

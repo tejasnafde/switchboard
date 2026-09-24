@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatMessage } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
-import type { ChatSlot } from '../../services/chatWorkspace'
+import type { ChatSlot } from '../../services/chat-workspace'
 
 interface ChatSearchOptions {
   messages: ChatMessage[]

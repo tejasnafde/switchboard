@@ -17,7 +17,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { homedir } from 'os'
 import { join } from 'path'
-import type { ProviderInstanceRow } from '../../src/main/db/providerInstances'
+import type { ProviderInstanceRow } from '../../src/main/db/provider-instances'
 
 const rows = new Map<string, ProviderInstanceRow>()
 
@@ -38,7 +38,7 @@ function codexRow(overrides: Partial<ProviderInstanceRow>): ProviderInstanceRow 
   }
 }
 
-vi.mock('../../src/main/db/providerInstances', () => ({
+vi.mock('../../src/main/db/provider-instances', () => ({
   getProviderInstanceFull: vi.fn((id: string) => rows.get(id) ?? null),
 }))
 

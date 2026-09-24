@@ -14,7 +14,7 @@
  * The `ide` scene borrows the code-server install from this Mac's real
  * userData (SB_TOUR_CODE_SERVER overrides the path) so it never downloads.
  * Scene ids must match `FEATURE_TOUR_STEPS` in
- * src/renderer/components/onboarding/featureRegistry.ts.
+ * src/renderer/components/onboarding/feature-registry.ts.
  */
 import { execFileSync } from 'node:child_process'
 import {

@@ -3,7 +3,7 @@ import { useAgentStore } from '../../src/renderer/stores/agent-store'
 import {
   publishChatWorkspace,
   resetChatWorkspaceRuntimeForTests,
-} from '../../src/renderer/services/chatWorkspaceRuntime'
+} from '../../src/renderer/services/chat-workspace-runtime'
 import { shouldSuppressTurnNotification } from '../../src/renderer/services/notifications'
 
 describe('displayed chat visibility', () => {

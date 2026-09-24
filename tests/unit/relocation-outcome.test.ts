@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import { resolveExecutionRoot } from '../../src/shared/execution-root'
 import type { RelocateExecutionRootResult } from '../../src/shared/execution-root-relocation'
-import { describeRelocationOutcome } from '../../src/renderer/services/executionRootRelocation'
+import { describeRelocationOutcome } from '../../src/renderer/services/execution-root-relocation'
 
 const root = resolveExecutionRoot({
   projectPath: '/repo/app',

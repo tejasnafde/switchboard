@@ -8,7 +8,7 @@ import {
   isDuplicateMachine,
   parsePort,
   partitionSshHosts,
-} from '../../src/renderer/components/sidebar/addMachineValidation'
+} from '../../src/renderer/components/sidebar/add-machine-validation'
 import type { Machine, SshHost } from '@shared/machines'
 
 const mk = (over: Partial<Machine>): Machine => ({

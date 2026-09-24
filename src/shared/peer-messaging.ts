@@ -41,7 +41,7 @@ export const PEER_AGENT_SEND_WINDOW_MS = 10 * 60_000
 /**
  * Marker written on the SENDING thread, in `<from> → <to>` form so
  * `parseRotationMarker` reads it with the other in-band markers. Lives here
- * rather than in the renderer's rotationMarker.ts because the backend writes
+ * rather than in the renderer's rotation-marker.ts because the backend writes
  * it - the sending window may be closed, or may not exist at all.
  */
 export const PEER_SENT_MARKER_PREFIX = '[[sb:peer-sent]]'

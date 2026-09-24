@@ -4,7 +4,7 @@
  * remote server's port, and the remote command boots the server bound there.
  */
 import { describe, it, expect } from 'vitest'
-import { buildTunnelCommand, SSH_COMMON_OPTS } from '../../src/main/machines/sshTunnel'
+import { buildTunnelCommand, SSH_COMMON_OPTS } from '../../src/main/machines/ssh-tunnel'
 import type { Machine } from '@shared/machines'
 
 const mk = (over: Partial<Machine>): Machine => ({

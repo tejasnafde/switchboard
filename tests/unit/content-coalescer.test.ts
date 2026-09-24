@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createContentCoalescer, type PendingContent } from '../../src/renderer/services/contentCoalescer'
+import { createContentCoalescer, type PendingContent } from '../../src/renderer/services/content-coalescer'
 
 describe('createContentCoalescer', () => {
   beforeEach(() => vi.useFakeTimers())

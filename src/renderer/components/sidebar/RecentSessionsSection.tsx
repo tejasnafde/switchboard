@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { RecentSessionItem } from './recentSessions'
+import type { RecentSessionItem } from './recent-sessions'
 import { formatRelativeTime } from './sidebar-helpers'
-import { DEFAULT_RECENT_SESSION_LIMIT, type RecentSessionLimit } from './recentSessionLimit'
-import { RECENT_DOT_LABELS, groupRecentSessions, recentDot } from './recentGroups'
+import { DEFAULT_RECENT_SESSION_LIMIT, type RecentSessionLimit } from './recent-session-limit'
+import { RECENT_DOT_LABELS, groupRecentSessions, recentDot } from './recent-groups'
 
 export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SESSION_LIMIT, activeSessionId, displayedSessionIds = [], onSelect }: {
   items: RecentSessionItem[]

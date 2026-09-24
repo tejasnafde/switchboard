@@ -7,8 +7,8 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/services/forkSession.ts",
-        "src/renderer/services/openConversationAtAnchor.ts",
+        "src/renderer/services/fork-session.ts",
+        "src/renderer/services/open-conversation-at-anchor.ts",
         "src/renderer/components/chat/MessageBubble.tsx",
         "src/renderer/components/chat/ForkLineageBanner.tsx",
         "src/renderer/stores/agent-store.ts",
@@ -20,9 +20,9 @@
       "status": "implemented",
       "evidence": [
         "apps/mobile/src/lib/api.ts",
-        "apps/mobile/src/lib/conversationFork.ts",
+        "apps/mobile/src/lib/conversation-fork.ts",
         "apps/mobile/src/screens/ThreadScreen.tsx",
-        "apps/mobile/src/lib/__tests__/conversationFork.test.ts"
+        "apps/mobile/src/lib/__tests__/conversation-fork.test.ts"
       ]
     },
     "nativeAndroid": {

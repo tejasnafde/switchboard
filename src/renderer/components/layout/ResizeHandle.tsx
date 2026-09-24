@@ -1,5 +1,5 @@
 import { useRef, useEffect, type CSSProperties, type RefObject } from 'react'
-import { showDragOverlay, hideDragOverlay } from '../../services/dragOverlay'
+import { showDragOverlay, hideDragOverlay } from '../../services/drag-overlay'
 
 interface ResizeHandleProps {
   direction: 'horizontal' | 'vertical'

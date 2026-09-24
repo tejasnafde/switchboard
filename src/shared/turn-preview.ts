@@ -1,7 +1,7 @@
 /**
  * Live preview line for a session/thread's CURRENT TURN - used by the
  * desktop sidebar Recents row, the kanban card tile, and the mobile
- * conversation list (see sessionPreview.ts / threadPreview.ts, the thin
+ * conversation list (see session-preview.ts / thread-preview.ts, the thin
  * per-surface adapters that map their own message shape onto
  * `PreviewMessage` and call `turnPreviewLine`).
  *

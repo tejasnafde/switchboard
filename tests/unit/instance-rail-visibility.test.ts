@@ -8,7 +8,7 @@
  * indication anything changed and no way to pick a different one.
  */
 import { describe, it, expect } from 'vitest'
-import { shouldShowInstanceRail } from '../../src/renderer/shared/instanceRailVisibility'
+import { shouldShowInstanceRail } from '../../src/renderer/shared/instance-rail-visibility'
 
 describe('shouldShowInstanceRail', () => {
   it('shows the rail whenever 2+ enabled instances exist, regardless of selection', () => {

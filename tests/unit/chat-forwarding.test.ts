@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildForwardedContext, forwardingTargets } from '../../src/renderer/services/chatForwarding'
+import { buildForwardedContext, forwardingTargets } from '../../src/renderer/services/chat-forwarding'
 
 const sessions = [
   { id: 'left', title: 'Architecture', type: 'claude-code' },

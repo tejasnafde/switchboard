@@ -10,7 +10,7 @@
     },
     "reactNativeIos": {
       "status": "not_applicable",
-      "reason": "Nothing under apps/mobile imports src/main/worktree.ts or any of the deleted exports; mobile worktree creation already goes through the shared WorktreeCreationRequest/Snapshot contract in src/shared/worktree-creation.ts and apps/mobile/src/lib/newSessionCreation.ts, which call the same live IPC channels the desktop client uses. Verified with a repo-wide grep for createWorktree/createForkWorktree/createSessionWorktree across apps/mobile: no matches."
+      "reason": "Nothing under apps/mobile imports src/main/worktree.ts or any of the deleted exports; mobile worktree creation already goes through the shared WorktreeCreationRequest/Snapshot contract in src/shared/worktree-creation.ts and apps/mobile/src/lib/new-session-creation.ts, which call the same live IPC channels the desktop client uses. Verified with a repo-wide grep for createWorktree/createForkWorktree/createSessionWorktree across apps/mobile: no matches."
     },
     "nativeAndroid": {
       "status": "not_applicable",

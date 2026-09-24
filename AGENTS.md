@@ -105,7 +105,7 @@ Three things beyond plain RPC, all driven by the phone case:
 
 `src/shared/*` is the transport-agnostic contract layer (channels, wire protocol, transport interface, events, types) - **no `electron`, no `react` imports**. Consumed by preload AND both backend hosts.
 
-**Remote machines / SSH** (`src/main/machines/`): `sshTunnel.ts` builds `ssh -L localPort:127.0.0.1:remotePort … <bootstrap>` (uses the system `ssh` binary - no `ssh2`/native deps; `BatchMode`, `accept-new`), `connectionManager.ts` owns connect/provision/health-probe/auto-reconnect, plus `provisioner.ts`/`remoteExec.ts`/`reconnectBackoff.ts`/`sshConfig.ts`. The renderer then connects to `ws://127.0.0.1:<localPort>` as if local. Docs: `docs/notes/ssh-remote-plan.md`, `docs/notes/remote-machines-handoff.md`. No mobile client and no cloud relay - the "remote client" is the desktop app pointed at a tunneled remote backend.
+**Remote machines / SSH** (`src/main/machines/`): `ssh-tunnel.ts` builds `ssh -L localPort:127.0.0.1:remotePort … <bootstrap>` (uses the system `ssh` binary - no `ssh2`/native deps; `BatchMode`, `accept-new`), `connection-manager.ts` owns connect/provision/health-probe/auto-reconnect, plus `provisioner.ts`/`remote-exec.ts`/`reconnectBackoff.ts`/`ssh-config.ts`. The renderer then connects to `ws://127.0.0.1:<localPort>` as if local. Docs: `docs/notes/ssh-remote-plan.md`, `docs/notes/remote-machines-handoff.md`. No mobile client and no cloud relay - the "remote client" is the desktop app pointed at a tunneled remote backend.
 
 ### Mobile app (`apps/mobile/`)
 
@@ -117,7 +117,7 @@ that side). Imports `@shared/*` and nothing else from the repo.
 **Two update lanes.** `mobile-ota.yml` publishes JS-only changes over
 expo-updates; `mobile-release.yml` builds an APK on EAS and attaches it to a
 `mobile-v*` GitHub Release, which the app installs itself
-(`src/lib/selfUpdate.ts`). Native changes - a new module, a permission, an SDK
+(`src/lib/self-update.ts`). Native changes - a new module, a permission, an SDK
 bump - MUST take the APK lane. `runtimeVersion` uses the **`fingerprint`**
 policy (changed 2026-08-01, was `appVersion`), so the hash covers native deps,
 config plugins and the native-affecting parts of app.json. An OTA can therefore
@@ -270,7 +270,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 One session hands a self-contained summary to another on the SAME backend. Two entry points, ONE delivery method - `ProviderRegistry.deliverPeerMessage(input)`:
 
-- **User-typed**: `/send-to <session>: <message>` (parsing + fuzzy target resolution in `renderer/components/chat/sendToCommand.ts`) → `ProviderChannels.DELIVER_PEER_MESSAGE` → the registry with `initiator: 'user'`. The handler FORCES the initiator; a client claiming `'agent'` would take the agent path's budget while skipping the approval that path relies on.
+- **User-typed**: `/send-to <session>: <message>` (parsing + fuzzy target resolution in `renderer/components/chat/send-to-command.ts`) → `ProviderChannels.DELIVER_PEER_MESSAGE` → the registry with `initiator: 'user'`. The handler FORCES the initiator; a client claiming `'agent'` would take the agent path's budget while skipping the approval that path relies on.
 - **Agent-initiated (CLAUDE ONLY)**: two in-process SDK MCP tools (`createSdkMcpServer`, server name `switchboard`, built per query in `claude-adapter.ts`'s `startDraining`), so the model sees `mcp__switchboard__list_agent_sessions` and `mcp__switchboard__send_agent_message`. Names, descriptions and handler behaviour live in `provider/peer-tools.ts` (SDK-free); `adapters/claude-peer-tools.ts` is the zod + `sdk.tool()` binding. **Codex and OpenCode stay valid TARGETS and cannot SEND** - the seam is `ProviderAdapter.setPeerToolHost?`, which only Claude implements, so an equivalent for them is adapter work only.
 
 Delivery is an ordinary `sendTurn`, which is what makes a peer message structurally unable to answer an approval: nothing on the path reaches `respondToRequest`. The receiving body is `wrapPeerMessage`, which tells the peer the message is not from the user and carries no authority.
@@ -303,7 +303,7 @@ Traps:
 
 - `SlashCommandMenu` popover wired into `ChatInput` textarea
 - Trigger: `/` at start of line, matched by `^\/([^\s/]*)$` (mid-line slashes like paths don't fire)
-- Registry in `src/renderer/components/chat/slashCommands.ts`
+- Registry in `src/renderer/components/chat/slash-commands.ts`
 - v1 commands: `/plan`, `/sandbox`, `/edits`, `/full`, `/clear`, `/archive`, `/image`, `/stop`, `/help`
 - `/help` opens an overlay listing everything
 
@@ -354,19 +354,19 @@ Traps:
 - Top-level view (not a right-pane mode) swapping the chat area for a workspace-scoped board; sidebar stays mounted. `layout-store.appView: 'chats' | 'kanban'`.
 - `kanban_cards` table: `(id, project_path, title, description, tags JSON, status, cost_cap_usd, cost_used_usd, runtime_mode, conversation_id, worktree_path, worktree_branch, created_at, updated_at, completed_at)`. Statuses: `backlog | in_progress | needs_input | done`.
 - IPC (`KanbanChannels`): `list / create / update / delete / create-worktree / remove-worktree / list-worktrees / list-stale-worktrees / remove-stale-worktree`. Moving a card to `done` auto-archives its linked conversation (`applyKanbanArchiveSideEffect`); moving back unarchives.
-- `cardLaunch.ts` `launchCardChat`: reuses the linked conversation if live, else spins up a new session rooted at `worktree_path ?? project_path`, links card→conversation, seeds + auto-sends the first turn (title + description). `WorktreeManagerModal` is the manual cleanup UI (lists worktrees, flags `inUse`, batch-removes stale).
+- `card-launch.ts` `launchCardChat`: reuses the linked conversation if live, else spins up a new session rooted at `worktree_path ?? project_path`, links card→conversation, seeds + auto-sends the first turn (title + description). `WorktreeManagerModal` is the manual cleanup UI (lists worktrees, flags `inUse`, batch-removes stale).
 
 ### Lexical chat input (pill chips + @-mentions)
 
 - `RichChatTextarea.tsx` - Lexical `PlainTextPlugin` editor that serializes to a plain string with `[[pill:id]]` tokens (draft store stays string-shaped). Replaced the plain `<textarea>`.
 - **Pill chips** (`PillNode` decorator + shared `PillChipVisual`): three kinds - `file` (blue), `terminal` (amber), `chat-message` (purple). Inserted by ⌘L context bridge; `×` removes (fires `sb-pill-remove` to prune metadata). Round-trip through `[[pill:id]]` on paste/reload. `renderPillBody` rebuilds chips in sent bubbles.
-- **@-mentions**: `@` at a word boundary opens `AtMentionMenu`; `detectAtTrigger` + `filterAtMatches` rank with `services/fuzzyScore`; Enter inserts a file ref.
-- `rotationMarker.ts` - when the user swaps provider instance mid-chat, a `[[sb:instance-rotated]] <from> → <to>` system marker renders as a compact pill.
-- `BranchPicker` (`main ▾` chip) switches the session's git ref via `git:switch-ref` (policy in `branchPickerPolicy.ts`: current first, then locals, then remotes; substring filter).
+- **@-mentions**: `@` at a word boundary opens `AtMentionMenu`; `detectAtTrigger` + `filterAtMatches` rank with `services/fuzzy-score`; Enter inserts a file ref.
+- `rotation-marker.ts` - when the user swaps provider instance mid-chat, a `[[sb:instance-rotated]] <from> → <to>` system marker renders as a compact pill.
+- `BranchPicker` (`main ▾` chip) switches the session's git ref via `git:switch-ref` (policy in `branch-picker-policy.ts`: current first, then locals, then remotes; substring filter).
 
 ### Project favicons (`sb-favicon://` protocol)
 
-- `faviconResolver.ts` probes static icon paths (root → public/ → app/ → src/ → assets/ → .idea/, each `.svg`/`.ico`/`.png`), cached by `(projectPath, parent mtime)`. Fallback `faviconHtmlScan.ts` scans `index.html` / framework root files for `<link rel="icon">` (skips data:/http: hrefs, containment-checked).
+- `favicon-resolver.ts` probes static icon paths (root → public/ → app/ → src/ → assets/ → .idea/, each `.svg`/`.ico`/`.png`), cached by `(projectPath, parent mtime)`. Fallback `favicon-html-scan.ts` scans `index.html` / framework root files for `<link rel="icon">` (skips data:/http: hrefs, containment-checked).
 - Served via the `sb-favicon://favicon?path=<encoded>` custom protocol (`protocol/sb-favicon.ts`) - path must match a known DB project. `ProjectFavicon.tsx` renders it in the sidebar, falling back to a folder glyph on error.
 
 ## What's currently working
@@ -390,16 +390,16 @@ Traps:
 - **Per-turn duration badge** (2026-04-29): adapters stamp `turnStartedAt` on `sendTurn` and emit `durationMs` on `turn.completed`. MessageBubble renders "Worked for X.Xs" under the assistant message via `fmtDuration` from `src/shared/format.ts`. Wired across all 3 active adapters (claude, codex, opencode-acp).
 - **Right-pane "IDE" mode** (⌘⇧E to toggle, 2026-07-10): the right column flips between the terminal strip and the embedded VS Code workbench. `layout-store.rightPaneMode` (persisted under `layout.rightPaneMode`). Both panes stay mounted so toggling preserves xterm/pty and workbench state.
 - **Embedded IDE (code-server)** (2026-07-10): full workbench, one server + one webview per app, idle shutdown, cmd+l selection → chat pill, pill click → open-at-line - see Embedded IDE section
-- **Inline file pills in agent messages** (2026-04-29): `MessageBubble` post-process walks rendered markdown DOM; inline `<code>` tokens that match `looksLikeRepoPath()` become clickable chips. Path heuristic in `src/shared/filePathRef.ts` (must contain `/`, must end in `.<ext>` or have `:line[-line]` suffix; rejects URLs and absolute paths to avoid false positives). Click → `layout-store.openInViewer(path, lineRange)` flips the right pane to the IDE and routes an open-at-line through the sb-bridge. Existence verified via `files:resolve` IPC; non-existent paths revert to plain code.
+- **Inline file pills in agent messages** (2026-04-29): `MessageBubble` post-process walks rendered markdown DOM; inline `<code>` tokens that match `looksLikeRepoPath()` become clickable chips. Path heuristic in `src/shared/file-path-ref.ts` (must contain `/`, must end in `.<ext>` or have `:line[-line]` suffix; rejects URLs and absolute paths to avoid false positives). Click → `layout-store.openInViewer(path, lineRange)` flips the right pane to the IDE and routes an open-at-line through the sb-bridge. Existence verified via `files:resolve` IPC; non-existent paths revert to plain code.
 - **`⌘L` context bridge** (legacy alias retained for the terminal flow inside the multi-source dispatch above)
 - **`⌘K` quick prompt**: floating prompt bar that sends a one-shot turn to the active session. Pre-fills with the workbench selection (cmd+k inside the IDE, Cursor-style: instruction -> agent edits -> FileDiffCard review) or the current terminal selection
 - **Side-by-side dual chat panels** (`⌘|` toggle, `dualChat`/`rightSessionId`/`chatSplitRatio` in layout-store)
 - **"Send to other panel"** forward action on messages
 - **Status bar** at bottom showing project, agent, status, terminal count
 - **System notifications** on `turn.completed` for non-active sessions (`src/renderer/services/notifications.ts`)
-- **Export conversation as markdown** (`exportMarkdown.ts` + Sidebar right-click)
+- **Export conversation as markdown** (`export-markdown.ts` + Sidebar right-click)
 - **`⌘F` in-pane search** for terminals (xterm SearchAddon with decoration overlays - requires `allowProposedApi: true`) and individual chat panes (DOM TreeWalker wraps first match in `<mark.sb-search-mark>`); shared `InPaneSearchBar` component, document-level keydown listeners scoped to focused pane via `[data-terminal-pane]` / `[data-chat-panel]` attrs
-- **Feature Tour modal** (`FeatureTourModal.tsx` + `featureRegistry.ts` in `src/renderer/components/onboarding/`) - auto-opens on first launch and after `TOUR_VERSION` bumps; replayable from Settings → Tour. MP4 clips streamed via `sb-tour://<id>.mp4` custom protocol (resolves to `videos/dist/`, served via `net.fetch('file://...')` for byte-range support). **Every clip is recorded from the real app** by `videos/capture-tour.mjs`: Playwright drives the built bundle (`npm run build:fast` first) against an isolated seeded fixture with `SB_DEMO_ADAPTER=1`, which swaps every provider for the scripted `adapters/demo-adapter.ts` so agent-driven scenes (plan-mode denial, diff card) are deterministic and need no credentials. Scene ids in that script MUST match `FEATURE_TOUR_STEPS`. Re-record after any visible UI change: `node videos/capture-tour.mjs <id>` (or `all`), then look at the frames before committing. The `ide` scene symlinks this Mac's code-server install into the fixture so it never downloads. The README hero is the same script with `SB_SCREENSHOT=docs/images/hero.png node videos/capture-tour.mjs hero`. Do NOT hand-draw UI replicas again (the HyperFrames scenes were deleted 2026-09-15 after drifting from the app within four months; see `docs/notes/hyperframes-spike.md`).
+- **Feature Tour modal** (`FeatureTourModal.tsx` + `feature-registry.ts` in `src/renderer/components/onboarding/`) - auto-opens on first launch and after `TOUR_VERSION` bumps; replayable from Settings → Tour. MP4 clips streamed via `sb-tour://<id>.mp4` custom protocol (resolves to `videos/dist/`, served via `net.fetch('file://...')` for byte-range support). **Every clip is recorded from the real app** by `videos/capture-tour.mjs`: Playwright drives the built bundle (`npm run build:fast` first) against an isolated seeded fixture with `SB_DEMO_ADAPTER=1`, which swaps every provider for the scripted `adapters/demo-adapter.ts` so agent-driven scenes (plan-mode denial, diff card) are deterministic and need no credentials. Scene ids in that script MUST match `FEATURE_TOUR_STEPS`. Re-record after any visible UI change: `node videos/capture-tour.mjs <id>` (or `all`), then look at the frames before committing. The `ide` scene symlinks this Mac's code-server install into the fixture so it never downloads. The README hero is the same script with `SB_SCREENSHOT=docs/images/hero.png node videos/capture-tour.mjs hero`. Do NOT hand-draw UI replicas again (the HyperFrames scenes were deleted 2026-09-15 after drifting from the app within four months; see `docs/notes/hyperframes-spike.md`).
 - **Agent-aware UI labels**: `agentLabel()` / `agentShortLabel()` helpers in `shared/types.ts` so StatusBar / MessageBubble / etc. all reflect Claude Code / Codex / OpenCode correctly
 - **Multi-instance provider picker** (shipped): named credentials per agent type (env or oauth_dir), `UnifiedProviderPicker` + Settings → Providers, env overlay + session migration at spawn - see Provider instances section above
 - **Kanban board** (⌘⇧K) with worktree-backed cards - see Kanban section
@@ -407,7 +407,7 @@ Traps:
 - **Lexical chat input** with pill chips + `@`-mention file autocomplete - see Lexical chat input section
 - **Project favicons** in the sidebar via `sb-favicon://`
 - **Bookmarks** (`bookmark-store` + `bookmarks` DB table) - bookmark messages/sessions
-- **In-chat diff review** (2026-06-02): after each turn, changed files surface as Cursor-style diff cards in chat with per-hunk accept/reject. Git checkpoint at turn start (`src/main/git/checkpoint.ts` + `checkpoint-tracker.ts`); `fileDiffResolve.ts` applies/reverts hunks; `file.edited` events are provider-agnostic (git is the source of truth). `FileDiffCard.tsx` renders the cards.
+- **In-chat diff review** (2026-06-02): after each turn, changed files surface as Cursor-style diff cards in chat with per-hunk accept/reject. Git checkpoint at turn start (`src/main/git/checkpoint.ts` + `checkpoint-tracker.ts`); `file-diff-resolve.ts` applies/reverts hunks; `file.edited` events are provider-agnostic (git is the source of truth). `FileDiffCard.tsx` renders the cards.
 - **Cross-session messaging**: `/send-to <session>: <message>`, plus two Claude-only SDK MCP tools (`list_agent_sessions` / `send_agent_message`) that let the model hand a finding to a sibling session itself, behind the ordinary approval gate and two extra guards (hop depth, per-sender budget) - see Cross-session messaging above
 - **Queued messages you can act on** (2026-09-24): a held follow-up renders as a dashed Queued bubble with Send now / Cancel on desktop and phone; the composer is two round icon buttons driven by the `chat.followUpDefault` setting (Steer / Queue), and the drift chip can be muted per conversation (`conversations.follow_suggestions`, auto-off past two worked worktrees). See `docs/feature-parity/composer-follow-ups.json`
 - **Rate-limit event handling** (2026-06-10): Claude SDK `rate_limit_event` surfaced as a chat status message with window type + reset time; subprocess leak on `stopSession` fixed (6 new tests in `claude-adapter-stop-session.test.ts`)
@@ -434,7 +434,7 @@ Traps:
 - IPC: `ProviderChannels.LIST_SKILLS` → `provider:list-skills` (preload `window.api.provider.listSkills(threadId)`).
 - UI: `ChatInput` fetches on session start with retry-while-empty (handles late `system/init`); `mergeWithAgentSkills` keeps built-ins first, name-collisions resolve in favor of built-ins so `/clear` always means "clear chat" not whatever a skill named `clear` does. `SlashCommandMenu` renders source-grouped sections + argument-hint suffix. Agent-source selections insert `/<name> ` into the textarea (no special wire path) - the SDK / CLI parses leading slash from the prompt itself.
 
-Pure parsers exported and unit-tested: `parseClaudeSlashCommands` (claude-adapter), `parseCodexSkills` (codex-adapter), `mergeWithAgentSkills` + `skillsToSlashCommands` (slashCommands.ts).
+Pure parsers exported and unit-tested: `parseClaudeSlashCommands` (claude-adapter), `parseCodexSkills` (codex-adapter), `mergeWithAgentSkills` + `skillsToSlashCommands` (slash-commands.ts).
 
 ## Test suite
 
@@ -496,7 +496,7 @@ src/
 │   ├── db/
 │   │   ├── database.ts                # getDb + migrate(); re-exports the domain modules below, so import from here
 │   │   ├── projects.ts · conversations.ts (+ thread ancestry, archive) · messages.ts · settings.ts (+ session layouts) · kanban.ts · bookmarks.ts
-│   │   └── providerInstances.ts       # provider_instances CRUD (safeStorage-encrypted env)
+│   │   └── provider-instances.ts       # provider_instances CRUD (safeStorage-encrypted env)
 │   ├── files/                         # listing (gitignore-annotated) · writing (atomic+conflict) · gitignore matcher
 │   ├── git/                           # diffHunks (gutter) · refs · worktreePaths · checkpoint (diff review) · legacy-session-worktree-lease (session worktree creation)
 │   ├── ide/                           # code-server-manager · binary (download) · bridge-server (ws)
@@ -505,12 +505,12 @@ src/
 │   ├── ipc/
 │   │   ├── terminal.ts · app.ts       # PTY · projects/sessions/archive/fork
 │   │   ├── files.ts · git.ts · ide.ts · kanban.ts # files + git + IDE + kanban IPC
-│   │   ├── providerInstances.ts       # instance LIST/UPSERT/DELETE/TEST/CREATE_OAUTH_DIR
-│   │   └── enrichDisplayBody.ts       # pill/display-body enrichment for stored messages
+│   │   ├── provider-instances.ts       # instance LIST/UPSERT/DELETE/TEST/CREATE_OAUTH_DIR
+│   │   └── enrich-display-body.ts       # pill/display-body enrichment for stored messages
 │   ├── projects/
 │   │   ├── session-scanner.ts         # exact-match Claude + Codex scanners (encodeClaudeProjectPath)
-│   │   ├── faviconResolver.ts         # static icon probe (cached by path+mtime)
-│   │   └── faviconHtmlScan.ts         # <link rel=icon> fallback scan
+│   │   ├── favicon-resolver.ts         # static icon probe (cached by path+mtime)
+│   │   └── favicon-html-scan.ts         # <link rel=icon> fallback scan
 │   ├── protocol/sb-favicon.ts         # sb-favicon:// custom protocol handler
 │   ├── provider/
 │   │   ├── provider-registry.ts       # IPC handlers, instance resolution, event forwarding
@@ -534,24 +534,24 @@ src/
 ├── preload/index.ts                   # Typed window.api (SwitchboardAPI), strongly-typed provider.onEvent
 ├── renderer/
 │   ├── App.tsx                        # Flat flex-row layout, all keybindings, view switching
-│   ├── services/globalKeybindings.ts  # resolveGlobalKeydown: pure keydown → app shortcut action (App dispatches)
+│   ├── services/global-keybindings.ts  # resolveGlobalKeydown: pure keydown → app shortcut action (App dispatches)
 │   ├── components/
 │   │   ├── CommandPalette.tsx (⌘⇧P) · QuickPromptModal.tsx (⌘K) · SearchModal.tsx (⌘⇧F)
 │   │   ├── SettingsModal.tsx · settings/ProvidersTab.tsx · settings/ProviderUsagePanel.tsx · SessionPickerModal.tsx
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx · ChatInput.tsx · MessageList.tsx · MessageBubble.tsx
-│   │   │   ├── providerEventReducer.ts # desktop provider event → agent-store reducer (ChatPanel's listener)
+│   │   │   ├── provider-event-reducer.ts # desktop provider event → agent-store reducer (ChatPanel's listener)
 │   │   │   ├── ChatWorkspacePanels.tsx # primary/secondary ChatPanel slots + ChatSplitHandle
-│   │   │   ├── useChatSearch.ts (in-pane ⌘F) · SlashHelpOverlay.tsx · chatSessionSettings.ts (mode/model/effort writes)
-│   │   │   ├── pickerKeydown.ts (send-to/@/slash picker keys) · modelVariants.tsx (VariantChips, model id helpers)
-│   │   │   ├── ApprovalCard · PlanCard · QuestionCard · FileDiffCard · SlashCommandMenu · slashCommands.ts
+│   │   │   ├── useChatSearch.ts (in-pane ⌘F) · SlashHelpOverlay.tsx · chat-session-settings.ts (mode/model/effort writes)
+│   │   │   ├── picker-keydown.ts (send-to/@/slash picker keys) · model-variants.tsx (VariantChips, model id helpers)
+│   │   │   ├── ApprovalCard · PlanCard · QuestionCard · FileDiffCard · SlashCommandMenu · slash-commands.ts
 │   │   │   ├── UnifiedProviderPicker.tsx # agent tabs → instance rail → model search
-│   │   │   ├── BranchPicker.tsx + branchPickerPolicy.ts · SkillChip · FileChip
-│   │   │   ├── AtMentionMenu.tsx + atMention.ts · renderPillBody.tsx · rotationMarker.ts
+│   │   │   ├── BranchPicker.tsx + branch-picker-policy.ts · SkillChip · FileChip
+│   │   │   ├── AtMentionMenu.tsx + at-mention.ts · render-pill-body.tsx · rotation-marker.ts
 │   │   │   └── lexical/               # RichChatTextarea · PillNode · PillChipVisual
 │   │   ├── layout/                    # ResizeHandle · ViewToggle (Chats/Board title-bar toggle)
 │   │   ├── ide/                       # IdePane (code-server <webview>)
-│   │   ├── kanban/                    # KanbanView (⌘⇧K) · CardModal · WorktreeManagerModal · cardLaunch.ts
+│   │   ├── kanban/                    # KanbanView (⌘⇧K) · CardModal · WorktreeManagerModal · card-launch.ts
 │   │   ├── sidebar/                   # Sidebar · ProjectFavicon · WorkspaceManager · dragLogic
 │   │   ├── onboarding/               # FeatureTourModal + featureRegistry
 │   │   └── terminal/                  # TerminalStrip · TerminalWindow · TerminalPane · TerminalHeader · TemplatePicker
@@ -560,7 +560,7 @@ src/
 │   └── stores/                        # agent · terminal · layout · theme · draft · kanban · provider-instance · skill · bookmark
 ├── preload/                           # transport.ts (IpcTransport) · ws-transport (via shared) · hybrid-transport · transport-router · routing-table
 ├── shared/
-│   ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · filePathRef.ts
+│   ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · file-path-ref.ts
 │   ├── provider-usage.ts · claude-usage-parse.ts · codex-usage-parse.ts   # normalised subscription usage limits
 │   ├── transport.ts · ws-protocol.ts · ws-transport.ts · machines.ts   # backend transport seam (local ↔ remote)
 └── tests/unit/                        # vitest suite (see Test suite)

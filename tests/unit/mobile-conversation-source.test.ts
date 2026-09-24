@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { conversationSourceLabel } from '../../apps/mobile/src/lib/conversationSource'
+import { conversationSourceLabel } from '../../apps/mobile/src/lib/conversation-source'
 
 describe('mobile conversation provenance', () => {
   it('shows Cursor provenance without changing the runnable provider', () => {

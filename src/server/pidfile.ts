@@ -1,7 +1,7 @@
 /**
  * PID-file ownership for the headless backend.
  *
- * The remote bootstrap (machines/connectDeps.ts REMOTE_COMMAND) reads
+ * The remote bootstrap (machines/connect-deps.ts REMOTE_COMMAND) reads
  * `~/.switchboard-server/server.pid` and kills that pid before launching a
  * fresh server, so the file is the ONLY handle anything has on a lingering
  * process. That makes two properties load-bearing:

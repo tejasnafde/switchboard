@@ -12,11 +12,11 @@ import {
   type ChatSlot,
   type ChatWorkspaceEvent,
   type ChatWorkspaceState,
-} from '../services/chatWorkspace'
+} from '../services/chat-workspace'
 import {
   publishChatWorkspace,
   registerChatWorkspaceController,
-} from '../services/chatWorkspaceRuntime'
+} from '../services/chat-workspace-runtime'
 
 const log = createRendererLogger('store:layout')
 

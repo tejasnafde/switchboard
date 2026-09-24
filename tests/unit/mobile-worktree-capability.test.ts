@@ -4,8 +4,8 @@ import { encodeFrame, type WsFrame } from '../../src/shared/ws-protocol'
 import type { Transport } from '../../src/shared/transport'
 import { SwitchboardClient } from '../../apps/mobile/src/lib/api'
 import { IapTransport } from '../../apps/mobile/src/lib/iap-transport'
-import { restoredWorktreeForm, shouldOfferWorktreeCreation } from '../../apps/mobile/src/lib/worktreeCapability'
-import type { MobileNewSessionCreationState } from '../../apps/mobile/src/lib/newSessionCreation'
+import { restoredWorktreeForm, shouldOfferWorktreeCreation } from '../../apps/mobile/src/lib/worktree-capability'
+import type { MobileNewSessionCreationState } from '../../apps/mobile/src/lib/new-session-creation'
 
 class FakeIapSocket {
   static instance: FakeIapSocket | null = null

@@ -140,7 +140,7 @@ export interface ProviderSkill {
 
 /**
  * Where `effectiveOauthDir` on a `ProviderInstance` came from - see
- * `ProviderInstanceWire` in main/db/providerInstances.ts, the source of
+ * `ProviderInstanceWire` in main/db/provider-instances.ts, the source of
  * truth for this contract. Settings must brand the display by this field,
  * not infer isolation from whether `oauthDir` happens to be set: a legacy
  * `env`-sourced row has no `oauthDir` at all but is still isolated.
@@ -174,7 +174,7 @@ export interface ProviderInstance {
   oauthDir: string | null
   /** Backend-authoritative canonical directory this instance's credential
    *  home actually resolves to - see ProviderInstanceWire in
-   *  main/db/providerInstances.ts. Settings must display this, not `oauthDir`,
+   *  main/db/provider-instances.ts. Settings must display this, not `oauthDir`,
    *  as "the directory in use". */
   effectiveOauthDir: string | null
   /** Where `effectiveOauthDir` came from - see `EffectiveOauthDirSource`. */

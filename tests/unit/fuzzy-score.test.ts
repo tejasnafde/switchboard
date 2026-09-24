@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fuzzyScore } from '../../src/renderer/services/fuzzyScore'
+import { fuzzyScore } from '../../src/renderer/services/fuzzy-score'
 
 /** Rank `targets` best-first by score, dropping non-matches. */
 function rank(query: string, targets: string[]): string[] {

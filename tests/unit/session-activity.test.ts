@@ -6,7 +6,7 @@
  * live, not only after a reload.
  */
 import { describe, it, expect } from 'vitest'
-import { bumpSessionActivity } from '../../src/renderer/components/sidebar/sessionActivity'
+import { bumpSessionActivity } from '../../src/renderer/components/sidebar/session-activity'
 import type { Project } from '@shared/types'
 
 const projects = (): Project[] => [

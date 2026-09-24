@@ -18,7 +18,7 @@ import { createLogger } from '@shared/logger'
 export { parsePairingUrl } from '../lib/pairing'
 import { SwitchboardClient } from '../lib/api'
 import { IapTransport } from '../lib/iap-transport'
-import { foregroundAction } from '../lib/appLifecycle'
+import { foregroundAction } from '../lib/app-lifecycle'
 import {
   deleteConnectionToken,
   loadConnectionSession,

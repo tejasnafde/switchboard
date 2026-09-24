@@ -18,8 +18,8 @@
       "evidence": [
         "apps/mobile/src/screens/ThreadScreen.tsx",
         "apps/mobile/src/stores/outbox.ts",
-        "apps/mobile/src/lib/outboxModel.ts",
-        "apps/mobile/src/lib/turnSubmit.ts"
+        "apps/mobile/src/lib/outbox-model.ts",
+        "apps/mobile/src/lib/turn-submit.ts"
       ]
     },
     "nativeAndroid": {
@@ -49,7 +49,7 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/lib/outboxModel.ts"
+        "apps/mobile/src/lib/outbox-model.ts"
       ]
     },
     "updateRelease": {

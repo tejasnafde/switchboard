@@ -12,7 +12,7 @@ import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import { scanCodexSessionCopies } from '../projects/session-scanner'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import { mergeConversationMessages } from '../agent/dedupe-messages'
-import { enrichMessagesWithDisplayBody } from '../ipc/enrichDisplayBody'
+import { enrichMessagesWithDisplayBody } from '../ipc/enrich-display-body'
 import {
   isForkableCanonicalMessage,
   type CanonicalForkMessage,

@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import { WebSocketServer, type AddressInfo } from 'ws'
 import Database from 'better-sqlite3'
 
-vi.mock('../../src/main/db/providerInstances', () => ({
+vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({
     id: id ?? `${agentType}-default`,
     agentType,

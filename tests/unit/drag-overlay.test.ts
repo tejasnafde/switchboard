@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { showDragOverlay, hideDragOverlay, isDragOverlayActive } from '../../src/renderer/services/dragOverlay'
+import { showDragOverlay, hideDragOverlay, isDragOverlayActive } from '../../src/renderer/services/drag-overlay'
 
 /**
  * The drag overlay is the shield that keeps the pointer inside the host

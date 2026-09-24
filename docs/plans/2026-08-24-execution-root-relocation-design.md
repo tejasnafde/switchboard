@@ -92,7 +92,7 @@ published.
 
 ### 3. Terminal defaults (landed)
 
-`src/renderer/services/executionRoot.ts` is the single lookup. All seven
+`src/renderer/services/execution-root.ts` is the single lookup. All seven
 creation entry points now use it: `TerminalStrip`, `TerminalWindow`, three
 `CommandPalette` commands, two `App.tsx` keyboard shortcuts, and both
 `useTerminalLifecycle` hydration paths.

@@ -7,7 +7,7 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/components/chat/sendToCommand.ts",
+        "src/renderer/components/chat/send-to-command.ts",
         "src/renderer/components/chat/ChatInput.tsx",
         "src/renderer/components/chat/lexical/RichChatTextarea.tsx",
         "tests/unit/send-to-command.test.ts",

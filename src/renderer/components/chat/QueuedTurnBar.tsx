@@ -8,9 +8,9 @@ import { useState } from 'react'
 import { promoteUnavailableReason } from '@shared/turn-delivery'
 import { Button } from '../ui/button'
 import { useDraftStore } from '../../stores/draft-store'
-import { focusComposer } from '../../services/composerRegistry'
+import { focusComposer } from '../../services/composer-registry'
 import { createRendererLogger } from '../../logger'
-import { ArrowUpIcon, ClockIcon, CloseIcon } from './chatIcons'
+import { ArrowUpIcon, ClockIcon, CloseIcon } from './chat-icons'
 
 const log = createRendererLogger('chat:queued-turn')
 

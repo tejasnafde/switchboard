@@ -17,7 +17,7 @@
  *       (c) easy to grep + visually scan in a draft string.
  */
 import { describe, it, expect } from 'vitest'
-import { insertPillAtCursor, serializeBodyWithPills } from '../../src/renderer/services/chatInputBody'
+import { insertPillAtCursor, serializeBodyWithPills } from '../../src/renderer/services/chat-input-body'
 
 describe('insertPillAtCursor', () => {
   it('inserts the token + trailing space into an empty body', () => {

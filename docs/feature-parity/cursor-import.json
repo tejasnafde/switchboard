@@ -17,7 +17,7 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/lib/conversationSource.ts",
+        "apps/mobile/src/lib/conversation-source.ts",
         "tests/unit/mobile-conversation-source.test.ts"
       ]
     },

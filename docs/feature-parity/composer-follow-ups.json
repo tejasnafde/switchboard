@@ -11,13 +11,13 @@
         "src/renderer/components/chat/ChatPanel.tsx",
         "src/renderer/components/chat/MessageBubble.tsx",
         "src/renderer/components/chat/QueuedTurnBar.tsx",
-        "src/renderer/components/chat/chatIcons.tsx",
+        "src/renderer/components/chat/chat-icons.tsx",
         "src/renderer/components/ui/button.tsx",
         "src/renderer/components/SettingsModal.tsx",
         "src/renderer/components/sidebar/RecentSessionsSection.tsx",
         "src/renderer/stores/agent-store.ts",
         "src/renderer/stores/layout-store.ts",
-        "src/renderer/services/pendingRequestRecovery.ts",
+        "src/renderer/services/pending-request-recovery.ts",
         "e2e/queue-steer.e2e.mjs",
         "e2e/visual-regressions.e2e.mjs"
       ]
@@ -30,8 +30,8 @@
         "apps/mobile/src/screens/ConnectionsScreen.tsx",
         "apps/mobile/src/stores/chat.ts",
         "apps/mobile/src/stores/prefs.ts",
-        "apps/mobile/src/lib/heldTurns.ts",
-        "apps/mobile/src/screens/__tests__/heldTurnBar.test.tsx",
+        "apps/mobile/src/lib/held-turns.ts",
+        "apps/mobile/src/screens/__tests__/held-turn-bar.test.tsx",
         "tests/unit/mobile-held-turns.test.ts",
         "tests/unit/mobile-chat-store.test.ts"
       ]

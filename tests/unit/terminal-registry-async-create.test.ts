@@ -1,6 +1,6 @@
 /**
  * `createTerminalAsync` backs the Terminal-tab "Start Terminal Session"
- * flow (via startTerminalSession in terminalLoginStart.ts). Unlike
+ * flow (via startTerminalSession in terminal-login-start.ts). Unlike
  * `getOrCreateTerminal` (fire-and-forget, used throughout the rest of the
  * app - see terminal-registry-env.test.ts / terminal-registry-login-
  * instance.test.ts, which must keep passing unchanged), this awaits the

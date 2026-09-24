@@ -63,7 +63,7 @@ import {
   type LexicalNode,
 } from 'lexical'
 import { $createPillNode, $isPillNode, PillNode } from './PillNode'
-import { parseBodyToSegments } from '../../../services/chatInputBody'
+import { parseBodyToSegments } from '../../../services/chat-input-body'
 import type { DraftPill } from '../../../stores/draft-store'
 import { createRendererLogger } from '../../../logger'
 

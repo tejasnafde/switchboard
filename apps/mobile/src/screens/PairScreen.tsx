@@ -31,11 +31,11 @@ import { useHeaderHeight } from '@react-navigation/elements'
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { SshIapTarget } from '@shared/machines'
-import { selectAvailableIapTargets, type IapTargetSelection } from '../lib/iapDiscovery'
+import { selectAvailableIapTargets, type IapTargetSelection } from '../lib/iap-discovery'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
-import { keyboardAvoidance } from '../lib/keyboardAvoidance'
+import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 import {
   getClient,
   parsePairingUrl,

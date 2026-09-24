@@ -7,13 +7,13 @@ import type { Project, SessionSummary, Workspace } from '@shared/types'
 
 // Grouping and ordering moved to shared/ so the mobile Projects screen groups
 // projects the same way. Re-exported here to keep existing import sites valid.
-import type { WorkspaceGroup } from '@shared/projectGrouping'
+import type { WorkspaceGroup } from '@shared/project-grouping'
 
 export {
   groupProjectsByWorkspace,
   colorTokenForWorkspace,
   type WorkspaceGroup,
-} from '@shared/projectGrouping'
+} from '@shared/project-grouping'
 
 /** Compact "now / 5m / 3h / 2d / 4w / 3mo" stamp for sidebar thread rows. */
 export { formatRelativeTime } from '@shared/format'

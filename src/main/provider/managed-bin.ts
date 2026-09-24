@@ -2,7 +2,7 @@
  * Switchboard's managed CLI bin directory, and deterministic precedence for it.
  *
  * Provisioning links the `claude` and `codex` it installed into
- * `$HOME/.local/bin` (see machines/provisionSetup.ts). Two things then went
+ * `$HOME/.local/bin` (see machines/provision-setup.ts). Two things then went
  * wrong on remotes:
  *
  *  - The runtime PATH omitted that directory entirely. The tunnel launches the

@@ -7,7 +7,7 @@ import {
   createDesktopPreparedTurnRegistry,
   submitProgrammaticTurn,
   submitDesktopUserTurn,
-} from '../../src/renderer/services/desktopTurnSubmission'
+} from '../../src/renderer/services/desktop-turn-submission'
 import type { UserTurnSubmissionV1 } from '../../src/shared/provider-events'
 
 function database(): Database.Database {

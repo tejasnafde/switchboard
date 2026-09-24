@@ -4,7 +4,7 @@ import {
   serializeLaunchConfigFile,
   type LaunchConfigFile,
 } from '../../src/shared/launch-config'
-import { launchConfigListReducer } from '../../src/renderer/services/launchConfigListReducer'
+import { launchConfigListReducer } from '../../src/renderer/services/launch-config-list-reducer'
 
 describe('repository worktree setup launch config', () => {
   it('parses setup independently from terminal on_start commands', () => {

@@ -16,7 +16,7 @@
       "status": "implemented",
       "evidence": [
         "apps/mobile/src/screens/ThreadScreen.tsx",
-        "apps/mobile/src/screens/__tests__/feedItems.test.tsx"
+        "apps/mobile/src/screens/__tests__/feed-items.test.tsx"
       ]
     },
     "nativeAndroid": {
@@ -45,7 +45,7 @@
     "automated": [
       "npm run typecheck (main + renderer) passes with src/shared/tool-summary.ts and the updated ToolCallBlock.tsx.",
       "npx vitest run - full repo suite (393 files) passes, including tests/unit/tool-summary.test.ts (moved from tests/unit/mobile-tool-summary.test.ts, import path updated, 18 tests) and the new tests/unit/tool-summary-fixtures.test.ts (36 tests: 1 fixture-shape check + 1 case per fixture entry) reading tests/fixtures/tool-summary-cases.json.",
-      "npm test --prefix apps/mobile -- --runInBand passes (6 suites, 35 tests), including apps/mobile/src/screens/__tests__/feedItems.test.tsx which exercises ThreadScreen's tool-row rendering through the moved '@shared/tool-summary' import.",
+      "npm test --prefix apps/mobile -- --runInBand passes (6 suites, 35 tests), including apps/mobile/src/screens/__tests__/feed-items.test.tsx which exercises ThreadScreen's tool-row rendering through the moved '@shared/tool-summary' import.",
       "cd apps/mobile && npx tsc --noEmit -p tsconfig.json passes clean.",
       "cd apps/android && ./gradlew testDebugUnitTest lintDebug - ThreadPresentationTest (25 tests, all pre-existing assertions updated for the new label wording, no-quote Grep detail, and 2-segment path shortening) and the new ToolSummaryFixturesTest (reads the same tests/fixtures/tool-summary-cases.json from the repo root, walking up from the Gradle working directory the same way LegacyStateDecoderTest.kt already does, and asserts every case not marked android:false) both pass; lintDebug passes.",
       "npm run validate:feature-parity -- --base origin/main passes against this manifest."

@@ -9,7 +9,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { createDebouncedStorage } from '../lib/debouncedStorage'
+import { createDebouncedStorage } from '../lib/debounced-storage'
 import type {
   ProviderKind,
   RuntimeContentEvent,
@@ -21,7 +21,7 @@ import type {
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
 import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
 import type { SyntheticUserPart } from '@shared/synthetic-message'
-import { splitLegacyCachedItems } from '../lib/threadHistory'
+import { splitLegacyCachedItems } from '../lib/thread-history'
 import { applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 

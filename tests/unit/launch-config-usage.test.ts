@@ -5,7 +5,7 @@
  * remaining no-recorded-use bucket.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { sortLaunchConfigsByRecency, recordLaunchConfigUsage } from '../../src/renderer/services/launchConfigUsage'
+import { sortLaunchConfigsByRecency, recordLaunchConfigUsage } from '../../src/renderer/services/launch-config-usage'
 
 // Minimal localStorage shim so the helper runs under Node.
 class MemoryStorage {

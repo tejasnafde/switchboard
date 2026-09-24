@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMachineStore } from '../../stores/machine-store'
 import { AppChannels, FilesChannels } from '@shared/ipc-channels'
 import type { Project } from '@shared/types'
-import { splitPath, pathCompletions, moveSelection, acceptSuggestion } from './pathComplete'
+import { splitPath, pathCompletions, moveSelection, acceptSuggestion } from './path-complete'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('sidebar:add-remote-project')

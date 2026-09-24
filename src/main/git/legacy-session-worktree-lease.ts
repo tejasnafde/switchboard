@@ -6,8 +6,8 @@ import { isAbsolute, dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { getDb } from '../db/database'
 import { userDataDir } from '../runtime'
-import { resolveSessionWorktreePath } from './worktreePaths'
-import { cloneDependencyDirsInBackground } from './dependencyClone'
+import { resolveSessionWorktreePath } from './worktree-paths'
+import { cloneDependencyDirsInBackground } from './dependency-clone'
 
 const execFileAsync = promisify(execFile)
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Project } from '@shared/types'
 import { useMachineStore } from '../stores/machine-store'
-import { fuzzyScore } from '../services/fuzzyScore'
+import { fuzzyScore } from '../services/fuzzy-score'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('new-chat:picker')

@@ -13,7 +13,7 @@
  * credential home a login terminal gets.
  */
 import type { TerminalCreateOptions } from '@shared/types'
-import { resolveProviderInstance } from '../db/providerInstances'
+import { resolveProviderInstance } from '../db/provider-instances'
 import { resolveInstanceEnv } from '../provider/instance-env'
 
 /**

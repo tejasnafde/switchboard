@@ -4,7 +4,7 @@ import {
   bufferContent,
   drainTurn,
   type StreamingBuffer,
-} from '../../src/renderer/services/streamingBuffer'
+} from '../../src/renderer/services/streaming-buffer'
 
 describe('streamingBuffer', () => {
   it('createStreamingBuffer returns an empty buffer', () => {

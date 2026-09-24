@@ -2,7 +2,7 @@
 #
 # Publishes an iOS-only JS bundle to the EAS `production` update branch. The
 # remaining React Native iOS app picks it up on its next foreground and offers a restart
-# (apps/mobile/src/lib/otaUpdate.ts). No APK download, no install prompt, no
+# (apps/mobile/src/lib/ota-update.ts). No APK download, no install prompt, no
 # store review.
 #
 # THIS LANE IS IOS JS/ASSETS ONLY. Native Android retired Expo OTA and receives

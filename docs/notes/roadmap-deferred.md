@@ -188,7 +188,7 @@ ships first. Adapter changes to accept an `instanceId` at
 ## 5. Multi-instance provider picker (t3code-style) - ✅ SHIPPED
 
 > **Update (2026-06-01):** This shipped. `provider_instances` table +
-> `ipc/providerInstances.ts` + `UnifiedProviderPicker` + Settings →
+> `ipc/provider-instances.ts` + `UnifiedProviderPicker` + Settings →
 > Providers tab are all live (env or `oauth_dir` auth, safeStorage-encrypted
 > env, per-instance accent color, session migration across credential
 > rotation). The auto-rotation-on-rate-limit follow-up described below is
@@ -391,7 +391,7 @@ worktree's changes get merged back today, which is new work, not a side
 effect of the clone.
 
 Partly addressed already: the worktree `node_modules` clone (PR #107,
-`src/main/git/dependencyClone.ts`) solves the dependency-reinstall half of
+`src/main/git/dependency-clone.ts`) solves the dependency-reinstall half of
 this problem for the existing git-worktree path, via `cloneDependencyDirsInBackground`.
 It does not touch worktree creation time or total disk use for the rest of
 the project tree - that's the part a full APFS clone would additionally buy.

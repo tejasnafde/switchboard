@@ -125,7 +125,7 @@ const CANONICAL_CODEX = join(homedir(), '.codex')
 const CANONICAL_CLAUDE = join(homedir(), '.claude')
 
 async function db() {
-  return import('../../src/main/db/providerInstances')
+  return import('../../src/main/db/provider-instances')
 }
 
 beforeEach(() => {

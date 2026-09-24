@@ -12,7 +12,7 @@
 import { app } from 'electron'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
-import type { BridgeFile } from '../machines/provisionSetup'
+import type { BridgeFile } from '../machines/provision-setup'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('ide:bundled')

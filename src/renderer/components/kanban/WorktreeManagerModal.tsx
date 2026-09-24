@@ -17,7 +17,7 @@ import { createRendererLogger } from '../../logger'
 import { confirm } from '../ui/confirm'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { cn } from '../../lib/utils'
-import { closeButtonClass, dangerButtonClass, footerClass, headerClass, modalClass, secondaryButtonClass } from './kanbanModalClasses'
+import { closeButtonClass, dangerButtonClass, footerClass, headerClass, modalClass, secondaryButtonClass } from './kanban-modal-classes'
 
 const log = createRendererLogger('kanban:worktree-manager')
 

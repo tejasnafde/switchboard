@@ -8,7 +8,7 @@
       "status": "implemented",
       "evidence": [
         "src/renderer/components/chat/ChatPanel.tsx",
-        "src/renderer/components/chat/providerEventReducer.ts",
+        "src/renderer/components/chat/provider-event-reducer.ts",
         "src/preload/index.ts",
         "src/main/provider/adapters/demo-adapter.ts",
         "e2e/reopen-tool-rows.e2e.mjs"
@@ -17,7 +17,7 @@
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/lib/threadHistory.ts",
+        "apps/mobile/src/lib/thread-history.ts",
         "tests/unit/mobile-thread-history.test.ts"
       ]
     },

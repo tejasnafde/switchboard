@@ -4,7 +4,7 @@ import { join } from 'path'
 import { existsSync, mkdirSync, renameSync } from 'fs'
 import { createMainLogger as createLogger } from '../logger'
 import { AGENT_TYPES, defaultInstanceId } from '@shared/types'
-import { deriveProjectPositions } from './projectOrdering'
+import { deriveProjectPositions } from './project-ordering'
 import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
 import { searchMessagesInDatabase, type SearchResult } from './message-search'
 import { ensureConversationForkSchema } from './conversation-fork'
@@ -430,7 +430,7 @@ function migrate(db: Database.Database): void {
   ensureBookmarksTable(db)
 
   // Provider instances: named credential sets scoped to an agent kind.
-  // See src/main/db/providerInstances.ts for the encryption contract.
+  // See src/main/db/provider-instances.ts for the encryption contract.
   db.exec(`
     CREATE TABLE IF NOT EXISTS provider_instances (
       id            TEXT PRIMARY KEY,

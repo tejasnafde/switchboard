@@ -5,7 +5,7 @@ import { TerminalWindow } from './TerminalWindow'
 import { PaneResizeHandle } from './PaneResizeHandle'
 import { focusTerminal } from '../../services/terminal-registry'
 import { LaunchConfigPicker } from './LaunchConfigPicker'
-import { sessionExecutionRootPath } from '../../services/executionRoot'
+import { sessionExecutionRootPath } from '../../services/execution-root'
 
 /** Where a new pane opens. The session's CURRENT root, so a followed
  *  worktree is picked up instead of the parent checkout. */

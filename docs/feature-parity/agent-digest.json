@@ -11,9 +11,9 @@
         "src/main/provider/adapters/codex-adapter.ts",
         "src/main/provider/adapters/opencode-acp-adapter.ts",
         "src/renderer/components/chat/MessageBubble.tsx",
-        "src/renderer/components/sidebar/recentSessions.ts",
+        "src/renderer/components/sidebar/recent-sessions.ts",
         "src/renderer/components/sidebar/RecentSessionsSection.tsx",
-        "src/renderer/services/sessionPreview.ts",
+        "src/renderer/services/session-preview.ts",
         "src/renderer/components/kanban/KanbanView.tsx",
         "src/renderer/styles/global.css",
         "tests/unit/agent-digest.test.ts",
@@ -28,8 +28,8 @@
       "evidence": [
         "apps/mobile/src/screens/ThreadScreen.tsx",
         "apps/mobile/src/screens/ConversationsScreen.tsx",
-        "apps/mobile/src/lib/threadPreview.ts",
-        "apps/mobile/src/screens/__tests__/feedItems.test.tsx",
+        "apps/mobile/src/lib/thread-preview.ts",
+        "apps/mobile/src/screens/__tests__/feed-items.test.tsx",
         "tests/unit/mobile-thread-preview.test.ts"
       ]
     },

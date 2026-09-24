@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { buildKanbanCardCreateSubmission } from '../../src/renderer/components/kanban/kanbanCreateIntent'
+import { buildKanbanCardCreateSubmission } from '../../src/renderer/components/kanban/kanban-create-intent'
 
 describe('Kanban card create intent', () => {
   it('stores the initial agent prompt and runtime mode with a worktree request', () => {

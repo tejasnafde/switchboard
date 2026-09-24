@@ -16,7 +16,7 @@ import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { GitChannels } from '@shared/ipc-channels'
 import { listRefs, switchRef, getCurrentBranch, type Ref } from '../git/refs'
-import { watchHead, unwatchHead } from '../git/headWatcher'
+import { watchHead, unwatchHead } from '../git/head-watcher'
 import {
   createLegacySessionWorktree,
   type LegacySessionWorktreeInput,

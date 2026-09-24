@@ -1,4 +1,4 @@
-import { getProviderInstanceFull } from '../db/providerInstances'
+import { getProviderInstanceFull } from '../db/provider-instances'
 import {
   getConversationById,
   getConversationByThreadId,

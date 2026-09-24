@@ -8,7 +8,7 @@
       "status": "implemented",
       "evidence": [
         "src/renderer/components/chat/ChatInput.tsx",
-        "src/renderer/components/chat/composerFooterLayout.ts",
+        "src/renderer/components/chat/composer-footer-layout.ts",
         "tests/unit/composer-footer-layout.test.ts"
       ]
     },

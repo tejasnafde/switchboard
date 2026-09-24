@@ -9,7 +9,7 @@
  *    channel) - both must count as unhealthy, not pass the probe
  *
  * REMOTE_COMMAND's shape - the bounded stale-server reap and the managed-CLI
- * PATH export it now composes from machines/remoteBootstrap.ts - is covered in
+ * PATH export it now composes from machines/remote-bootstrap.ts - is covered in
  * tests/unit/remote-bootstrap-cleanup.test.ts.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -70,12 +70,12 @@ class FakeWebSocket {
 
 vi.mock('ws', () => ({ default: FakeWebSocket }))
 
-let waitForHealth: typeof import('../../src/main/machines/connectDeps').waitForHealth
-let spawnTunnel: typeof import('../../src/main/machines/connectDeps').spawnTunnel
-let allocatePort: typeof import('../../src/main/machines/connectDeps').allocatePort
-let REMOTE_COMMAND: typeof import('../../src/main/machines/connectDeps').REMOTE_COMMAND
-let REMOTE_BRIDGE_PORT: typeof import('../../src/main/machines/connectDeps').REMOTE_BRIDGE_PORT
-let SERVER_VERSION_CHANNEL: typeof import('../../src/main/machines/connectDeps').SERVER_VERSION_CHANNEL
+let waitForHealth: typeof import('../../src/main/machines/connect-deps').waitForHealth
+let spawnTunnel: typeof import('../../src/main/machines/connect-deps').spawnTunnel
+let allocatePort: typeof import('../../src/main/machines/connect-deps').allocatePort
+let REMOTE_COMMAND: typeof import('../../src/main/machines/connect-deps').REMOTE_COMMAND
+let REMOTE_BRIDGE_PORT: typeof import('../../src/main/machines/connect-deps').REMOTE_BRIDGE_PORT
+let SERVER_VERSION_CHANNEL: typeof import('../../src/main/machines/connect-deps').SERVER_VERSION_CHANNEL
 
 const LOCAL_VERSION = '1.2.3'
 
@@ -83,7 +83,7 @@ beforeEach(async () => {
   vi.useFakeTimers()
   FakeWebSocket.instances = []
   process.env.npm_package_version = LOCAL_VERSION
-  ;({ waitForHealth, spawnTunnel, allocatePort, REMOTE_COMMAND, REMOTE_BRIDGE_PORT, SERVER_VERSION_CHANNEL } = await import('../../src/main/machines/connectDeps'))
+  ;({ waitForHealth, spawnTunnel, allocatePort, REMOTE_COMMAND, REMOTE_BRIDGE_PORT, SERVER_VERSION_CHANNEL } = await import('../../src/main/machines/connect-deps'))
 })
 
 afterEach(() => {
@@ -266,12 +266,12 @@ describe('spawnTunnel', () => {
   })
 })
 
-// REMOTE_COMMAND now composes machines/remoteBootstrap.ts, and most of its
+// REMOTE_COMMAND now composes machines/remote-bootstrap.ts, and most of its
 // contract (bounded TERM->KILL escalation, per-process identity guards, no
 // pkill, the managed-CLI PATH export, bridge-token export ordering) is
 // asserted in tests/unit/remote-bootstrap-cleanup.test.ts alongside the
 // builders - not repeated here, to avoid two copies of the same string
-// assertions drifting. The two checks below are connectDeps.ts's own concern
+// assertions drifting. The two checks below are connect-deps.ts's own concern
 // (its REMOTE_BRIDGE_PORT constant and the token-minting command text) and
 // were dropped by a prior refactor with no replacement; restored here.
 describe('REMOTE_COMMAND bridge token/port', () => {

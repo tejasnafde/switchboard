@@ -4,9 +4,9 @@
  * upgrade, or launch as-is. No ssh here - just parsing + the decision.
  */
 import { describe, it, expect } from 'vitest'
-import { parseProbeOutput } from '../../src/main/machines/remoteProbe'
-import { planProvision } from '../../src/main/machines/provisionPlan'
-import { buildProbeCommand } from '../../src/main/machines/provisionCommands'
+import { parseProbeOutput } from '../../src/main/machines/remote-probe'
+import { planProvision } from '../../src/main/machines/provision-plan'
+import { buildProbeCommand } from '../../src/main/machines/provision-commands'
 import type { Machine } from '@shared/machines'
 
 describe('parseProbeOutput', () => {

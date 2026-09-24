@@ -13,7 +13,7 @@ import {
   getConversationRuntimeMode,
   getSetting,
 } from '../db/database'
-import { getProviderInstanceFull } from '../db/providerInstances'
+import { getProviderInstanceFull } from '../db/provider-instances'
 import {
   defaultInstanceSettingKey,
   defaultModelSettingKey,

@@ -1,7 +1,7 @@
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { assembleClaudeForkAtEvent } from '../agent/jsonl-truncate'
-import type { ProviderInstanceRow } from '../db/providerInstances'
+import type { ProviderInstanceRow } from '../db/provider-instances'
 import {
   claudeSessionResumePath,
   defaultClaudeDir,

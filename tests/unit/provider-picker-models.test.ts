@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelOption } from '@shared/models'
-import { filterModels, groupModelsByProvider } from '../../src/renderer/components/chat/providerPickerModels'
+import { filterModels, groupModelsByProvider } from '../../src/renderer/components/chat/provider-picker-models'
 
 const model = (id: string, label = id): ModelOption => ({ id, label, tier: 'balanced' })
 

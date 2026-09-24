@@ -12,10 +12,10 @@
 
 import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { useKanbanStore } from '../../stores/kanban-store'
-import { downscaleImage } from '../../services/imageDownscale'
-import { insertSnippetWithNewlineGuards } from '../../services/insertSnippet'
-import { buildKanbanCardCreateSubmission } from './kanbanCreateIntent'
-import { describeKanbanWorktreeCreation } from './kanbanWorktreePresentation'
+import { downscaleImage } from '../../services/image-downscale'
+import { insertSnippetWithNewlineGuards } from '../../services/insert-snippet'
+import { buildKanbanCardCreateSubmission } from './kanban-create-intent'
+import { describeKanbanWorktreeCreation } from './kanban-worktree-presentation'
 import {
   KANBAN_COLUMNS,
   KANBAN_DEFAULT_RUNTIME_MODE,
@@ -34,7 +34,7 @@ import {
   modalClass,
   primaryButtonClass,
   secondaryButtonClass,
-} from './kanbanModalClasses'
+} from './kanban-modal-classes'
 
 const RUNTIME_MODE_OPTIONS: ReadonlyArray<{ value: RuntimeMode; label: string; hint: string }> = [
   { value: 'plan', label: 'Plan', hint: 'Read-only - agent proposes but does not edit' },

@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
-import { renderPillBody, type PillsMeta } from '../../src/renderer/components/chat/renderPillBody'
+import { renderPillBody, type PillsMeta } from '../../src/renderer/components/chat/render-pill-body'
 import { PillChipVisual } from '../../src/renderer/components/chat/lexical/PillChipVisual'
 
 function asElement(n: ReactNode): ReactElement {

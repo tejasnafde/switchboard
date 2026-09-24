@@ -1,7 +1,7 @@
 # Plan - ⌘+L context bridge + ⌘+K quick prompt
 
 > **Status: shipped 2026-04-26.** Both features are live in production.
-> Implementation lives at `src/renderer/services/contextBridge.ts`
+> Implementation lives at `src/renderer/services/context-bridge.ts`
 > (⌘+L - 50k char cap, multi-line selections wrap in a fenced code
 > block, appended to the active chat draft) and
 > `src/renderer/components/QuickPromptModal.tsx` (⌘+K - floating
@@ -63,7 +63,7 @@ The agent receives the selection + metadata + the question in one message.
 | `src/renderer/services/terminal-registry.ts` | Add `getTerminalSelection(paneId)` helper that reads from the registered xterm instance |
 | `src/renderer/App.tsx` | Add ⌘+L keybinding handler |
 | `src/renderer/components/terminal/TerminalPane.tsx` | (Optional) add "Send to chat" to right-click menu later |
-| `src/renderer/services/contextBridge.ts` | **New** - pure formatter + dispatch function `sendTerminalSelectionToChat()` |
+| `src/renderer/services/context-bridge.ts` | **New** - pure formatter + dispatch function `sendTerminalSelectionToChat()` |
 | `src/renderer/components/CommandPalette.tsx` | Register the new command in the registry |
 | `tests/unit/context-bridge.test.ts` | **New** - pure tests for the formatter |
 
@@ -96,7 +96,7 @@ export function formatTerminalContext(params: {
 
 ### Effort
 
-- `contextBridge.ts` + unit tests: ~45 min
+- `context-bridge.ts` + unit tests: ~45 min
 - Keybinding + registry wiring: ~20 min
 - Toast / no-selection feedback: ~15 min
 - **Total: ~1.5 hours**
@@ -141,7 +141,7 @@ Dismiss with Esc. Pre-fills with current terminal selection if present
 | `src/renderer/components/QuickPromptModal.tsx` | **New** - the floating bar component |
 | `src/renderer/App.tsx` | ⌘+K keybinding + mount the modal |
 | `src/renderer/components/CommandPalette.tsx` | Register command "Quick prompt (⌘K)" |
-| `src/renderer/services/contextBridge.ts` | Reused for pre-filling selection |
+| `src/renderer/services/context-bridge.ts` | Reused for pre-filling selection |
 
 ### Relationship to existing features
 
@@ -168,7 +168,7 @@ Dismiss with Esc. Pre-fills with current terminal selection if present
 
 ## Suggested build order
 
-1. **`contextBridge.ts` + unit tests** first - pure logic, no UI. Lock down the formatter.
+1. **`context-bridge.ts` + unit tests** first - pure logic, no UI. Lock down the formatter.
 2. **⌘+L** next - smaller feature, validates the context capture plumbing against a real flow (insert into draft).
 3. **⌘+K** last - builds on the same primitives, adds the modal UI.
 

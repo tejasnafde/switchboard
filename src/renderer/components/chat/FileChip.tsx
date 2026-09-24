@@ -11,7 +11,7 @@
  */
 import { memo } from 'react'
 import { useLayoutStore } from '../../stores/layout-store'
-import type { FilePathRef } from '@shared/filePathRef'
+import type { FilePathRef } from '@shared/file-path-ref'
 
 interface FileChipProps {
   ref_: FilePathRef

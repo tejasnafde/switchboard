@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { access, mkdir, realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { cloneDependencyDirsInBackground } from '../git/dependencyClone'
+import { cloneDependencyDirsInBackground } from '../git/dependency-clone'
 
 const execFileAsync = promisify(execFile)
 

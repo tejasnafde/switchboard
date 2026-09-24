@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyCloseFocus, type ClosestEl } from '../../src/renderer/closeFocus'
+import { classifyCloseFocus, type ClosestEl } from '../../src/renderer/close-focus'
 
 /** Build a fake element whose `closest` matches the given selectors. */
 function fakeEl(matches: Record<string, { side?: string }>): ClosestEl {

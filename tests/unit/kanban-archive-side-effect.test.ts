@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest'
 import {
   archiveActionForStatusChange,
   applyKanbanArchiveSideEffect,
-} from '../../src/shared/kanbanArchive'
+} from '../../src/shared/kanban-archive'
 import { vi } from 'vitest'
 
 describe('archiveActionForStatusChange', () => {

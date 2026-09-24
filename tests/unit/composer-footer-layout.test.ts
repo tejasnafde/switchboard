@@ -5,7 +5,7 @@
  * The policy below decides what compacts first; wrapping and shrink are CSS.
  */
 import { describe, it, expect } from 'vitest'
-import { composerFooterLayout, COMPACT_FOOTER_BELOW_PX } from '../../src/renderer/components/chat/composerFooterLayout'
+import { composerFooterLayout, COMPACT_FOOTER_BELOW_PX } from '../../src/renderer/components/chat/composer-footer-layout'
 
 describe('composerFooterLayout', () => {
   it('shows everything on a wide pane', () => {
