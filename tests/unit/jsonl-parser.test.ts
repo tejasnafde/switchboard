@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { JsonlParser } from '../../src/main/agent/jsonl-parser'
+import { JsonlParser, normalizeCodexEvent } from '../../src/main/agent/jsonl-parser'
 
 describe('JsonlParser', () => {
   it('filters a recognized synthetic user context bundle without hiding genuine mentions', () => {
@@ -16,6 +16,39 @@ describe('JsonlParser', () => {
     parser.feed(`${synthetic}\n${genuine}\n`)
     expect(messages.map((message) => message.content)).toEqual(['Explain <environment_context> to me'])
   })
+  it('drops isMeta user entries and keeps task notifications for the row renderer', () => {
+    const meta = JSON.stringify({
+      type: 'user',
+      isMeta: true,
+      message: { role: 'user', content: [{ type: 'text', text: 'Continue from where you left off.' }] },
+    })
+    const notification = '<task-notification>\n<status>failed</status>\n<summary>Background command "x" failed with exit code 1</summary>\n</task-notification>'
+    const task = JSON.stringify({ type: 'user', message: { role: 'user', content: notification } })
+    const messages: Array<{ content: string }> = []
+    const parser = new JsonlParser((message) => messages.push(message))
+    parser.feed(`${meta}\n${task}\n`)
+    expect(messages.map((message) => message.content)).toEqual([notification])
+  })
+
+  it('strips Codex image wrapper blocks from user text', () => {
+    const message = normalizeCodexEvent({
+      type: 'response_item',
+      timestamp: '2026-09-01T00:00:00Z',
+      payload: {
+        type: 'message',
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'see screenshot' },
+          { type: 'input_text', text: '<image>' },
+          { type: 'input_image', image_url: 'data:image/png;base64,AAA=' },
+          { type: 'input_text', text: '</image>' },
+        ],
+      },
+    })
+    expect(message?.content).toBe('see screenshot')
+    expect(message?.images).toHaveLength(1)
+  })
+
   it('parses a complete assistant message', () => {
     const messages: unknown[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))

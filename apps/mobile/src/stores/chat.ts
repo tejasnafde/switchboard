@@ -20,6 +20,7 @@ import type {
 } from '@shared/provider-events'
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
 import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
+import type { SyntheticUserPart } from '@shared/synthetic-message'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -33,6 +34,8 @@ export type FeedItem =
   | { kind: 'error'; id: string; message: string }
   /** Non-agent row the UI inserts itself, e.g. "showing last N of M messages". */
   | { kind: 'notice'; id: string; text: string }
+  /** Provider-generated user-role block, e.g. a background-task notification. */
+  | { kind: 'synthetic'; id: string; part: SyntheticUserPart }
 
 export interface ThreadState {
   items: FeedItem[]

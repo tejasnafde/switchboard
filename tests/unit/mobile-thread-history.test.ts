@@ -26,4 +26,21 @@ describe('mobile thread history', () => {
       },
     ])
   })
+
+  it('renders a task notification as its own row and keeps the typed remainder', () => {
+    const items = historyToItems([
+      message({
+        id: 'n',
+        content: '<task-notification>\n<task-id>b1</task-id>\n<status>failed</status>\n<summary>Background command "Build" failed with exit code 2</summary>\n</task-notification>\nkeep going',
+      }),
+    ])
+    expect(items).toEqual([
+      {
+        kind: 'synthetic',
+        id: 'h-n-s0',
+        part: { kind: 'task-notification', status: 'failed', summary: 'Background command "Build" failed with exit code 2', taskId: 'b1', outputFile: undefined },
+      },
+      { kind: 'user', id: 'h-n', text: 'keep going', at: 1, images: undefined },
+    ])
+  })
 })

@@ -2,6 +2,7 @@ import { readdir, readFile, stat, open } from 'fs/promises'
 import { join, basename, resolve } from 'path'
 import { homedir } from 'os'
 import { generateTitle } from '@shared/auto-title'
+import { userTypedText } from '@shared/synthetic-message'
 import type { SessionSummary, SessionSource } from '@shared/types'
 import { createMainLogger } from '../logger'
 import { scanCursorSessions } from '../cursor/store'
@@ -134,19 +135,26 @@ async function scanClaudeProjectsDir(
       let title = `Session ${copies.length + 1}`
       try {
         const head = await readHead(filePath, 5000)
-        const firstUserMsg = head.split('\n').find((line) => {
+        for (const line of head.split('\n')) {
+          if (!line) continue
+          let obj
           try {
-            const obj = JSON.parse(line)
-            return obj.type === 'human' || (obj.type === 'user' && obj.message?.content)
-          } catch { return false }
-        })
-        if (firstUserMsg) {
-          const obj = JSON.parse(firstUserMsg)
+            obj = JSON.parse(line)
+          } catch (err) {
+            // The head read usually cuts the last line mid-record.
+            log.debug('skipping unparseable head line', { filePath, err })
+            continue
+          }
+          if (!(obj.type === 'human' || obj.type === 'user') || obj.isMeta === true) continue
           const content = obj.message?.content
-          const text = typeof content === 'string' ? content
+          const raw = typeof content === 'string' ? content
             : Array.isArray(content) ? content.find((b: { type?: string; text?: string }) => b.type === 'text')?.text ?? ''
             : ''
-          if (text) title = generateTitle(text)
+          // A background-task notification or interrupt marker is not a title.
+          const text = userTypedText(raw)
+          if (!text) continue
+          title = generateTitle(text)
+          break
         }
       } catch (err) {
         log.debug('title extraction failed - using default title', { filePath, err })

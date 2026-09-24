@@ -105,7 +105,9 @@ export class JsonlParser {
       case 'user': {
         const content = extractContent(event.message)
         const images = extractImages(event.message)
-        if (images.length === 0 && visibleUserMessageText(content) === null) return null
+        // isMeta marks text Claude Code wrote for the model only: skill bodies,
+        // image size annotations, "Continue from where you left off."
+        if (images.length === 0 && (event.isMeta === true || visibleUserMessageText(content) === null)) return null
         // Skip user messages that only contain tool_result blocks (internal protocol)
         // - but keep messages that have images even without text content, so
         // historical image-only user messages reappear after reload.
@@ -289,13 +291,17 @@ function stableCodexId(event: Record<string, unknown>): string {
   return `codex_${createHash('sha256').update(JSON.stringify(event)).digest('hex').slice(0, 24)}`
 }
 
+const CODEX_IMAGE_WRAPPER = /^<\/?image\b[^>]*>$/
+
 function extractCodexText(content: unknown): string {
   if (!Array.isArray(content)) return ''
   return content
     .map((block: Record<string, unknown>) => {
       const blockType = block.type as string | undefined
       if (blockType === 'input_text' || blockType === 'output_text' || blockType === 'text') {
-        return typeof block.text === 'string' ? block.text : ''
+        // Codex brackets each attached image with `<image>` / `</image>` text blocks.
+        if (typeof block.text !== 'string' || CODEX_IMAGE_WRAPPER.test(block.text)) return ''
+        return block.text
       }
       return ''
     })

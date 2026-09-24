@@ -2,6 +2,9 @@ package app.switchboard.mobile.ui.thread
 
 import app.switchboard.mobile.data.thread.ThreadState
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.SyntheticPart
+import app.switchboard.mobile.domain.thread.SyntheticTone
+import app.switchboard.mobile.domain.thread.SyntheticUserMessage
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonObject
@@ -116,6 +119,7 @@ enum class ThreadRowKind {
     PEER,
     TODO,
     RAW_NOTICE,
+    SYNTHETIC,
 }
 
 enum class ToolIconKind {
@@ -238,6 +242,17 @@ sealed interface ThreadRowPresentation {
         override val kind = ThreadRowKind.RAW_NOTICE
     }
 
+    /** A provider-generated user-role block, e.g. a background-task notification. */
+    data class Synthetic(
+        override val key: String,
+        val label: String,
+        val detail: String?,
+        val tone: SyntheticTone,
+        val monospace: Boolean,
+    ) : ThreadRowPresentation {
+        override val kind = ThreadRowKind.SYNTHETIC
+    }
+
     data class Notice(
         override val key: String,
         val title: String,
@@ -284,7 +299,7 @@ object ThreadPresenter {
         return ThreadPresentation.Content(
             metadata = metadata(thread),
             contentStatus = contentStatus(state),
-            rows = thread.feed.map(::row),
+            rows = thread.feed.flatMap(::rows),
         )
     }
 
@@ -317,6 +332,28 @@ object ThreadPresenter {
             usedTokens = thread.usedTokens,
             lastTurnAt = thread.lastTurnAt,
         )
+    }
+
+    /** Like [row], but splits provider-generated blocks off a user message into their own rows. */
+    fun rows(item: FeedItem): List<ThreadRowPresentation> {
+        if (item !is FeedItem.User) return listOf(row(item))
+        val split = SyntheticUserMessage.split(item.text) ?: return listOf(row(item))
+        return buildList {
+            split.parts.forEachIndexed { index, part ->
+                add(
+                    ThreadRowPresentation.Synthetic(
+                        key = "${item.id}-s$index",
+                        label = SyntheticUserMessage.label(part),
+                        detail = SyntheticUserMessage.detail(part),
+                        tone = SyntheticUserMessage.tone(part),
+                        monospace = part is SyntheticPart.CommandOutput,
+                    ),
+                )
+            }
+            if (split.userText.isNotEmpty() || item.images.isNotEmpty()) {
+                add(row(item.copy(text = split.userText)))
+            }
+        }
     }
 
     fun row(item: FeedItem): ThreadRowPresentation = when (item) {

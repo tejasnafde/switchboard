@@ -20,6 +20,8 @@ import {
 } from '../../services/forkSession'
 import { isForkableForkMessage } from '@shared/conversation-fork'
 import { parseRotationMarker } from './rotationMarker'
+import { SyntheticUserRow } from './SyntheticUserRow'
+import { splitSyntheticUserText } from '@shared/synthetic-message'
 import { stripDigest } from '@shared/agent-digest'
 import { TodoList } from './TodoList'
 import { useBookmarkStore } from '../../stores/bookmark-store'
@@ -236,6 +238,32 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           )}
         </div>
       </div>
+    )
+  }
+
+  // Provider-generated user-role blocks (task notifications, interrupts)
+  // render as compact rows; whatever the user actually typed after them
+  // keeps its bubble. displayBody is always what the user typed.
+  const synthetic = isUser && message.displayBody === undefined
+    ? splitSyntheticUserText(message.content)
+    : null
+  if (synthetic) {
+    return (
+      <>
+        {synthetic.parts.map((part, i) => <SyntheticUserRow key={i} part={part} />)}
+        {synthetic.userText && (
+          <MessageBubble
+            message={{ ...message, displayBody: synthetic.userText }}
+            sessionId={sessionId}
+            knownSkillNames={knownSkillNames}
+            onApproval={onApproval}
+            onAnswerQuestion={onAnswerQuestion}
+            onPlanAction={onPlanAction}
+            onFileDiffResolve={onFileDiffResolve}
+            hideTurnDuration={hideTurnDuration}
+          />
+        )}
+      </>
     )
   }
 

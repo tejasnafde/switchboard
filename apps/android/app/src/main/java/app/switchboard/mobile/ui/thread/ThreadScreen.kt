@@ -41,6 +41,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -109,6 +110,7 @@ import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.thread.AgentDigest
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.SyntheticTone
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.domain.remote.ForkLineageMetadata
@@ -125,6 +127,7 @@ import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.ui.theme.TextFaint
 import app.switchboard.mobile.ui.components.InlineStatus
 import app.switchboard.mobile.ui.components.InlineStatusProgress
 import app.switchboard.mobile.ui.components.SectionLabel
@@ -1291,11 +1294,57 @@ private fun ThreadRow(
             body = row.body,
             tint = TextDim,
         )
+        is ThreadRowPresentation.Synthetic -> SyntheticRow(row)
         is ThreadRowPresentation.RawNotice -> NoticeCard(
             title = "Unsupported event · ${row.eventType}",
             body = "${row.source.text}\n${row.raw}",
             tint = TextDim,
         )
+    }
+}
+
+@Composable
+private fun SyntheticRow(row: ThreadRowPresentation.Synthetic) {
+    var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
+    val tint = when (row.tone) {
+        SyntheticTone.OK -> Green
+        SyntheticTone.ERROR -> Red
+        SyntheticTone.WARN -> Amber
+        SyntheticTone.MUTED -> TextFaint
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .then(
+                if (row.detail != null) {
+                    Modifier.clickable(role = Role.Button) { expanded = !expanded }
+                } else {
+                    Modifier
+                },
+            )
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(6.dp).clip(CircleShape).background(tint))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = row.label,
+                color = TextDim,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = if (row.monospace) GeistMono else null,
+                maxLines = if (expanded) Int.MAX_VALUE else 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (expanded && row.detail != null) {
+            Text(
+                text = row.detail,
+                color = TextFaint,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = GeistMono,
+                modifier = Modifier.padding(start = 14.dp, top = 4.dp),
+            )
+        }
     }
 }
 
