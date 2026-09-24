@@ -31,4 +31,13 @@ describe('HeldTurnBar', () => {
     act(() => { v.root.findByProps({ testID: 'held-cancel' }).props.onPress() })
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
+
+  it('shows a refused action on the row, in place of the hint', () => {
+    const v = renderComponent(
+      <HeldTurnBar actions={heldTurnActions('claude')} error="This message already started." onPromote={() => {}} onCancel={() => {}} />,
+    )
+    const text = v.texts().join(' ')
+    expect(text).toContain('This message already started.')
+    expect(text).not.toContain('Runs after this turn')
+  })
 })

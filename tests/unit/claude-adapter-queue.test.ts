@@ -168,6 +168,8 @@ describe('ClaudeAdapter queued turns', () => {
     const cancel = adapter.cancelQueuedTurn('thread-1', 'remote_a')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(adapter as any).startQueuedTurn(active)
+    // Nothing starts until the cancel says which message the CLI runs.
+    expect(active.onEvent.mock.calls.some(([e]) => e.type === 'turn.dequeued')).toBe(false)
     finishCancel(true)
     await expect(cancel).resolves.toBe(true)
     const dequeued = active.onEvent.mock.calls.map(([e]) => e).filter((e) => e.type === 'turn.dequeued')
@@ -175,6 +177,30 @@ describe('ClaudeAdapter queued turns', () => {
       { type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_b', reason: 'started' },
       { type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_a', reason: 'cancelled' },
     ])
+    active.watchdog.turnEnded()
+  })
+
+  it('starts the head, with its own mode, when a cancel racing the turn end fails', async () => {
+    let finishCancel!: (v: boolean) => void
+    const cancelAsyncMessage = vi.fn(() => new Promise<boolean>((resolve) => { finishCancel = resolve }))
+    const setPermissionMode = vi.fn(async () => {})
+    const { adapter, active } = running({ cancelAsyncMessage, setPermissionMode })
+    await adapter.sendTurn('thread-1', 'a', 'plan', undefined, 'queue', 'remote_a')
+    await adapter.sendTurn('thread-1', 'b', 'full-access', undefined, 'queue', 'remote_b')
+    const cancel = adapter.cancelQueuedTurn('thread-1', 'remote_a')
+    active.turnStartedAt = null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).startQueuedTurn(active)
+    finishCancel(false)
+    await expect(cancel).resolves.toBe(false)
+    const dequeued = active.onEvent.mock.calls.map(([e]) => e).filter((e) => e.type === 'turn.dequeued')
+    expect(dequeued).toEqual([
+      { type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_a', reason: 'started' },
+    ])
+    expect(active.session.runtimeMode).toBe('plan')
+    expect(setPermissionMode).not.toHaveBeenCalledWith('bypassPermissions')
+    expect(active.turnStartedAt).not.toBeNull()
+    expect(active.queuedTurns.map((t) => t.id)).toEqual(['remote_b'])
     active.watchdog.turnEnded()
   })
 

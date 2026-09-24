@@ -417,9 +417,10 @@ object ThreadStoreReducer {
             // Showing a held message as Queued is staged (android_composer_follow_ups);
             // decoding it keeps it out of the feed as an unsupported-event notice.
             is ThreadEventPayload.TurnQueued -> withJournal
-            // A message another client took back never reached the agent.
+            // A message another client took back never reached the agent. The
+            // row can be live (`remote_x`) or from history (`h-remote_x`).
             is ThreadEventPayload.TurnDequeued -> if (event.reason == "cancelled") {
-                withJournal.copy(feed = withJournal.feed.filterNot { it is FeedItem.User && it.id == event.messageId })
+                withJournal.copy(feed = withJournal.feed.filterNot { it is FeedItem.User && feedIdentity(it) == event.messageId })
             } else {
                 withJournal
             }

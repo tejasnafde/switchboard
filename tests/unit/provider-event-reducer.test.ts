@@ -251,7 +251,7 @@ describe('reduceProviderEvent (desktop)', () => {
   it('worktree.drift carries the chat setting and says nothing when muted', () => {
     reduce({ type: 'worktree.drift', worktreePath: '/wt2', branch: 'c', followSuggestions: 'on', workedWorktrees: 4 })
     expect(session().driftSuggestion).toEqual({ worktreePath: '/wt2', branch: 'c', followSuggestions: 'on', workedWorktrees: 4 })
-    useAgentStore.getState().setDriftSuggestion(T, null)
+    // Muted elsewhere while this window still shows the chip: it goes.
     reduce({ type: 'worktree.drift', worktreePath: '/wt3', branch: 'd', followSuggestions: 'muted', workedWorktrees: 1 })
     expect(session().driftSuggestion ?? null).toBeNull()
   })

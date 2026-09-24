@@ -713,23 +713,36 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // controls check too, rather than offer buttons whose channel is missing.
   const canControlQueue = getClient(connectionId)?.supportsCapability('turn_queue_controls_v1') === true
 
+  // A refused Send now / Cancel belongs on its row: reporting it as a thread
+  // error would mark a still-running thread as failed and hide Stop.
+  const [heldErrors, setHeldErrors] = useState<Record<string, string>>({})
   const actOnHeld = useCallback(async (held: QueuedTurnSummary, action: 'promote' | 'cancel') => {
     const client = getClient(connectionId)
     if (!client) return
+    const showOnRow = (message: string | undefined) =>
+      setHeldErrors((current) => {
+        const next = { ...current }
+        if (message) next[held.messageId] = message
+        else delete next[held.messageId]
+        return next
+      })
+    showOnRow(undefined)
     try {
       const result = action === 'promote'
         ? await client.promoteQueuedTurn(threadId, held.messageId)
         : await client.cancelQueuedTurn(threadId, held.messageId)
       if (!result.ok) {
-        reportError(new Error(result.message))
+        log.warn(`${action} of held message ${held.messageId} refused: ${result.message}`)
+        showOnRow(result.message)
         return
       }
       // The bubble goes on the backend's turn.dequeued; the text comes back here.
       if (action === 'cancel') setDraft((current) => (current ? `${current}\n\n${result.turn.text}` : result.turn.text))
     } catch (err) {
-      reportError(err)
+      log.warn(`${action} of held message ${held.messageId} failed`, err)
+      showOnRow(err instanceof Error ? err.message : String(err))
     }
-  }, [connectionId, threadId, reportError])
+  }, [connectionId, threadId])
 
   const renderItem = useCallback(
     ({ item }: { item: FeedItem }) => {
@@ -774,6 +787,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
                 {held && (
                   <HeldTurnBar
                     actions={heldTurnActions(thread.provider ?? provider)}
+                    error={heldErrors[held.messageId]}
                     onPromote={() => void actOnHeld(held, 'promote')}
                     onCancel={() => void actOnHeld(held, 'cancel')}
                   />
@@ -836,6 +850,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       thread.provider,
       provider,
       actOnHeld,
+      heldErrors,
     ],
   )
 

@@ -53,7 +53,6 @@ export function QueuedTurnBar({ sessionId, messageId, provider }: {
       style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}
     >
       <span
-        role="status"
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -67,7 +66,7 @@ export function QueuedTurnBar({ sessionId, messageId, provider }: {
         <ClockIcon size={11} />
         Queued
       </span>
-      <span>{error ?? 'runs after this turn'}</span>
+      <span role="status" aria-live="polite">{error ?? 'runs after this turn'}</span>
       <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 2 }}>
         <Button
           variant="ghost"

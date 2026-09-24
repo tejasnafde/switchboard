@@ -282,10 +282,13 @@ export const FileEditItem = memo(function FileEditItem({
  */
 export function HeldTurnBar({
   actions,
+  error,
   onPromote,
   onCancel,
 }: {
   actions: HeldTurnActions
+  /** Why the last Send now / Cancel was refused, shown in place of the hint. */
+  error?: string
   onPromote: () => void
   onCancel: () => void
 }) {
@@ -295,7 +298,13 @@ export function HeldTurnBar({
         <Ionicons name="time-outline" size={11} color={colors.textDim} />
         <Text style={styles.heldChipText}>Queued</Text>
       </View>
-      <Text style={styles.heldHint} numberOfLines={2}>{actions.hint}</Text>
+      <Text
+        style={[styles.heldHint, error !== undefined && styles.deliveryFailed]}
+        numberOfLines={2}
+        accessibilityLiveRegion="polite"
+      >
+        {error ?? actions.hint}
+      </Text>
       <Pressable
         onPress={onPromote}
         disabled={!actions.canPromote}

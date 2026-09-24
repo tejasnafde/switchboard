@@ -151,7 +151,7 @@ interface QueuedClaudeTurn {
   images?: Array<{ url: string; mimeType?: string }>
   /** The pushed message itself, to take it back while the SDK has not read it. */
   sdkMessage: SDKUserMessage
-  /** A cancel is in flight; the turn end must not count this one as started. */
+  /** A cancel is in flight; a turn end waits for its result before starting anything. */
   withdrawing?: boolean
 }
 type SDKMessage = import('@anthropic-ai/claude-agent-sdk').SDKMessage
@@ -613,6 +613,8 @@ interface ActiveSession {
   turnStartedAt: number | null
   /** Messages sent with `priority: 'later'`, oldest first; one per queued turn. */
   queuedTurns: QueuedClaudeTurn[]
+  /** A turn ended while the head of the queue was being cancelled; start the next once that settles. */
+  startAfterWithdraw?: boolean
   /**
    * Effective model id from the last `getContextUsage()` poll, e.g.
    * `claude-fable-5`. The rejection payload never carries the model, yet the
@@ -1364,10 +1366,15 @@ export class ClaudeAdapter implements ProviderAdapter {
         turn.withdrawing = false
       }
     }
-    if (!withdrawn) return false
-    const index = active.queuedTurns.indexOf(turn)
-    if (index >= 0) active.queuedTurns.splice(index, 1)
-    return true
+    if (withdrawn) {
+      const index = active.queuedTurns.indexOf(turn)
+      if (index >= 0) active.queuedTurns.splice(index, 1)
+    }
+    if (active.startAfterWithdraw) {
+      active.startAfterWithdraw = false
+      this.startQueuedTurn(active)
+    }
+    return withdrawn
   }
 
   /**
@@ -1376,11 +1383,15 @@ export class ClaudeAdapter implements ProviderAdapter {
    * runtime mode it was sent with. Called from every path that ends a turn.
    */
   private startQueuedTurn(active: ActiveSession): void {
-    // One being cancelled is not what runs next if the cancel lands; if it
-    // does not, the CLI runs it and it shows as queued until its own turn ends.
-    const index = active.queuedTurns.findIndex((t) => !t.withdrawing)
-    if (index < 0) return
-    const [next] = active.queuedTurns.splice(index, 1)
+    // The CLI runs the head of its queue. If that one is being cancelled,
+    // only the cancel result says which message runs now, so wait for it.
+    const head = active.queuedTurns[0]
+    if (!head) return
+    if (head.withdrawing) {
+      active.startAfterWithdraw = true
+      return
+    }
+    const next = active.queuedTurns.shift()!
     const mode = next.runtimeMode
     if (next.id) active.onEvent({ type: 'turn.dequeued', threadId: active.session.threadId, messageId: next.id, reason: 'started' })
     active.turnStartedAt = Date.now()
