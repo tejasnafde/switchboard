@@ -26,7 +26,7 @@ function makeActive(onEvent = vi.fn()) {
     partialMessageText: new Map<string, string>(),
     draining: false,
     turnStartedAt: null,
-    queuedModes: [],
+    queuedTurns: [],
     skills: [],
     instanceEnv: {},
     instanceOauthDir: null,

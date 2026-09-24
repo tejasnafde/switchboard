@@ -33,7 +33,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { commitConversationProviderSwitch, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
+import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
@@ -43,6 +43,10 @@ import {
   type TurnAcceptanceResult,
 } from './durable-turn-acceptance'
 import { sessionDefaultsFor } from './session-defaults'
+import { QueuedTurnLedger } from './queued-turn-ledger'
+import { queuedTurnComposerText } from '@shared/queued-turns'
+import { echoMessageId } from '@shared/provider-events'
+import { promoteUnavailableReason, startsOwnProviderTurn, type QueuedTurnActionResult, type QueuedTurnSummary } from '@shared/turn-delivery'
 import {
   errorMessage,
   isDefiniteAdapterPreconditionFailure,
@@ -295,6 +299,57 @@ export class ProviderRegistry implements PeerToolHost {
     const remaining = (this.outstandingTurns.get(threadId) ?? 0) - 1
     if (remaining > 0) this.outstandingTurns.set(threadId, remaining)
     else this.outstandingTurns.delete(threadId)
+  }
+
+  /** Messages adapters hold until the running turn ends; see `QueuedTurnLedger`. */
+  private queuedTurns = new QueuedTurnLedger()
+
+  /** The live thread a client's id names: its own, or the root it rotated from. */
+  private liveThreadId(threadId: string): string {
+    return this.sessionAdapters.has(threadId) ? threadId : resolveRootThreadId(threadId)
+  }
+
+  listQueuedTurns(threadId: string): QueuedTurnSummary[] {
+    return this.queuedTurns.list(this.liveThreadId(threadId))
+  }
+
+  /**
+   * Send a queued message into the running turn now, or take it back.
+   * Outstanding-turn accounting is not done here but on the adapter's
+   * `turn.dequeued`, in `publish`, so every way out of the queue settles it
+   * in one place.
+   */
+  private async actOnQueuedTurn(action: 'promote' | 'cancel', threadId: string, messageId: string): Promise<QueuedTurnActionResult> {
+    const live = this.liveThreadId(threadId)
+    const turn = this.queuedTurns.get(live, messageId)
+    const adapter = this.sessionAdapters.get(live)
+    if (!turn || !adapter) {
+      return { ok: false, reason: 'not-found', message: 'This message is no longer queued.' }
+    }
+    const unavailable = action === 'promote' ? promoteUnavailableReason(adapter.provider) : null
+    const run = action === 'promote' ? adapter.promoteQueuedTurn : adapter.cancelQueuedTurn
+    if (unavailable || !run) {
+      return { ok: false, reason: 'unsupported', message: unavailable ?? 'This provider cannot change its queue.' }
+    }
+    let done: boolean
+    try {
+      done = await run.call(adapter, live, messageId)
+    } catch (err) {
+      log.warn(`${action} of queued message ${messageId} on ${live} failed: ${errorMessage(err)}`)
+      return { ok: false, reason: 'failed', message: errorMessage(err) }
+    }
+    if (!done) {
+      return { ok: false, reason: 'not-found', message: 'This message already started.' }
+    }
+    if (action === 'cancel') {
+      // The row was committed with the accepted turn; the agent never saw it.
+      try {
+        deleteUserMessage(resolveRootThreadId(live), messageId)
+      } catch (err) {
+        log.warn(`could not delete cancelled queued message ${messageId}: ${errorMessage(err)}`)
+      }
+    }
+    return { ok: true, turn }
   }
 
   /**
@@ -577,7 +632,7 @@ export class ProviderRegistry implements PeerToolHost {
     const targetCwd = this.sessionCwd.get(targetThreadId)
     if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd)
     notebookManager.beginTurn(targetThreadId)
-    const startsNewProviderTurn = adapter.provider !== 'codex' || !this.hasOutstandingTurn(targetThreadId)
+    const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(targetThreadId), undefined)
     if (startsNewProviderTurn) this.beginOutstandingTurn(targetThreadId)
     releasePreparation()
     // Set before the send, not after: the receiving model may call the peer
@@ -636,6 +691,11 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   private publish(event: RuntimeEvent): void {
+    if (event.type === 'turn.queued' || event.type === 'turn.dequeued') {
+      const observed = this.queuedTurns.observe(event, this.sessionAdapters.get(event.threadId)?.provider)
+      if (observed.releasesOutstandingTurn) this.finishOutstandingTurn(event.threadId)
+      event = observed.event
+    }
     // Persisted here, not in ChatPanel, which only exists when a desktop window
     // is attached - a phone on a headless server saw a 529 once and lost it on
     // reload. The `Error: ` prefix is load-bearing: `getSystemMarkerMessages`
@@ -762,7 +822,17 @@ export class ProviderRegistry implements PeerToolHost {
         return
       }
       log.info('worktree drift detected', { threadId, worktree: event.worktreePath, branch: event.branch })
-      this.bus.publish(event)
+      // The count and the chat's setting ride on the event, so a client
+      // decides between the chip and the "off" line without asking.
+      let follow: ConversationFollowSuggestions | null = null
+      try {
+        follow = recordConversationWorkedWorktrees(threadId, [cwd, event.worktreePath])
+      } catch (err) {
+        log.warn(`could not record worked worktrees for ${threadId}: ${errorMessage(err)}`)
+      }
+      this.bus.publish(follow
+        ? { ...event, followSuggestions: follow.mode, workedWorktrees: follow.workedWorktrees.length }
+        : event)
     } catch (err) {
       log.warn(`worktree drift detection failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -945,17 +1015,25 @@ export class ProviderRegistry implements PeerToolHost {
         dispatch: async () => {
           // A queued message becomes a turn of its own once the running one
           // ends, so it counts; a Codex steer joins the running turn and does not.
-          const startsNewProviderTurn = adapter.provider !== 'codex' || !this.hasOutstandingTurn(threadId) || input.delivery === 'queue'
+          const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(threadId), input.delivery)
           if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
           releasePreparation()
+          // The chat row id every client already has for this message, which
+          // is what a held message is listed, promoted and cancelled by.
+          const queuedId = input.delivery === 'queue' ? echoMessageId(input.origin) : undefined
+          if (queuedId) {
+            this.queuedTurns.expect(queuedId, queuedTurnComposerText(input.providerText, input.displayBody, input.pillsMeta), Date.now())
+          }
           try {
-            await adapter.sendTurn(threadId, input.providerText, input.runtimeMode, input.images, input.delivery)
+            await adapter.sendTurn(threadId, input.providerText, input.runtimeMode, input.images, input.delivery, queuedId)
           } catch (error) {
             if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
             if (isDefiniteAdapterPreconditionFailure(error, threadId)) {
               throw new TurnNotAcceptedError(errorMessage(error), { cause: error })
             }
             throw error
+          } finally {
+            if (queuedId) this.queuedTurns.settle(queuedId)
           }
         },
       })
@@ -1019,6 +1097,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.sessionDescriptors.delete(threadId)
       this.sessionCredentials.delete(threadId)
       this.outstandingTurns.delete(threadId)
+      this.queuedTurns.clear(threadId)
       this.turnDepth.delete(threadId)
       this.pendingRequests.delete(threadId)
       this.checkpoints.clear(threadId)
@@ -1656,7 +1735,7 @@ export class ProviderRegistry implements PeerToolHost {
           throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
         }
 
-        const startsNewProviderTurn = adapter.provider !== 'codex' || !this.hasOutstandingTurn(threadId)
+        const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(threadId), undefined)
         if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
         releasePreparation()
         try {
@@ -1776,6 +1855,12 @@ export class ProviderRegistry implements PeerToolHost {
     // recovering a card after the process that opened it may be long gone
     // from this client's view (reload, resume gap).
     this.host.handle(ProviderChannels.GET_PENDING_REQUESTS, (threadId: string) => this.getPendingRequests(threadId))
+
+    this.host.handle(ProviderChannels.LIST_QUEUED_TURNS, (threadId: string) => this.listQueuedTurns(threadId))
+    this.host.handle(ProviderChannels.PROMOTE_QUEUED_TURN, (threadId: string, messageId: string) =>
+      this.actOnQueuedTurn('promote', threadId, messageId))
+    this.host.handle(ProviderChannels.CANCEL_QUEUED_TURN, (threadId: string, messageId: string) =>
+      this.actOnQueuedTurn('cancel', threadId, messageId))
 
     this.host.handle(ProviderChannels.OPENCODE_LIST_MODELS, async () => {
       try {

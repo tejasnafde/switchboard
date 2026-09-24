@@ -93,6 +93,16 @@ export function saveMessage(
   return { ok: true }
 }
 
+/**
+ * Remove a user message that never reached the agent: a queued message the
+ * user took back. Only a user row, only in its own conversation.
+ */
+export function deleteUserMessage(conversationId: string, messageId: string): boolean {
+  return getDb().prepare(
+    "DELETE FROM messages WHERE id = ? AND conversation_id = ? AND role = 'user'"
+  ).run(messageId, conversationId).changes > 0
+}
+
 export interface MessageRow {
   id: string
   conversation_id: string

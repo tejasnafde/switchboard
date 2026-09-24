@@ -43,6 +43,10 @@ export const BACKEND_CAPABILITIES = [
    *  approval/question/plan cards, so a client can recover them after a
    *  resume gap instead of waiting on a card that will never re-arrive. */
   'pending_requests_v1',
+  /** A queued message is announced (`turn.queued` / `turn.dequeued`), listed
+   *  by `ProviderChannels.LIST_QUEUED_TURNS`, and can be sent into the running
+   *  turn now (`PROMOTE_QUEUED_TURN`) or taken back (`CANCEL_QUEUED_TURN`). */
+  'turn_queue_controls_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

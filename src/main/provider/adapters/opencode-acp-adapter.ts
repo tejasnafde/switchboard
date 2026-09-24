@@ -115,7 +115,7 @@ interface ActiveSession {
   /** True while a send applies its mode, before its prompt is in flight. */
   startingPrompt: boolean
   /** Messages sent with delivery 'queue' while a prompt ran, oldest first. */
-  queuedTurns: Array<{ message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
+  queuedTurns: Array<{ id?: string; message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
   /** Accumulates chunk deltas by messageId for text and reasoning blocks. */
@@ -517,7 +517,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       return
     }
     active.drainingQueue = true
-    this.sendTurn(threadId, next.message, next.runtimeMode, next.images, undefined, true)
+    if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'started' })
+    this.deliverTurn(threadId, next.message, next.runtimeMode, next.images, undefined, undefined, true)
       .then(() => { active.drainingQueue = false })
       .catch((err: unknown) => {
         const reason = err instanceof Error ? err.message : String(err)
@@ -534,8 +535,30 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
     delivery?: TurnDelivery,
+    queuedId?: string,
+  ): Promise<void> {
+    return this.deliverTurn(threadId, message, runtimeMode, images, delivery, queuedId, false)
+  }
+
+  /** OpenCode has no steer, so a queued message can only be taken back. */
+  async cancelQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
+    const active = this.sessions.get(threadId)
+    const index = active?.queuedTurns.findIndex((turn) => turn.id === queuedId) ?? -1
+    if (!active || index < 0) return false
+    active.queuedTurns.splice(index, 1)
+    active.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'cancelled' })
+    return true
+  }
+
+  private async deliverTurn(
+    threadId: string,
+    message: string,
+    runtimeMode: RuntimeMode | undefined,
+    images: Array<{ url: string; mimeType?: string }> | undefined,
+    delivery: TurnDelivery | undefined,
+    queuedId: string | undefined,
     /** Set only by drainQueued, which already holds the prompt slot. */
-    fromQueue = false,
+    fromQueue: boolean,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) throw new Error(`No OpenCode ACP session: ${threadId}`)
@@ -548,7 +571,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     // new send could start a second prompt ahead of it.
     const busy = active.inFlightPrompt !== null || active.startingPrompt || (active.drainingQueue && !fromQueue)
     if (busy && delivery === 'queue') {
-      active.queuedTurns.push({ message, runtimeMode, images })
+      active.queuedTurns.push({ id: queuedId, message, runtimeMode, images })
+      if (queuedId) active.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
       return
     }
     if (busy) {
@@ -740,6 +764,9 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       pending.resolve({ outcome: { outcome: 'cancelled' } })
     }
     active.pendingPermissions.clear()
+    for (const turn of active.queuedTurns.splice(0)) {
+      if (turn.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: turn.id, reason: 'dropped' })
+    }
     this.sessions.delete(threadId)
     log.info(`session stopped: ${threadId}`)
   }

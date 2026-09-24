@@ -227,7 +227,7 @@ interface ActiveSession {
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
   /** Messages sent with delivery 'queue' while a turn ran, oldest first. */
-  queuedTurns: Array<{ message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
+  queuedTurns: Array<{ id?: string; message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
   /** Active codex turn id (from turn/start response or turn/started); null
    * when idle. Required as `expectedTurnId` to steer a running turn. */
   activeTurnId: string | null
@@ -816,8 +816,20 @@ export class CodexAdapter implements ProviderAdapter {
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
     delivery?: TurnDelivery,
+    queuedId?: string,
+  ): Promise<void> {
+    return this.deliverTurn(threadId, message, runtimeMode, images, delivery, queuedId, false)
+  }
+
+  private async deliverTurn(
+    threadId: string,
+    message: string,
+    runtimeMode: RuntimeMode | undefined,
+    images: Array<{ url: string; mimeType?: string }> | undefined,
+    delivery: TurnDelivery | undefined,
+    queuedId: string | undefined,
     /** Set only by drainQueued, which owns the next drain step itself. */
-    fromQueue = false,
+    fromQueue: boolean,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.child) throw new Error(`Session ${threadId} not found or not connected`)
@@ -826,7 +838,8 @@ export class CodexAdapter implements ProviderAdapter {
     // mode, which must not reach the running turn, and started as its own
     // turn once that one completes (see drainQueued).
     if (delivery === 'queue' && (active.activeTurnId || active.turnStartPromise)) {
-      active.queuedTurns.push({ message, runtimeMode, images })
+      active.queuedTurns.push({ id: queuedId, message, runtimeMode, images })
+      if (queuedId) active.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
       return
     }
 
@@ -1044,13 +1057,48 @@ export class CodexAdapter implements ProviderAdapter {
   private drainQueued(threadId: string, active: ActiveSession): void {
     const next = active.queuedTurns.shift()
     if (!next) return
-    this.sendTurn(threadId, next.message, next.runtimeMode, next.images, undefined, true).catch((err: unknown) => {
+    if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'started' })
+    this.deliverTurn(threadId, next.message, next.runtimeMode, next.images, undefined, undefined, true).catch((err: unknown) => {
       const reason = err instanceof Error ? err.message : String(err)
       log.warn(`queued codex turn failed to start for ${threadId}: ${reason}`)
       active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
       active.onEvent({ type: 'turn.completed', threadId })
       this.drainQueued(threadId, active)
     })
+  }
+
+  async cancelQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
+    const active = this.sessions.get(threadId)
+    const index = active?.queuedTurns.findIndex((turn) => turn.id === queuedId) ?? -1
+    if (!active || index < 0) return false
+    active.queuedTurns.splice(index, 1)
+    active.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'cancelled' })
+    return true
+  }
+
+  /**
+   * Steer a queued message into the running turn. Only while a turn is live:
+   * with none, the message would start a turn of its own, which is what the
+   * queue is about to do anyway. A steer that fails puts the message back
+   * where it was, so it still runs after the turn.
+   */
+  async promoteQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
+    const active = this.sessions.get(threadId)
+    if (!active) return false
+    if (active.turnStartPromise) await active.turnStartPromise.catch(() => undefined)
+    const index = active.queuedTurns.findIndex((turn) => turn.id === queuedId)
+    if (index < 0 || !active.activeTurnId) return false
+    const [turn] = active.queuedTurns.splice(index, 1)
+    try {
+      await this.deliverTurn(threadId, turn.message, turn.runtimeMode, turn.images, 'steer', undefined, true)
+    } catch (err) {
+      log.warn(`could not steer queued message into ${threadId}, keeping it queued: ${err instanceof Error ? err.message : String(err)}`)
+      active.queuedTurns.splice(Math.min(index, active.queuedTurns.length), 0, turn)
+      if (!active.activeTurnId && !active.turnStartPromise) this.drainQueued(threadId, active)
+      throw err
+    }
+    active.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'promoted' })
+    return true
   }
 
   async setModel(threadId: string, model: string): Promise<void> {
@@ -1164,6 +1212,9 @@ export class CodexAdapter implements ProviderAdapter {
       pending.reject(new Error('Session stopped'))
     }
 
+    for (const turn of active.queuedTurns.splice(0)) {
+      if (turn.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: turn.id, reason: 'dropped' })
+    }
     this.sessions.delete(threadId)
     log.info(`session stopped: ${threadId}`)
   }

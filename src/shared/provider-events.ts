@@ -15,6 +15,8 @@ import type { PeerMessageInitiator } from './peer-messaging'
 import { stripHandoffPreamble } from './handoff'
 import { splitSyntheticUserText } from './synthetic-message'
 import type { AgentProvider } from './types'
+import type { QueuedTurnExit } from './turn-delivery'
+import type { FollowSuggestionMode } from './follow-suggestions'
 
 export type ProviderSessionStatus =
   | 'connecting'
@@ -121,6 +123,10 @@ export interface RuntimeWorktreeDriftEvent {
   threadId: string
   worktreePath: string
   branch: string
+  /** The conversation's Follow-chip setting; absent from older backends (auto). */
+  followSuggestions?: FollowSuggestionMode
+  /** Distinct worktrees the conversation has worked in, this one included. */
+  workedWorktrees?: number
 }
 
 /**
@@ -253,6 +259,8 @@ export type RuntimeEvent = (
   | RuntimeRequestClosedEvent
   | RuntimeTurnCompletedEvent
   | RuntimeTurnRetryingEvent
+  | RuntimeTurnQueuedEvent
+  | RuntimeTurnDequeuedEvent
   | RuntimeErrorEvent
   | RuntimeStatusEvent
   | RuntimeSessionEvent
@@ -533,6 +541,28 @@ export interface RuntimeTurnCompletedEvent {
    * Rendered by MessageBubble as "Worked for X.Xs" Cursor-style.
    */
   durationMs?: number
+}
+
+/**
+ * The adapter is holding a `delivery: 'queue'` message until the running turn
+ * ends. Adapters emit `threadId` + `messageId` only; the registry fills in
+ * `text` and `queuedAt` before publishing, from the submission it dispatched.
+ */
+export interface RuntimeTurnQueuedEvent {
+  type: 'turn.queued'
+  threadId: string
+  /** The chat row this message already has on every client. */
+  messageId: string
+  text?: string
+  queuedAt?: number
+}
+
+/** A queued message left the queue; see `QueuedTurnExit` for the reasons. */
+export interface RuntimeTurnDequeuedEvent {
+  type: 'turn.dequeued'
+  threadId: string
+  messageId: string
+  reason: QueuedTurnExit
 }
 
 export interface RuntimeTurnRetryingEvent {
