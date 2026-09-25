@@ -245,6 +245,17 @@ describe('stored notice across a reload', () => {
       .toEqual([stored(web).id, 'line-ended'])
   })
 
+  it('shows equal notices queued inside the skew once', () => {
+    // The CLI queued the stream-ended notice three times in one millisecond and wrote one line.
+    const a = monitor('u1', 'Monitor "deploy" stream ended', 1_000)
+    const b = monitor('u2', 'Monitor "deploy" stream ended', 1_050)
+    expect(mergeConversationMessages([lineFor(b, 'line')], [stored(a), stored(b)]).map((m) => m.id)).toEqual(['line'])
+    expect(mergeConversationMessages([], [stored(a), stored(b)]).map((m) => m.id)).toEqual([stored(a).id])
+    // Further apart than the skew, they are two notices.
+    const later = monitor('u3', 'Monitor "deploy" stream ended', 7_000)
+    expect(mergeConversationMessages([], [stored(a), stored(later)])).toHaveLength(2)
+  })
+
   it('gives a line to the equal notice it was written for', () => {
     // Two events with the same summary: the first line was dropped, the second written.
     const first = monitor('u1', 'Monitor event: "deploy"', 1_000)
