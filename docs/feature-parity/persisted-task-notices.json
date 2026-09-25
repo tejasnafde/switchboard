@@ -1,0 +1,69 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "persisted-task-notices",
+  "summary": "The registry stores each live task.notification (from live-task-notifications) in the SQLite message mirror as a user row whose content is taskNotificationText(event), id storedTaskNoticeId(threadId, taskId) = tasknotice_<thread>:<task id>, INSERT OR IGNORE and stamped with the event's own time, so it is stored once per task. The CLI queues some notices and removes them without writing a transcript line; those used to vanish on reload. On load-session-by-id, mergeConversationMessages pairs a stored notice with a transcript <task-notification> part of the same task id (nearest in time), else one without a task id whose status and summary match within 5s; a paired notice is dropped for the transcript line, an unpaired one stays. Stored notices are kept out of the turn-boundary pass so they cannot re-window assistant matching, and out of the first-user-row check that gates auto-title. Every client already renders a history user row through the synthetic split, and its live matcher (desktop reducer, phone store, Android ThreadStoreReducer) already treats history rows as transcript rows, so a replay after a reload or re-seed lands on the stored row. The id prefix is not the live row's task_ prefix, which the desktop reducer skips.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "tests/unit/live-task-notification.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/thread-history.ts",
+        "apps/mobile/src/stores/chat.ts",
+        "tests/unit/live-task-notification.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/synthetic-message.ts",
+        "src/shared/provider-events.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/agent/dedupe-messages.ts",
+        "tests/unit/assistant-mirror.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/turn-acceptance.ts",
+        "tests/unit/turn-acceptance-store.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test -- --maxWorkers=2",
+      "npm test --prefix apps/mobile",
+      "cd apps/android && ./gradlew testDebugUnitTest"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No schema change: the rows use the existing messages table, so nothing migrates. Notices from before this release were never stored and still show only if the transcript has their line.",
+      "No live Claude session was run with a notice the CLI dropped; the tests build the stored row the way the registry writes it.",
+      "A task notified twice keeps only its first stored notice (INSERT OR IGNORE), and a task that notified before this release and again later, with the later line dropped, pairs its stored notice with the older line.",
+      "Older clients need no change: the stored row reaches them as an ordinary history user row, which they already split into the compact row."
+    ]
+  }
+}

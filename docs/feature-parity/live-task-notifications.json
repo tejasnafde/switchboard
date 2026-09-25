@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "live-task-notifications",
-  "summary": "Claude's live system/task_notification (a backgrounded Bash command or subagent settled) becomes a task.notification runtime event, so the compact 'Background task failed: ...' row shows as it happens instead of only after a reload. Every client builds the row from the same fields the transcript's <task-notification> line carries (status, summary, task id, output file) and splits it with the existing synthetic-message code, so the live row and the reloaded row are the same row. The live event is not persisted, and a reload replaces it with the transcript line. The two can share no id (the live event carries the SDK message uuid, the transcript row its own line uuid), so a live notice that arrives after a reload or re-seed (resume replay, Android's buffered events replayed by installSnapshot) is dropped when a transcript row already shows the same task id, status and summary (trimmed on both sides, as the transcript parser does) stamped within 5s of it either way (transcriptShowsTaskNotification, ported to Kotlin).",
+  "summary": "Claude's live system/task_notification (a backgrounded Bash command or subagent settled) becomes a task.notification runtime event, so the compact 'Background task failed: ...' row shows as it happens instead of only after a reload. Every client builds the row from the same fields the transcript's <task-notification> line carries (status, summary, task id, output file) and splits it with the existing synthetic-message code, so the live row and the reloaded row are the same row. The registry also stores the live event once per task, and a reload pairs it with the transcript line (see persisted-task-notices). The two can share no id (the live event carries the SDK message uuid, the transcript row its own line uuid), so a live notice that arrives after a reload or re-seed (resume replay, Android's buffered events replayed by installSnapshot) is dropped when a transcript row already shows the same task id, status and summary (trimmed on both sides, as the transcript parser does) stamped within 5s of it either way (transcriptShowsTaskNotification, ported to Kotlin).",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -40,7 +40,7 @@
     },
     "storageDataMigration": {
       "status": "not_applicable",
-      "reason": "Nothing new is stored. The registry does not mirror task.notification to SQLite; the transcript's <task-notification> user line stays the only stored copy, and a reload already rendered it."
+      "reason": "Nothing new in this change. Storing the live notice is persisted-task-notices; the transcript's <task-notification> user line was already stored and rendered on reload."
     },
     "updateRelease": {
       "status": "implemented",

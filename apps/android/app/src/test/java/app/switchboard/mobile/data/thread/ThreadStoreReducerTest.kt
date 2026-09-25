@@ -6,6 +6,8 @@ import app.switchboard.mobile.domain.thread.ThreadEventDecoder
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadRuntimeEvent
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
+import app.switchboard.mobile.domain.remote.ChatMessage
+import app.switchboard.mobile.domain.remote.LoadedSession
 import app.switchboard.mobile.domain.remote.MessageImage
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
@@ -350,6 +352,39 @@ class ThreadStoreReducerTest {
         // The same subagent finishing again later is a new notice, not the old row.
         state = ingest(state, "mac-a", 7, 11, notice(900_000, "u2"))
         assertEquals(listOf("h-line-uuid", "task_u2"), state.thread("mac-a", "thread-1")!!.feed.map { it.id })
+    }
+
+    @Test
+    fun storedTaskNoticeInHistoryAbsorbsTheBufferedAndReplayedLiveNotice() {
+        // No transcript line: the backend's history carries the notice it stored for the live event.
+        val stored = ChatMessage(
+            id = "tasknotice_thread-1:t1",
+            role = "user",
+            content = SyntheticUserMessage.taskNotificationText("t1", "failed", "Build failed", null),
+            timestamp = 50_000,
+            raw = JsonObject(linkedMapOf()),
+        )
+        val snapshot = LoadedSessionSnapshotMapper.map(
+            "thread-1",
+            LoadedSession(messages = listOf(stored), meta = null, total = null, truncated = null, raw = JsonObject(linkedMapOf())),
+        )
+        val notice = event(
+            "task.notification", "messageId" to s("task_u1"), "taskId" to s("t1"),
+            "status" to s("failed"), "summary" to s("Build failed"), "at" to n(50_000),
+        )
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 7))
+        state = reduce(state, ThreadAction.InstallSnapshot(ThreadEventScope("mac-a", 7), ThreadSnapshot("thread-1", emptyList())))
+        state = ingest(state, "mac-a", 7, 10, notice)
+        state = reduce(state, ThreadAction.ReplayGap(ThreadEventScope("mac-a", 7)))
+        state = ingest(state, "mac-a", 7, 10, notice)
+        state = reduce(state, ThreadAction.InstallSnapshot(ThreadEventScope("mac-a", 7), snapshot))
+        assertEquals(listOf("h-tasknotice_thread-1:t1"), state.thread("mac-a", "thread-1")!!.feed.map { it.id })
+
+        // A resume replay after the re-seed lands on the stored row too.
+        state = ingest(state, "mac-a", 7, 11, notice)
+        val feed = state.thread("mac-a", "thread-1")!!.feed
+        assertEquals(listOf("h-tasknotice_thread-1:t1"), feed.map { it.id })
+        assertTrue((feed.single() as FeedItem.User).fromTranscript)
     }
 
     @Test

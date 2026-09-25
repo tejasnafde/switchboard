@@ -67,6 +67,7 @@ import { prepareCodexProfileSwitch } from './codex-session-migrate'
 import { remoteBlockedProviderLabel, remoteProviderLoginPrompt, remoteProviderConfigDir, checkRemoteProviderAuth } from './remote-gate'
 import type { AgentType, FileDiffAttachment, ToolCall } from '@shared/types'
 import { fileDiffRowId, storedToolText, toolInputText, toolRowId } from '@shared/turn-activity'
+import { storedTaskNoticeId, taskNotificationText } from '@shared/synthetic-message'
 import type {
   ProviderAdapter,
   ProviderKind,
@@ -710,6 +711,16 @@ export class ProviderRegistry implements PeerToolHost {
         )
       } catch (err) {
         log.warn(`failed to persist error card for ${event.threadId}: ${err}`)
+      }
+    }
+    // Claude queues some notices and drops them without a transcript line, so
+    // without this copy a notice shown live is gone after a reload. Stamped
+    // with the event's time so the reload can pair it with a line if one exists.
+    if (event.type === 'task.notification') {
+      try {
+        saveMessageIfAbsent(storedTaskNoticeId(event.threadId, event.taskId), event.threadId, 'user', taskNotificationText(event), undefined, undefined, event.at)
+      } catch (err) {
+        log.warn(`failed to persist task notice ${event.taskId} for ${event.threadId}: ${err}`)
       }
     }
     if (event.type === 'session') {

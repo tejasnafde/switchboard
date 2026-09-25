@@ -102,6 +102,17 @@ export function taskNotificationText(n: { taskId: string; status: string; summar
   return `<task-notification>\n${lines.join('\n')}\n</task-notification>`
 }
 
+export const STORED_TASK_NOTICE_PREFIX = 'tasknotice_'
+
+/**
+ * The SQLite row a live notice is stored under: one per task in a thread, so a
+ * replayed event cannot store it twice. Not the live row's `task_` id, which
+ * the desktop reducer skips when it looks for a notice already on screen.
+ */
+export function storedTaskNoticeId(threadId: string, taskId: string): string {
+  return `${STORED_TASK_NOTICE_PREFIX}${threadId}:${taskId}`
+}
+
 /**
  * How far apart a live notice and its transcript line can be stamped, either
  * way (both on the backend's clock). The CLI writes the line when a turn

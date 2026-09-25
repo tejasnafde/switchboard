@@ -254,8 +254,9 @@ export interface RuntimeModelUnavailableEvent {
  * writes the same notice into the transcript as a `<task-notification>` user
  * line, which is what a reload shows; this is the live copy of it, so clients
  * render it through `taskNotificationText` and the same synthetic-row split.
- * Not persisted: the transcript line is the stored copy, so a reload replaces
- * this row rather than adding a second one.
+ * The registry stores it once per task (`storedTaskNoticeId`), because the CLI
+ * drops some queued notices without writing a line. A reload pairs the stored
+ * copy with the transcript line when there is one, so it shows once.
  */
 export interface RuntimeTaskNotificationEvent {
   type: 'task.notification'

@@ -39,6 +39,7 @@ vi.mock('../../src/main/db/database', () => ({
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import { storedToolText, STORED_TOOL_TEXT_MAX_CHARS } from '../../src/shared/turn-activity'
+import { storedTaskNoticeId } from '../../src/shared/synthetic-message'
 
 /** Drives `publish` directly - the mirror is a property of the event stream. */
 function makeRegistry(): { publish: (e: RuntimeEvent) => void; registry: ProviderRegistry } {
@@ -187,5 +188,25 @@ describe('live assistant mirror', () => {
       timestamp: 5_000,
       fileDiff: { relPath: 'a.ts', oldContent: 'old', newContent: 'new', status: 'pending' },
     })
+  })
+})
+
+describe('live task notice mirror', () => {
+  beforeEach(() => { saved.length = 0; savedAt.length = 0 })
+
+  it('stores the notice as its transcript text, once per task, at its own time', () => {
+    const { publish } = makeRegistry()
+    const notice = {
+      type: 'task.notification', threadId: 't1', messageId: 'task_u1', taskId: 'b1',
+      status: 'failed', summary: 'Build failed', outputFile: '/tmp/b1.output', at: 1_000,
+    } as RuntimeEvent
+    publish(notice)
+    expect(saved).toEqual([{
+      id: storedTaskNoticeId('t1', 'b1'),
+      conversationId: 't1',
+      role: 'user',
+      content: '<task-notification>\n<task-id>b1</task-id>\n<output-file>/tmp/b1.output</output-file>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>',
+    }])
+    expect(savedAt).toEqual([1_000])
   })
 })

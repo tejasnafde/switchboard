@@ -11,6 +11,7 @@ import {
 } from '../../src/main/db/turn-acceptance'
 import { AtomicUserTurnSubmission } from '../../src/main/provider/durable-turn-acceptance'
 import { commitConversationProfileSwitch } from '../../src/main/db/conversation-profile-commit'
+import { storedTaskNoticeId } from '../../src/shared/synthetic-message'
 
 const scratch: string[] = []
 
@@ -363,6 +364,23 @@ describe('SqliteTurnAcceptanceStore', () => {
       updated_at: 200,
     })
     expect(store.reserve(key, 'hash')).toEqual({ kind: 'duplicate', state: 'completed' })
+    db.close()
+  })
+
+  it('still titles a chat whose only user row is a stored task notice', () => {
+    const db = atomicTurnDb()
+    db.prepare(`INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, 'thread-a', 'user', ?, 50)`)
+      .run(storedTaskNoticeId('thread-a', 'b1'), '<task-notification>\n<task-id>b1</task-id>\n</task-notification>')
+    const store = new SqliteTurnAcceptanceStore(() => db) as SqliteTurnAcceptanceStore & {
+      reserveEnvelope(key: TurnAcceptanceKey, payloadHash: string, envelopeJson: string, messageId: string, eventAt: number): { kind: string }
+      completeUserTurn(key: TurnAcceptanceKey, payloadHash: string, turn: Record<string, unknown>): { completed: boolean; conversationTitle?: string }
+    }
+    const key = acceptanceKey()
+    store.reserveEnvelope(key, 'hash', '{"turn":true}', 'remote_origin-a', 100)
+    expect(store.beginDispatch(key, 'hash')).toBe(true)
+    expect(store.completeUserTurn(key, 'hash', {
+      messageId: 'remote_origin-a', providerText: 'hi', acceptedAt: 200, autoTitle: 'Hi',
+    })).toEqual({ completed: true, conversationTitle: 'Hi' })
     db.close()
   })
 
