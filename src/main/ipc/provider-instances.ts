@@ -29,6 +29,7 @@ import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencod
 import { applyEnvOverlay } from '../provider/env-overlay'
 import { resolveInstanceEnv } from '../provider/instance-env'
 import { resolveOauthDirForCreate } from '../provider/oauth-path'
+import { demoUsage } from '../provider/adapters/demo-adapter'
 import { fetchInstanceUsage, invalidateUsage, type UsageRequestOptions } from '../provider/usage'
 
 const log = createLogger('ipc:provider-instances')
@@ -62,6 +63,7 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
   })
 
   host.handle(ProviderInstanceChannels.USAGE, async (id: string, opts?: UsageRequestOptions) => {
+    if (process.env.SB_DEMO_ADAPTER === '1') return demoUsage(id, getProviderInstanceFull(id)?.agentType ?? 'claude-code')
     return fetchInstanceUsage(id, opts)
   })
 

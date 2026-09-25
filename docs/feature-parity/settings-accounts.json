@@ -1,0 +1,55 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "settings-accounts",
+  "summary": "Settings' Accounts & models page is redesigned: a summary strip (most room left, next reset, accounts needing attention), one card per provider instance grouped by agent and sorted by the room left, wide usage bars per named window with reset countdowns, a star for the default account, a ⋯ menu holding every action, and a single Sign in again button for a signed-out account. Usage is read for every account when the page opens, through the existing channel and its 45s cache.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/settings/AccountsPanel.tsx",
+        "src/renderer/components/settings/accounts-model.ts",
+        "src/renderer/components/settings/settings-rows.ts",
+        "src/renderer/components/SettingsPage.tsx",
+        "tests/unit/accounts-model.test.ts",
+        "tests/unit/settings-page-render.test.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/radix-overlays.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native app has no account settings page: nothing under apps/mobile/src calls the provider-instances channels, so it never lists, edits or reads usage for an account."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android has no account settings page. It calls provider-instances:list only to pick an instance for a new session (data/remote/SwitchboardRemoteClient.kt), and its Settings ACCOUNT section is the Google account for IAP, not provider accounts."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": ["src/main/ipc/provider-instances.ts", "src/main/provider/adapters/demo-adapter.ts"],
+      "reason": "No channel or payload changes. Only under SB_DEMO_ADAPTER=1 does provider-instances:usage answer with canned readings (demoUsage), so the demo fixture and the visual suite never read a real credential now that the page reads usage on open."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table or migration. Set as default and Default model write the existing chat.defaultProviderInstanceId.<agent> and chat.defaultModel.<agent> settings the composer already writes and the backend already reads."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer-only change behind the existing channels; no package identity, signing, deep link or update-channel change, and an older backend answers the same usage and settings calls."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/accounts-model.test.ts pins the bar thresholds (75 amber, 90 red, red for a reached window), the countdown text, sorting by room left, the summary strip values, the default-account resolution and the credential line.",
+      "tests/unit/settings-page-render.test.ts checks the page renders exactly its searchable rows.",
+      "e2e/visual-regressions.e2e.mjs adds a settings-accounts screen in three themes from demo usage and deletes the seeded accounts through the ⋯ menu and the in-app confirm; e2e/radix-overlays.e2e.mjs opens the add flow from + Add account.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against real signed-in or signed-out accounts: every usage reading in the tests and e2e runs is mocked or from demoUsage.",
+      "Sign in again copies the login command; running it and the following Test the sign-in were not exercised."
+    ]
+  }
+}

@@ -7,8 +7,7 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/components/settings/ProviderUsagePanel.tsx",
-        "src/renderer/components/settings/ProvidersTab.tsx",
+        "src/renderer/components/settings/AccountsPanel.tsx",
         "src/main/provider/usage/claude-usage.ts",
         "src/main/provider/usage/claude-cli-refresh.ts",
         "tests/unit/expired-token-status.test.ts"

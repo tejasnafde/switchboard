@@ -326,8 +326,9 @@ async function settingsDialog() {
     await settings.getByPlaceholder('launch config name').count() === 0 && await settings.isVisible())
   // The provider editor sits inside Settings; Escape closes only the editor.
   await settings.getByRole('button', { name: /^Accounts & models/ }).click()
-  await settings.getByRole('button', { name: '+ Add Instance' }).first().click()
-  const editor = settings.getByText(/^New Instance - /)
+  await settings.getByRole('button', { name: '+ Add account' }).click()
+  await win.getByRole('button', { name: 'Claude Code', exact: true }).click()
+  const editor = settings.getByText(/^New account - /)
   await editor.waitFor({ state: 'visible' })
   await win.keyboard.press('Escape')
   check('settings: Escape closes the provider editor, not Settings',

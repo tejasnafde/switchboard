@@ -5,7 +5,7 @@
  * Two phases, both on by default (SB_VISUAL_SCOPE=behaviour|screens runs one):
  *   - behaviour: translucent-theme assertions (native glass transmission,
  *     fullscreen fallback, sidebar Recents/Saved/organizer) on its own fixture.
- *   - screens: ten key screens in Dark, Light and Translucent, captured
+ *   - screens: the key screens in Dark, Light and Translucent, captured
  *     against the seeded tour workspace with the scripted demo provider
  *     (SB_DEMO_ADAPTER=1) and pixel-compared with the baselines in
  *     e2e/snapshots/<screen>-<theme>-<platform>.png.
@@ -526,6 +526,28 @@ async function captureThemeScreens(win, theme) {
   const settings = win.locator('.settings-page')
   await settings.waitFor({ state: 'visible' })
   await snapScreen(win, 'settings', theme, settings)
+  // Two more Claude accounts after the picker shot, so its baseline keeps
+  // the fixture's one-per-agent list. The main process answers usage from
+  // demoUsage (SB_DEMO_ADAPTER): no real credential is read.
+  await win.evaluate(() => Promise.all([
+    ['claude-code-work', 'akshaya', '#b0833a'],
+    ['claude-code-personal', 'aditya', '#8a4a4a'],
+  ].map(([id, displayName, accentColor]) => window.api.providerInstances.upsert({
+    id, agentType: 'claude-code', displayName, accentColor, authMode: 'env', env: null, oauthDir: null, enabled: true,
+  }))))
+  await settings.getByRole('button', { name: /^Accounts & models/ }).click()
+  await settings.locator('[data-account]').nth(4).waitFor({ state: 'visible' })
+  await settings.getByText('Loading usage…').first().waitFor({ state: 'detached' })
+  // The credential line names this machine's home directory.
+  await snapScreen(win, 'settings-accounts', theme, settings, [settings.locator('[data-credential]')])
+  // Delete them through the menu, or the composer chip names the account
+  // on every later screen.
+  for (const name of ['akshaya', 'aditya']) {
+    await settings.getByRole('button', { name: `Actions for ${name}` }).click()
+    await win.getByRole('button', { name: 'Delete', exact: true }).click()
+    await win.getByRole('alertdialog', { name: `Delete "${name}"?` }).getByRole('button', { name: 'Delete' }).click()
+    await settings.locator('[data-account]').filter({ hasText: name }).waitFor({ state: 'detached' })
+  }
   await win.keyboard.press('Escape')
   await settings.waitFor({ state: 'hidden' })
 
@@ -632,7 +654,7 @@ async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) 
   // scale (Retina or not), sRGB output whatever the display's colour profile,
   // the window size, the terminal's shell prompt and the time zone.
   const demoEnv = demo
-    ? { SB_DEMO_ADAPTER: '1', TZ: 'UTC', SHELL: '/bin/sh', PS1: 'demo@acme:$ ', ENV: '/dev/null', USER: 'developer', LOGNAME: 'developer' }
+    ? { SB_DEMO_ADAPTER: '1', SB_DEMO_NOW: String(FROZEN_NOW), TZ: 'UTC', SHELL: '/bin/sh', PS1: 'demo@acme:$ ', ENV: '/dev/null', USER: 'developer', LOGNAME: 'developer' }
     : {}
   const args = demo ? ['--force-device-scale-factor=1', '--force-color-profile=srgb'] : []
   const instance = await electron.launch({
