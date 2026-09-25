@@ -515,6 +515,11 @@ function migrate(db: Database.Database): void {
   if (!convCols.some((c) => c.name === 'worked_worktrees')) {
     db.exec('ALTER TABLE conversations ADD COLUMN worked_worktrees TEXT')
   }
+  // Migration (2026-09-25): 1 once the user closes the "Follow suggestions are
+  // off" notice, so it does not come back with the next drift. NULL = not closed.
+  if (!convCols.some((c) => c.name === 'follow_notice_dismissed')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN follow_notice_dismissed INTEGER')
+  }
 
   // Migration (2026-09-25): the last turn's status line (agent digest, else a
   // plain preview), so every list shows a chat's summary without loading its

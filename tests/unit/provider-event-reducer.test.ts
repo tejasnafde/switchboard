@@ -256,6 +256,32 @@ describe('reduceProviderEvent (desktop)', () => {
     expect(session().driftSuggestion ?? null).toBeNull()
   })
 
+  it('worktree.drift keeps a closed "off" notice closed as the worktree count grows', () => {
+    reduce({ type: 'worktree.drift', worktreePath: '/wt2', branch: 'c', followSuggestions: 'auto', workedWorktrees: 3 })
+    expect(session().driftSuggestion).toMatchObject({ workedWorktrees: 3 })
+    for (const count of [3, 4, 7]) {
+      reduce({ type: 'worktree.drift', worktreePath: `/wt${count}`, branch: 'd', followSuggestions: 'auto', followNoticeDismissed: true, workedWorktrees: count })
+      expect(session().driftSuggestion ?? null).toBeNull()
+    }
+    // "Turn back on" clears the dismissal on the backend, and the chip returns.
+    reduce({ type: 'worktree.drift', worktreePath: '/wt8', branch: 'e', followSuggestions: 'on', followNoticeDismissed: false, workedWorktrees: 8 })
+    expect(session().driftSuggestion).toMatchObject({ branch: 'e', followSuggestions: 'on' })
+  })
+
+  it('worktree.drift computed before the dismissal was saved does not bring the notice back', () => {
+    useAgentStore.getState().setFollowNoticeDismissed(T, true)
+    reduce({ type: 'worktree.drift', worktreePath: '/wt4', branch: 'd', followSuggestions: 'auto', followNoticeDismissed: false, workedWorktrees: 4 })
+    expect(session().driftSuggestion ?? null).toBeNull()
+    expect(session().followNoticeDismissed).toBe(true)
+    // Turned back on elsewhere: the chip shows and the local override ends.
+    reduce({ type: 'worktree.drift', worktreePath: '/wt5', branch: 'e', followSuggestions: 'on', followNoticeDismissed: false, workedWorktrees: 5 })
+    expect(session().driftSuggestion).toMatchObject({ branch: 'e' })
+    expect(session().followNoticeDismissed).toBe(false)
+    // Off again later, not closed since: the notice shows again.
+    reduce({ type: 'worktree.drift', worktreePath: '/wt6', branch: 'f', followSuggestions: 'auto', followNoticeDismissed: false, workedWorktrees: 6 })
+    expect(session().driftSuggestion).toMatchObject({ branch: 'f' })
+  })
+
   it('error appends a system error and clears the retry card', () => {
     reduce({ type: 'turn.retrying', turnId: 'x', message: 'Reconnecting... 1/5' })
     reduce({ type: 'error', message: 'boom' })

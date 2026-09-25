@@ -77,6 +77,11 @@ interface AgentSession {
   worktreeId?: string | null
   /** Agent wrote into a different worktree - offer to follow (worktree.drift). */
   driftSuggestion?: DriftSuggestion | null
+  /**
+   * The "off" notice was closed in this window. Covers a drift event computed
+   * before the backend saved the dismissal; cleared once suggestions are on.
+   */
+  followNoticeDismissed?: boolean
   /** Branch name in `worktreePath` (e.g. `sb/thread-abc123`). */
   worktreeBranch?: string | null
   /**
@@ -248,6 +253,7 @@ interface AgentStore {
    * (sidebar tags, future cwd badges).
    */
   setDriftSuggestion: (sessionId: string, suggestion: DriftSuggestion | null) => void
+  setFollowNoticeDismissed: (sessionId: string, dismissed: boolean) => void
   setWorktree: (
     sessionId: string,
     worktreePath: string | null,
@@ -663,6 +669,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === sessionId ? { ...s, driftSuggestion: suggestion } : s,
+      ),
+    })),
+
+  setFollowNoticeDismissed: (sessionId, dismissed) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, followNoticeDismissed: dismissed } : s,
       ),
     })),
 

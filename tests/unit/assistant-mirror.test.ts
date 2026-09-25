@@ -43,8 +43,9 @@ import type { RuntimeEvent } from '../../src/shared/provider-events'
 import { storedToolText, STORED_TOOL_TEXT_MAX_CHARS } from '../../src/shared/turn-activity'
 
 /** Drives `publish` directly - the mirror is a property of the event stream. */
+const emitted: string[] = []
 function makeRegistry(): { publish: (e: RuntimeEvent) => void; registry: ProviderRegistry } {
-  const host = { handle: () => {}, emit: () => {}, on: () => {} }
+  const host = { handle: () => {}, emit: (channel: string) => { emitted.push(channel) }, on: () => {} }
   const registry = new ProviderRegistry(host as never)
   const publish = (e: RuntimeEvent) => (registry as unknown as {
     publish: (e: RuntimeEvent) => void
@@ -59,7 +60,7 @@ const content = (threadId: string, messageId: string, text: string, append?: boo
 const turnEnd = (threadId: string): RuntimeEvent => ({ type: 'turn.completed', threadId } as RuntimeEvent)
 
 describe('live assistant mirror', () => {
-  beforeEach(() => { saved.length = 0; savedAt.length = 0; activity.length = 0; statusLines.length = 0 })
+  beforeEach(() => { saved.length = 0; savedAt.length = 0; activity.length = 0; statusLines.length = 0; emitted.length = 0 })
 
   it('persists the folded reply once the turn completes', () => {
     const { publish } = makeRegistry()
@@ -79,6 +80,16 @@ describe('live assistant mirror', () => {
     publish(content('t1', 'm2', 'Anything else?'))
     publish(turnEnd('t1'))
     expect(statusLines).toEqual([{ id: 't1', line: 'Tests pass, PR open' }])
+    expect(emitted).toContain('app:conversations-changed')
+  })
+
+  it('keeps the stored status line when a stop flushes a half-finished turn', () => {
+    const { publish, registry } = makeRegistry()
+    publish(content('t1', 'm1', 'Halfway through the'))
+    ;(registry as unknown as { flushTurnMirror: (id: string, completed: boolean) => void }).flushTurnMirror('t1', false)
+    expect(saved.map((m) => m.content)).toEqual(['Halfway through the'])
+    expect(statusLines).toHaveLength(0)
+    expect(emitted).not.toContain('app:conversations-changed')
   })
 
   it('falls back to the plain-text preview when the turn has no digest', () => {

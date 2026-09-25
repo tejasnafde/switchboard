@@ -1,3 +1,5 @@
+import { currentPlatform, matchShortcut, SHORTCUTS, type ShortcutCommand, type ShortcutKeyInput, type ShortcutPlatform } from '@shared/shortcuts'
+
 export type GlobalKeyAction =
   | { type: 'toggle-sidebar' }
   | { type: 'toggle-data-science' }
@@ -17,51 +19,47 @@ export type GlobalKeyAction =
   | { type: 'focus-direction'; direction: 'left' | 'right' | 'up' | 'down' }
   | { type: 'focus-window'; index: number }
 
-export type GlobalKeyInput = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey'>
+export type GlobalKeyInput = ShortcutKeyInput
 
-const ARROW_DIRECTIONS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' } as const
+const ACTIONS: Record<string, GlobalKeyAction | ((index: number) => GlobalKeyAction)> = {
+  'app.toggle-sidebar': { type: 'toggle-sidebar' },
+  'app.toggle-data-science': { type: 'toggle-data-science' },
+  'app.toggle-terminal': { type: 'toggle-terminal' },
+  'app.toggle-right-pane': { type: 'toggle-right-pane' },
+  'app.toggle-board': { type: 'toggle-app-view' },
+  'chat.new': { type: 'new-chat' },
+  'app.command-palette': { type: 'toggle-palette' },
+  'app.search': { type: 'toggle-search' },
+  'terminal.new-window-right': { type: 'new-terminal-window', direction: 'row' },
+  'terminal.new-window-below': { type: 'new-terminal-window', direction: 'column' },
+  'chat.dual': { type: 'toggle-dual-chat' },
+  'chat.interrupt': { type: 'interrupt' },
+  'chat.context-bridge': { type: 'context-bridge' },
+  'chat.quick-prompt': { type: 'quick-prompt' },
+  'terminal.new-tab': { type: 'new-terminal-tab' },
+  'terminal.next-tab': { type: 'cycle-tab', direction: 'next' },
+  'terminal.prev-tab': { type: 'cycle-tab', direction: 'prev' },
+  'terminal.focus-left': { type: 'focus-direction', direction: 'left' },
+  'terminal.focus-right': { type: 'focus-direction', direction: 'right' },
+  'terminal.focus-up': { type: 'focus-direction', direction: 'up' },
+  'terminal.focus-down': { type: 'focus-direction', direction: 'down' },
+  'terminal.focus-window': (index) => ({ type: 'focus-window', index }),
+}
 
 /**
- * Which app-wide shortcut a keydown is, or null. Order matters: it is the
- * first-match chain the window listener used, so e.g. ⌘⇧K is the board and
- * plain ⌘K is the quick prompt.
+ * Which app-wide shortcut a keydown is, or null. On macOS `Mod` is ⌘ only, so
+ * Ctrl+K / Ctrl+J / Ctrl+B reach the focused terminal or text field instead
+ * of firing an app command (this listener runs in the window capture phase,
+ * ahead of xterm).
  */
-export function resolveGlobalKeydown(e: GlobalKeyInput): GlobalKeyAction | null {
-  if (!e.metaKey && !e.ctrlKey) return null
-  const key = e.key
-  if (key === 'b' || key === 'B') return { type: 'toggle-sidebar' }
-  // ⌘+Shift+J - data scientist mode: workbench center, chat docked right
-  if ((key === 'j' || key === 'J') && e.shiftKey) return { type: 'toggle-data-science' }
-  if (key === 'j' || key === 'J') return { type: 'toggle-terminal' }
-  // ⌘+Shift+E - toggle right pane: terminal ↔ files
-  if ((key === 'e' || key === 'E') && e.shiftKey) return { type: 'toggle-right-pane' }
-  // ⌘+Shift+K - toggle top-level app view (chats ↔ kanban board)
-  if ((key === 'k' || key === 'K') && e.shiftKey) return { type: 'toggle-app-view' }
-  // ⌘+Shift+O - new chat: pick the project, then a draft opens
-  if ((key === 'o' || key === 'O') && e.shiftKey) return { type: 'new-chat' }
-  if ((key === 'p' || key === 'P') && e.shiftKey) return { type: 'toggle-palette' }
-  // ⌘+Shift+F - search across conversations
-  if ((key === 'f' || key === 'F') && e.shiftKey) return { type: 'toggle-search' }
-  // ⌘+⇧+T - new window in a new row (below); ⌘+T - same row (right of active)
-  if (key.toLowerCase() === 't') return { type: 'new-terminal-window', direction: e.shiftKey ? 'column' : 'row' }
-  // ⌘+Shift+| - toggle dual-chat mode
-  if (key === '|' || (key === '\\' && e.shiftKey)) return { type: 'toggle-dual-chat' }
-  // ⌘+Backspace - interrupt the current agent turn
-  if (key === 'Backspace' && !e.shiftKey && !e.altKey) return { type: 'interrupt' }
-  // ⌘+L - context bridge: append the focused selection to the chat draft
-  if ((key === 'l' || key === 'L') && !e.shiftKey) return { type: 'context-bridge' }
-  // ⌘+K - quick prompt
-  if (key === 'k' || key === 'K') return { type: 'quick-prompt' }
-  // ⌘+\ - new tab in the active window
-  if (key === '\\' && !e.shiftKey) return { type: 'new-terminal-tab' }
-  // ⌘+⇧+] / ⌘+⇧+[ - next / prev tab in active window
-  if (key === '}' || (key === ']' && e.shiftKey)) return { type: 'cycle-tab', direction: 'next' }
-  if (key === '{' || (key === '[' && e.shiftKey)) return { type: 'cycle-tab', direction: 'prev' }
-  // ⌘+⌥+Arrow - navigate between windows directionally
-  if (e.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(key)) {
-    return { type: 'focus-direction', direction: ARROW_DIRECTIONS[key as keyof typeof ARROW_DIRECTIONS] }
+export function resolveGlobalKeydown(
+  e: GlobalKeyInput,
+  platform: ShortcutPlatform = currentPlatform(),
+  commands: readonly ShortcutCommand[] = SHORTCUTS,
+): GlobalKeyAction | null {
+  for (const [id, action] of Object.entries(ACTIONS)) {
+    const index = matchShortcut(e, id, platform, commands)
+    if (index >= 0) return typeof action === 'function' ? action(index) : action
   }
-  // ⌘+1..9 - focus window by index
-  if (key >= '1' && key <= '9') return { type: 'focus-window', index: parseInt(key) - 1 }
   return null
 }

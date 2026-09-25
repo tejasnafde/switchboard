@@ -125,6 +125,8 @@ export interface RuntimeWorktreeDriftEvent {
   branch: string
   /** The conversation's Follow-chip setting; absent from older backends (auto). */
   followSuggestions?: FollowSuggestionMode
+  /** The user closed the "off" notice in this chat; absent from older backends. */
+  followNoticeDismissed?: boolean
   /** Distinct worktrees the conversation has worked in, this one included. */
   workedWorktrees?: number
 }

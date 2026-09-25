@@ -66,6 +66,7 @@ import { $createPillNode, $isPillNode, PillNode } from './PillNode'
 import { parseBodyToSegments } from '../../../services/chat-input-body'
 import type { DraftPill } from '../../../stores/draft-store'
 import { createRendererLogger } from '../../../logger'
+import { matchesShortcut } from '@shared/shortcuts'
 
 const log = createRendererLogger('chat:lexical')
 
@@ -383,9 +384,9 @@ function EnterKeyPlugin({ onEnter }: { onEnter?: (key: { altKey: boolean }) => v
     return editor.registerCommand<KeyboardEvent | null>(
       KEY_ENTER_COMMAND,
       (event) => {
-        if (event && event.shiftKey) return false // soft break
+        if (event && event.shiftKey) return false // soft break (composer.newline)
         event?.preventDefault()
-        onEnter?.({ altKey: Boolean(event?.altKey) })
+        onEnter?.({ altKey: !!event && matchesShortcut(event, 'composer.send-other') })
         return true
       },
       COMMAND_PRIORITY_LOW,

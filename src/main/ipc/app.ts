@@ -37,11 +37,13 @@ import {
   getArchivedConversations,
   isConversationArchived,
   getConversationById,
-  setConversationStatusLine,
+  setConversationStatusLineIfMissing,
   getConversationForkMetadata,
   getConversationRuntimeMode,
   setConversationRuntimeMode,
   setConversationFollowSuggestions,
+  getConversationFollowSuggestions,
+  setConversationFollowNoticeDismissed,
   getConversationProviderInstanceId,
   setConversationProviderInstanceId,
   getConversationModel,
@@ -474,7 +476,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       if (!(rootRow ?? row).status_line) {
         const statusLine = sessionPreviewLine(history.messages)
         try {
-          if (statusLine) setConversationStatusLine(row.id, statusLine)
+          if (statusLine) setConversationStatusLineIfMissing(row.id, statusLine)
         } catch (err) {
           log.warn(`status line backfill failed for ${conversationId}: ${err}`)
         }
@@ -542,6 +544,13 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   })
   host.handle(AppChannels.SET_CONVERSATION_FOLLOW_SUGGESTIONS, (id: string, mode: unknown) => {
     return { ok: setConversationFollowSuggestions(id, parseFollowSuggestionMode(mode)) }
+  })
+  host.handle(AppChannels.GET_CONVERSATION_FOLLOW_SUGGESTIONS, (id: string) => {
+    const follow = getConversationFollowSuggestions(id)
+    return { mode: follow.mode, noticeDismissed: follow.noticeDismissed, workedWorktrees: follow.workedWorktrees.length }
+  })
+  host.handle(AppChannels.DISMISS_CONVERSATION_FOLLOW_NOTICE, (id: string) => {
+    return { ok: setConversationFollowNoticeDismissed(id) }
   })
 
   // Per-conversation provider-instance id. Symmetric with runtime mode:

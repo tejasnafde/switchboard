@@ -15,7 +15,7 @@ vi.mock('../../src/main/db/database', async (importOriginal) => ({
   resolveRootThreadId: (id: string) => id,
   getSessionLayout: () => null,
   getConversationForkMetadata: () => null,
-  setConversationStatusLine: (id: string, line: string) => { stored.push({ id, line }) },
+  setConversationStatusLineIfMissing: (id: string, line: string) => { stored.push({ id, line }) },
 }))
 vi.mock('../../src/main/conversations/history', () => ({
   loadConversationHistory: async () => ({ messages: history, diskMessageCount: history.length, databaseMessageCount: 0, familyIds: ['c1'] }),

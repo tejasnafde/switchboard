@@ -35,6 +35,23 @@ describe('RowMeta', () => {
     expect(v.texts()).not.toContain('Tests pass, PR open')
   })
 
+  it('prefers the stored line over a feed restored from disk', () => {
+    act(() => {
+      useChatStore.setState({
+        threads: {
+          [key]: {
+            cached: true,
+            items: [{ kind: 'text', id: 'a1', text: 'Yesterday reading the router', stream: 'assistant', done: true }],
+          } as unknown as ThreadState,
+        },
+      })
+    })
+    const v = renderComponent(<RowMeta threadKeyStr={key} title="Fix login" statusLine="Tests pass, PR open" />)
+    expect(v.texts()).toContain('Tests pass, PR open')
+    const bare = renderComponent(<RowMeta threadKeyStr={key} title="Fix login" />)
+    expect(bare.texts()).toContain('Yesterday reading the router')
+  })
+
   it('shows no second line when there is neither', () => {
     const v = renderComponent(<RowMeta threadKeyStr={key} title="Fix login" />)
     expect(v.texts()).toEqual(['Fix login'])

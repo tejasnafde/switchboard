@@ -101,7 +101,13 @@ export function KanbanView(): React.ReactElement {
       setWorkspaces(ws)
     }
     void load()
-    return () => { cancelled = true }
+    // A turn ending stores its chat's status line; re-read it for the tiles.
+    const off = window.api.app.onConversationsChanged(() => {
+      void (window.api.app.getProjects() as Promise<Project[]>)
+        .then((ps) => { if (!cancelled) setProjects(ps) })
+        .catch((err) => log.warn('getProjects failed on conversations-changed', err))
+    })
+    return () => { cancelled = true; off() }
   }, [])
 
   useEffect(() => window.api.worktreeCreation.onProgress((event) => {

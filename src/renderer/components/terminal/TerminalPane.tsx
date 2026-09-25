@@ -11,6 +11,7 @@ import {
   onTerminalSearchResults,
   focusTerminal,
 } from '../../services/terminal-registry'
+import { matchesShortcut } from '@shared/shortcuts'
 
 interface TerminalPaneProps {
   id: string
@@ -60,13 +61,8 @@ export const TerminalPane = memo(function TerminalPane(props: TerminalPaneProps)
   // this terminal).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Accept either modifier so the same shortcut works on both
-      // platforms. `!both` blocks Ctrl+Cmd+F, which is the macOS
-      // fullscreen toggle muscle memory; we don't want to fight that.
-      const cmd = e.metaKey && !e.ctrlKey
-      const ctrl = e.ctrlKey && !e.metaKey
-      if (!((cmd || ctrl) && !e.altKey && !e.shiftKey)) return
-      if (e.key !== 'f' && e.key !== 'F') return
+      // ⌘F on macOS (Ctrl+F there is the shell's forward-char), Ctrl+F elsewhere.
+      if (!matchesShortcut(e, 'pane.find')) return
       const wrap = wrapperRef.current
       if (!wrap) return
       const active = document.activeElement as Element | null

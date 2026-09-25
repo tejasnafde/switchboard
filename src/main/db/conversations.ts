@@ -738,6 +738,8 @@ export function setConversationRuntimeMode(id: string, mode: string): void {
 
 export interface ConversationFollowSuggestions {
   mode: FollowSuggestionMode
+  /** The user closed the "off" notice; it stays closed until a mode is chosen again. */
+  noticeDismissed: boolean
   /** Distinct worktree paths the conversation has worked in. */
   workedWorktrees: readonly string[]
 }
@@ -759,19 +761,35 @@ function parseWorkedWorktrees(value: string | null | undefined): readonly string
  */
 export function getConversationFollowSuggestions(id: string): ConversationFollowSuggestions {
   const row = getDb().prepare(
-    'SELECT follow_suggestions, worked_worktrees FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as { follow_suggestions: string | null; worked_worktrees: string | null } | undefined
+    'SELECT follow_suggestions, follow_notice_dismissed, worked_worktrees FROM conversations WHERE id = ?'
+  ).get(resolveRootThreadId(id)) as {
+    follow_suggestions: string | null
+    follow_notice_dismissed: number | null
+    worked_worktrees: string | null
+  } | undefined
   return {
     mode: parseFollowSuggestionMode(row?.follow_suggestions),
+    noticeDismissed: row?.follow_notice_dismissed === 1,
     workedWorktrees: parseWorkedWorktrees(row?.worked_worktrees),
   }
 }
 
-/** Leaves `updated_at` alone: a display preference must not reorder the sidebar. */
+/**
+ * Choosing a mode clears a dismissed notice, so turning suggestions off again
+ * later says so once. Leaves `updated_at` alone: a display preference must not
+ * reorder the sidebar.
+ */
 export function setConversationFollowSuggestions(id: string, mode: FollowSuggestionMode): boolean {
   return getDb().prepare(
-    'UPDATE conversations SET follow_suggestions = ? WHERE id = ?'
+    'UPDATE conversations SET follow_suggestions = ?, follow_notice_dismissed = NULL WHERE id = ?'
   ).run(mode === 'auto' ? null : mode, resolveRootThreadId(id)).changes > 0
+}
+
+/** The x on the "Follow suggestions are off" notice. */
+export function setConversationFollowNoticeDismissed(id: string): boolean {
+  return getDb().prepare(
+    'UPDATE conversations SET follow_notice_dismissed = 1 WHERE id = ?'
+  ).run(resolveRootThreadId(id)).changes > 0
 }
 
 /** Add the worktrees a drift check saw the agent in; returns the new state. */
@@ -783,7 +801,7 @@ export function recordConversationWorkedWorktrees(id: string, paths: readonly st
       'UPDATE conversations SET worked_worktrees = ? WHERE id = ?'
     ).run(JSON.stringify(worked), resolveRootThreadId(id))
   }
-  return { mode: current.mode, workedWorktrees: worked }
+  return { ...current, workedWorktrees: worked }
 }
 
 /**
@@ -793,6 +811,15 @@ export function recordConversationWorkedWorktrees(id: string, paths: readonly st
  */
 export function setConversationStatusLine(id: string, line: string): void {
   const stmt = getDb().prepare('UPDATE conversations SET status_line = ? WHERE id = ?')
+  for (const memberId of threadFamilyIds(id)) stmt.run(line, memberId)
+}
+
+/**
+ * The history backfill's write: only rows still without a line, in the same
+ * statement, so a turn that ended while history loaded keeps its newer line.
+ */
+export function setConversationStatusLineIfMissing(id: string, line: string): void {
+  const stmt = getDb().prepare('UPDATE conversations SET status_line = ? WHERE id = ? AND status_line IS NULL')
   for (const memberId of threadFamilyIds(id)) stmt.run(line, memberId)
 }
 
