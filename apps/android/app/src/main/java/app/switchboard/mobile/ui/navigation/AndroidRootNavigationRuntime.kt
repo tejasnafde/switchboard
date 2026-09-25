@@ -55,7 +55,11 @@ class AndroidRootNavigationRuntime(
     private val registerViewingRenewal: (() -> Unit) -> Closeable = { Closeable {} },
     override val followUpDefault: StateFlow<TurnDelivery> = MutableStateFlow(TurnDelivery.Steer),
     private val persistFollowUpDefault: (TurnDelivery) -> Unit = {},
+    private val seedPending: (TransportScope, String, List<JsonObject>) -> Unit = { _, _, _ -> },
 ) : RootNavigationRuntime {
+    override fun seedPendingRequests(scope: TransportScope, threadId: String, pending: List<JsonObject>) =
+        seedPending(scope, threadId, pending)
+
     override fun setFollowUpDefault(value: TurnDelivery) = persistFollowUpDefault(value)
 
     override val statuses: StateFlow<Map<String, ConnectionRuntimeState>> = fleet.statuses

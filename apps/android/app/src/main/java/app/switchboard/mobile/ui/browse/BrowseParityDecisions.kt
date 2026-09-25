@@ -9,6 +9,7 @@ enum class BrowseThreadAttention {
     None,
     Approval,
     Input,
+    Plan,
 }
 
 data class BrowseThreadActivity(

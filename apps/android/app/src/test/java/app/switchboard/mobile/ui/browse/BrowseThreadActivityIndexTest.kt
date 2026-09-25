@@ -119,6 +119,42 @@ class BrowseThreadActivityIndexTest {
         assertEquals(null, preview())
     }
 
+    @Test
+    fun aPlanNeedsYouUntilTheNextUserMessageAndAStopClearsEverything() {
+        val index = BrowseThreadActivityIndex()
+        fun attention() = index.state(scope).value.getValue("thread").attention
+
+        index.onEvent(scope, event("plan.proposed", "planId" to JsonString("p1")))
+        assertEquals(BrowseThreadAttention.Plan, attention())
+        index.onEvent(scope, event("user.message", "text" to JsonString("go")))
+        assertEquals(BrowseThreadAttention.None, attention())
+
+        index.onEvent(scope, event("request.opened", "requestId" to JsonString("r1")))
+        index.onEvent(scope, event("status", "status" to JsonString("stopped")))
+        assertEquals(BrowseThreadAttention.None, attention())
+    }
+
+    @Test
+    fun theBackendSeedMarksAChatAndCannotReopenACardClosedLive() {
+        val index = BrowseThreadActivityIndex()
+        fun attention() = index.state(scope).value.getValue("thread").attention
+        fun pending(type: String, field: String, id: String) = JsonObject(
+            linkedMapOf("type" to JsonString(type), "threadId" to JsonString("thread"), field to JsonString(id)),
+        )
+
+        index.seedPending(scope, "thread", listOf(pending("question.asked", "requestId", "q1")))
+        assertEquals(BrowseThreadAttention.Input, attention())
+
+        index.onEvent(scope, event("request.opened", "requestId" to JsonString("r1")))
+        index.onEvent(scope, event("request.closed", "requestId" to JsonString("r1")))
+        // A reply that raced the close still lists r1.
+        index.seedPending(scope, "thread", listOf(pending("request.opened", "requestId", "r1"), pending("plan.proposed", "planId", "p1")))
+        assertEquals(BrowseThreadAttention.Plan, attention())
+
+        index.seedPending(scope, "thread", emptyList())
+        assertEquals(BrowseThreadAttention.None, attention())
+    }
+
     private fun event(
         type: String,
         vararg fields: Pair<String, app.switchboard.mobile.protocol.JsonValue>,

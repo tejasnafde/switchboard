@@ -126,6 +126,7 @@ data class BrowseConversationRow(
     val status: String?,
     val originSource: String? = null,
     val preview: String? = null,
+    val attention: BrowseThreadAttention = BrowseThreadAttention.Unknown,
 )
 
 sealed interface BrowseProjectsPresentation {
@@ -235,6 +236,7 @@ object BrowsePresenter {
                     status = activity[conversation.id]?.status,
                     originSource = conversation.originSource,
                     preview = activity[conversation.id]?.preview,
+                    attention = activity[conversation.id]?.attention ?: BrowseThreadAttention.Unknown,
                 )
             },
             status = status(state, "conversations", visible.size),
@@ -304,6 +306,9 @@ object BrowseRowPolicy {
         if (row.originSource == "cursor") "Cursor" else agentLabel(row.agentType),
         when {
             row.status.isFailureStatus() -> row.status
+            row.attention == BrowseThreadAttention.Approval -> "Waiting on your approval"
+            row.attention == BrowseThreadAttention.Input -> "Waiting on your answer"
+            row.attention == BrowseThreadAttention.Plan -> "Plan ready for your review"
             !row.preview.isNullOrBlank() -> row.preview
             row.unread > 0 -> "${row.unread} unread"
             !row.status.isNullOrBlank() -> row.status
@@ -321,6 +326,49 @@ object BrowseRowPolicy {
 
     private fun String?.isFailureStatus(): Boolean = this == "error" || this == "failed"
 }
+
+enum class BrowseConversationGroupKey(val label: String) {
+    NeedsYou("Needs you"),
+    Working("Working"),
+    Done("Done recently"),
+}
+
+data class BrowseConversationGroup(
+    val key: BrowseConversationGroupKey,
+    val rows: List<BrowseConversationRow>,
+)
+
+/**
+ * The conversation list grouped like the desktop sidebar's Recents (option C):
+ * Needs you (an open approval, question or plan, or an error), Working, then
+ * Done recently. Rows keep their order inside a group.
+ */
+object BrowseConversationGroups {
+    private val WORKING_STATUSES = setOf("running", "streaming", "working", "thinking")
+
+    fun key(row: BrowseConversationRow): BrowseConversationGroupKey = when {
+        row.attention.isActionable() || row.status == "error" || row.status == "failed" ->
+            BrowseConversationGroupKey.NeedsYou
+        row.status in WORKING_STATUSES -> BrowseConversationGroupKey.Working
+        else -> BrowseConversationGroupKey.Done
+    }
+
+    /**
+     * Empty groups are dropped. A list where nothing needs you or works stays
+     * one plain list: a lone "Done recently" header over month-old chats
+     * says nothing.
+     */
+    fun group(rows: List<BrowseConversationRow>): List<BrowseConversationGroup> {
+        val byKey = rows.groupBy(::key)
+        if (byKey.keys.none { it != BrowseConversationGroupKey.Done }) return emptyList()
+        return BrowseConversationGroupKey.entries.mapNotNull { key ->
+            byKey[key]?.let { BrowseConversationGroup(key, it) }
+        }
+    }
+}
+
+internal fun BrowseThreadAttention.isActionable(): Boolean =
+    this == BrowseThreadAttention.Approval || this == BrowseThreadAttention.Input || this == BrowseThreadAttention.Plan
 
 enum class BrowseActivityTone {
     ACTIVE,
@@ -343,8 +391,18 @@ object BrowseVisualPolicy {
         }
     }
 
-    fun activityTone(status: String?, unread: Int): BrowseActivityTone = when (status) {
-        "error", "failed" -> BrowseActivityTone.ERROR
+    /** The dot carries the colour; an open card outranks everything but an error. */
+    fun activityTone(
+        status: String?,
+        unread: Int,
+        attention: BrowseThreadAttention = BrowseThreadAttention.Unknown,
+    ): BrowseActivityTone = when {
+        status == "error" || status == "failed" -> BrowseActivityTone.ERROR
+        attention.isActionable() -> BrowseActivityTone.ATTENTION
+        else -> statusTone(status, unread)
+    }
+
+    private fun statusTone(status: String?, unread: Int): BrowseActivityTone = when (status) {
         "running", "streaming", "working" -> BrowseActivityTone.ACTIVE
         "starting", "connecting", "waiting", "queued" -> BrowseActivityTone.ATTENTION
         else -> if (unread > 0) BrowseActivityTone.UNREAD else BrowseActivityTone.MUTED

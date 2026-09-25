@@ -650,6 +650,8 @@ private fun ConnectedBrowseRoute(
                 runtime.saveCollapsedWorkspaceIds(connectionId, workspaceIds)
             },
             snapshotStore = snapshotStore,
+            supportsPendingRequests = "pending_requests_v1" in lease.capabilities,
+            onPendingRequests = { threadId, pending -> runtime.seedPendingRequests(lease.scope, threadId, pending) },
         )
     }
     val state by coordinator.state.collectAsState()

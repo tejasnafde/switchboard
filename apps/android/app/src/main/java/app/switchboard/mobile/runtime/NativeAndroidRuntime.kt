@@ -204,6 +204,12 @@ class NativeAndroidRuntime private constructor(
         return browseActivityIndex.state(transportScope)
     }
 
+    fun seedPendingRequests(
+        transportScope: TransportScope,
+        threadId: String,
+        pending: List<app.switchboard.mobile.protocol.JsonObject>,
+    ) = browseActivityIndex.seedPending(transportScope, threadId, pending)
+
     fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) {
         if (connectionId.isBlank()) return
         val encoded = BrowseCollapsePreferences.encode(workspaceIds)

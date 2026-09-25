@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -323,14 +324,21 @@ private fun ConversationsSurface(
                             )
                         }
                     }
-                    items(visible, key = BrowseConversationRow::id) { row ->
-                        ConversationRow(
-                            row = row,
-                            onClick = { onSessionTap(row) },
-                            onLongClick = { renaming = row },
-                        )
-                        RenameErrorSlot(renameErrors[row.id])
-                        HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                    val groups = BrowseConversationGroups.group(visible)
+                    val sections = groups.ifEmpty { listOf(BrowseConversationGroup(BrowseConversationGroupKey.Done, visible)) }
+                    sections.forEach { group ->
+                        if (groups.isNotEmpty()) {
+                            item(key = "group:${group.key}") { ConversationGroupHeader(group) }
+                        }
+                        items(group.rows, key = BrowseConversationRow::id) { row ->
+                            ConversationRow(
+                                row = row,
+                                onClick = { onSessionTap(row) },
+                                onLongClick = { renaming = row },
+                            )
+                            RenameErrorSlot(renameErrors[row.id])
+                            HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                        }
                     }
                 }
             }
@@ -346,6 +354,27 @@ private fun ConversationsSurface(
             }
         }
     }
+}
+
+/** The count is plain grey text; the row dot carries the colour. */
+@Composable
+private fun ConversationGroupHeader(group: BrowseConversationGroup) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 6.dp)
+            .testTag(BrowseTestTags.group(group.key))
+            .semantics(mergeDescendants = true) { heading() },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SectionLabel(group.key.label)
+        Text(group.rows.size.toString(), color = TextDim, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+object BrowseTestTags {
+    fun group(key: BrowseConversationGroupKey) = "browse-conversation-group:${key.name}"
 }
 
 @Composable
@@ -410,7 +439,7 @@ private fun ConversationRow(
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        leadingContent = { ActivityDot(BrowseVisualPolicy.activityTone(row.status, row.unread)) },
+        leadingContent = { ActivityDot(BrowseVisualPolicy.activityTone(row.status, row.unread, row.attention)) },
         trailingContent = {
             Column(horizontalAlignment = Alignment.End) {
                 Text(

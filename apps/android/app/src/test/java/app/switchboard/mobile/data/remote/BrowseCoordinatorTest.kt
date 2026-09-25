@@ -240,6 +240,37 @@ class BrowseCoordinatorTest {
         )
     }
 
+    @Test
+    fun aPendingRequestsBackendIsAskedForEachListedChatsOpenCards() {
+        val remote = FakeBrowseRemote()
+        val recovered = mutableListOf<Pair<String, List<JsonObject>>>()
+        val coordinator = BrowseCoordinator(
+            connectionId = "machine",
+            connectionLabel = "Desktop",
+            offlineSnapshot = emptySnapshot(),
+            remote = remote,
+            supportsPendingRequests = true,
+            onPendingRequests = { threadId, pending -> recovered += threadId to pending },
+        )
+
+        coordinator.refreshConversations("/a")
+        remote.conversations.removeFirst().second(success("conversations:/a", listOf(conversation("t1"), conversation("t2"))))
+        assertEquals(listOf("t1", "t2"), remote.pending.map { it.first })
+
+        val open = JsonObject(linkedMapOf("type" to app.switchboard.mobile.protocol.JsonString("request.opened")))
+        remote.pending.removeFirst().second(success("pending", listOf(open)))
+        assertEquals(listOf("t1" to listOf(open)), recovered)
+    }
+
+    @Test
+    fun anOlderBackendIsNeverAskedForPendingRequests() {
+        val remote = FakeBrowseRemote()
+        val coordinator = coordinator(remote)
+        coordinator.refreshConversations("/a")
+        remote.conversations.removeFirst().second(success("conversations:/a", listOf(conversation("t1"))))
+        assertTrue(remote.pending.isEmpty())
+    }
+
     private fun coordinator(remote: FakeBrowseRemote) = BrowseCoordinator(
         connectionId = "machine",
         connectionLabel = "Desktop",
@@ -320,6 +351,11 @@ private class FakeBrowseRemote : BrowseRemote {
     val workspaces = ArrayDeque<(RemoteResponse<List<Workspace>>) -> Unit>()
     val creates = ArrayDeque<Pair<CreateConversation, (RemoteResponse<CommandBody>) -> Unit>>()
     val renames = ArrayDeque<Rename>()
+    val pending = ArrayDeque<Pair<String, (RemoteResponse<List<JsonObject>>) -> Unit>>()
+
+    override fun getPendingRequests(threadId: String, callback: (RemoteResponse<List<JsonObject>>) -> Unit) {
+        pending += threadId to callback
+    }
 
     override fun getProjects(callback: (RemoteResponse<List<Project>>) -> Unit) {
         projects += callback

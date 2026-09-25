@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
             registerViewingRenewal = switchboardApplication::registerViewingLeaseRenewal,
             followUpDefault = switchboardApplication.followUpDefault,
             persistFollowUpDefault = switchboardApplication::setFollowUpDefault,
+            seedPending = switchboardApplication::seedPendingRequests,
         )
     }
 

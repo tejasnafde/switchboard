@@ -9,6 +9,7 @@ import app.switchboard.mobile.ui.browse.BrowseThreadAttention
 enum class HomeRecentStatus(val label: String) {
     Approval("Approval"),
     Input("Input"),
+    Plan("Plan"),
     Working("Working"),
     Failed("Failed"),
     Done("Done"),
@@ -93,6 +94,7 @@ object HomePresenter {
         when (activity?.attention) {
             BrowseThreadAttention.Approval -> return HomeRecentStatus.Approval
             BrowseThreadAttention.Input -> return HomeRecentStatus.Input
+            BrowseThreadAttention.Plan -> return HomeRecentStatus.Plan
             BrowseThreadAttention.None -> Unit
             BrowseThreadAttention.Unknown, null -> {
                 if (state?.feed?.any { it is FeedItem.Approval && it.state == "pending" } == true) {
@@ -112,7 +114,7 @@ object HomePresenter {
 
     private fun statusPriority(status: HomeRecentStatus?): Int = when (status) {
         HomeRecentStatus.Approval -> 5
-        HomeRecentStatus.Input -> 4
+        HomeRecentStatus.Input, HomeRecentStatus.Plan -> 4
         HomeRecentStatus.Working -> 3
         HomeRecentStatus.Failed -> 2
         HomeRecentStatus.Done -> 1
