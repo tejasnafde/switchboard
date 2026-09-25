@@ -10,7 +10,7 @@
         "src/renderer/components/chat/SyntheticUserRow.tsx",
         "src/renderer/components/chat/MessageBubble.tsx",
         "src/renderer/components/chat/MessageList.tsx",
-        "src/shared/turn-preview.ts",
+        "src/renderer/components/sidebar/recent-sessions.ts",
         "src/renderer/services/desktop-turn-submission.ts"
       ]
     },
@@ -44,6 +44,7 @@
       "status": "implemented",
       "evidence": [
         "src/shared/synthetic-message.ts",
+        "src/shared/turn-preview.ts",
         "src/shared/provider-events.ts",
         "src/main/agent/jsonl-parser.ts",
         "src/main/projects/session-scanner.ts",
