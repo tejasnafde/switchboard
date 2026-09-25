@@ -11,6 +11,7 @@ object ThreadTestTags {
     const val APPROVAL_SLOT = "thread-approval-slot"
     const val QUEUE_TOGGLE = "thread-queue-next-toggle"
 
+    fun fileGroup(key: String) = "thread-file-group:$key"
     fun heldBar(messageId: String) = "thread-held-bar:$messageId"
     fun heldSendNow(messageId: String) = "thread-held-send-now:$messageId"
     fun heldCancel(messageId: String) = "thread-held-cancel:$messageId"

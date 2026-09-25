@@ -192,6 +192,8 @@ fun ThreadScreen(
     var lightboxUrl by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
     var settingsOpen by rememberSaveable(threadId) { mutableStateOf(false) }
     var forkMessageId by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
+    // Local to this screen, like the desktop's per-turn expansion.
+    var expandedFileGroups by rememberSaveable(threadId) { mutableStateOf(emptySet<String>()) }
     // Per-thread, in memory only - a fresh screen instance re-offers.
     var compactionDismissed by rememberSaveable(threadId) { mutableStateOf(false) }
     // onSendOverride is fire-and-forget (dispatched onto a worker coroutine), so
@@ -349,7 +351,7 @@ fun ThreadScreen(
                     ) {
                         items(
                             ThreadFeedLayoutPolicy.declarationOrder(
-                                ThreadChromePolicy.feedRows(presentation.rows),
+                                ThreadFileGroups.collapse(ThreadChromePolicy.feedRows(presentation.rows), expandedFileGroups),
                             ),
                             key = { "feed:${it.key}" },
                         ) { row ->
@@ -364,6 +366,9 @@ fun ThreadScreen(
                                 onFork = { messageId -> forkMessageId = messageId },
                                 held = held,
                                 onHeldAction = onHeldAction,
+                                onToggleFileGroup = { key ->
+                                    expandedFileGroups = if (key in expandedFileGroups) expandedFileGroups - key else expandedFileGroups + key
+                                },
                             )
                         }
                     }
@@ -1267,6 +1272,7 @@ private fun ThreadRow(
     onFork: (String) -> Unit,
     held: ThreadHeldPresentation = ThreadHeldPresentation(),
     onHeldAction: (String, Boolean) -> Unit = { _, _ -> },
+    onToggleFileGroup: (String) -> Unit = {},
 ) {
     when (row) {
         is ThreadRowPresentation.User -> UserRow(
@@ -1315,6 +1321,7 @@ private fun ThreadRow(
         )
 
         is ThreadRowPresentation.FileEdit -> FileEditRow(row, backendLabel)
+        is ThreadRowPresentation.FileGroup -> FileGroupRow(row) { onToggleFileGroup(row.key) }
         is ThreadRowPresentation.Drift -> NoticeCard(
             "Worktree changed",
             "${row.source.branch}\n${row.source.worktreePath}",
@@ -2053,6 +2060,29 @@ private fun PlanRow(
 }
 
 @Composable
+private fun FileGroupRow(row: ThreadRowPresentation.FileGroup, onToggle: () -> Unit) {
+    CardContainer(tint = Green) {
+        PressableLine(
+            enabled = true,
+            onClick = onToggle,
+            modifier = Modifier
+                .testTag(ThreadTestTags.fileGroup(row.key))
+                .semantics { stateDescription = if (row.expanded) "Expanded" else "Collapsed" },
+        ) {
+            Text(row.label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("+${row.addedLines}", color = Green, fontFamily = GeistMono)
+            Text("-${row.removedLines}", color = Red, fontFamily = GeistMono, modifier = Modifier.padding(start = 8.dp))
+            Text(
+                if (row.expanded) "Hide" else "Show",
+                color = Accent,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(start = 12.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun FileEditRow(
     row: ThreadRowPresentation.FileEdit,
     backendLabel: String,
@@ -2261,12 +2291,13 @@ private fun CardContainer(
 private fun PressableLine(
     enabled: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     content: @Composable RowScope.() -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(8.dp))
