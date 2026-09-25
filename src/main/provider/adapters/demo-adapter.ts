@@ -269,6 +269,9 @@ export class DemoAdapter implements ProviderAdapter {
   private async run(threadId: string, session: DemoSession, message: string): Promise<void> {
     const turn: DemoTurn = { session, scriptedMs: 0, cancelled: false }
     session.turns.add(turn)
+    // A real adapter reports usage as the turn streams, so the composer's
+    // context ring shows in the screenshots, running and idle.
+    session.onEvent({ type: 'context_window', threadId, usedTokens: 158_000, maxTokens: 200_000 })
     try {
       await this.script(threadId, turn, message)
     } finally {
