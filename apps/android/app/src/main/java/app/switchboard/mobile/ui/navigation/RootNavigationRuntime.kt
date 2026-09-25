@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 private val EmptyBrowseActivity = MutableStateFlow<Map<String, BrowseThreadActivity>>(emptyMap())
+private val DefaultFollowUp = MutableStateFlow(app.switchboard.mobile.domain.thread.TurnDelivery.Steer)
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
 private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
 private val EmptyQueuedTurns = MutableStateFlow<List<QueuedTurn>>(emptyList())
@@ -98,6 +99,15 @@ interface RootNavigationRuntime {
 
     fun browseActivity(scope: TransportScope): StateFlow<Map<String, BrowseThreadActivity>> =
         EmptyBrowseActivity
+
+    /** A chat's open cards from `provider:get-pending-requests`, for Needs you. */
+    fun seedPendingRequests(scope: TransportScope, threadId: String, pending: List<app.switchboard.mobile.protocol.JsonObject>) = Unit
+
+    /** The device's "Follow-up while the agent works" choice. */
+    val followUpDefault: StateFlow<app.switchboard.mobile.domain.thread.TurnDelivery>
+        get() = DefaultFollowUp
+
+    fun setFollowUpDefault(value: app.switchboard.mobile.domain.thread.TurnDelivery) = Unit
 
     fun collapsedWorkspaceIds(connectionId: String, snapshot: OfflineSnapshot): Set<String> =
         BrowseCollapsePreferences.initial(snapshot, connectionId)

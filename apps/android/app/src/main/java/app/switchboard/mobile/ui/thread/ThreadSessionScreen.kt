@@ -75,6 +75,11 @@ fun ThreadSessionScreen(
         },
         onDraftChange = coordinator::updateDraft,
         onSend = router::send,
+        onToggleDelivery = coordinator::toggleNextDelivery,
+        held = session.toHeldPresentation(),
+        onHeldAction = { messageId, promote ->
+            (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.actOnHeld(messageId, promote) }
+        },
         onSendOverride = router::sendText,
         onInterrupt = router::interrupt,
         onRuntimeModeChange = router::selectRuntimeMode,

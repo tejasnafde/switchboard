@@ -88,6 +88,8 @@ import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
@@ -111,6 +113,7 @@ import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.thread.AgentDigest
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.SyntheticTone
+import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.domain.remote.ForkLineageMetadata
@@ -180,12 +183,17 @@ fun ThreadScreen(
     forkMetadata: ForkLineageMetadata? = null,
     onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
     onSendOverride: (String) -> Unit = {},
+    onToggleDelivery: () -> Unit = {},
+    held: ThreadHeldPresentation = ThreadHeldPresentation(),
+    onHeldAction: (messageId: String, promote: Boolean) -> Unit = { _, _ -> },
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
     var lightboxUrl by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
     var settingsOpen by rememberSaveable(threadId) { mutableStateOf(false) }
     var forkMessageId by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
+    // Local to this screen, like the desktop's per-turn expansion.
+    var expandedFileGroups by rememberSaveable(threadId) { mutableStateOf(emptySet<String>()) }
     // Per-thread, in memory only - a fresh screen instance re-offers.
     var compactionDismissed by rememberSaveable(threadId) { mutableStateOf(false) }
     // onSendOverride is fire-and-forget (dispatched onto a worker coroutine), so
@@ -295,6 +303,7 @@ fun ThreadScreen(
                 onOutboxAction = onOutboxAction,
                 onDraftChange = onDraftChange,
                 onSend = onSend,
+                onToggleDelivery = onToggleDelivery,
                 onInterrupt = onInterrupt,
                 onOpenSettings = { settingsOpen = true },
                 onRuntimeModeChange = onRuntimeModeChange,
@@ -333,6 +342,11 @@ fun ThreadScreen(
                 }
 
                 is ThreadPresentation.Content -> key(threadId) {
+                    val feedRows = remember(presentation.rows, expandedFileGroups) {
+                        ThreadFeedLayoutPolicy.declarationOrder(
+                            ThreadFileGroups.collapse(ThreadChromePolicy.feedRows(presentation.rows), expandedFileGroups),
+                        )
+                    }
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
@@ -341,9 +355,7 @@ fun ThreadScreen(
                         contentPadding = PaddingValues(top = 24.dp),
                     ) {
                         items(
-                            ThreadFeedLayoutPolicy.declarationOrder(
-                                ThreadChromePolicy.feedRows(presentation.rows),
-                            ),
+                            feedRows,
                             key = { "feed:${it.key}" },
                         ) { row ->
                             ThreadRow(
@@ -355,6 +367,11 @@ fun ThreadScreen(
                                 onAction = onAction,
                                 onImageOpen = { lightboxUrl = it },
                                 onFork = { messageId -> forkMessageId = messageId },
+                                held = held,
+                                onHeldAction = onHeldAction,
+                                onToggleFileGroup = { key ->
+                                    expandedFileGroups = if (key in expandedFileGroups) expandedFileGroups - key else expandedFileGroups + key
+                                },
                             )
                         }
                     }
@@ -478,6 +495,7 @@ private fun ThreadBottomArea(
     onOutboxAction: (String, OutboxUiAction) -> Unit,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
+    onToggleDelivery: () -> Unit,
     onInterrupt: () -> Unit,
     onOpenSettings: () -> Unit,
     onRuntimeModeChange: (RuntimeMode) -> Unit,
@@ -508,6 +526,7 @@ private fun ThreadBottomArea(
                 state = composer,
                 onDraftChange = onDraftChange,
                 onSend = onSend,
+                onToggleDelivery = onToggleDelivery,
                 onInterrupt = onInterrupt,
                 onOpenSettings = onOpenSettings,
                 onRuntimeModeChange = onRuntimeModeChange,
@@ -528,6 +547,7 @@ private fun ThreadComposer(
     state: ThreadComposerPresentation,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
+    onToggleDelivery: () -> Unit,
     onInterrupt: () -> Unit,
     onOpenSettings: () -> Unit,
     onRuntimeModeChange: (RuntimeMode) -> Unit,
@@ -634,6 +654,24 @@ private fun ThreadComposer(
                 }
             }
         }
+        state.queueToggle?.let { toggle ->
+            TextButton(
+                onClick = onToggleDelivery,
+                modifier = Modifier
+                    .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+                    .testTag(ThreadTestTags.QUEUE_TOGGLE)
+                    .semantics {
+                        contentDescription = toggle.accessibilityLabel
+                        stateDescription = toggle.label
+                    },
+            ) {
+                Text(
+                    toggle.label,
+                    color = if (toggle.queues) Accent else TextDim,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
@@ -665,7 +703,7 @@ private fun ThreadComposer(
                         .onFocusChanged { focused = it.isFocused }
                         .heightIn(min = SwitchboardDimensions.minimumTouchTarget),
                     placeholder = {
-                        Text(if (state.showInterrupt) "Queue a follow-up…" else "Message the agent…")
+                        Text(state.runningPlaceholder ?: "Message the agent…")
                     },
                     singleLine = inputLayout.singleLine,
                     minLines = 1,
@@ -1235,12 +1273,18 @@ private fun ThreadRow(
     onAction: (ThreadUiAction) -> Unit,
     onImageOpen: (String) -> Unit,
     onFork: (String) -> Unit,
+    held: ThreadHeldPresentation = ThreadHeldPresentation(),
+    onHeldAction: (String, Boolean) -> Unit = { _, _ -> },
+    onToggleFileGroup: (String) -> Unit = {},
 ) {
     when (row) {
         is ThreadRowPresentation.User -> UserRow(
             row.source,
             onImageOpen,
             onFork.takeIf { row.source.id.startsWith("h-") },
+            heldMessageId = TurnDeliveryPolicy.heldMessageId(held.messageIds, row.source.id),
+            held = held,
+            onHeldAction = onHeldAction,
         )
         is ThreadRowPresentation.Text -> TextRow(
             row,
@@ -1280,6 +1324,7 @@ private fun ThreadRow(
         )
 
         is ThreadRowPresentation.FileEdit -> FileEditRow(row, backendLabel)
+        is ThreadRowPresentation.FileGroup -> FileGroupRow(row) { onToggleFileGroup(row.key) }
         is ThreadRowPresentation.Drift -> NoticeCard(
             "Worktree changed",
             "${row.source.branch}\n${row.source.worktreePath}",
@@ -1354,6 +1399,9 @@ private fun UserRow(
     item: FeedItem.User,
     onImageOpen: (String) -> Unit,
     onFork: ((String) -> Unit)? = null,
+    heldMessageId: String? = null,
+    held: ThreadHeldPresentation = ThreadHeldPresentation(),
+    onHeldAction: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     Row(
         modifier = Modifier
@@ -1395,6 +1443,59 @@ private fun UserRow(
                         }
                     }
                 }
+                heldMessageId?.let { messageId ->
+                    HeldTurnBar(
+                        messageId = messageId,
+                        held = held,
+                        onPromote = { onHeldAction(messageId, true) },
+                        onCancel = { onHeldAction(messageId, false) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The foot of a user bubble the backend holds: Queued, then Send now and Cancel. */
+@Composable
+private fun HeldTurnBar(
+    messageId: String,
+    held: ThreadHeldPresentation,
+    onPromote: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val onBubble = MaterialTheme.colorScheme.onPrimary
+    val error = held.errors[messageId]
+    val busy = messageId in held.busy
+    Column(
+        modifier = Modifier.testTag(ThreadTestTags.heldBar(messageId)),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = "Queued · ${error ?: held.actions.hint}",
+            color = if (error != null) Red else onBubble.copy(alpha = 0.8f),
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 2,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(
+                onClick = onPromote,
+                enabled = held.actions.canPromote && !busy,
+                modifier = Modifier
+                    .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+                    .testTag(ThreadTestTags.heldSendNow(messageId)),
+            ) {
+                Text("Send now", color = onBubble.copy(alpha = if (held.actions.canPromote && !busy) 1f else 0.5f))
+            }
+            TextButton(
+                onClick = onCancel,
+                enabled = !busy,
+                modifier = Modifier
+                    .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+                    .testTag(ThreadTestTags.heldCancel(messageId)),
+            ) {
+                Text("Cancel", color = onBubble)
             }
         }
     }
@@ -1962,6 +2063,29 @@ private fun PlanRow(
 }
 
 @Composable
+private fun FileGroupRow(row: ThreadRowPresentation.FileGroup, onToggle: () -> Unit) {
+    CardContainer(tint = Green) {
+        PressableLine(
+            enabled = true,
+            onClick = onToggle,
+            modifier = Modifier
+                .testTag(ThreadTestTags.fileGroup(row.key))
+                .semantics { stateDescription = if (row.expanded) "Expanded" else "Collapsed" },
+        ) {
+            Text(row.label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("+${row.addedLines}", color = Green, fontFamily = GeistMono)
+            Text("-${row.removedLines}", color = Red, fontFamily = GeistMono, modifier = Modifier.padding(start = 8.dp))
+            Text(
+                if (row.expanded) "Hide" else "Show",
+                color = Accent,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(start = 12.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun FileEditRow(
     row: ThreadRowPresentation.FileEdit,
     backendLabel: String,
@@ -2170,12 +2294,13 @@ private fun CardContainer(
 private fun PressableLine(
     enabled: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     content: @Composable RowScope.() -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(8.dp))

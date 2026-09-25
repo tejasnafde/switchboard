@@ -9,6 +9,12 @@ object ThreadTestTags {
     const val ARCHIVE_ACTION = "thread-archive-action"
     const val ARCHIVE_CONFIRM = "thread-archive-confirm"
     const val APPROVAL_SLOT = "thread-approval-slot"
+    const val QUEUE_TOGGLE = "thread-queue-next-toggle"
+
+    fun fileGroup(key: String) = "thread-file-group:$key"
+    fun heldBar(messageId: String) = "thread-held-bar:$messageId"
+    fun heldSendNow(messageId: String) = "thread-held-send-now:$messageId"
+    fun heldCancel(messageId: String) = "thread-held-cancel:$messageId"
 
     fun toolContainer(key: String) = "thread-tool-container:$key"
     fun toolRow(key: String) = "thread-tool-row:$key"

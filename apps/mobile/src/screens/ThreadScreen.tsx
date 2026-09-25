@@ -71,9 +71,10 @@ import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 import { outboxPresentation, recoverRejectedDraft } from '../lib/outbox-model'
 import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-fork'
-import { ApprovalItem, FileEditItem, HeldTurnBar, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
+import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
 import { styles } from './thread-screen.styles'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
+import { collapseFileEdits, type FeedRow } from '../lib/file-groups'
 
 /** How much of a long thread to pull on open. The feed says when it is a window. */
 const HISTORY_WINDOW = 250
@@ -441,7 +442,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // FlatList passes its own getItem/getItemCount after {...restProps}, so a
   // zero-copy accessor would be ignored and the feed would render oldest-first.
   // Reversing a copy is cheap; the memoized rows are what actually mattered.
-  const reversedItems = useMemo(() => [...thread.items].reverse(), [thread.items])
+  // Which turns' "Changed N files" rows are open, on this screen only.
+  const [openFileGroups, setOpenFileGroups] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleFileGroup = useCallback((id: string) => {
+    setOpenFileGroups((open) => {
+      const next = new Set(open)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+  }, [])
+  const reversedItems = useMemo(
+    () => collapseFileEdits(thread.items, openFileGroups).reverse(),
+    [thread.items, openFileGroups],
+  )
   const itemCount = reversedItems.length
 
   const setMode = (mode: RuntimeMode) => {
@@ -745,7 +758,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   }, [connectionId, threadId])
 
   const renderItem = useCallback(
-    ({ item }: { item: FeedItem }) => {
+    ({ item }: { item: FeedRow }) => {
       switch (item.kind) {
         case 'user':
           const queued = queuedByBubbleId.get(item.id)
@@ -822,6 +835,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
           return <PlanItem item={item} onImplement={implementPlan} onIterate={focusComposer} />
         case 'fileEdit':
           return <FileEditItem item={item} backendLabel={backendLabel} />
+        case 'fileGroup':
+          return <FileGroupItem row={item} onToggle={toggleFileGroup} />
         case 'notice':
           return (
             <View style={styles.noticeRow}>
@@ -851,6 +866,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       provider,
       actOnHeld,
       heldErrors,
+      toggleFileGroup,
     ],
   )
 

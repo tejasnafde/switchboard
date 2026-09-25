@@ -63,6 +63,24 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun heldMessagesFollowQueuedDequeuedStopAndASeed() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = ingest(state, "mac-a", 1, 1, event("turn.queued", "messageId" to s("remote_a")))
+        state = ingest(state, "mac-a", 1, 2, event("turn.queued", "messageId" to s("remote_b")))
+        assertEquals(setOf("remote_a", "remote_b"), state.thread("mac-a", "thread-1")!!.heldTurns)
+
+        // Started or promoted: the row stays, the Queued mark goes.
+        state = ingest(state, "mac-a", 1, 3, event("turn.dequeued", "messageId" to s("remote_a"), "reason" to s("started")))
+        assertEquals(setOf("remote_b"), state.thread("mac-a", "thread-1")!!.heldTurns)
+
+        state = ingest(state, "mac-a", 1, 4, event("status", "status" to s("stopped")))
+        assertEquals(emptySet<String>(), state.thread("mac-a", "thread-1")!!.heldTurns)
+
+        state = reduce(state, ThreadAction.SeedHeldTurns("mac-a", "thread-1", setOf("remote_c")))
+        assertEquals(setOf("remote_c"), state.thread("mac-a", "thread-1")!!.heldTurns)
+    }
+
+    @Test
     fun aCancelFromAnotherClientRemovesTheHistoryRowToo() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         state = reduce(

@@ -8,6 +8,9 @@ import app.switchboard.mobile.data.thread.ThreadSessionState
 import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.composer.ComposerAttachment
+import app.switchboard.mobile.domain.thread.HeldTurnActions
+import app.switchboard.mobile.domain.thread.QueueToggle
+import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 
 data class ThreadComposerPresentation(
     val draft: String,
@@ -22,11 +25,39 @@ data class ThreadComposerPresentation(
     val attachments: List<ComposerAttachment> = emptyList(),
     val editingOrigin: String? = null,
     val modelLabel: String? = null,
+    /** Steer/queue chip for the next send; null when idle or the choice does not apply. */
+    val queueToggle: QueueToggle? = null,
+    /** Replaces the idle placeholder while a turn runs. */
+    val runningPlaceholder: String? = null,
 ) {
     val canSend: Boolean
         get() = canSendNow()
 
     fun canSendNow(): Boolean = (draft.isNotBlank() || attachments.isNotEmpty()) && !submitting
+}
+
+/** Messages the backend holds until the running turn ends, as the feed shows them. */
+data class ThreadHeldPresentation(
+    val messageIds: Set<String> = emptySet(),
+    val actions: HeldTurnActions = TurnDeliveryPolicy.heldTurnActions(null),
+    val errors: Map<String, String> = emptyMap(),
+    val busy: Set<String> = emptySet(),
+)
+
+fun ThreadSessionState.toHeldPresentation(): ThreadHeldPresentation {
+    val thread = when (val value = load) {
+        is ThreadSessionLoad.Loading -> value.cached
+        is ThreadSessionLoad.Ready -> value.thread
+        is ThreadSessionLoad.Failed -> value.cached
+    }
+    // Only a backend that can act on a held message gets its controls.
+    if (!followUp.canControlHeld || thread == null) return ThreadHeldPresentation()
+    return ThreadHeldPresentation(
+        messageIds = thread.heldTurns,
+        actions = TurnDeliveryPolicy.heldTurnActions(thread.provider),
+        errors = followUp.heldErrors,
+        busy = followUp.heldBusy,
+    )
 }
 
 fun ThreadSessionLoad.toUiLoadState(): ThreadLoadState = when (this) {
@@ -46,10 +77,20 @@ fun ThreadSessionState.toComposerPresentation(): ThreadComposerPresentation {
         is ThreadSessionLoad.Ready -> value.thread
         is ThreadSessionLoad.Failed -> value.cached
     }
+    val running = thread?.status == "running"
+    val provider = thread?.provider
+    val toggle = if (running && followUp.canQueue && TurnDeliveryPolicy.canSteer(provider)) {
+        TurnDeliveryPolicy.queueToggle(followUp.preferred, composer.flipNextDelivery)
+    } else {
+        null
+    }
     return composer.toPresentation(
         controlMessage = controlMessage,
-        showInterrupt = thread?.status == "running",
+        showInterrupt = running,
         modelLabel = thread?.resolvedModel,
+    ).copy(
+        queueToggle = toggle,
+        runningPlaceholder = if (running) TurnDeliveryPolicy.runningPlaceholder(provider, toggle?.queues == true) else null,
     )
 }
 

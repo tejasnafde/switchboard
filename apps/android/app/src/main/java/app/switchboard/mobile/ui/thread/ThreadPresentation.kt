@@ -114,6 +114,7 @@ enum class ThreadRowKind {
     PLAN,
     QUESTION,
     FILE_EDIT,
+    FILE_GROUP,
     DRIFT,
     SPEND_BLOCKED,
     PEER,
@@ -211,6 +212,17 @@ sealed interface ThreadRowPresentation {
     ) : ThreadRowPresentation {
         override val key = source.id
         override val kind = ThreadRowKind.FILE_EDIT
+    }
+
+    /** One turn's changed files, folded (see [ThreadFileGroups]). */
+    data class FileGroup(
+        override val key: String,
+        val label: String,
+        val addedLines: Int,
+        val removedLines: Int,
+        val expanded: Boolean,
+    ) : ThreadRowPresentation {
+        override val kind = ThreadRowKind.FILE_GROUP
     }
 
     data class Drift(val source: FeedItem.Drift) : ThreadRowPresentation {

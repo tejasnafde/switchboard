@@ -14,6 +14,8 @@ import app.switchboard.mobile.ui.browse.BrowseLoadState
 import app.switchboard.mobile.ui.browse.BrowseProjectRecord
 import app.switchboard.mobile.ui.browse.BrowseState
 import app.switchboard.mobile.ui.browse.BrowseThreadActivity
+import app.switchboard.mobile.ui.browse.BrowseThreadAttention
+import app.switchboard.mobile.protocol.JsonObject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -37,6 +39,10 @@ interface BrowseRemote {
         title: String,
         callback: (RemoteResponse<CommandBody>) -> Unit,
     )
+
+    /** Only called on `pending_requests_v1`. */
+    fun getPendingRequests(threadId: String, callback: (RemoteResponse<List<JsonObject>>) -> Unit): Unit =
+        throw UnsupportedOperationException("Pending requests are not supported")
 }
 
 fun interface BrowseCollapsePreferenceStore {
@@ -52,6 +58,9 @@ class BrowseCoordinator(
     initialCollapsedWorkspaceIds: Set<String> = emptySet(),
     private val collapsePreferenceStore: BrowseCollapsePreferenceStore? = null,
     private val snapshotStore: BrowseSnapshotStore = EmptyBrowseSnapshotStore,
+    /** Backend advertises `pending_requests_v1`: each listed chat's open cards are fetched for Needs you. */
+    private val supportsPendingRequests: Boolean = false,
+    private val onPendingRequests: (threadId: String, pending: List<JsonObject>) -> Unit = { _, _ -> },
 ) {
     private val saved = runCatching { snapshotStore.load(connectionId) }
         .getOrDefault(BrowseSnapshotSeed())
@@ -259,6 +268,30 @@ class BrowseCoordinator(
         mutableState.value = mutableState.value.copy(
             conversationsByProject = mutableState.value.conversationsByProject + (projectPath to next),
         )
+        (response.outcome as? RemoteOutcome.Success)?.value?.let(::recoverPendingRequests)
+    }
+
+    /**
+     * Needs you is read from the backend's record of open cards, so a chat
+     * whose card opened before this app was listening still says so.
+     * Chats whose cards are already known (live events or an earlier reply)
+     * are skipped, since these share the connection's request cap with sends.
+     * ponytail: one request per chat, newest [PENDING_REQUEST_ROWS] only; a
+     * batched channel would lift the cap.
+     */
+    private fun recoverPendingRequests(conversations: List<Conversation>) {
+        if (!supportsPendingRequests) return
+        val known = mutableState.value.threadActivity
+        conversations
+            .filter { known[it.id]?.attention in setOf(null, BrowseThreadAttention.Unknown) }
+            .sortedByDescending(Conversation::updatedAt)
+            .take(PENDING_REQUEST_ROWS)
+            .forEach { conversation ->
+            remote.getPendingRequests(conversation.id) { response ->
+                if (closed || !accepts(response)) return@getPendingRequests
+                (response.outcome as? RemoteOutcome.Success)?.value?.let { onPendingRequests(conversation.id, it) }
+            }
+        }
     }
 
     private fun accepts(response: RemoteResponse<*>): Boolean =
@@ -327,6 +360,8 @@ class BrowseCoordinator(
     )
 }
 
+private const val PENDING_REQUEST_ROWS = 15
+
 private fun <T, R> List<T>.asCachedLoadState(transform: (T) -> R): BrowseLoadState<R> =
     if (isEmpty()) {
         BrowseLoadState.Loading()
@@ -377,5 +412,9 @@ class SwitchboardBrowseRemote(
         callback: (RemoteResponse<CommandBody>) -> Unit,
     ) {
         client.renameConversation(conversationId, title, callback)
+    }
+
+    override fun getPendingRequests(threadId: String, callback: (RemoteResponse<List<JsonObject>>) -> Unit) {
+        client.getPendingRequests(threadId, callback)
     }
 }

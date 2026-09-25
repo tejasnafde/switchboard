@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "file-diff-cards-opt-in",
-  "summary": "Make the in-chat per-file diff cards (with per-hunk accept/reject) opt-in and off by default, since most users only review a diff once it becomes a PR. Off collapses a turn's changed files to a single \"Changed N files\" button that expands the real cards for that turn only; the backend keeps computing and emitting file.edited unconditionally.",
+  "summary": "Make the in-chat per-file diff cards (with per-hunk accept/reject) opt-in and off by default, since most users only review a diff once it becomes a PR. Off collapses a turn's changed files to a single \"Changed N files\" button that expands the real cards for that turn only; the backend keeps computing and emitting file.edited unconditionally. The phone (React Native) and native Android now fold a turn's file rows the same way: one \"Changed N files\" row with the turn's line totals, collapsed by default, where the turn's first file row was; a tap opens that turn's compact file rows on this device only (screen state, no stored setting and nothing read from the desktop's chat.showFileDiffs). A turn is everything between two user rows, since neither phone feed carries a turn id.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -17,14 +17,24 @@
       ]
     },
     "reactNativeIos": {
-      "status": "staged",
-      "flag": "mobile_file_diff_collapse",
-      "followUpRelease": "The React Native thread feed (apps/mobile/src/screens/ThreadScreen.tsx, FileEditItem) already renders one compact, ungrouped one-line +/- summary per changed file with no per-hunk accept/reject, so today's verbosity problem does not exist there the way it does on desktop. Grouping consecutive fileEdit feed items by turn and collapsing them behind a button mirrors a flat FeedItem[] (apps/mobile/src/stores/chat.ts) that has no turn concept at all today - the FlatList renders items individually with no equivalent to groupIntoTurns/projectTurnPresentation. That's new grouping logic, not a render-only toggle, so it ships as its own follow-up mobile release once the feed gains turn grouping, behind the local (per-device, AsyncStorage-backed) mobile_file_diff_collapse flag rather than reading the desktop's chat.showFileDiffs setting over the wire."
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/file-groups.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/__tests__/file-group-item.test.tsx",
+        "tests/unit/mobile-file-groups.test.ts"
+      ]
     },
     "nativeAndroid": {
-      "status": "staged",
-      "flag": "mobile_file_diff_collapse",
-      "followUpRelease": "Same situation as reactNativeIos: ThreadPresentation.kt's FeedItem.FileEdit renders one compact row per changed file with no per-hunk controls, and there is no turn-grouping concept in the Android feed to collapse. Ships alongside the React Native change, once the Android thread feed gains the same turn-grouping, behind the same named mobile_file_diff_collapse flag (a local Android preference, not the desktop settings key)."
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadFileGroups.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadFileGroupsTest.kt",
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt"
+      ]
     },
     "sharedBackendApi": {
       "status": "not_applicable",
@@ -36,22 +46,24 @@
     },
     "updateRelease": {
       "status": "not_applicable",
-      "reason": "Renderer presentation change only. No package identity, signing, deep-link scheme, update channel, or wire-protocol change; the file.edited IPC/event contract is untouched."
+      "reason": "Presentation change only. No package identity, signing, deep-link scheme, update channel, or wire-protocol change; the file.edited IPC/event contract is untouched. The phone's part is JavaScript only, so it can ride the mobile-ota.yml lane (the fingerprint runtimeVersion is unchanged); native Android's ships with its next APK."
     }
   },
   "verification": {
     "automated": [
       "npm run typecheck passed for both the main and renderer projects.",
       "npm test passed the full vitest suite including two new tests: layout-store's 'file diff cards opt-in' describe block (default-off, setShowFileDiffCards toggles the flag) and message-list's changedFilesLabel formatting test ('Changed 1 file' / 'Changed 8 files').",
-      "npm test --prefix apps/mobile passed unchanged - no mobile files were touched by this change.",
-      "Android unit tests (./gradlew testDebugUnitTest) were not run - no apps/android files were touched by this change."
+      "npx vitest run tests/unit/mobile-file-groups.test.ts: each turn folds behind one collapsed row where its first file was, only the tapped turn expands, a feed without edits is unchanged, the label counts",
+      "npm test --prefix apps/mobile: FileGroupItem renders the count, the totals and its expanded state, and a tap toggles its own turn",
+      "cd apps/android && ./gradlew testDebugUnitTest: ThreadFileGroupsTest (the same three rules as the phone); ThreadScreenRegressionTest's file-edit case now expands the group first (instrumented, compiled only)"
     ],
     "hardware": [
       "Desktop manual verification on this Mac: built with npm run build:fast, launched the app via videos/capture-tour.mjs's own scripted demo fixture (SB_DEMO_ADAPTER=1) with the seeded settings row set to 'false', ran the 'diff-review' scene (a real turn that edits a file) and confirmed the turn collapses to a 'Changed 1 file' button with no per-hunk controls visible. Re-seeded the row to 'true' and reran the same scene, confirming the cards render exactly as before (header + Keep all/Reject all + hunks), matching the pre-existing tour clip. Separately launched a fresh Electron instance with an isolated --user-data-dir and screenshotted Settings > General > Responses, confirming the new 'Show file diff cards in chat' checkbox renders unchecked by default with its description."
     ],
     "notExercised": [
       "The 'Changed N files' button's hover/focus-visible styling and the grid-row expand transition (turn-files-toggle in global.css) were confirmed once in the running app but not across all three themes (dark/light/translucent).",
-      "No live remote-backend (WsHost/SSH-tunnelled) session was used to confirm the setting behaves the same when a session is served over the wire instead of the local Electron IPC host - the setting is read through the same window.api.settings surface either way, so no divergence is expected, but it was not exercised."
+      "No live remote-backend (WsHost/SSH-tunnelled) session was used to confirm the setting behaves the same when a session is served over the wire instead of the local Electron IPC host - the setting is read through the same window.api.settings surface either way, so no divergence is expected, but it was not exercised.",
+      "Neither phone's Changed N files row was tapped on a device or emulator (none was available); the instrumented ThreadScreenRegressionTest was compiled, not run."
     ]
   }
 }

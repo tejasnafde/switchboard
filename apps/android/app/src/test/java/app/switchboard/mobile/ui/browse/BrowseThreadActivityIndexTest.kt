@@ -1,6 +1,7 @@
 package app.switchboard.mobile.ui.browse
 
 import app.switchboard.mobile.platform.protocol.TransportScope
+import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.RuntimeEventKind
@@ -88,6 +89,77 @@ class BrowseThreadActivityIndexTest {
             BrowseThreadAttention.None,
             index.state(scope).value.getValue("thread").attention,
         )
+    }
+
+    @Test
+    fun theCurrentTurnsDigestIsThePreviewAndANewTurnClearsIt() {
+        val index = BrowseThreadActivityIndex()
+        fun preview() = index.state(scope).value.getValue("thread").preview
+        fun chunk(messageId: String, text: String, append: Boolean) = event(
+            "content",
+            "streamKind" to JsonString("assistant"),
+            "messageId" to JsonString(messageId),
+            "text" to JsonString(text),
+            "append" to JsonBoolean(append),
+        )
+
+        index.onEvent(scope, chunk("m1", "Reading the ", append = false))
+        index.onEvent(scope, chunk("m1", "**config** file", append = true))
+        assertEquals("Reading the config file", preview())
+
+        index.onEvent(scope, chunk("m1", " <agent_digest>Checking config</agent_digest>", append = true))
+        // A later message of the same turn without a digest keeps the earlier digest.
+        index.onEvent(scope, chunk("m2", "Now running tests", append = false))
+        assertEquals("Checking config", preview())
+
+        index.onEvent(scope, event("content", "streamKind" to JsonString("reasoning"), "messageId" to JsonString("r"), "text" to JsonString("thinking")))
+        assertEquals("Checking config", preview())
+
+        index.onEvent(scope, event("user.message", "text" to JsonString("next")))
+        assertEquals(null, preview())
+    }
+
+    @Test
+    fun aPlanNeedsYouUntilTheNextUserMessageAndAStopClearsEverything() {
+        val index = BrowseThreadActivityIndex()
+        fun attention() = index.state(scope).value.getValue("thread").attention
+
+        index.onEvent(scope, event("plan.proposed", "planId" to JsonString("p1")))
+        assertEquals(BrowseThreadAttention.Plan, attention())
+        index.onEvent(scope, event("user.message", "text" to JsonString("go")))
+        assertEquals(BrowseThreadAttention.None, attention())
+
+        index.onEvent(scope, event("request.opened", "requestId" to JsonString("r1")))
+        index.onEvent(scope, event("status", "status" to JsonString("stopped")))
+        assertEquals(BrowseThreadAttention.None, attention())
+    }
+
+    @Test
+    fun theBackendSeedMarksAChatAndCannotReopenACardClosedLive() {
+        val index = BrowseThreadActivityIndex()
+        fun attention() = index.state(scope).value.getValue("thread").attention
+        fun pending(type: String, field: String, id: String) = JsonObject(
+            linkedMapOf("type" to JsonString(type), "threadId" to JsonString("thread"), field to JsonString(id)),
+        )
+
+        index.seedPending(scope, "thread", listOf(pending("question.asked", "requestId", "q1")))
+        assertEquals(BrowseThreadAttention.Input, attention())
+
+        index.onEvent(scope, event("request.opened", "requestId" to JsonString("r1")))
+        index.onEvent(scope, event("request.closed", "requestId" to JsonString("r1")))
+        // A reply that raced the close still lists r1.
+        index.seedPending(scope, "thread", listOf(pending("request.opened", "requestId", "r1"), pending("plan.proposed", "planId", "p1")))
+        assertEquals(BrowseThreadAttention.Plan, attention())
+
+        // A reply taken before a card opened live does not hide it.
+        index.onEvent(scope, event("user.message", "text" to JsonString("go")))
+        index.onEvent(scope, event("request.opened", "requestId" to JsonString("r2")))
+        index.seedPending(scope, "thread", emptyList())
+        assertEquals(BrowseThreadAttention.Approval, attention())
+        // Nor does a plan the next user message answered come back.
+        index.onEvent(scope, event("request.closed", "requestId" to JsonString("r2")))
+        index.seedPending(scope, "thread", listOf(pending("plan.proposed", "planId", "p1")))
+        assertEquals(BrowseThreadAttention.None, attention())
     }
 
     private fun event(

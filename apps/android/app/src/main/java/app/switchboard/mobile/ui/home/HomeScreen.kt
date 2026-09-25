@@ -312,7 +312,7 @@ private fun HomeRecentTrailing(row: HomeRecentRow) {
         return
     }
     val color = when (status) {
-        HomeRecentStatus.Approval, HomeRecentStatus.Input -> Amber
+        HomeRecentStatus.Approval, HomeRecentStatus.Input, HomeRecentStatus.Plan -> Amber
         HomeRecentStatus.Working -> Accent
         HomeRecentStatus.Failed -> Red
         HomeRecentStatus.Done -> Green

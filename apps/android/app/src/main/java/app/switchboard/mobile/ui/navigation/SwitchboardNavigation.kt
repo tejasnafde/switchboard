@@ -100,6 +100,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 
 private val EmptyRuntimeStatuses = MutableStateFlow<Map<String, ConnectionRuntimeState>>(emptyMap())
+private val SteerFollowUp = kotlinx.coroutines.flow.MutableStateFlow(app.switchboard.mobile.domain.thread.TurnDelivery.Steer)
 private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
 private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
 private val EmptyQueuedTurns = MutableStateFlow<List<QueuedTurn>>(emptyList())
@@ -267,6 +268,8 @@ fun SwitchboardNavigation(
                     navigationState = navigationState.push(AppRoute.ManageConnections)
                 },
                 onUpdateAction = onUpdateAction,
+                followUpDefault = (runtime?.followUpDefault ?: SteerFollowUp).collectAsState().value,
+                onFollowUpDefault = { runtime?.setFollowUpDefault(it) },
             )
 
             is AppRoute.Pair -> PairingScreen(
@@ -647,6 +650,8 @@ private fun ConnectedBrowseRoute(
                 runtime.saveCollapsedWorkspaceIds(connectionId, workspaceIds)
             },
             snapshotStore = snapshotStore,
+            supportsPendingRequests = "pending_requests_v1" in lease.capabilities,
+            onPendingRequests = { threadId, pending -> runtime.seedPendingRequests(lease.scope, threadId, pending) },
         )
     }
     val state by coordinator.state.collectAsState()
@@ -959,6 +964,8 @@ private fun ConnectedThreadRoute(
             worktreePath = route.worktreePath,
             providerHint = route.provider,
             supportsPendingRequests = "pending_requests_v1" in lease.capabilities,
+            capabilities = lease.capabilities,
+            followUpDefault = { runtime.followUpDefault.value },
             composerPersistence = object : ThreadComposerPersistence {
                 override fun save(draft: ComposerDraft) = runtime.saveComposerDraft(draft)
 

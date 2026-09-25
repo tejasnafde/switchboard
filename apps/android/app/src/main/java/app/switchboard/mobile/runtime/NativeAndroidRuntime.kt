@@ -79,7 +79,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import app.switchboard.mobile.domain.thread.TurnDelivery
+import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
@@ -145,7 +149,30 @@ class NativeAndroidRuntime private constructor(
             }
         }
     }
+    private val mutableFollowUpDefault = MutableStateFlow(TurnDelivery.Steer)
+    /** "Follow-up while the agent works", per device like the phone's preference. */
+    val followUpDefault: StateFlow<TurnDelivery> = mutableFollowUpDefault.asStateFlow()
+    @Volatile private var followUpDefaultChosen = false
+    private val followUpDefaultLoad: Job = scope.launch {
+        val stored = database.preferenceDao().findPreference(TurnDeliveryPolicy.FOLLOW_UP_DEFAULT_KEY) ?: return@launch
+        // A tap during the read wins over the stored value.
+        if (!followUpDefaultChosen) {
+            mutableFollowUpDefault.value = TurnDeliveryPolicy.parseFollowUpDefault(stored.value)
+        }
+    }
     private var closed = false
+
+    fun setFollowUpDefault(value: TurnDelivery) {
+        followUpDefaultChosen = true
+        followUpDefaultLoad.cancel()
+        mutableFollowUpDefault.value = value
+        scope.launch {
+            // The latest choice, not this tap's: two quick taps may write out of order.
+            database.preferenceDao().upsertPreference(
+                AppPreferenceEntity(TurnDeliveryPolicy.FOLLOW_UP_DEFAULT_KEY, mutableFollowUpDefault.value.wire),
+            )
+        }
+    }
 
     fun start() {
         pushTokenRuntime.start()
@@ -181,6 +208,12 @@ class NativeAndroidRuntime private constructor(
         )
         return browseActivityIndex.state(transportScope)
     }
+
+    fun seedPendingRequests(
+        transportScope: TransportScope,
+        threadId: String,
+        pending: List<app.switchboard.mobile.protocol.JsonObject>,
+    ) = browseActivityIndex.seedPending(transportScope, threadId, pending)
 
     fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) {
         if (connectionId.isBlank()) return

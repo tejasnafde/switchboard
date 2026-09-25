@@ -337,6 +337,9 @@ class ThreadScreenRegressionTest {
             }
         }
 
+        // A turn's files start folded behind one row.
+        compose.onNodeWithText("Changed on Mac", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Changed 1 file").assertIsDisplayed().performClick()
         compose.onNodeWithText("Changed on Mac", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Review").performClick()
         compose.onNodeWithText("old").assertIsDisplayed()
