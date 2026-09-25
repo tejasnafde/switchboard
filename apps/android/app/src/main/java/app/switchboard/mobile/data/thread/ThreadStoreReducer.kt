@@ -3,6 +3,7 @@ package app.switchboard.mobile.data.thread
 import app.switchboard.mobile.domain.thread.DriftSuggestion
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.SpendBlock
+import app.switchboard.mobile.domain.thread.SyntheticUserMessage
 import app.switchboard.mobile.domain.thread.ThreadEventPayload
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadRuntimeEvent
@@ -413,6 +414,18 @@ object ThreadStoreReducer {
             )
             is ThreadEventPayload.TodoUpdated -> withJournal.copy(
                 feed = upsert(withJournal.feed, FeedItem.Todo("todo-${event.todoId}", event.todoId, event.items)),
+            )
+            // Same text as the transcript line a reload shows, so it splits into the same row.
+            is ThreadEventPayload.TaskNotification -> withJournal.copy(
+                feed = upsert(
+                    withJournal.feed,
+                    FeedItem.User(
+                        event.messageId,
+                        SyntheticUserMessage.taskNotificationText(event.taskId, event.status, event.summary, event.outputFile),
+                        event.at,
+                        fromTranscript = true,
+                    ),
+                ),
             )
             // Showing a held message as Queued is staged (android_composer_follow_ups);
             // decoding it keeps it out of the feed as an unsupported-event notice.

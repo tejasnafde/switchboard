@@ -88,6 +88,20 @@ const BLOCKS: readonly Block[] = [
   { start: '<skill>', end: '</skill>' },
 ]
 
+/**
+ * The transcript form of a task notification, so a live notice goes through
+ * the same split as the one rebuilt from the transcript on reload.
+ */
+export function taskNotificationText(n: { taskId: string; status: string; summary: string; outputFile?: string }): string {
+  const lines = [
+    `<task-id>${n.taskId}</task-id>`,
+    n.outputFile ? `<output-file>${n.outputFile}</output-file>` : '',
+    `<status>${n.status}</status>`,
+    `<summary>${n.summary}</summary>`,
+  ].filter(Boolean)
+  return `<task-notification>\n${lines.join('\n')}\n</task-notification>`
+}
+
 /** Null when `text` does not start with a generated block, i.e. a real user message. */
 export function splitSyntheticUserText(text: string): SyntheticUserSplit | null {
   let remaining = text.trim()

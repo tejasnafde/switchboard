@@ -67,6 +67,15 @@ object SyntheticUserMessage {
         Block("<skill>", "</skill>"),
     )
 
+    /** Port of `taskNotificationText`: the transcript form of a live task notification. */
+    fun taskNotificationText(taskId: String, status: String, summary: String, outputFile: String?): String =
+        listOfNotNull(
+            "<task-id>$taskId</task-id>",
+            outputFile?.let { "<output-file>$it</output-file>" },
+            "<status>$status</status>",
+            "<summary>$summary</summary>",
+        ).joinToString("\n", prefix = "<task-notification>\n", postfix = "\n</task-notification>")
+
     /** Null when [text] does not start with a generated block, i.e. a real user message. */
     fun split(text: String): SyntheticSplit? {
         var remaining = text.trim()

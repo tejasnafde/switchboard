@@ -129,6 +129,10 @@ object ThreadEventDecoder {
                     TodoEntry(value.requiredString("text"), value.requiredString("status"))
                 },
             )
+            "task.notification" -> ThreadEventKind.TaskNotification to ThreadEventPayload.TaskNotification(
+                raw.requiredString("messageId"), raw.requiredString("taskId"), raw.requiredString("status"),
+                raw.requiredString("summary"), raw.string("outputFile"), raw.requiredLong("at"),
+            )
             "turn.queued" -> ThreadEventKind.TurnQueued to ThreadEventPayload.TurnQueued(raw.requiredString("messageId"))
             "turn.dequeued" -> ThreadEventKind.TurnDequeued to ThreadEventPayload.TurnDequeued(
                 raw.requiredString("messageId"), raw.requiredString("reason"),

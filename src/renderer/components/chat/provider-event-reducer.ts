@@ -1,4 +1,5 @@
 import type { RuntimeEvent } from '@shared/provider-events'
+import { taskNotificationText } from '@shared/synthetic-message'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
 import { fileDiffRowId, toolInputText, toolRowId } from '@shared/turn-activity'
 import { defaultModelSettingKey } from '@shared/session-defaults'
@@ -109,6 +110,11 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       appendMessage(tid, peerMessageToChatMessage(event, ownLabel))
       break
     }
+    case 'task.notification':
+      // The transcript's copy is a user line, so this is one too: MessageBubble
+      // splits both into the same row, and a reload replaces this one.
+      appendMessage(tid, { id: event.messageId, role: 'user', content: taskNotificationText(event), timestamp: event.at })
+      break
     case 'tool.started': {
       const existing = useAgentStore.getState().sessions
         .find((s) => s.id === tid)?.messages

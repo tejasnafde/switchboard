@@ -249,6 +249,26 @@ export interface RuntimeModelUnavailableEvent {
   model: string
 }
 
+/**
+ * A background task (a backgrounded Bash command or subagent) settled. Claude
+ * writes the same notice into the transcript as a `<task-notification>` user
+ * line, which is what a reload shows; this is the live copy of it, so clients
+ * render it through `taskNotificationText` and the same synthetic-row split.
+ * Not persisted: the transcript line is the stored copy, so a reload replaces
+ * this row rather than adding a second one.
+ */
+export interface RuntimeTaskNotificationEvent {
+  type: 'task.notification'
+  threadId: string
+  /** Stable across replays, so a redelivered event lands on its own row. */
+  messageId: string
+  taskId: string
+  status: string
+  summary: string
+  outputFile?: string
+  at: number
+}
+
 export type RuntimeEvent = (
   | RuntimeContentEvent
   | RuntimeUserMessageEvent
@@ -278,6 +298,7 @@ export type RuntimeEvent = (
   | RuntimeThreadReadEvent
   | RuntimePeerMessageEvent
   | RuntimeTodoUpdatedEvent
+  | RuntimeTaskNotificationEvent
 ) & {
   /** Which machine emitted this event ('local' or a remote's id). Stamped by
    *  preload's provider.onEvent, not the adapter - used to reject cross-machine

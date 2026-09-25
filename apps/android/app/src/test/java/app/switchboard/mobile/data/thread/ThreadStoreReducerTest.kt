@@ -1,6 +1,7 @@
 package app.switchboard.mobile.data.thread
 
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.SyntheticUserMessage
 import app.switchboard.mobile.domain.thread.ThreadEventDecoder
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadRuntimeEvent
@@ -222,6 +223,29 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun liveTaskNotificationSplitsLikeTheTranscriptLineAndReplaysOntoOneRow() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val raw = event(
+            "task.notification",
+            "messageId" to s("task_u1"),
+            "taskId" to s("bd5t7u1q8"),
+            "status" to s("failed"),
+            "summary" to s("Background command \"Build\" failed with exit code 144"),
+            "outputFile" to s("/tmp/tasks/bd5t7u1q8.output"),
+            "at" to n(5),
+        )
+        state = ingest(state, "mac-a", 1, 1, raw)
+        state = ingest(state, "mac-a", 1, 2, raw)
+
+        val user = state.thread("mac-a", "thread-1")!!.feed.filterIsInstance<FeedItem.User>().single()
+        assertTrue(user.fromTranscript)
+        val transcript = "<task-notification>\n<task-id>bd5t7u1q8</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n" +
+            "<output-file>/tmp/tasks/bd5t7u1q8.output</output-file>\n<status>failed</status>\n" +
+            "<summary>Background command \"Build\" failed with exit code 144</summary>\n</task-notification>"
+        assertEquals(SyntheticUserMessage.split(transcript), SyntheticUserMessage.split(user.text))
+    }
+
+    @Test
     fun modelUnavailableAppendsAFriendlyNoticeWithTheDroppedModelName() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         state = ingest(state, "mac-a", 1, 1, event("model.unavailable", "model" to s("claude-opus-4-7")))
@@ -428,6 +452,7 @@ class ThreadStoreReducerTest {
         event("thread.read", "at" to n(3)),
         event("peer.message", "direction" to s("received"), "initiator" to s("agent"), "messageId" to s("peer"), "peerThreadId" to s("other"), "peerLabel" to s("Other"), "text" to s("hello"), "at" to n(4)),
         event("todo.updated", "todoId" to s("todo"), "items" to arr(obj("text" to s("Ship"), "status" to s("completed")))),
+        event("task.notification", "messageId" to s("task_u1"), "taskId" to s("t1"), "status" to s("failed"), "summary" to s("Build failed"), "at" to n(5)),
         event("turn.completed", "turnId" to s("turn"), "costUsd" to n("0.6"), "usedTokens" to n(50), "maxTokens" to n(100), "numTurns" to n(1), "durationMs" to n(1200)),
     )
 

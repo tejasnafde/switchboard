@@ -156,6 +156,7 @@ interface QueuedClaudeTurn {
 }
 type SDKMessage = import('@anthropic-ai/claude-agent-sdk').SDKMessage
 type SDKUserMessage = import('@anthropic-ai/claude-agent-sdk').SDKUserMessage
+type SDKTaskNotificationMessage = import('@anthropic-ai/claude-agent-sdk').SDKTaskNotificationMessage
 type SDKOptions = import('@anthropic-ai/claude-agent-sdk').Options
 type CanUseTool = import('@anthropic-ai/claude-agent-sdk').CanUseTool
 type PermissionMode = import('@anthropic-ai/claude-agent-sdk').PermissionMode
@@ -1638,6 +1639,22 @@ export class ClaudeAdapter implements ProviderAdapter {
               log.warn(`getContextUsage after compaction failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
             })
           }
+        }
+
+        // A background task settled. skip_transcript tasks never reach the
+        // transcript, so showing them live would leave a row a reload drops.
+        if (sys.subtype === 'task_notification' && !sys.skip_transcript) {
+          const note = sys as unknown as SDKTaskNotificationMessage
+          active.onEvent({
+            type: 'task.notification',
+            threadId,
+            messageId: `task_${note.uuid}`,
+            taskId: note.task_id,
+            status: note.status,
+            summary: note.summary,
+            ...(note.output_file ? { outputFile: note.output_file } : {}),
+            at: Date.now(),
+          })
         }
 
         // "compacting" status → show in UI

@@ -1,0 +1,67 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "live-task-notifications",
+  "summary": "Claude's live system/task_notification (a backgrounded Bash command or subagent settled) becomes a task.notification runtime event, so the compact 'Background task failed: ...' row shows as it happens instead of only after a reload. Every client builds the row from the same fields the transcript's <task-notification> line carries (status, summary, task id, output file) and splits it with the existing synthetic-message code, so the live row and the reloaded row are the same row. The live event is not persisted: a reload replaces it with the transcript line, so there is no duplicate.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "tests/unit/live-task-notification.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts",
+        "tests/unit/live-task-notification.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadEventDecoder.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SyntheticUserMessage.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/protocol/WsProtocol.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "src/shared/synthetic-message.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "tests/unit/live-task-notification.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing new is stored. The registry does not mirror task.notification to SQLite; the transcript's <task-notification> user line stays the only stored copy, and a reload already rendered it."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test -- --maxWorkers=2",
+      "npm test --prefix apps/mobile and cd apps/mobile && npx tsc --noEmit",
+      "cd apps/android && ./gradlew testDebugUnitTest"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live Claude session was run with a failing background task; the adapter test uses the SDK's SDKTaskNotificationMessage shape and the transcript line recorded on this machine.",
+      "Clients older than this release ignore task.notification (desktop and the React Native app drop unknown events), except native Android before this release, which shows it as an 'Unsupported runtime event' notice until updated. The row still appears after a reload on all of them.",
+      "Codex has no live equivalent: app-server's only exit notification, process/exited, answers a client-issued process/spawn, which Switchboard never sends. Its synthetic transcript blocks are context bootstraps and <turn_aborted>, and the interrupt already shows live through turn/completed."
+    ]
+  }
+}

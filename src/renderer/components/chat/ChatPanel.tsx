@@ -67,6 +67,7 @@ import {
 } from '../../services/draft-transfer'
 import { providerKindFor } from '@shared/types'
 import { confirm } from '../ui/confirm'
+import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 
 interface ChatPanelProps {
   /**
@@ -144,7 +145,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const pendingDeliveryState = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index--) {
       const message = messages[index]
-      if (message.role === 'user') return message.deliveryState
+      // A task notice landing mid-send is not the send.
+      if (message.role === 'user' && !isSyntheticOnlyMessage(message)) return message.deliveryState
     }
     return undefined
   }, [messages])

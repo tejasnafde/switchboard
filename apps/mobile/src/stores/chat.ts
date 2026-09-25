@@ -307,6 +307,16 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             ],
           }
         }
+        case 'task.notification': {
+          if (t.items.some((i) => i.id === event.messageId)) return {}
+          const { status, summary, taskId, outputFile } = event
+          return {
+            items: [
+              ...t.items,
+              { kind: 'synthetic', id: event.messageId, part: { kind: 'task-notification', status, summary, taskId, outputFile } },
+            ],
+          }
+        }
         case 'tool.started':
           return {
             items: [

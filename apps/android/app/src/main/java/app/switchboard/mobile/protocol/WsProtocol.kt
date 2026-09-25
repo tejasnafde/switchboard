@@ -270,6 +270,7 @@ data class RuntimeEventPayload(
             "thread.read",
             "peer.message",
             "todo.updated",
+            "task.notification",
             "turn.queued",
             "turn.dequeued",
         )
