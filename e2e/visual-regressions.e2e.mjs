@@ -194,14 +194,14 @@ async function assertNativeGlassTransmitsColor(win, suffix = '') {
   await win.waitForTimeout(300)
 
   await win.getByTitle('Settings').click()
-  await win.getByRole('button', { name: 'Appearance', exact: true }).click()
+  await win.getByRole('button', { name: /^Appearance(?: \d+ changed)?$/ }).click()
   await win.getByRole('button', { name: /Dark/ }).click()
   await win.keyboard.press('Escape')
   await win.waitForTimeout(300)
   const dark = colorDelta(captureNative(bounds, suffix ? join(artifactDir, `native-dark-${suffix}.png`) : nativeDarkScreenshotPath))
 
   await win.getByTitle('Settings').click()
-  await win.getByRole('button', { name: 'Appearance', exact: true }).click()
+  await win.getByRole('button', { name: /^Appearance(?: \d+ changed)?$/ }).click()
   await win.getByRole('button', { name: /Translucent/ }).click()
   await win.keyboard.press('Escape')
   await win.waitForTimeout(300)
@@ -281,7 +281,7 @@ async function assertFullscreenFallback(win) {
 
 async function chooseTheme(win, themeName) {
   await win.getByTitle('Settings').click()
-  await win.getByRole('button', { name: 'Appearance', exact: true }).click()
+  await win.getByRole('button', { name: /^Appearance(?: \d+ changed)?$/ }).click()
   await win.getByRole('button', { name: new RegExp(themeName) }).click()
   await win.keyboard.press('Escape')
   await win.waitForTimeout(150)
@@ -708,7 +708,7 @@ async function runBehaviourChecks() {
   await win.getByTitle('Settings').click()
   const recentLimit = win.locator('select[aria-label="Recent conversations"]')
   await recentLimit.selectOption('6')
-  await win.getByRole('button', { name: 'Appearance', exact: true }).click()
+  await win.getByRole('button', { name: /^Appearance(?: \d+ changed)?$/ }).click()
   const translucent = win.getByRole('button', { name: /Translucent/ })
   await translucent.waitFor({ state: 'visible' })
   await translucent.click()

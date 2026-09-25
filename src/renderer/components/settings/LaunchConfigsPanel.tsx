@@ -79,12 +79,17 @@ export function LaunchConfigsPanel() {
   // When selected project changes, load + parse its yaml
   useEffect(() => {
     if (!selectedLaunchConfigProject) return
+    // A slower read for the previous project must not land after this one:
+    // every save builds on launchConfigFile and writes to the selected project.
+    let cancelled = false
     window.api.app.getLaunchConfig(selectedLaunchConfigProject).then((yaml: string | null) => {
+      if (cancelled) return
       const text = yaml ?? DEFAULT_LAUNCH_CONFIG_YAML
       let parsed: LaunchConfigFile
       try {
         parsed = parseLaunchConfigFile(text)
-      } catch {
+      } catch (err) {
+        log.warn('launch-config.yaml did not parse, editing an empty config', err)
         parsed = { terminals: [], configs: { default: { terminals: [] } } }
       }
       // Ensure `default` always exists - the reducer + lifecycle assume it.
@@ -103,13 +108,16 @@ export function LaunchConfigsPanel() {
       setSetupCommand(parsed.worktree?.setup.command ?? '')
       setSetupDefaultPolicy(parsed.worktree?.setup.defaultPolicy ?? 'ask')
       setSetupStartupPolicy(parsed.worktree?.setup.startupPolicy ?? 'wait-for-setup')
-    }).catch(() => {
+    }).catch((err) => {
+      if (cancelled) return
+      log.warn('getLaunchConfig failed, editing an empty config', err)
       const fresh: LaunchConfigFile = { terminals: [], configs: { default: { terminals: [] } } }
       setLaunchConfigFile(fresh)
       setSelectedLaunchConfig('default')
       setBodyYaml(serializeLaunchConfigBody(fresh.configs!.default))
       setBodyDirty(false)
     })
+    return () => { cancelled = true }
   }, [selectedLaunchConfigProject])
 
   // When the user picks a different launch config name, swap the body editor.
