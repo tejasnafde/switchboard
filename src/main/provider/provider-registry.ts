@@ -33,7 +33,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
-import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
+import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
@@ -514,6 +514,11 @@ export class ProviderRegistry implements PeerToolHost {
   getPendingRequests(threadId: string): PendingBlockingEvent[] {
     const byKey = this.pendingRequests.get(resolveRootThreadId(threadId))
     return byKey ? [...byKey.values()] : []
+  }
+
+  /** Whether any id of the thread has an accepted turn that has not completed. */
+  isTurnInFlight(threadId: string): boolean {
+    return threadFamilyIds(threadId).some((id) => this.hasOutstandingTurn(id))
   }
 
   /** Live sessions with their CURRENT status, not the status they started at. */

@@ -21,6 +21,8 @@ const savedAt: Array<number | undefined> = []
 const activity: Array<{ id: string; conversationId: string; timestamp: number; toolCalls?: unknown; fileDiff?: { status: string } }> = []
 const statusLines: Array<{ id: string; line: string }> = []
 vi.mock('../../src/main/db/database', () => ({
+  // A rotated id `uuid-1` belongs to thread `t1`.
+  threadFamilyIds: (id: string) => (id === 't1' || id === 'uuid-1' ? ['t1', 'uuid-1'] : [id]),
   setConversationStatusLine: (id: string, line: string) => { statusLines.push({ id, line }) },
   saveActivityMessageIfAbsent: (row: (typeof activity)[number]) => {
     activity.push(row)
@@ -84,6 +86,15 @@ describe('live assistant mirror', () => {
     publish(turnEnd('t1'))
     expect(statusLines).toEqual([{ id: 't1', line: 'Tests pass, PR open' }])
     expect(emitted).toContain('app:conversations-changed')
+  })
+
+  it('reports a turn in flight under any id of the thread until it completes', () => {
+    const { publish, registry } = makeRegistry()
+    ;(registry as unknown as { beginOutstandingTurn: (id: string) => void }).beginOutstandingTurn('t1')
+    expect(registry.isTurnInFlight('uuid-1')).toBe(true)
+    expect(registry.isTurnInFlight('other')).toBe(false)
+    publish(turnEnd('t1'))
+    expect(registry.isTurnInFlight('uuid-1')).toBe(false)
   })
 
   it('keeps the stored status line when a stop flushes a half-finished turn', () => {

@@ -137,6 +137,8 @@ function enrichRecoveryCandidates(candidates: SessionSummary[]): SessionSummary[
 
 export interface AppHandlerDependencies {
   conversationFork?: Pick<ConversationForkCoordinator, 'createOrGet' | 'get'>
+  /** True while the thread's provider is mid-turn; see `ProviderRegistry.isTurnInFlight`. */
+  isTurnInFlight?: (threadId: string) => boolean
 }
 
 export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependencies = {}): void {
@@ -473,7 +475,8 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     try {
       const history = await loadConversationHistory(conversationId, row.project_path)
       // Lazy backfill for chats whose last turn ended before the column existed.
-      if (!(rootRow ?? row).status_line) {
+      // Skipped mid-turn: the history's newest text is not a finished turn yet.
+      if (!(rootRow ?? row).status_line && !deps.isTurnInFlight?.(conversationId)) {
         const statusLine = sessionPreviewLine(history.messages)
         try {
           // Mounted lists refresh on this, as they do after a turn stores one.

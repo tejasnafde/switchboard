@@ -145,7 +145,7 @@ host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 
 const registry = new ProviderRegistry(host)
 const worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(host, () => registry)
-registerAppHandlers(host)
+registerAppHandlers(host, { isTurnInFlight: (id) => registry.isTurnInFlight(id) })
 registerKanbanHandlers(host, {
   createWorktreeTransaction: (request) => worktreeCreationRuntime.createWorktreeTransaction(request),
   getWorktreeCreation: (request) => worktreeCreationRuntime.getWorktreeCreation(request),

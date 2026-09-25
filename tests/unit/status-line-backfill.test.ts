@@ -26,9 +26,12 @@ vi.mock('../../src/main/conversations/history', () => ({
 const { registerAppHandlers } = await import('../../src/main/ipc/app')
 const { AppChannels } = await import('../../src/shared/ipc-channels')
 
-function loadById(): Promise<unknown> {
+function loadById(turnInFlight = false): Promise<unknown> {
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
-  registerAppHandlers({ handle: (c: string, h: (...args: unknown[]) => unknown) => handlers.set(c, h), emit: (channel: string) => { emitted.push(channel) } } as never, {})
+  registerAppHandlers(
+    { handle: (c: string, h: (...args: unknown[]) => unknown) => handlers.set(c, h), emit: (channel: string) => { emitted.push(channel) } } as never,
+    { isTurnInFlight: () => turnInFlight },
+  )
   return handlers.get(AppChannels.LOAD_SESSION_BY_ID)!('c1') as Promise<unknown>
 }
 
@@ -55,6 +58,13 @@ describe('status line backfill on history load', () => {
     rows.set('c1', { id: 'c1', project_path: '/repo', agent_type: 'claude-code', title: 'Chat', status_line: null })
     writeTakes = false
     await loadById()
+    expect(emitted).toHaveLength(0)
+  })
+
+  it('does not backfill from a turn that is still running', async () => {
+    rows.set('c1', { id: 'c1', project_path: '/repo', agent_type: 'claude-code', title: 'Chat', status_line: null })
+    await loadById(true)
+    expect(stored).toHaveLength(0)
     expect(emitted).toHaveLength(0)
   })
 

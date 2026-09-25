@@ -647,7 +647,7 @@ app.whenReady().then(() => {
   })
 
   registerTerminalHandlers(backendHost)
-  registerAppHandlers(backendHost)
+  registerAppHandlers(backendHost, { isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false })
   registerPushHandlers(backendHost)
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
@@ -719,7 +719,7 @@ app.whenReady().then(() => {
         ? new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
         : new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
-      registerAppHandlers(reactivatedHost)
+      registerAppHandlers(reactivatedHost, { isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false })
       registerPushHandlers(reactivatedHost)
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)
