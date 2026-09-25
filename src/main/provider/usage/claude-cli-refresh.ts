@@ -14,7 +14,9 @@
  */
 
 import { execFile } from 'child_process'
+import { existsSync } from 'fs'
 import { tmpdir } from 'os'
+import { win32 } from 'path'
 import { findClaudeBin } from '../adapters/claude-adapter'
 import { createMainLogger } from '../../logger'
 
@@ -23,10 +25,28 @@ const log = createMainLogger('provider:usage-refresh')
 const NO_MODEL_TIMEOUT_MS = 30_000
 const TURN_TIMEOUT_MS = 60_000
 
+/**
+ * execFile cannot start a Windows `.cmd`/`.bat`/`.ps1` shim without a shell,
+ * and a shell would re-parse the arguments (the empty `--tools` value among
+ * them). npm's shim for Claude Code only forwards to the package's native
+ * `bin/claude.exe`, so launch that directly. Null when the shim has no such
+ * target, rather than falling back to a shell.
+ */
+export function claudeLaunchPath(
+  bin: string,
+  platform: NodeJS.Platform = process.platform,
+  exists: (path: string) => boolean = existsSync,
+): string | null {
+  if (platform !== 'win32' || !/\.(cmd|bat|ps1)$/i.test(bin)) return bin
+  const exe = win32.join(win32.dirname(bin), 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe')
+  return exists(exe) ? exe : null
+}
+
 function runClaude(args: string[], env: Record<string, string>, timeoutMs: number, what: string): Promise<boolean> {
-  const bin = findClaudeBin()
+  const found = findClaudeBin()
+  const bin = found ? claudeLaunchPath(found) : null
   if (!bin) {
-    log.warn(`${what}: claude binary not found`)
+    log.warn(`${what}: ${found ? `cannot launch ${found} without a shell` : 'claude binary not found'}`)
     return Promise.resolve(false)
   }
   return new Promise((resolve) => {
