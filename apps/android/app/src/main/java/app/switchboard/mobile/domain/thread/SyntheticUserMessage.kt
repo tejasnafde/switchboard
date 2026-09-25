@@ -1,5 +1,7 @@
 package app.switchboard.mobile.domain.thread
 
+import kotlin.math.abs
+
 /**
  * Kotlin port of src/shared/synthetic-message.ts. Provider CLIs write
  * background-task notifications, interrupt markers and bootstrap context into
@@ -90,10 +92,18 @@ object SyntheticUserMessage {
         status: String,
         summary: String,
         at: Long,
-    ): Boolean = rows.any { (part, rowAt) ->
-        part is SyntheticPart.TaskNotification && part.taskId == taskId && part.status == status &&
-            part.summary == summary && rowAt >= at - TRANSCRIPT_NOTICE_SKEW_MS
+    ): Boolean {
+        val key = taskNoticeKey(taskId, status, summary)
+        return rows.any { (part, rowAt) ->
+            part is SyntheticPart.TaskNotification &&
+                taskNoticeKey(part.taskId, part.status, part.summary) == key &&
+                abs(rowAt - at) <= TRANSCRIPT_NOTICE_SKEW_MS
+        }
     }
+
+    /** The transcript parser's rules ([tag] trims, status defaults), applied to either side. */
+    private fun taskNoticeKey(taskId: String?, status: String, summary: String) =
+        Triple(taskId?.trim().orEmpty(), status.trim().ifEmpty { "completed" }, summary.trim())
 
     /** Null when [text] does not start with a generated block, i.e. a real user message. */
     fun split(text: String): SyntheticSplit? {

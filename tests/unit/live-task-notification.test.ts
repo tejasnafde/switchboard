@@ -123,4 +123,36 @@ describe('live row vs reload', () => {
     flushQueue()
     expect(useChatStore.getState().threads[key].items.map((i) => i.id)).toEqual(['h-jsonl-uuid-s0'])
   })
+
+  // The transcript parser trims tag values, so a padded live summary still matches.
+  const padded = () => ({ ...liveEvent(), summary: `${SDK_MESSAGE.summary}  \n` })
+  // A row stamped later than the window is a different notice, even with equal fields.
+  const tooLate = (at: number): ChatMessage => ({ ...transcriptLine(at), timestamp: at + 6_000 })
+
+  it('desktop: matches a padded summary, and not a row outside the window', () => {
+    const messages = () => useAgentStore.getState().sessions[0].messages.map((m) => m.id)
+    const event = padded()
+    useAgentStore.getState().setMessages(T, [transcriptLine(event.at)])
+    reduceProviderEvent(event, { streamingEnabled: true, coalescer: null })
+    expect(messages()).toEqual(['jsonl-uuid'])
+
+    useAgentStore.getState().setMessages(T, [tooLate(event.at)])
+    reduceProviderEvent(event, { streamingEnabled: true, coalescer: null })
+    expect(messages()).toEqual(['jsonl-uuid', event.messageId])
+  })
+
+  it('phone: matches a padded summary, and not a row outside the window', () => {
+    const event = padded()
+    const ids = (history: ChatMessage) => {
+      resetQueue()
+      useChatStore.setState({ threads: {}, activeKey: null })
+      const key = threadKey('c1', T)
+      useChatStore.getState().seedItems(key, historyToItems([history]))
+      useChatStore.getState().ingest('c1', event)
+      flushQueue()
+      return useChatStore.getState().threads[key].items.map((i) => i.id)
+    }
+    expect(ids(transcriptLine(event.at))).toEqual(['h-jsonl-uuid-s0'])
+    expect(ids(tooLate(event.at))).toEqual(['h-jsonl-uuid-s0', event.messageId])
+  })
 })

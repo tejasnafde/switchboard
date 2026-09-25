@@ -335,6 +335,34 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun bufferedTaskNotificationMatchesAPaddedSummaryButNotARowOutsideTheWindow() {
+        val transcript = "<task-notification>\n<task-id>t1</task-id>\n<status>failed</status>\n" +
+            "<summary>Build failed</summary>\n</task-notification>"
+        // The transcript parser trims tag values, so a padded live summary is the same notice.
+        val notice = event(
+            "task.notification", "messageId" to s("task_u1"), "taskId" to s("t1"),
+            "status" to s("failed"), "summary" to s("Build failed  \n"), "at" to n(50_000),
+        )
+        fun reseededIds(rowAt: Long): List<String> {
+            var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 7))
+            state = reduce(state, ThreadAction.InstallSnapshot(ThreadEventScope("mac-a", 7), ThreadSnapshot("thread-1", emptyList())))
+            state = reduce(state, ThreadAction.ReplayGap(ThreadEventScope("mac-a", 7)))
+            state = ingest(state, "mac-a", 7, 10, notice)
+            state = reduce(
+                state,
+                ThreadAction.InstallSnapshot(
+                    ThreadEventScope("mac-a", 7),
+                    ThreadSnapshot("thread-1", listOf(FeedItem.User("h-line", transcript, rowAt, fromTranscript = true))),
+                ),
+            )
+            return state.thread("mac-a", "thread-1")!!.feed.map { it.id }
+        }
+        assertEquals(listOf("h-line"), reseededIds(50_070))
+        // A later row with equal fields is a different notice, so the buffered one stays.
+        assertEquals(listOf("h-line", "task_u1"), reseededIds(56_000))
+    }
+
+    @Test
     fun replayGapCollapsesSnapshotAndBufferedEchoForTheSamePhoneOrigin() {
         val image = MessageImage(
             "data:image/png;base64,AAA",

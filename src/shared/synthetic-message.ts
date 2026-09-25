@@ -103,8 +103,9 @@ export function taskNotificationText(n: { taskId: string; status: string; summar
 }
 
 /**
- * The CLI stamps a notice's transcript line when a turn consumes it, at or
- * after the moment the live event was stamped (both on the backend's clock).
+ * How far apart a live notice and its transcript line can be stamped, either
+ * way (both on the backend's clock). The CLI writes the line when a turn
+ * consumes the notice, measured 20-70ms after it.
  */
 export const TRANSCRIPT_NOTICE_SKEW_MS = 5_000
 
@@ -120,11 +121,17 @@ export function transcriptShowsTaskNotification(
   rows: Iterable<{ part: SyntheticUserPart; at: number }>,
   live: { taskId: string; status: string; summary: string; at: number },
 ): boolean {
+  const key = taskNoticeKey(live)
   for (const { part, at } of rows) {
-    if (part.kind === 'task-notification' && part.taskId === live.taskId && part.status === live.status
-      && part.summary === live.summary && at >= live.at - TRANSCRIPT_NOTICE_SKEW_MS) return true
+    if (part.kind === 'task-notification' && taskNoticeKey(part) === key
+      && Math.abs(at - live.at) <= TRANSCRIPT_NOTICE_SKEW_MS) return true
   }
   return false
+}
+
+/** The transcript parser's rules (`tag` trims, status defaults), applied to either side. */
+function taskNoticeKey(n: { taskId?: string; status: string; summary: string }): string {
+  return JSON.stringify([n.taskId?.trim() ?? '', n.status.trim() || 'completed', n.summary.trim()])
 }
 
 /** Null when `text` does not start with a generated block, i.e. a real user message. */
