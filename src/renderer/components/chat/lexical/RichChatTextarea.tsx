@@ -98,6 +98,8 @@ interface RichChatTextareaProps {
   disabled?: boolean
   /** Forwarded to the contenteditable as a `data-*` attribute for ⌘F search etc. */
   dataAttrs?: Record<string, string>
+  /** Right padding (a CSS length), so text and placeholder stop short of controls the host overlays on the box. */
+  trailingInset?: string
 }
 
 export const INSERT_PILL_COMMAND: LexicalCommand<DraftPill> = createCommand('INSERT_PILL')
@@ -503,6 +505,9 @@ function onError(err: Error): void {
   log.error('Lexical editor error:', err)
 }
 
+/** One line of text plus padding and border, so the box has a known one-line height. */
+export const RICH_TEXTAREA_MIN_HEIGHT = 42
+
 export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTextareaProps>(
   function RichChatTextarea(props, ref): React.ReactElement {
     const {
@@ -515,6 +520,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
       placeholder = 'Message the agent...',
       disabled = false,
       dataAttrs,
+      trailingInset = '12px',
     } = props
 
     const valueRef = useRef(value)
@@ -561,7 +567,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
               style={{
                 flex: 1,
                 resize: 'none',
-                padding: '10px 12px',
+                padding: `10px ${trailingInset} 10px 12px`,
                 borderRadius: 'var(--radius)',
                 border: '1px solid var(--border)',
                 background: 'var(--bg-primary)',
@@ -572,7 +578,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
                 outline: 'none',
                 maxHeight: '200px',
                 overflowY: 'auto',
-                minHeight: '38px',
+                minHeight: `${RICH_TEXTAREA_MIN_HEIGHT}px`,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
               }}
@@ -585,6 +591,10 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
                 position: 'absolute',
                 top: '10px',
                 left: '12px',
+                right: trailingInset,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
                 color: 'var(--text-muted)',
                 pointerEvents: 'none',
                 fontSize: '13px',
