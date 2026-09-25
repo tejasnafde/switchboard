@@ -895,14 +895,23 @@ async function runBehaviourChecks() {
 function keepFailureArtifacts() {
   if (process.env.SB_VISUAL_ARTIFACT_DIR) return
   const root = join(repoRoot, 'e2e', 'artifacts', 'visual-failures')
-  const dest = join(root, new Date().toISOString().replace(/[:.]/g, '-'))
+  // The pid keeps two runs that fail in the same millisecond apart.
+  const dest = join(root, `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`)
   try {
-    cpSync(artifactDir, dest, { recursive: true })
+    mkdirSync(root, { recursive: true })
+    cpSync(artifactDir, dest, { recursive: true, errorOnExist: true, force: false })
     console.error(`failure artifacts kept in ${dest}`)
-    const runs = readdirSync(root).sort()
-    for (const old of runs.slice(0, Math.max(0, runs.length - 10))) rmSync(join(root, old), { recursive: true, force: true })
   } catch (copyError) {
     console.error(`could not keep the failure artifacts: ${copyError}`)
+    return
+  }
+  const runs = readdirSync(root).sort()
+  for (const old of runs.slice(0, Math.max(0, runs.length - 10))) {
+    try {
+      rmSync(join(root, old), { recursive: true, force: true })
+    } catch (removeError) {
+      console.error(`could not remove old failure artifacts ${old}: ${removeError}`)
+    }
   }
 }
 
