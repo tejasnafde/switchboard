@@ -1139,7 +1139,15 @@ class ThreadSessionCoordinator(
             remote.listQueuedTurns(threadId) { response ->
                 synchronized(this) {
                     if (!accepts(response, request, heldRequest) || closed || remote.scope != scope) return@synchronized
-                    val held = (response.outcome as? RemoteOutcome.Success)?.value ?: return@synchronized
+                    val held = when (val outcome = response.outcome) {
+                        is RemoteOutcome.Failure -> {
+                            controlMessage = heldListFailure(outcome.message)
+                            publish()
+                            return@synchronized
+                        }
+                        is RemoteOutcome.Success -> outcome.value
+                    }
+                    if (controlMessage?.startsWith(HELD_LIST_FAILURE) == true) controlMessage = null
                     if (heldRevision != revision) {
                         if (attempt < HELD_RECOVERY_ATTEMPTS) recoverHeldTurns(attempt + 1)
                         return@synchronized
@@ -1153,8 +1161,9 @@ class ThreadSessionCoordinator(
                     publish()
                 }
             }
-        } catch (_: RuntimeException) {
-            // Best effort, like recoverPendingRequests(): live events still mark new held messages.
+        } catch (error: RuntimeException) {
+            // Live events still mark new held messages; say why older ones may be unmarked.
+            controlMessage = heldListFailure(error.message ?: "request failed")
         }
     }
 
@@ -1566,6 +1575,9 @@ class ThreadSessionCoordinator(
     companion object {
         const val HISTORY_LIMIT = 250L
         private const val HELD_RECOVERY_ATTEMPTS = 3
+        private const val HELD_LIST_FAILURE = "Could not list queued messages: "
+
+        private fun heldListFailure(reason: String) = HELD_LIST_FAILURE + reason
         const val IMPLEMENT_PLAN_MESSAGE = "Implement the plan you proposed."
         const val OPEN_FILE_UNSUPPORTED = "Opening changed files is not available on mobile yet."
         val ACTIVE_PROVIDER_STATUSES = setOf(

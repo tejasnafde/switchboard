@@ -2,6 +2,7 @@ package app.switchboard.mobile.data.outbox
 
 import app.switchboard.mobile.data.remote.SwitchboardRemoteClient
 import app.switchboard.mobile.domain.outbox.DeliveryReadiness
+import app.switchboard.mobile.domain.outbox.ORIGIN_CONFLICT_RECOVERY
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.outbox.SendOutcome
 import app.switchboard.mobile.domain.outbox.SendResponseDecoder
@@ -134,8 +135,6 @@ private fun deterministicRejection(message: String): String? {
 
 private const val ORIGIN_CONFLICT_MESSAGE =
     "turn origin was already used with a different payload"
-private const val ORIGIN_CONFLICT_RECOVERY =
-    "This turn's retry identity was already used with different text or images. Send the edit as a new message."
 
 private val IMAGE_REJECTION_MESSAGES = listOf(
     "Images must be PNG, JPEG, WebP, or GIF data URLs",

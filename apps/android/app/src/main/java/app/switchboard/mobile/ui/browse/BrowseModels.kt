@@ -1,6 +1,7 @@
 package app.switchboard.mobile.ui.browse
 
 import app.switchboard.mobile.data.local.OfflineSnapshot
+import app.switchboard.mobile.data.thread.ThreadSessionCoordinator
 import app.switchboard.mobile.domain.remote.BrowseDecisions
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
@@ -344,12 +345,11 @@ data class BrowseConversationGroup(
  * Done recently. Rows keep their order inside a group.
  */
 object BrowseConversationGroups {
-    private val WORKING_STATUSES = setOf("running", "streaming", "working", "thinking")
 
     fun key(row: BrowseConversationRow): BrowseConversationGroupKey = when {
         row.attention.isActionable() || row.status == "error" || row.status == "failed" ->
             BrowseConversationGroupKey.NeedsYou
-        row.status in WORKING_STATUSES -> BrowseConversationGroupKey.Working
+        row.status in ThreadSessionCoordinator.ACTIVE_PROVIDER_STATUSES -> BrowseConversationGroupKey.Working
         else -> BrowseConversationGroupKey.Done
     }
 
@@ -403,7 +403,7 @@ object BrowseVisualPolicy {
     }
 
     private fun statusTone(status: String?, unread: Int): BrowseActivityTone = when (status) {
-        "running", "streaming", "working" -> BrowseActivityTone.ACTIVE
+        "running", "streaming", "working", "thinking" -> BrowseActivityTone.ACTIVE
         "starting", "connecting", "waiting", "queued" -> BrowseActivityTone.ATTENTION
         else -> if (unread > 0) BrowseActivityTone.UNREAD else BrowseActivityTone.MUTED
     }

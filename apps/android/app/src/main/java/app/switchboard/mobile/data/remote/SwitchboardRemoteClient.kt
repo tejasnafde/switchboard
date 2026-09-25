@@ -393,6 +393,8 @@ class SwitchboardRemoteClient(
                     "threadId" to JsonString(threadId),
                     "origin" to JsonString(origin),
                     "providerText" to JsonString(providerText),
+                    // What send-turn sets, so a row first tried there keeps its fingerprint.
+                    "autoTitleText" to JsonString(providerText),
                 ).apply {
                     runtimeMode?.let { put("runtimeMode", JsonString(it.wire)) }
                     images?.let { list ->

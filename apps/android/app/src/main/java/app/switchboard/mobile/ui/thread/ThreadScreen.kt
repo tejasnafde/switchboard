@@ -342,6 +342,11 @@ fun ThreadScreen(
                 }
 
                 is ThreadPresentation.Content -> key(threadId) {
+                    val feedRows = remember(presentation.rows, expandedFileGroups) {
+                        ThreadFeedLayoutPolicy.declarationOrder(
+                            ThreadFileGroups.collapse(ThreadChromePolicy.feedRows(presentation.rows), expandedFileGroups),
+                        )
+                    }
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
@@ -350,9 +355,7 @@ fun ThreadScreen(
                         contentPadding = PaddingValues(top = 24.dp),
                     ) {
                         items(
-                            ThreadFeedLayoutPolicy.declarationOrder(
-                                ThreadFileGroups.collapse(ThreadChromePolicy.feedRows(presentation.rows), expandedFileGroups),
-                            ),
+                            feedRows,
                             key = { "feed:${it.key}" },
                         ) { row ->
                             ThreadRow(

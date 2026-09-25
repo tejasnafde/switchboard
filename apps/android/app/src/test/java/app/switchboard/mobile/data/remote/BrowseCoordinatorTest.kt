@@ -263,6 +263,24 @@ class BrowseCoordinatorTest {
     }
 
     @Test
+    fun aChatWhoseCardsAreAlreadyKnownIsNotAskedAgain() {
+        val remote = FakeBrowseRemote()
+        val coordinator = BrowseCoordinator(
+            connectionId = "machine",
+            connectionLabel = "Desktop",
+            offlineSnapshot = emptySnapshot(),
+            remote = remote,
+            supportsPendingRequests = true,
+        )
+        coordinator.updateThreadActivity(
+            mapOf("t1" to app.switchboard.mobile.ui.browse.BrowseThreadActivity(null, 0, app.switchboard.mobile.ui.browse.BrowseThreadAttention.None)),
+        )
+        coordinator.refreshConversations("/a")
+        remote.conversations.removeFirst().second(success("conversations:/a", listOf(conversation("t1"), conversation("t2"))))
+        assertEquals(listOf("t2"), remote.pending.map { it.first })
+    }
+
+    @Test
     fun anOlderBackendIsNeverAskedForPendingRequests() {
         val remote = FakeBrowseRemote()
         val coordinator = coordinator(remote)

@@ -152,19 +152,24 @@ class NativeAndroidRuntime private constructor(
     private val mutableFollowUpDefault = MutableStateFlow(TurnDelivery.Steer)
     /** "Follow-up while the agent works", per device like the phone's preference. */
     val followUpDefault: StateFlow<TurnDelivery> = mutableFollowUpDefault.asStateFlow()
+    @Volatile private var followUpDefaultChosen = false
     private val followUpDefaultLoad: Job = scope.launch {
-        database.preferenceDao().findPreference(TurnDeliveryPolicy.FOLLOW_UP_DEFAULT_KEY)?.let {
-            mutableFollowUpDefault.value = TurnDeliveryPolicy.parseFollowUpDefault(it.value)
+        val stored = database.preferenceDao().findPreference(TurnDeliveryPolicy.FOLLOW_UP_DEFAULT_KEY) ?: return@launch
+        // A tap during the read wins over the stored value.
+        if (!followUpDefaultChosen) {
+            mutableFollowUpDefault.value = TurnDeliveryPolicy.parseFollowUpDefault(stored.value)
         }
     }
     private var closed = false
 
     fun setFollowUpDefault(value: TurnDelivery) {
+        followUpDefaultChosen = true
         followUpDefaultLoad.cancel()
         mutableFollowUpDefault.value = value
         scope.launch {
+            // The latest choice, not this tap's: two quick taps may write out of order.
             database.preferenceDao().upsertPreference(
-                AppPreferenceEntity(TurnDeliveryPolicy.FOLLOW_UP_DEFAULT_KEY, value.wire),
+                AppPreferenceEntity(TurnDeliveryPolicy.FOLLOW_UP_DEFAULT_KEY, mutableFollowUpDefault.value.wire),
             )
         }
     }

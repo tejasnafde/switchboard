@@ -202,6 +202,8 @@ class OutboxRemoteSenderTest {
         assertEquals(JsonString("origin-1"), body.values["origin"])
         assertEquals(JsonString("hello"), body.values["providerText"])
         assertEquals(JsonString("sandbox"), body.values["runtimeMode"])
+        // Same as send-turn sets, so a row first tried there keeps its fingerprint.
+        assertEquals(JsonString("hello"), body.values["autoTitleText"])
 
         val noQueue = MutableAvailability(4, extra = setOf(ATOMIC_USER_TURN_CAPABILITY))
         sender(rpc, noQueue).send(turn(origin = "origin-2", delivery = "queue"), {})

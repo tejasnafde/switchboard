@@ -151,7 +151,14 @@ class BrowseThreadActivityIndexTest {
         index.seedPending(scope, "thread", listOf(pending("request.opened", "requestId", "r1"), pending("plan.proposed", "planId", "p1")))
         assertEquals(BrowseThreadAttention.Plan, attention())
 
+        // A reply taken before a card opened live does not hide it.
+        index.onEvent(scope, event("user.message", "text" to JsonString("go")))
+        index.onEvent(scope, event("request.opened", "requestId" to JsonString("r2")))
         index.seedPending(scope, "thread", emptyList())
+        assertEquals(BrowseThreadAttention.Approval, attention())
+        // Nor does a plan the next user message answered come back.
+        index.onEvent(scope, event("request.closed", "requestId" to JsonString("r2")))
+        index.seedPending(scope, "thread", listOf(pending("plan.proposed", "planId", "p1")))
         assertEquals(BrowseThreadAttention.None, attention())
     }
 

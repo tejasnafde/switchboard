@@ -74,25 +74,27 @@ class BrowseThreadActivityIndex {
     }
 
     /**
-     * Replace a thread's open cards with the backend's own record
+     * Add the backend's own record of a thread's open cards
      * (`provider:get-pending-requests`), so a chat whose card opened before
-     * this app was listening still reads Needs you. A card already closed
-     * live since is not brought back by a reply that raced the close.
+     * this app was listening still reads Needs you. Each reply replaces the
+     * cards the last one reported, but a reply can race live events either
+     * way, so it never drops a card opened live and never brings back one
+     * closed live.
      */
     @Synchronized
     fun seedPending(scope: TransportScope, threadId: String, pending: List<JsonObject>) {
         val flow = mutableByScope.getOrPut(scope) { MutableStateFlow(emptyMap()) }
         val key = scope to threadId
-        val closed = pendingAttention[key]?.closed.orEmpty()
+        val live = pendingAttention[key] ?: PendingAttention()
+        val closed = live.closed
         fun ids(type: String, idField: String) = pending
             .filter { (it.values["type"] as? JsonString)?.value == type }
             .mapNotNullTo(mutableSetOf()) { (it.values[idField] as? JsonString)?.value?.takeIf(String::isNotBlank) }
             .minus(closed)
-        val seeded = PendingAttention(
-            approvals = ids("request.opened", "requestId"),
-            questions = ids("question.asked", "requestId"),
-            plans = ids("plan.proposed", "planId"),
-            closed = closed,
+        val seeded = live.copy(
+            approvals = live.approvals.filterTo(mutableSetOf(), live.openedLive::contains) + ids("request.opened", "requestId"),
+            questions = live.questions.filterTo(mutableSetOf(), live.openedLive::contains) + ids("question.asked", "requestId"),
+            plans = live.plans.filterTo(mutableSetOf(), live.openedLive::contains) + ids("plan.proposed", "planId"),
         )
         pendingAttention[key] = seeded
         val before = flow.value[threadId] ?: BrowseThreadActivity(status = null, unread = 0)
@@ -156,7 +158,9 @@ class BrowseThreadActivityIndex {
                 questions = if (opened) before.questions + requestId else before.questions - requestId,
             )
             AttentionKind.Plan -> before.copy(plans = before.plans + requestId)
-        }.let { if (opened) it else it.copy(closed = it.closed + requestId) }
+        }.let {
+            if (opened) it.copy(openedLive = it.openedLive + requestId) else it.copy(closed = it.closed + requestId)
+        }
         pendingAttention[key] = after
         return activity.copy(attention = after.presentation())
     }
@@ -165,9 +169,9 @@ class BrowseThreadActivityIndex {
     private fun clearAttention(key: Pair<TransportScope, String>, plansOnly: Boolean): BrowseThreadAttention? {
         val before = pendingAttention[key] ?: return if (plansOnly) null else BrowseThreadAttention.None
         val after = if (plansOnly) {
-            before.copy(plans = emptySet())
+            before.copy(plans = emptySet(), closed = before.closed + before.plans)
         } else {
-            PendingAttention(closed = before.closed + before.approvals + before.questions)
+            PendingAttention(closed = before.closed + before.approvals + before.questions + before.plans)
         }
         pendingAttention[key] = after
         return after.presentation()
@@ -179,6 +183,8 @@ class BrowseThreadActivityIndex {
         val plans: Set<String> = emptySet(),
         /** Closed live; a late seed must not reopen them. */
         val closed: Set<String> = emptySet(),
+        /** Opened live; a seed taken before the open must not drop them. */
+        val openedLive: Set<String> = emptySet(),
     ) {
         fun presentation(): BrowseThreadAttention = when {
             approvals.isNotEmpty() -> BrowseThreadAttention.Approval
