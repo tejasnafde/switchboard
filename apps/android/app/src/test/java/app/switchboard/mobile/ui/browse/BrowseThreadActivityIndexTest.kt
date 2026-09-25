@@ -1,6 +1,7 @@
 package app.switchboard.mobile.ui.browse
 
 import app.switchboard.mobile.platform.protocol.TransportScope
+import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.RuntimeEventKind
@@ -88,6 +89,34 @@ class BrowseThreadActivityIndexTest {
             BrowseThreadAttention.None,
             index.state(scope).value.getValue("thread").attention,
         )
+    }
+
+    @Test
+    fun theCurrentTurnsDigestIsThePreviewAndANewTurnClearsIt() {
+        val index = BrowseThreadActivityIndex()
+        fun preview() = index.state(scope).value.getValue("thread").preview
+        fun chunk(messageId: String, text: String, append: Boolean) = event(
+            "content",
+            "streamKind" to JsonString("assistant"),
+            "messageId" to JsonString(messageId),
+            "text" to JsonString(text),
+            "append" to JsonBoolean(append),
+        )
+
+        index.onEvent(scope, chunk("m1", "Reading the ", append = false))
+        index.onEvent(scope, chunk("m1", "**config** file", append = true))
+        assertEquals("Reading the config file", preview())
+
+        index.onEvent(scope, chunk("m1", " <agent_digest>Checking config</agent_digest>", append = true))
+        // A later message of the same turn without a digest keeps the earlier digest.
+        index.onEvent(scope, chunk("m2", "Now running tests", append = false))
+        assertEquals("Checking config", preview())
+
+        index.onEvent(scope, event("content", "streamKind" to JsonString("reasoning"), "messageId" to JsonString("r"), "text" to JsonString("thinking")))
+        assertEquals("Checking config", preview())
+
+        index.onEvent(scope, event("user.message", "text" to JsonString("next")))
+        assertEquals(null, preview())
     }
 
     private fun event(

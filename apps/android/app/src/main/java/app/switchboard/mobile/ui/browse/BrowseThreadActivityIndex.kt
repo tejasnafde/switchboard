@@ -1,6 +1,9 @@
 package app.switchboard.mobile.ui.browse
 
 import app.switchboard.mobile.platform.protocol.TransportScope
+import app.switchboard.mobile.domain.thread.PreviewMessage
+import app.switchboard.mobile.domain.thread.TurnPreview
+import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.RuntimeEventPayload
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,6 +13,8 @@ class BrowseThreadActivityIndex {
     private val mutableByScope = mutableMapOf<TransportScope, MutableStateFlow<Map<String, BrowseThreadActivity>>>()
     private val unreadMarked = mutableSetOf<Pair<TransportScope, String>>()
     private val pendingAttention = mutableMapOf<Pair<TransportScope, String>, PendingAttention>()
+    /** Assistant text of each thread's current turn, by message id, for the preview line. */
+    private val turnText = mutableMapOf<Pair<TransportScope, String>, LinkedHashMap<String, String>>()
 
     @Synchronized
     fun state(scope: TransportScope): StateFlow<Map<String, BrowseThreadActivity>> =
@@ -33,14 +38,17 @@ class BrowseThreadActivityIndex {
             }
             "user.message" -> {
                 unreadMarked -= key
-                before
+                // A new turn: the previous turn's text no longer describes it.
+                turnText -= key
+                before.copy(preview = null)
             }
             "content" -> {
                 val streamKind = (event.raw.values["streamKind"] as? JsonString)?.value
-                if (streamKind == "assistant" && unreadMarked.add(key)) {
-                    before.copy(unread = before.unread + 1)
-                } else {
+                if (streamKind != "assistant") {
                     before
+                } else {
+                    val unread = if (unreadMarked.add(key)) before.unread + 1 else before.unread
+                    before.copy(unread = unread, preview = appendTurnText(key, event))
                 }
             }
             "request.opened" -> updateAttention(before, key, AttentionKind.Approval, opened = true, event)
@@ -74,6 +82,20 @@ class BrowseThreadActivityIndex {
         pendingAttention.keys.removeAll { (scope, _) ->
             scope.connectionId == connectionId && scope.generation != generation
         }
+        turnText.keys.removeAll { (scope, _) ->
+            scope.connectionId == connectionId && scope.generation != generation
+        }
+    }
+
+    private fun appendTurnText(key: Pair<TransportScope, String>, event: RuntimeEventPayload): String? {
+        val messages = turnText.getOrPut(key) { linkedMapOf() }
+        val messageId = (event.raw.values["messageId"] as? JsonString)?.value.orEmpty()
+        val text = (event.raw.values["text"] as? JsonString)?.value.orEmpty()
+        val append = (event.raw.values["append"] as? JsonBoolean)?.value == true
+        messages[messageId] = if (append) messages[messageId].orEmpty() + text else text
+        return TurnPreview.turnPreviewLine(
+            messages.values.map { PreviewMessage(it, isAssistant = true, isUser = false) },
+        )
     }
 
     private fun updateAttention(

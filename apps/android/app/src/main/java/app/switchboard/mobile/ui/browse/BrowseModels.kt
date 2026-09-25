@@ -125,6 +125,7 @@ data class BrowseConversationRow(
     val unread: Int,
     val status: String?,
     val originSource: String? = null,
+    val preview: String? = null,
 )
 
 sealed interface BrowseProjectsPresentation {
@@ -233,6 +234,7 @@ object BrowsePresenter {
                     unread = activity[conversation.id]?.unread ?: 0,
                     status = activity[conversation.id]?.status,
                     originSource = conversation.originSource,
+                    preview = activity[conversation.id]?.preview,
                 )
             },
             status = status(state, "conversations", visible.size),
@@ -302,6 +304,7 @@ object BrowseRowPolicy {
         if (row.originSource == "cursor") "Cursor" else agentLabel(row.agentType),
         when {
             row.status.isFailureStatus() -> row.status
+            !row.preview.isNullOrBlank() -> row.preview
             row.unread > 0 -> "${row.unread} unread"
             !row.status.isNullOrBlank() -> row.status
             row.availableOffline -> "saved"

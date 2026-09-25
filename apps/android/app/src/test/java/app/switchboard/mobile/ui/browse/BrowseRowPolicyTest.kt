@@ -51,6 +51,18 @@ class BrowseRowPolicyTest {
         )
     }
 
+    @Test
+    fun conversationSupportingLabelShowsTheTurnPreviewAfterAFailure() {
+        assertEquals(
+            "Claude · Reading files",
+            BrowseRowPolicy.conversationSupportingLabel(conversation(unread = 2, status = "running", preview = "Reading files")),
+        )
+        assertEquals(
+            "Claude · failed",
+            BrowseRowPolicy.conversationSupportingLabel(conversation(status = "failed", preview = "Reading files")),
+        )
+    }
+
     private fun project(
         sessionCount: Int = 4,
         unread: Int = 0,
@@ -75,6 +87,7 @@ class BrowseRowPolicyTest {
         originSource: String? = null,
         unread: Int = 0,
         status: String? = null,
+        preview: String? = null,
     ) = BrowseConversationRow(
         conversation = Conversation(
             id = "thread-1",
@@ -97,5 +110,6 @@ class BrowseRowPolicyTest {
         availableOffline = true,
         unread = unread,
         status = status,
+        preview = preview,
     )
 }

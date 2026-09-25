@@ -15,6 +15,8 @@ data class BrowseThreadActivity(
     val status: String?,
     val unread: Int,
     val attention: BrowseThreadAttention = BrowseThreadAttention.Unknown,
+    /** The current turn's digest, else its plain-text preview (`TurnPreview`). */
+    val preview: String? = null,
 )
 
 data class BrowseProjectActivity(
