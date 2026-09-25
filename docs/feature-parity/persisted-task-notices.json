@@ -15,8 +15,7 @@
       "status": "implemented",
       "evidence": [
         "apps/mobile/src/lib/thread-history.ts",
-        "apps/mobile/src/stores/chat.ts",
-        "tests/unit/live-task-notification.test.ts"
+        "apps/mobile/src/stores/chat.ts"
       ]
     },
     "nativeAndroid": {
