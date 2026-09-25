@@ -25,6 +25,8 @@ vi.mock('../../src/main/db/database', () => ({
     return true
   },
   recordThreadSession: () => {},
+  // Claude rotated this thread's session id; the root conversation is t1.
+  resolveRootThreadId: (id: string) => (id === 'rotated-session' ? 't1' : id),
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: (
     id: string, conversationId: string, role: string, content: string,
@@ -37,8 +39,9 @@ vi.mock('../../src/main/db/database', () => ({
 }))
 
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
-import type { RuntimeEvent } from '../../src/shared/provider-events'
+import type { RuntimeEvent, RuntimeTaskNotificationEvent } from '../../src/shared/provider-events'
 import { storedToolText, STORED_TOOL_TEXT_MAX_CHARS } from '../../src/shared/turn-activity'
+import { storedTaskNoticeId } from '../../src/shared/synthetic-message'
 
 /** Drives `publish` directly - the mirror is a property of the event stream. */
 function makeRegistry(): { publish: (e: RuntimeEvent) => void; registry: ProviderRegistry } {
@@ -187,5 +190,45 @@ describe('live assistant mirror', () => {
       timestamp: 5_000,
       fileDiff: { relPath: 'a.ts', oldContent: 'old', newContent: 'new', status: 'pending' },
     })
+  })
+})
+
+describe('live task notice mirror', () => {
+  beforeEach(() => { saved.length = 0; savedAt.length = 0 })
+
+  const notice = (overrides: Partial<RuntimeTaskNotificationEvent> = {}): RuntimeEvent => ({
+    type: 'task.notification', threadId: 't1', messageId: 'task_u1', taskId: 'b1',
+    status: 'failed', summary: 'Build failed', outputFile: '/tmp/b1.output', at: 1_000, ...overrides,
+  })
+
+  it('stores the notice as its transcript text, at its own time', () => {
+    const { publish } = makeRegistry()
+    publish(notice())
+    expect(saved).toEqual([{
+      id: storedTaskNoticeId('t1', 'task_u1'),
+      conversationId: 't1',
+      role: 'user',
+      content: '<task-notification>\n<task-id>b1</task-id>\n<output-file>/tmp/b1.output</output-file>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>',
+    }])
+    expect(savedAt).toEqual([1_000])
+  })
+
+  it('keeps every notice one task reports, and one row per replayed notice', () => {
+    const { publish } = makeRegistry()
+    publish(notice({ messageId: 'task_u1', status: 'completed', summary: 'Monitor event: "deploy"' }))
+    publish(notice({ messageId: 'task_u2', status: 'completed', summary: 'Monitor "deploy" stream ended', at: 2_000 }))
+    publish(notice({ messageId: 'task_u2', status: 'completed', summary: 'Monitor "deploy" stream ended', at: 2_000 }))
+    // The replay reaches the store under the same id, where INSERT OR IGNORE drops it.
+    expect(saved.map((row) => row.id)).toEqual([
+      storedTaskNoticeId('t1', 'task_u1'),
+      storedTaskNoticeId('t1', 'task_u2'),
+      storedTaskNoticeId('t1', 'task_u2'),
+    ])
+  })
+
+  it('stores a notice from a rotated session id under the root conversation', () => {
+    const { publish } = makeRegistry()
+    publish(notice({ threadId: 'rotated-session' }))
+    expect(saved).toEqual([expect.objectContaining({ id: storedTaskNoticeId('t1', 'task_u1'), conversationId: 't1' })])
   })
 })

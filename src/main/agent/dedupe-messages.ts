@@ -1,5 +1,6 @@
 import type { ChatMessage, ToolCall } from '@shared/types'
 import { isActivityRow } from '@shared/turn-activity'
+import { STORED_TASK_NOTICE_PREFIX, TRANSCRIPT_NOTICE_SKEW_MS, sameTaskNotice, splitSyntheticUserText, type SyntheticUserPart } from '@shared/synthetic-message'
 
 /**
  * Collapse the same message arriving from more than one source. `load-by-id`
@@ -55,8 +56,12 @@ const USER_COPY_SKEW_MS = 5_000
  */
 export function mergeConversationMessages(
   diskMessages: ChatMessage[],
-  databaseMessages: ChatMessage[],
+  mirroredMessages: ChatMessage[],
 ): ChatMessage[] {
+  // Stored task notices pair with a transcript line by task, not by text, and
+  // must not open a turn below: the transcript's own line already does.
+  const storedNotices = mirroredMessages.filter(isStoredTaskNotice)
+  const databaseMessages = mirroredMessages.filter((message) => !isStoredTaskNotice(message))
   const disk = dedupeMessagesById(diskMessages).messages.map(cloneMessage)
   const diskIndexesById = new Map(disk.map((message, index) => [message.id, index]))
   const semanticCandidates = new Map<string, Array<{ index: number; timestamp: number }>>()
@@ -136,7 +141,76 @@ export function mergeConversationMessages(
     databaseOnly.push(message)
   }
 
-  return [...disk, ...databaseOnly].sort((a, b) => a.timestamp - b.timestamp)
+  return [...disk, ...databaseOnly, ...noticesMissingFromTranscript(storedNotices, disk)]
+    .sort((a, b) => a.timestamp - b.timestamp)
+}
+
+function isStoredTaskNotice(message: ChatMessage): boolean {
+  return message.role === 'user' && message.id.startsWith(STORED_TASK_NOTICE_PREFIX)
+}
+
+type TaskNoticePart = Extract<SyntheticUserPart, { kind: 'task-notification' }>
+
+function taskNoticePart(message: ChatMessage): TaskNoticePart | undefined {
+  const part = splitSyntheticUserText(message.content)?.parts[0]
+  return part?.kind === 'task-notification' ? part : undefined
+}
+
+/**
+ * The stored notices no transcript line shows. One task can report many times
+ * (a Monitor notices once per event, then once when its stream ends), so a
+ * line pairs only with the same occurrence: equal task id, status and summary.
+ * A line without a task id also has to fall inside the skew, the rule the live
+ * reducers use. Closest pairs are taken first and each side pairs once, so of
+ * two equal notices the line goes to the one it was written for; equal ones
+ * inside the skew are one notice.
+ */
+function noticesMissingFromTranscript(stored: ChatMessage[], disk: ChatMessage[]): ChatMessage[] {
+  if (stored.length === 0) return []
+  const lines = disk
+    .filter((message) => message.role === 'user')
+    .flatMap((message) => (splitSyntheticUserText(message.content)?.parts ?? [])
+      .filter((part): part is TaskNoticePart => part.kind === 'task-notification')
+      .map((part) => ({ part, at: message.timestamp })))
+  const notices = collapseRepeatedNotices(stored)
+  const pairs: Array<{ notice: number; line: number; distance: number }> = []
+  notices.forEach((message, notice) => {
+    const part = taskNoticePart(message)
+    if (!part) return
+    lines.forEach((line, index) => {
+      const distance = Math.abs(line.at - message.timestamp)
+      const sameOccurrence = line.part.taskId
+        ? sameTaskNotice(line.part, part)
+        : sameTaskNotice(line.part, { ...part, taskId: undefined }) && distance <= TRANSCRIPT_NOTICE_SKEW_MS
+      if (sameOccurrence) pairs.push({ notice, line: index, distance })
+    })
+  })
+  pairs.sort((a, b) => a.distance - b.distance)
+  const shown = new Set<number>()
+  const claimed = new Set<number>()
+  for (const { notice, line } of pairs) {
+    if (shown.has(notice) || claimed.has(line)) continue
+    shown.add(notice)
+    claimed.add(line)
+  }
+  return notices.filter((_, notice) => !shown.has(notice))
+}
+
+/**
+ * One notice per run of equal ones inside the skew, the earliest. The CLI can
+ * queue the same notice several times in one millisecond and write one line,
+ * and the live reducers already treat equal notices that close as one.
+ */
+function collapseRepeatedNotices(stored: ChatMessage[]): ChatMessage[] {
+  const kept: Array<{ message: ChatMessage; part: TaskNoticePart | undefined }> = []
+  for (const message of [...stored].sort((a, b) => a.timestamp - b.timestamp)) {
+    const part = taskNoticePart(message)
+    const repeat = part && kept.some((earlier) => earlier.part
+      && sameTaskNotice(earlier.part, part)
+      && message.timestamp - earlier.message.timestamp <= TRANSCRIPT_NOTICE_SKEW_MS)
+    if (!repeat) kept.push({ message, part })
+  }
+  return kept.map(({ message }) => message)
 }
 
 /** The disk message already holding every one of this row's tool calls. */
