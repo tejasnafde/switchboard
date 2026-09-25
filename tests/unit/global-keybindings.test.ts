@@ -32,9 +32,8 @@ describe('resolveGlobalKeydown', () => {
     [key('ArrowDown', { altKey: true }), { type: 'focus-direction', direction: 'down' }],
     [key('1'), { type: 'focus-window', index: 0 }],
     [key('9'), { type: 'focus-window', index: 8 }],
-    [key('b', { metaKey: false, ctrlKey: true }), { type: 'toggle-sidebar' }],
   ])('%o -> %o', (input, action) => {
-    expect(resolveGlobalKeydown(input)).toEqual(action)
+    expect(resolveGlobalKeydown(input, 'mac')).toEqual(action)
   })
 
   it.each([
@@ -52,6 +51,13 @@ describe('resolveGlobalKeydown', () => {
     key('0'),
     key('x'),
   ])('%o -> null', (input) => {
-    expect(resolveGlobalKeydown(input)).toBeNull()
+    expect(resolveGlobalKeydown(input, 'mac')).toBeNull()
+  })
+
+  it('uses Ctrl for Mod off macOS, and leaves Ctrl alone on macOS', () => {
+    const ctrlB = key('b', { metaKey: false, ctrlKey: true })
+    expect(resolveGlobalKeydown(ctrlB, 'other')).toEqual({ type: 'toggle-sidebar' })
+    expect(resolveGlobalKeydown(ctrlB, 'mac')).toBeNull()
+    expect(resolveGlobalKeydown(key('b'), 'other')).toBeNull()
   })
 })

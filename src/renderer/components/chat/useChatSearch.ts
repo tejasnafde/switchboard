@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatMessage } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
 import type { ChatSlot } from '../../services/chat-workspace'
+import { matchesShortcut } from '@shared/shortcuts'
 
 interface ChatSearchOptions {
   messages: ChatMessage[]
@@ -82,12 +83,8 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
   const panelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Accept ⌘F on macOS or Ctrl+F on Windows/Linux. Reject combos
-      // that include both (Ctrl+Cmd+F is the macOS fullscreen toggle).
-      const cmd = e.metaKey && !e.ctrlKey
-      const ctrl = e.ctrlKey && !e.metaKey
-      if (!((cmd || ctrl) && !e.altKey && !e.shiftKey)) return
-      if (e.key !== 'f' && e.key !== 'F') return
+      // ⌘F on macOS, Ctrl+F on Windows/Linux.
+      if (!matchesShortcut(e, 'pane.find')) return
       const el = panelRef.current
       if (!el) return
       const active = document.activeElement as Element | null
