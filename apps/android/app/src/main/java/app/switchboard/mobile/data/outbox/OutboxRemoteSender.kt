@@ -10,10 +10,14 @@ import app.switchboard.mobile.domain.remote.ImageInput
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.RuntimeMode
+import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import app.switchboard.mobile.platform.protocol.RequestSubmission
 import app.switchboard.mobile.platform.protocol.RpcFailure
 
 const val DURABLE_TURN_ORIGIN_CAPABILITY = "durable_turn_origin"
+
+/** The backend takes the whole turn as one `provider:submit-user-turn` envelope. */
+const val ATOMIC_USER_TURN_CAPABILITY = "atomic_user_turn_v1"
 
 sealed interface OutboxImageMaterialization {
     data class Success(val images: List<ImageInput>) : OutboxImageMaterialization
@@ -73,14 +77,28 @@ class OutboxRemoteSender(
             callback = callback,
         )
         try {
-            val submission = client.sendTurn(
-                threadId = turn.threadId,
-                message = turn.text,
-                runtimeMode = runtimeMode,
-                images = materialized.takeIf { it.isNotEmpty() },
-                origin = turn.origin,
-                callback = completion::response,
-            )
+            val images = materialized.takeIf { it.isNotEmpty() }
+            val submission = if (ATOMIC_USER_TURN_CAPABILITY in availability.capabilities) {
+                client.submitUserTurn(
+                    threadId = turn.threadId,
+                    origin = turn.origin,
+                    providerText = turn.text,
+                    runtimeMode = runtimeMode,
+                    images = images,
+                    // An older backend would steer a queued message, so it only asks where honoured.
+                    delivery = turn.delivery?.takeIf { TurnDeliveryPolicy.QUEUE_CAPABILITY in availability.capabilities },
+                    callback = completion::response,
+                )
+            } else {
+                client.sendTurn(
+                    threadId = turn.threadId,
+                    message = turn.text,
+                    runtimeMode = runtimeMode,
+                    images = images,
+                    origin = turn.origin,
+                    callback = completion::response,
+                )
+            }
             completion.submitted(submission)
         } catch (_: RuntimeException) {
             completion.failedBeforeSubmission(SendOutcome.TransportAmbiguous("Send completion is unknown"))

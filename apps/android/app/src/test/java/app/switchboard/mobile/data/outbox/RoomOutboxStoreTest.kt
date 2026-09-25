@@ -22,6 +22,7 @@ class RoomOutboxStoreTest {
         val store = RoomOutboxStore(dao)
         val turns = listOf(
             turn("pending", OutboxDeliveryState.Pending),
+            turn("queued", OutboxDeliveryState.Pending).copy(delivery = "queue"),
             turn(
                 "ack",
                 OutboxDeliveryState.Acknowledged(

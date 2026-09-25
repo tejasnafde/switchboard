@@ -64,6 +64,11 @@ object BackendChannels {
     const val CurrentBranch = "git:current-branch"
     const val StartSession = "provider:start-session"
     const val SendTurn = "provider:send-turn"
+    /** The atomic envelope (`atomic_user_turn_v1`); carries `delivery` on `turn_queue_v1`. */
+    const val SubmitUserTurn = "provider:submit-user-turn"
+    const val ListQueuedTurns = "provider:list-queued-turns"
+    const val PromoteQueuedTurn = "provider:promote-queued-turn"
+    const val CancelQueuedTurn = "provider:cancel-queued-turn"
     const val ResolveUserTurn = "provider:resolve-user-turn"
     const val Interrupt = "provider:interrupt"
     const val StopSession = "provider:stop-session"
@@ -367,6 +372,75 @@ class SwitchboardRemoteClient(
             } ?: JsonNull,
             origin?.let(::JsonString) ?: JsonNull,
         ),
+        callback,
+    )
+
+    /** `UserTurnSubmissionV1`; the response has the same shape as `sendTurn`'s. */
+    fun submitUserTurn(
+        threadId: String,
+        origin: String,
+        providerText: String,
+        runtimeMode: RuntimeMode?,
+        images: List<ImageInput>?,
+        delivery: String?,
+        callback: (RemoteResponse<CommandBody>) -> Unit,
+    ) = command(
+        BackendChannels.SubmitUserTurn,
+        array(
+            JsonObject(
+                linkedMapOf<String, JsonValue>(
+                    "version" to JsonNumber("1"),
+                    "threadId" to JsonString(threadId),
+                    "origin" to JsonString(origin),
+                    "providerText" to JsonString(providerText),
+                ).apply {
+                    runtimeMode?.let { put("runtimeMode", JsonString(it.wire)) }
+                    images?.let { list ->
+                        put(
+                            "images",
+                            JsonArray(
+                                list.map { image ->
+                                    JsonObject(
+                                        linkedMapOf<String, JsonValue>("url" to JsonString(image.url)).apply {
+                                            image.mimeType?.let { put("mimeType", JsonString(it)) }
+                                        },
+                                    )
+                                },
+                            ),
+                        )
+                    }
+                    delivery?.let { put("delivery", JsonString(it)) }
+                },
+            ),
+        ),
+        callback,
+    )
+
+    /** Needs `turn_queue_controls_v1`. */
+    fun listQueuedTurns(
+        threadId: String,
+        callback: (RemoteResponse<List<app.switchboard.mobile.domain.thread.QueuedTurnSummary>>) -> Unit,
+    ) = call(BackendChannels.ListQueuedTurns, array(JsonString(threadId)), RemoteDecoders::queuedTurns, callback)
+
+    fun promoteQueuedTurn(
+        threadId: String,
+        messageId: String,
+        callback: (RemoteResponse<app.switchboard.mobile.domain.thread.QueuedTurnActionResult>) -> Unit,
+    ) = call(
+        BackendChannels.PromoteQueuedTurn,
+        array(JsonString(threadId), JsonString(messageId)),
+        RemoteDecoders::queuedTurnAction,
+        callback,
+    )
+
+    fun cancelQueuedTurn(
+        threadId: String,
+        messageId: String,
+        callback: (RemoteResponse<app.switchboard.mobile.domain.thread.QueuedTurnActionResult>) -> Unit,
+    ) = call(
+        BackendChannels.CancelQueuedTurn,
+        array(JsonString(threadId), JsonString(messageId)),
+        RemoteDecoders::queuedTurnAction,
         callback,
     )
 

@@ -30,7 +30,9 @@ import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.ui.browse.BrowseThreadActivity
 import java.io.Closeable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import app.switchboard.mobile.domain.thread.TurnDelivery
 import kotlin.coroutines.resume
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -51,7 +53,11 @@ class AndroidRootNavigationRuntime(
     override val worktreeCreations: NewSessionWorktreeCreationStore,
     private val beginViewingLease: (TransportScope, String) -> Closeable = { _, _ -> Closeable {} },
     private val registerViewingRenewal: (() -> Unit) -> Closeable = { Closeable {} },
+    override val followUpDefault: StateFlow<TurnDelivery> = MutableStateFlow(TurnDelivery.Steer),
+    private val persistFollowUpDefault: (TurnDelivery) -> Unit = {},
 ) : RootNavigationRuntime {
+    override fun setFollowUpDefault(value: TurnDelivery) = persistFollowUpDefault(value)
+
     override val statuses: StateFlow<Map<String, ConnectionRuntimeState>> = fleet.statuses
     override val composerDrafts = composer.drafts
     override val composerErrors = composer.errors

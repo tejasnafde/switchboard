@@ -428,6 +428,42 @@ class SwitchboardDatabaseTest {
     }
 
     @Test
+    fun migrationFiveToSixKeepsQueuedTurnsAndLeavesTheirDeliveryUnset() {
+        val name = "outbox-delivery-migration-test"
+        migrationHelper.createDatabase(name, 5).apply {
+            execSQL(
+                "INSERT INTO connections (id, label, kind, url, project, zone, instance, port) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>("lan", "Mac", "ws", "ws://mac", "/repo", null, null, null),
+            )
+            execSQL(
+                "INSERT INTO outbox (origin, bubbleId, connectionId, threadId, text, runtimeMode, " +
+                    "createdAtMs, attempts, nextAttemptAtMs, deliveryState, stateReason, receiptLegacy, " +
+                    "receiptDuplicate, receiptRawJson, legacyRawJson) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>(
+                    "o-1", "remote_o-1", "lan", "thread", "hello", "sandbox",
+                    1L, 0, 0L, "pending", null, null, null, null, null,
+                ),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            name,
+            6,
+            true,
+            SwitchboardDatabase.MIGRATION_5_6,
+        ).use { migrated ->
+            migrated.query("SELECT text, delivery FROM outbox WHERE origin = 'o-1'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("hello", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+            }
+        }
+    }
+
+    @Test
     fun migrationOneToFivePreservesDurableStateAndTransformsOutboxWithoutLoss() {
         val name = "full-chain-migration-test"
         migrationHelper.createDatabase(name, 1).apply {

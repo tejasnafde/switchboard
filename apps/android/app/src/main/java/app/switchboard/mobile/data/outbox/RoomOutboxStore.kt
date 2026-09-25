@@ -41,6 +41,7 @@ object OutboxEntityMapper {
                 receiptDuplicate = receipt?.duplicate,
                 receiptRawJson = receipt?.raw?.let(JsonCodec::encode),
                 legacyRawJson = turn.legacyRawJson,
+                delivery = turn.delivery,
             ),
             attachments = turn.attachments.mapIndexed { position, attachment ->
                 OutboxAttachmentEntity(
@@ -109,6 +110,7 @@ object OutboxEntityMapper {
             nextAttemptAtMs = message.nextAttemptAtMs,
             deliveryState = state,
             legacyRawJson = message.legacyRawJson,
+            delivery = message.delivery,
         )
     }
 

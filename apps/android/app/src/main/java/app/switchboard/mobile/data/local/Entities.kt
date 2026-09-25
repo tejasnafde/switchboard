@@ -188,6 +188,7 @@ data class OutboxEntity(
     val receiptDuplicate: Boolean?,
     val receiptRawJson: String?,
     val legacyRawJson: String?,
+    val delivery: String? = null,
 )
 
 @Entity(

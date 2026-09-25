@@ -157,6 +157,26 @@ object RemoteDecoders {
         return value.array().values.map { it.obj() }
     }
 
+    fun queuedTurns(value: JsonValue?): List<app.switchboard.mobile.domain.thread.QueuedTurnSummary> {
+        if (value == null || value === JsonNull) return emptyList()
+        return value.array().values.map {
+            val raw = it.obj()
+            app.switchboard.mobile.domain.thread.QueuedTurnSummary(raw.stringRequired("messageId"), raw.string("text").orEmpty())
+        }
+    }
+
+    fun queuedTurnAction(value: JsonValue?): app.switchboard.mobile.domain.thread.QueuedTurnActionResult {
+        val raw = value.obj()
+        return if (raw.booleanRequired("ok")) {
+            val turn = raw.required("turn").obj()
+            app.switchboard.mobile.domain.thread.QueuedTurnActionResult.Done(turn.string("text").orEmpty())
+        } else {
+            app.switchboard.mobile.domain.thread.QueuedTurnActionResult.Refused(
+                raw.string("message") ?: raw.string("reason") ?: "Refused",
+            )
+        }
+    }
+
     fun setting(value: JsonValue?): String? =
         when (value) {
             null, JsonNull -> null

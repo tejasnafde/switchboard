@@ -79,7 +79,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import app.switchboard.mobile.domain.thread.TurnDelivery
+import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
@@ -145,7 +149,25 @@ class NativeAndroidRuntime private constructor(
             }
         }
     }
+    private val mutableFollowUpDefault = MutableStateFlow(TurnDelivery.Steer)
+    /** "Follow-up while the agent works", per device like the phone's preference. */
+    val followUpDefault: StateFlow<TurnDelivery> = mutableFollowUpDefault.asStateFlow()
+    private val followUpDefaultLoad: Job = scope.launch {
+        database.preferenceDao().findPreference(TurnDeliveryPolicy.FOLLOW_UP_DEFAULT_KEY)?.let {
+            mutableFollowUpDefault.value = TurnDeliveryPolicy.parseFollowUpDefault(it.value)
+        }
+    }
     private var closed = false
+
+    fun setFollowUpDefault(value: TurnDelivery) {
+        followUpDefaultLoad.cancel()
+        mutableFollowUpDefault.value = value
+        scope.launch {
+            database.preferenceDao().upsertPreference(
+                AppPreferenceEntity(TurnDeliveryPolicy.FOLLOW_UP_DEFAULT_KEY, value.wire),
+            )
+        }
+    }
 
     fun start() {
         pushTokenRuntime.start()

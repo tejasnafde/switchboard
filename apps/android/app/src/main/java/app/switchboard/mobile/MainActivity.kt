@@ -53,6 +53,8 @@ class MainActivity : ComponentActivity() {
             threadSnapshots = switchboardApplication.threadSnapshotStore,
             beginViewingLease = switchboardApplication::beginPushViewing,
             registerViewingRenewal = switchboardApplication::registerViewingLeaseRenewal,
+            followUpDefault = switchboardApplication.followUpDefault,
+            persistFollowUpDefault = switchboardApplication::setFollowUpDefault,
         )
     }
 

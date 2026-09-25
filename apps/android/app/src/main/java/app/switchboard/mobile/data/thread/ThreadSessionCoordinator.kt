@@ -26,6 +26,10 @@ import app.switchboard.mobile.domain.remote.ProviderKind
 import app.switchboard.mobile.domain.remote.StartSession
 import app.switchboard.mobile.domain.remote.StartedSession
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.QueuedTurnActionResult
+import app.switchboard.mobile.domain.thread.QueuedTurnSummary
+import app.switchboard.mobile.domain.thread.TurnDelivery
+import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import app.switchboard.mobile.domain.thread.ThreadEventDecoder
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
@@ -66,6 +70,8 @@ data class ThreadComposerState(
     val focusRequest: Long = 0,
     val attachments: List<ComposerAttachment> = emptyList(),
     val editingOrigin: String? = null,
+    /** The next send does the opposite of the device's follow-up default. */
+    val flipNextDelivery: Boolean = false,
 )
 
 data class ThreadSessionState(
@@ -78,6 +84,18 @@ data class ThreadSessionState(
     val archive: ThreadArchiveState = ThreadArchiveState(),
     val pendingActions: ThreadPendingActions = ThreadPendingActions(),
     val forkMetadata: ForkLineageMetadata? = null,
+    val followUp: ThreadFollowUpState = ThreadFollowUpState(),
+)
+
+data class ThreadFollowUpState(
+    val preferred: TurnDelivery = TurnDelivery.Steer,
+    /** Backend holds a `delivery: queue` message (`turn_queue_v1`). */
+    val canQueue: Boolean = false,
+    /** Backend lists, promotes and cancels held messages (`turn_queue_controls_v1`). */
+    val canControlHeld: Boolean = false,
+    /** Why the last Send now / Cancel was refused, by held message id. */
+    val heldErrors: Map<String, String> = emptyMap(),
+    val heldBusy: Set<String> = emptySet(),
 )
 
 data class ThreadArchiveState(
@@ -240,6 +258,18 @@ interface ThreadSessionRemote {
      *  have dropped for good. Only call when `pending_requests_v1` is
      *  advertised - an older backend has no handler for the channel. */
     fun getPendingRequests(threadId: String, callback: (RemoteResponse<List<JsonObject>>) -> Unit)
+
+    /** Only called on `turn_queue_controls_v1`. */
+    fun listQueuedTurns(threadId: String, callback: (RemoteResponse<List<QueuedTurnSummary>>) -> Unit): Unit =
+        throw UnsupportedOperationException("Queued messages are not supported")
+
+    /** Send now when [promote], else Cancel. Only called on `turn_queue_controls_v1`. */
+    fun actOnQueuedTurn(
+        threadId: String,
+        messageId: String,
+        promote: Boolean,
+        callback: (RemoteResponse<QueuedTurnActionResult>) -> Unit,
+    ): Unit = throw UnsupportedOperationException("Queued messages are not supported")
 }
 
 class SwitchboardThreadSessionRemote(
@@ -339,6 +369,19 @@ class SwitchboardThreadSessionRemote(
 
     override fun getPendingRequests(threadId: String, callback: (RemoteResponse<List<JsonObject>>) -> Unit) {
         client.getPendingRequests(threadId, callback)
+    }
+
+    override fun listQueuedTurns(threadId: String, callback: (RemoteResponse<List<QueuedTurnSummary>>) -> Unit) {
+        client.listQueuedTurns(threadId, callback)
+    }
+
+    override fun actOnQueuedTurn(
+        threadId: String,
+        messageId: String,
+        promote: Boolean,
+        callback: (RemoteResponse<QueuedTurnActionResult>) -> Unit,
+    ) {
+        if (promote) client.promoteQueuedTurn(threadId, messageId, callback) else client.cancelQueuedTurn(threadId, messageId, callback)
     }
 }
 
@@ -440,7 +483,17 @@ class ThreadSessionCoordinator(
     /** Backend advertises `pending_requests_v1` - see `getPendingRequests`.
      *  False for an older backend, which has no handler for the channel. */
     private val supportsPendingRequests: Boolean = false,
+    /** The backend's capabilities for the follow-up composer (`turn_queue_v1`, `turn_queue_controls_v1`). */
+    private val capabilities: Set<String> = emptySet(),
+    /** The device's "Follow-up while the agent works" choice, read at send time. */
+    private val followUpDefault: () -> TurnDelivery = { TurnDelivery.Steer },
 ) : AutoCloseable {
+    private val canQueue = TurnDeliveryPolicy.QUEUE_CAPABILITY in capabilities
+    private val canControlHeld = TurnDeliveryPolicy.QUEUE_CONTROLS_CAPABILITY in capabilities
+    private val heldErrors = mutableMapOf<String, String>()
+    private val heldBusy = mutableSetOf<String>()
+    private var heldRevision = 0L
+    private var heldRequest = 0L
     private val key = ThreadKey(scope.connectionId, threadId)
     private val composerKey = ComposerDraftKey(scope.connectionId, threadId)
     private var store = ThreadStoreReducer.reduce(
@@ -561,11 +614,18 @@ class ThreadSessionCoordinator(
         if (text.isEmpty() && composer.attachments.isEmpty()) return ComposerSubmitResult.Empty
         composer = composer.copy(submitting = true, error = null)
         publish()
+        val thread = currentThread()
         val result = enqueueDraft(
             text = text,
             mode = composer.runtimeMode,
             attachments = composer.attachments,
             editingOrigin = composer.editingOrigin,
+            delivery = TurnDeliveryPolicy.requestedDelivery(
+                provider = thread?.provider ?: providerHint,
+                running = thread?.status == "running",
+                preferred = followUpDefault(),
+                flipped = composer.flipNextDelivery,
+            ),
         )
         return when (result) {
             is EnqueueResult.Durable -> {
@@ -579,6 +639,7 @@ class ThreadSessionCoordinator(
                         editingOrigin = null,
                         submitting = false,
                         error = null,
+                        flipNextDelivery = false,
                     )
                 } else {
                     composer.copy(
@@ -889,6 +950,51 @@ class ThreadSessionCoordinator(
         }
     }
 
+    /** The composer chip: the next send steers instead of queueing, or the other way round. */
+    @Synchronized
+    fun toggleNextDelivery() {
+        composer = composer.copy(flipNextDelivery = !composer.flipNextDelivery)
+        publish()
+    }
+
+    /**
+     * Send now (steer a held message into the running turn) or Cancel (take
+     * it back; its text returns to the composer). The row itself goes on the
+     * backend's turn.dequeued. A refusal shows on the row, not as a thread
+     * error, which would hide Stop on a still-running thread.
+     */
+    @Synchronized
+    fun actOnHeld(messageId: String, promote: Boolean) {
+        if (closed || !canControlHeld || remote.scope != scope || !heldBusy.add(messageId)) return
+        heldErrors.remove(messageId)
+        publish()
+        try {
+            remote.actOnQueuedTurn(threadId, messageId, promote) { response ->
+                synchronized(this) {
+                    heldBusy -= messageId
+                    if (!accepts(response) || closed) return@synchronized
+                    when (val outcome = response.outcome) {
+                        is RemoteOutcome.Failure -> heldErrors[messageId] = outcome.message
+                        is RemoteOutcome.Success -> when (val result = outcome.value) {
+                            is QueuedTurnActionResult.Refused -> heldErrors[messageId] = result.message
+                            is QueuedTurnActionResult.Done -> if (!promote && result.text.isNotEmpty()) {
+                                val draft = composer.draft
+                                composer = composer.copy(draft = if (draft.isEmpty()) result.text else "$draft\n\n${result.text}")
+                                composerHasUnacknowledgedLocalChanges = true
+                                persistComposer()
+                            }
+                        }
+                    }
+                    publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            heldBusy -= messageId
+            heldErrors[messageId] = error.message ?: "Request failed"
+            publish()
+        }
+    }
+
     @Synchronized
     fun perform(control: ThreadSessionControl): ThreadControlOutcome = when (control) {
         is ThreadSessionControl.Approval -> requestControl(
@@ -957,6 +1063,7 @@ class ThreadSessionCoordinator(
                     persistSnapshot()
                     reattach(outcome.value)
                     recoverPendingRequests()
+                    recoverHeldTurns()
                 }
 
                 is RemoteOutcome.Failure -> {
@@ -1015,6 +1122,39 @@ class ThreadSessionCoordinator(
         } catch (_: RuntimeException) {
             // Recovery is optional, like loadSkills()/refreshModels() above -
             // the feed the ordinary load already installed remains usable.
+        }
+    }
+
+    /**
+     * Re-list the messages the backend still holds, so Queued rows survive a
+     * reload or a resume gap. A live turn.queued / turn.dequeued that lands
+     * while the backend answers makes the answer stale; ask again rather than
+     * undo it (at most [HELD_RECOVERY_ATTEMPTS] times, like the phone).
+     */
+    private fun recoverHeldTurns(attempt: Int = 1) {
+        if (!canControlHeld) return
+        val revision = heldRevision
+        val request = ++heldRequest
+        try {
+            remote.listQueuedTurns(threadId) { response ->
+                synchronized(this) {
+                    if (!accepts(response, request, heldRequest) || closed || remote.scope != scope) return@synchronized
+                    val held = (response.outcome as? RemoteOutcome.Success)?.value ?: return@synchronized
+                    if (heldRevision != revision) {
+                        if (attempt < HELD_RECOVERY_ATTEMPTS) recoverHeldTurns(attempt + 1)
+                        return@synchronized
+                    }
+                    reduce(ThreadAction.SeedHeldTurns(scope.connectionId, threadId, held.mapTo(mutableSetOf()) { it.messageId }))
+                    load = when (val current = load) {
+                        is ThreadSessionLoad.Loading -> ThreadSessionLoad.Loading(currentThread())
+                        is ThreadSessionLoad.Failed -> current.copy(cached = currentThread())
+                        is ThreadSessionLoad.Ready -> current.copy(thread = requireNotNull(currentThread()))
+                    }
+                    publish()
+                }
+            }
+        } catch (_: RuntimeException) {
+            // Best effort, like recoverPendingRequests(): live events still mark new held messages.
         }
     }
 
@@ -1117,6 +1257,11 @@ class ThreadSessionCoordinator(
                 is app.switchboard.mobile.domain.thread.ThreadEventPayload.QuestionAnswered -> {
                     pendingControls -= "question:${decoded.requestId}"
                     pendingQuestionRequestIds -= decoded.requestId
+                }
+                is app.switchboard.mobile.domain.thread.ThreadEventPayload.TurnQueued -> heldRevision += 1
+                is app.switchboard.mobile.domain.thread.ThreadEventPayload.TurnDequeued -> {
+                    heldRevision += 1
+                    heldErrors.remove(decoded.messageId)
                 }
                 is app.switchboard.mobile.domain.thread.ThreadEventPayload.UserMessage -> {
                     val origin = decoded.origin
@@ -1222,6 +1367,7 @@ class ThreadSessionCoordinator(
         mode: RuntimeMode,
         attachments: List<ComposerAttachment> = emptyList(),
         editingOrigin: String? = null,
+        delivery: TurnDelivery? = null,
     ): EnqueueResult = try {
         val draft = OutgoingTurnDraft(
                 connectionId = scope.connectionId,
@@ -1236,6 +1382,7 @@ class ThreadSessionCoordinator(
                 },
                 runtimeMode = mode.wire,
                 createdAtMs = clock.nowMs(),
+                delivery = delivery?.wire,
             )
         editingOrigin?.let { enqueue.replace(it, draft) } ?: enqueue.enqueue(draft)
     } catch (error: RuntimeException) {
@@ -1314,6 +1461,13 @@ class ThreadSessionCoordinator(
                 planIds = pendingPlanOrigins.keys.toSet(),
             ),
             forkMetadata = forkMetadata,
+            followUp = ThreadFollowUpState(
+                preferred = followUpDefault(),
+                canQueue = canQueue,
+                canControlHeld = canControlHeld,
+                heldErrors = heldErrors.toMap(),
+                heldBusy = heldBusy.toSet(),
+            ),
         )
     }
 
@@ -1411,6 +1565,7 @@ class ThreadSessionCoordinator(
 
     companion object {
         const val HISTORY_LIMIT = 250L
+        private const val HELD_RECOVERY_ATTEMPTS = 3
         const val IMPLEMENT_PLAN_MESSAGE = "Implement the plan you proposed."
         const val OPEN_FILE_UNSUPPORTED = "Opening changed files is not available on mobile yet."
         val ACTIVE_PROVIDER_STATUSES = setOf(
