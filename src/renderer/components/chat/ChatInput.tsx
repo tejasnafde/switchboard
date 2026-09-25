@@ -1074,6 +1074,7 @@ export function ChatInput({
   /** "Not in this chat" / "Turn back on": saved with the conversation on its backend. */
   const setFollowSuggestions = (mode: FollowSuggestionMode) => {
     if (!sessionId) return
+    useAgentStore.getState().setFollowNoticeDismissed(sessionId, false)
     if (driftSuggestion) {
       useAgentStore.getState().setDriftSuggestion(sessionId, { ...driftSuggestion, followSuggestions: mode })
     }
@@ -1082,14 +1083,21 @@ export function ChatInput({
     })
   }
 
-  /** The chip's x only closes this suggestion; the "off" notice's x is saved, so it stays closed. */
+  /**
+   * The chip's x only closes this suggestion; the "off" notice's x is saved, so
+   * it stays closed. A failed save still closes it here: an older backend has no
+   * such channel, and a notice that cannot be closed is worse than one that
+   * comes back.
+   */
   const dismissDrift = () => {
     if (!sessionId) return
     useAgentStore.getState().setDriftSuggestion(sessionId, null)
     if (driftView?.kind !== 'off') return
-    window.api.app.dismissConversationFollowNotice(sessionId).catch((err: unknown) => {
-      log.warn('could not save the dismissed Follow notice', err)
-    })
+    useAgentStore.getState().setFollowNoticeDismissed(sessionId, true)
+    window.api.app.dismissConversationFollowNotice(sessionId).then(
+      ({ ok }) => { if (!ok) log.warn('no conversation row to save the dismissed Follow notice on', sessionId) },
+      (err: unknown) => log.warn('could not save the dismissed Follow notice', err),
+    )
   }
 
   // Lazy-load the file list the first time the user opens `@`. Cached on

@@ -439,7 +439,9 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       // Muted with "Not in this chat", or the "off" notice closed, maybe on
       // another client: say nothing, and take down what this window still shows.
       const follow = event.followSuggestions ?? 'auto'
-      const view = followSuggestionView(follow, event.workedWorktrees ?? 0, event.followNoticeDismissed ?? false)
+      const dismissedHere = drifted?.followNoticeDismissed ?? false
+      const view = followSuggestionView(follow, event.workedWorktrees ?? 0, (event.followNoticeDismissed ?? false) || dismissedHere)
+      if (view.kind === 'chip' && dismissedHere) useAgentStore.getState().setFollowNoticeDismissed(tid, false)
       if (follow === 'muted' || view.kind === 'hidden') {
         useAgentStore.getState().setDriftSuggestion(tid, null)
         break

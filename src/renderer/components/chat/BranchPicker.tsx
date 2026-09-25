@@ -296,6 +296,8 @@ function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose, followSes
       {followOff && onTurnFollowBackOn && (
         <button
           type="button"
+          // Enter here is this button's, not the branch list's.
+          onKeyDown={(e) => { if (e.key === 'Enter') e.stopPropagation() }}
           onClick={() => {
             onTurnFollowBackOn()
             onClose(false)

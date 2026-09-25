@@ -268,6 +268,20 @@ describe('reduceProviderEvent (desktop)', () => {
     expect(session().driftSuggestion).toMatchObject({ branch: 'e', followSuggestions: 'on' })
   })
 
+  it('worktree.drift computed before the dismissal was saved does not bring the notice back', () => {
+    useAgentStore.getState().setFollowNoticeDismissed(T, true)
+    reduce({ type: 'worktree.drift', worktreePath: '/wt4', branch: 'd', followSuggestions: 'auto', followNoticeDismissed: false, workedWorktrees: 4 })
+    expect(session().driftSuggestion ?? null).toBeNull()
+    expect(session().followNoticeDismissed).toBe(true)
+    // Turned back on elsewhere: the chip shows and the local override ends.
+    reduce({ type: 'worktree.drift', worktreePath: '/wt5', branch: 'e', followSuggestions: 'on', followNoticeDismissed: false, workedWorktrees: 5 })
+    expect(session().driftSuggestion).toMatchObject({ branch: 'e' })
+    expect(session().followNoticeDismissed).toBe(false)
+    // Off again later, not closed since: the notice shows again.
+    reduce({ type: 'worktree.drift', worktreePath: '/wt6', branch: 'f', followSuggestions: 'auto', followNoticeDismissed: false, workedWorktrees: 6 })
+    expect(session().driftSuggestion).toMatchObject({ branch: 'f' })
+  })
+
   it('error appends a system error and clears the retry card', () => {
     reduce({ type: 'turn.retrying', turnId: 'x', message: 'Reconnecting... 1/5' })
     reduce({ type: 'error', message: 'boom' })
