@@ -18,11 +18,13 @@ echo "==> deslop-lint staged files..."
 npx --no-install lint-staged
 
 echo "==> running tests..."
+# Half the cores: several agent worktrees commit at once on one Mac, and a full
+# worker pool each pushed the load past 100, which timed out unrelated tests.
 if node -e "const Database = require('better-sqlite3'); new Database(':memory:').close()" >/dev/null 2>&1; then
-  npm test
+  npm test -- --maxWorkers=50%
 else
   echo "better-sqlite3 is rebuilt for Electron; splitting tests by native runtime..."
-  npx --no-install vitest run \
+  npx --no-install vitest run --maxWorkers=50% \
     --exclude tests/unit/durable-turn-acceptance.test.ts \
     --exclude tests/unit/turn-acceptance-store.test.ts
   ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/vitest/vitest.mjs run \
