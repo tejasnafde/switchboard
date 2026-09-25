@@ -1528,6 +1528,12 @@ html, body, #root {
   background: rgba(0, 0, 0, 0.06) !important;
 }
 
+/* Stop/Send sit over the input's bottom-right corner, so a tall draft's
+   scrollbar ends above them instead of running underneath. */
+.chat-composer .sb-rci-content::-webkit-scrollbar-track {
+  margin-bottom: 38px;
+}
+
 .theme-translucent .chat-composer .sb-rci-content {
   background: rgba(0, 0, 0, 0.08) !important;
   border-color: rgba(255, 255, 255, 0.08) !important;

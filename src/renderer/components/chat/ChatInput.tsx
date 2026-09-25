@@ -50,7 +50,7 @@ import { AtMentionMenu } from './AtMentionMenu'
 import { DraftWorkspaceChips } from './DraftWorkspaceChips'
 import { BranchPickerTrigger } from './BranchPicker'
 import { composerFooterLayout } from './composer-footer-layout'
-import { RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
+import { RICH_TEXTAREA_MIN_HEIGHT, RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
 import { serializeBodyWithPills } from '../../services/chat-input-body'
 import {
   desktopComposerRecoveryAction,
@@ -158,6 +158,20 @@ const driftLinkStyle = {
   padding: 0,
   fontSize: 11,
 } as const
+
+// Stop/Send sit inside the input box at its bottom-right, inset so they are
+// centred on a one-line draft and stay pinned to the corner as it grows.
+// The size is Button's `icon-round` (size-7), which is rem-based.
+const COMPOSER_ACTION_SIZE = '1.75rem'
+const COMPOSER_ACTION_INSET = `calc((${RICH_TEXTAREA_MIN_HEIGHT}px - ${COMPOSER_ACTION_SIZE}) / 2)`
+const COMPOSER_ACTION_GAP = 6
+const COMPOSER_TEXT_GAP = 8
+
+function composerActionsInset(showStop: boolean): string {
+  const buttons = showStop ? 2 : 1
+  const gaps = (buttons - 1) * COMPOSER_ACTION_GAP + COMPOSER_TEXT_GAP
+  return `calc(${COMPOSER_ACTION_INSET} + ${buttons} * ${COMPOSER_ACTION_SIZE} + ${gaps}px)`
+}
 
 // Module-level constant - referential equality across renders so the
 // `pills` selector doesn't fabricate a new array when a session has
@@ -546,6 +560,7 @@ export function ChatInput({
     : 'send'
   const composerErrorColor = recovery?.ambiguous ? 'var(--warning)' : 'var(--error)'
   const followUpDefault = useLayoutStore((s) => s.followUpDefault)
+  const showStop = isRunning && !!onInterrupt
   const sendButton = isSubmitting
     ? { label: 'Sending', tooltip: 'Sending…' }
     : recoveryAction === 'retry-safe'
@@ -1515,7 +1530,7 @@ export function ChatInput({
           sees a plain string body with `[[pill:id]]` tokens; pillsById
           maps tokens to chip metadata + serialized content. */}
       <div
-        style={{ position: 'relative', display: 'flex', gap: '8px', alignItems: 'flex-end' }}
+        style={{ position: 'relative', display: 'flex' }}
         onKeyDownCapture={handleEditorKeyDown}
       >
         {/* Slash command popover - positioned above the editor */}
@@ -1572,28 +1587,40 @@ export function ChatInput({
             pillsById={pillsById}
             placeholder={placeholder}
             disabled={disabled}
+            trailingInset={composerActionsInset(showStop)}
           />
-        </div>
-        {isRunning && onInterrupt && (
-          <Button
-            variant="destructive-outline"
-            size="icon-round"
-            onClick={onInterrupt}
-            aria-label="Stop"
-            title="Stop the current turn (⌘⌫)"
+          <div
+            data-composer-actions
+            style={{
+              position: 'absolute',
+              right: COMPOSER_ACTION_INSET,
+              bottom: COMPOSER_ACTION_INSET,
+              display: 'flex',
+              gap: COMPOSER_ACTION_GAP,
+            }}
           >
-            <StopSquareIcon />
-          </Button>
-        )}
-        <Button
-          size="icon-round"
-          onClick={() => { void handleSend(followUpDefault) }}
-          disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
-          aria-label={sendButton.label}
-          title={sendButton.tooltip}
-        >
-          <ArrowUpIcon />
-        </Button>
+            {showStop && (
+              <Button
+                variant="destructive-outline"
+                size="icon-round"
+                onClick={onInterrupt}
+                aria-label="Stop"
+                title="Stop the current turn (⌘⌫)"
+              >
+                <StopSquareIcon />
+              </Button>
+            )}
+            <Button
+              size="icon-round"
+              onClick={() => { void handleSend(followUpDefault) }}
+              disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
+              aria-label={sendButton.label}
+              title={sendButton.tooltip}
+            >
+              <ArrowUpIcon />
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Footer bar: agent selector + mode toggle + hints. Wraps instead of
@@ -1760,18 +1787,27 @@ export function ChatInput({
 
         <span style={{ flex: 1 }} />
 
-        {/* Context meter. flexShrink 0: this is the one footer item that must
-            never be squeezed under the pane edge. */}
-        {contextUsage && (
-          <span style={{ flexShrink: 0, display: 'inline-flex' }}>
-            <ContextWindowMeter usage={contextUsage} />
-          </span>
-        )}
-
         {/* Idle only: while a turn runs, the send button's tooltip names the keys. */}
         {footerLayout.showHint && !isRunning && (
           <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
             Enter send · Shift+Enter newline
+          </span>
+        )}
+
+        {/* Context meter (24px), last so it sits centred under the Send button,
+            and marginLeft auto keeps it right-aligned when a narrow footer
+            wraps it onto a row of its own. flexShrink 0: this is the one
+            footer item that must never be squeezed under the pane edge. */}
+        {contextUsage && (
+          <span
+            style={{
+              flexShrink: 0,
+              display: 'inline-flex',
+              marginLeft: 'auto',
+              marginRight: `calc(${COMPOSER_ACTION_INSET} + (${COMPOSER_ACTION_SIZE} - 24px) / 2)`,
+            }}
+          >
+            <ContextWindowMeter usage={contextUsage} />
           </span>
         )}
       </div>

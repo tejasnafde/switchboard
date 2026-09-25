@@ -1,0 +1,49 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "composer-button-alignment",
+  "summary": "The desktop composer's round Stop and Send buttons move inside the input box at its bottom-right, with the same inset from the box's right and bottom edges; the box is 42px on one line, so they are centred on a one-line draft and stay in the corner as the draft grows. Text and placeholder reserve room for them, and a tall draft's scrollbar ends above them. The context-window ring is the footer's last item, centred under the Send button, and stays right-aligned when a narrow footer wraps it onto its own row.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/lexical/RichChatTextarea.tsx",
+        "src/renderer/styles/global.css",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots/composer-running-dark-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile has its own composer and send button layout, which this change does not touch."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The Compose composer is its own layout; nothing it renders is affected."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Renderer layout only. The one main-process change is the scripted demo adapter (SB_DEMO_ADAPTER=1, screenshots and tour only) reporting a context_window event so the ring shows in the screenshots; no real adapter or wire contract changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "An unconditional desktop renderer fix with no flag, package identity, signing, update-channel or rollout change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual (composer-running, approval, queued-message, chat, chat-narrow, confirm-dialog in Dark, Light and Translucent)",
+      "npm run typecheck",
+      "npm test"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The tall multi-line draft and the dual chat panel were measured with a one-off Playwright probe against the built app (equal 9.6px right and bottom inset, ring centre on the Send centre), not by a committed test."
+    ]
+  }
+}
