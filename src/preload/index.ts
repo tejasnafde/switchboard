@@ -209,6 +209,10 @@ const api = {
       transport.invoke(AppChannels.SET_CONVERSATION_RUNTIME_MODE, id, mode),
     setConversationFollowSuggestions: (id: string, mode: import('@shared/follow-suggestions').FollowSuggestionMode): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_FOLLOW_SUGGESTIONS, id, mode),
+    getConversationFollowSuggestions: (id: string): Promise<{ mode: import('@shared/follow-suggestions').FollowSuggestionMode; noticeDismissed: boolean; workedWorktrees: number }> =>
+      transport.invoke(AppChannels.GET_CONVERSATION_FOLLOW_SUGGESTIONS, id),
+    dismissConversationFollowNotice: (id: string): Promise<{ ok: boolean }> =>
+      transport.invoke(AppChannels.DISMISS_CONVERSATION_FOLLOW_NOTICE, id),
     getConversationProviderInstanceId: (id: string): Promise<{ instanceId: string | null }> =>
       transport.invoke(AppChannels.GET_CONVERSATION_PROVIDER_INSTANCE_ID, id),
     setConversationProviderInstanceId: (id: string, instanceId: string): Promise<{ ok: boolean }> =>
