@@ -102,6 +102,31 @@ export function taskNotificationText(n: { taskId: string; status: string; summar
   return `<task-notification>\n${lines.join('\n')}\n</task-notification>`
 }
 
+/**
+ * The CLI stamps a notice's transcript line when a turn consumes it, at or
+ * after the moment the live event was stamped (both on the backend's clock).
+ */
+export const TRANSCRIPT_NOTICE_SKEW_MS = 5_000
+
+/**
+ * True when a transcript row already shows this live notice. The two can
+ * share no id: the live event carries the SDK message's uuid, the transcript
+ * row its own line's. So identity is the task's fields plus time, which keeps
+ * an older identical notice (a resumed subagent finishing again) separate.
+ * ponytail: two identical notices for one task inside the skew collapse into
+ * one; a notice id in the transcript would be the upgrade.
+ */
+export function transcriptShowsTaskNotification(
+  rows: Iterable<{ part: SyntheticUserPart; at: number }>,
+  live: { taskId: string; status: string; summary: string; at: number },
+): boolean {
+  for (const { part, at } of rows) {
+    if (part.kind === 'task-notification' && part.taskId === live.taskId && part.status === live.status
+      && part.summary === live.summary && at >= live.at - TRANSCRIPT_NOTICE_SKEW_MS) return true
+  }
+  return false
+}
+
 /** Null when `text` does not start with a generated block, i.e. a real user message. */
 export function splitSyntheticUserText(text: string): SyntheticUserSplit | null {
   let remaining = text.trim()

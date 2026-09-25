@@ -416,7 +416,10 @@ object ThreadStoreReducer {
                 feed = upsert(withJournal.feed, FeedItem.Todo("todo-${event.todoId}", event.todoId, event.items)),
             )
             // Same text as the transcript line a reload shows, so it splits into the same row.
-            is ThreadEventPayload.TaskNotification -> withJournal.copy(
+            // installSnapshot replays buffered events over history, so skip one the history already shows.
+            is ThreadEventPayload.TaskNotification -> if (historyShowsTaskNotification(withJournal.feed, event)) {
+                withJournal
+            } else withJournal.copy(
                 feed = upsert(
                     withJournal.feed,
                     FeedItem.User(
@@ -515,6 +518,13 @@ object ThreadStoreReducer {
         val index = feed.indexOfFirst { feedIdentity(it) == identity }
         if (index < 0) return feed + item
         return feed.toMutableList().also { it[index] = item }
+    }
+
+    private fun historyShowsTaskNotification(feed: List<FeedItem>, event: ThreadEventPayload.TaskNotification): Boolean {
+        val rows = feed.filterIsInstance<FeedItem.User>()
+            .filter { it.fromTranscript && it.id.startsWith("h-") }
+            .flatMap { user -> SyntheticUserMessage.split(user.text)?.parts.orEmpty().map { it to user.at } }
+        return SyntheticUserMessage.transcriptShowsTaskNotification(rows, event.taskId, event.status, event.summary, event.at)
     }
 
     private fun feedIdentity(item: FeedItem): String =

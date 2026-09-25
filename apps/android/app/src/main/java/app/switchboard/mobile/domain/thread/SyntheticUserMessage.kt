@@ -76,6 +76,25 @@ object SyntheticUserMessage {
             "<summary>$summary</summary>",
         ).joinToString("\n", prefix = "<task-notification>\n", postfix = "\n</task-notification>")
 
+    /** Port of `TRANSCRIPT_NOTICE_SKEW_MS`. */
+    const val TRANSCRIPT_NOTICE_SKEW_MS = 5_000L
+
+    /**
+     * Port of `transcriptShowsTaskNotification`: the live event and the transcript
+     * row share no id (SDK message uuid vs transcript line uuid), so identity is
+     * the task's fields plus time.
+     */
+    fun transcriptShowsTaskNotification(
+        rows: List<Pair<SyntheticPart, Long>>,
+        taskId: String,
+        status: String,
+        summary: String,
+        at: Long,
+    ): Boolean = rows.any { (part, rowAt) ->
+        part is SyntheticPart.TaskNotification && part.taskId == taskId && part.status == status &&
+            part.summary == summary && rowAt >= at - TRANSCRIPT_NOTICE_SKEW_MS
+    }
+
     /** Null when [text] does not start with a generated block, i.e. a real user message. */
     fun split(text: String): SyntheticSplit? {
         var remaining = text.trim()

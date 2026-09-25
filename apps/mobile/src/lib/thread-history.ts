@@ -12,7 +12,7 @@ type UserItem = Extract<FeedItem, { kind: 'user' }>
  */
 export function splitTranscriptUserItem(item: UserItem): FeedItem[] {
   const split = splitSyntheticUserText(item.text)
-  const rows: FeedItem[] = (split?.parts ?? []).map((part, i) => ({ kind: 'synthetic', id: `${item.id}-s${i}`, part }))
+  const rows: FeedItem[] = (split?.parts ?? []).map((part, i) => ({ kind: 'synthetic', id: `${item.id}-s${i}`, part, at: item.at }))
   const text = split ? split.userText : item.text
   if (text.trim() || item.images?.length) rows.push({ ...item, text })
   return rows

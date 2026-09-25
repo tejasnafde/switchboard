@@ -4,6 +4,7 @@ import { mergeConversationMessages } from '../../src/main/agent/dedupe-messages'
 import { reduceProviderEvent } from '../../src/renderer/components/chat/provider-event-reducer'
 import { useAgentStore } from '../../src/renderer/stores/agent-store'
 import { flushQueue, resetQueue, threadKey, useChatStore } from '../../apps/mobile/src/stores/chat'
+import { historyToItems } from '../../apps/mobile/src/lib/thread-history'
 import { splitSyntheticUserText, taskNotificationText } from '../../src/shared/synthetic-message'
 import type { RuntimeEvent, RuntimeTaskNotificationEvent } from '../../src/shared/provider-events'
 import type { ChatMessage } from '../../src/shared/types'
@@ -71,7 +72,8 @@ describe('Claude system/task_notification', () => {
 
 describe('live row vs reload', () => {
   const T = 'thread-1'
-  const reloaded: ChatMessage = { id: 'jsonl-uuid', role: 'user', content: TRANSCRIPT_TEXT, timestamp: 5_000 }
+  // The CLI stamps the transcript line when a turn consumes the notice, just after it.
+  const transcriptLine = (at: number): ChatMessage => ({ id: 'jsonl-uuid', role: 'user', content: TRANSCRIPT_TEXT, timestamp: at + 70 })
 
   beforeEach(() => {
     useAgentStore.setState({ sessions: [], activeSessionId: null })
@@ -87,9 +89,17 @@ describe('live row vs reload', () => {
     expect(splitSyntheticUserText(messages()[0].content)).toEqual(splitSyntheticUserText(TRANSCRIPT_TEXT))
 
     // The live copy is never mirrored to SQLite, so history is the transcript alone.
+    const reloaded = transcriptLine(event.at)
     const history = mergeConversationMessages([reloaded], [])
     useAgentStore.getState().setMessages(T, history)
     expect(messages()).toEqual([reloaded])
+
+    // A resume replay after the reload does not put it back beside the transcript row.
+    reduceProviderEvent(event, { streamingEnabled: true, coalescer: null })
+    expect(messages()).toEqual([reloaded])
+    // The same subagent finishing again later is a new notice.
+    reduceProviderEvent({ ...event, messageId: 'task_later', at: event.at + 600_000 }, { streamingEnabled: true, coalescer: null })
+    expect(messages().map((m) => m.id)).toEqual(['jsonl-uuid', 'task_later'])
   })
 
   it('phone: renders the same synthetic part, once', () => {
@@ -101,5 +111,16 @@ describe('live row vs reload', () => {
     flushQueue()
     const items = useChatStore.getState().threads[threadKey('c1', T)].items
     expect(items).toEqual([{ kind: 'synthetic', id: event.messageId, part: splitSyntheticUserText(TRANSCRIPT_TEXT)!.parts[0] }])
+  })
+
+  it('phone: a replay after a re-seed does not add it beside the history row', () => {
+    resetQueue()
+    useChatStore.setState({ threads: {}, activeKey: null })
+    const event = liveEvent()
+    const key = threadKey('c1', T)
+    useChatStore.getState().seedItems(key, historyToItems([transcriptLine(event.at)]))
+    useChatStore.getState().ingest('c1', event)
+    flushQueue()
+    expect(useChatStore.getState().threads[key].items.map((i) => i.id)).toEqual(['h-jsonl-uuid-s0'])
   })
 })

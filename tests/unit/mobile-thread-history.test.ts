@@ -59,6 +59,7 @@ describe('mobile thread history', () => {
         kind: 'synthetic',
         id: 'h-n-s0',
         part: { kind: 'task-notification', status: 'failed', summary: 'Background command "Build" failed with exit code 2', taskId: 'b1', outputFile: undefined },
+        at: 1,
       },
       { kind: 'user', id: 'h-n', text: 'keep going', at: 1, images: undefined },
     ])
@@ -77,7 +78,7 @@ describe('mobile thread history', () => {
       { kind: 'user', id: 'h-old', text: '[Request interrupted by user]', at: 1 },
       live,
     ])).toEqual([
-      { kind: 'synthetic', id: 'h-old-s0', part: { kind: 'interrupted', duringToolUse: false } },
+      { kind: 'synthetic', id: 'h-old-s0', part: { kind: 'interrupted', duringToolUse: false }, at: 1 },
       live,
     ])
   })
