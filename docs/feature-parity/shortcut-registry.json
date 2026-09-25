@@ -1,0 +1,54 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "shortcut-registry",
+  "summary": "Move every desktop keyboard shortcut into one registry in src/shared/shortcuts.ts (id, label, group, scope, bindings written with Mod), read it from the global resolver, the app menu, the Cmd+W intercept, the command palette hints, the Settings list and the components that own their keys, and stop Ctrl chords from firing app commands on macOS. Adds pure override and clash-detection functions for a later editing UI.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/global-keybindings.ts",
+        "src/main/index.ts",
+        "src/renderer/components/SettingsModal.tsx",
+        "src/renderer/components/CommandPalette.tsx",
+        "tests/unit/global-keybindings.test.ts",
+        "tests/unit/global-keybindings-terminal.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native client has no keyboard shortcuts: nothing under apps/mobile/src handles onKeyPress or hardware key events, and touch is its only input. The registry is in src/shared, so it can be imported there if one is ever added."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android client handles no hardware key events (no KeyEvent, onKeyEvent or isCtrlPressed under apps/android/app/src/main), so there is no shortcut to register."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/shortcuts.ts",
+        "tests/unit/shortcuts.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored yet. applyShortcutOverrides takes a command id to bindings map for the later Settings editor, which will choose the settings key; malformed overrides are ignored so a bad stored value cannot break the defaults."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Desktop code change only. No package identity, signing, deep link, update channel or native module change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/global-keybindings-terminal.test.ts mounts a real xterm in jsdom with the App's window capture listener and asserts Ctrl+K/J/B/L/T reach the PTY with no app action on macOS; it fails 6 of 7 against the previous resolver.",
+      "tests/unit/shortcuts.test.ts covers registry validity, per-OS matching and formatting, Electron accelerators, overrides and clash detection.",
+      "The existing tests/unit/global-keybindings.test.ts cases pass unchanged against the registry-backed resolver (the Ctrl case now runs as the non-macOS platform)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The Windows and Linux builds were not run; Ctrl-as-Mod there is covered by unit tests only.",
+      "The Electron menu accelerators and the Cmd+W before-input-event path were not driven by a test; they read the same registry values the unit tests pin."
+    ]
+  }
+}

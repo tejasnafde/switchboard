@@ -844,7 +844,12 @@ export class ProviderRegistry implements PeerToolHost {
         log.warn(`could not record worked worktrees for ${threadId}: ${errorMessage(err)}`)
       }
       this.bus.publish(follow
-        ? { ...event, followSuggestions: follow.mode, workedWorktrees: follow.workedWorktrees.length }
+        ? {
+            ...event,
+            followSuggestions: follow.mode,
+            followNoticeDismissed: follow.noticeDismissed,
+            workedWorktrees: follow.workedWorktrees.length,
+          }
         : event)
     } catch (err) {
       log.warn(`worktree drift detection failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)

@@ -35,6 +35,7 @@ import {
   primaryButtonClass,
   secondaryButtonClass,
 } from './kanban-modal-classes'
+import { matchesShortcut } from '@shared/shortcuts'
 
 const RUNTIME_MODE_OPTIONS: ReadonlyArray<{ value: RuntimeMode; label: string; hint: string }> = [
   { value: 'plan', label: 'Plan', hint: 'Read-only - agent proposes but does not edit' },
@@ -255,7 +256,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
   // Escape is the dialog's. Focus stays inside it, so ⌘Enter can live on the
   // content; the confirm dialog holds it back while one is open.
   const onKeyDown = (e: KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    if (matchesShortcut(e, 'kanban.card-submit')) {
       e.preventDefault()
       void handleSubmit()
     }

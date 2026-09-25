@@ -7,6 +7,7 @@ import { sessionExecutionRootPath } from '../services/execution-root'
 import { useThemeStore, type ThemeName } from '../stores/theme-store'
 import { createRendererLogger } from '../logger'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
+import { shortcutLabel } from '@shared/shortcuts'
 
 const log = createRendererLogger('command-palette')
 
@@ -48,9 +49,8 @@ export function commandTargetSessionId(state: {
 /**
  * Single source of truth for palette commands.
  *
- * Adding a new shortcut? Add it here - the palette will surface it
- * automatically. Don't add inline items; this registry also feeds into
- * the keyboard shortcuts section of Settings in the future.
+ * Adding a new command? Add it here - the palette will surface it
+ * automatically. Key bindings live in `@shared/shortcuts`; hints read from it.
  */
 function buildCommands(opts: {
   onClose: () => void
@@ -74,31 +74,31 @@ function buildCommands(opts: {
 
   return [
     // ── Navigation ───────────────────────────────────────────────
-    { id: 'nav.toggle-sidebar', group: 'Navigation', label: 'Toggle Sidebar', shortcut: '⌘B',
+    { id: 'nav.toggle-sidebar', group: 'Navigation', label: 'Toggle Sidebar', shortcut: shortcutLabel('app.toggle-sidebar'),
       run: () => { layout().toggleSidebar(); onClose() } },
-    { id: 'nav.toggle-terminal', group: 'Navigation', label: 'Toggle Terminal', shortcut: '⌘J',
+    { id: 'nav.toggle-terminal', group: 'Navigation', label: 'Toggle Terminal', shortcut: shortcutLabel('app.toggle-terminal'),
       run: () => { layout().toggleTerminal(); onClose() } },
-    { id: 'nav.open-settings', group: 'Navigation', label: 'Open Settings', shortcut: '⌘,',
+    { id: 'nav.open-settings', group: 'Navigation', label: 'Open Settings', shortcut: shortcutLabel('app.settings'),
       run: () => { onOpenSettings(); onClose() } },
-    { id: 'nav.search', group: 'Navigation', label: 'Search across chats', shortcut: '⌘⇧F',
+    { id: 'nav.search', group: 'Navigation', label: 'Search across chats', shortcut: shortcutLabel('app.search'),
       available: () => !!onOpenSearch,
       run: () => { onOpenSearch?.(); onClose() } },
-    { id: 'nav.dual-chat', group: 'Navigation', label: 'Open second chat panel (dual-chat)', shortcut: '⌘⇧\\',
+    { id: 'nav.dual-chat', group: 'Navigation', label: 'Open second chat panel (dual-chat)', shortcut: shortcutLabel('chat.dual'),
       available: () => !!onOpenSessionPicker,
       run: () => {
         const l = layout()
         if (l.secondarySessionId) { l.closeChatSlot('secondary'); onClose() }
         else { onOpenSessionPicker?.(); onClose() }
       } },
-    { id: 'nav.quick-prompt', group: 'Navigation', label: 'Quick prompt (context-aware one-shot)', shortcut: '⌘K',
+    { id: 'nav.quick-prompt', group: 'Navigation', label: 'Quick prompt (context-aware one-shot)', shortcut: shortcutLabel('chat.quick-prompt'),
       available: () => !!opts.onOpenQuickPrompt,
       run: () => { opts.onOpenQuickPrompt?.(); onClose() } },
-    { id: 'nav.context-bridge', group: 'Navigation', label: 'Send terminal selection to chat', shortcut: '⌘L',
+    { id: 'nav.context-bridge', group: 'Navigation', label: 'Send terminal selection to chat', shortcut: shortcutLabel('chat.context-bridge'),
       available: () => !!opts.onContextBridge,
       run: () => { opts.onContextBridge?.(); onClose() } },
 
     // ── Chat ─────────────────────────────────────────────────────
-    { id: 'chat.interrupt', group: 'Chat', label: 'Stop current turn', shortcut: '⌘⌫',
+    { id: 'chat.interrupt', group: 'Chat', label: 'Stop current turn', shortcut: shortcutLabel('chat.interrupt'),
       available: () => {
         const sid = commandTargetSessionId(layout())
         const s = sid ? agents().sessions.find((x) => x.id === sid) : null
@@ -131,13 +131,13 @@ function buildCommands(opts: {
       run: withFocusedSession((sid) => { agents().setRuntimeMode(sid, 'full-access') }) },
 
     // ── Terminal ─────────────────────────────────────────────────
-    { id: 'term.new-tab', group: 'Terminal', label: 'New Terminal Tab', shortcut: '⌘\\',
+    { id: 'term.new-tab', group: 'Terminal', label: 'New Terminal Tab', shortcut: shortcutLabel('terminal.new-tab'),
       run: withFocusedSession((sid) => {
         const ids = terms().getAllPaneIds(sid)
         const cwd = sessionExecutionRootPath(sid)
         terms().addPaneToActiveWindow(sid, { label: `Terminal ${ids.length + 1}`, cwd })
       }) },
-    { id: 'term.new-window-right', group: 'Terminal', label: 'New Terminal Window (right)', shortcut: '⌘T',
+    { id: 'term.new-window-right', group: 'Terminal', label: 'New Terminal Window (right)', shortcut: shortcutLabel('terminal.new-window-right'),
       run: withFocusedSession((sid) => {
         const ids = terms().getAllWindowIds(sid)
         const cwd = sessionExecutionRootPath(sid)
@@ -145,7 +145,7 @@ function buildCommands(opts: {
         if (ids.length === 0) terms().addWindow(sid, { label, cwd })
         else terms().splitActiveWindow(sid, 'row', { label, cwd })
       }) },
-    { id: 'term.new-window-below', group: 'Terminal', label: 'New Terminal Window (below)', shortcut: '⌘⇧T',
+    { id: 'term.new-window-below', group: 'Terminal', label: 'New Terminal Window (below)', shortcut: shortcutLabel('terminal.new-window-below'),
       run: withFocusedSession((sid) => {
         const ids = terms().getAllWindowIds(sid)
         const cwd = sessionExecutionRootPath(sid)
@@ -153,9 +153,9 @@ function buildCommands(opts: {
         if (ids.length === 0) terms().addWindow(sid, { label, cwd })
         else terms().splitActiveWindow(sid, 'column', { label, cwd })
       }) },
-    { id: 'term.cycle-next', group: 'Terminal', label: 'Next tab in active window', shortcut: '⌘⇧]',
+    { id: 'term.cycle-next', group: 'Terminal', label: 'Next tab in active window', shortcut: shortcutLabel('terminal.next-tab'),
       run: withFocusedSession((sid) => { terms().cyclePane(sid, 'next') }) },
-    { id: 'term.cycle-prev', group: 'Terminal', label: 'Previous tab in active window', shortcut: '⌘⇧[',
+    { id: 'term.cycle-prev', group: 'Terminal', label: 'Previous tab in active window', shortcut: shortcutLabel('terminal.prev-tab'),
       run: withFocusedSession((sid) => { terms().cyclePane(sid, 'prev') }) },
   ]
 }

@@ -2,6 +2,18 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
+import { matchesShortcut } from '@shared/shortcuts'
+
+// macOS-only registry commands (see SHORTCUTS) and the bytes each sends.
+const TERMINAL_KEY_SEQUENCES: [string, string][] = [
+  ['terminal.kill-line', '\x15'], // Ctrl+U: kill whole line
+  ['terminal.line-start', '\x1bOH'], // Home key (xterm application mode)
+  ['terminal.line-end', '\x1bOF'], // End key (xterm application mode)
+  ['terminal.clear', '\x0c'], // Ctrl+L: clear screen
+  ['terminal.kill-word', '\x17'], // Ctrl+W: backward kill word
+  ['terminal.word-left', '\x1b[1;3D'], // Matches bindkey in .zshrc
+  ['terminal.word-right', '\x1b[1;3C'],
+]
 
 export interface TerminalInstance {
   terminal: Terminal
@@ -149,41 +161,12 @@ function buildTerminalInstance(id: string, machineId?: string): TerminalInstance
   terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
     if (e.type !== 'keydown') return true
 
-    // Cmd combos - use Home/End sequences (not Ctrl+A/E which can echo as ^A/^E)
-    if (e.metaKey && !e.altKey && !e.ctrlKey) {
-      if (e.key === 'Backspace') {
-        sendToPty('\x15') // Ctrl+U: kill whole line
-        return false
-      }
-      if (e.key === 'ArrowLeft') {
-        sendToPty('\x1bOH') // Home key (xterm application mode)
-        return false
-      }
-      if (e.key === 'ArrowRight') {
-        sendToPty('\x1bOF') // End key (xterm application mode)
-        return false
-      }
-      if (e.key === 'k' || e.key === 'K') {
-        sendToPty('\x0c') // Ctrl+L: clear screen
-        terminal.clear()
-        return false
-      }
-    }
-
-    // Option combos
-    if (e.altKey && !e.metaKey && !e.ctrlKey) {
-      if (e.key === 'Backspace') {
-        sendToPty('\x17') // Ctrl+W: backward kill word
-        return false
-      }
-      if (e.key === 'ArrowLeft') {
-        sendToPty('\x1b[1;3D') // Matches bindkey in .zshrc
-        return false
-      }
-      if (e.key === 'ArrowRight') {
-        sendToPty('\x1b[1;3C') // Matches bindkey in .zshrc
-        return false
-      }
+    // Cmd combos use Home/End sequences (not Ctrl+A/E which can echo as ^A/^E)
+    for (const [id, seq] of TERMINAL_KEY_SEQUENCES) {
+      if (!matchesShortcut(e, id)) continue
+      sendToPty(seq)
+      if (id === 'terminal.clear') terminal.clear()
+      return false
     }
 
     // All other keys - let xterm handle natively

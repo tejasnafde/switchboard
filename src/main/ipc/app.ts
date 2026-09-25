@@ -41,6 +41,8 @@ import {
   getConversationRuntimeMode,
   setConversationRuntimeMode,
   setConversationFollowSuggestions,
+  getConversationFollowSuggestions,
+  setConversationFollowNoticeDismissed,
   getConversationProviderInstanceId,
   setConversationProviderInstanceId,
   getConversationModel,
@@ -531,6 +533,13 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   })
   host.handle(AppChannels.SET_CONVERSATION_FOLLOW_SUGGESTIONS, (id: string, mode: unknown) => {
     return { ok: setConversationFollowSuggestions(id, parseFollowSuggestionMode(mode)) }
+  })
+  host.handle(AppChannels.GET_CONVERSATION_FOLLOW_SUGGESTIONS, (id: string) => {
+    const follow = getConversationFollowSuggestions(id)
+    return { mode: follow.mode, noticeDismissed: follow.noticeDismissed, workedWorktrees: follow.workedWorktrees.length }
+  })
+  host.handle(AppChannels.DISMISS_CONVERSATION_FOLLOW_NOTICE, (id: string) => {
+    return { ok: setConversationFollowNoticeDismissed(id) }
   })
 
   // Per-conversation provider-instance id. Symmetric with runtime mode:
