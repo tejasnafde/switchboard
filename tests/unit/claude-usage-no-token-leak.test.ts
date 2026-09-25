@@ -18,6 +18,11 @@ vi.mock('../../src/main/provider/usage/claude-keychain', () => ({
   readClaudeCredential: (...args: unknown[]) => readClaudeCredential(...args),
 }))
 
+vi.mock('../../src/main/provider/usage/claude-cli-refresh', () => ({
+  refreshClaudeTokenWithoutTurn: vi.fn(async () => true),
+  refreshClaudeTokenWithTurn: vi.fn(async () => true),
+}))
+
 vi.mock('../../src/main/logger', () => ({
   createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }))
@@ -108,13 +113,13 @@ describe('fetchClaudeUsage never leaks the access token', () => {
     expectNoToken(usage)
   })
 
-  it('reports an expired credential without echoing it', async () => {
+  it('reports an expired, unrefreshable credential without echoing it', async () => {
     readClaudeCredential.mockResolvedValue({
       ...liveCredential,
       credential: { ...liveCredential.credential, expiresAtMs: Date.now() - 1000 },
     })
     const usage = await fetchClaudeUsage('inst', { CLAUDE_CONFIG_DIR: '/tmp/x' }, '/tmp/x')
-    expect(usage.status).toBe('expired')
+    expect(usage.status).toBe('unauthenticated')
     expectNoToken(usage)
   })
 

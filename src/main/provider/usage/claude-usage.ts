@@ -1,26 +1,26 @@
 /**
  * Claude subscription usage, read from `GET /api/oauth/usage`.
  *
- * Deliberately never refreshes the OAuth token: the CLI rotates it and writes
- * it back, and clears a dead refresh token, so refreshing here would race the
- * CLI and can log the user out. Expiry is checked locally and reported. A 401
- * on a token that had not expired means revocation or a missing scope, which
- * a refresh would not fix either.
+ * Deliberately never refreshes the OAuth token itself: the CLI rotates it and
+ * writes it back, and clears a dead refresh token, so refreshing here would
+ * race the CLI and can log the user out. An expired token with a refresh token
+ * is still a signed-in account (see provider-auth-state.ts), so the CLI is
+ * asked to refresh it (claude-cli-refresh.ts) and the credential is read again.
  */
 
 import { oauthLoginCommand } from '@shared/provider-auth-format'
 import { parseClaudeUsage } from '@shared/claude-usage-parse'
 import type { ProviderUsage } from '@shared/provider-usage'
+import { providerAuthState } from '@shared/provider-auth-state'
 import { createMainLogger } from '../../logger'
 import { readClaudeCredential } from './claude-keychain'
+import { refreshClaudeTokenWithoutTurn, refreshClaudeTokenWithTurn } from './claude-cli-refresh'
 import { redactSecrets } from './redact'
 
 const log = createMainLogger('provider:usage-claude')
 
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 const REQUEST_TIMEOUT_MS = 8000
-/** Treat a token inside this window as already expired. */
-const EXPIRY_SKEW_MS = 60_000
 /** The endpoint is gated on this scope; without it the API reports no limits. */
 const REQUIRED_SCOPE = 'user:profile'
 const RETRY_DELAY_MS = 400
@@ -156,6 +156,7 @@ export async function fetchClaudeUsage(
   instanceId: string,
   env: Record<string, string>,
   oauthDir: string | null,
+  opts: { refreshWithTurn?: boolean } = {},
 ): Promise<ProviderUsage> {
   const now = Date.now()
   const result = base(instanceId, now)
@@ -169,7 +170,17 @@ export async function fetchClaudeUsage(
   const configDir = env.CLAUDE_CONFIG_DIR ?? null
   const loginCommand = oauthLoginCommand('claude-code', oauthDir || configDir || '~/.claude')
 
-  const credential = await readClaudeCredential(configDir)
+  let credential = await readClaudeCredential(configDir)
+  if (credential.kind === 'found' && credential.credential.hasRefreshToken) {
+    // The turn is the user's explicit "Refresh now", so it also covers a 401
+    // on a token that had not expired locally. The no-model path only helps
+    // when the CLI itself considers the token expired.
+    const expired = providerAuthState({ credential: credential.credential, nowMs: now }) === 'refresh-pending'
+    if (opts.refreshWithTurn || expired) {
+      await (opts.refreshWithTurn ? refreshClaudeTokenWithTurn(env) : refreshClaudeTokenWithoutTurn(env))
+      credential = await readClaudeCredential(configDir)
+    }
+  }
   if (credential.kind === 'unsupported') {
     return { ...result, status: 'unsupported', message: credential.message }
   }
@@ -185,15 +196,35 @@ export async function fetchClaudeUsage(
     }
   }
 
-  const { accessToken, expiresAtMs, subscriptionType, scopes } = credential.credential
+  const { accessToken, subscriptionType, scopes } = credential.credential
   const plan = subscriptionType
+  const refreshPending: ProviderUsage = {
+    ...result,
+    status: 'refresh-pending',
+    plan,
+    message: "Signed in. The token refreshes on this account's next chat, and usage appears after it."
+      + ' Refresh now sends one tiny message on the smallest model, which uses a small amount of quota.',
+  }
 
-  if (expiresAtMs !== null && expiresAtMs - EXPIRY_SKEW_MS <= now) {
+  const state = providerAuthState({ credential: credential.credential, nowMs: Date.now() })
+  if (state === 'refresh-pending' && !opts.refreshWithTurn) return refreshPending
+  if (state === 'refresh-pending') {
+    // A real turn went through the CLI and the token is still stale, so its
+    // refresh failed: the refresh token is dead, or the turn never ran.
     return {
       ...result,
-      status: 'expired',
+      status: 'unauthenticated',
       plan,
-      message: `The stored login for this instance expired at ${new Date(expiresAtMs).toLocaleString()}. Run a turn with this instance, or run the login command, to refresh it.`,
+      message: 'A refresh turn did not renew this login. If chats on this account fail too, log in again.',
+      ...(loginCommand ? { command: loginCommand } : {}),
+    }
+  }
+  if (state === 'logged-out') {
+    return {
+      ...result,
+      status: 'unauthenticated',
+      plan,
+      message: 'The stored login expired and has no refresh token, so it cannot be renewed. Log in again.',
       ...(loginCommand ? { command: loginCommand } : {}),
     }
   }
@@ -224,7 +255,11 @@ export async function fetchClaudeUsage(
   }
 
   if (response.status === 401 || response.status === 403) {
-    // The token had not expired, so this is revocation or a scope problem.
+    // The server can reject a token before its stored expiry. With a refresh
+    // token the CLI recovers from a 401 on its next call, so this is not a
+    // logout unless a refresh turn just ran and it is still rejected. A 403
+    // is a scope problem that no refresh fixes.
+    if (response.status === 401 && credential.credential.hasRefreshToken && !opts.refreshWithTurn) return refreshPending
     return {
       ...result,
       status: 'unauthenticated',

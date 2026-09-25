@@ -1,8 +1,9 @@
 /**
  * Per-instance subscription usage lookup, behind the Settings "Usage" button.
  *
- * Read-only: nothing here writes a credential, refreshes a token, or touches
- * a running session.
+ * Nothing here writes a credential or refreshes a token itself, and nothing
+ * touches a running session. A stale Claude token is refreshed by the Claude
+ * CLI (see claude-cli-refresh.ts).
  */
 
 import { getProviderInstanceFull } from '../../db/provider-instances'
@@ -53,14 +54,20 @@ function flat(
   }
 }
 
-async function probe(id: string, agentType: ProviderUsage['agentType']): Promise<ProviderUsage> {
+export interface UsageRequestOptions {
+  force?: boolean
+  /** Claude only: run one minimal CLI turn first so the CLI refreshes a stale token. */
+  refreshWithTurn?: boolean
+}
+
+async function probe(id: string, agentType: ProviderUsage['agentType'], opts: UsageRequestOptions): Promise<ProviderUsage> {
   const instance = getProviderInstanceFull(id)
   if (!instance) return flat(id, agentType, 'unsupported', 'Instance not found.')
 
   const env = resolveInstanceEnv(instance)
 
   if (instance.agentType === 'claude-code') {
-    return fetchClaudeUsage(id, env, instance.oauthDir)
+    return fetchClaudeUsage(id, env, instance.oauthDir, { refreshWithTurn: opts.refreshWithTurn })
   }
 
   if (instance.agentType === 'codex') {
@@ -92,8 +99,8 @@ export function invalidateUsage(id?: string): void {
   cache.delete(id)
 }
 
-export async function fetchInstanceUsage(id: string, opts?: { force?: boolean }): Promise<ProviderUsage> {
-  if (opts?.force) cache.delete(id)
+export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions = {}): Promise<ProviderUsage> {
+  if (opts.force || opts.refreshWithTurn) cache.delete(id)
   else {
     const cached = cache.get(id)
     if (cached && Date.now() - cached.fetchedAtMs < CACHE_TTL_MS) return cached
@@ -107,7 +114,7 @@ export async function fetchInstanceUsage(id: string, opts?: { force?: boolean })
   // Resolved up front so a probe that throws can still report the right kind.
   const agentType = getProviderInstanceFull(id)?.agentType ?? 'claude-code'
 
-  const task = probe(id, agentType)
+  const task = probe(id, agentType, opts)
     .then((result) => {
       cache.set(id, result)
       return result
