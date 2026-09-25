@@ -402,6 +402,17 @@ background dependency copy) or total disk use across many concurrent cards
 becomes a real complaint. Until then the existing worktree + dependency-clone
 path covers the common case at lower implementation risk.
 
+## 10. Settings UI overhaul
+
+**Shape.** The Settings dialog moved onto a Radix Dialog in #128, but only its
+shell uses Tailwind. The tab bodies still carry about 126 inline `style={{}}`
+objects, and the layout grew one tab at a time. The owner wants to redesign the
+whole Settings UI rather than port those styles one by one, so the inline
+styles stay until that redesign.
+
+**What unblocks this.** A design for the new Settings layout (mock first, as
+with the sidebar and composer).
+
 ## Researched, specced, not started (2026-08-09)
 
 Both were briefed and scoped from the competitor research below; each died to
@@ -451,14 +462,3 @@ two-runner rule. JS only, so it stays on the OTA lane.
   `packages/contracts/src/providerInstance.ts`).
 - Cursor adapter (worth yoinking model+reasoning matrix from):
   `/tmp/vibe-kanban/crates/executors/src/executors/cursor.rs`.
-
-## 10. Settings UI overhaul
-
-**Shape.** The Settings dialog moved onto a Radix Dialog in #128, but only its
-shell uses Tailwind. The tab bodies still carry about 126 inline `style={{}}`
-objects, and the layout grew one tab at a time. The owner wants to redesign the
-whole Settings UI rather than port those styles one by one, so the inline
-styles stay until that redesign.
-
-**What unblocks this.** A design for the new Settings layout (mock first, as
-with the sidebar and composer).
