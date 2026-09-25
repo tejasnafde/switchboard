@@ -1,8 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import Database from 'better-sqlite3'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import {
   SqliteTurnAcceptanceStore,
   ensureTurnAcceptanceSchema,
@@ -12,12 +9,6 @@ import {
 import { AtomicUserTurnSubmission } from '../../src/main/provider/durable-turn-acceptance'
 import { commitConversationProfileSwitch } from '../../src/main/db/conversation-profile-commit'
 import { storedTaskNoticeId } from '../../src/shared/synthetic-message'
-
-const scratch: string[] = []
-
-afterEach(() => {
-  while (scratch.length) rmSync(scratch.pop()!, { recursive: true, force: true })
-})
 
 describe('SqliteTurnAcceptanceStore', () => {
   it('migrates the existing acceptance table for canonical envelopes', () => {
@@ -60,31 +51,20 @@ describe('SqliteTurnAcceptanceStore', () => {
     db.close()
   })
 
-  // Both "backend process restart" tests below open a SECOND better-sqlite3
-  // connection to the same on-disk file rather than closing the first one and
-  // reopening the same path. A real restart is a brand-new OS process, which is
-  // exactly what a second connection object models - but closing `first` and
-  // then immediately calling `new Database(path)` in the SAME process measured
-  // as high as 6305ms on windows-latest CI (vitest's default 5000ms test
-  // timeout killed it first: gh run 35915744856, job 107366633886). better-
-  // sqlite3's own busy_timeout defaults to 5000ms, so that close-then-reopen
-  // cycle was racing two independent 5000ms timers against whatever transient
-  // handle-release delay Windows introduces (most likely Defender's on-access
-  // scan of the freshly-written file) - not a defect in recoverUndispatchedTurns
-  // or reserve(), which operate on committed rows regardless of which
-  // connection reads them. No product code path does this close-then-reopen
-  // dance in-process: a real restart is a whole new process (src/main/db/
-  // database.ts's closeDb() runs at app quit, getDb() reopens only when the
-  // app relaunches), so this was purely a test-harness artifact.
+  // The "backend process restart" tests below reopen the committed database
+  // image (`serialize()`), which is what a restarted process reads. They used
+  // a temp file on disk, and on windows-latest every autocommit there creates
+  // and deletes a -journal file under Defender's on-access scan: first a
+  // close-then-reopen measured 6305ms (gh run 35915744856), then a second
+  // handle on the same file 7741ms (gh run 36120536528), against 3-10ms for the
+  // in-memory tests in this file. recoverUndispatchedTurns and reserve() act on
+  // committed rows, so which handle holds them does not change what is tested.
   it('releases an undispatched reservation after a backend process restart', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'sb-turn-accept-'))
-    scratch.push(dir)
-    const path = join(dir, 'switchboard.db')
-    const first = new Database(path)
+    const first = new Database(':memory:')
     ensureTurnAcceptanceSchema(first)
     new SqliteTurnAcceptanceStore(() => first).reserve(acceptanceKey(), 'payload-a')
 
-    const reopened = new Database(path)
+    const reopened = new Database(first.serialize())
     recoverUndispatchedTurns(reopened)
     const result = new SqliteTurnAcceptanceStore(() => reopened).reserve(acceptanceKey(), 'payload-a')
 
@@ -94,16 +74,13 @@ describe('SqliteTurnAcceptanceStore', () => {
   })
 
   it('keeps a dispatching turn ambiguous after a backend process restart', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'sb-turn-accept-'))
-    scratch.push(dir)
-    const path = join(dir, 'switchboard.db')
-    const first = new Database(path)
+    const first = new Database(':memory:')
     ensureTurnAcceptanceSchema(first)
     const firstStore = new SqliteTurnAcceptanceStore(() => first)
     firstStore.reserve(acceptanceKey(), 'payload-a')
     firstStore.beginDispatch(acceptanceKey(), 'payload-a')
 
-    const reopened = new Database(path)
+    const reopened = new Database(first.serialize())
     recoverUndispatchedTurns(reopened)
     const result = new SqliteTurnAcceptanceStore(() => reopened).reserve(acceptanceKey(), 'payload-a')
 

@@ -716,9 +716,11 @@ export class ProviderRegistry implements PeerToolHost {
     // Claude queues some notices and drops them without a transcript line, so
     // without this copy a notice shown live is gone after a reload. Stamped
     // with the event's time so the reload can pair it with a line if one exists.
+    // Stored under the root conversation, where a rotated session id reads it.
     if (event.type === 'task.notification') {
       try {
-        saveMessageIfAbsent(storedTaskNoticeId(event.threadId, event.taskId), event.threadId, 'user', taskNotificationText(event), undefined, undefined, event.at)
+        const conversationId = resolveRootThreadId(event.threadId)
+        saveMessageIfAbsent(storedTaskNoticeId(conversationId, event.messageId), conversationId, 'user', taskNotificationText(event), undefined, undefined, event.at)
       } catch (err) {
         log.warn(`failed to persist task notice ${event.taskId} for ${event.threadId}: ${err}`)
       }

@@ -1,6 +1,6 @@
 import type { ChatMessage, ToolCall } from '@shared/types'
 import { isActivityRow } from '@shared/turn-activity'
-import { STORED_TASK_NOTICE_PREFIX, splitSyntheticUserText, transcriptShowsTaskNotification, type SyntheticUserPart } from '@shared/synthetic-message'
+import { STORED_TASK_NOTICE_PREFIX, TRANSCRIPT_NOTICE_SKEW_MS, sameTaskNotice, splitSyntheticUserText, type SyntheticUserPart } from '@shared/synthetic-message'
 
 /**
  * Collapse the same message arriving from more than one source. `load-by-id`
@@ -157,12 +157,12 @@ function taskNoticePart(message: ChatMessage): TaskNoticePart | undefined {
 }
 
 /**
- * The stored notices no transcript line shows. A line claims a notice with the
- * same task id first (the nearest one, as a resumed subagent can notify
- * again). A line without a task id claims one with equal fields inside the
- * skew, the rule the live reducers use. Each line claims one notice at most.
- * ponytail: a task that notified before storage existed and again later, with
- * the later line dropped, pairs its stored notice with the older line.
+ * The stored notices no transcript line shows. One task can report many times
+ * (a Monitor notices once per event, then once when its stream ends), so a
+ * line pairs only with the same occurrence: equal task id, status and summary.
+ * A line without a task id also has to fall inside the skew, the rule the live
+ * reducers use. Closest pairs are taken first and each side pairs once, so of
+ * two equal notices the line goes to the one it was written for.
  */
 function noticesMissingFromTranscript(stored: ChatMessage[], disk: ChatMessage[]): ChatMessage[] {
   if (stored.length === 0) return []
@@ -171,28 +171,27 @@ function noticesMissingFromTranscript(stored: ChatMessage[], disk: ChatMessage[]
     .flatMap((message) => (splitSyntheticUserText(message.content)?.parts ?? [])
       .filter((part): part is TaskNoticePart => part.kind === 'task-notification')
       .map((part) => ({ part, at: message.timestamp })))
-  const claimed = new Set<number>()
-  const nearest = (notice: ChatMessage, matches: (line: (typeof lines)[number]) => boolean): number => {
-    let best = -1
+  const pairs: Array<{ notice: number; line: number; distance: number }> = []
+  stored.forEach((message, notice) => {
+    const part = taskNoticePart(message)
+    if (!part) return
     lines.forEach((line, index) => {
-      if (claimed.has(index) || !matches(line)) return
-      if (best < 0 || Math.abs(line.at - notice.timestamp) < Math.abs(lines[best].at - notice.timestamp)) best = index
+      const distance = Math.abs(line.at - message.timestamp)
+      const sameOccurrence = line.part.taskId
+        ? sameTaskNotice(line.part, part)
+        : sameTaskNotice(line.part, { ...part, taskId: undefined }) && distance <= TRANSCRIPT_NOTICE_SKEW_MS
+      if (sameOccurrence) pairs.push({ notice, line: index, distance })
     })
-    return best
-  }
-  return [...stored].sort((a, b) => a.timestamp - b.timestamp).filter((notice) => {
-    const part = taskNoticePart(notice)
-    if (!part) return true
-    let index = part.taskId ? nearest(notice, (line) => line.part.taskId === part.taskId) : -1
-    if (index < 0) {
-      // A line with a task id of its own is some other task's.
-      const live = { taskId: '', status: part.status, summary: part.summary, at: notice.timestamp }
-      index = nearest(notice, (line) => !line.part.taskId && transcriptShowsTaskNotification([line], live))
-    }
-    if (index < 0) return true
-    claimed.add(index)
-    return false
   })
+  pairs.sort((a, b) => a.distance - b.distance)
+  const shown = new Set<number>()
+  const claimed = new Set<number>()
+  for (const { notice, line } of pairs) {
+    if (shown.has(notice) || claimed.has(line)) continue
+    shown.add(notice)
+    claimed.add(line)
+  }
+  return stored.filter((_, notice) => !shown.has(notice))
 }
 
 /** The disk message already holding every one of this row's tool calls. */

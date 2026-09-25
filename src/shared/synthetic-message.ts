@@ -105,12 +105,14 @@ export function taskNotificationText(n: { taskId: string; status: string; summar
 export const STORED_TASK_NOTICE_PREFIX = 'tasknotice_'
 
 /**
- * The SQLite row a live notice is stored under: one per task in a thread, so a
- * replayed event cannot store it twice. Not the live row's `task_` id, which
- * the desktop reducer skips when it looks for a notice already on screen.
+ * The SQLite row a live notice is stored under: one per notice, keyed by the
+ * live event's `messageId`, so a replayed event cannot store it twice while a
+ * task that reports again (a Monitor emits one notice per event, then one when
+ * its stream ends) keeps every notice. Not the live row's own `task_` id,
+ * which the desktop reducer skips when it looks for a notice already on screen.
  */
-export function storedTaskNoticeId(threadId: string, taskId: string): string {
-  return `${STORED_TASK_NOTICE_PREFIX}${threadId}:${taskId}`
+export function storedTaskNoticeId(conversationId: string, messageId: string): string {
+  return `${STORED_TASK_NOTICE_PREFIX}${conversationId}:${messageId}`
 }
 
 /**
@@ -138,6 +140,14 @@ export function transcriptShowsTaskNotification(
       && Math.abs(at - live.at) <= TRANSCRIPT_NOTICE_SKEW_MS) return true
   }
   return false
+}
+
+/** Equal task id, status and summary, by the transcript parser's rules. */
+export function sameTaskNotice(
+  a: { taskId?: string; status: string; summary: string },
+  b: { taskId?: string; status: string; summary: string },
+): boolean {
+  return taskNoticeKey(a) === taskNoticeKey(b)
 }
 
 /** The transcript parser's rules (`tag` trims, status defaults), applied to either side. */

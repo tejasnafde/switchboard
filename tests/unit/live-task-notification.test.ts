@@ -162,7 +162,7 @@ describe('stored notice across a reload', () => {
   const transcriptLine = (at: number): ChatMessage => ({ id: 'jsonl-uuid', role: 'user', content: TRANSCRIPT_TEXT, timestamp: at + 70 })
   // What the registry writes for the live event (see the assistant-mirror test).
   const stored = (event: RuntimeTaskNotificationEvent): ChatMessage => ({
-    id: storedTaskNoticeId(T, event.taskId), role: 'user', content: taskNotificationText(event), timestamp: event.at,
+    id: storedTaskNoticeId(T, event.messageId), role: 'user', content: taskNotificationText(event), timestamp: event.at,
   })
   const ctx = { streamingEnabled: true, coalescer: null }
 
@@ -208,9 +208,9 @@ describe('stored notice across a reload', () => {
     expect(phoneAfterReseed(history, event).map((i) => i.id)).toEqual(['h-jsonl-uuid-s0'])
   })
 
-  it('pairs by task id before fields and time', () => {
+  it('pairs a line only with the same occurrence of its task', () => {
     const event = liveEvent()
-    // Same task, stamped well outside the skew: still that task's line.
+    // Same task and fields, consumed well after the notice: still its line.
     const late = { ...transcriptLine(event.at), timestamp: event.at + 60_000 }
     expect(mergeConversationMessages([late], [stored(event)])).toEqual([late])
     // Another task's line with equal fields does not claim it.
@@ -222,11 +222,34 @@ describe('stored notice across a reload', () => {
     expect(mergeConversationMessages([{ ...bare, timestamp: event.at + 6_000 }], [stored(event)])).toHaveLength(2)
   })
 
-  it('lets one line claim one stored notice only', () => {
-    const event = liveEvent()
-    const again = { ...event, taskId: 'bd5t7u1q8', at: event.at + 600_000 }
-    const second: ChatMessage = { ...stored(again), id: storedTaskNoticeId('rotated', again.taskId) }
-    const merged = mergeConversationMessages([transcriptLine(event.at)], [stored(event), second])
-    expect(merged.map((m) => m.id)).toEqual(['jsonl-uuid', second.id])
+  // Recorded from a Monitor task on this machine: one notice per event, then
+  // one when its stream ended. The last was queued and never written as a line.
+  const monitor = (uuid: string, summary: string, at: number): RuntimeTaskNotificationEvent => ({
+    type: 'task.notification', threadId: T, messageId: `task_${uuid}`, taskId: 'bkjj7ulhp', status: 'completed', summary, at,
+  })
+  const lineFor = (event: RuntimeTaskNotificationEvent, id: string): ChatMessage => ({
+    id, role: 'user', content: taskNotificationText(event), timestamp: event.at + 100,
+  })
+
+  it('keeps each notice of a task that reports more than once', () => {
+    const web = monitor('u1', 'Monitor event: "scout deploy workflows after merge"', 1_000)
+    const ended = monitor('u2', 'Monitor "scout deploy workflows after merge" stream ended', 500_000)
+    const merged = mergeConversationMessages([lineFor(web, 'line-web')], [stored(web), stored(ended)])
+    expect(merged.map((m) => m.id)).toEqual(['line-web', stored(ended).id])
+
+    expect(desktopAfterReload(merged, ended).map((m) => m.id)).toEqual(['line-web', stored(ended).id])
+    expect(phoneAfterReseed(merged, ended).map((i) => i.id)).toEqual(['h-line-web-s0', `h-${stored(ended).id}-s0`])
+
+    // The other way round: the earlier notice was dropped, the later one written.
+    expect(mergeConversationMessages([lineFor(ended, 'line-ended')], [stored(web), stored(ended)]).map((m) => m.id))
+      .toEqual([stored(web).id, 'line-ended'])
+  })
+
+  it('gives a line to the equal notice it was written for', () => {
+    // Two events with the same summary: the first line was dropped, the second written.
+    const first = monitor('u1', 'Monitor event: "deploy"', 1_000)
+    const second = monitor('u2', 'Monitor event: "deploy"', 60_000)
+    const merged = mergeConversationMessages([lineFor(second, 'line-2')], [stored(first), stored(second)])
+    expect(merged.map((m) => m.id)).toEqual([stored(first).id, 'line-2'])
   })
 })
