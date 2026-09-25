@@ -1,7 +1,7 @@
 /**
  * Live preview line for a session/thread's CURRENT TURN - used by the
  * desktop sidebar Recents row, the kanban card tile, and the mobile
- * conversation list (see session-preview.ts / thread-preview.ts, the thin
+ * conversation list (see `sessionPreviewLine` below / thread-preview.ts, the thin
  * per-surface adapters that map their own message shape onto
  * `PreviewMessage` and call `turnPreviewLine`).
  *
@@ -13,6 +13,8 @@
  * before falling back to a truncated raw preview of the newest one.
  */
 import { extractDigest, stripDigest } from './agent-digest'
+import { isSyntheticOnlyUserText } from './synthetic-message'
+import type { ChatMessage } from './types'
 
 export interface PreviewMessage {
   text: string
@@ -88,4 +90,21 @@ export function turnPreviewLine(messages: PreviewMessage[]): string | undefined 
   }
 
   return undefined
+}
+
+/**
+ * `turnPreviewLine` over stored or loaded `ChatMessage[]`: the desktop's
+ * Recents row and kanban tile, and the backend's lazy status-line backfill.
+ */
+export function sessionPreviewLine(messages: ChatMessage[]): string | undefined {
+  return turnPreviewLine(
+    messages.map(
+      (message): PreviewMessage => ({
+        text: message.content,
+        isAssistant: message.role === 'assistant',
+        // A background-task notification is not a turn boundary for the preview.
+        isUser: message.role === 'user' && (message.displayBody !== undefined || !isSyntheticOnlyUserText(message.content)),
+      }),
+    ),
+  )
 }

@@ -19,7 +19,11 @@ vi.mock('../../src/main/db/provider-instances', () => ({
 const saved: Array<{ id: string; conversationId: string; role: string; content: string }> = []
 const savedAt: Array<number | undefined> = []
 const activity: Array<{ id: string; conversationId: string; timestamp: number; toolCalls?: unknown; fileDiff?: { status: string } }> = []
+const statusLines: Array<{ id: string; line: string }> = []
 vi.mock('../../src/main/db/database', () => ({
+  // A rotated id `uuid-1` belongs to thread `t1`.
+  threadFamilyIds: (id: string) => (id === 't1' || id === 'uuid-1' ? ['t1', 'uuid-1'] : [id]),
+  setConversationStatusLine: (id: string, line: string) => { statusLines.push({ id, line }) },
   saveActivityMessageIfAbsent: (row: (typeof activity)[number]) => {
     activity.push(row)
     return true
@@ -44,8 +48,9 @@ import { storedToolText, STORED_TOOL_TEXT_MAX_CHARS } from '../../src/shared/tur
 import { storedTaskNoticeId } from '../../src/shared/synthetic-message'
 
 /** Drives `publish` directly - the mirror is a property of the event stream. */
+const emitted: string[] = []
 function makeRegistry(): { publish: (e: RuntimeEvent) => void; registry: ProviderRegistry } {
-  const host = { handle: () => {}, emit: () => {}, on: () => {} }
+  const host = { handle: () => {}, emit: (channel: string) => { emitted.push(channel) }, on: () => {} }
   const registry = new ProviderRegistry(host as never)
   const publish = (e: RuntimeEvent) => (registry as unknown as {
     publish: (e: RuntimeEvent) => void
@@ -60,7 +65,7 @@ const content = (threadId: string, messageId: string, text: string, append?: boo
 const turnEnd = (threadId: string): RuntimeEvent => ({ type: 'turn.completed', threadId } as RuntimeEvent)
 
 describe('live assistant mirror', () => {
-  beforeEach(() => { saved.length = 0; savedAt.length = 0; activity.length = 0 })
+  beforeEach(() => { saved.length = 0; savedAt.length = 0; activity.length = 0; statusLines.length = 0; emitted.length = 0 })
 
   it('persists the folded reply once the turn completes', () => {
     const { publish } = makeRegistry()
@@ -72,6 +77,46 @@ describe('live assistant mirror', () => {
     expect(saved).toEqual([
       { id: 'm1', conversationId: 't1', role: 'assistant', content: 'Hello world' },
     ])
+  })
+
+  it('stores the turn digest as the status line, without the tags', () => {
+    const { publish } = makeRegistry()
+    publish(content('t1', 'm1', 'Done. <agent_digest>Tests pass, PR open</agent_digest>'))
+    publish(content('t1', 'm2', 'Anything else?'))
+    publish(turnEnd('t1'))
+    expect(statusLines).toEqual([{ id: 't1', line: 'Tests pass, PR open' }])
+    expect(emitted).toContain('app:conversations-changed')
+  })
+
+  it('reports a turn in flight under any id of the thread until it completes', () => {
+    const { publish, registry } = makeRegistry()
+    ;(registry as unknown as { beginOutstandingTurn: (id: string) => void }).beginOutstandingTurn('t1')
+    expect(registry.isTurnInFlight('uuid-1')).toBe(true)
+    expect(registry.isTurnInFlight('other')).toBe(false)
+    publish(turnEnd('t1'))
+    expect(registry.isTurnInFlight('uuid-1')).toBe(false)
+  })
+
+  it('keeps the stored status line when a stop flushes a half-finished turn', () => {
+    const { publish, registry } = makeRegistry()
+    publish(content('t1', 'm1', 'Halfway through the'))
+    ;(registry as unknown as { flushTurnMirror: (id: string, completed: boolean) => void }).flushTurnMirror('t1', false)
+    expect(saved.map((m) => m.content)).toEqual(['Halfway through the'])
+    expect(statusLines).toHaveLength(0)
+    expect(emitted).not.toContain('app:conversations-changed')
+  })
+
+  it('falls back to the plain-text preview when the turn has no digest', () => {
+    const { publish } = makeRegistry()
+    publish(content('t1', 'm1', 'Fixed **the** `login` bug'))
+    publish(turnEnd('t1'))
+    expect(statusLines).toEqual([{ id: 't1', line: 'Fixed the login bug' }])
+  })
+
+  it('stores nothing for a turn with no assistant text', () => {
+    const { publish } = makeRegistry()
+    publish(turnEnd('t1'))
+    expect(statusLines).toHaveLength(0)
   })
 
   it('does not mirror reasoning or plan streams', () => {

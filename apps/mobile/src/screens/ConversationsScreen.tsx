@@ -37,10 +37,24 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Conversations'>
  * one thread, so chat-store churn re-renders only the affected row - the list
  * itself never subscribes to the whole threads map.
  */
-const RowMeta = memo(function RowMeta({ threadKeyStr, title }: { threadKeyStr: string; title: string }) {
+export const RowMeta = memo(function RowMeta({
+  threadKeyStr,
+  title,
+  statusLine,
+}: {
+  threadKeyStr: string
+  title: string
+  /** The backend's stored line: shown until the thread's feed is fetched this run. */
+  statusLine?: string | null
+}) {
   const unread = useChatStore((s) => s.threads[threadKeyStr]?.unread ?? 0)
   const status = useChatStore((s) => s.threads[threadKeyStr]?.status)
-  const preview = useChatStore((s) => threadPreviewLine(s.threads[threadKeyStr]?.items ?? []))
+  // A feed restored from disk may predate the backend's line, so it only fills in.
+  const preview = useChatStore((s) => {
+    const thread = s.threads[threadKeyStr]
+    const feedPreview = threadPreviewLine(thread?.items ?? [])
+    return thread?.cached ? statusLine ?? feedPreview : feedPreview ?? statusLine
+  })
   return (
     <>
       <View style={styles.titleLine}>
@@ -236,7 +250,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
             }
           >
             <View style={styles.rowBody}>
-              <RowMeta threadKeyStr={threadKey(connectionId, item.id)} title={item.title} />
+              <RowMeta threadKeyStr={threadKey(connectionId, item.id)} title={item.title} statusLine={item.status_line} />
               <View style={styles.metaLine}>
                 <View style={styles.agentChip}>
                   <Text style={styles.agentChipText}>{conversationSourceLabel(item)}</Text>

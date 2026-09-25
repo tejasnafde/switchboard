@@ -92,6 +92,27 @@ class BrowsePresentationTest {
     }
 
     @Test
+    fun storedStatusLineFillsThePreviewUntilLiveTurnTextArrives() {
+        fun rows(activity: Map<String, BrowseThreadActivity>) = (
+            BrowsePresenter.conversations(
+                BrowseLoadState.Ready(
+                    listOf(
+                        BrowseConversationRecord(conversation("stored", 20).copy(statusLine = "Tests pass, PR open")),
+                        BrowseConversationRecord(conversation("none", 10)),
+                    ),
+                    cached = false,
+                ),
+                OfflineBrowseIndex.empty(),
+                activity,
+            ) as BrowseConversationsPresentation.Content
+        ).rows
+
+        assertEquals(listOf("Tests pass, PR open", null), rows(emptyMap()).map { it.preview })
+        val live = mapOf("stored" to BrowseThreadActivity(status = "running", unread = 0, preview = "Reading the router"))
+        assertEquals("Reading the router", rows(live).first().preview)
+    }
+
+    @Test
     fun archivedOnlyConversationCachePresentsTheRealEmptyState() {
         val result = BrowsePresenter.conversations(
             BrowseLoadState.Ready(

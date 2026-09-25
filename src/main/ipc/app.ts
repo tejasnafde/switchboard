@@ -37,6 +37,7 @@ import {
   getArchivedConversations,
   isConversationArchived,
   getConversationById,
+  setConversationStatusLineIfMissing,
   getConversationForkMetadata,
   getConversationRuntimeMode,
   setConversationRuntimeMode,
@@ -78,6 +79,7 @@ import {
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import { loadConversationHistory } from '../conversations/history'
+import { sessionPreviewLine } from '@shared/turn-preview'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import { getConversationForkCoordinator } from '../conversations/conversation-fork-runtime'
 import type { ConversationForkCoordinator } from '../conversations/conversation-fork-coordinator'
@@ -135,6 +137,8 @@ function enrichRecoveryCandidates(candidates: SessionSummary[]): SessionSummary[
 
 export interface AppHandlerDependencies {
   conversationFork?: Pick<ConversationForkCoordinator, 'createOrGet' | 'get'>
+  /** True while the thread's provider is mid-turn; see `ProviderRegistry.isTurnInFlight`. */
+  isTurnInFlight?: (threadId: string) => boolean
 }
 
 export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependencies = {}): void {
@@ -470,6 +474,19 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
 
     try {
       const history = await loadConversationHistory(conversationId, row.project_path)
+      // Lazy backfill for chats whose last turn ended before the column existed.
+      // Skipped mid-turn: the history's newest text is not a finished turn yet.
+      if (!(rootRow ?? row).status_line && !deps.isTurnInFlight?.(conversationId)) {
+        const statusLine = sessionPreviewLine(history.messages)
+        try {
+          // Mounted lists refresh on this, as they do after a turn stores one.
+          if (statusLine && setConversationStatusLineIfMissing(row.id, statusLine)) {
+            host.emit(AppChannels.CONVERSATIONS_CHANGED)
+          }
+        } catch (err) {
+          log.warn(`status line backfill failed for ${conversationId}: ${err}`)
+        }
+      }
       log.info(
         `load-by-id: ${conversationId} -> ${history.messages.length} messages ` +
         `(${history.diskMessageCount} disk, ${history.databaseMessageCount} DB) ` +

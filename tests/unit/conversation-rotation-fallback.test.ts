@@ -35,6 +35,7 @@ const conversations = new Map<string, {
   follow_suggestions?: string | null
   follow_notice_dismissed?: number | null
   worked_worktrees?: string | null
+  status_line?: string | null
 }>()
 
 vi.mock('better-sqlite3', () => {
@@ -148,6 +149,20 @@ vi.mock('better-sqlite3', () => {
             row.last_read_at = at
             return { changes: 1 }
           }
+          if (/UPDATE conversations SET status_line = \? WHERE id = \? AND status_line IS NULL/.test(sql)) {
+            const [line, id] = args as [string, string]
+            const row = conversations.get(id)
+            if (!row || row.status_line != null) return { changes: 0 }
+            row.status_line = line
+            return { changes: 1 }
+          }
+          if (/UPDATE conversations SET status_line = \?/.test(sql)) {
+            const [line, id] = args as [string, string]
+            const row = conversations.get(id)
+            if (!row) return { changes: 0 }
+            row.status_line = line
+            return { changes: 1 }
+          }
           if (/UPDATE conversations SET follow_suggestions = \?, follow_notice_dismissed = NULL WHERE id = \?/.test(sql)) {
             const [mode, id] = args as [string | null, string]
             const row = conversations.get(id)
@@ -227,6 +242,8 @@ const {
   setConversationFollowSuggestions,
   setConversationFollowNoticeDismissed,
   recordConversationWorkedWorktrees,
+  setConversationStatusLine,
+  setConversationStatusLineIfMissing,
 } = await import('../../src/main/db/database')
 
 beforeEach(() => {
@@ -392,6 +409,31 @@ describe('read state covers every id of a rotated thread', () => {
 
   it('reports no change when the thread has no row at all', () => {
     expect(setConversationLastRead('ghost', 5000)).toBe(false)
+  })
+})
+
+describe('stored status line survives Claude session-id rotation', () => {
+  it('lands on the root row the lists read when written under a rotated UUID', () => {
+    conversations.set('agent_123', {})
+    conversations.set('uuid-abc', {})
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    setConversationStatusLine('uuid-abc', 'Tests pass, PR open')
+
+    expect(conversations.get('agent_123')?.status_line).toBe('Tests pass, PR open')
+    expect(conversations.get('uuid-abc')?.status_line).toBe('Tests pass, PR open')
+  })
+
+  it('backfills only rows still without a line, so a newer turn line survives', () => {
+    conversations.set('agent_123', { status_line: 'Newer turn' })
+    conversations.set('uuid-abc', {})
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    expect(setConversationStatusLineIfMissing('uuid-abc', 'Older history')).toBe(true)
+    expect(setConversationStatusLineIfMissing('uuid-abc', 'Oldest')).toBe(false)
+
+    expect(conversations.get('agent_123')?.status_line).toBe('Newer turn')
+    expect(conversations.get('uuid-abc')?.status_line).toBe('Older history')
   })
 })
 

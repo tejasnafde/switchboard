@@ -354,6 +354,8 @@ export interface ConversationRow {
   fork_git_base_sha?: string | null
   fork_source_dirty?: number | null
   fork_omitted_change_summary?: string | null
+  /** Last finished turn's preview line - see `setConversationStatusLine`. */
+  status_line?: string | null
 }
 
 /**
@@ -800,6 +802,28 @@ export function recordConversationWorkedWorktrees(id: string, paths: readonly st
     ).run(JSON.stringify(worked), resolveRootThreadId(id))
   }
   return { ...current, workedWorktrees: worked }
+}
+
+/**
+ * Store the list preview of the thread's last finished turn. Leaves
+ * `updated_at` alone, and writes every id of the thread like
+ * `setConversationLastRead`, so a rotated id lands on the row lists read.
+ */
+export function setConversationStatusLine(id: string, line: string): void {
+  const stmt = getDb().prepare('UPDATE conversations SET status_line = ? WHERE id = ?')
+  for (const memberId of threadFamilyIds(id)) stmt.run(line, memberId)
+}
+
+/**
+ * The history backfill's write: only rows still without a line, in the same
+ * statement, so a turn that ended while history loaded keeps its newer line.
+ * Returns whether any row took it.
+ */
+export function setConversationStatusLineIfMissing(id: string, line: string): boolean {
+  const stmt = getDb().prepare('UPDATE conversations SET status_line = ? WHERE id = ? AND status_line IS NULL')
+  let changed = 0
+  for (const memberId of threadFamilyIds(id)) changed += stmt.run(line, memberId).changes
+  return changed > 0
 }
 
 /**

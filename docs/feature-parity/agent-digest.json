@@ -13,7 +13,6 @@
         "src/renderer/components/chat/MessageBubble.tsx",
         "src/renderer/components/sidebar/recent-sessions.ts",
         "src/renderer/components/sidebar/RecentSessionsSection.tsx",
-        "src/renderer/services/session-preview.ts",
         "src/renderer/components/kanban/KanbanView.tsx",
         "src/renderer/styles/global.css",
         "tests/unit/agent-digest.test.ts",

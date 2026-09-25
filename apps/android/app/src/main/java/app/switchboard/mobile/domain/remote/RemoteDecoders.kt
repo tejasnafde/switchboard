@@ -218,6 +218,7 @@ object RemoteDecoders {
         worktreeBranch = raw.string("worktree_branch"),
         raw = raw,
         originSource = raw.string("origin_source"),
+        statusLine = raw.string("status_line"),
     )
 
     private fun workspace(raw: JsonObject) = Workspace(

@@ -236,7 +236,8 @@ object BrowsePresenter {
                     unread = activity[conversation.id]?.unread ?: 0,
                     status = activity[conversation.id]?.status,
                     originSource = conversation.originSource,
-                    preview = activity[conversation.id]?.preview,
+                    // Live turn text wins; the stored line covers a chat not seen live.
+                    preview = activity[conversation.id]?.preview ?: conversation.statusLine,
                     attention = activity[conversation.id]?.attention ?: BrowseThreadAttention.Unknown,
                 )
             },

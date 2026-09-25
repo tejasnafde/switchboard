@@ -3,7 +3,7 @@
  */
 
 import type { BackendHost } from '../backend/host'
-import { ProviderChannels } from '@shared/ipc-channels'
+import { AppChannels, ProviderChannels } from '@shared/ipc-channels'
 import { applyContentText } from '@shared/content-stream'
 import { createMainLogger as createLogger } from '../logger'
 import { trackAnalyticsEvent } from '../analytics'
@@ -33,7 +33,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
-import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
+import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
@@ -88,6 +88,7 @@ import {
 import { isAgentProvider, toAgentProvider } from '@shared/types'
 import { peekCatalog, probeCatalog } from './catalog-probe'
 import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-requests'
+import { turnPreviewLine } from '@shared/turn-preview'
 
 const log = createLogger('provider:registry')
 
@@ -404,10 +405,25 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
-  /** Mirror the finished turn's assistant messages and tool calls, then drop the buffers. */
-  private flushTurnMirror(threadId: string): void {
+  /**
+   * Mirror the turn's assistant messages and tool calls, then drop the
+   * buffers. Only a completed turn replaces the stored status line: a stop
+   * mid-turn would leave half a sentence as the chat's summary.
+   */
+  private flushTurnMirror(threadId: string, turnCompleted: boolean): void {
     const byMessage = this.pendingAssistantText.get(threadId)
     this.pendingAssistantText.delete(threadId)
+    // The buffer holds exactly this turn's assistant messages, in order.
+    const statusLine = turnPreviewLine([...byMessage?.values() ?? []].map(({ text }) => ({ text, isAssistant: true, isUser: false })))
+    if (turnCompleted && statusLine) {
+      try {
+        setConversationStatusLine(threadId, statusLine)
+        // Lists that are not showing this chat live re-read the stored line.
+        this.host.emit(AppChannels.CONVERSATIONS_CHANGED)
+      } catch (err) {
+        log.warn(`failed to store status line for ${threadId}: ${err}`)
+      }
+    }
     for (const [messageId, { text, at }] of byMessage ?? []) {
       if (!text.trim()) continue
       try {
@@ -498,6 +514,11 @@ export class ProviderRegistry implements PeerToolHost {
   getPendingRequests(threadId: string): PendingBlockingEvent[] {
     const byKey = this.pendingRequests.get(resolveRootThreadId(threadId))
     return byKey ? [...byKey.values()] : []
+  }
+
+  /** Whether any id of the thread has an accepted turn that has not completed. */
+  isTurnInFlight(threadId: string): boolean {
+    return threadFamilyIds(threadId).some((id) => this.hasOutstandingTurn(id))
   }
 
   /** Live sessions with their CURRENT status, not the status they started at. */
@@ -772,7 +793,7 @@ export class ProviderRegistry implements PeerToolHost {
     // working tree and stream one file.edited event per changed file. Fire
     // and forget; the cards land right after the turn.completed marker.
     if (event.type === 'turn.completed') {
-      this.flushTurnMirror(event.threadId)
+      this.flushTurnMirror(event.threadId, true)
       void this.emitFileEdits(event.threadId, Date.now())
     }
 
@@ -1108,7 +1129,7 @@ export class ProviderRegistry implements PeerToolHost {
         throw new Error('Provider stopped without a recoverable session snapshot')
       }
       this.sessionEpochs.delete(threadId)
-      this.flushTurnMirror(threadId)
+      this.flushTurnMirror(threadId, false)
       this.sessionAdapters.delete(threadId)
       this.sessionCwd.delete(threadId)
       this.sessionStatus.delete(threadId)

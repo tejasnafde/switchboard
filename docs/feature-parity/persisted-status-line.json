@@ -1,0 +1,71 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "persisted-status-line",
+  "summary": "Every chat list showed a chat's summary line only while that chat's messages were loaded in memory, so most desktop sidebar Recents rows fell back to the project name, and kanban tiles, the phone list and the Android list were blank. The backend now stores the last finished turn's line (the agent digest, else the plain-text preview, by the shared turnPreviewLine rules) in a nullable conversations.status_line column, written by ProviderRegistry.flushTurnMirror on turn end for every id of the thread (threadFamilyIds, so it resolves through resolveRootThreadId). projectManagedRootSessions puts it on SessionSummary.statusLine and sessionSummaryToConversationRow on ConversationRow.status_line, so app:get-projects and app:get-conversations carry it. Only a completed turn writes it (a stop mid-turn keeps the previous line), and the write emits app:conversations-changed so the sidebar and the kanban board re-read it. Existing chats are backfilled lazily by app:load-session-by-id the first time their history loads, with a write-if-missing statement so a turn that ended meanwhile keeps its newer line (a backfill that wrote emits app:conversations-changed too, and none runs while ProviderRegistry.isTurnInFlight reports the thread mid-turn); there is no startup scan. The phone prefers the stored line over a feed restored from disk (cached), which may predate it. Each surface shows the live preview first, then the stored line, then its previous fallback (the project name on the desktop sidebar, nothing elsewhere).",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/sidebar/recent-sessions.ts",
+        "src/renderer/components/kanban/KanbanView.tsx",
+        "tests/unit/sidebar-recents.test.ts",
+        "tests/unit/kanban-stored-status-line.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ConversationsScreen.tsx",
+        "apps/mobile/src/screens/__tests__/conversation-row-meta.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseModels.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/remote/RemoteProjectDecoderTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/browse/BrowsePresentationTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/types.ts",
+        "src/shared/turn-preview.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/ipc/terminal-sessions.ts",
+        "src/main/ipc/app.ts",
+        "tests/unit/assistant-mirror.test.ts",
+        "tests/unit/terminal-sessions-ipc.test.ts",
+        "tests/unit/status-line-backfill.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "src/main/db/conversations.ts",
+        "tests/unit/conversation-rotation-fallback.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "An additive nullable column and optional wire fields. An older client ignores them; a newer client against an older backend sees no field and keeps the live preview only. No flag, package identity, signing or update-channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test",
+      "npm test --prefix apps/mobile",
+      "cd apps/android && ./gradlew testDebugUnitTest",
+      "SB_VISUAL_SCOPE=screens node e2e/visual-regressions.e2e.mjs (sidebar screens)"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not checked on a phone or Android device, and not against live Claude or Codex turns; the store path is covered by driving ProviderRegistry.publish in unit tests."
+    ]
+  }
+}
