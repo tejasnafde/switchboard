@@ -91,7 +91,7 @@ test('settings modal opens', async () => {
     await settingsBtn.click()
     await page.waitForTimeout(300)
 
-    const modal = page.locator('.settings-modal-content')
+    const modal = page.locator('.settings-page')
     if (await modal.count() > 0) {
       await expect(modal).toBeVisible()
       // Close

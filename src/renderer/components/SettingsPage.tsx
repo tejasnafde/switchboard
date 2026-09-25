@@ -143,7 +143,11 @@ function SettingsBody({
           value={query}
           onChange={(event) => onQuery(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && results[0]) onNavigate(results[0].page, results[0].id)
+            if (event.key !== 'Enter' || !results[0]) return
+            // Focus moves to the opened row's control during this keydown; left
+            // alone, the same key press would then activate that control.
+            event.preventDefault()
+            onNavigate(results[0].page, results[0].id)
           }}
           className="mx-[2px] mb-2.5 rounded-[7px] border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:border-[var(--border-focus)]"
         />
@@ -404,7 +408,7 @@ const labelId = (id: string) => `setting-label-${id.replace(/\W/g, '-')}`
 
 /**
  * Scrolls a row opened from search into view and moves focus to its first
- * control, so the result the keyboard was on does not leave focus on nothing.
+ * control (never its Reset, where Enter would undo the setting), so the result the keyboard was on does not leave focus on nothing.
  */
 function useHighlightTarget(id: string) {
   const { highlight } = useContext(SettingsContext)
@@ -414,7 +418,7 @@ function useHighlightTarget(id: string) {
     const el = ref.current
     if (!active || !el) return
     el.scrollIntoView({ block: 'center' })
-    const control = el.querySelector<HTMLElement>('button, input, select, textarea, a[href]')
+    const control = el.querySelector<HTMLElement>(':is(button, input, select, textarea, a[href]):not([data-setting-reset])')
     ;(control ?? el).focus({ preventScroll: true })
   }, [active])
   return { ref, active }
@@ -474,6 +478,7 @@ function SettingRow({ def, extra, below, children }: {
       {changed && def.defaultValue !== undefined && (
         <button
           type="button"
+          data-setting-reset
           aria-label={`Reset ${def.label}`}
           onClick={() => set(def.id, def.defaultValue!)}
           className="shrink-0 cursor-pointer rounded-[4px] border-0 bg-transparent px-1 text-[11.5px] text-[var(--text-muted)] outline-none hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-ring"

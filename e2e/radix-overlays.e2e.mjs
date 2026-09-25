@@ -308,6 +308,16 @@ async function settingsDialog() {
     await settings.getByRole('button', { name: /^Chat & agents/ }).getAttribute('aria-current') === 'page')
   check('settings: the result row is highlighted and focused',
     await focusSettlesOn(`!!document.activeElement?.closest('[data-setting-row="chat.followUp"]')`))
+  // A changed row puts Reset before its control; focus must skip Reset,
+  // or the next Enter would undo the setting.
+  await settings.getByRole('button', { name: 'Queue', exact: true }).click()
+  await settings.getByLabel('Search settings').fill('steer')
+  await win.keyboard.press('Enter')
+  check('settings: a changed result row focuses its control, not Reset',
+    await focusSettlesOn(`document.activeElement?.getAttribute('aria-pressed') !== null && !!document.activeElement.closest('[data-setting-row="chat.followUp"][data-changed]')`))
+  await settings.getByRole('button', { name: 'Reset Follow-up while the agent works' }).click()
+  check('settings: Reset puts the default back',
+    await settings.getByRole('button', { name: 'Steer', exact: true }).getAttribute('aria-pressed') === 'true')
   await settings.getByRole('button', { name: 'Projects', exact: true }).click()
   await settings.getByRole('button', { name: '+ new launch config' }).click()
   await settings.getByPlaceholder('launch config name').waitFor({ state: 'visible' })
