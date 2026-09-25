@@ -249,7 +249,7 @@ export default function PairScreen() {
 
         <View style={styles.scanFoot}>
           <Text style={styles.scanHint}>
-            Point at the QR your machine printed on startup, or the one in desktop Settings, Mobile.
+            Point at the QR your machine printed on startup, or the one in desktop Settings, Devices & machines.
           </Text>
           <View style={styles.scanActions}>
             <Pressable

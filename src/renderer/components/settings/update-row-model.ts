@@ -2,7 +2,7 @@ import type { UpdateStatus } from '@shared/update-status'
 
 /**
  * Pure view-model for the Settings → Updates row. Extracted from
- * SettingsModal so the button-state rules (idempotency guards, pending
+ * SettingsPage so the button-state rules (idempotency guards, pending
  * labels) are unit-testable without a DOM.
  */
 export interface UpdateRowView {

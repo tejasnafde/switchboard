@@ -23,7 +23,7 @@ import {
 
 const log = createRendererLogger('ide:pane')
 
-/** Idle shutdown default (minutes); user-tunable via Settings → General. */
+/** Idle shutdown default (minutes); user-tunable via Settings → General → Embedded IDE. */
 const DEFAULT_IDLE_MINUTES = 5
 const IDLE_TTL_SETTING = 'ide.idleTtlMinutes'
 /** Recycle the single code-server after it has served this many distinct

@@ -15,7 +15,7 @@ interface FeatureTourModalProps {
 /**
  * Onboarding / what's-new modal. Shown automatically on first launch
  * after the tour version bumps (gated by `tour.lastSeenVersion` setting),
- * and replayable from Settings → Tour.
+ * and replayable from Settings → About → Feature tour.
  *
  * The video for each step streams via the `sb-tour://<id>.mp4` custom
  * protocol registered in main. Missing MP4s fall through to the

@@ -45,12 +45,12 @@ Then launch normally from Applications / Spotlight / Dock. One-time; subsequent 
 - **Chat shortcuts** - `⌘K` quick prompt, `⌘L` send selection to chat (terminal / file / chat message), `⌘|` split-chat, `⌘⇧F` full-text search, `⌘,` settings.
 - **Code editor** - `⌘⇧E` flips the right pane to a file tree + CodeMirror editor with git gutter and ⌘-click jump-to-def.
 - **Kanban board** - `⌘⇧K` opens the workspace-scoped board; cards launch agents in their own git worktrees.
-- **Notifications** - when an agent finishes a turn in a backgrounded chat. Allow them via Settings → Notifications → Send test notification.
-- **Auto-update** - Switchboard polls GitHub Releases on launch. When an update is ready you'll see "Restart and install" in Settings → About. No manual installs after the first one (except the `xattr` quarantine step above).
+- **Notifications** - when an agent finishes a turn in a backgrounded chat. Allow them via Settings → General → Send test notification.
+- **Auto-update** - Switchboard polls GitHub Releases on launch. When an update is ready you'll see "Restart and install" in Settings → General → Updates. No manual installs after the first one (except the `xattr` quarantine step above).
 
 ## Keyboard cheatsheet
 
-`⌘⇧P` opens the command palette with a searchable list of everything. Settings → Tour replays the feature tour.
+`⌘⇧P` opens the command palette with a searchable list of everything. Settings → About → Feature tour replays the feature tour.
 
 ## Known rough edges
 

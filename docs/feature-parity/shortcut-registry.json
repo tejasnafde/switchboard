@@ -9,7 +9,7 @@
       "evidence": [
         "src/renderer/services/global-keybindings.ts",
         "src/main/index.ts",
-        "src/renderer/components/SettingsModal.tsx",
+        "src/renderer/components/SettingsPage.tsx",
         "src/renderer/components/CommandPalette.tsx",
         "tests/unit/global-keybindings.test.ts",
         "tests/unit/global-keybindings-terminal.test.ts"

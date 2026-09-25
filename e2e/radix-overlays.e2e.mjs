@@ -156,7 +156,7 @@ async function commandPalette() {
   await palette.waitFor({ state: 'visible' })
   await win.keyboard.type('open settings')
   await win.keyboard.press('Enter')
-  const settings = win.locator('.settings-modal-content')
+  const settings = win.locator('.settings-page')
   await settings.waitFor({ state: 'visible' })
   check('palette: a command that opens Settings does not pull focus back to the composer',
     await win.waitForTimeout(300).then(() => win.evaluate(() => document.activeElement?.getAttribute('aria-label') !== 'Chat message')))
@@ -295,15 +295,37 @@ async function settingsDialog() {
   await opener.click()
   const settings = win.getByRole('dialog', { name: 'Settings' })
   await settings.waitFor({ state: 'visible' })
-  check('settings: focus moves into it', await focusSettlesOn(`!!document.activeElement?.closest('.settings-modal-content')`))
-  await settings.getByRole('button', { name: 'Launch Configs', exact: true }).click()
+  check('settings: focus moves into its search', await focusSettlesOn(`document.activeElement?.getAttribute('aria-label') === 'Search settings'`))
+  // Search opens the row's page with the row highlighted and focused.
+  await win.keyboard.type('steer')
+  await settings.getByRole('heading', { name: /results? for "steer"/ }).waitFor({ state: 'visible' })
+  await win.keyboard.press('Escape')
+  check('settings: Escape clears a search, not Settings',
+    await settings.isVisible() && await settings.getByLabel('Search settings').inputValue() === '')
+  await win.keyboard.type('steer')
+  await win.keyboard.press('Enter')
+  check('settings: a search result opens its page',
+    await settings.getByRole('button', { name: /^Chat & agents/ }).getAttribute('aria-current') === 'page')
+  check('settings: the result row is highlighted and focused',
+    await focusSettlesOn(`!!document.activeElement?.closest('[data-setting-row="chat.followUp"]')`))
+  // A changed row puts Reset before its control; focus must skip Reset,
+  // or the next Enter would undo the setting.
+  await settings.getByRole('button', { name: 'Queue', exact: true }).click()
+  await settings.getByLabel('Search settings').fill('steer')
+  await win.keyboard.press('Enter')
+  check('settings: a changed result row focuses its control, not Reset',
+    await focusSettlesOn(`document.activeElement?.getAttribute('aria-pressed') !== null && !!document.activeElement.closest('[data-setting-row="chat.followUp"][data-changed]')`))
+  await settings.getByRole('button', { name: 'Reset Follow-up while the agent works' }).click()
+  check('settings: Reset puts the default back',
+    await settings.getByRole('button', { name: 'Steer', exact: true }).getAttribute('aria-pressed') === 'true')
+  await settings.getByRole('button', { name: 'Projects', exact: true }).click()
   await settings.getByRole('button', { name: '+ new launch config' }).click()
   await settings.getByPlaceholder('launch config name').waitFor({ state: 'visible' })
   await win.keyboard.press('Escape')
   check('settings: Escape cancels a launch-config name field, not Settings',
     await settings.getByPlaceholder('launch config name').count() === 0 && await settings.isVisible())
   // The provider editor sits inside Settings; Escape closes only the editor.
-  await settings.getByRole('button', { name: /^providers$/i }).click()
+  await settings.getByRole('button', { name: /^Accounts & models/ }).click()
   await settings.getByRole('button', { name: '+ Add Instance' }).first().click()
   const editor = settings.getByText(/^New Instance - /)
   await editor.waitFor({ state: 'visible' })
@@ -311,14 +333,15 @@ async function settingsDialog() {
   check('settings: Escape closes the provider editor, not Settings',
     await editor.waitFor({ state: 'hidden', timeout: 2000 }).then(() => true, () => false) && await settings.isVisible())
   for (let i = 0; i < 12; i++) await win.keyboard.press('Tab')
-  check('settings: Tab stays inside it', await win.evaluate(() => !!document.activeElement?.closest('.settings-modal-content')))
+  check('settings: Tab stays inside it', await win.evaluate(() => !!document.activeElement?.closest('.settings-page')))
   await win.keyboard.press('Escape')
   check('settings: Escape closes it', await hidden(settings))
   check('settings: focus returns to its button', await focusIsTrigger('Settings'))
   await opener.click()
   await settings.waitFor({ state: 'visible' })
-  await clickOutside(640, 700)
-  check('settings: an outside click closes it', await hidden(settings))
+  await settings.getByRole('button', { name: 'Back', exact: true }).click()
+  check('settings: Back closes it', await hidden(settings))
+  check('settings: Back returns focus to its button', await focusIsTrigger('Settings'))
 }
 
 await openConversation('Debug auth callback')

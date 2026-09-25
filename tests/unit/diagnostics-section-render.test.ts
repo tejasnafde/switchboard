@@ -12,7 +12,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { DiagnosticsSnapshot } from '../../src/shared/diagnostics-report'
-import { DiagnosticsSection, DiagnosticsBody } from '../../src/renderer/components/SettingsModal'
+import { DiagnosticsSection, DiagnosticsBody } from '../../src/renderer/components/SettingsPage'
 
 function snapshot(overrides: Partial<DiagnosticsSnapshot> = {}): DiagnosticsSnapshot {
   return {

@@ -7,7 +7,7 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/components/SettingsModal.tsx",
+        "src/renderer/components/SettingsPage.tsx",
         "tests/unit/diagnostics-section-render.test.ts",
         "tests/unit/diagnostics-disclosure.test.ts"
       ]

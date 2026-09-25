@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RecentSessionsSection } from '../../src/renderer/components/sidebar/RecentSessionsSection'
 import type { RecentSessionItem } from '../../src/renderer/components/sidebar/recent-sessions'
-import { RecentConversationsSetting } from '../../src/renderer/components/SettingsModal'
+import { SettingsPageBody } from '../../src/renderer/components/SettingsPage'
 
 const item: RecentSessionItem = {
   session: {
@@ -78,7 +78,7 @@ describe('RecentSessionsSection', () => {
   })
 
   it('offers every supported collapsed baseline in General settings', () => {
-    const markup = renderToStaticMarkup(createElement(RecentConversationsSetting))
+    const markup = renderToStaticMarkup(createElement(SettingsPageBody, { page: 'general' }))
 
     expect(markup).toContain('Recent conversations')
     for (const limit of [4, 6, 8, 12]) {

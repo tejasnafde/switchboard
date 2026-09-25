@@ -10,7 +10,7 @@
         "src/renderer/stores/layout-store.ts",
         "src/renderer/components/chat/MessageList.tsx",
         "src/renderer/components/chat/turn-presentation.ts",
-        "src/renderer/components/SettingsModal.tsx",
+        "src/renderer/components/SettingsPage.tsx",
         "src/renderer/styles/global.css",
         "tests/unit/layout-store.test.ts",
         "tests/unit/message-list.test.ts"

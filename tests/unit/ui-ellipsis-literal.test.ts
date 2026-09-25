@@ -68,10 +68,10 @@ describe('UI ellipsis rendering', () => {
       expect(source).not.toMatch(/['"](?:Approving|Denying|Yes, and|No, do).*\\u2026['"]/)
     })
 
-    it('SettingsModal save status should use real ellipsis', async () => {
+    it('launch config save status should use real ellipsis', async () => {
       const fs = await import('fs/promises')
       const source = await fs.readFile(
-        new URL('../../src/renderer/components/SettingsModal.tsx', import.meta.url),
+        new URL('../../src/renderer/components/settings/LaunchConfigsPanel.tsx', import.meta.url),
         'utf-8'
       )
       // Ensure no literal … in save status
@@ -99,7 +99,8 @@ describe('UI ellipsis rendering', () => {
         '../../src/renderer/components/chat/MessageBubble.tsx',
         '../../src/renderer/components/chat/ChatPanel.tsx',
         '../../src/renderer/components/chat/ApprovalCard.tsx',
-        '../../src/renderer/components/SettingsModal.tsx',
+        '../../src/renderer/components/SettingsPage.tsx',
+        '../../src/renderer/components/settings/LaunchConfigsPanel.tsx',
         '../../src/renderer/components/sidebar/Sidebar.tsx',
       ]
 
@@ -186,7 +187,8 @@ describe('UI ellipsis rendering', () => {
         '../../src/renderer/components/chat/MessageBubble.tsx',
         '../../src/renderer/components/chat/ChatPanel.tsx',
         '../../src/renderer/components/chat/ApprovalCard.tsx',
-        '../../src/renderer/components/SettingsModal.tsx',
+        '../../src/renderer/components/SettingsPage.tsx',
+        '../../src/renderer/components/settings/LaunchConfigsPanel.tsx',
         '../../src/renderer/components/sidebar/Sidebar.tsx',
       ]
 

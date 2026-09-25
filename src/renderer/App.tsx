@@ -15,7 +15,8 @@ import { TerminalSessionPane } from './components/terminal/TerminalSessionPane'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { IdePane } from './components/ide/IdePane'
 import { KanbanView } from './components/kanban/KanbanView'
-import { SettingsModal } from './components/SettingsModal'
+import { SettingsPage } from './components/SettingsPage'
+import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
 import { NewChatProjectPicker } from './components/NewChatProjectPicker'
 import { SearchModal } from './components/SearchModal'
@@ -123,7 +124,8 @@ export function App() {
   const clearMessages = useAgentStore((s) => s.clearMessages)
   const setTitle = useAgentStore((s) => s.setTitle)
   const { loadSavedTheme } = useThemeStore()
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsPage, setSettingsPage] = useState<SettingsPageId | null>(null)
+  const settingsOpen = settingsPage !== null
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [newChatPickerOpen, setNewChatPickerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -230,17 +232,17 @@ export function App() {
     } else if (action.kind === 'open-search') {
       setSearchOpen(true)
     } else if (action.kind === 'open-settings') {
-      setSettingsOpen(true)
+      setSettingsPage(action.page)
     }
   }, [])
 
-  // Listen for an explicit "replay tour" event so SettingsModal (which
+  // Listen for an explicit "replay tour" event so the Settings page (which
   // doesn't own this state) can trigger the modal without prop-drilling.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ startAt?: number }>).detail
       setTourStartAt(detail?.startAt ?? 0)
-      setSettingsOpen(false)
+      setSettingsPage(null)
       setTourOpen(true)
     }
     window.addEventListener('tour:replay', handler)
@@ -437,7 +439,7 @@ export function App() {
   useEffect(() => {
     if (typeof window.api?.onOpenSettings !== 'function') return
     const remove = window.api.onOpenSettings(unlessConfirmOpen(() => {
-      setSettingsOpen(true)
+      setSettingsPage('general')
     }))
     return () => { remove() }
   }, [])
@@ -1337,7 +1339,7 @@ export function App() {
               gives discoverability for users who don't know the shortcut. */}
           <ViewToggle />
           <button
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => setSettingsPage('general')}
             style={{
               background: 'none',
               border: 'none',
@@ -1553,7 +1555,7 @@ export function App() {
         </div>
       )}
 
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsPage page={settingsPage} onNavigate={setSettingsPage} onClose={() => setSettingsPage(null)} />
       <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
       <NewChatProjectPicker
         open={newChatPickerOpen}
@@ -1568,7 +1570,7 @@ export function App() {
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        onOpenSettings={() => { setPaletteOpen(false); setSettingsOpen(true) }}
+        onOpenSettings={() => { setPaletteOpen(false); setSettingsPage('general') }}
         onOpenSearch={() => { setPaletteOpen(false); setSearchOpen(true) }}
         onOpenSessionPicker={() => { setPaletteOpen(false); setSessionPickerOpen(true) }}
         onOpenQuickPrompt={() => { setPaletteOpen(false); setQuickPromptOpen(true) }}
