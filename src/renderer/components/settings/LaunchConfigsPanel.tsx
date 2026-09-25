@@ -465,8 +465,13 @@ export function LaunchConfigsPanel() {
 
           {/* Right pane: body editor */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            {/* Read-only while a save is in flight: the save applies the config
+                it started with, which re-seeds this body and would drop anything
+                typed meanwhile. The write is local and brief. */}
             <textarea
               value={bodyYaml}
+              readOnly={configSaveState === 'saving'}
+              aria-busy={configSaveState === 'saving'}
               onChange={(e) => { setBodyYaml(e.target.value); setBodyDirty(true); setConfigSaveState('idle'); setConfigError(null) }}
               spellCheck={false}
               style={{
