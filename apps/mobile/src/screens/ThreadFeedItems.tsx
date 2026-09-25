@@ -10,6 +10,7 @@ import { Markdown } from '../components/Markdown'
 import type { FeedItem } from '../stores/chat'
 import { styles } from './thread-screen.styles'
 import type { HeldTurnActions } from '../lib/held-turns'
+import { fileEditCounts, type FileGroupRow } from '../lib/file-groups'
 
 // ─── Item renderers ────────────────────────────────────────────
 
@@ -257,10 +258,7 @@ export const FileEditItem = memo(function FileEditItem({
   item: Extract<FeedItem, { kind: 'fileEdit' }>
   backendLabel: string
 }) {
-  const oldLines = item.oldContent ? item.oldContent.split('\n').length : 0
-  const newLines = item.newContent ? item.newContent.split('\n').length : 0
-  const added = item.changeKind === 'delete' ? 0 : item.changeKind === 'add' ? newLines : Math.max(0, newLines - oldLines)
-  const removed = item.changeKind === 'add' ? 0 : item.changeKind === 'delete' ? oldLines : Math.max(0, oldLines - newLines)
+  const { added, removed } = fileEditCounts(item)
 
   return (
     <View style={[styles.itemBlock, styles.fileEditCard]}>
@@ -273,6 +271,32 @@ export const FileEditItem = memo(function FileEditItem({
         <Text style={styles.fileEditApplied}>applied on {backendLabel}</Text>
       </View>
     </View>
+  )
+})
+
+/** One turn's changed files, folded; a tap shows or hides that turn's file rows. */
+export const FileGroupItem = memo(function FileGroupItem({
+  row,
+  onToggle,
+}: {
+  row: FileGroupRow
+  onToggle: (id: string) => void
+}) {
+  return (
+    <Pressable
+      onPress={() => onToggle(row.id)}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: row.expanded }}
+      testID="file-group"
+      style={[styles.itemBlock, styles.fileEditCard]}
+    >
+      <Text style={styles.fileEditTitle}>{row.label}</Text>
+      <View style={styles.fileEditMetaRow}>
+        <Text style={styles.addedText}>+{row.added}</Text>
+        <Text style={styles.removedText}>-{row.removed}</Text>
+        <Text style={styles.fileEditApplied}>{row.expanded ? 'Hide' : 'Show'}</Text>
+      </View>
+    </Pressable>
   )
 })
 

@@ -64,6 +64,20 @@ class OutboxPolicyTest {
     }
 
     @Test
+    fun envelopeRefusalsAreRetryablePermanentOrAConflict() {
+        fun refusal(state: String, vararg extra: Pair<String, JsonValue>) = SendResponseDecoder.decode(
+            obj("accepted" to JsonBoolean(false), "duplicate" to JsonBoolean(false), "state" to JsonString(state), *extra),
+        )
+        val busy = refusal("rejected", "retryable" to JsonBoolean(true), "reason" to JsonString("Session queue full"))
+        val refused = refusal("rejected", "retryable" to JsonBoolean(false), "reason" to JsonString("No session"))
+        val conflict = refusal("conflict", "reason" to JsonString("origin reused"))
+
+        assertEquals(SendOutcome.Retryable("Session queue full"), busy)
+        assertEquals(SendOutcome.Permanent("No session"), refused)
+        assertEquals(SendOutcome.Permanent(ORIGIN_CONFLICT_RECOVERY), conflict)
+    }
+
+    @Test
     fun commandSuccessIsIndependentFromAFailedFollowUpRefresh() {
         val result = OutboxFollowUpPolicy.afterCommand(
             OutboxOperationResult.Success("sent"),

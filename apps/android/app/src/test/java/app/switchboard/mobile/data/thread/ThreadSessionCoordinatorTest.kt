@@ -25,6 +25,11 @@ import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.SessionMeta
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.QueuedTurnActionResult
+import app.switchboard.mobile.domain.thread.QueuedTurnSummary
+import app.switchboard.mobile.domain.thread.TurnDelivery
+import app.switchboard.mobile.ui.thread.toComposerPresentation
+import app.switchboard.mobile.ui.thread.toHeldPresentation
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.protocol.JsonBoolean
@@ -530,6 +535,89 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `a mid-turn send asks for queue only when the device default or the chip says so`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = FakeEnqueuePort()
+        var preferred = TurnDelivery.Steer
+        val coordinator = coordinator(
+            remote,
+            cached = ThreadState(status = "running", provider = "claude-code"),
+            enqueue = enqueue,
+            capabilities = setOf("turn_queue_v1"),
+            followUpDefault = { preferred },
+        )
+
+        coordinator.updateDraft("steer me")
+        enqueue.results += durable("o-1", "steer me")
+        coordinator.submit()
+        assertNull(enqueue.drafts.last().delivery)
+
+        coordinator.toggleNextDelivery()
+        assertEquals("Sends after this turn", coordinator.state.value.toComposerPresentation().queueToggle?.label)
+        coordinator.updateDraft("later")
+        enqueue.results += durable("o-2", "later")
+        coordinator.submit()
+        assertEquals("queue", enqueue.drafts.last().delivery)
+        // The chip flips one send only.
+        assertEquals(false, coordinator.state.value.composer.flipNextDelivery)
+
+        preferred = TurnDelivery.Queue
+        coordinator.updateDraft("also later")
+        enqueue.results += durable("o-3", "also later")
+        coordinator.submit()
+        assertEquals("queue", enqueue.drafts.last().delivery)
+    }
+
+    @Test
+    fun `held messages are listed after load and Cancel puts the text back in the composer`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf("turn_queue_v1", "turn_queue_controls_v1"))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+        remote.heldListCallbacks.removeAt(0)(success("held", listOf(QueuedTurnSummary("remote_q", "later"))))
+        assertEquals(setOf("remote_q"), coordinator.currentThread()!!.heldTurns)
+        assertEquals(setOf("remote_q"), coordinator.state.value.toHeldPresentation().messageIds)
+
+        coordinator.updateDraft("draft")
+        coordinator.actOnHeld("remote_q", promote = false)
+        assertEquals(listOf("remote_q" to false), remote.heldActions)
+        remote.heldActionCallbacks.removeAt(0)(success("cancel", QueuedTurnActionResult.Done("later")))
+        assertEquals("draft\n\nlater", coordinator.state.value.composer.draft)
+
+        coordinator.actOnHeld("remote_q", promote = true)
+        remote.heldActionCallbacks.removeAt(0)(success("promote", QueuedTurnActionResult.Refused("Nothing is running")))
+        assertEquals("Nothing is running", coordinator.state.value.followUp.heldErrors["remote_q"])
+
+        remote.emit(scope, event("turn.dequeued", "thread-1", "messageId" to JsonString("remote_q"), "reason" to JsonString("started")))
+        assertEquals(emptySet<String>(), coordinator.currentThread()!!.heldTurns)
+        assertNull(coordinator.state.value.followUp.heldErrors["remote_q"])
+    }
+
+    @Test
+    fun `a live queue event during the listing asks again instead of undoing it`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf("turn_queue_controls_v1"))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+        remote.emit(scope, event("turn.queued", "thread-1", "messageId" to JsonString("remote_new")))
+        remote.heldListCallbacks.removeAt(0)(success("held", emptyList()))
+
+        assertEquals(setOf("remote_new"), coordinator.currentThread()!!.heldTurns)
+        assertEquals(1, remote.heldListCallbacks.size)
+    }
+
+    @Test
+    fun `an older backend is never asked for held messages and shows no chip`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, cached = ThreadState(status = "running", provider = "claude-code"))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+
+        assertTrue(remote.heldListCallbacks.isEmpty())
+        assertNull(coordinator.state.value.toComposerPresentation().queueToggle)
+    }
+
+    @Test
     fun `composer synchronously blocks a reentrant send`() {
         val remote = FakeThreadSessionRemote(scope)
         lateinit var coordinator: ThreadSessionCoordinator
@@ -1017,6 +1105,8 @@ class ThreadSessionCoordinatorTest {
         projectPath: String? = null,
         worktreePath: String? = null,
         supportsPendingRequests: Boolean = false,
+        capabilities: Set<String> = emptySet(),
+        followUpDefault: () -> TurnDelivery = { TurnDelivery.Steer },
     ) = ThreadSessionCoordinator(
         scope = scope,
         threadId = "thread-1",
@@ -1030,6 +1120,8 @@ class ThreadSessionCoordinatorTest {
         projectPath = projectPath,
         worktreePath = worktreePath,
         supportsPendingRequests = supportsPendingRequests,
+        capabilities = capabilities,
+        followUpDefault = followUpDefault,
     )
 
     private fun loadedSession(vararg messages: ChatMessage) = LoadedSession(
@@ -1398,6 +1490,24 @@ private class FakeThreadSessionRemote(
     override fun getPendingRequests(threadId: String, callback: (RemoteResponse<List<JsonObject>>) -> Unit) {
         pendingRequestsThreadIds += threadId
         pendingRequestsCallbacks += callback
+    }
+
+    val heldListCallbacks = mutableListOf<(RemoteResponse<List<QueuedTurnSummary>>) -> Unit>()
+    val heldActions = mutableListOf<Pair<String, Boolean>>()
+    val heldActionCallbacks = mutableListOf<(RemoteResponse<QueuedTurnActionResult>) -> Unit>()
+
+    override fun listQueuedTurns(threadId: String, callback: (RemoteResponse<List<QueuedTurnSummary>>) -> Unit) {
+        heldListCallbacks += callback
+    }
+
+    override fun actOnQueuedTurn(
+        threadId: String,
+        messageId: String,
+        promote: Boolean,
+        callback: (RemoteResponse<QueuedTurnActionResult>) -> Unit,
+    ) {
+        heldActions += messageId to promote
+        heldActionCallbacks += callback
     }
 
     fun emit(scope: ThreadEventScope, payload: RuntimeEventPayload) {

@@ -26,6 +26,8 @@ data class OutgoingTurnDraft(
     val attachments: List<AttachmentDraft>,
     val runtimeMode: String?,
     val createdAtMs: Long,
+    /** `queue` holds a mid-turn message until the running turn ends; null steers or sends. */
+    val delivery: String? = null,
 )
 
 data class SendReceipt(
@@ -71,6 +73,8 @@ data class QueuedTurn(
     val nextAttemptAtMs: Long,
     val deliveryState: OutboxDeliveryState,
     val legacyRawJson: String? = null,
+    /** Frozen at send time: it is part of the backend's origin fingerprint. */
+    val delivery: String? = null,
 )
 
 enum class DeliveryReadiness {

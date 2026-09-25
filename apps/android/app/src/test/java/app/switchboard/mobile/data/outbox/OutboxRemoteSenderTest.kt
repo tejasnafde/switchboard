@@ -190,6 +190,35 @@ class OutboxRemoteSenderTest {
         assertEquals(0, rpc.invocations)
     }
 
+    @Test
+    fun atomicBackendGetsTheEnvelopeAndOnlyAQueueCapableOneGetsDelivery() {
+        val rpc = FakeRpc(synchronousOutcome = RpcOutcome.Success(null))
+        val envelope = MutableAvailability(4, extra = setOf(ATOMIC_USER_TURN_CAPABILITY, "turn_queue_v1"))
+        sender(rpc, envelope).send(turn(delivery = "queue"), {})
+
+        assertEquals("provider:submit-user-turn", rpc.lastChannel)
+        val body = rpc.lastArgs.values.single() as JsonObject
+        assertEquals(JsonString("queue"), body.values["delivery"])
+        assertEquals(JsonString("origin-1"), body.values["origin"])
+        assertEquals(JsonString("hello"), body.values["providerText"])
+        assertEquals(JsonString("sandbox"), body.values["runtimeMode"])
+        // Same as send-turn sets, so a row first tried there keeps its fingerprint.
+        assertEquals(JsonString("hello"), body.values["autoTitleText"])
+
+        val noQueue = MutableAvailability(4, extra = setOf(ATOMIC_USER_TURN_CAPABILITY))
+        sender(rpc, noQueue).send(turn(origin = "origin-2", delivery = "queue"), {})
+        assertEquals(null, (rpc.lastArgs.values.single() as JsonObject).values["delivery"])
+    }
+
+    @Test
+    fun olderBackendKeepsThePositionalSend() {
+        val rpc = FakeRpc(synchronousOutcome = RpcOutcome.Success(null))
+        sender(rpc).send(turn(delivery = "queue"), {})
+
+        assertEquals("provider:send-turn", rpc.lastChannel)
+        assertEquals(JsonString("hello"), rpc.lastArgs.values[1])
+    }
+
     private fun sender(
         rpc: FakeRpc,
         availability: MutableAvailability = MutableAvailability(rpc.scope!!.generation),
@@ -207,6 +236,7 @@ class OutboxRemoteSenderTest {
         runtimeMode: String? = "sandbox",
         attachments: List<StagedAttachment> = emptyList(),
         legacyRawJson: String? = null,
+        delivery: String? = null,
     ) = QueuedTurn(
         connectionId = "mac-a",
         threadId = "thread-a",
@@ -220,12 +250,14 @@ class OutboxRemoteSenderTest {
         nextAttemptAtMs = 0,
         deliveryState = OutboxDeliveryState.Pending,
         legacyRawJson = legacyRawJson,
+        delivery = delivery,
     )
 
     private class MutableAvailability(
         var generation: Long,
         var ready: Boolean = true,
         var durable: Boolean = true,
+        val extra: Set<String> = emptySet(),
     ) : OutboxCapabilityLookup {
         override fun lookup(turn: QueuedTurn) = OutboxConnectionAvailability(
             generation = generation,
@@ -234,7 +266,7 @@ class OutboxRemoteSenderTest {
             } else {
                 app.switchboard.mobile.domain.outbox.DeliveryReadiness.Offline
             },
-            capabilities = if (durable) setOf(DURABLE_TURN_ORIGIN_CAPABILITY) else emptySet(),
+            capabilities = (if (durable) setOf(DURABLE_TURN_ORIGIN_CAPABILITY) else emptySet()) + extra,
         )
     }
 
@@ -248,6 +280,7 @@ class OutboxRemoteSenderTest {
     ) : RemoteRpc {
         var invocations = 0
         lateinit var lastArgs: JsonArray
+        var lastChannel: String? = null
         private var callback: ((RpcOutcome) -> Unit)? = null
 
         override fun invoke(
@@ -258,6 +291,7 @@ class OutboxRemoteSenderTest {
         ): RequestSubmission {
             invocations++
             lastArgs = args
+            lastChannel = channel
             this.callback = callback
             synchronousOutcome?.let(callback)
             return submission

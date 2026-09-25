@@ -27,6 +27,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.role
+import app.switchboard.mobile.domain.thread.TurnDelivery
 import app.switchboard.mobile.ui.components.SectionLabel
 import app.switchboard.mobile.ui.theme.TextDim
 
@@ -38,6 +44,8 @@ fun SettingsScreen(
     onManageMachines: () -> Unit,
     onUpdateAction: (app.switchboard.mobile.update.UpdateAction) -> Unit,
     modifier: Modifier = Modifier,
+    followUpDefault: TurnDelivery = TurnDelivery.Steer,
+    onFollowUpDefault: (TurnDelivery) -> Unit = {},
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -84,6 +92,10 @@ fun SettingsScreen(
             }
             item { HorizontalDivider() }
 
+            item { SectionLabel("CHAT", Modifier.padding(top = 24.dp, bottom = 8.dp)) }
+            item { FollowUpDefaultRow(followUpDefault, onFollowUpDefault) }
+            item { HorizontalDivider() }
+
             item { SectionLabel("APP", Modifier.padding(top = 24.dp, bottom = 8.dp)) }
             item {
                 ListItem(
@@ -124,6 +136,35 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+/** Enter's default while a turn runs; the composer chip flips it for one send. */
+@Composable
+private fun FollowUpDefaultRow(value: TurnDelivery, onChange: (TurnDelivery) -> Unit) {
+    ListItem(
+        headlineContent = { Text("Follow-up while the agent works") },
+        supportingContent = {
+            Row(
+                modifier = Modifier.selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TurnDelivery.entries.forEach { option ->
+                    FilterChip(
+                        selected = option == value,
+                        onClick = { onChange(option) },
+                        label = { Text(if (option == TurnDelivery.Steer) "Steer" else "Queue") },
+                        modifier = Modifier
+                            .testTag(SettingsTestTags.followUp(option))
+                            .semantics { role = Role.RadioButton },
+                    )
+                }
+            }
+        },
+    )
+}
+
+object SettingsTestTags {
+    fun followUp(option: TurnDelivery) = "settings-follow-up-${option.wire}"
 }
 
 @Composable

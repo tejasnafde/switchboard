@@ -124,4 +124,16 @@ class SwitchboardApplication : Application() {
     fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) {
         nativeRuntime.saveCollapsedWorkspaceIds(connectionId, workspaceIds)
     }
+
+    fun seedPendingRequests(
+        scope: TransportScope,
+        threadId: String,
+        pending: List<app.switchboard.mobile.protocol.JsonObject>,
+    ) = nativeRuntime.seedPendingRequests(scope, threadId, pending)
+
+    val followUpDefault: StateFlow<app.switchboard.mobile.domain.thread.TurnDelivery>
+        get() = nativeRuntime.followUpDefault
+
+    fun setFollowUpDefault(value: app.switchboard.mobile.domain.thread.TurnDelivery) =
+        nativeRuntime.setFollowUpDefault(value)
 }

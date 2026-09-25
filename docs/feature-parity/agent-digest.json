@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "agent-digest",
-  "summary": "Sidebar/kanban/conversation-list previews used to show the first raw, mid-sentence words of the latest assistant reply. The agent now reports a one-line status wrapped in <agent_digest>...</agent_digest> (a prompt rule appended for Claude and Codex, which have a clean instructions seam; OpenCode's ACP does not, so it keeps today's raw preview). src/shared/agent-digest.ts is pure and provider-agnostic: extractDigest pulls the last complete tag for previews (capped ~120 chars); stripDigest(text, { streaming }) removes complete tag pairs always, and additionally hides a still-forming trailing tag only when streaming is true - a FINISHED message that merely quotes the literal tag with no close (this file's own OPEN_TAG constant, for instance) is left alone, which fixed a CodeRabbit-caught bug where that case silently ate the rest of the message in the chat bubble, on copy, on mobile, and on Android. src/shared/turn-preview.ts (also CodeRabbit-prompted) makes the preview search every assistant message in the CURRENT TURN (everything after the last user message) for a digest before falling back to raw text, since Claude splits a turn into several messages at tool calls and the newest one often has no digest of its own yet. The raw message is stored unchanged everywhere - all of this runs at render time only, so previews are derived live from in-memory session/thread state (agent-store on desktop, the chat store on mobile) and reset on reload rather than needing a DB migration.",
+  "summary": "Sidebar/kanban/conversation-list previews used to show the first raw, mid-sentence words of the latest assistant reply. The agent now reports a one-line status wrapped in <agent_digest>...</agent_digest> (a prompt rule appended for Claude and Codex, which have a clean instructions seam; OpenCode's ACP does not, so it keeps today's raw preview). src/shared/agent-digest.ts is pure and provider-agnostic: extractDigest pulls the last complete tag for previews (capped ~120 chars); stripDigest(text, { streaming }) removes complete tag pairs always, and additionally hides a still-forming trailing tag only when streaming is true - a FINISHED message that merely quotes the literal tag with no close (this file's own OPEN_TAG constant, for instance) is left alone, which fixed a CodeRabbit-caught bug where that case silently ate the rest of the message in the chat bubble, on copy, on mobile, and on Android. src/shared/turn-preview.ts (also CodeRabbit-prompted) makes the preview search every assistant message in the CURRENT TURN (everything after the last user message) for a digest before falling back to raw text, since Claude splits a turn into several messages at tool calls and the newest one often has no digest of its own yet. The raw message is stored unchanged everywhere - all of this runs at render time only, so previews are derived live from in-memory session/thread state (agent-store on desktop, the chat store on mobile) and reset on reload rather than needing a DB migration. Native Android's conversation list now uses the same rule: BrowseThreadActivityIndex keeps the current turn's live assistant text per thread (reset on user.message) and TurnPreview.kt, a Kotlin port of turnPreviewLine and plainPreviewText, turns it into the row's second-line preview (a failure status still wins).",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -34,13 +34,17 @@
       ]
     },
     "nativeAndroid": {
-      "status": "staged",
-      "flag": "agent_digest_android_list_preview",
-      "followUpRelease": "Native Android gains the conversation-list digest preview once BrowseThreadActivityIndex accumulates live assistant text per thread (it currently tracks only status/unread/pending-attention, not content) the way the desktop agent-store and the mobile chat store already do; until then the conversation list shows today's status/time only, with no raw tag and no preview line. The required, unflagged part - stripping <agent_digest> out of the rendered transcript so a raw tag never shows on the phone - already ships unconditionally, no flag needed.",
+      "status": "implemented",
       "evidence": [
         "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/AgentDigest.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/TurnPreview.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseThreadActivityIndex.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseModels.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/AgentDigestTest.kt"
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/AgentDigestTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/TurnPreviewTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/browse/BrowseThreadActivityIndexTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/browse/BrowseRowPolicyTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -79,16 +83,17 @@
       "npm test",
       "cd apps/mobile && npm test: TextItem strips a complete and a still-streaming <agent_digest> tag, with streaming derived from item.done",
       "cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew testDebugUnitTest: AgentDigestTest, the Kotlin port of the shared extractDigest/stripDigest(text, streaming) test suite, both modes",
-      "npm run validate:feature-parity -- --base origin/main"
+      "npm run validate:feature-parity -- --base origin/main",
+      "cd apps/android && ./gradlew testDebugUnitTest: TurnPreviewTest runs the 19 cases of tests/unit/turn-preview.test.ts one for one; BrowseThreadActivityIndexTest (append and replace chunks, a digest from an earlier message of the turn, reasoning ignored, a user message clears it); BrowseRowPolicyTest (preview on line 2, a failure still wins)"
     ],
     "hardware": [],
     "notExercised": [
       "No live Claude or Codex turn was run against a real account with the appended prompt rule; the systemPrompt/developerInstructions wiring was verified by unit test and by reading the installed codex-cli's generated JSON schema (ThreadStartParams/ThreadResumeParams), not by observing a real agent emit a tag.",
       "The claim that OpenCode's ACP has no instructions seam was checked by reading @agentclientprotocol/sdk's NewSessionRequest/PromptRequest types, not by probing a live opencode acp session.",
-      "The Android conversation-list digest preview is staged and unbuilt, so it has nothing to exercise yet.",
       "Android's chat-text stripping (ThreadScreen.kt TextRow) was verified only via AgentDigestTest.kt's JVM unit tests, not on a physical device or emulator.",
       "The desktop sidebar Recents preview and kanban card preview were not visually verified in a running build - only through renderToStaticMarkup-based unit tests and the pure previewLine/sessionPreviewLine/turnPreviewLine helpers.",
-      "No live multi-message Claude turn (a real tool-call split) was observed end to end; the turn-boundary and cross-message digest search is verified only against synthetic message arrays."
+      "No live multi-message Claude turn (a real tool-call split) was observed end to end; the turn-boundary and cross-message digest search is verified only against synthetic message arrays.",
+      "The Android list preview was not seen on a device or emulator (none was available). It is built from live events since the app started, like the desktop agent-store: a thread with no live traffic this run shows no preview line, only status and time."
     ]
   }
 }

@@ -50,6 +50,8 @@ data class ThreadState(
     val unread: Int = 0,
     val drift: DriftSuggestion? = null,
     val spendBlock: SpendBlock? = null,
+    /** Message ids (their user row ids) the backend holds until the running turn ends. */
+    val heldTurns: Set<String> = emptySet(),
     val eventJournal: List<ScopedThreadEvent> = emptyList(),
     val awaitingReseed: Boolean = false,
     val bufferedEvents: List<ScopedThreadEvent> = emptyList(),
@@ -72,6 +74,8 @@ sealed interface ThreadAction {
     data class InstallSnapshot(val scope: ThreadEventScope, val snapshot: ThreadSnapshot) : ThreadAction
     data class CompleteReseed(val scope: ThreadEventScope) : ThreadAction
     data class SetViewing(val connectionId: String, val threadId: String, val viewing: Boolean) : ThreadAction
+    /** Replace the held messages with what the backend lists (open, reconnect, resume gap). */
+    data class SeedHeldTurns(val connectionId: String, val threadId: String, val messageIds: Set<String>) : ThreadAction
 }
 
 object ThreadEventCoalescer {
@@ -116,6 +120,11 @@ object ThreadStoreReducer {
             is ThreadAction.InstallSnapshot -> installSnapshot(state, action.scope, action.snapshot)
             is ThreadAction.CompleteReseed -> completeReseed(state, action.scope)
             is ThreadAction.SetViewing -> setViewing(state, action)
+            is ThreadAction.SeedHeldTurns -> {
+                val key = ThreadKey(action.connectionId, action.threadId)
+                val thread = state.threads[key] ?: ThreadState()
+                state.copy(threads = state.threads + (key to thread.copy(heldTurns = action.messageIds)))
+            }
         }
 
     private fun activate(state: ThreadStoreState, action: ThreadAction.Activate): ThreadStoreState {
@@ -326,6 +335,8 @@ object ThreadStoreReducer {
             )
             is ThreadEventPayload.Status -> withJournal.copy(
                 status = event.status,
+                // A session that stopped or died holds nothing any more.
+                heldTurns = if (event.status == "stopped" || event.status == "error") emptySet() else withJournal.heldTurns,
                 feed = if (event.status == "running") withJournal.feed else stopRetries(withJournal.feed),
             )
             is ThreadEventPayload.Session -> withJournal.copy(sessionId = event.sessionId)
@@ -430,16 +441,17 @@ object ThreadStoreReducer {
                     ),
                 ),
             )
-            // Showing a held message as Queued is staged (android_composer_follow_ups);
-            // decoding it keeps it out of the feed as an unsupported-event notice.
-            is ThreadEventPayload.TurnQueued -> withJournal
-            // A message another client took back never reached the agent. The
-            // row can be live (`remote_x`) or from history (`h-remote_x`).
-            is ThreadEventPayload.TurnDequeued -> if (event.reason == "cancelled") {
-                withJournal.copy(feed = withJournal.feed.filterNot { it is FeedItem.User && feedIdentity(it) == event.messageId })
-            } else {
-                withJournal
-            }
+            is ThreadEventPayload.TurnQueued -> withJournal.copy(heldTurns = withJournal.heldTurns + event.messageId)
+            // A message taken back never reached the agent. The row can be
+            // live (`remote_x`) or from history (`h-remote_x`).
+            is ThreadEventPayload.TurnDequeued -> withJournal.copy(
+                heldTurns = withJournal.heldTurns - event.messageId,
+                feed = if (event.reason == "cancelled") {
+                    withJournal.feed.filterNot { it is FeedItem.User && feedIdentity(it) == event.messageId }
+                } else {
+                    withJournal.feed
+                },
+            )
         }
     }
 

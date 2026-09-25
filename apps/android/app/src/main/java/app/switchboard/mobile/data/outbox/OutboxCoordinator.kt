@@ -58,6 +58,7 @@ class OutboxCoordinator(
             attempts = 0,
             nextAttemptAtMs = 0,
             deliveryState = OutboxDeliveryState.Pending,
+            delivery = draft.delivery,
         )
         when (val persisted = store.insert(turn)) {
             is OutboxStorageResult.Failure -> {
@@ -139,6 +140,7 @@ class OutboxCoordinator(
             text = draft.text,
             attachments = staged,
             runtimeMode = draft.runtimeMode,
+            delivery = draft.delivery,
             attempts = 0,
             nextAttemptAtMs = 0,
             deliveryState = OutboxDeliveryState.Pending,
