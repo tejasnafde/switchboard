@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { QuestionAttachment } from '@shared/types'
 import { createRendererLogger } from '../../logger'
+import { matchShortcut } from '@shared/shortcuts'
 
 const log = createRendererLogger('chat:question-card')
 
@@ -109,13 +110,11 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
   useEffect(() => {
     if (answered || !activeQ) return
     const handler = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const idx = matchShortcut(e, 'question.pick')
+      if (idx < 0) return
       const target = e.target
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
       if (target instanceof HTMLElement && target.closest('[contenteditable]:not([contenteditable="false"])')) return
-      const digit = parseInt(e.key, 10)
-      if (Number.isNaN(digit) || digit < 1 || digit > 9) return
-      const idx = digit - 1
       if (idx === activeQ.options.length) {
         // Digit right after the last option opens the "None of the above"
         // free-text row, so the keyboard flow can reach it too.

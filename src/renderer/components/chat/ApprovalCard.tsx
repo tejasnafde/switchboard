@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import type { ChatMessage } from '@shared/types'
 import { createRendererLogger } from '../../logger'
+import { matchesShortcut } from '@shared/shortcuts'
 
 const log = createRendererLogger('chat:approval-card')
 
@@ -127,7 +128,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                 autoFocus
                 onChange={(e) => setNote(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  if (matchesShortcut(e, 'approval.commit-note')) {
                     e.preventDefault()
                     commit(noteMode)
                   }

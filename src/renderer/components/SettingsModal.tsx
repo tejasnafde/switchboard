@@ -59,6 +59,7 @@ import { confirm } from './ui/confirm'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { onEscapeFirst } from './ui/escape-first'
 import { cn } from '../lib/utils'
+import { currentPlatform, shortcutLabel, shortcutsFor } from '@shared/shortcuts'
 
 const log = createRendererLogger('component:settings')
 
@@ -441,28 +442,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {/* Keyboard shortcuts info */}
               <SettingsSection title="Keyboard Shortcuts">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 16px', fontSize: '12px' }}>
-                  <ShortcutRow label="Toggle sidebar" keys={'⌘B'} />
-                  <ShortcutRow label="Toggle terminal" keys={'⌘J'} />
-                  <ShortcutRow label="Command palette" keys={'⌘⇧P'} />
-                  <ShortcutRow label="Search across chats" keys={'⌘⇧F'} />
-                  <ShortcutRow label="Open settings" keys={'⌘,'} />
-                  <ShortcutRow label="Send message" keys="Enter" />
-                  <ShortcutRow label="New line in message" keys="Shift+Enter" />
-                  <ShortcutRow label="Stop agent (when running)" keys={'⌘⌫'} />
-                  <ShortcutRow label="Quick prompt (Spotlight-style)" keys={'⌘K'} />
-                  <ShortcutRow label="Send terminal selection to chat" keys={'⌘L'} />
-                  <ShortcutRow label="Toggle dual-chat panel" keys={'⌘⇧\\'} />
-
-                  {/* Terminals */}
-                  <ShortcutRow label="New window (right)" keys={'⌘T'} />
-                  <ShortcutRow label="New window (below)" keys={'⌘⇧T'} />
-                  <ShortcutRow label="New tab in active window" keys={'⌘\\'} />
-                  <ShortcutRow label="Close active tab" keys={'⌘W'} />
-                  <ShortcutRow label="Close active window" keys={'⌘⇧W'} />
-                  <ShortcutRow label="Next tab" keys={'⌘⇧]'} />
-                  <ShortcutRow label="Prev tab" keys={'⌘⇧['} />
-                  <ShortcutRow label="Focus window N" keys={'⌘1…9'} />
-                  <ShortcutRow label="Navigate windows" keys={'⌘⌥←↑↓→'} />
+                  {shortcutsFor(currentPlatform()).map((c) => (
+                    <ShortcutRow key={c.id} label={c.label} keys={shortcutLabel(c.id)} />
+                  ))}
                 </div>
               </SettingsSection>
             </div>
