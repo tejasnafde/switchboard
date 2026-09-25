@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { STORED_TASK_NOTICE_PREFIX } from '@shared/synthetic-message'
 
 export type TurnAcceptanceState = 'reserved' | 'dispatching' | 'completed' | 'abandoned'
 
@@ -277,11 +278,12 @@ export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
       )
       if (completion.changes !== 1) return { completed: false }
 
+      // A stored background-task notice is a user row nobody typed.
       const hasAcceptedUserTurn = Boolean(db.prepare(`
         SELECT 1 FROM messages
-         WHERE conversation_id = ? AND role = 'user'
+         WHERE conversation_id = ? AND role = 'user' AND substr(id, 1, ?) != ?
          LIMIT 1
-      `).get(key.threadId))
+      `).get(key.threadId, STORED_TASK_NOTICE_PREFIX.length, STORED_TASK_NOTICE_PREFIX))
       const transcript = db.prepare(`
         INSERT INTO messages
           (id, conversation_id, role, content, tool_calls, images, timestamp, display_body, pills_meta)

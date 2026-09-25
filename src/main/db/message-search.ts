@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { STORED_TASK_NOTICE_PREFIX } from '@shared/synthetic-message'
 
 export interface SearchResult {
   messageId: string
@@ -21,6 +22,10 @@ export function searchMessagesInDatabase(
   const sanitized = query.replace(/['"]/g, ' ').trim()
   if (!sanitized) return []
   const boundedLimit = Math.max(1, Math.min(limit, 50))
+  // A stored task notice is machine text, and a reload replaces it with the
+  // transcript's copy when there is one, so a hit on it can name a row the
+  // chat does not show.
+  const notStoredNotice = `substr(m.id, 1, ${STORED_TASK_NOTICE_PREFIX.length}) != '${STORED_TASK_NOTICE_PREFIX}'`
 
   try {
     return database.prepare(`
@@ -43,6 +48,7 @@ export function searchMessagesInDatabase(
       WHERE messages_fts MATCH ?
         AND COALESCE(root.sidebar_role, c.sidebar_role) = 'managed'
         AND COALESCE(root.archived, c.archived) = 0
+        AND ${notStoredNotice}
       ORDER BY rank
       LIMIT ?
     `).all(sanitized, boundedLimit) as SearchResult[]
@@ -66,6 +72,7 @@ export function searchMessagesInDatabase(
       WHERE m.content LIKE ?
         AND COALESCE(root.sidebar_role, c.sidebar_role) = 'managed'
         AND COALESCE(root.archived, c.archived) = 0
+        AND ${notStoredNotice}
       LIMIT ?
     `).all(sanitized, `%${sanitized}%`, boundedLimit) as SearchResult[]
   }

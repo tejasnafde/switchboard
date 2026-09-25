@@ -102,6 +102,19 @@ export function taskNotificationText(n: { taskId: string; status: string; summar
   return `<task-notification>\n${lines.join('\n')}\n</task-notification>`
 }
 
+export const STORED_TASK_NOTICE_PREFIX = 'tasknotice_'
+
+/**
+ * The SQLite row a live notice is stored under: one per notice, keyed by the
+ * live event's `messageId`, so a replayed event cannot store it twice while a
+ * task that reports again (a Monitor emits one notice per event, then one when
+ * its stream ends) keeps every notice. Not the live row's own `task_` id,
+ * which the desktop reducer skips when it looks for a notice already on screen.
+ */
+export function storedTaskNoticeId(conversationId: string, messageId: string): string {
+  return `${STORED_TASK_NOTICE_PREFIX}${conversationId}:${messageId}`
+}
+
 /**
  * How far apart a live notice and its transcript line can be stamped, either
  * way (both on the backend's clock). The CLI writes the line when a turn
@@ -127,6 +140,14 @@ export function transcriptShowsTaskNotification(
       && Math.abs(at - live.at) <= TRANSCRIPT_NOTICE_SKEW_MS) return true
   }
   return false
+}
+
+/** Equal task id, status and summary, by the transcript parser's rules. */
+export function sameTaskNotice(
+  a: { taskId?: string; status: string; summary: string },
+  b: { taskId?: string; status: string; summary: string },
+): boolean {
+  return taskNoticeKey(a) === taskNoticeKey(b)
 }
 
 /** The transcript parser's rules (`tag` trims, status defaults), applied to either side. */
