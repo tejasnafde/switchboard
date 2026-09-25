@@ -19,8 +19,7 @@
         "tests/unit/settings-rows.test.ts",
         "tests/unit/settings-page-render.test.ts",
         "e2e/radix-overlays.e2e.mjs",
-        "e2e/visual-regressions.e2e.mjs",
-        "src/shared/shortcuts.ts"
+        "e2e/visual-regressions.e2e.mjs"
       ]
     },
     "reactNativeIos": {
