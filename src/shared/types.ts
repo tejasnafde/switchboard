@@ -377,6 +377,11 @@ export interface SessionSummary {
   parentSessionId?: string | null
   depth?: number | null
   forkMetadata?: import('./conversation-fork').ForkLineageMetadata
+  /**
+   * The last finished turn's preview line (agent digest, else plain text),
+   * stored by the backend so a list can show it before messages load.
+   */
+  statusLine?: string | null
 }
 
 export interface Project {
@@ -461,4 +466,6 @@ export interface ConversationRow {
   worktree_path?: string | null
   worktree_branch?: string | null
   worktree_creation_id?: string | null
+  /** See `SessionSummary.statusLine`. */
+  status_line?: string | null
 }

@@ -1,6 +1,6 @@
 import type { AgentStatus, ChatMessage, Project, SessionSummary } from '@shared/types'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
-import { sessionPreviewLine } from '../../services/session-preview'
+import { sessionPreviewLine } from '@shared/turn-preview'
 
 export interface RecentLiveSession {
   id: string
@@ -102,10 +102,10 @@ export interface RecentSessionItem {
   machineId: string
   status?: RecentSessionStatus
   /**
-   * Live, in-memory-only preview of the session's latest assistant message
-   * (the agent's own `<agent_digest>` status line when reported, else a
-   * raw truncated preview) - see `session-preview.ts`. Undefined for a
-   * session with no live assistant message yet (e.g. not opened this run).
+   * Preview of the session's current turn (the agent's own `<agent_digest>`
+   * status line when reported, else a raw truncated preview): live from
+   * loaded messages, else the backend's stored `session.statusLine`.
+   * Undefined when neither exists.
    */
   previewLine?: string
   /** Line 2 of the row - see `recentStatusLine`. */
@@ -132,7 +132,7 @@ export function deriveRecentSessions(_input: {
       seen.add(key)
       const live = liveById.get(key)
       const status = recentSessionStatus(session, live)
-      const previewLine = live ? sessionPreviewLine(live.messages) : undefined
+      const previewLine = (live && sessionPreviewLine(live.messages)) || session.statusLine || undefined
       return {
         session,
         projectPath: project.path,

@@ -153,6 +153,30 @@ describe('deriveRecentSessions', () => {
     expect(preview!.length).toBe(70)
   })
 
+  it('falls back from the live preview to the stored status line, then the project name', () => {
+    const stored = project()
+    stored.sessions = stored.sessions.map((s) => s.id === 'approval' ? s : { ...s, statusLine: `Stored ${s.id}` })
+    const result = deriveRecentSessions({
+      localProjects: [stored],
+      remoteProjects: {},
+      liveSessions: [
+        {
+          id: 'running',
+          machineId: 'local',
+          status: 'idle',
+          messages: [{ id: 'm1', role: 'assistant', content: '<agent_digest>Live digest</agent_digest>', timestamp: 1 }],
+        },
+        // Loaded but with no assistant text yet: the stored line still shows.
+        { id: 'recent', machineId: 'local', status: 'idle', messages: [] },
+      ],
+    })
+    const line = (id: string) => result.find((item) => item.session.id === id)?.statusLine
+
+    expect(line('running')).toBe('Live digest')
+    expect(line('recent')).toBe('Stored recent')
+    expect(line('approval')).toBe('repo')
+  })
+
   it('leaves previewLine undefined for a session with no live entry', () => {
     const result = deriveRecentSessions({
       localProjects: [project()],

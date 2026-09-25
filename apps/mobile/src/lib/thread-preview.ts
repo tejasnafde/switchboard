@@ -2,7 +2,7 @@
  * Live, in-memory-only preview line for a conversation-list row: the
  * agent's own <agent_digest> status line when it reported one anywhere in
  * the current turn, else a raw truncated preview of the newest assistant
- * text. Mirrors the desktop sidebar's session-preview.ts.
+ * text. Mirrors the desktop's `sessionPreviewLine`.
  *
  * Only available once a thread has been opened this session - `items`
  * comes from the chat store's live FeedItem feed, which (like the
@@ -12,7 +12,7 @@
  *
  * Thin adapter: maps `FeedItem[]` onto the shared, surface-agnostic
  * `turnPreviewLine` (see `@shared/turn-preview` - also used by desktop's
- * session-preview.ts), which does the actual turn-boundary and digest
+ * `sessionPreviewLine`), which does the actual turn-boundary and digest
  * search. Only `user` items and `text`/`assistant`-stream items carry a
  * turn-preview signal; tool calls, reasoning/plan streams and everything
  * else are skipped rather than mapped in, since they neither bound a turn

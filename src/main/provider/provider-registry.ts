@@ -33,7 +33,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
-import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
+import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
@@ -87,6 +87,7 @@ import {
 import { isAgentProvider, toAgentProvider } from '@shared/types'
 import { peekCatalog, probeCatalog } from './catalog-probe'
 import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-requests'
+import { turnPreviewLine } from '@shared/turn-preview'
 
 const log = createLogger('provider:registry')
 
@@ -407,6 +408,15 @@ export class ProviderRegistry implements PeerToolHost {
   private flushTurnMirror(threadId: string): void {
     const byMessage = this.pendingAssistantText.get(threadId)
     this.pendingAssistantText.delete(threadId)
+    // The buffer holds exactly this turn's assistant messages, in order.
+    const statusLine = turnPreviewLine([...byMessage?.values() ?? []].map(({ text }) => ({ text, isAssistant: true, isUser: false })))
+    if (statusLine) {
+      try {
+        setConversationStatusLine(threadId, statusLine)
+      } catch (err) {
+        log.warn(`failed to store status line for ${threadId}: ${err}`)
+      }
+    }
     for (const [messageId, { text, at }] of byMessage ?? []) {
       if (!text.trim()) continue
       try {

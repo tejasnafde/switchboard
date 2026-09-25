@@ -516,6 +516,13 @@ function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE conversations ADD COLUMN worked_worktrees TEXT')
   }
 
+  // Migration (2026-09-25): the last turn's status line (agent digest, else a
+  // plain preview), so every list shows a chat's summary without loading its
+  // messages. Filled on turn end, or lazily the first time history loads.
+  if (!convCols.some((c) => c.name === 'status_line')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN status_line TEXT')
+  }
+
   // Rebuild FTS index from existing messages
   try {
     const ftsCount = (db.prepare('SELECT count(*) as c FROM messages_fts').get() as { c: number } | undefined)?.c ?? 0

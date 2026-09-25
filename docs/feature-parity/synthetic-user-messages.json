@@ -10,7 +10,7 @@
         "src/renderer/components/chat/SyntheticUserRow.tsx",
         "src/renderer/components/chat/MessageBubble.tsx",
         "src/renderer/components/chat/MessageList.tsx",
-        "src/renderer/services/session-preview.ts",
+        "src/shared/turn-preview.ts",
         "src/renderer/services/desktop-turn-submission.ts"
       ]
     },

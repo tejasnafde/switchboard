@@ -183,6 +183,18 @@ describe('projectManagedRootSessions', () => {
     expect(result[0]).toMatchObject({ title: 'v0', startedAt: 9000, filePath: '' })
   })
 
+  it('carries the stored status line into the session list every client loads', () => {
+    const rows = [
+      makeRow({ id: 'summarised', status_line: 'Tests pass, PR open' }),
+      makeRow({ id: 'bare' }),
+    ]
+    const sessions = projectManagedRootSessions(rows)
+
+    expect(sessions.map((s) => s.statusLine)).toEqual(['Tests pass, PR open', null])
+    expect(sessionSummaryToConversationRow(sessions[0], '/projects/foo').status_line).toBe('Tests pass, PR open')
+    expect(sessionSummaryToConversationRow(sessions[1], '/projects/foo').status_line).toBeNull()
+  })
+
   it('excludes archived rows from the normal sidebar projection', () => {
     const rows = [
       makeRow({ id: 'active', updated_at: 10 }),

@@ -354,6 +354,8 @@ export interface ConversationRow {
   fork_git_base_sha?: string | null
   fork_source_dirty?: number | null
   fork_omitted_change_summary?: string | null
+  /** Last finished turn's preview line - see `setConversationStatusLine`. */
+  status_line?: string | null
 }
 
 /**
@@ -782,6 +784,16 @@ export function recordConversationWorkedWorktrees(id: string, paths: readonly st
     ).run(JSON.stringify(worked), resolveRootThreadId(id))
   }
   return { mode: current.mode, workedWorktrees: worked }
+}
+
+/**
+ * Store the list preview of the thread's last finished turn. Leaves
+ * `updated_at` alone, and writes every id of the thread like
+ * `setConversationLastRead`, so a rotated id lands on the row lists read.
+ */
+export function setConversationStatusLine(id: string, line: string): void {
+  const stmt = getDb().prepare('UPDATE conversations SET status_line = ? WHERE id = ?')
+  for (const memberId of threadFamilyIds(id)) stmt.run(line, memberId)
 }
 
 /**

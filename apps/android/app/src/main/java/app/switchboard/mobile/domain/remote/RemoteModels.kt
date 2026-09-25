@@ -79,6 +79,8 @@ data class Conversation(
     val worktreeBranch: String?,
     val raw: JsonObject,
     val originSource: String? = null,
+    /** Last finished turn's preview line, stored by the backend. */
+    val statusLine: String? = null,
 )
 
 data class ChatMessage(

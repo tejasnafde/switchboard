@@ -38,7 +38,7 @@ import {
 } from '@dnd-kit/core'
 import { useAgentStore } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
-import { sessionPreviewLine } from '../../services/session-preview'
+import { sessionPreviewLine } from '@shared/turn-preview'
 import { describeKanbanWorktreeCreation } from './kanban-worktree-presentation'
 import { useLayoutStore } from '../../stores/layout-store'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
@@ -330,6 +330,7 @@ export function KanbanView(): React.ReactElement {
             <CardTilePresentation
               card={draggingCard}
               projectName={projectByPath.get(draggingCard.projectPath)?.name ?? draggingCard.projectPath.split('/').pop() ?? ''}
+              storedStatusLine={storedStatusLine(projectByPath, draggingCard)}
               showProjectChip={!projectFilter}
               isOverlay
             />
@@ -377,7 +378,7 @@ function Column({
   status: KanbanStatus
   label: string
   cards: KanbanCard[]
-  projectByPath: Map<string, { name: string }>
+  projectByPath: Map<string, Project>
   onOpen: (id: string) => void
   onStart: (card: KanbanCard) => void
   onStartAndOpen: (card: KanbanCard) => void
@@ -403,6 +404,7 @@ function Column({
             key={c.id}
             card={c}
             projectName={projectByPath.get(c.projectPath)?.name ?? c.projectPath.split('/').pop() ?? ''}
+            storedStatusLine={storedStatusLine(projectByPath, c)}
             showProjectChip={showProjectChip}
             isDragging={draggingId === c.id}
             onOpen={() => onOpen(c.id)}
@@ -420,6 +422,12 @@ function Column({
   )
 }
 
+/** The backend's stored line for a card's chat, shown until its messages load. */
+export function storedStatusLine(projectByPath: Map<string, Project>, card: KanbanCard): string | undefined {
+  if (!card.conversationId) return undefined
+  return projectByPath.get(card.projectPath)?.sessions.find((s) => s.id === card.conversationId)?.statusLine ?? undefined
+}
+
 /**
  * Drag wiring split from presentation so `DragOverlay` can re-render
  * the same tile without conflicting `useDraggable` bindings.
@@ -427,6 +435,7 @@ function Column({
 function DraggableCardTile({
   card,
   projectName,
+  storedStatusLine,
   showProjectChip,
   isDragging,
   onOpen,
@@ -435,6 +444,7 @@ function DraggableCardTile({
 }: {
   card: KanbanCard
   projectName: string
+  storedStatusLine?: string
   showProjectChip: boolean
   isDragging: boolean
   onOpen: () => void
@@ -455,6 +465,7 @@ function DraggableCardTile({
       <CardTilePresentation
         card={card}
         projectName={projectName}
+        storedStatusLine={storedStatusLine}
         showProjectChip={showProjectChip}
         isSource={isDragging}
         onStart={onStart}
@@ -467,6 +478,7 @@ function DraggableCardTile({
 function CardTilePresentation({
   card,
   projectName,
+  storedStatusLine,
   showProjectChip,
   isSource,
   isOverlay,
@@ -475,6 +487,7 @@ function CardTilePresentation({
 }: {
   card: KanbanCard
   projectName: string
+  storedStatusLine?: string
   showProjectChip: boolean
   isSource?: boolean
   isOverlay?: boolean
@@ -494,15 +507,14 @@ function CardTilePresentation({
       ? s.sessions.find((x) => x.id === card.conversationId)?.unreadCount ?? 0
       : 0,
   )
-  // Live, in-memory preview (digest when the agent reported one, else a
-  // raw truncated fallback) - same source as the sidebar Recents row. See
-  // session-preview.ts. Undefined for a card with no linked session, or one
-  // that has produced no assistant message yet this run.
+  // Digest when the agent reported one, else a raw truncated fallback - same
+  // rule as the sidebar Recents row: live from loaded messages, else the
+  // line the backend stored when the last turn ended.
   const previewLine = useAgentStore((s) =>
     card.conversationId
       ? sessionPreviewLine(s.sessions.find((x) => x.id === card.conversationId)?.messages ?? [])
       : undefined,
-  )
+  ) ?? storedStatusLine
 
   const overBudget = card.costCapUsd != null && card.costUsedUsd != null && card.costUsedUsd >= card.costCapUsd
   const hasSession = !!card.conversationId

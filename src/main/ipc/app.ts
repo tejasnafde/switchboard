@@ -37,6 +37,7 @@ import {
   getArchivedConversations,
   isConversationArchived,
   getConversationById,
+  setConversationStatusLine,
   getConversationForkMetadata,
   getConversationRuntimeMode,
   setConversationRuntimeMode,
@@ -76,6 +77,7 @@ import {
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import { loadConversationHistory } from '../conversations/history'
+import { sessionPreviewLine } from '@shared/turn-preview'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import { getConversationForkCoordinator } from '../conversations/conversation-fork-runtime'
 import type { ConversationForkCoordinator } from '../conversations/conversation-fork-coordinator'
@@ -468,6 +470,15 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
 
     try {
       const history = await loadConversationHistory(conversationId, row.project_path)
+      // Lazy backfill for chats whose last turn ended before the column existed.
+      if (!(rootRow ?? row).status_line) {
+        const statusLine = sessionPreviewLine(history.messages)
+        try {
+          if (statusLine) setConversationStatusLine(row.id, statusLine)
+        } catch (err) {
+          log.warn(`status line backfill failed for ${conversationId}: ${err}`)
+        }
+      }
       log.info(
         `load-by-id: ${conversationId} -> ${history.messages.length} messages ` +
         `(${history.diskMessageCount} disk, ${history.databaseMessageCount} DB) ` +

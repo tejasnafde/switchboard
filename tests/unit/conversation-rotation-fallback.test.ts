@@ -34,6 +34,7 @@ const conversations = new Map<string, {
   title?: string | null
   follow_suggestions?: string | null
   worked_worktrees?: string | null
+  status_line?: string | null
 }>()
 
 vi.mock('better-sqlite3', () => {
@@ -141,6 +142,13 @@ vi.mock('better-sqlite3', () => {
             row.last_read_at = at
             return { changes: 1 }
           }
+          if (/UPDATE conversations SET status_line = \?/.test(sql)) {
+            const [line, id] = args as [string, string]
+            const row = conversations.get(id)
+            if (!row) return { changes: 0 }
+            row.status_line = line
+            return { changes: 1 }
+          }
           if (/UPDATE conversations SET follow_suggestions = \?/.test(sql)) {
             const [mode, id] = args as [string | null, string]
             const row = conversations.get(id)
@@ -212,6 +220,7 @@ const {
   getConversationFollowSuggestions,
   setConversationFollowSuggestions,
   recordConversationWorkedWorktrees,
+  setConversationStatusLine,
 } = await import('../../src/main/db/database')
 
 beforeEach(() => {
@@ -377,6 +386,19 @@ describe('read state covers every id of a rotated thread', () => {
 
   it('reports no change when the thread has no row at all', () => {
     expect(setConversationLastRead('ghost', 5000)).toBe(false)
+  })
+})
+
+describe('stored status line survives Claude session-id rotation', () => {
+  it('lands on the root row the lists read when written under a rotated UUID', () => {
+    conversations.set('agent_123', {})
+    conversations.set('uuid-abc', {})
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    setConversationStatusLine('uuid-abc', 'Tests pass, PR open')
+
+    expect(conversations.get('agent_123')?.status_line).toBe('Tests pass, PR open')
+    expect(conversations.get('uuid-abc')?.status_line).toBe('Tests pass, PR open')
   })
 })
 

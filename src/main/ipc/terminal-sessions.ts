@@ -35,6 +35,7 @@ export function projectManagedRootSessions(
       worktreeBranch: conversation.worktree_branch ?? null,
       worktreeCreationId: conversation.worktree_creation_id ?? null,
       worktreeRecovery: retainedWorktreeRecovery(conversation),
+      statusLine: conversation.status_line ?? null,
     }))
     .sort((a, b) => b.startedAt - a.startedAt)
 }
@@ -128,5 +129,6 @@ export function sessionSummaryToConversationRow(
     worktree_path: s.worktreePath ?? null,
     worktree_branch: s.worktreeBranch ?? null,
     worktree_creation_id: s.worktreeCreationId ?? null,
+    status_line: s.statusLine ?? null,
   } as ConversationRow
 }
