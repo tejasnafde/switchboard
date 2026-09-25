@@ -1,6 +1,7 @@
 package app.switchboard.mobile.data.thread
 
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.SyntheticUserMessage
 import app.switchboard.mobile.domain.thread.ThreadEventDecoder
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadRuntimeEvent
@@ -240,6 +241,29 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun liveTaskNotificationSplitsLikeTheTranscriptLineAndReplaysOntoOneRow() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val raw = event(
+            "task.notification",
+            "messageId" to s("task_u1"),
+            "taskId" to s("bd5t7u1q8"),
+            "status" to s("failed"),
+            "summary" to s("Background command \"Build\" failed with exit code 144"),
+            "outputFile" to s("/tmp/tasks/bd5t7u1q8.output"),
+            "at" to n(5),
+        )
+        state = ingest(state, "mac-a", 1, 1, raw)
+        state = ingest(state, "mac-a", 1, 2, raw)
+
+        val user = state.thread("mac-a", "thread-1")!!.feed.filterIsInstance<FeedItem.User>().single()
+        assertTrue(user.fromTranscript)
+        val transcript = "<task-notification>\n<task-id>bd5t7u1q8</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n" +
+            "<output-file>/tmp/tasks/bd5t7u1q8.output</output-file>\n<status>failed</status>\n" +
+            "<summary>Background command \"Build\" failed with exit code 144</summary>\n</task-notification>"
+        assertEquals(SyntheticUserMessage.split(transcript), SyntheticUserMessage.split(user.text))
+    }
+
+    @Test
     fun modelUnavailableAppendsAFriendlyNoticeWithTheDroppedModelName() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         state = ingest(state, "mac-a", 1, 1, event("model.unavailable", "model" to s("claude-opus-4-7")))
@@ -298,6 +322,62 @@ class ThreadStoreReducerTest {
         assertEquals(listOf("history-new", "m-live-assistant", "t-live-tool"), reseeded.feed.map { it.id })
         assertEquals("AB", (reseeded.feed[1] as FeedItem.Text).text)
         assertTrue(reseeded.bufferedEvents.isEmpty())
+    }
+
+    @Test
+    fun replayGapDoesNotAddABufferedTaskNotificationBesideItsTranscriptRow() {
+        val transcript = "<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n" +
+            "<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>"
+        fun notice(at: Long, uuid: String) = event(
+            "task.notification", "messageId" to s("task_$uuid"), "taskId" to s("t1"),
+            "status" to s("failed"), "summary" to s("Build failed"), "at" to n(at),
+        )
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 7))
+        state = reduce(state, ThreadAction.InstallSnapshot(ThreadEventScope("mac-a", 7), ThreadSnapshot("thread-1", emptyList())))
+        state = ingest(state, "mac-a", 7, 10, notice(50_000, "u1"))
+        state = reduce(state, ThreadAction.ReplayGap(ThreadEventScope("mac-a", 7)))
+        state = ingest(state, "mac-a", 7, 10, notice(50_000, "u1"))
+        // The transcript line was stamped when a turn consumed the notice, just after it.
+        state = reduce(
+            state,
+            ThreadAction.InstallSnapshot(
+                ThreadEventScope("mac-a", 7),
+                ThreadSnapshot("thread-1", listOf(FeedItem.User("h-line-uuid", transcript, 50_070, fromTranscript = true))),
+            ),
+        )
+        assertEquals(listOf("h-line-uuid"), state.thread("mac-a", "thread-1")!!.feed.map { it.id })
+
+        // The same subagent finishing again later is a new notice, not the old row.
+        state = ingest(state, "mac-a", 7, 11, notice(900_000, "u2"))
+        assertEquals(listOf("h-line-uuid", "task_u2"), state.thread("mac-a", "thread-1")!!.feed.map { it.id })
+    }
+
+    @Test
+    fun bufferedTaskNotificationMatchesAPaddedSummaryButNotARowOutsideTheWindow() {
+        val transcript = "<task-notification>\n<task-id>t1</task-id>\n<status>failed</status>\n" +
+            "<summary>Build failed</summary>\n</task-notification>"
+        // The transcript parser trims tag values, so a padded live summary is the same notice.
+        val notice = event(
+            "task.notification", "messageId" to s("task_u1"), "taskId" to s("t1"),
+            "status" to s("failed"), "summary" to s("Build failed  \n"), "at" to n(50_000),
+        )
+        fun reseededIds(rowAt: Long): List<String> {
+            var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 7))
+            state = reduce(state, ThreadAction.InstallSnapshot(ThreadEventScope("mac-a", 7), ThreadSnapshot("thread-1", emptyList())))
+            state = reduce(state, ThreadAction.ReplayGap(ThreadEventScope("mac-a", 7)))
+            state = ingest(state, "mac-a", 7, 10, notice)
+            state = reduce(
+                state,
+                ThreadAction.InstallSnapshot(
+                    ThreadEventScope("mac-a", 7),
+                    ThreadSnapshot("thread-1", listOf(FeedItem.User("h-line", transcript, rowAt, fromTranscript = true))),
+                ),
+            )
+            return state.thread("mac-a", "thread-1")!!.feed.map { it.id }
+        }
+        assertEquals(listOf("h-line"), reseededIds(50_070))
+        // A later row with equal fields is a different notice, so the buffered one stays.
+        assertEquals(listOf("h-line", "task_u1"), reseededIds(56_000))
     }
 
     @Test
@@ -446,6 +526,7 @@ class ThreadStoreReducerTest {
         event("thread.read", "at" to n(3)),
         event("peer.message", "direction" to s("received"), "initiator" to s("agent"), "messageId" to s("peer"), "peerThreadId" to s("other"), "peerLabel" to s("Other"), "text" to s("hello"), "at" to n(4)),
         event("todo.updated", "todoId" to s("todo"), "items" to arr(obj("text" to s("Ship"), "status" to s("completed")))),
+        event("task.notification", "messageId" to s("task_u1"), "taskId" to s("t1"), "status" to s("failed"), "summary" to s("Build failed"), "at" to n(5)),
         event("turn.completed", "turnId" to s("turn"), "costUsd" to n("0.6"), "usedTokens" to n(50), "maxTokens" to n(100), "numTurns" to n(1), "durationMs" to n(1200)),
     )
 

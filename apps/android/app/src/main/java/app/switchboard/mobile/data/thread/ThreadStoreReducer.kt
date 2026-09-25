@@ -3,6 +3,7 @@ package app.switchboard.mobile.data.thread
 import app.switchboard.mobile.domain.thread.DriftSuggestion
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.SpendBlock
+import app.switchboard.mobile.domain.thread.SyntheticUserMessage
 import app.switchboard.mobile.domain.thread.ThreadEventPayload
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadRuntimeEvent
@@ -425,6 +426,21 @@ object ThreadStoreReducer {
             is ThreadEventPayload.TodoUpdated -> withJournal.copy(
                 feed = upsert(withJournal.feed, FeedItem.Todo("todo-${event.todoId}", event.todoId, event.items)),
             )
+            // Same text as the transcript line a reload shows, so it splits into the same row.
+            // installSnapshot replays buffered events over history, so skip one the history already shows.
+            is ThreadEventPayload.TaskNotification -> if (historyShowsTaskNotification(withJournal.feed, event)) {
+                withJournal
+            } else withJournal.copy(
+                feed = upsert(
+                    withJournal.feed,
+                    FeedItem.User(
+                        event.messageId,
+                        SyntheticUserMessage.taskNotificationText(event.taskId, event.status, event.summary, event.outputFile),
+                        event.at,
+                        fromTranscript = true,
+                    ),
+                ),
+            )
             is ThreadEventPayload.TurnQueued -> withJournal.copy(heldTurns = withJournal.heldTurns + event.messageId)
             // A message taken back never reached the agent. The row can be
             // live (`remote_x`) or from history (`h-remote_x`).
@@ -514,6 +530,13 @@ object ThreadStoreReducer {
         val index = feed.indexOfFirst { feedIdentity(it) == identity }
         if (index < 0) return feed + item
         return feed.toMutableList().also { it[index] = item }
+    }
+
+    private fun historyShowsTaskNotification(feed: List<FeedItem>, event: ThreadEventPayload.TaskNotification): Boolean {
+        val rows = feed.filterIsInstance<FeedItem.User>()
+            .filter { it.fromTranscript && it.id.startsWith("h-") }
+            .flatMap { user -> SyntheticUserMessage.split(user.text)?.parts.orEmpty().map { it to user.at } }
+        return SyntheticUserMessage.transcriptShowsTaskNotification(rows, event.taskId, event.status, event.summary, event.at)
     }
 
     private fun feedIdentity(item: FeedItem): String =

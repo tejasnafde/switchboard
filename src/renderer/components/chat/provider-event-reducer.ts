@@ -1,4 +1,5 @@
 import type { RuntimeEvent } from '@shared/provider-events'
+import { splitSyntheticUserText, taskNotificationText, transcriptShowsTaskNotification } from '@shared/synthetic-message'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
 import { fileDiffRowId, toolInputText, toolRowId } from '@shared/turn-activity'
 import { defaultModelSettingKey } from '@shared/session-defaults'
@@ -107,6 +108,17 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       // bubble instead of showing the delivery twice after a reload.
       const ownLabel = useAgentStore.getState().sessions.find((s) => s.id === tid)?.title ?? tid
       appendMessage(tid, peerMessageToChatMessage(event, ownLabel))
+      break
+    }
+    case 'task.notification': {
+      // The transcript's copy is a user line, so this is one too: MessageBubble
+      // splits both into the same row, and a reload replaces this one. A replay
+      // after that reload must not add it back beside the transcript row.
+      const transcriptRows = (useAgentStore.getState().sessions.find((s) => s.id === tid)?.messages ?? [])
+        .filter((m) => m.role === 'user' && !m.id.startsWith('task_'))
+        .flatMap((m) => (splitSyntheticUserText(m.content)?.parts ?? []).map((part) => ({ part, at: m.timestamp })))
+      if (transcriptShowsTaskNotification(transcriptRows, event)) break
+      appendMessage(tid, { id: event.messageId, role: 'user', content: taskNotificationText(event), timestamp: event.at })
       break
     }
     case 'tool.started': {

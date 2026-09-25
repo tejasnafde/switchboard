@@ -1,5 +1,7 @@
 package app.switchboard.mobile.domain.thread
 
+import kotlin.math.abs
+
 /**
  * Kotlin port of src/shared/synthetic-message.ts. Provider CLIs write
  * background-task notifications, interrupt markers and bootstrap context into
@@ -66,6 +68,42 @@ object SyntheticUserMessage {
         Block("<codex_internal_context", "</codex_internal_context>"),
         Block("<skill>", "</skill>"),
     )
+
+    /** Port of `taskNotificationText`: the transcript form of a live task notification. */
+    fun taskNotificationText(taskId: String, status: String, summary: String, outputFile: String?): String =
+        listOfNotNull(
+            "<task-id>$taskId</task-id>",
+            outputFile?.let { "<output-file>$it</output-file>" },
+            "<status>$status</status>",
+            "<summary>$summary</summary>",
+        ).joinToString("\n", prefix = "<task-notification>\n", postfix = "\n</task-notification>")
+
+    /** Port of `TRANSCRIPT_NOTICE_SKEW_MS`. */
+    const val TRANSCRIPT_NOTICE_SKEW_MS = 5_000L
+
+    /**
+     * Port of `transcriptShowsTaskNotification`: the live event and the transcript
+     * row share no id (SDK message uuid vs transcript line uuid), so identity is
+     * the task's fields plus time.
+     */
+    fun transcriptShowsTaskNotification(
+        rows: List<Pair<SyntheticPart, Long>>,
+        taskId: String,
+        status: String,
+        summary: String,
+        at: Long,
+    ): Boolean {
+        val key = taskNoticeKey(taskId, status, summary)
+        return rows.any { (part, rowAt) ->
+            part is SyntheticPart.TaskNotification &&
+                taskNoticeKey(part.taskId, part.status, part.summary) == key &&
+                abs(rowAt - at) <= TRANSCRIPT_NOTICE_SKEW_MS
+        }
+    }
+
+    /** The transcript parser's rules ([tag] trims, status defaults), applied to either side. */
+    private fun taskNoticeKey(taskId: String?, status: String, summary: String) =
+        Triple(taskId?.trim().orEmpty(), status.trim().ifEmpty { "completed" }, summary.trim())
 
     /** Null when [text] does not start with a generated block, i.e. a real user message. */
     fun split(text: String): SyntheticSplit? {

@@ -88,6 +88,52 @@ const BLOCKS: readonly Block[] = [
   { start: '<skill>', end: '</skill>' },
 ]
 
+/**
+ * The transcript form of a task notification, so a live notice goes through
+ * the same split as the one rebuilt from the transcript on reload.
+ */
+export function taskNotificationText(n: { taskId: string; status: string; summary: string; outputFile?: string }): string {
+  const lines = [
+    `<task-id>${n.taskId}</task-id>`,
+    n.outputFile ? `<output-file>${n.outputFile}</output-file>` : '',
+    `<status>${n.status}</status>`,
+    `<summary>${n.summary}</summary>`,
+  ].filter(Boolean)
+  return `<task-notification>\n${lines.join('\n')}\n</task-notification>`
+}
+
+/**
+ * How far apart a live notice and its transcript line can be stamped, either
+ * way (both on the backend's clock). The CLI writes the line when a turn
+ * consumes the notice, measured 20-70ms after it.
+ */
+export const TRANSCRIPT_NOTICE_SKEW_MS = 5_000
+
+/**
+ * True when a transcript row already shows this live notice. The two can
+ * share no id: the live event carries the SDK message's uuid, the transcript
+ * row its own line's. So identity is the task's fields plus time, which keeps
+ * an older identical notice (a resumed subagent finishing again) separate.
+ * ponytail: two identical notices for one task inside the skew collapse into
+ * one; a notice id in the transcript would be the upgrade.
+ */
+export function transcriptShowsTaskNotification(
+  rows: Iterable<{ part: SyntheticUserPart; at: number }>,
+  live: { taskId: string; status: string; summary: string; at: number },
+): boolean {
+  const key = taskNoticeKey(live)
+  for (const { part, at } of rows) {
+    if (part.kind === 'task-notification' && taskNoticeKey(part) === key
+      && Math.abs(at - live.at) <= TRANSCRIPT_NOTICE_SKEW_MS) return true
+  }
+  return false
+}
+
+/** The transcript parser's rules (`tag` trims, status defaults), applied to either side. */
+function taskNoticeKey(n: { taskId?: string; status: string; summary: string }): string {
+  return JSON.stringify([n.taskId?.trim() ?? '', n.status.trim() || 'completed', n.summary.trim()])
+}
+
 /** Null when `text` does not start with a generated block, i.e. a real user message. */
 export function splitSyntheticUserText(text: string): SyntheticUserSplit | null {
   let remaining = text.trim()

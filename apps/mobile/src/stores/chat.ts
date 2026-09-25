@@ -20,7 +20,7 @@ import type {
 } from '@shared/provider-events'
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
 import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
-import type { SyntheticUserPart } from '@shared/synthetic-message'
+import { transcriptShowsTaskNotification, type SyntheticUserPart } from '@shared/synthetic-message'
 import { splitLegacyCachedItems } from '../lib/thread-history'
 import { applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
@@ -38,7 +38,7 @@ export type FeedItem =
   /** Non-agent row the UI inserts itself, e.g. "showing last N of M messages". */
   | { kind: 'notice'; id: string; text: string }
   /** Provider-generated user-role block, e.g. a background-task notification. */
-  | { kind: 'synthetic'; id: string; part: SyntheticUserPart }
+  | { kind: 'synthetic'; id: string; part: SyntheticUserPart; at?: number }
 
 export interface ThreadState {
   items: FeedItem[]
@@ -304,6 +304,19 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             items: [
               ...t.items,
               { kind: 'user', id, text: text ?? '', at: event.at, images: images?.length ? images : undefined },
+            ],
+          }
+        }
+        case 'task.notification': {
+          if (t.items.some((i) => i.id === event.messageId)) return {}
+          // A replay after a re-seed must not add it back beside the history row.
+          const historyRows = t.items.flatMap((i) => (i.kind === 'synthetic' && i.id.startsWith('h-') && i.at !== undefined ? [{ part: i.part, at: i.at }] : []))
+          if (transcriptShowsTaskNotification(historyRows, event)) return {}
+          const { status, summary, taskId, outputFile } = event
+          return {
+            items: [
+              ...t.items,
+              { kind: 'synthetic', id: event.messageId, part: { kind: 'task-notification', status, summary, taskId, outputFile } },
             ],
           }
         }
