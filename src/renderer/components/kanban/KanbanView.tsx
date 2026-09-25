@@ -91,21 +91,23 @@ export function KanbanView(): React.ReactElement {
   // mount), so we re-fetch here. Cheap: this is a small SQLite query.
   useEffect(() => {
     let cancelled = false
+    // Responses can land out of order; only the newest request may set projects.
+    let latestRequest = 0
+    const fetchProjects = () => {
+      const request = ++latestRequest
+      return (window.api.app.getProjects() as Promise<Project[]>).then((ps) => {
+        if (!cancelled && request === latestRequest) setProjects(ps)
+      })
+    }
     const load = async () => {
-      const [ps, ws] = await Promise.all([
-        window.api.app.getProjects() as Promise<Project[]>,
-        window.api.app.workspaces.list(),
-      ])
+      const [, ws] = await Promise.all([fetchProjects(), window.api.app.workspaces.list()])
       if (cancelled) return
-      setProjects(ps)
       setWorkspaces(ws)
     }
     void load()
     // A turn ending stores its chat's status line; re-read it for the tiles.
     const off = window.api.app.onConversationsChanged(() => {
-      void (window.api.app.getProjects() as Promise<Project[]>)
-        .then((ps) => { if (!cancelled) setProjects(ps) })
-        .catch((err) => log.warn('getProjects failed on conversations-changed', err))
+      fetchProjects().catch((err) => log.warn('getProjects failed on conversations-changed', err))
     })
     return () => { cancelled = true; off() }
   }, [])

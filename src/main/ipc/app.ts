@@ -476,7 +476,10 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       if (!(rootRow ?? row).status_line) {
         const statusLine = sessionPreviewLine(history.messages)
         try {
-          if (statusLine) setConversationStatusLineIfMissing(row.id, statusLine)
+          // Mounted lists refresh on this, as they do after a turn stores one.
+          if (statusLine && setConversationStatusLineIfMissing(row.id, statusLine)) {
+            host.emit(AppChannels.CONVERSATIONS_CHANGED)
+          }
         } catch (err) {
           log.warn(`status line backfill failed for ${conversationId}: ${err}`)
         }

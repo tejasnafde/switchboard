@@ -817,10 +817,13 @@ export function setConversationStatusLine(id: string, line: string): void {
 /**
  * The history backfill's write: only rows still without a line, in the same
  * statement, so a turn that ended while history loaded keeps its newer line.
+ * Returns whether any row took it.
  */
-export function setConversationStatusLineIfMissing(id: string, line: string): void {
+export function setConversationStatusLineIfMissing(id: string, line: string): boolean {
   const stmt = getDb().prepare('UPDATE conversations SET status_line = ? WHERE id = ? AND status_line IS NULL')
-  for (const memberId of threadFamilyIds(id)) stmt.run(line, memberId)
+  let changed = 0
+  for (const memberId of threadFamilyIds(id)) changed += stmt.run(line, memberId).changes
+  return changed > 0
 }
 
 /**

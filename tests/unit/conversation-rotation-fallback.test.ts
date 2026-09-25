@@ -429,7 +429,8 @@ describe('stored status line survives Claude session-id rotation', () => {
     conversations.set('uuid-abc', {})
     threadSessions.set('uuid-abc', 'agent_123')
 
-    setConversationStatusLineIfMissing('uuid-abc', 'Older history')
+    expect(setConversationStatusLineIfMissing('uuid-abc', 'Older history')).toBe(true)
+    expect(setConversationStatusLineIfMissing('uuid-abc', 'Oldest')).toBe(false)
 
     expect(conversations.get('agent_123')?.status_line).toBe('Newer turn')
     expect(conversations.get('uuid-abc')?.status_line).toBe('Older history')
