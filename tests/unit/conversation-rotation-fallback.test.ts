@@ -33,6 +33,7 @@ const conversations = new Map<string, {
   pending_handoff_from?: string | null
   title?: string | null
   follow_suggestions?: string | null
+  follow_notice_dismissed?: number | null
   worked_worktrees?: string | null
 }>()
 
@@ -78,9 +79,15 @@ vi.mock('better-sqlite3', () => {
             const row = conversations.get(args[0] as string)
             return row ? { pending_handoff_from: row.pending_handoff_from ?? null } : undefined
           }
-          if (/SELECT follow_suggestions, worked_worktrees FROM conversations WHERE id = \?/.test(sql)) {
+          if (/SELECT follow_suggestions, follow_notice_dismissed, worked_worktrees FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
-            return row ? { follow_suggestions: row.follow_suggestions ?? null, worked_worktrees: row.worked_worktrees ?? null } : undefined
+            return row
+              ? {
+                  follow_suggestions: row.follow_suggestions ?? null,
+                  follow_notice_dismissed: row.follow_notice_dismissed ?? null,
+                  worked_worktrees: row.worked_worktrees ?? null,
+                }
+              : undefined
           }
           if (/SELECT agent_type FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
@@ -141,11 +148,18 @@ vi.mock('better-sqlite3', () => {
             row.last_read_at = at
             return { changes: 1 }
           }
-          if (/UPDATE conversations SET follow_suggestions = \?/.test(sql)) {
+          if (/UPDATE conversations SET follow_suggestions = \?, follow_notice_dismissed = NULL WHERE id = \?/.test(sql)) {
             const [mode, id] = args as [string | null, string]
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
             row.follow_suggestions = mode
+            row.follow_notice_dismissed = null
+            return { changes: 1 }
+          }
+          if (/UPDATE conversations SET follow_notice_dismissed = 1 WHERE id = \?/.test(sql)) {
+            const row = conversations.get(args[0] as string)
+            if (!row) return { changes: 0 }
+            row.follow_notice_dismissed = 1
             return { changes: 1 }
           }
           if (/UPDATE conversations SET worked_worktrees = \?/.test(sql)) {
@@ -211,6 +225,7 @@ const {
   updateConversationTitle,
   getConversationFollowSuggestions,
   setConversationFollowSuggestions,
+  setConversationFollowNoticeDismissed,
   recordConversationWorkedWorktrees,
 } = await import('../../src/main/db/database')
 
@@ -428,6 +443,19 @@ describe('Follow-chip setting survives Claude session-id rotation', () => {
     expect(getConversationFollowSuggestions('uuid-abc').mode).toBe('muted')
     setConversationFollowSuggestions('uuid-abc', 'auto')
     expect(conversations.get('agent_123')?.follow_suggestions).toBeNull()
+  })
+
+  it('keeps a dismissed notice through a rotated UUID and more worktrees, until a mode is chosen', () => {
+    conversations.set('agent_123', {})
+    threadSessions.set('uuid-abc', 'agent_123')
+    expect(setConversationFollowNoticeDismissed('uuid-abc')).toBe(true)
+    expect(conversations.get('agent_123')?.follow_notice_dismissed).toBe(1)
+    expect(conversations.has('uuid-abc')).toBe(false)
+    const grown = recordConversationWorkedWorktrees('uuid-abc', ['/repo', '/wt/a', '/wt/b', '/wt/c'])
+    expect(grown.noticeDismissed).toBe(true)
+    expect(grown.workedWorktrees).toHaveLength(4)
+    setConversationFollowSuggestions('agent_123', 'on')
+    expect(getConversationFollowSuggestions('uuid-abc')).toMatchObject({ mode: 'on', noticeDismissed: false })
   })
 
   it('records distinct worked worktrees on the root row', () => {

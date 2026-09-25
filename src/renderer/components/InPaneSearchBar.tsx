@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { matchesShortcut } from '@shared/shortcuts'
 
 /**
  * Small floating search bar used by both `TerminalPane` and `ChatPanel`
@@ -77,30 +78,14 @@ export function InPaneSearchBar({
         // Stop ALL keys from bubbling out of the search bar - otherwise
         // pressing arrow keys would also drive the chat textarea or the
         // terminal underneath.
-        if (e.key === 'Escape') {
+        const run = matchesShortcut(e, 'search.close') ? onClose
+          : matchesShortcut(e, 'search.next') ? onNext
+          : matchesShortcut(e, 'search.prev') ? onPrev
+          : null
+        if (run) {
           e.preventDefault()
           e.stopPropagation()
-          onClose()
-        } else if (e.key === 'Enter') {
-          e.preventDefault()
-          e.stopPropagation()
-          if (e.shiftKey) onPrev()
-          else onNext()
-        } else if (e.key === 'ArrowDown') {
-          e.preventDefault()
-          e.stopPropagation()
-          onNext()
-        } else if (e.key === 'ArrowUp') {
-          e.preventDefault()
-          e.stopPropagation()
-          onPrev()
-        } else if (e.key === 'F3' || (e.key === 'g' && (e.metaKey || e.ctrlKey))) {
-          // ⌘G (macOS) / Ctrl+G (Windows/Linux) / F3 - "find next"
-          // muscle memory across platforms.
-          e.preventDefault()
-          e.stopPropagation()
-          if (e.shiftKey) onPrev()
-          else onNext()
+          run()
         }
       }}
       style={{

@@ -58,6 +58,7 @@ import {
 const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { AgentType } from '@shared/types'
+import { matchesShortcut, shortcutAccelerator, type ShortcutKeyInput } from '@shared/shortcuts'
 
 /** Unpackaged means a dev run, where a stale instance is the usual lock holder. */
 const isDev = !app.isPackaged
@@ -305,11 +306,15 @@ function createWindow(): BrowserWindow {
     shell.openExternal(url)
   })
 
-  // Intercept ⌘W / ⌘⇧W - renderer decides whether to close a tab, window, or app
+  // Intercept ⌘W / ⌘⇧W - renderer decides whether to close a tab, window, or app.
+  // On macOS Ctrl+W is the shell's kill-word, so only ⌘ counts.
   window.webContents.on('before-input-event', (event, input) => {
-    if ((input.meta || input.control) && input.key.toLowerCase() === 'w' && input.type === 'keyDown') {
+    if (input.type !== 'keyDown') return
+    const key: ShortcutKeyInput = { key: input.key, metaKey: input.meta, ctrlKey: input.control, shiftKey: input.shift, altKey: input.alt }
+    const shift = matchesShortcut(key, 'terminal.close-window')
+    if (shift || matchesShortcut(key, 'terminal.close-tab')) {
       event.preventDefault()
-      window.webContents.send('app:close-pane-or-window', { shift: input.shift })
+      window.webContents.send('app:close-pane-or-window', { shift })
     }
   })
 
@@ -558,7 +563,7 @@ app.whenReady().then(() => {
         { type: 'separator' },
         {
           label: 'Settings',
-          accelerator: 'CmdOrCtrl+,',
+          accelerator: shortcutAccelerator('app.settings'),
           click: () => {
             mainWindow?.webContents.send('app:open-settings')
           },
@@ -583,7 +588,7 @@ app.whenReady().then(() => {
       submenu: [
         {
           label: 'Open Chat Beside…',
-          accelerator: 'CmdOrCtrl+Shift+\\',
+          accelerator: shortcutAccelerator('chat.dual'),
           click: () => {
             mainWindow?.webContents.send('app:open-chat-beside')
           },
@@ -595,12 +600,12 @@ app.whenReady().then(() => {
       submenu: [
         {
           label: 'Reload',
-          accelerator: 'CmdOrCtrl+R',
+          accelerator: shortcutAccelerator('app.reload'),
           click: () => { void confirmReload(false) },
         },
         {
           label: 'Force Reload',
-          accelerator: 'Shift+CmdOrCtrl+R',
+          accelerator: shortcutAccelerator('app.force-reload'),
           click: () => { void confirmReload(true) },
         },
         { role: 'toggleDevTools' },

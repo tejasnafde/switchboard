@@ -6,6 +6,7 @@
  * without being searchable, or be found under a label the page does not show.
  * Pure so the search and the changed-count rules are unit-tested.
  */
+import { currentPlatform, shortcutLabel, shortcutsFor, type ShortcutPlatform } from '@shared/shortcuts'
 import { DEFAULT_RECENT_SESSION_LIMIT } from '../sidebar/recent-session-limit'
 
 export type SettingsPageId =
@@ -31,7 +32,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'chat', title: 'Chat & agents', description: 'Defaults for new and running chats.' },
   { id: 'accounts', title: 'Accounts & models', description: 'The accounts each agent signs in with, and how much of each one is used.' },
   { id: 'projects', title: 'Projects', description: 'Settings that belong to one project.' },
-  { id: 'keyboard', title: 'Keyboard', description: 'Every shortcut.' },
+  { id: 'keyboard', title: 'Keyboard', description: 'Every shortcut, with the keys for this computer.' },
   { id: 'devices', title: 'Devices & machines', description: 'Phones paired with this Mac.' },
   { id: 'data', title: 'Archive & data', description: 'Archived chats.' },
   { id: 'about', title: 'About', description: 'A unified developer workspace that multiplexes terminals and agent chats.' },
@@ -45,32 +46,11 @@ export interface SettingRowDef {
   description?: string
   /** The value a row holds before the user changes it. Only rows that hold a value have one. */
   defaultValue?: string
+  /** How the default reads in the UI, when the raw value does not ('dark' is Dark). */
+  defaultLabel?: string
   /** A shortcut row's keys, shown and searched. */
   keys?: string
 }
-
-export const SHORTCUTS: ReadonlyArray<{ label: string; keys: string }> = [
-  { label: 'Toggle sidebar', keys: '⌘B' },
-  { label: 'Toggle terminal', keys: '⌘J' },
-  { label: 'Command palette', keys: '⌘⇧P' },
-  { label: 'Search across chats', keys: '⌘⇧F' },
-  { label: 'Open settings', keys: '⌘,' },
-  { label: 'Send message', keys: 'Enter' },
-  { label: 'New line in message', keys: 'Shift+Enter' },
-  { label: 'Stop agent (when running)', keys: '⌘⌫' },
-  { label: 'Quick prompt (Spotlight-style)', keys: '⌘K' },
-  { label: 'Send terminal selection to chat', keys: '⌘L' },
-  { label: 'Toggle dual-chat panel', keys: '⌘⇧\\' },
-  { label: 'New window (right)', keys: '⌘T' },
-  { label: 'New window (below)', keys: '⌘⇧T' },
-  { label: 'New tab in active window', keys: '⌘\\' },
-  { label: 'Close active tab', keys: '⌘W' },
-  { label: 'Close active window', keys: '⌘⇧W' },
-  { label: 'Next tab', keys: '⌘⇧]' },
-  { label: 'Prev tab', keys: '⌘⇧[' },
-  { label: 'Focus window N', keys: '⌘1…9' },
-  { label: 'Navigate windows', keys: '⌘⌥←↑↓→' },
-]
 
 export const PRIVACY_POLICY_URL = 'https://tn07.dev/privacy'
 
@@ -96,12 +76,14 @@ const ROWS = {
     label: 'Recent conversations',
     description: 'Rows shown before the Recents section offers Show more.',
     defaultValue: String(DEFAULT_RECENT_SESSION_LIMIT),
+    defaultLabel: `${DEFAULT_RECENT_SESSION_LIMIT} conversations`,
   },
   ideIdleTtl: {
     id: 'ide.idleTtl', page: 'general', section: 'Embedded IDE',
     label: 'Shut down when hidden after',
     description: 'Idle minutes before the code-server workbench is killed to free CPU/RAM. Reopening (⌘⇧E) relaunches it in ~2s.',
     defaultValue: '5',
+    defaultLabel: '5 minutes',
   },
   analytics: {
     id: 'privacy.analytics', page: 'general', section: 'Privacy',
@@ -114,12 +96,14 @@ const ROWS = {
     label: 'Theme',
     description: 'Translucent blurs the desktop behind the window (macOS). System follows the macOS light or dark appearance.',
     defaultValue: 'dark',
+    defaultLabel: 'Dark',
   },
   followUp: {
     id: 'chat.followUp', page: 'chat', section: 'While the agent works',
     label: 'Follow-up while the agent works',
     description: 'What Enter does with a message sent mid-turn. Steer hands it to the agent at its next step; Queue holds it until the turn ends. ⌥Enter does the other one. OpenCode always queues.',
     defaultValue: 'steer',
+    defaultLabel: 'Steer',
   },
   streaming: {
     id: 'chat.streaming', page: 'chat', section: 'While the agent works',
@@ -132,6 +116,7 @@ const ROWS = {
     label: 'Recommended workspace',
     description: "Which option is highlighted first. You still choose for every new thread. Local runs the agent in the project root; New worktree creates a fresh git worktree off HEAD so parallel threads don't trample each other.",
     defaultValue: 'local',
+    defaultLabel: 'Local (project root)',
   },
   fileDiffs: {
     id: 'chat.fileDiffs', page: 'chat', section: 'In the chat',
@@ -188,16 +173,23 @@ const ROWS = {
 
 export const SETTING_ROW: { readonly [K in keyof typeof ROWS]: SettingRowDef } = ROWS
 
-export function shortcutRowId(index: number): string {
-  return `keyboard.shortcut.${index}`
+/**
+ * One read-only row per command in the shortcut registry, sectioned by its
+ * group, labelled with this platform's keys. Rebinding comes later.
+ */
+export function shortcutRows(platform: ShortcutPlatform = currentPlatform()): SettingRowDef[] {
+  return shortcutsFor(platform).map((c) => ({
+    id: `keyboard.${c.id}`,
+    page: 'keyboard',
+    section: c.group,
+    label: c.label,
+    keys: shortcutLabel(c.id, platform),
+  }))
 }
 
 /** The search index: every row above plus one per shortcut, in page order. */
 export const SETTING_ROWS: readonly SettingRowDef[] = (() => {
-  const rows: SettingRowDef[] = [
-    ...Object.values(ROWS),
-    ...SHORTCUTS.map((s, i) => ({ id: shortcutRowId(i), page: 'keyboard' as const, section: 'Shortcuts', label: s.label, keys: s.keys })),
-  ]
+  const rows: SettingRowDef[] = [...Object.values(ROWS), ...shortcutRows()]
   const order = SETTINGS_PAGES.map((p) => p.id)
   return rows.sort((a, b) => order.indexOf(a.page) - order.indexOf(b.page))
 })()
@@ -219,6 +211,14 @@ export function searchSettingRows(query: string, rows: readonly SettingRowDef[] 
       .filter(Boolean).join(' ').toLowerCase()
     return terms.every((term) => haystack.includes(term))
   })
+}
+
+/** The default as the user sees it, for the Changed tooltip. */
+export function defaultValueLabel(row: SettingRowDef): string {
+  if (row.defaultLabel) return row.defaultLabel
+  if (row.defaultValue === 'true') return 'On'
+  if (row.defaultValue === 'false') return 'Off'
+  return row.defaultValue ?? ''
 }
 
 /** A row is changed once its loaded value differs from its default. */

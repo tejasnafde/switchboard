@@ -5,6 +5,11 @@
  * new worktree each turn and has no single home branch to follow. `muted` is
  * the user's "Not in this chat"; `on` is "Turn back on", which also overrides
  * the automatic cut-off.
+ *
+ * The notice that replaces the chip when it is off has its own x, saved per
+ * conversation as `noticeDismissed`: once closed it stays closed in that chat
+ * however many more worktrees it works in. Choosing a mode again ("Turn back
+ * on" from the branch picker, or "Not in this chat") clears it.
  */
 export type FollowSuggestionMode = 'auto' | 'muted' | 'on'
 
@@ -28,13 +33,24 @@ export type FollowSuggestionView =
   | { kind: 'chip' }
   | { kind: 'off'; reason: 'muted' }
   | { kind: 'off'; reason: 'many-worktrees'; count: number }
+  | { kind: 'hidden' }
 
-export function followSuggestionView(mode: FollowSuggestionMode, workedWorktrees: number): FollowSuggestionView {
-  if (mode === 'muted') return { kind: 'off', reason: 'muted' }
-  if (mode === 'auto' && workedWorktrees > FOLLOW_AUTO_OFF_ABOVE) {
-    return { kind: 'off', reason: 'many-worktrees', count: workedWorktrees }
-  }
-  return { kind: 'chip' }
+export function followSuggestionView(
+  mode: FollowSuggestionMode,
+  workedWorktrees: number,
+  noticeDismissed = false,
+): FollowSuggestionView {
+  const off = followSuggestionsOff(mode, workedWorktrees)
+  if (!off) return { kind: 'chip' }
+  if (noticeDismissed) return { kind: 'hidden' }
+  return mode === 'muted'
+    ? { kind: 'off', reason: 'muted' }
+    : { kind: 'off', reason: 'many-worktrees', count: workedWorktrees }
+}
+
+/** Whether the chip is off in this chat, so "Turn back on" has something to do. */
+export function followSuggestionsOff(mode: FollowSuggestionMode, workedWorktrees: number): boolean {
+  return mode === 'muted' || (mode === 'auto' && workedWorktrees > FOLLOW_AUTO_OFF_ABOVE)
 }
 
 /** The one line shown in place of the chip when suggestions are off. */

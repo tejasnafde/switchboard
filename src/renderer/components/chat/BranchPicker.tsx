@@ -9,6 +9,10 @@
  *     calls `git.switchRef`; the surrounding ChatInput re-fetches the
  *     current branch on close.
  *
+ * While the chat's Follow suggestions are off (muted, or past the worktree
+ * cut-off), the popover ends with "Turn Follow suggestions back on", so the
+ * choice stays reversible after the composer's notice was closed.
+ *
  * Refs come from `window.api.git.listRefs(cwd)`. We re-fetch each time
  * the popover opens (cheap; user-paced); no React Query yet.
  *
@@ -21,6 +25,7 @@ import { createRendererLogger } from '../../logger'
 import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { rankAndFilterRefs, decideSwitchAction, type Ref } from './branch-picker-policy'
+import { followSuggestionsOff } from '@shared/follow-suggestions'
 
 const log = createRendererLogger('chat:branch-picker')
 
@@ -37,9 +42,12 @@ interface TriggerProps {
   onChanged?: () => void
   /** The cwd itself no longer exists (deleted worktree) - owner can heal the pointer. */
   onCwdMissing?: () => void
+  /** The conversation whose Follow suggestions the popover can turn back on. */
+  followSessionId?: string
+  onTurnFollowBackOn?: () => void
 }
 
-export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissing }: TriggerProps) {
+export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissing, followSessionId, onTurnFollowBackOn }: TriggerProps) {
   const [open, setOpen] = useState(false)
   const [current, setCurrent] = useState<string | null>(null)
   const [isGitRepo, setIsGitRepo] = useState(true)
@@ -126,7 +134,14 @@ export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissi
         }}
         className="sb-floating-surface z-[1200] w-[320px] overflow-hidden rounded-[6px] border border-[var(--border)] shadow-[0_10px_30px_rgba(0,0,0,0.35)]!"
       >
-        <BranchPickerPopover cwd={cwd} inputRef={inputRef} onSwapWorktree={onSwapWorktree} onClose={close} />
+        <BranchPickerPopover
+          cwd={cwd}
+          inputRef={inputRef}
+          onSwapWorktree={onSwapWorktree}
+          onClose={close}
+          followSessionId={followSessionId}
+          onTurnFollowBackOn={onTurnFollowBackOn}
+        />
       </PopoverContent>
     </Popover>
   )
@@ -137,9 +152,11 @@ interface PopoverProps {
   inputRef: React.RefObject<HTMLInputElement | null>
   onSwapWorktree?: (newCwd: string, branch: string) => void
   onClose: (changed: boolean) => void
+  followSessionId?: string
+  onTurnFollowBackOn?: () => void
 }
 
-function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose }: PopoverProps) {
+function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose, followSessionId, onTurnFollowBackOn }: PopoverProps) {
   const [refs, setRefs] = useState<Ref[]>([])
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
@@ -165,6 +182,19 @@ function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose }: Popover
       cancelled = true
     }
   }, [cwd])
+
+  const [followOff, setFollowOff] = useState(false)
+  useEffect(() => {
+    if (!followSessionId) return
+    let cancelled = false
+    window.api.app.getConversationFollowSuggestions(followSessionId).then(
+      (res) => { if (!cancelled) setFollowOff(followSuggestionsOff(res.mode, res.workedWorktrees)) },
+      (err: unknown) => log.warn('could not read the Follow suggestion setting', err),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [followSessionId])
 
   const filtered = rankAndFilterRefs(refs, query)
   const notGitRepo = !!error && /not a git repository/i.test(error)
@@ -263,6 +293,20 @@ function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose }: Popover
           </button>
         ))}
       </div>
+      {followOff && onTurnFollowBackOn && (
+        <button
+          type="button"
+          // Enter here is this button's, not the branch list's.
+          onKeyDown={(e) => { if (e.key === 'Enter') e.stopPropagation() }}
+          onClick={() => {
+            onTurnFollowBackOn()
+            onClose(false)
+          }}
+          className="w-full cursor-pointer border-0 border-t border-[var(--border)] bg-transparent px-[12px] py-[7px] text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-active,var(--bg-tertiary))]"
+        >
+          Turn Follow suggestions back on
+        </button>
+      )}
     </div>
   )
 }

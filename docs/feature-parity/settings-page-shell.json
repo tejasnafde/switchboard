@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "settings-page-shell",
-  "summary": "Step 1 of the Settings overhaul. The desktop Settings modal (seven top tabs) becomes a full-window page below the title bar with a left navigation of nine pages: General, Appearance, Chat & agents, Accounts & models, Projects, Keyboard, Devices & machines, Archive & data and About. Every existing setting and panel moved as it was, through the same stores, settings keys and IPC. Every row is defined once in settings-rows.ts; the pages render from those definitions and one search indexes them (label, description, section, page title and a shortcut's keys), so a result names its page and opens it with the row highlighted and focused. A row whose value differs from its default shows a thin accent edge and a Reset, and the navigation counts changed rows per page. The privacy text links to https://tn07.dev/privacy through the existing external-link path. It opens on General from the gear, the menu (Cmd+,) and the palette, a tour action can name a page, and Escape (which first clears a search) or Back returns focus to where it was. The phone and Android only change the copy that pointed users at the old Mobile tab.",
+  "summary": "Step 1 of the Settings overhaul. The desktop Settings modal (seven top tabs) becomes a full-window page below the title bar with a left navigation of nine pages: General, Appearance, Chat & agents, Accounts & models, Projects, Keyboard, Devices & machines, Archive & data and About. Every existing setting and panel moved as it was, through the same stores, settings keys and IPC. Every row is defined once in settings-rows.ts; the pages render from those definitions and one search indexes them (label, description, section, page title and a shortcut's keys), so a result names its page and opens it with the row highlighted and focused. A row whose value differs from its default shows a muted 'Changed' label after its name (the tooltip names the default) and a Reset beside the control, and the navigation counts changed rows per page. Colour marks only exceptions: a granted notification permission is plain muted text. The Keyboard page and its search rows read the shortcut registry (src/shared/shortcuts.ts), one read-only row per command for the current OS, sectioned by the registry's groups. The privacy text links to https://tn07.dev/privacy through the existing external-link path. It opens on General from the gear, the menu (Cmd+,) and the palette, a tour action can name a page, and Escape (which first clears a search) or Back returns focus to where it was. The phone and Android only change the copy that pointed users at the old Mobile tab.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -19,7 +19,8 @@
         "tests/unit/settings-rows.test.ts",
         "tests/unit/settings-page-render.test.ts",
         "e2e/radix-overlays.e2e.mjs",
-        "e2e/visual-regressions.e2e.mjs"
+        "e2e/visual-regressions.e2e.mjs",
+        "src/shared/shortcuts.ts"
       ]
     },
     "reactNativeIos": {
@@ -54,7 +55,8 @@
       "tests/unit/settings-page-render.test.ts renders every page and asserts it shows exactly the rows search indexes for it, that every row with a default has a read/write binding, and that the privacy link is a plain external href.",
       "tests/unit/settings-rows.test.ts pins search (every term must match, across label, description, page title and keys; page order) and the changed count per page.",
       "e2e/radix-overlays.e2e.mjs against the built app: focus lands in search, Escape clears a search before closing, Enter opens the first result's page with its row focused, launch-config and provider-editor Escape still stay inside, Tab stays inside, Escape and Back close it and return focus to the gear.",
-      "The screens phase of e2e/visual-regressions.e2e.mjs captures the page in Dark, Light and Translucent; baselines were rewritten, read, and two further runs passed without updating."
+      "The screens phase of e2e/visual-regressions.e2e.mjs captures the page in Dark, Light and Translucent; baselines were rewritten, read, and two further runs passed without updating.",
+      "Round 2: tests/unit/settings-rows.test.ts pins the registry rows for both platforms (Cmd+J on macOS, Ctrl+J elsewhere), that their keys are searchable, and the default named in the Changed tooltip; the overlays e2e (68 checks) and the screens phase (baselines rewritten, read, then two runs without updating) pass after merging origin/main."
     ],
     "hardware": [],
     "notExercised": [

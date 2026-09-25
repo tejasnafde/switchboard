@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { shortcutAccelerator } from '@shared/shortcuts'
 
 const read = (path: string) => readFileSync(resolve(__dirname, path), 'utf8')
 
@@ -63,7 +64,8 @@ describe('dual-chat component contract', () => {
 
   it('exposes the same open-beside chord through the native Chat menu', () => {
     expect(main).toContain("label: 'Open Chat Beside…'")
-    expect(main).toContain("accelerator: 'CmdOrCtrl+Shift+\\\\'")
+    expect(main).toContain("accelerator: shortcutAccelerator('chat.dual')")
+    expect(shortcutAccelerator('chat.dual')).toBe('CmdOrCtrl+Shift+\\')
     expect(preload).toContain('onOpenChatBeside')
     expect(app).toContain('window.api.onOpenChatBeside')
     expect(app).toContain('toggleDualChatWorkspace')

@@ -298,7 +298,7 @@ async function settingsDialog() {
   check('settings: focus moves into its search', await focusSettlesOn(`document.activeElement?.getAttribute('aria-label') === 'Search settings'`))
   // Search opens the row's page with the row highlighted and focused.
   await win.keyboard.type('steer')
-  await settings.getByRole('heading', { name: /1 result for "steer"/ }).waitFor({ state: 'visible' })
+  await settings.getByRole('heading', { name: /results? for "steer"/ }).waitFor({ state: 'visible' })
   await win.keyboard.press('Escape')
   check('settings: Escape clears a search, not Settings',
     await settings.isVisible() && await settings.getByLabel('Search settings').inputValue() === '')

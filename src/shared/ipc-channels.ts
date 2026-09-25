@@ -42,6 +42,9 @@ export const AppChannels = {
   SET_CONVERSATION_RUNTIME_MODE: 'app:set-conversation-runtime-mode',
   /** Per-conversation Follow-chip setting (`FollowSuggestionMode`). */
   SET_CONVERSATION_FOLLOW_SUGGESTIONS: 'app:set-conversation-follow-suggestions',
+  /** Read by the branch picker, which offers "Turn back on" while the chip is off. */
+  GET_CONVERSATION_FOLLOW_SUGGESTIONS: 'app:get-conversation-follow-suggestions',
+  DISMISS_CONVERSATION_FOLLOW_NOTICE: 'app:dismiss-conversation-follow-notice',
   GET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:get-conversation-provider-instance-id',
   SET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:set-conversation-provider-instance-id',
   GET_CONVERSATION_MODEL: 'app:get-conversation-model',

@@ -26,7 +26,7 @@
  */
 
 import { _electron as electron } from 'playwright'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -890,6 +890,35 @@ async function runBehaviourChecks() {
   await assertNativeGlassTransmitsColor(relaunched.win, 'relaunch')
 }
 
+/**
+ * The artifact dir is emptied at the start of every run, so a passing rerun
+ * used to wipe the only evidence of a rare failure (the 0.46% chat-narrow
+ * diff was lost twice). Copy a failed run's artifacts to their own dated
+ * folder, and keep the newest 10.
+ */
+function keepFailureArtifacts() {
+  if (process.env.SB_VISUAL_ARTIFACT_DIR) return
+  const root = join(repoRoot, 'e2e', 'artifacts', 'visual-failures')
+  // The pid keeps two runs that fail in the same millisecond apart.
+  const dest = join(root, `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`)
+  try {
+    mkdirSync(root, { recursive: true })
+    cpSync(artifactDir, dest, { recursive: true, errorOnExist: true, force: false })
+    console.error(`failure artifacts kept in ${dest}`)
+  } catch (copyError) {
+    console.error(`could not keep the failure artifacts: ${copyError}`)
+    return
+  }
+  const runs = readdirSync(root).sort()
+  for (const old of runs.slice(0, Math.max(0, runs.length - 10))) {
+    try {
+      rmSync(join(root, old), { recursive: true, force: true })
+    } catch (removeError) {
+      console.error(`could not remove old failure artifacts ${old}: ${removeError}`)
+    }
+  }
+}
+
 const screenFailures = []
 try {
   if (scope !== 'screens') await runBehaviourChecks()
@@ -906,6 +935,7 @@ try {
     () => console.error(`window at failure: ${failurePath}`),
     (shotError) => console.error(`could not capture the window at failure: ${shotError}`),
   )
+  keepFailureArtifacts()
 } finally {
   await closeApp()
   cleanup()

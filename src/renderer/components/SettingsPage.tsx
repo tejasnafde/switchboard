@@ -24,13 +24,12 @@ import {
   SETTINGS_PAGES,
   SETTING_ROW,
   SETTING_ROWS,
-  SHORTCUTS,
   PRIVACY_POLICY_URL,
   changedCountByPage,
+  defaultValueLabel,
   isSettingChanged,
   pageTitle,
   searchSettingRows,
-  shortcutRowId,
   type SettingRowDef,
   type SettingsPageId,
 } from './settings/settings-rows'
@@ -353,17 +352,19 @@ function ChatPage() {
 
 function KeyboardPage() {
   const rows = SETTING_ROWS.filter((row) => row.page === 'keyboard')
+  const groups = [...new Set(rows.map((row) => row.section))]
   return (
-    <Section title="Shortcuts" card>
-      {SHORTCUTS.map((shortcut, i) => {
-        const def = rows.find((row) => row.id === shortcutRowId(i))!
-        return (
-          <SettingRow key={def.id} def={def}>
-            <Kbd>{shortcut.keys}</Kbd>
-          </SettingRow>
-        )
-      })}
-    </Section>
+    <>
+      {groups.map((group) => (
+        <Section key={group} title={group} card>
+          {rows.filter((row) => row.section === group).map((def) => (
+            <SettingRow key={def.id} def={def}>
+              <Kbd>{def.keys}</Kbd>
+            </SettingRow>
+          ))}
+        </Section>
+      ))}
+    </>
   )
 }
 
@@ -440,8 +441,9 @@ function SettingAnchor({ def, children }: { def: SettingRowDef; children: ReactN
 }
 
 /**
- * One row: label and description from its definition, a thin accent edge and
- * a Reset once its value differs from the default, and the control.
+ * One row: label and description from its definition, a muted "Changed"
+ * after the label and a Reset beside the control once its value differs from
+ * the default, and the control.
  */
 function SettingRow({ def, extra, below, children }: {
   def: SettingRowDef
@@ -461,13 +463,23 @@ function SettingRow({ def, extra, below, children }: {
       data-setting-row={def.id}
       data-changed={changed || undefined}
       className={cn(
-        'relative flex items-center gap-4 border-t border-[var(--border)] px-[14px] py-3 outline-none first:border-t-0',
+        'flex items-center gap-4 border-t border-[var(--border)] px-[14px] py-3 outline-none first:border-t-0',
         active && 'bg-[var(--accent-subtle)]',
       )}
     >
-      {changed && <span aria-hidden="true" className="absolute bottom-2.5 left-0 top-2.5 w-[2px] rounded-[2px] bg-[var(--accent)]" />}
       <div className="min-w-0 flex-1">
-        <div id={labelId(def.id)} className="text-[13px] font-[500]">{def.label}</div>
+        <div className="flex items-baseline">
+          <div id={labelId(def.id)} className="text-[13px] font-[500]">{def.label}</div>
+          {changed && (
+            <span
+              title={`Changed from the default (${defaultValueLabel(def)})`}
+              className="ml-2 inline-flex shrink-0 cursor-default items-center gap-[5px] text-[11px] font-[500] tracking-[0.02em] text-[var(--text-muted)]"
+            >
+              <span aria-hidden="true" className="size-[5px] rounded-full bg-[var(--text-secondary)]" />
+              Changed
+            </span>
+          )}
+        </div>
         {(def.description || extra) && (
           <div className="mt-0.5 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
             {def.description}{def.description && extra ? ' ' : null}{extra}
@@ -608,7 +620,7 @@ function NotificationRows() {
   }
 
   const permissionBadge = permission === 'granted'
-    ? { text: 'Permission: granted', className: 'text-[var(--success)]' }
+    ? { text: 'Permission: granted', className: 'text-[var(--text-muted)]' }
     : permission === 'denied'
       ? { text: 'Permission: denied (fix in macOS Settings)', className: 'text-[var(--error)]' }
       : permission === 'default'
