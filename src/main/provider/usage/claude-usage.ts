@@ -207,7 +207,18 @@ export async function fetchClaudeUsage(
   }
 
   const state = providerAuthState({ credential: credential.credential, nowMs: Date.now() })
-  if (state === 'refresh-pending') return refreshPending
+  if (state === 'refresh-pending' && !opts.refreshWithTurn) return refreshPending
+  if (state === 'refresh-pending') {
+    // A real turn went through the CLI and the token is still stale, so its
+    // refresh failed: the refresh token is dead, or the turn never ran.
+    return {
+      ...result,
+      status: 'unauthenticated',
+      plan,
+      message: 'A refresh turn did not renew this login. If chats on this account fail too, log in again.',
+      ...(loginCommand ? { command: loginCommand } : {}),
+    }
+  }
   if (state === 'logged-out') {
     return {
       ...result,
@@ -245,9 +256,10 @@ export async function fetchClaudeUsage(
 
   if (response.status === 401 || response.status === 403) {
     // The server can reject a token before its stored expiry. With a refresh
-    // token the CLI recovers from that on its next call, so this is not a
-    // logout unless a refresh turn just ran and it is still rejected.
-    if (credential.credential.hasRefreshToken && !opts.refreshWithTurn) return refreshPending
+    // token the CLI recovers from a 401 on its next call, so this is not a
+    // logout unless a refresh turn just ran and it is still rejected. A 403
+    // is a scope problem that no refresh fixes.
+    if (response.status === 401 && credential.credential.hasRefreshToken && !opts.refreshWithTurn) return refreshPending
     return {
       ...result,
       status: 'unauthenticated',

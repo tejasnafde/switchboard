@@ -112,6 +112,21 @@ describe('fetchClaudeUsage with an expired token', () => {
     expect(usage.status).toBe('ok')
   })
 
+  it('reports logged out when Refresh now ran and the token is still stale', async () => {
+    readClaudeCredential.mockResolvedValue(found(Date.now() - 16 * HOUR))
+    withTurn.mockResolvedValue(false)
+    const usage = await fetchClaudeUsage('inst', env, '/tmp/x', { refreshWithTurn: true })
+    expect(withTurn).toHaveBeenCalledTimes(1)
+    expect(usage.status).toBe('unauthenticated')
+    expect(usage.command).toContain('claude auth login')
+  })
+
+  it('treats a 403 as a scope problem, not a pending refresh', async () => {
+    readClaudeCredential.mockResolvedValue(found(Date.now() + 8 * HOUR))
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({}) }) as unknown as typeof fetch
+    expect((await fetchClaudeUsage('inst', env, '/tmp/x')).status).toBe('unauthenticated')
+  })
+
   it('does not touch the CLI for a live token', async () => {
     readClaudeCredential.mockResolvedValue(found(Date.now() + 8 * HOUR))
     globalThis.fetch = vi.fn().mockResolvedValue(ok) as unknown as typeof fetch
