@@ -39,6 +39,8 @@ export interface StoredClaudeCredential {
   expiresAtMs: number | null
   subscriptionType: string | null
   scopes: string[]
+  /** Whether the CLI can refresh an expired access token. The value itself is never kept. */
+  hasRefreshToken: boolean
 }
 
 export type CredentialReadResult =
@@ -148,6 +150,7 @@ export function parseStoredClaudeCredential(raw: string): StoredClaudeCredential
     scopes: Array.isArray(record.scopes)
       ? record.scopes.filter((s): s is string => typeof s === 'string')
       : [],
+    hasRefreshToken: typeof record.refreshToken === 'string' && record.refreshToken.length > 0,
   }
 }
 

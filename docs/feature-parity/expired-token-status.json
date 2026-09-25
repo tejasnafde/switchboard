@@ -1,0 +1,56 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "expired-token-status",
+  "summary": "A Claude provider instance whose access token expired but still has a refresh token is reported as signed in, not logged out, by one shared rule; the Usage panel asks the Claude CLI to refresh it (no model call first, one minimal turn on explicit Refresh now) instead of failing with 401, and Switchboard still never refreshes a token itself.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/settings/ProviderUsagePanel.tsx",
+        "src/renderer/components/settings/ProvidersTab.tsx",
+        "src/main/provider/usage/claude-usage.ts",
+        "src/main/provider/usage/claude-cli-refresh.ts",
+        "tests/unit/expired-token-status.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native client has no provider-instance settings: nothing under apps/mobile/src calls providerInstances test or usage, so it never shows a Claude instance's login state or plan usage."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android client has no provider-instance settings and never calls the provider-instances test or usage channels, so it has no login-state or usage surface to correct."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-auth-state.ts",
+        "src/shared/provider-usage.ts",
+        "src/shared/provider-auth-format.ts",
+        "tests/unit/expired-token-status.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored. The status is derived per request from the CLI and the stored credential; no table, setting or migration changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, update channel or new IPC channel. The existing provider-instances:usage channel gains an optional refreshWithTurn flag, which an older backend ignores, and the usage status 'expired' is renamed 'refresh-pending', which only the desktop Settings panel reads."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/expired-token-status.test.ts pins the shared rule (expired plus refresh token is refresh-pending, no refresh token or no credential or CLI loggedIn false is logged out) and the usage path: refresh without a turn then read, the signed-in 'appears after the next chat' state when that did not refresh, one CLI turn on Refresh now, no CLI call for a live token, and a 401 with a refresh token treated as pending.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [
+      "On the user's Mac (CLI 2.1.280), `claude mcp list` under an instance whose token expired 734 hours earlier rewrote its keychain entry (the CLI tried the refresh; that refresh token was dead, so the CLI marked the account logged out), where `claude auth status` left the entry untouched. The minimal refresh turn command (`claude -p hi --model haiku --tools '' --no-session-persistence --strict-mcp-config`) exited 0 against a live instance."
+    ],
+    "notExercised": [
+      "A successful no-model refresh of a token that is expired but still refreshable has not been observed: no such account existed on the machine during the change. If `claude mcp list` stops refreshing, the panel falls back to the Refresh now turn.",
+      "The Refresh now button has not been clicked in the running app."
+    ]
+  }
+}

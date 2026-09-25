@@ -48,10 +48,10 @@ export type UsageStatus =
   | 'ok'
   /** API key / Bedrock / Vertex / gateway / OpenCode - plan limits do not apply. */
   | 'not-applicable'
-  /** No readable credential, or a 401 on a credential that had not expired. */
+  /** No readable credential, no refresh token, or rejected even after a refresh turn. */
   | 'unauthenticated'
-  /** Credential found but its `expiresAt` is in the past. */
-  | 'expired'
+  /** Signed in, but the access token is stale until the CLI's next call refreshes it. */
+  | 'refresh-pending'
   /** This backend cannot read the credential store (non-macOS, headless remote). */
   | 'unsupported'
   /** HTTP / RPC / spawn / timeout failure. */

@@ -1,4 +1,5 @@
 import type { AgentType } from './types'
+import { providerAuthState } from './provider-auth-state'
 
 export interface FormattedAuthStatus {
   ok: boolean
@@ -107,8 +108,10 @@ export function formatClaudeAuthStatus(stdout: string, oauthDir?: string | null)
 
   try {
     const parsed = JSON.parse(trimmed) as Record<string, unknown>
-    const loggedIn = parsed.loggedIn === true
-    if (!loggedIn) {
+    // The CLI's own answer, not the stored token's expiry: an expired access
+    // token with a refresh token still reports loggedIn true, and it is.
+    const state = providerAuthState({ cliLoggedIn: parsed.loggedIn === true, nowMs: Date.now() })
+    if (state === 'logged-out') {
       const command = oauthLoginCommand('claude-code', oauthDir || '~/.claude')
       return {
         ok: false,

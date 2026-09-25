@@ -23,7 +23,7 @@ interface ProviderInstanceStore {
   test: (id: string) => Promise<{ ok: boolean; message: string }>
   /** Subscription usage for one instance. Never throws; failures come back
    *  as a ProviderUsage with a non-'ok' status. */
-  usage: (id: string, opts?: { force?: boolean }) => Promise<ProviderUsage>
+  usage: (id: string, opts?: { force?: boolean; refreshWithTurn?: boolean }) => Promise<ProviderUsage>
   clearError: () => void
   /** Helper: instances filtered to a given agent kind, in a stable order
    *  (default first, then alpha). Used by both the picker and the
