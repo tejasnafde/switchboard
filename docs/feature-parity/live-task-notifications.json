@@ -8,15 +8,13 @@
       "status": "implemented",
       "evidence": [
         "src/renderer/components/chat/provider-event-reducer.ts",
-        "src/renderer/components/chat/ChatPanel.tsx",
-        "tests/unit/live-task-notification.test.ts"
+        "src/renderer/components/chat/ChatPanel.tsx"
       ]
     },
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/stores/chat.ts",
-        "tests/unit/live-task-notification.test.ts"
+        "apps/mobile/src/stores/chat.ts"
       ]
     },
     "nativeAndroid": {
