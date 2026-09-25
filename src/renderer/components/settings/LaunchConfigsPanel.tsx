@@ -1,13 +1,13 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   parseLaunchConfigFile,
-  serializeLaunchConfigFile,
   serializeLaunchConfigBody,
   parseLaunchConfigBodyYaml,
   type LaunchConfigFile,
   type WorktreeSetupConfig,
 } from '@shared/launch-config'
 import { launchConfigListReducer } from '../../services/launch-config-list-reducer'
+import { saveLaunchConfigFor } from './launch-config-save'
 import { confirm } from '../ui/confirm'
 import { onEscapeFirst } from '../ui/escape-first'
 import { createRendererLogger } from '../../logger'
@@ -129,20 +129,32 @@ export function LaunchConfigsPanel() {
     setConfigError(null)
   }, [selectedLaunchConfig, launchConfigFile])
 
-  const persist = useCallback(async (config: LaunchConfigFile) => {
-    if (!selectedLaunchConfigProject) return
+  const currentProject = useRef(selectedLaunchConfigProject)
+  currentProject.current = selectedLaunchConfigProject
+
+  /** True only when the write landed on the project still selected; callers stop otherwise. */
+  const persist = useCallback(async (config: LaunchConfigFile): Promise<boolean> => {
+    const project = selectedLaunchConfigProject
+    if (!project) return false
     setConfigSaveState('saving')
     setConfigError(null)
-    try {
-      const text = serializeLaunchConfigFile(config)
-      await window.api.app.saveLaunchConfig(selectedLaunchConfigProject, text)
-      setLaunchConfigFile(config)
-      setConfigSaveState('saved')
-      setTimeout(() => setConfigSaveState('idle'), 1500)
-    } catch (e) {
+    const outcome = await saveLaunchConfigFor(
+      project,
+      config,
+      (p, text) => window.api.app.saveLaunchConfig(p, text),
+      (p) => currentProject.current === p,
+    )
+    if (outcome.kind === 'stale') return false
+    if (outcome.kind === 'failed') {
+      log.warn('saving launch-config.yaml failed', outcome.error)
       setConfigSaveState('error')
-      setConfigError(e instanceof Error ? e.message : String(e))
+      setConfigError(outcome.error)
+      return false
     }
+    setLaunchConfigFile(config)
+    setConfigSaveState('saved')
+    setTimeout(() => setConfigSaveState('idle'), 1500)
+    return true
   }, [selectedLaunchConfigProject])
 
   const handleSaveBody = useCallback(async () => {
@@ -165,8 +177,7 @@ export function LaunchConfigsPanel() {
       setConfigSaveState('error')
       return
     }
-    await persist(result.config)
-    setBodyDirty(false)
+    if (await persist(result.config)) setBodyDirty(false)
   }, [bodyYaml, launchConfigFile, selectedLaunchConfig, persist])
 
   const handleAddLaunchConfig = useCallback(async () => {
@@ -177,7 +188,7 @@ export function LaunchConfigsPanel() {
       setConfigError(result.error)
       return
     }
-    await persist(result.config)
+    if (!(await persist(result.config))) return
     setSelectedLaunchConfig(name)
     setAddingLaunchConfig(false)
     setAddValue('')
@@ -191,7 +202,7 @@ export function LaunchConfigsPanel() {
       setConfigError(result.error)
       return
     }
-    await persist(result.config)
+    if (!(await persist(result.config))) return
     if (selectedLaunchConfig === from) setSelectedLaunchConfig(to)
     setRenamingLaunchConfig(null)
     setRenameValue('')
@@ -203,7 +214,7 @@ export function LaunchConfigsPanel() {
       setConfigError(result.error)
       return
     }
-    await persist(result.config)
+    if (!(await persist(result.config))) return
     if (selectedLaunchConfig === name) setSelectedLaunchConfig('default')
   }, [launchConfigFile, selectedLaunchConfig, persist])
 

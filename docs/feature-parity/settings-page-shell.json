@@ -19,7 +19,9 @@
         "tests/unit/settings-rows.test.ts",
         "tests/unit/settings-page-render.test.ts",
         "e2e/radix-overlays.e2e.mjs",
-        "e2e/visual-regressions.e2e.mjs"
+        "e2e/visual-regressions.e2e.mjs",
+        "src/renderer/components/settings/launch-config-save.ts",
+        "tests/unit/launch-config-save.test.ts"
       ]
     },
     "reactNativeIos": {
@@ -55,7 +57,8 @@
       "tests/unit/settings-rows.test.ts pins search (every term must match, across label, description, page title and keys; page order) and the changed count per page.",
       "e2e/radix-overlays.e2e.mjs against the built app: focus lands in search, Escape clears a search before closing, Enter opens the first result's page with its row focused, launch-config and provider-editor Escape still stay inside, Tab stays inside, Escape and Back close it and return focus to the gear.",
       "The screens phase of e2e/visual-regressions.e2e.mjs captures the page in Dark, Light and Translucent; baselines were rewritten, read, and two further runs passed without updating.",
-      "Round 2: tests/unit/settings-rows.test.ts pins the registry rows for both platforms (Cmd+J on macOS, Ctrl+J elsewhere), that their keys are searchable, and the default named in the Changed tooltip; the overlays e2e (68 checks) and the screens phase (baselines rewritten, read, then two runs without updating) pass after merging origin/main."
+      "Round 2: tests/unit/settings-rows.test.ts pins the registry rows for both platforms (Cmd+J on macOS, Ctrl+J elsewhere), that their keys are searchable, and the default named in the Changed tooltip; the overlays e2e (68 checks) and the screens phase (baselines rewritten, read, then two runs without updating) pass after merging origin/main.",
+      "Round 3: tests/unit/launch-config-save.test.ts pins that a launch-config save is applied only when it succeeded on the project still selected (failed keeps the edit unsaved; a project switch mid-write drops the result, including its error)."
     ],
     "hardware": [],
     "notExercised": [
