@@ -6,6 +6,7 @@ import {
   barTone,
   credentialSummary,
   defaultAccountId,
+  readSettings,
   roomLeft,
   sortByRoomLeft,
   untilReset,
@@ -50,7 +51,8 @@ describe('untilReset', () => {
     expect(untilReset(NOW - MIN, NOW)).toBe('now')
     expect(untilReset(NOW + 40 * MIN, NOW)).toBe('in 40 min')
     expect(untilReset(NOW + 182 * MIN, NOW)).toBe('in 3 h 02 min')
-    expect(untilReset(Date.UTC(2026, 9, 2, 12), NOW)).toBe('Fri 2 Oct')
+    // Local noon, so the date is 2 Oct in every host time zone.
+    expect(untilReset(new Date(2026, 9, 2, 12).getTime(), NOW)).toBe('Fri 2 Oct')
   })
 })
 
@@ -111,5 +113,16 @@ describe('credentialSummary', () => {
     expect(credentialSummary(inst('a'))).toBe('/h/.claude-a')
     expect(credentialSummary(inst('b', { authMode: 'env', envKeys: ['ANTHROPIC_API_KEY'] }))).toBe('API key (ANTHROPIC_API_KEY)')
     expect(credentialSummary(inst('c', { agentType: 'opencode', authMode: 'env' }))).toBe('Shell environment')
+  })
+})
+
+describe('readSettings', () => {
+  it('keeps the values that were read when one key fails', async () => {
+    const boom = new Error('ipc down')
+    const result = await readSettings(['a', 'b', 'c'], async (key) => {
+      if (key === 'b') throw boom
+      return key === 'c' ? null : `value-${key}`
+    })
+    expect(result).toEqual({ values: { a: 'value-a' }, failed: [{ key: 'b', reason: boom }] })
   })
 })

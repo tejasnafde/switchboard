@@ -39,6 +39,7 @@ import {
   credentialSummary,
   defaultAccountId,
   needsAttention,
+  readSettings,
   sortByRoomLeft,
   untilReset,
   type BarTone,
@@ -98,14 +99,12 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
   }, [refresh])
 
   useEffect(() => {
-    Promise.all(SETTING_KEYS.map((key) => window.api.settings.get(key)))
-      .then((values) => {
-        if (!mounted.current) return
-        const read = Object.fromEntries(SETTING_KEYS.flatMap((key, i) => (values[i] ? [[key, values[i]]] : [])))
-        // A pick made before the read landed wins.
-        setStored((prev) => ({ ...read, ...prev }))
-      })
-      .catch((err) => log.warn('reading the account defaults failed', err))
+    void readSettings(SETTING_KEYS, (key) => window.api.settings.get(key)).then(({ values, failed }) => {
+      for (const { key, reason } of failed) log.warn(`reading ${key} failed`, reason)
+      if (!mounted.current) return
+      // A pick made before the read landed wins.
+      setStored((prev) => ({ ...values, ...prev }))
+    })
   }, [])
 
   const writeSetting = useCallback((key: string, value: string) => {

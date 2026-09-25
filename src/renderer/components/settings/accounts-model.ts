@@ -127,3 +127,18 @@ export function defaultAccountId(
   const id = resolveMachineInstanceId({ agentType: kind, scoped: stored.scoped, legacy: stored.legacy, legacyAgentType: owner(stored.legacy) })
   return id && owner(id) === kind ? id : defaultInstanceId(kind)
 }
+
+/** Reads each key on its own, so one failed read keeps the rest. */
+export async function readSettings(
+  keys: readonly string[],
+  get: (key: string) => Promise<string | null>,
+): Promise<{ values: Record<string, string>; failed: { key: string; reason: unknown }[] }> {
+  const results = await Promise.allSettled(keys.map((key) => get(key)))
+  const values: Record<string, string> = {}
+  const failed: { key: string; reason: unknown }[] = []
+  results.forEach((result, i) => {
+    if (result.status === 'rejected') failed.push({ key: keys[i], reason: result.reason })
+    else if (result.value) values[keys[i]] = result.value
+  })
+  return { values, failed }
+}

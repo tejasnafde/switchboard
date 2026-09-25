@@ -538,7 +538,10 @@ async function captureThemeScreens(win, theme) {
   await settings.getByRole('button', { name: /^Accounts & models/ }).click()
   await settings.locator('[data-account]').nth(4).waitFor({ state: 'visible' })
   await settings.getByText('Loading usage…').first().waitFor({ state: 'detached' })
-  // The credential line names this machine's home directory.
+  // The credential line names this machine's home directory, so its length
+  // differs by host (/Users/runner on CI). A fixed box keeps the mask and the
+  // text after it in place.
+  await win.addStyleTag({ content: '[data-credential] { display: inline-block; width: 260px; overflow: hidden; white-space: nowrap; vertical-align: bottom }' })
   await snapScreen(win, 'settings-accounts', theme, settings, [settings.locator('[data-credential]')])
   // Delete them through the menu, or the composer chip names the account
   // on every later screen.
