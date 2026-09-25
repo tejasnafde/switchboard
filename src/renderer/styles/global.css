@@ -159,10 +159,13 @@ html[data-fullscreen="true"].theme-translucent .titlebar-drag {
   background: transparent !important;
 }
 
-/* Settings modal must always be opaque - even in translucent mode */
-.settings-modal-content {
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-md);
+/* The Settings page covers the workspace, so it must be opaque - even in
+   translucent mode, where the app would otherwise show through it. */
+.settings-page {
+  background: var(--bg-primary);
+}
+.theme-translucent .settings-page {
+  background: rgb(20, 20, 20);
 }
 
 /* All floating surfaces (modals, popovers, dropdowns) need a solid
@@ -189,7 +192,6 @@ html[data-fullscreen="true"].theme-translucent .titlebar-drag {
 
 /* Translucent mode: bump blur + opacity so popovers don't show the
    wallpaper through themselves. */
-.theme-translucent .settings-modal-content,
 .theme-translucent .palette-modal-content,
 .theme-translucent .sb-floating-surface {
   background: rgba(20, 20, 20, 0.98) !important;

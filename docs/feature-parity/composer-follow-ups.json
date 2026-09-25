@@ -13,7 +13,7 @@
         "src/renderer/components/chat/QueuedTurnBar.tsx",
         "src/renderer/components/chat/chat-icons.tsx",
         "src/renderer/components/ui/button.tsx",
-        "src/renderer/components/SettingsModal.tsx",
+        "src/renderer/components/SettingsPage.tsx",
         "src/renderer/components/sidebar/RecentSessionsSection.tsx",
         "src/renderer/stores/agent-store.ts",
         "src/renderer/stores/layout-store.ts",

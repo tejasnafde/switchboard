@@ -12,7 +12,7 @@
         "src/renderer/components/chat/ApprovalCard.tsx",
         "src/renderer/components/chat/ChatInput.tsx",
         "src/renderer/components/terminal/TerminalStrip.tsx",
-        "src/renderer/components/SettingsModal.tsx",
+        "src/renderer/components/SettingsPage.tsx",
         "src/renderer/components/sidebar/Sidebar.tsx"
       ]
     },

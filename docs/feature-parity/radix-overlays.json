@@ -21,7 +21,7 @@
         "src/renderer/components/kanban/WorktreeManagerModal.tsx",
         "src/renderer/components/kanban/kanban-modal-classes.ts",
         "src/renderer/components/sidebar/WorkspaceManager.tsx",
-        "src/renderer/components/SettingsModal.tsx",
+        "src/renderer/components/SettingsPage.tsx",
         "src/renderer/styles/tailwind.css",
         "src/renderer/styles/global.css",
         "tests/unit/provider-picker-models.test.ts",

@@ -163,7 +163,7 @@ export default function SignInScreen() {
             <Text style={styles.stepTitle}>Connect your Google account</Text>
             <Text style={styles.stepBody}>Needed only to reach work VMs over IAP.</Text>
             <Text style={styles.stepBody}>
-              On the desktop app, open Settings, then Mobile, then select Connect Google account. Sign
+              On the desktop app, open Settings, then Devices & machines, then select Connect Google account. Sign
               in when the browser opens. Scan the QR it shows you.
             </Text>
 

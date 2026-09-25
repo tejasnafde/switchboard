@@ -144,7 +144,7 @@ Auto-update uses the zip directly and works without the DMG.
 ## How auto-update works
 
 Both platforms use [`electron-updater`](https://www.electron.build/auto-update).
-On launch (and on demand from **Settings → About → Check for updates**),
+On launch (and on demand from **Settings → General → Check for updates**),
 the renderer talks to a small main-process module
 (`src/main/updater.ts`) that:
 
@@ -198,7 +198,7 @@ Nothing in CI can prove the update actually installs, because that needs a
 packaged app replacing itself on a real machine. Install the previous version,
 relaunch, and confirm the prompt appears within ~30 seconds. If it does not:
 
-- Open Settings → About → Check for updates and read the status line.
+- Open Settings → General → Check for updates and read the status line.
 - Tail the app log at `~/Library/Application Support/switchboard/logs/`
   on macOS (or `%APPDATA%\switchboard\logs\` on Windows). Lines tagged
   `[updater]` show what electron-updater saw.

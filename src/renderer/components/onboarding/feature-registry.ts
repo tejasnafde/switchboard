@@ -15,6 +15,8 @@
  * step or rerecord a clip you want existing users to see.
  */
 
+import type { SettingsPageId } from '../settings/settings-rows'
+
 export interface FeatureTourStep {
   /** Stable id; doubles as scene + mp4 filename. kebab-case. */
   id: string
@@ -32,7 +34,7 @@ export interface FeatureTourStep {
 export type TryItAction =
   | { kind: 'focus-chat-with-slash' }
   | { kind: 'open-search' }
-  | { kind: 'open-settings'; tab: 'general' | 'providers' | 'workspaces' | 'archived' | 'tour' | 'about' }
+  | { kind: 'open-settings'; page: SettingsPageId }
   | { kind: 'noop' }
 
 /**

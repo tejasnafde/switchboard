@@ -418,8 +418,8 @@ private fun CredentialImportPanel(
         style = MaterialTheme.typography.bodySmall,
     )
     Text(
-        text = "On the desktop app, open Settings, then Mobile, then select Connect Google " +
-            "account. Sign in when the browser opens. Scan the QR it shows you.",
+        text = "On the desktop app, open Settings, then Devices & machines, then select " +
+            "Connect Google account. Sign in when the browser opens. Scan the QR it shows you.",
         color = TextDim,
         style = MaterialTheme.typography.bodySmall,
     )
