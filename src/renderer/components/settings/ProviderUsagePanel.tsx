@@ -101,10 +101,12 @@ export function ProviderUsagePanel({
   usage,
   loading,
   onRefresh,
+  onRefreshWithTurn,
 }: {
   usage: ProviderUsage | null
   loading: boolean
   onRefresh: () => void
+  onRefreshWithTurn: () => void
 }) {
   if (!usage && !loading) return null
 
@@ -182,13 +184,32 @@ export function ProviderUsagePanel({
           style={{
             marginTop: hasRows ? '6px' : 0,
             // Only a genuine failure is red. not-applicable / unsupported /
-            // expired are informational states, not errors.
+            // refresh-pending are informational states, not errors.
             color: usage.status === 'error' ? 'var(--error)' : 'var(--text-muted)',
             wordBreak: 'break-word',
           }}
         >
           {usage.message}
         </div>
+      )}
+
+      {usage?.status === 'refresh-pending' && (
+        <button
+          onClick={onRefreshWithTurn}
+          disabled={loading}
+          style={{
+            marginTop: '6px',
+            fontSize: '10px',
+            padding: '2px 8px',
+            border: '1px solid var(--border)',
+            borderRadius: '4px',
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            cursor: loading ? 'default' : 'pointer',
+          }}
+        >
+          {loading ? 'Refreshing…' : 'Refresh now'}
+        </button>
       )}
 
       {usage?.command && (

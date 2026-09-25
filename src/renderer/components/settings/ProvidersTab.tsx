@@ -207,10 +207,10 @@ function ProviderInstanceCard({
     }
   }
 
-  async function loadUsage(force: boolean) {
+  async function loadUsage(opts?: { force?: boolean; refreshWithTurn?: boolean }) {
     setUsageLoading(true)
     try {
-      const result = await fetchUsage(instance.id, force ? { force: true } : undefined)
+      const result = await fetchUsage(instance.id, opts)
       if (mounted.current) setUsage(result)
     } finally {
       if (mounted.current) setUsageLoading(false)
@@ -223,7 +223,7 @@ function ProviderInstanceCard({
       return
     }
     setUsageOpen(true)
-    if (!usage) void loadUsage(false)
+    if (!usage) void loadUsage()
   }
 
   return (
@@ -366,7 +366,8 @@ function ProviderInstanceCard({
         <ProviderUsagePanel
           usage={usage}
           loading={usageLoading}
-          onRefresh={() => void loadUsage(true)}
+          onRefresh={() => void loadUsage({ force: true })}
+          onRefreshWithTurn={() => void loadUsage({ refreshWithTurn: true })}
         />
       )}
     </div>
