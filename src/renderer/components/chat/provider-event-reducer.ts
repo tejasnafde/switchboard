@@ -3,6 +3,7 @@ import { splitSyntheticUserText, taskNotificationText, transcriptShowsTaskNotifi
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
 import { fileDiffRowId, toolInputText, toolRowId } from '@shared/turn-activity'
 import { defaultModelSettingKey } from '@shared/session-defaults'
+import { followSuggestionView } from '@shared/follow-suggestions'
 import type { AgentStatus, ChatMessage } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
@@ -435,16 +436,18 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       // and never interprets it. So remote drift is followable now.
       const drifted = useAgentStore.getState().sessions.find((s) => s.id === tid)
       if (drifted?.worktreePath === event.worktreePath) break
-      // Muted with "Not in this chat", maybe on another client: say nothing,
-      // and take down a chip this window still shows.
-      if (event.followSuggestions === 'muted') {
+      // Muted with "Not in this chat", or the "off" notice closed, maybe on
+      // another client: say nothing, and take down what this window still shows.
+      const follow = event.followSuggestions ?? 'auto'
+      const view = followSuggestionView(follow, event.workedWorktrees ?? 0, event.followNoticeDismissed ?? false)
+      if (follow === 'muted' || view.kind === 'hidden') {
         useAgentStore.getState().setDriftSuggestion(tid, null)
         break
       }
       useAgentStore.getState().setDriftSuggestion(tid, {
         worktreePath: event.worktreePath,
         branch: event.branch,
-        followSuggestions: event.followSuggestions ?? 'auto',
+        followSuggestions: follow,
         workedWorktrees: event.workedWorktrees ?? 0,
       })
       break

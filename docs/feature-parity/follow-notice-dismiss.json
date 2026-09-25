@@ -1,0 +1,63 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "follow-notice-dismiss",
+  "summary": "The x on the desktop composer's 'Follow suggestions are off for this chat' notice is saved per conversation (conversations.follow_notice_dismissed, resolved through resolveRootThreadId), rides on worktree.drift as followNoticeDismissed, and keeps the notice hidden in that chat however many worktrees it works in. Choosing a mode again clears it. The branch picker offers 'Turn Follow suggestions back on' while suggestions are off (read over app:get-conversation-follow-suggestions), so the choice stays reversible. The rule lives in src/shared/follow-suggestions.ts (followSuggestionView's 'hidden' view, followSuggestionsOff). The chip's own x keeps closing only the current suggestion, per the drift watcher's per-turn re-arm.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/BranchPicker.tsx",
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "tests/unit/provider-event-reducer.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native app does not handle worktree.drift and shows neither the Follow chip nor the off notice; the new optional event field is ignored by it."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android shows a drift row from worktreePath and branch only, with no Follow-suggestion modes and no off notice; its decoder reads named fields, so the new optional followNoticeDismissed field is ignored."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/follow-suggestions.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/ipc/app.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/preload/index.ts",
+        "tests/unit/follow-suggestions.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "src/main/db/conversations.ts",
+        "tests/unit/conversation-rotation-fallback.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test -- --maxWorkers=2",
+      "npm run build:fast && SB_VISUAL_SCOPE=screens node e2e/visual-regressions.e2e.mjs (2 runs, no baseline changed)"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The notice's x and the branch picker's 'Turn Follow suggestions back on' were not clicked in the running app; the rule, the reducer and the storage are unit-tested.",
+      "Mixed versions were not run. An older desktop ignores the optional event field and keeps the previous behaviour. A newer desktop against an older backend gets a rejected dismiss (logged; the notice comes back as before) and no 'Turn Follow suggestions back on' entry in the branch picker, since that backend lacks the read channel."
+    ]
+  }
+}

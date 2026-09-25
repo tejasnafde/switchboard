@@ -1073,10 +1073,22 @@ export function ChatInput({
 
   /** "Not in this chat" / "Turn back on": saved with the conversation on its backend. */
   const setFollowSuggestions = (mode: FollowSuggestionMode) => {
-    if (!sessionId || !driftSuggestion) return
-    useAgentStore.getState().setDriftSuggestion(sessionId, { ...driftSuggestion, followSuggestions: mode })
+    if (!sessionId) return
+    if (driftSuggestion) {
+      useAgentStore.getState().setDriftSuggestion(sessionId, { ...driftSuggestion, followSuggestions: mode })
+    }
     window.api.app.setConversationFollowSuggestions(sessionId, mode).catch((err: unknown) => {
       log.warn('could not save the Follow suggestion setting', err)
+    })
+  }
+
+  /** The chip's x only closes this suggestion; the "off" notice's x is saved, so it stays closed. */
+  const dismissDrift = () => {
+    if (!sessionId) return
+    useAgentStore.getState().setDriftSuggestion(sessionId, null)
+    if (driftView?.kind !== 'off') return
+    window.api.app.dismissConversationFollowNotice(sessionId).catch((err: unknown) => {
+      log.warn('could not save the dismissed Follow notice', err)
     })
   }
 
@@ -1686,7 +1698,7 @@ export function ChatInput({
           </select>
         )}
 
-        {driftSuggestion && driftView && (
+        {driftSuggestion && driftView && driftView.kind !== 'hidden' && (
           <span
             data-drift-banner
             data-drift-view={driftView.kind}
@@ -1738,7 +1750,7 @@ export function ChatInput({
               type="button"
               title="Dismiss"
               aria-label="Dismiss"
-              onClick={() => sessionId && useAgentStore.getState().setDriftSuggestion(sessionId, null)}
+              onClick={dismissDrift}
               style={{ cursor: 'pointer', border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: 12 }}
             >
               ×
@@ -1755,6 +1767,8 @@ export function ChatInput({
         ) : (
           <BranchPickerTrigger
             cwd={repoRoot}
+            followSessionId={sessionId ?? undefined}
+            onTurnFollowBackOn={() => setFollowSuggestions('on')}
             onSwapWorktree={swapWorktreePointer}
             onCwdMissing={healOrphanedWorktree}
           />

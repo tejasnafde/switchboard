@@ -256,6 +256,18 @@ describe('reduceProviderEvent (desktop)', () => {
     expect(session().driftSuggestion ?? null).toBeNull()
   })
 
+  it('worktree.drift keeps a closed "off" notice closed as the worktree count grows', () => {
+    reduce({ type: 'worktree.drift', worktreePath: '/wt2', branch: 'c', followSuggestions: 'auto', workedWorktrees: 3 })
+    expect(session().driftSuggestion).toMatchObject({ workedWorktrees: 3 })
+    for (const count of [3, 4, 7]) {
+      reduce({ type: 'worktree.drift', worktreePath: `/wt${count}`, branch: 'd', followSuggestions: 'auto', followNoticeDismissed: true, workedWorktrees: count })
+      expect(session().driftSuggestion ?? null).toBeNull()
+    }
+    // "Turn back on" clears the dismissal on the backend, and the chip returns.
+    reduce({ type: 'worktree.drift', worktreePath: '/wt8', branch: 'e', followSuggestions: 'on', followNoticeDismissed: false, workedWorktrees: 8 })
+    expect(session().driftSuggestion).toMatchObject({ branch: 'e', followSuggestions: 'on' })
+  })
+
   it('error appends a system error and clears the retry card', () => {
     reduce({ type: 'turn.retrying', turnId: 'x', message: 'Reconnecting... 1/5' })
     reduce({ type: 'error', message: 'boom' })
