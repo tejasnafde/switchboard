@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { RecentSessionsSection } from '../../src/renderer/components/sidebar/RecentSessionsSection'
 import type { RecentSessionItem } from '../../src/renderer/components/sidebar/recent-sessions'
 import { SettingsPageBody } from '../../src/renderer/components/SettingsPage'
+import { RECENT_SESSION_LIMITS } from '../../src/renderer/components/sidebar/recent-session-limit'
 
 const item: RecentSessionItem = {
   session: {
@@ -80,9 +81,8 @@ describe('RecentSessionsSection', () => {
   it('offers every supported collapsed baseline in General settings', () => {
     const markup = renderToStaticMarkup(createElement(SettingsPageBody, { page: 'general' }))
 
-    expect(markup).toContain('Recent conversations')
-    for (const limit of [4, 6, 8, 12]) {
-      expect(markup).toContain(`value="${limit}"`)
-    }
+    expect(markup).toMatch(/role="combobox"[^>]*aria-label="Recent conversations"/)
+    // The list renders only when the combobox opens; the page builds it from this.
+    expect(RECENT_SESSION_LIMITS).toEqual([4, 6, 8, 12])
   })
 })
