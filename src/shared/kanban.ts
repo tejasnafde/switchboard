@@ -109,6 +109,8 @@ export interface WorktreeInfo {
   head: string
   /** True if `git worktree list` reported the worktree as missing/prunable. */
   prunable: boolean
+  /** True if `git worktree lock` holds it. Optional: older backends do not report it. */
+  locked?: boolean
   /** True if a kanban card currently references this path. Set by the IPC layer. */
   inUse: boolean
 }

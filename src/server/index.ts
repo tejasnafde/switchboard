@@ -21,6 +21,7 @@ import { registerFilesHandlers } from '../main/ipc/files'
 import { registerGitHandlers } from '../main/ipc/git'
 import { registerSttHandlers } from '../main/ipc/stt'
 import { registerKanbanHandlers } from '../main/ipc/kanban'
+import { registerWorktreeManagerHandlers } from '../main/ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from '../main/ipc/provider-instances'
 import { registerTerminalHandlers } from '../main/ipc/terminal'
 import { ProviderRegistry } from '../main/provider/provider-registry'
@@ -151,6 +152,7 @@ registerKanbanHandlers(host, {
   getWorktreeCreation: (request) => worktreeCreationRuntime.getWorktreeCreation(request),
   actOnWorktreeCreation: (request) => worktreeCreationRuntime.actOnWorktreeCreation(request),
 })
+registerWorktreeManagerHandlers(host)
 // Notify paired phones about approvals, questions, finished turns and errors.
 attachPushNotifier(registry.bus)
 registry.registerIpcHandlers()
