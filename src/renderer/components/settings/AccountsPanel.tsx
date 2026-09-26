@@ -4,7 +4,7 @@
  * card's ⋯ menu; the editor dialog below is the add and edit flow.
  */
 
-import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import type { ProviderInstance } from '@shared/types'
 import type { ProviderUsage, UsageWindow } from '@shared/provider-usage'
 import { buildWindow, fmtResetsAt } from '@shared/provider-usage'
@@ -124,12 +124,14 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
     syncUsage()
   }, [versions, syncUsage])
 
-  // Idempotent, so StrictMode's second render computes the same order.
+  // Recorded after commit, so a render React discards cannot fix the order.
   const shown = useRef<string[]>([])
   const ordered = stableOrder(shown.current, enabled, usages)
-  shown.current = ordered.map((i) => i.id)
+  useLayoutEffect(() => {
+    shown.current = ordered.map((i) => i.id)
+  })
 
-  const summary = accountsSummary(enabled, usages, Date.now())
+  const summary = accountsSummary(enabled, usages, Date.now(), loaded)
 
   return (
     <div>

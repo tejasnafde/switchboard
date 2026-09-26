@@ -45,7 +45,10 @@ interface ProviderInstanceStore {
 type UsageOpts = { force?: boolean; refreshWithTurn?: boolean }
 
 const usageReads = new Map<string, Promise<void>>()
-const requestedUsage = new Set<string>()
+/** A forced read asked for while one was in flight, run once it settles. */
+const queuedUsage = new Map<string, UsageOpts>()
+/** Instance id -> the version last read since the prewarm. */
+const requestedUsage = new Map<string, string>()
 
 function asMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -121,17 +124,26 @@ export const useProviderInstanceStore = create<ProviderInstanceStore>((set, get)
   usageLoading: {},
 
   loadUsage: (id, opts) => {
-    // Main hands a second request the read already in flight, forced or not.
+    // Main hands a second request the read already in flight, which may
+    // predate an edit, so a forced one waits for it and then reads again.
     const running = usageReads.get(id)
-    if (running) return running
+    if (running) {
+      if (opts?.force || opts?.refreshWithTurn) {
+        queuedUsage.set(id, { force: true, refreshWithTurn: queuedUsage.get(id)?.refreshWithTurn || opts.refreshWithTurn })
+      }
+      return running
+    }
     set((s) => ({ usageLoading: { ...s.usageLoading, [id]: true } }))
     const task = get().usage(id, opts).then((usage) => {
       usageReads.delete(id)
+      const next = queuedUsage.get(id)
+      queuedUsage.delete(id)
       set((s) => {
         const usageLoading = { ...s.usageLoading }
-        delete usageLoading[id]
+        if (!next) delete usageLoading[id]
         return { usages: { ...s.usages, [id]: usage }, usageLoading }
       })
+      if (next) return get().loadUsage(id, next)
     })
     usageReads.set(id, task)
     return task
@@ -140,9 +152,11 @@ export const useProviderInstanceStore = create<ProviderInstanceStore>((set, get)
   syncUsage: () => {
     for (const inst of get().instances) {
       const version = `${inst.id}@${inst.updatedAt}`
-      if (!inst.enabled || requestedUsage.has(version)) continue
-      requestedUsage.add(version)
-      void get().loadUsage(inst.id)
+      const previous = requestedUsage.get(inst.id)
+      if (!inst.enabled || previous === version) continue
+      requestedUsage.set(inst.id, version)
+      // Edited since the last read: main's cached reading is for the old credential.
+      void get().loadUsage(inst.id, previous === undefined ? undefined : { force: true })
     }
   },
 

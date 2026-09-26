@@ -101,6 +101,12 @@ describe('accountsSummary', () => {
     expect(summary.attention).toEqual({ count: 0, ...pending })
   })
 
+  it('shows a placeholder while the account list itself has not loaded', () => {
+    const summary = accountsSummary([], {}, NOW, false)
+    expect(summary.mostRoom.detail).toBe('Reading usage…')
+    expect(summary.attention).toMatchObject({ count: 0, value: '-' })
+  })
+
   it('keeps what is known while other readings are outstanding', () => {
     const summary = accountsSummary([inst('a'), inst('b')], { a: usage('a', 'unauthenticated') }, NOW)
     expect(summary.attention).toMatchObject({ count: 1, value: '1 account' })

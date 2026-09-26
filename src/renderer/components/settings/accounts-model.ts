@@ -93,10 +93,11 @@ export function accountsSummary(
   instances: readonly ProviderInstance[],
   usages: Readonly<Record<string, ProviderUsage>>,
   nowMs: number,
+  listed = true,
 ): AccountsSummary {
-  // Before the first reading of an account lands, an empty tile means "not
-  // yet", not "nothing to report".
-  const reading = instances.some((inst) => !usages[inst.id])
+  // Before the account list or an account's first reading lands, an empty
+  // tile means "not yet", not "nothing to report".
+  const reading = !listed || instances.some((inst) => !usages[inst.id])
   const pending = { value: '-', detail: 'Reading usage…' }
   const best = sortByRoomLeft(instances, usages)[0]
   const mostRoom = best && roomLeft(usages[best.id]) !== null
