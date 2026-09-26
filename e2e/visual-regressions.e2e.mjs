@@ -522,22 +522,24 @@ async function captureThemeScreens(win, theme) {
   await win.keyboard.press('Escape')
   await picker.waitFor({ state: 'hidden' })
 
-  await win.getByTitle('Settings').click()
-  const settings = win.locator('.settings-page')
-  await settings.waitFor({ state: 'visible' })
-  await snapScreen(win, 'settings', theme, settings)
   // Two more Claude accounts after the picker shot, so its baseline keeps
-  // the fixture's one-per-agent list. The main process answers usage from
-  // demoUsage (SB_DEMO_ADAPTER): no real credential is read.
+  // the fixture's one-per-agent list, and before Settings opens, so its
+  // prewarm reads them and Accounts sorts them on first paint. The main
+  // process answers usage from demoUsage (SB_DEMO_ADAPTER): no real
+  // credential is read.
   await win.evaluate(() => Promise.all([
     ['claude-code-work', 'akshaya', '#b0833a'],
     ['claude-code-personal', 'aditya', '#8a4a4a'],
   ].map(([id, displayName, accentColor]) => window.api.providerInstances.upsert({
     id, agentType: 'claude-code', displayName, accentColor, authMode: 'env', env: null, oauthDir: null, enabled: true,
   }))))
+  await win.getByTitle('Settings').click()
+  const settings = win.locator('.settings-page')
+  await settings.waitFor({ state: 'visible' })
+  await snapScreen(win, 'settings', theme, settings)
   await settings.getByRole('button', { name: /^Accounts & models/ }).click()
   await settings.locator('[data-account]').nth(4).waitFor({ state: 'visible' })
-  await settings.getByText('Loading usage…').first().waitFor({ state: 'detached' })
+  await win.waitForFunction(() => document.querySelectorAll('.settings-page [aria-busy="true"]').length === 0)
   // The credential line names this machine's home directory, so its length
   // differs by host (/Users/runner on CI). A fixed box keeps the mask and the
   // text after it in place.

@@ -23,13 +23,29 @@ interface ProviderInstanceStore {
   test: (id: string) => Promise<{ ok: boolean; message: string }>
   /** Subscription usage for one instance. Never throws; failures come back
    *  as a ProviderUsage with a non-'ok' status. */
-  usage: (id: string, opts?: { force?: boolean; refreshWithTurn?: boolean }) => Promise<ProviderUsage>
+  usage: (id: string, opts?: UsageOpts) => Promise<ProviderUsage>
+  /** Latest reading per instance id, kept across Settings visits so a
+   *  reopened Accounts page shows it at once. */
+  usages: Record<string, ProviderUsage>
+  /** Ids with a read in flight; a card keeps its previous reading meanwhile. */
+  usageLoading: Record<string, true>
+  loadUsage: (id: string, opts?: UsageOpts) => Promise<void>
+  /** Reads every enabled instance not yet read at its current version since
+   *  the last prewarm (main drops its cached reading when one is saved). */
+  syncUsage: () => void
+  /** Re-list and read usage for every account; Settings calls it on open. */
+  prewarmUsage: () => Promise<void>
   clearError: () => void
   /** Helper: instances filtered to a given agent kind, in a stable order
    *  (default first, then alpha). Used by both the picker and the
    *  Settings tab. */
   forAgent: (agentType: AgentType) => ProviderInstance[]
 }
+
+type UsageOpts = { force?: boolean; refreshWithTurn?: boolean }
+
+const usageReads = new Map<string, Promise<void>>()
+const requestedUsage = new Set<string>()
 
 function asMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -99,6 +115,41 @@ export const useProviderInstanceStore = create<ProviderInstanceStore>((set, get)
         fetchedAtMs: Date.now(),
       }
     }
+  },
+
+  usages: {},
+  usageLoading: {},
+
+  loadUsage: (id, opts) => {
+    // Main hands a second request the read already in flight, forced or not.
+    const running = usageReads.get(id)
+    if (running) return running
+    set((s) => ({ usageLoading: { ...s.usageLoading, [id]: true } }))
+    const task = get().usage(id, opts).then((usage) => {
+      usageReads.delete(id)
+      set((s) => {
+        const usageLoading = { ...s.usageLoading }
+        delete usageLoading[id]
+        return { usages: { ...s.usages, [id]: usage }, usageLoading }
+      })
+    })
+    usageReads.set(id, task)
+    return task
+  },
+
+  syncUsage: () => {
+    for (const inst of get().instances) {
+      const version = `${inst.id}@${inst.updatedAt}`
+      if (!inst.enabled || requestedUsage.has(version)) continue
+      requestedUsage.add(version)
+      void get().loadUsage(inst.id)
+    }
+  },
+
+  prewarmUsage: async () => {
+    requestedUsage.clear()
+    await get().refresh()
+    get().syncUsage()
   },
 
   clearError: () => set({ error: null }),

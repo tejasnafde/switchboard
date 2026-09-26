@@ -9,6 +9,7 @@ import {
   readSettings,
   roomLeft,
   sortByRoomLeft,
+  stableOrder,
   untilReset,
 } from '../../src/renderer/components/settings/accounts-model'
 
@@ -86,10 +87,49 @@ describe('accountsSummary', () => {
   })
 
   it('says so when nothing is reported and nobody needs attention', () => {
-    const summary = accountsSummary([inst('a')], {}, NOW)
-    expect(summary.mostRoom.value).toBe('-')
-    expect(summary.nextReset.value).toBe('-')
+    const summary = accountsSummary([inst('a')], { a: usage('a', 'not-applicable') }, NOW)
+    expect(summary.mostRoom).toEqual({ value: '-', detail: 'No usage reported yet' })
+    expect(summary.nextReset).toEqual({ value: '-', detail: 'No reset times reported' })
     expect(summary.attention).toMatchObject({ count: 0, value: 'None' })
+  })
+
+  it('shows a placeholder, not "None", while a first reading is outstanding', () => {
+    const summary = accountsSummary([inst('a'), inst('b')], { a: usage('a', 'not-applicable') }, NOW)
+    const pending = { value: '-', detail: 'Reading usage…' }
+    expect(summary.mostRoom).toEqual(pending)
+    expect(summary.nextReset).toEqual(pending)
+    expect(summary.attention).toEqual({ count: 0, ...pending })
+  })
+
+  it('keeps what is known while other readings are outstanding', () => {
+    const summary = accountsSummary([inst('a'), inst('b')], { a: usage('a', 'unauthenticated') }, NOW)
+    expect(summary.attention).toMatchObject({ count: 1, value: '1 account' })
+  })
+})
+
+describe('stableOrder', () => {
+  const ids = (list: ProviderInstance[]) => list.map((i) => i.id)
+  const list = [inst('full'), inst('free'), inst('out')]
+
+  it('sorts by the readings at hand the first time', () => {
+    expect(ids(stableOrder([], list, {}))).toEqual(['full', 'free', 'out'])
+    expect(ids(stableOrder([], list, {
+      full: usage('full', 'ok', [[80, 10]]),
+      free: usage('free', 'ok', [[5, 10]]),
+      out: usage('out', 'unauthenticated'),
+    }))).toEqual(['free', 'full', 'out'])
+  })
+
+  it('keeps the cards shown in place as readings land and change', () => {
+    const shown = ['full', 'free', 'out']
+    const usages = { full: usage('full', 'ok', [[99, 10]]), free: usage('free', 'ok', [[1, 10]]) }
+    expect(ids(stableOrder(shown, list, usages))).toEqual(shown)
+  })
+
+  it('appends new accounts, sorted among themselves, and drops removed ones', () => {
+    const next = [inst('free'), inst('full'), inst('late'), inst('later')]
+    const usages = { late: usage('late', 'ok', [[90, 10]]), later: usage('later', 'ok', [[10, 10]]) }
+    expect(ids(stableOrder(['full', 'out', 'free'], next, usages))).toEqual(['full', 'free', 'later', 'late'])
   })
 })
 

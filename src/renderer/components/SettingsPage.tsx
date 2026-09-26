@@ -15,6 +15,7 @@ import {
 } from '@shared/diagnostics-report'
 import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../logger'
+import { useProviderInstanceStore } from '../stores/provider-instance-store'
 import { AccountsPanel } from './settings/AccountsPanel'
 import { MobilePairingTab } from './settings/MobilePairingTab'
 import { LaunchConfigsPanel } from './settings/LaunchConfigsPanel'
@@ -69,6 +70,13 @@ export function SettingsPage({ page, onNavigate, onClose }: SettingsPageProps) {
     setQuery('')
     setHighlight(null)
   }, [page])
+
+  // Usage reads take seconds, so they start when Settings opens, on any page,
+  // and Accounts & models has its numbers by the time it is reached.
+  const open = page !== null
+  useEffect(() => {
+    if (open) void useProviderInstanceStore.getState().prewarmUsage()
+  }, [open])
 
   const navigate = useCallback((next: SettingsPageId, rowId: string | null = null) => {
     setQuery('')
