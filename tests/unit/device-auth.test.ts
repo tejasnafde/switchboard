@@ -19,7 +19,7 @@ import {
   PAIRING_CODE_TTL_MS,
   type DeviceSession,
 } from '../../src/shared/device-auth'
-import { AppChannels } from '../../src/shared/ipc-channels'
+import { AppChannels, KanbanChannels, WorktreeManagerChannels } from '../../src/shared/ipc-channels'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '../../src/shared/session-defaults'
 
 describe('isChannelAllowed', () => {
@@ -29,6 +29,13 @@ describe('isChannelAllowed', () => {
     expect(isChannelAllowed(PHONE_SCOPES, 'terminal:create')).toBe(false)
     expect(isChannelAllowed(PHONE_SCOPES, 'terminal:data')).toBe(false)
     expect(isChannelAllowed(PHONE_SCOPES, AppChannels.SAVE_LAUNCH_CONFIG)).toBe(false)
+  })
+
+  it('keeps a phone from removing worktrees, while it may still read them', () => {
+    expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.REMOVE)).toBe(false)
+    expect(isChannelAllowed(PHONE_SCOPES, KanbanChannels.REMOVE_STALE_WORKTREE)).toBe(false)
+    expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.INVENTORY)).toBe(true)
+    expect(isChannelAllowed(FULL_SCOPES, WorktreeManagerChannels.REMOVE)).toBe(true)
   })
 
   it('keeps chat-only file mutations away from the command-bearing launch config', () => {

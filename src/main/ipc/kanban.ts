@@ -11,7 +11,6 @@
 
 import type { BackendHost } from '../backend/host'
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
 import { KanbanChannels } from '@shared/ipc-channels'
 import { createMainLogger } from '../logger'
 import {
@@ -23,11 +22,8 @@ import {
   getKanbanWorktreeCreationKey,
   listInUseWorktreePaths,
 } from '../db/database'
-import {
-  removeWorktree,
-  listWorktrees,
-  findStaleWorktrees,
-} from '../worktree'
+import { listWorktrees, findStaleWorktrees } from '../worktree'
+import { defaultWorktreeManagerDeps, removeManagedWorktree, type WorktreeManagerDeps } from '../worktree-manager'
 import type { KanbanCardCreate, KanbanCardUpdate } from '@shared/kanban'
 import type { KanbanWorktreeCreationIntent } from '@shared/kanban'
 import type {
@@ -50,6 +46,7 @@ export interface KanbanHandlerDependencies {
   createCardId?: () => string
   createCreationId?: () => string
   now?: () => number
+  worktreeManager?: WorktreeManagerDeps
 }
 
 export function registerKanbanHandlers(
@@ -59,6 +56,8 @@ export function registerKanbanHandlers(
   const createCardId = deps.createCardId ?? (() => `card_${randomUUID()}`)
   const createCreationId = deps.createCreationId ?? randomUUID
   const now = deps.now ?? Date.now
+  let managerDeps = deps.worktreeManager
+  const worktreeManager = () => (managerDeps ??= defaultWorktreeManagerDeps())
 
   const removeCardWorktree = async (id: string) => {
     const card = getKanbanCard(id)
@@ -186,24 +185,17 @@ export function registerKanbanHandlers(
 
   host.handle(KanbanChannels.LIST_STALE_WORKTREES, async (projectPath: string) => {
     const inUse = listInUseWorktreePaths(projectPath)
-    return findStaleWorktrees(projectPath, inUse)
+    return findStaleWorktrees(projectPath, inUse, undefined, worktreeManager().readProtection())
   })
 
+  // Kept for clients older than the worktree manager. It goes through the
+  // same guard with nothing acknowledged, so it only removes a worktree that
+  // loses nothing; the old `force` flag is ignored.
   host.handle(
     KanbanChannels.REMOVE_STALE_WORKTREE,
-    async (projectPath: string, worktreePath: string, opts?: { force?: boolean }) => {
-      const resolvedTarget = resolve(worktreePath)
-      const knownWorktrees = await listWorktrees(projectPath)
-      const isRegistered = knownWorktrees.some((wt) => wt.path === resolvedTarget)
-      if (!isRegistered) {
-        throw new Error(`Refusing to remove worktree not registered with this repo: ${worktreePath}`)
-      }
-      const inUse = listInUseWorktreePaths(projectPath)
-      if (inUse.has(resolvedTarget)) {
-        throw new Error('Refusing to remove a worktree that is owned by an active conversation or card.')
-      }
-      await removeWorktree(projectPath, resolvedTarget, { force: opts?.force })
-      log.info(`removed stale worktree: ${worktreePath}`)
+    async (projectPath: string, worktreePath: string) => {
+      const result = await removeManagedWorktree({ projectPath, worktreePath, acknowledged: null }, worktreeManager())
+      if (!result.ok) throw new Error(result.error)
     },
   )
 

@@ -34,6 +34,7 @@ import type { UpdateStatus } from '@shared/update-status'
 import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../renderer/logger'
 import { createWorktreeCreationApi } from './worktree-creation-api'
+import { createWorktreeManagerApi } from './worktree-manager-api'
 import type { AgentProvider } from '@shared/types'
 
 const log = createRendererLogger('preload:provider')
@@ -109,6 +110,7 @@ if (remoteBaseTransport) remoteBaseTransport.onResumeGap = () => notifyResumeGap
 
 const api = {
   worktreeCreation: createWorktreeCreationApi(transport),
+  worktreeManager: createWorktreeManagerApi(transport),
 
   // ─── Terminal ────────────────────────────────────────────────────
   terminal: {
@@ -528,14 +530,6 @@ const api = {
       transport.invoke(KanbanChannels.REMOVE_WORKTREE, id, opts),
     listWorktrees: (projectPath: string): Promise<WorktreeInfo[]> =>
       transport.invoke(KanbanChannels.LIST_WORKTREES, projectPath),
-    listStaleWorktrees: (projectPath: string): Promise<WorktreeInfo[]> =>
-      transport.invoke(KanbanChannels.LIST_STALE_WORKTREES, projectPath),
-    removeStaleWorktree: (
-      projectPath: string,
-      worktreePath: string,
-      opts?: { force?: boolean },
-    ): Promise<void> =>
-      transport.invoke(KanbanChannels.REMOVE_STALE_WORKTREE, projectPath, worktreePath, opts),
   },
 
   // ─── Anonymous usage counts ────────────────────────────────────

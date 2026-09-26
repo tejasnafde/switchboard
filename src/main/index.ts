@@ -40,6 +40,7 @@ import { registerGitHandlers } from './ipc/git'
 import { registerSttHandlers } from './ipc/stt'
 import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
+import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
 import { tryResolveProviderInstance } from './db/provider-instances'
 import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
@@ -678,6 +679,7 @@ app.whenReady().then(() => {
       return worktreeCreationRuntime.actOnWorktreeCreation(request)
     },
   })
+  registerWorktreeManagerHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
   // Local-only resolver: hand preload an instance's oauth_dir BASENAME (a path
   // segment, not a secret) so it can forward it to a remote at session start.
@@ -750,6 +752,7 @@ app.whenReady().then(() => {
           return worktreeCreationRuntime.actOnWorktreeCreation(request)
         },
       })
+      registerWorktreeManagerHandlers(reactivatedHost)
       worktreeCreationRuntime?.registerHost(reactivatedHost)
       registerMachineHandlers(reactivatedHost)
       registerAnalyticsHandlers(reactivatedHost)
