@@ -52,7 +52,7 @@ export interface SendAction {
  * key, except on a provider that cannot steer, where it always queues.
  */
 export function sendAction(provider: string | undefined | null, running: boolean, preferred: TurnDelivery): SendAction {
-  if (!running) return { label: 'Send', tooltip: 'Send (Enter)' }
+  if (!running) return { label: 'Send', tooltip: 'Send (Enter) · Newline (Shift+Enter)' }
   if (!canSteer(provider)) {
     return { label: 'Queue', tooltip: 'Queue (Enter): OpenCode cannot take a message mid-turn, so it runs after this turn' }
   }
