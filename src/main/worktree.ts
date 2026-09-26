@@ -23,11 +23,12 @@
 
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { existsSync, realpathSync } from 'node:fs'
 import { access } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { createMainLogger } from './logger'
 import type { WorktreeInfo } from '@shared/kanban'
-import { protectionSource, type WorktreeProtection } from '@shared/worktree-manager'
+import { protectionSource, type WorktreeProtection, type WorktreeProtectionSource } from '@shared/worktree-manager'
 
 const log = createMainLogger('worktree')
 const execFileP = promisify(execFile)
@@ -53,6 +54,47 @@ export const WORKTREE_DIR_REL = '.switchboard/worktrees'
 
 export function worktreeRootFor(repoPath: string): string {
   return join(repoPath, WORKTREE_DIR_REL)
+}
+
+/**
+ * A key for comparing paths that reach us from git, the database and the
+ * renderer. They name the same directory in different spellings: git prints
+ * the long form (`C:/Users/runneradmin`) where a stored path may carry an 8.3
+ * short name (`C:\Users\RUNNER~1`) or a symlinked prefix (`/var` for
+ * `/private/var` on macOS). The deepest existing ancestor is resolved through
+ * the filesystem, so a worktree whose directory is gone still keys the same;
+ * Windows compares case-insensitively, as its filesystem does.
+ */
+export function pathKey(path: string): string {
+  let head = resolve(path)
+  const tail: string[] = []
+  while (!existsSync(head)) {
+    const parent = dirname(head)
+    if (parent === head) break
+    tail.unshift(basename(head))
+    head = parent
+  }
+  let real = head
+  try {
+    real = realpathSync.native(head)
+  } catch (err) {
+    log.debug(`realpath failed for ${head}: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  const key = join(real, ...tail)
+  return process.platform === 'win32' ? key.toLowerCase() : key
+}
+
+/** `protectionSource` over path keys, so a differently spelled path is still protected. */
+export function protectionFor(
+  protection: WorktreeProtection,
+  projectPath: string,
+  worktreePath: string,
+): WorktreeProtectionSource | null {
+  return protectionSource(
+    { projects: protection.projects.map(pathKey), worktrees: protection.worktrees.map(pathKey) },
+    pathKey(projectPath),
+    pathKey(worktreePath),
+  )
 }
 
 /**
@@ -163,18 +205,20 @@ export async function findStaleWorktrees(
   runner: GitRunner = defaultRunner,
   protection: WorktreeProtection = { projects: [], worktrees: [] },
 ): Promise<WorktreeInfo[]> {
-  if (protection.projects.includes(repoPath)) return []
+  if (protection.projects.map(pathKey).includes(pathKey(repoPath))) return []
   const all = await listWorktrees(repoPath, runner)
-  const root = worktreeRootFor(repoPath)
+  const root = pathKey(worktreeRootFor(repoPath))
+  const inUse = new Set([...inUsePaths].map(pathKey))
   const stale: WorktreeInfo[] = []
   for (const wt of all) {
-    const underManagedRoot = wt.path.startsWith(root)
+    const key = pathKey(wt.path)
+    const underManagedRoot = key.startsWith(root)
     if (!underManagedRoot) continue // user-created worktree, leave alone
-    if (wt.locked || protectionSource(protection, repoPath, wt.path)) continue
+    if (wt.locked || protectionFor(protection, repoPath, wt.path)) continue
     const exists = await pathExists(wt.path)
-    const orphaned = !inUsePaths.has(wt.path)
+    const orphaned = !inUse.has(key)
     if (wt.prunable || !exists || orphaned) {
-      stale.push({ ...wt, inUse: inUsePaths.has(wt.path) })
+      stale.push({ ...wt, inUse: inUse.has(key) })
     }
   }
   return stale

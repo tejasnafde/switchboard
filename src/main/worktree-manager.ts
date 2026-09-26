@@ -9,14 +9,12 @@
  * (via `removeWorktree`), never a recursive delete.
  */
 
-import { resolve } from 'node:path'
 import type { WorktreeInfo } from '@shared/kanban'
 import {
   WORKTREE_PROTECTION_SETTING,
   applyProtectionPatch,
   baseName,
   parseWorktreeProtection,
-  protectionSource,
   removalVerdict,
   type WorktreeChatLink,
   type WorktreeInventory,
@@ -26,7 +24,7 @@ import {
   type WorktreeRow,
 } from '@shared/worktree-manager'
 import { getProjects, getSetting, listInUseWorktreePaths, listWorktreeChatLinks, setSetting } from './db/database'
-import { listWorktrees, removeWorktree, type GitRunner } from './worktree'
+import { listWorktrees, pathKey, protectionFor, removeWorktree, type GitRunner } from './worktree'
 import { inspectWorktreeGit, resolveBaseRef, WorktreeSizeCache } from './worktree-inspect'
 import { createMainLogger } from './logger'
 
@@ -74,6 +72,7 @@ function isNotARepo(err: unknown): boolean {
   return /not a git repository/i.test(err instanceof Error ? err.message : String(err))
 }
 
+/** Paths from the database, keyed by `pathKey` so git's spelling of them matches. */
 interface ProjectContext {
   projectPath: string
   projectName: string
@@ -89,10 +88,10 @@ async function projectContext(projectPath: string, deps: WorktreeManagerDeps): P
   return {
     projectPath,
     projectName: projects.find((p) => p.path === projectPath)?.name || baseName(projectPath),
-    owned: deps.ownedPaths(projectPath),
-    links: deps.chatLinks(projectPath),
+    owned: new Set([...deps.ownedPaths(projectPath)].map(pathKey)),
+    links: new Map([...deps.chatLinks(projectPath)].map(([path, link]) => [pathKey(path), link])),
     protection: deps.readProtection(),
-    knownProjectPaths: new Set(projects.map((p) => p.path)),
+    knownProjectPaths: new Set(projects.map((p) => pathKey(p.path))),
     baseRef: await resolveBaseRef(projectPath, deps.runner),
   }
 }
@@ -104,6 +103,7 @@ async function toRow(ctx: ProjectContext, wt: WorktreeInfo, runner: GitRunner | 
   } catch (err) {
     log.warn(`git state unreadable for ${wt.path}: ${err instanceof Error ? err.message : String(err)}`)
   }
+  const key = pathKey(wt.path)
   return {
     projectPath: ctx.projectPath,
     projectName: ctx.projectName,
@@ -113,9 +113,9 @@ async function toRow(ctx: ProjectContext, wt: WorktreeInfo, runner: GitRunner | 
     prunable: wt.prunable,
     locked: wt.locked ?? false,
     // A worktree opened as a project of its own is in use by that project.
-    owned: ctx.owned.has(wt.path) || ctx.knownProjectPaths.has(wt.path),
-    chat: ctx.links.get(wt.path) ?? null,
-    protectedBy: protectionSource(ctx.protection, ctx.projectPath, wt.path),
+    owned: ctx.owned.has(key) || ctx.knownProjectPaths.has(key),
+    chat: ctx.links.get(key) ?? null,
+    protectedBy: protectionFor(ctx.protection, ctx.projectPath, wt.path),
     git,
   }
 }
@@ -143,9 +143,9 @@ export async function buildWorktreeInventory(
       }
       continue
     }
-    const fresh = worktrees.filter((wt) => !seen.has(wt.path))
+    const fresh = worktrees.filter((wt) => !seen.has(pathKey(wt.path)))
     if (fresh.length === 0) continue
-    for (const wt of fresh) seen.add(wt.path)
+    for (const wt of fresh) seen.add(pathKey(wt.path))
     const ctx = await projectContext(projectPath, deps)
     rows.push(...await mapLimit(fresh, INSPECT_CONCURRENCY, (wt) => toRow(ctx, wt, deps.runner)))
   }
@@ -165,7 +165,7 @@ export async function removeManagedWorktree(
   request: WorktreeRemovalRequest,
   deps: WorktreeManagerDeps,
 ): Promise<WorktreeRemovalResult> {
-  const target = resolve(request.worktreePath)
+  const target = pathKey(request.worktreePath)
   let worktrees: WorktreeInfo[]
   try {
     worktrees = await listWorktrees(request.projectPath, deps.runner)
@@ -174,24 +174,24 @@ export async function removeManagedWorktree(
     log.warn(`remove: could not list worktrees of ${request.projectPath}: ${error}`)
     return { ok: false, error }
   }
-  const wt = worktrees.find((w) => w.path === target)
+  const wt = worktrees.find((w) => pathKey(w.path) === target)
   if (!wt) return { ok: false, error: `Not a worktree of this repository: ${request.worktreePath}` }
 
   const row = await toRow(await projectContext(request.projectPath, deps), wt, deps.runner)
   const verdict = removalVerdict(row, request.acknowledged)
   if (!verdict.ok) {
-    log.info(`refused to remove ${target}: ${verdict.reason}`)
+    log.info(`refused to remove ${wt.path}: ${verdict.reason}`)
     return { ok: false, error: verdict.reason }
   }
   try {
-    await removeWorktree(request.projectPath, target, { force: verdict.force, deleteBranch: verdict.deleteBranch }, deps.runner)
+    await removeWorktree(request.projectPath, wt.path, { force: verdict.force, deleteBranch: verdict.deleteBranch }, deps.runner)
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
-    log.warn(`git worktree remove failed for ${target}: ${error}`)
+    log.warn(`git worktree remove failed for ${wt.path}: ${error}`)
     return { ok: false, error }
   }
-  deps.sizes.invalidate(target)
-  log.info(`removed worktree ${target}${verdict.force ? ` (confirmed losing ${row.git?.uncommittedFiles} files)` : ''}`)
+  deps.sizes.invalidate(wt.path)
+  log.info(`removed worktree ${wt.path}${verdict.force ? ` (confirmed losing ${row.git?.uncommittedFiles} files)` : ''}`)
   return { ok: true }
 }
 

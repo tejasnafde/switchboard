@@ -26,12 +26,17 @@ vi.mock('../../src/main/db/database', () => ({
   listInUseWorktreePaths: vi.fn(() => state.inUsePaths),
 }))
 
-vi.mock('../../src/main/worktree', () => ({
-  removeWorktree: state.removeWorktree,
-  listWorktrees: state.listWorktrees,
-  findStaleWorktrees: vi.fn(async () => []),
-  worktreeRootFor: vi.fn(() => '/repo/.switchboard/worktrees'),
-}))
+vi.mock('../../src/main/worktree', async (importOriginal) => {
+  const { pathKey, protectionFor } = await importOriginal<typeof import('../../src/main/worktree')>()
+  return {
+    pathKey,
+    protectionFor,
+    removeWorktree: state.removeWorktree,
+    listWorktrees: state.listWorktrees,
+    findStaleWorktrees: vi.fn(async () => []),
+    worktreeRootFor: vi.fn(() => '/repo/.switchboard/worktrees'),
+  }
+})
 
 const { registerKanbanHandlers } = await import('../../src/main/ipc/kanban')
 const { WorktreeSizeCache } = await import('../../src/main/worktree-inspect')

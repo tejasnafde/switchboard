@@ -52,7 +52,6 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/shared/worktree-manager.ts",
         "src/main/db/worktree-links.ts",
         "tests/unit/worktree-manager-rules.test.ts"
       ]
@@ -73,7 +72,8 @@
       "tests/unit/worktree-manager-git.test.ts: real git repositories in a temp dir removed after each test - git state of clean, dirty and ahead worktrees, the main checkout never listed, owned and protected rows, a locked worktree, removal of a clean worktree and its empty kanban branch, refusal of in-use and protected worktrees, a stale acknowledgement refused, a branch with unpushed commits kept, findStaleWorktrees skipping protected and locked worktrees, and the size cache (dedupe, refresh, two at a time, du on a real directory)",
       "tests/unit/kanban-worktree-transaction-handler.test.ts: the legacy stale removal channel goes through the guard and ignores its old force flag",
       "tests/unit/device-auth.test.ts: a phone session is refused worktree-manager:remove and kanban:remove-stale-worktree, and may still read the inventory",
-      "A one-off Playwright drive of the built app (SB_E2E_BACKGROUND=1, private TMPDIR, demo workspace with a clean, a dirty and an ahead worktree): the Archive & data summary, the manager's tabs and rows, the confirm for a worktree with an unpushed commit, the Chat column hidden at a narrow window, and the Projects page protection switches were captured and looked at. No removal was clicked in that run; removal is covered against real git by worktree-manager-git.test.ts."
+      "A one-off Playwright drive of the built app (SB_E2E_BACKGROUND=1, private TMPDIR, demo workspace with a clean, a dirty and an ahead worktree): the Archive & data summary, the manager's tabs and rows, the confirm for a worktree with an unpushed commit, the Chat column hidden at a narrow window, and the Projects page protection switches were captured and looked at. No removal was clicked in that run; removal is covered against real git by worktree-manager-git.test.ts.",
+      "tests/unit/worktree-manager-git.test.ts also runs on the Windows CI runner: paths from git, the database and the renderer are compared through pathKey (realpath of the deepest existing ancestor, case-insensitive on Windows), and a worktree whose owned path is spelled through a directory junction stays In use and is refused for removal."
     ],
     "hardware": [],
     "notExercised": [

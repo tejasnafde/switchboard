@@ -5,11 +5,11 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { WorktreeProtection } from '../../src/shared/worktree-manager'
-import { findStaleWorktrees, listWorktrees, WORKTREE_DIR_REL } from '../../src/main/worktree'
+import { findStaleWorktrees, listWorktrees, pathKey, WORKTREE_DIR_REL } from '../../src/main/worktree'
 import { WorktreeSizeCache } from '../../src/main/worktree-inspect'
 import {
   buildWorktreeInventory,
@@ -58,7 +58,8 @@ function addWorktree(name: string): string {
 const branches = () => git(repo, 'branch', '--format=%(refname:short)').split('\n').filter(Boolean)
 
 beforeEach(() => {
-  root = realpathSync(mkdtempSync(join(tmpdir(), 'sb-wtmgr-test-')))
+  // .native expands Windows 8.3 names (RUNNER~1), which git never prints.
+  root = realpathSync.native(mkdtempSync(join(tmpdir(), 'sb-wtmgr-test-')))
   repo = join(root, 'repo')
   git(root, 'init', '-q', '-b', 'main', repo)
   writeFileSync(join(repo, 'README.md'), 'hi\n')
@@ -85,11 +86,12 @@ describe('worktree inventory', () => {
 
     const { rows, errors } = await buildWorktreeInventory(undefined, deps())
     expect(errors).toEqual([])
-    const byPath = new Map(rows.map((r) => [r.path, r]))
-    expect(byPath.has(repo)).toBe(false)
-    expect(byPath.get(clean)?.git).toEqual({ uncommittedFiles: 0, unpushedCommits: 0, merged: true })
-    expect(byPath.get(dirty)?.git).toMatchObject({ uncommittedFiles: 2, unpushedCommits: 0 })
-    expect(byPath.get(ahead)?.git).toEqual({ uncommittedFiles: 0, unpushedCommits: 1, merged: false })
+    const byPath = new Map(rows.map((r) => [pathKey(r.path), r]))
+    expect(rows).toHaveLength(3)
+    expect(byPath.has(pathKey(repo))).toBe(false)
+    expect(byPath.get(pathKey(clean))?.git).toEqual({ uncommittedFiles: 0, unpushedCommits: 0, merged: true })
+    expect(byPath.get(pathKey(dirty))?.git).toMatchObject({ uncommittedFiles: 2, unpushedCommits: 0 })
+    expect(byPath.get(pathKey(ahead))?.git).toEqual({ uncommittedFiles: 0, unpushedCommits: 1, merged: false })
   })
 
   it('marks owned and protected worktrees, and skips a project that is not a git repo', async () => {
@@ -101,15 +103,31 @@ describe('worktree inventory', () => {
     mkdirSync(plain)
     const { rows, errors } = await buildWorktreeInventory([repo, plain], deps())
     expect(errors).toEqual([])
-    expect(rows.find((r) => r.path === mine)?.owned).toBe(true)
-    expect(rows.find((r) => r.path === kept)?.protectedBy).toBe('worktree')
+    expect(rows).toHaveLength(2)
+    expect(rows.find((r) => pathKey(r.path) === pathKey(mine))?.owned).toBe(true)
+    expect(rows.find((r) => pathKey(r.path) === pathKey(kept))?.protectedBy).toBe('worktree')
+  })
+
+  it('matches an owned path however it is spelled, so a differently written path never makes a worktree removable', async () => {
+    const path = addWorktree('aliased')
+    // A directory junction (a symlink elsewhere) gives the same worktree a
+    // second spelling, as an 8.3 short name or /var for /private/var does.
+    const alias = join(root, 'alias')
+    symlinkSync(repo, alias, 'junction')
+    owned = new Set([join(alias, WORKTREE_DIR_REL, 'aliased')])
+    const { rows } = await buildWorktreeInventory(undefined, deps())
+    expect(rows.find((r) => pathKey(r.path) === pathKey(path))?.owned).toBe(true)
+    const result = await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: null }, deps())
+    expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/in use/) })
+    expect(existsSync(path)).toBe(true)
   })
 
   it('reports a locked worktree', async () => {
     const path = addWorktree('locked')
     git(repo, 'worktree', 'lock', path)
-    const [wt] = await listWorktrees(repo)
-    expect(wt.locked).toBe(true)
+    const worktrees = await listWorktrees(repo)
+    expect(worktrees).toHaveLength(1)
+    expect(worktrees[0].locked).toBe(true)
   })
 })
 
@@ -177,7 +195,7 @@ describe('findStaleWorktrees', () => {
     const locked = addWorktree('locked')
     git(repo, 'worktree', 'lock', locked)
     const stale = await findStaleWorktrees(repo, new Set(), undefined, { projects: [], worktrees: [kept] })
-    expect(stale.map((w) => w.path)).toEqual([orphan])
+    expect(stale.map((w) => pathKey(w.path))).toEqual([pathKey(orphan)])
     expect(await findStaleWorktrees(repo, new Set(), undefined, { projects: [repo], worktrees: [] })).toEqual([])
   })
 })
