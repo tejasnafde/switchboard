@@ -57,7 +57,7 @@ describe('follow-up default', () => {
 
 describe('send button', () => {
   it('just sends while idle', () => {
-    expect(sendAction('claude-code', false, 'queue')).toEqual({ label: 'Send', tooltip: 'Send (Enter)' })
+    expect(sendAction('claude-code', false, 'queue')).toEqual({ label: 'Send', tooltip: 'Send (Enter) · Newline (Shift+Enter)' })
   })
   it('does the default mid-turn and names both keys', () => {
     expect(sendAction('claude-code', true, 'steer')).toEqual({ label: 'Steer', tooltip: 'Steer (Enter) · Queue (⌥Enter)' })
