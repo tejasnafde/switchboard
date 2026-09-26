@@ -16,7 +16,8 @@
         "src/main/index.ts",
         "src/main/ipc/app.ts",
         "tests/unit/settings-rows.test.ts",
-        "e2e/shortcut-rebinding.e2e.mjs"
+        "e2e/shortcut-rebinding.e2e.mjs",
+        "tests/unit/settings-page-render.test.ts"
       ]
     },
     "reactNativeIos": {
@@ -37,9 +38,8 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/shared/shortcuts.ts",
-        "src/renderer/services/keyboard-overrides.ts",
-        "tests/unit/shortcuts.test.ts"
+        "tests/unit/shortcuts.test.ts",
+        "tests/unit/settings-rows.test.ts"
       ]
     },
     "updateRelease": {

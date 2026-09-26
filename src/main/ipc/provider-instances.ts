@@ -33,6 +33,7 @@ import { demoUsage } from '../provider/adapters/demo-adapter'
 import { fetchInstanceUsage, invalidateUsage, type UsageRequestOptions } from '../provider/usage'
 
 const log = createLogger('ipc:provider-instances')
+let demoUsageCalls = 0
 
 export function registerProviderInstanceHandlers(host: BackendHost): void {
   host.handle(ProviderInstanceChannels.LIST, () => {
@@ -63,7 +64,13 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
   })
 
   host.handle(ProviderInstanceChannels.USAGE, async (id: string, opts?: UsageRequestOptions) => {
-    if (process.env.SB_DEMO_ADAPTER === '1') return demoUsage(id, getProviderInstanceFull(id)?.agentType ?? 'claude-code')
+    if (process.env.SB_DEMO_ADAPTER === '1') {
+      // SB_DEMO_USAGE_DELAY_MS staggers the answers (1x to 4x the delay) so an
+      // e2e run can watch them land one at a time, as real probes do.
+      const delayMs = (Number(process.env.SB_DEMO_USAGE_DELAY_MS) || 0) * (1 + (demoUsageCalls++ % 4))
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+      return demoUsage(id, getProviderInstanceFull(id)?.agentType ?? 'claude-code')
+    }
     return fetchInstanceUsage(id, opts)
   })
 

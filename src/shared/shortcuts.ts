@@ -393,10 +393,12 @@ export function shortcutClashesFor(
   platform: ShortcutPlatform = currentPlatform(),
   commands: readonly ShortcutCommand[] = active,
 ): ShortcutCommand[] {
-  const known = new Set(findShortcutClashes(SHORTCUTS, platform).map((c) => `${c.a} ${c.b}`))
+  // The pair AND the key: ⌘⌫ is excused for stop-agent and kill-line, not any key they later share.
+  const clashKey = (c: ShortcutClash) => `${c.a} ${c.b} ${bindingKey(c.binding, platform)}`
+  const known = new Set(findShortcutClashes(SHORTCUTS, platform).map(clashKey))
   const next = commands.map((c) => (c.id === id ? { ...c, bindings: [binding] } : c))
   const others = findShortcutClashes(next, platform)
-    .filter((c) => (c.a === id || c.b === id) && !known.has(`${c.a} ${c.b}`))
+    .filter((c) => (c.a === id || c.b === id) && !known.has(clashKey(c)))
     .map((c) => (c.a === id ? c.b : c.a))
   return commands.filter((c) => others.includes(c.id))
 }

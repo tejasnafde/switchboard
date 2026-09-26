@@ -17,7 +17,7 @@ import {
   RECENT_SESSION_LIMIT_SETTING,
   parseRecentSessionLimit,
 } from '../sidebar/recent-session-limit'
-import { getShortcut, SHORTCUTS, isRebindable } from '@shared/shortcuts'
+import { currentPlatform, getShortcut, isRebindable, shortcutsFor, SHORTCUTS } from '@shared/shortcuts'
 import { loadKeyboardOverrides, setKeyboardOverride } from '../../services/keyboard-overrides'
 import { SETTING_ROW, shortcutValue } from './settings-rows'
 import { createRendererLogger } from '../../logger'
@@ -81,7 +81,8 @@ const BINDINGS: Record<string, Binding> = {
     read: async () => flag((await window.api.settings.get('tour.autoplay')) !== 'false'),
     write: (v) => window.api.settings.set('tour.autoplay', v),
   },
-  ...Object.fromEntries(SHORTCUTS.filter(isRebindable).map((c): [string, Binding] => [`keyboard.${c.id}`, {
+  // Same platform filter as the rows: the macOS-only terminal keys have no row elsewhere.
+  ...Object.fromEntries(shortcutsFor(currentPlatform(), SHORTCUTS).filter(isRebindable).map((c): [string, Binding] => [`keyboard.${c.id}`, {
     read: async () => {
       await loadKeyboardOverrides()
       return shortcutValue(getShortcut(c.id).bindings)

@@ -15,6 +15,7 @@ import {
 } from '@shared/diagnostics-report'
 import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../logger'
+import { useProviderInstanceStore } from '../stores/provider-instance-store'
 import { AccountsPanel } from './settings/AccountsPanel'
 import { MobilePairingTab } from './settings/MobilePairingTab'
 import { LaunchConfigsPanel } from './settings/LaunchConfigsPanel'
@@ -36,6 +37,7 @@ import {
 import { RECENT_SESSION_LIMITS } from './sidebar/recent-session-limit'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Button } from './ui/button'
+import { Combobox } from './ui/combobox'
 import { onEscapeFirst } from './ui/escape-first'
 import { cn } from '../lib/utils'
 import { chordFromEvent, formatBinding, reservedShortcutReason, setShortcutCapture, shortcutClashesFor } from '@shared/shortcuts'
@@ -70,6 +72,13 @@ export function SettingsPage({ page, onNavigate, onClose }: SettingsPageProps) {
     setQuery('')
     setHighlight(null)
   }, [page])
+
+  // Usage reads take seconds, so they start when Settings opens, on any page,
+  // and Accounts & models has its numbers by the time it is reached.
+  const open = page !== null
+  useEffect(() => {
+    if (open) void useProviderInstanceStore.getState().prewarmUsage()
+  }, [open])
 
   const navigate = useCallback((next: SettingsPageId, rowId: string | null = null) => {
     setQuery('')
@@ -635,15 +644,15 @@ function ToggleControl({ def, onToggle }: { def: SettingRowDef; onToggle?: (on: 
 function SelectControl({ def, options }: { def: SettingRowDef; options: Array<{ value: string; label: string }> }) {
   const [value, setValue] = useRowValue(def)
   return (
-    <select
+    <Combobox
+      searchable={false}
       aria-label={def.label}
-      value={value ?? def.defaultValue}
+      value={value ?? def.defaultValue ?? ''}
       disabled={value === undefined}
-      onChange={(event) => setValue(event.target.value)}
-      className="shrink-0 cursor-pointer rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-1 text-[12px] text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+      onValueChange={setValue}
+      options={options}
+      className="shrink-0"
+    />
   )
 }
 

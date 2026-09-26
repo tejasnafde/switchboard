@@ -225,6 +225,11 @@ describe('clash refusal', () => {
     // the freed ⌘⌫ still belongs to the terminal's kill-line
     expect(shortcutClashesFor('app.search', 'Mod+Backspace', 'mac', cmds).map((c) => c.id)).toEqual(['terminal.kill-line'])
   })
+
+  it('excuses a default overlap only on its own key', () => {
+    const cmds = applyShortcutOverrides({ 'terminal.kill-line': ['Mod+Shift+Backspace'] })
+    expect(shortcutClashesFor('chat.interrupt', 'Mod+Shift+Backspace', 'mac', cmds).map((c) => c.id)).toEqual(['terminal.kill-line'])
+  })
 })
 
 describe('clash detection', () => {
