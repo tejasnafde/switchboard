@@ -10,7 +10,7 @@
  * keeps a new path from building a session some other way.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, win32 } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   useAgentStore,
@@ -122,6 +122,20 @@ describe('kanban reuse (the reported path)', () => {
     expect(setRuntimeMode).not.toHaveBeenCalled()
   })
 
+  it('does not overwrite a mode the user picked while the stored mode was being read', async () => {
+    const setRuntimeMode = api(null)
+    let answer!: (value: { mode: string }) => void
+    const app = (globalThis as { window: { api: { app: Record<string, unknown> } } }).window.api.app
+    app.getConversationRuntimeMode = vi.fn(() => new Promise((resolve) => { answer = resolve }))
+    const launch = launchCardChat(card(null), { openChat: true })
+    await vi.waitFor(() => expect(answer).toBeDefined())
+    useAgentStore.getState().setRuntimeMode('conv', 'plan')
+    answer({ mode: 'full-access' })
+    await launch
+    expect(runtimeModeToSend(session('conv'))).toBe('plan')
+    expect(setRuntimeMode).not.toHaveBeenCalled()
+  })
+
   it('falls back to the card\'s own mode', async () => {
     api(null)
     await launchCardChat(card('sandbox'), { openChat: true })
@@ -130,24 +144,50 @@ describe('kanban reuse (the reported path)', () => {
 })
 
 describe('source guard', () => {
+  interface Source { path: string; text: string }
   const root = join(__dirname, '../../src/renderer')
   const files = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
     const path = join(dir, name)
     return statSync(path).isDirectory() ? files(path) : /\.tsx?$/.test(name) ? [path] : []
   })
-  const sources = files(root).map((path) => ({ path: relative(root, path), text: readFileSync(path, 'utf8') }))
+  // Platform-neutral: a Windows checkout has backslash paths and, with
+  // autocrlf, CRLF line endings. Both are folded before any check.
+  const normalise = ({ path, text }: Source): Source => ({ path: path.replace(/\\/g, '/'), text: text.replace(/\r\n/g, '\n') })
+  const sources = files(root).map((path) => normalise({ path: relative(root, path), text: readFileSync(path, 'utf8') }))
+
+  /** What the guard asserts, as data, so it can be run over any spelling of the tree. */
+  function findings(tree: readonly Source[]) {
+    // A fresh session literal is the only place `unreadCount: 0` appears unspread.
+    const builders = tree.filter(({ text }) => text.split('\n').some((line) => /\bunreadCount: 0\b/.test(line) && !line.includes('...')))
+    const flagWriters = tree.filter(({ text }) => /runtimeModeUnresolved:\s*true/.test(text))
+    const store = tree.find((f) => f.path === 'stores/agent-store.ts')?.text ?? ''
+    return {
+      builders: builders.map((f) => f.path),
+      flagWriters: flagWriters.map((f) => f.path),
+      storeHelperCalls: store.match(/\.\.\.initialRuntimeMode\(/g)?.length ?? 0,
+      storeBuilders: store.split('\n').filter((line) => /^\s+unreadCount: 0,$/.test(line)).length,
+    }
+  }
 
   it('only agent-store builds a session object or sets runtimeModeUnresolved', () => {
-    // A fresh session literal is the only place `unreadCount: 0` appears unspread.
-    const builders = sources.filter(({ text }) => text.split('\n').some((line) => /\bunreadCount: 0\b/.test(line) && !line.includes('...')))
-    expect(builders.map((f) => f.path)).toEqual(['stores/agent-store.ts'])
-    const flagWriters = sources.filter(({ text }) => /runtimeModeUnresolved:\s*true/.test(text))
-    expect(flagWriters.map((f) => f.path)).toEqual(['stores/agent-store.ts'])
+    const { builders, flagWriters } = findings(sources)
+    expect(builders).toEqual(['stores/agent-store.ts'])
+    expect(flagWriters).toEqual(['stores/agent-store.ts'])
   })
 
   it('both builders in agent-store go through initialRuntimeMode', () => {
-    const store = sources.find((f) => f.path === 'stores/agent-store.ts')!.text
-    expect(store.match(/\.\.\.initialRuntimeMode\(/g)).toHaveLength(2)
-    expect(store.split('\n').filter((line) => /^\s+unreadCount: 0,$/.test(line))).toHaveLength(2)
+    const { storeHelperCalls, storeBuilders } = findings(sources)
+    expect(storeHelperCalls).toBe(2)
+    expect(storeBuilders).toBe(2)
+  })
+
+  it('reaches the same verdict on a Windows checkout (backslash paths, CRLF endings)', () => {
+    const windows = sources.map(({ path, text }) =>
+      normalise({ path: win32.join(...path.split('/')), text: text.replace(/\n/g, '\r\n') }))
+    expect(windows.some((f) => f.path.includes('\\'))).toBe(false)
+    expect(findings(windows)).toEqual(findings(sources))
+    // Without the folding the checks would miss: this is what failed on the Windows runner.
+    const raw = sources.map(({ path, text }) => ({ path: win32.join(...path.split('/')), text: text.replace(/\n/g, '\r\n') }))
+    expect(findings(raw)).not.toEqual(findings(sources))
   })
 })

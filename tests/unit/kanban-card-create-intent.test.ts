@@ -26,6 +26,20 @@ describe('Kanban card create intent', () => {
     })
   })
 
+  it('sends no runtime mode, on the card or its first agent, when the user left it on the project default', () => {
+    const submission = buildKanbanCardCreateSubmission({
+      projectPath: '/repo',
+      title: 'Untouched',
+      description: '',
+      tags: [],
+      costCapUsd: null,
+      runtimeMode: null,
+      withWorktree: true,
+    })
+    expect('runtimeMode' in submission).toBe(false)
+    expect(submission.worktreeCreation?.initialAgent && 'runtimeMode' in submission.worktreeCreation.initialAgent).toBe(false)
+  })
+
   it('preserves the chosen status without asking for backend launch for a plain card', () => {
     const submission = buildKanbanCardCreateSubmission({
       projectPath: '/repo',

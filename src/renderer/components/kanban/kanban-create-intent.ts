@@ -8,7 +8,8 @@ interface KanbanCardCreateFields {
   tags: string[]
   status?: KanbanStatus
   costCapUsd: number | null
-  runtimeMode: RuntimeMode
+  /** Null when the user left it on the project default: nothing is sent, the backend decides. */
+  runtimeMode: RuntimeMode | null
   withWorktree: boolean
 }
 
@@ -29,14 +30,14 @@ export function buildKanbanCardCreateSubmission(
     tags: fields.tags,
     status: fields.status,
     costCapUsd: fields.costCapUsd,
-    runtimeMode: fields.runtimeMode,
+    ...(fields.runtimeMode ? { runtimeMode: fields.runtimeMode } : {}),
     withWorktree: fields.withWorktree,
     ...(fields.withWorktree
       ? {
           worktreeCreation: {
             initialAgent: {
               provider: 'claude-code' as const,
-              runtimeMode: fields.runtimeMode,
+              ...(fields.runtimeMode ? { runtimeMode: fields.runtimeMode } : {}),
               prompt: initialPrompt(fields.title, fields.description),
             },
           },

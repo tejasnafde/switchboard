@@ -24,4 +24,16 @@ describe('kanban runtime_mode round trip', () => {
     createKanbanCard('card_auto', { projectPath: '/tmp/project', title: 'auto card', runtimeMode: 'auto' })
     expect(getKanbanCard('card_auto')?.runtimeMode).toBe('auto')
   })
+
+  it('keeps a card nobody picked a mode for unset, so the project default applies', () => {
+    const root = mkdtempSync(join(tmpdir(), 'sb-kanban-mode-'))
+    scratch.push(root)
+    process.env.SWITCHBOARD_DATA_DIR = root
+
+    addProject('/tmp/project', 'project')
+    createKanbanCard('card_unset', { projectPath: '/tmp/project', title: 'untouched card' })
+    createKanbanCard('card_picked', { projectPath: '/tmp/project', title: 'picked card', runtimeMode: 'accept-edits' })
+    expect(getKanbanCard('card_unset')?.runtimeMode).toBeNull()
+    expect(getKanbanCard('card_picked')?.runtimeMode).toBe('accept-edits')
+  })
 })

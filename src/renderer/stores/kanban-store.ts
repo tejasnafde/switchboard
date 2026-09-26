@@ -116,7 +116,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
           status: input.worktreeCreation?.initialAgent ? 'in_progress' : input.status ?? 'backlog',
           costCapUsd: input.costCapUsd ?? null,
           costUsedUsd: null,
-          runtimeMode: input.runtimeMode ?? 'accept-edits',
+          runtimeMode: input.runtimeMode ?? null,
           conversationId: null,
           worktreePath: null,
           worktreeBranch: null,
@@ -135,7 +135,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
               description: input.description ?? '',
               tags: input.tags ?? [],
               status: input.worktreeCreation?.initialAgent ? 'in_progress' : input.status ?? 'backlog',
-              runtimeMode: input.runtimeMode ?? 'accept-edits',
+              ...(input.runtimeMode ? { runtimeMode: input.runtimeMode } : {}),
               costCapUsd: input.costCapUsd ?? null,
             } },
             purpose: 'kanban',
@@ -259,7 +259,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
         const prompt = [card.title.trim(), card.description.trim()].filter(Boolean).join('\n\n')
         return {
           provider: 'claude-code' as const,
-          runtimeMode: card.runtimeMode,
+          ...(card.runtimeMode ? { runtimeMode: card.runtimeMode } : {}),
           prompt: prompt || 'Start working on this card.',
         }
       })(),

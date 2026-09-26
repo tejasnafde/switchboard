@@ -18,7 +18,6 @@ import { buildKanbanCardCreateSubmission } from './kanban-create-intent'
 import { describeKanbanWorktreeCreation } from './kanban-worktree-presentation'
 import {
   KANBAN_COLUMNS,
-  KANBAN_DEFAULT_RUNTIME_MODE,
   type KanbanCard,
   type KanbanStatus,
 } from '@shared/kanban'
@@ -40,10 +39,12 @@ import { matchesShortcut } from '@shared/shortcuts'
 const RUNTIME_MODE_OPTIONS: ReadonlyArray<{ value: RuntimeMode; label: string; hint: string }> = [
   { value: 'plan', label: 'Plan', hint: 'Read-only - agent proposes but does not edit' },
   { value: 'sandbox', label: 'Sandbox', hint: 'Edits require approval' },
-  { value: 'accept-edits', label: 'Accept edits', hint: 'Auto-approves edits (default)' },
+  { value: 'accept-edits', label: 'Accept edits', hint: 'Auto-approves edits' },
   { value: 'auto', label: 'Auto', hint: 'The agent approves routine actions; OpenCode still asks' },
   { value: 'full-access', label: 'Full access', hint: 'Auto-approves edits and shell commands' },
 ]
+
+const PROJECT_DEFAULT_MODE = 'project-default'
 
 interface ProjectOption {
   path: string
@@ -87,9 +88,9 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
   // Initial mode only - once the card has a session, the chat panel's
   // runtime selector is the source of truth, so we render a read-only
   // chip in `edit` mode instead of letting the field drift.
-  const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>(
-    card?.runtimeMode ?? KANBAN_DEFAULT_RUNTIME_MODE,
-  )
+  // Null is "Project default": nothing is stored or sent, and the backend
+  // applies the project's mode when the card's chat starts.
+  const [runtimeMode, setRuntimeMode] = useState<RuntimeMode | null>(card?.runtimeMode ?? null)
   const [submitting, setSubmitting] = useState(false)
   // The ⌘Enter keydown closure captures a stale `submitting`, so a held
   // ⌘Enter fired handleSubmit repeatedly - each call creating a worktree
@@ -372,21 +373,24 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
             {mode === 'create' ? (
               <>
                 <select
-                  value={runtimeMode}
-                  onChange={(e) => setRuntimeMode(e.target.value as RuntimeMode)}
+                  value={runtimeMode ?? PROJECT_DEFAULT_MODE}
+                  onChange={(e) => setRuntimeMode(e.target.value === PROJECT_DEFAULT_MODE ? null : e.target.value as RuntimeMode)}
                   className={inputClass}
                 >
+                  <option value={PROJECT_DEFAULT_MODE}>Project default</option>
                   {RUNTIME_MODE_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
                 <span className={hintClass}>
-                  {RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.hint}
+                  {runtimeMode
+                    ? RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.hint
+                    : 'The mode set for this project in Settings > Chat & agents'}
                 </span>
               </>
             ) : (
               <div className={chipClass} title="Change the live mode from the chat panel's runtime selector">
-                {RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.label ?? runtimeMode}
+                {runtimeMode ? RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.label ?? runtimeMode : 'Project default'}
               </div>
             )}
           </label>

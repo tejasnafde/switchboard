@@ -631,9 +631,11 @@ function CardTilePresentation({
             ))}
           </span>
         )}
-        <span style={badgeStyle} title="Initial runtime mode (change live mode from the chat panel)">
-          {RUNTIME_MODE_BADGE[card.runtimeMode]}
-        </span>
+        {card.runtimeMode && (
+          <span style={badgeStyle} title="Initial runtime mode (change live mode from the chat panel)">
+            {RUNTIME_MODE_BADGE[card.runtimeMode]}
+          </span>
+        )}
         {card.costCapUsd != null && (
           <span style={{ ...badgeStyle, color: overBudget ? 'var(--red, #d73a49)' : undefined }}>
             {formatCostUsd(card.costUsedUsd ?? 0)}/{formatCostUsd(card.costCapUsd)}

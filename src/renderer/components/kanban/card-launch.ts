@@ -150,7 +150,10 @@ export async function launchCardChat(
       ])
       if (runtimeModeResult.status === 'fulfilled') {
         const persisted = runtimeModeResult.value
-        if (persisted && existing.runtimeModeUnresolved) {
+        // Read the session again: the user may have picked a mode (or the
+        // backend resolved it) while the lookup was in flight.
+        const current = useAgentStore.getState().sessions.find((s) => s.id === existing.id)
+        if (persisted && current?.runtimeModeUnresolved) {
           useAgentStore.getState().setRuntimeMode(existing.id, persisted)
           window.api?.provider?.setRuntimeMode?.(existing.id, persisted).catch((err) => {
             log('setRuntimeMode failed on reuse', { sessionId: existing.id, err: String(err) })
