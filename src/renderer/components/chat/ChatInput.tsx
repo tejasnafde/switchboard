@@ -49,7 +49,6 @@ import { fuzzyScore } from '../../services/fuzzy-score'
 import { AtMentionMenu } from './AtMentionMenu'
 import { DraftWorkspaceChips } from './DraftWorkspaceChips'
 import { BranchPickerTrigger } from './BranchPicker'
-import { composerFooterLayout } from './composer-footer-layout'
 import { RICH_TEXTAREA_MIN_HEIGHT, RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
 import { serializeBodyWithPills } from '../../services/chat-input-body'
 import {
@@ -356,21 +355,6 @@ export function ChatInput({
   // can re-detect slash triggers without dipping into the editor.
   const [caret, setCaret] = useState<number | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
-  // Pane width drives the footer compaction policy. Media queries cannot see
-  // a pane, only the window, so the footer measures itself.
-  const footerRef = useRef<HTMLDivElement | null>(null)
-  const [footerWidth, setFooterWidth] = useState<number | null>(null)
-  useEffect(() => {
-    const el = footerRef.current
-    if (!el) return
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width
-      if (typeof width === 'number') setFooterWidth(width)
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
-  const footerLayout = composerFooterLayout(footerWidth)
   const [previewImage, setPreviewImage] = useState<ImageAttachment | null>(null)
 
   // Slash command popover state: `null` when closed; trigger info when open
@@ -1647,7 +1631,6 @@ export function ChatInput({
           overflowing on a narrow pane; the policy drops the hint and shortens
           the mode labels first. */}
       <div
-        ref={footerRef}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1805,15 +1788,6 @@ export function ChatInput({
               <option key={m.value} value={m.value} title={m.detail}>{m.label}</option>
             ))}
           </select>
-        )}
-
-        <span style={{ flex: 1 }} />
-
-        {/* Idle only: while a turn runs, the send button's tooltip names the keys. */}
-        {footerLayout.showHint && !isRunning && (
-          <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            Enter send · Shift+Enter newline
-          </span>
         )}
 
         {/* Context meter (24px), last so it sits centred under the Send button,

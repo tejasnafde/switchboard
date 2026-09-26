@@ -2,14 +2,12 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "composer-footer-width",
-  "summary": "Keep the desktop composer footer on one row: short runtime-mode labels with the detail as a tooltip, a footer hint that names steer and queue while the agent works, and Alt+Enter that still queues while an autocomplete menu is open.",
+  "summary": "Keep the desktop composer footer on one row: short runtime-mode labels with the detail as a tooltip, no key-hint text (the send button's tooltip names Enter, Shift+Enter and the follow-up keys), and Alt+Enter that still queues while an autocomplete menu is open.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/components/chat/ChatInput.tsx",
-        "src/renderer/components/chat/composer-footer-layout.ts",
-        "tests/unit/composer-footer-layout.test.ts"
+        "src/renderer/components/chat/ChatInput.tsx"
       ]
     },
     "reactNativeIos": {
@@ -21,8 +19,11 @@
       "reason": "The Compose composer has no runtime-mode select or desktop footer hint; nothing it renders is affected."
     },
     "sharedBackendApi": {
-      "status": "not_applicable",
-      "reason": "Renderer copy and layout only. Runtime modes, steer and queue delivery, and every wire contract are unchanged."
+      "status": "implemented",
+      "evidence": [
+        "src/shared/turn-delivery.ts",
+        "tests/unit/turn-delivery.test.ts"
+      ]
     },
     "storageDataMigration": {
       "status": "not_applicable",
@@ -35,7 +36,7 @@
   },
   "verification": {
     "automated": [
-      "npx vitest run tests/unit/composer-footer-layout.test.ts",
+      "npx vitest run tests/unit/turn-delivery.test.ts",
       "npm run typecheck",
       "npm test"
     ],
