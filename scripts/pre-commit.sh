@@ -18,6 +18,12 @@ echo "==> deslop-lint staged files..."
 npx --no-install lint-staged
 
 echo "==> running tests..."
+# git runs hooks with GIT_DIR (and GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY...) pointing at
+# this repository. A test that shells out to git in its own temp repo then
+# edits THIS repo instead: one set core.bare=true for every worktree, and the
+# fixtures' `git config user.name "Switchboard Test"` became the author of
+# every commit from 2026-08-24 on. Tests never need the hook's git context.
+unset $(git rev-parse --local-env-vars)
 # Half the cores: several agent worktrees commit at once on one Mac, and a full
 # worker pool each pushed the load past 100, which timed out unrelated tests.
 if node -e "const Database = require('better-sqlite3'); new Database(':memory:').close()" >/dev/null 2>&1; then
