@@ -6,7 +6,7 @@
   "surfaces": {
     "desktop": {
       "status": "implemented",
-      "evidence": ["src/main/index.ts", "AGENTS.md"]
+      "evidence": ["src/main/index.ts"]
     },
     "reactNativeIos": {
       "status": "not_applicable",
