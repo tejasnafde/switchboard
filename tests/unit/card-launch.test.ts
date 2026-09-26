@@ -181,25 +181,24 @@ describe('resolveCardRuntimeMode', () => {
     expect(mode).toBe('plan')
   })
 
-  it('falls back to user default when no DB row and no per-card mode', async () => {
+  // Nobody chose a mode: the renderer default is not passed off as one, so
+  // the session is unresolved and the backend picks the project's mode.
+  it('returns no mode when there is no DB row and no per-card mode', async () => {
     installApiMock(null)
     setStoreDefaultRuntimeMode('accept-edits')
-    const mode = await resolveCardRuntimeMode(null, 'conv_123')
-    expect(mode).toBe('accept-edits')
+    expect(await resolveCardRuntimeMode(null, 'conv_123')).toBeUndefined()
   })
 
-  it('uses user default when no conversation is linked and no per-card mode', async () => {
+  it('returns no mode when no conversation is linked and the card has none', async () => {
     installApiMock('full-access') // present, but no convId so not queried
     setStoreDefaultRuntimeMode('plan')
-    const mode = await resolveCardRuntimeMode(null, null)
-    expect(mode).toBe('plan')
+    expect(await resolveCardRuntimeMode(null, null)).toBeUndefined()
   })
 
-  it('rejects garbage values from the DB and falls back to the next tier', async () => {
+  it('rejects garbage values from the DB and falls back to the card', async () => {
     installApiMock('not-a-mode')
-    setStoreDefaultRuntimeMode('full-access')
-    const mode = await resolveCardRuntimeMode(null, 'conv_123')
-    expect(mode).toBe('full-access')
+    expect(await resolveCardRuntimeMode('plan', 'conv_123')).toBe('plan')
+    expect(await resolveCardRuntimeMode(null, 'conv_123')).toBeUndefined()
   })
 })
 
@@ -372,10 +371,10 @@ describe('launchCardChat', () => {
     expect(api.app.setConversationRuntimeMode).toHaveBeenCalledWith(result.sessionId, 'full-access')
   })
 
-  it('hydrates a reused session whose in-memory mode is stale from the DB', async () => {
+  it('hydrates a reused session whose in-memory mode is unresolved from the DB', async () => {
     // Simulate the "open card after app restart" path: the session was
-    // added via a sidebar click with the module default ('sandbox'), but
-    // the user's actual saved mode for this conversation is 'full-access'.
+    // added via a sidebar click with no stored mode (unresolved, showing a
+    // guess), and the user's saved mode for this conversation is 'full-access'.
     const api = installApiMock('full-access')
     useAgentStore.setState({
       sessions: [{
@@ -387,6 +386,7 @@ describe('launchCardChat', () => {
         messages: [],
         unreadCount: 0,
         runtimeMode: 'sandbox',
+        runtimeModeUnresolved: true,
       }],
       activeSessionId: null,
     })

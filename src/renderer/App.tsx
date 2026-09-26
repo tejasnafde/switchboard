@@ -547,7 +547,6 @@ export function App() {
     }
     addSession({
       ...session,
-      ...(session.runtimeMode === undefined ? { runtimeModeUnresolved: true } : {}),
       ...(draft?.model ? { model: draft.model } : {}),
       ...(draft?.instanceId ? { instanceId: draft.instanceId } : {}),
       ...(draft?.reasoningEffort ? { reasoningEffort: draft.reasoningEffort } : {}),
@@ -655,7 +654,6 @@ export function App() {
         machineId,
         title: 'New chat',
         runtimeMode,
-        ...(runtimeMode === undefined ? { runtimeModeUnresolved: true } : {}),
         ...(carry?.model ? { model: carry.model } : {}),
         ...(carry?.instanceId ? { instanceId: carry.instanceId } : {}),
         ...(carry?.reasoningEffort ? { reasoningEffort: carry.reasoningEffort } : {}),

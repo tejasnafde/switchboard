@@ -11,7 +11,7 @@
 import { FOLLOW_UP_DEFAULT_KEY, parseFollowUpDefault, type TurnDelivery } from '@shared/turn-delivery'
 import { SETTING_SESSION_ENV_MODE, SETTING_SHOW_FILE_DIFFS } from '@shared/project-settings'
 import type { RuntimeMode } from '@shared/provider-events'
-import { useAgentStore, defaultRuntimeModeFor, projectRuntimeModeOverride } from '../stores/agent-store'
+import { useAgentStore, projectRuntimeModeOverride } from '../stores/agent-store'
 import { useLayoutStore } from '../stores/layout-store'
 import { effectiveLocalSetting, ensureProjectOverrides, useEffectiveSetting } from '../stores/project-settings-store'
 import { getDefaultSessionEnvMode, type SessionEnvMode } from './session-env-mode'
@@ -36,13 +36,16 @@ export function useShowFileDiffCards(sessionId: string | null | undefined): bool
 }
 
 /**
- * The mode and environment a new chat in this project starts with. A mode
- * carried over from the focused chat applies unless the project overrides it.
+ * The mode and environment a new chat in this project starts with.
  *
- * When the project's overrides cannot be read, `runtimeMode` is undefined
- * unless a mode was carried over: the chat must then send none, so the
- * backend (which reads the overrides itself) decides. Where a chat runs is
- * decided here and nowhere else, so it falls back to the global value.
+ * `runtimeMode` is only ever a mode carried over from the focused chat, and
+ * not even that when the project overrides the mode. Otherwise it is
+ * undefined and the session is unresolved (`initialRuntimeMode`): the chat
+ * shows the project's default and the backend picks the mode. A carried mode
+ * applies when the overrides cannot be read, since someone chose it.
+ *
+ * Where a chat runs is decided here and nowhere else, so on a failed read
+ * it falls back to the global value.
  */
 export async function newChatDefaultsFor(
   projectPath: string,
@@ -54,8 +57,5 @@ export async function newChatDefaultsFor(
     return { runtimeMode: carriedMode, envMode: globalEnvMode }
   }
   const envMode = effectiveLocalSetting(SETTING_SESSION_ENV_MODE, projectPath, globalEnvMode) === 'worktree' ? 'worktree' : 'local'
-  return {
-    runtimeMode: projectRuntimeModeOverride(projectPath) ?? carriedMode ?? defaultRuntimeModeFor(projectPath),
-    envMode,
-  }
+  return { runtimeMode: projectRuntimeModeOverride(projectPath) ? undefined : carriedMode, envMode }
 }

@@ -36,6 +36,8 @@ describe('runtime mode for new chats', () => {
     const mode = (id: string) => useAgentStore.getState().sessions.find((s) => s.id === id)?.runtimeMode
     expect(mode('a')).toBe('plan')
     expect(mode('b')).toBe('accept-edits')
+    // Both are the renderer's guess: neither is sent, the backend picks.
+    expect(useAgentStore.getState().sessions.every((s) => s.runtimeModeUnresolved)).toBe(true)
   })
 
   it('lets only a project override beat a mode carried over from another chat', () => {
@@ -44,9 +46,8 @@ describe('runtime mode for new chats', () => {
     expect(defaultRuntimeModeFor(null)).toBe('accept-edits')
   })
 
-  it('launches a kanban card with no mode of its own in its project\'s mode', async () => {
-    expect(await resolveCardRuntimeMode(null, null, APP)).toBe('plan')
-    expect(await resolveCardRuntimeMode(null, null, OTHER)).toBe('accept-edits')
+  it('gives a kanban card with no mode of its own no mode, so the backend picks the project\'s', async () => {
+    expect(await resolveCardRuntimeMode(null, null)).toBeUndefined()
   })
 
   it('resolves the follow-up default the same way', () => {

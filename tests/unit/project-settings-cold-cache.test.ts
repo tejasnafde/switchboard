@@ -42,18 +42,18 @@ beforeEach(() => {
 })
 
 describe('the first new chat in a project, with a cold cache', () => {
-  it('starts in the project\'s override, not the global mode', async () => {
-    expect(await newChatDefaultsFor(APP)).toEqual({ runtimeMode: 'plan', envMode: 'worktree' })
+  it('shows the project\'s override and environment, and leaves the mode for the backend to pick', async () => {
+    const { runtimeMode, envMode } = await newChatDefaultsFor(APP)
+    expect({ runtimeMode, envMode }).toEqual({ runtimeMode: undefined, envMode: 'worktree' })
+    // The draft is added with no mode: unresolved, showing the now-known override.
+    useAgentStore.getState().addSession({ id: 'd', type: 'claude-code', status: 'idle', projectPath: APP, title: 'New chat', runtimeMode })
+    expect(useAgentStore.getState().sessions[0]).toMatchObject({ runtimeMode: 'plan', runtimeModeUnresolved: true })
   })
 
-  it('lets the override beat a mode carried over from the focused chat, and only the override', async () => {
-    expect((await newChatDefaultsFor(APP, 'full-access')).runtimeMode).toBe('plan')
+  it('drops a mode carried over from another chat when the project overrides it, and keeps it otherwise', async () => {
+    expect((await newChatDefaultsFor(APP, 'full-access')).runtimeMode).toBeUndefined()
     expect((await newChatDefaultsFor(OTHER, 'full-access')).runtimeMode).toBe('full-access')
-    expect(await newChatDefaultsFor(OTHER)).toEqual({ runtimeMode: 'accept-edits', envMode: 'local' })
-  })
-
-  it('launches a kanban card with no mode of its own in the project\'s override', async () => {
-    expect(await resolveCardRuntimeMode(null, null, APP)).toBe('plan')
+    expect(await newChatDefaultsFor(OTHER)).toEqual({ runtimeMode: undefined, envMode: 'local' })
   })
 
   it('reads a project once however many callers wait on it, and not again once cached', async () => {
@@ -65,7 +65,7 @@ describe('the first new chat in a project, with a cold cache', () => {
   it('asks again after a failed read instead of caching the failure', async () => {
     projectOverrides.mockRejectedValueOnce(new Error('backend restarting'))
     expect(await ensureProjectOverrides(APP)).toBe(false)
-    expect((await newChatDefaultsFor(APP)).runtimeMode).toBe('plan')
+    expect((await newChatDefaultsFor(APP)).envMode).toBe('worktree')
   })
 })
 
@@ -116,7 +116,7 @@ describe('when the project\'s overrides cannot be read', () => {
       kanban: { update: vi.fn(async () => ({})) },
     }
     const card = { id: 'c', projectPath: APP, title: 'Do it', description: '', runtimeMode: null, conversationId: null, worktreePath: null } as unknown as KanbanCard
-    expect(await resolveCardRuntimeMode(null, null, APP)).toBeUndefined()
+    expect(await resolveCardRuntimeMode(null, null)).toBeUndefined()
     const { sessionId } = await launchCardChat(card, { openChat: false })
     expect(startSession.mock.calls[0][0]).toMatchObject({ runtimeMode: undefined })
     expect(submitUserTurn.mock.calls[0][0]).toMatchObject({ runtimeMode: undefined })

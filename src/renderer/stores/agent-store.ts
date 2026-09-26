@@ -49,6 +49,24 @@ export function defaultRuntimeModeFor(projectPath: string | null | undefined): R
   return isRuntimeMode(mode) ? mode : storeDefaultRuntimeMode
 }
 
+/**
+ * The one rule for a session's starting mode, applied wherever a session
+ * enters the store (`addSession`, `adoptLiveSessions`), so no path can skip
+ * it. `chosen` is a mode someone decided: the user, a mode carried over from
+ * another chat, a card's own mode, the conversation's stored mode, or the
+ * backend's live descriptor. Without one the session is unresolved: it shows
+ * the renderer's default (the project override when known, else the global
+ * one) only as a guess, sends no mode, and the backend's `sessionDefaultsFor`
+ * decides. A renderer default is never sent as if it were a choice.
+ */
+export function initialRuntimeMode(
+  projectPath: string | null | undefined,
+  chosen: unknown,
+): { runtimeMode: RuntimeMode; runtimeModeUnresolved?: true } {
+  if (isRuntimeMode(chosen)) return { runtimeMode: chosen }
+  return { runtimeMode: defaultRuntimeModeFor(projectPath), runtimeModeUnresolved: true }
+}
+
 /** The mode to send to the backend: none while the session's mode is unresolved, so the backend decides. */
 export function runtimeModeToSend(session: Pick<AgentSession, 'runtimeMode' | 'runtimeModeUnresolved'> | undefined): RuntimeMode | undefined {
   if (!session || session.runtimeModeUnresolved) return undefined
@@ -226,7 +244,8 @@ interface AgentStore {
     | { sessionId: string; messageId?: string; messageTimestamp?: number; stamp: number; query?: string }
     | null
 
-  addSession: (session: Omit<AgentSession, 'messages' | 'unreadCount' | 'runtimeMode'> & { runtimeMode?: RuntimeMode }) => void
+  /** `runtimeMode` only when someone chose it; absent, the session is unresolved (`initialRuntimeMode`). */
+  addSession: (session: Omit<AgentSession, 'messages' | 'unreadCount' | 'runtimeMode' | 'runtimeModeUnresolved'> & { runtimeMode?: RuntimeMode }) => void
   removeSession: (id: string) => void
   setActiveSession: (id: string) => void
   /** Clear the badge without focusing the session - a `thread.read` from
@@ -330,7 +349,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           ...session,
           messages: [],
           unreadCount: 0,
-          runtimeMode: session.runtimeMode ?? defaultRuntimeModeFor(session.projectPath),
+          ...initialRuntimeMode(session.projectPath, session.runtimeMode),
         },
       ],
       activeSessionId: state.activeSessionId ?? session.id,
@@ -413,7 +432,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           projectPath: s.cwd,
           machineId,
           unreadCount: 0,
-          runtimeMode: isRuntimeMode(s.runtimeMode) ? s.runtimeMode : 'sandbox',
+          ...initialRuntimeMode(s.cwd, s.runtimeMode),
           model: s.model,
           instanceId: s.instanceId,
           resumeSessionId: s.sessionId,

@@ -7,40 +7,28 @@
 import { createRendererLogger } from '../../logger'
 import { isRuntimeMode } from '@shared/session-defaults'
 import type { KanbanCard } from '@shared/kanban'
-import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
-import { useAgentStore, adoptStartedRuntimeMode, defaultRuntimeModeFor, type RuntimeMode } from '../../stores/agent-store'
-import { ensureProjectOverrides } from '../../stores/project-settings-store'
+import { useAgentStore, adoptStartedRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
 import { emitSessionCreated } from '../../services/session-events'
 import type { AgentType, ConversationRow } from '@shared/types'
 
 const launchLog = createRendererLogger('kanban:launch')
 
 /**
- * Resolve the runtime mode for a card-launched chat. Order of precedence:
- *   1. Explicit per-card mode (`card.runtimeMode`) - the user's intent
- *      from the create modal; only honored on NEW launches.
- *   2. Per-conversation persisted mode (from `conversations.runtime_mode`)
- *      - checked for reused launches; reflects any mid-conversation mode
- *      changes the user made after the initial launch.
- *   3. The user's last-chosen default this session
- *      (`defaultRuntimeModeFor(projectPath)`, the project's override or
- *      the default seeded from settings at boot).
- *   4. `KANBAN_DEFAULT_RUNTIME_MODE` ('accept-edits') as the final
- *      fallback - matches the kanban-create-modal default.
+ * The runtime mode someone chose for a card-launched chat, if anyone did:
+ *   1. The conversation's persisted mode (`conversations.runtime_mode`),
+ *      checked on reuse, so a mode changed mid-conversation survives
+ *      reopening through the play button.
+ *   2. The card's own mode (`card.runtimeMode`), from the create modal.
  *
- * Undefined when it would come from tier 3 and the project's overrides
- * could not be read: the launch then sends no mode and the backend picks it.
- *
- * `cardRuntimeMode` is the strongest signal, but we still consult the DB
- * before it on the reuse path so a stored override (e.g. user toggled to
- * full-access mid-turn) survives reopening through the play button.
+ * Undefined otherwise. The renderer's default is never returned: the session
+ * is then unresolved (`initialRuntimeMode`), sends no mode, and the backend
+ * picks the project's.
  *
  * Exported so it's directly unit-testable.
  */
 export async function resolveCardRuntimeMode(
   cardRuntimeMode: RuntimeMode | null | undefined,
   conversationId: string | null | undefined,
-  projectPath?: string,
 ): Promise<RuntimeMode | undefined> {
   if (conversationId) {
     try {
@@ -50,15 +38,10 @@ export async function resolveCardRuntimeMode(
         return persisted as RuntimeMode
       }
     } catch (err) {
-      launchLog.debug(`getConversationRuntimeMode failed for ${conversationId} - falling through to card/store default`, err)
+      launchLog.debug(`getConversationRuntimeMode failed for ${conversationId} - falling through to the card's mode`, err)
     }
   }
-  if (isRuntimeMode(cardRuntimeMode)) return cardRuntimeMode
-  if (!(await ensureProjectOverrides(projectPath))) {
-    launchLog.warn(`overrides for ${projectPath} are unknown: the card's chat lets the backend pick its mode`)
-    return undefined
-  }
-  return defaultRuntimeModeFor(projectPath) ?? KANBAN_DEFAULT_RUNTIME_MODE
+  return isRuntimeMode(cardRuntimeMode) ? cardRuntimeMode : undefined
 }
 
 export interface CardLaunchInit {
@@ -143,7 +126,7 @@ export async function launchCardChat(
         status: 'idle',
         projectPath: row.project_path,
         title: row.title,
-        runtimeMode: card.runtimeMode,
+        // No mode yet: the fix-up below applies the conversation's, then the card's.
         worktreePath: row.worktree_path ?? card.worktreePath,
         worktreeBranch: row.worktree_branch ?? card.worktreeBranch,
       })
@@ -153,24 +136,21 @@ export async function launchCardChat(
       log('reuse existing session', { cardId: card.id, sessionId: existing.id })
       useAgentStore.getState().setActiveSession(existing.id)
       // Fix up the in-memory mode and pinned model from the DB. The session
-      // may have been added via a sidebar click on app boot (which seeded
-      // `runtimeMode` with the module default before we could fetch the
-      // persisted value, and left `model` unset entirely). Without this,
-      // the chip would show e.g. 'sandbox' even though the user's last
-      // selection was 'full-access', and the model picker would silently
-      // drop back to the adapter default.
+      // may have been added without a mode (unresolved, showing a guess) and
+      // without its pinned model. A mode is applied only to an unresolved
+      // session: one already in memory keeps the mode it has.
       //
       // The two reads are independent, fired concurrently rather than one
       // after the other - each wrapped in its own async IIFE so a
       // synchronous throw from either rejects that entry instead of
       // skipping the other fix-up.
       const [runtimeModeResult, modelResult] = await Promise.allSettled([
-        (async () => resolveCardRuntimeMode(card.runtimeMode, existing.id, card.projectPath))(),
+        (async () => resolveCardRuntimeMode(card.runtimeMode, existing.id))(),
         (async () => window.api?.app?.getConversationModel?.(existing.id))(),
       ])
       if (runtimeModeResult.status === 'fulfilled') {
         const persisted = runtimeModeResult.value
-        if (persisted && persisted !== existing.runtimeMode) {
+        if (persisted && existing.runtimeModeUnresolved) {
           useAgentStore.getState().setRuntimeMode(existing.id, persisted)
           window.api?.provider?.setRuntimeMode?.(existing.id, persisted).catch((err) => {
             log('setRuntimeMode failed on reuse', { sessionId: existing.id, err: String(err) })
@@ -200,7 +180,7 @@ export async function launchCardChat(
   // Pull the real source of truth instead of hardcoding 'sandbox'. New cards
   // (no linked conversation) inherit the user's last-chosen default; reused
   // cards that lost their in-memory session pull from the DB row.
-  const runtimeMode = await resolveCardRuntimeMode(card.runtimeMode, card.conversationId, card.projectPath)
+  const runtimeMode = await resolveCardRuntimeMode(card.runtimeMode, card.conversationId)
   log('starting new session', {
     cardId: card.id,
     sessionId,
@@ -219,7 +199,6 @@ export async function launchCardChat(
     projectPath,
     title,
     runtimeMode,
-    ...(runtimeMode === undefined ? { runtimeModeUnresolved: true } : {}),
   })
   useAgentStore.getState().setActiveSession(sessionId)
 
