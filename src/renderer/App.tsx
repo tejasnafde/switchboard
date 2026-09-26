@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth } from './stores/layout-store'
-import { useAgentStore, setStoreDefaultRuntimeMode, projectRuntimeModeOverride, type RuntimeMode } from './stores/agent-store'
+import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from './stores/agent-store'
 import { classifyCloseFocus, type ClosestEl } from './close-focus'
 import { useBookmarkStore } from './stores/bookmark-store'
 import { useThemeStore } from './stores/theme-store'
@@ -35,7 +35,7 @@ import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { sessionExecutionRootPath } from './services/execution-root'
 import { emitSessionCreated, onProviderEvent, onSessionRename } from './services/session-events'
 import { initSharedReadState } from './services/read-state'
-import { defaultSessionEnvModeFor } from './services/effective-settings'
+import { newChatDefaultsFor } from './services/effective-settings'
 import {
   createDesktopNewChatCoordinator,
   retainedWorktreeCreationKey,
@@ -640,7 +640,7 @@ export function App() {
       const focusedId = useLayoutStore.getState().focusedChatSessionId()
       const from = store.sessions.find((s) => s.id === focusedId)
       const carry = from && !from.draft && from.type !== 'terminal' ? from : undefined
-      const envMode = await defaultSessionEnvModeFor(projectPath)
+      const { runtimeMode, envMode } = await newChatDefaultsFor(projectPath, carry?.runtimeMode)
       // A second open for the same project can land during the await.
       if (useAgentStore.getState().sessions.some((s) => s.id === id)) { selectChatSession(id); return }
       window.api.routing.bind(id, machineId)
@@ -651,7 +651,7 @@ export function App() {
         projectPath,
         machineId,
         title: 'New chat',
-        runtimeMode: projectRuntimeModeOverride(projectPath) ?? carry?.runtimeMode,
+        runtimeMode,
         ...(carry?.model ? { model: carry.model } : {}),
         ...(carry?.instanceId ? { instanceId: carry.instanceId } : {}),
         ...(carry?.reasoningEffort ? { reasoningEffort: carry.reasoningEffort } : {}),

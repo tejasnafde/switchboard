@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
  * Project scopes in Settings, against the built app (npm run build:fast
- * first): pick a project in the Chat & agents Scope combobox, override its
- * runtime mode, check a new chat in that project starts in it and a new chat
+ * first): a new chat opened right after launch already starts in its
+ * project's stored override (the renderer's cache is cold then); then pick
+ * a project in the Chat & agents Scope combobox, override its runtime mode,
+ * check a new chat in that project starts in it and a new chat
  * in another project does not, check the Projects page counts it and its
  * Open returns to that scope, then Reset. Uses the demo adapter and an
  * isolated profile; temp dirs are removed on exit.
@@ -22,6 +24,7 @@ process.on('exit', () => { for (const dir of scratch) rmSync(dir, { recursive: t
 const userData = mk('sb-scopes-ud-')
 const alpha = realpathSync(mk('sb-scopes-alpha-'))
 const beta = realpathSync(mk('sb-scopes-beta-'))
+const gamma = realpathSync(mk('sb-scopes-gamma-'))
 const db = join(userData, 'data', 'switchboard.db')
 const q = (sql) => execFileSync('sqlite3', [db, sql]).toString().trim()
 
@@ -45,11 +48,14 @@ let { app, win } = await launch()
 await app.close()
 q(`INSERT OR REPLACE INTO projects (path, name, added_at, sort_order) VALUES ('${alpha}', 'alpha', ${Date.now()}, 0);`)
 q(`INSERT OR REPLACE INTO projects (path, name, added_at, sort_order) VALUES ('${beta}', 'beta', ${Date.now()}, 1);`)
+q(`INSERT OR REPLACE INTO projects (path, name, added_at, sort_order) VALUES ('${gamma}', 'gamma', ${Date.now()}, 2);`)
+// An override from an earlier run. The tmp paths are already real, so each is its own pathKey on macOS.
+q(`INSERT OR REPLACE INTO settings (key, value) VALUES ('project:${gamma}:chat.defaultRuntimeMode', 'full-access');`)
 ;({ app, win } = await launch())
 
 const results = []
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`) }
-const overrideRow = () => q(`SELECT value FROM settings WHERE key LIKE 'project:%:chat.defaultRuntimeMode';`)
+const overrideRow = () => q(`SELECT value FROM settings WHERE key = 'project:${alpha}:chat.defaultRuntimeMode';`)
 
 try {
   const settings = win.getByRole('dialog', { name: 'Settings' })
@@ -78,6 +84,10 @@ try {
     const composer = win.locator('.chat-composer:visible').last()
     return composer.getAttribute('data-runtime-mode')
   }
+
+  // First thing after launch, before anything else reads the overrides.
+  const first = await newChatMode('gamma')
+  check('the first new chat after launch starts in the stored override', first === 'full-access', String(first))
 
   await win.getByTitle('Settings').waitFor({ state: 'visible', timeout: 20_000 })
   await openChatPage()

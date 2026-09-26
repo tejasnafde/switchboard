@@ -9,6 +9,7 @@ import { isRuntimeMode } from '@shared/session-defaults'
 import type { KanbanCard } from '@shared/kanban'
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { useAgentStore, defaultRuntimeModeFor, type RuntimeMode } from '../../stores/agent-store'
+import { ensureProjectOverrides } from '../../stores/project-settings-store'
 import { emitSessionCreated } from '../../services/session-events'
 import type { AgentType, ConversationRow } from '@shared/types'
 
@@ -50,6 +51,7 @@ export async function resolveCardRuntimeMode(
     }
   }
   if (isRuntimeMode(cardRuntimeMode)) return cardRuntimeMode
+  await ensureProjectOverrides(projectPath)
   return defaultRuntimeModeFor(projectPath) ?? KANBAN_DEFAULT_RUNTIME_MODE
 }
 

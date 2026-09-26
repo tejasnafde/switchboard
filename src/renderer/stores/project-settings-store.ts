@@ -59,6 +59,26 @@ export const useProjectSettingsStore = create<ProjectSettingsState>((set, get) =
   },
 }))
 
+// One read per project at a time, so a new chat and the sidebar's boot load share it.
+const pending = new Map<string, Promise<void>>()
+
+/**
+ * Wait until this project's overrides are in the cache. Anything that picks
+ * a value once, at creation (a new chat's mode and environment), must await
+ * this: a synchronous read of a cold cache takes the global value, and the
+ * chat then sends it explicitly, so the backend's own resolution never runs.
+ * A failed read is not cached, so the next call asks again.
+ */
+export async function ensureProjectOverrides(projectPath: string | null | undefined): Promise<void> {
+  if (!projectPath || projectPath in useProjectSettingsStore.getState().byProject) return
+  let read = pending.get(projectPath)
+  if (!read) {
+    read = useProjectSettingsStore.getState().load([projectPath]).finally(() => pending.delete(projectPath))
+    pending.set(projectPath, read)
+  }
+  await read
+}
+
 export function projectOverride(projectPath: string | null | undefined, key: ScopableSettingKey): string | undefined {
   if (!projectPath) return undefined
   return useProjectSettingsStore.getState().byProject[projectPath]?.[key]

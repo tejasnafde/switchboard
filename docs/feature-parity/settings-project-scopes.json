@@ -21,6 +21,7 @@
         "src/renderer/App.tsx",
         "src/preload/index.ts",
         "tests/unit/project-settings-consumers.test.ts",
+        "tests/unit/project-settings-cold-cache.test.ts",
         "e2e/project-scopes.e2e.mjs"
       ]
     },
@@ -71,9 +72,9 @@
   "verification": {
     "automated": [
       "npm run typecheck",
-      "npm test (vitest: scopable list, resolution order, pathKey junction and Windows case variant, unknown-key tolerance, device-auth gating of override keys, backend and renderer consumers)",
+      "npm test (vitest: scopable list, resolution order, pathKey junction and Windows case variant, unknown-key tolerance, device-auth gating of override keys, backend and renderer consumers, and the first new chat in a project with a cold renderer cache)",
       "npm test --prefix apps/mobile (getSessionDefaults passes the project path)",
-      "npm run build:fast && node e2e/project-scopes.e2e.mjs (11 checks: Scope pick, override stored, new chat in the project starts in Plan, a chat in another project does not, Projects page count and Open, Reset removes the row)",
+      "npm run build:fast && node e2e/project-scopes.e2e.mjs (12 checks: the first new chat after launch starts in a stored override, Scope pick, override stored, new chat in the project starts in Plan, a chat in another project does not, Projects page count and Open, Reset removes the row)",
       "SB_VISUAL_SCOPE=screens node e2e/visual-regressions.e2e.mjs (no covered screen changed)"
     ],
     "hardware": [],
