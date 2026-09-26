@@ -3,7 +3,8 @@
  * Rebinding a shortcut in Settings > Keyboard, against the built app
  * (npm run build:fast first): record a new chord for the command palette,
  * check the new chord opens it and the old one no longer does, that a
- * reserved chord is refused with its reason, then Reset back to the default.
+ * reserved chord is refused with its reason, that Cmd+R while recording does
+ * not reach the menu's reload, then Reset back to the default.
  * Temp dirs are removed on exit.
  */
 import { _electron as electron } from 'playwright'
@@ -60,9 +61,33 @@ try {
   check('a reserved chord is refused with the reason', /copy|interrupts/.test((await alert.textContent()) ?? ''))
   await win.keyboard.press(`${mod}+B`)
   check('a clashing chord names the other command', /Toggle sidebar/.test((await alert.textContent()) ?? ''))
+  // The native menu stands down while recording: ⌘R must not reach the
+  // reload dialog. The dialog is stubbed to count, and a marker on the page
+  // would vanish on a reload.
+  await app.evaluate(({ dialog }) => {
+    globalThis.__reloadPrompts = 0
+    dialog.showMessageBox = async () => { globalThis.__reloadPrompts += 1; return { response: 1 } }
+  })
+  const reloadPrompts = () => app.evaluate(() => globalThis.__reloadPrompts)
+  const clickReloadItem = () => app.evaluate(({ Menu, BrowserWindow }) => {
+    const item = Menu.getApplicationMenu()?.items.flatMap((i) => i.submenu?.items ?? []).find((i) => i.label === 'Reload')
+    item?.click(undefined, BrowserWindow.getAllWindows()[0])
+  })
+  await win.evaluate(() => { window.__sameDocument = true })
+  await win.keyboard.press(`${mod}+R`)
+  await clickReloadItem()
+  await win.waitForTimeout(300)
+  check('Cmd+R while recording opens no reload prompt', (await reloadPrompts()) === 0, String(await reloadPrompts()))
+  check('and does not reload the page', await win.evaluate(() => window.__sameDocument === true))
+  check('the recorder is still recording', (await recorder.textContent()) === 'Press the new shortcut')
+
   await win.keyboard.press(`${mod}+Shift+Y`)
   check('the row shows Changed', await row.getByText('Changed').waitFor({ timeout: 3000 }).then(() => true, () => false))
   check('the recorder shows the new keys', (await recorder.textContent()) !== 'Press the new shortcut')
+
+  // Recording ended with that chord, so the menu acts again.
+  await clickReloadItem()
+  check('the Reload menu item works again once recording ends', (await reloadPrompts()) === 1, String(await reloadPrompts()))
 
   await win.keyboard.press('Escape')
   await settings.waitFor({ state: 'hidden' })

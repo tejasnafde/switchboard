@@ -26,6 +26,7 @@ import { configureAnalytics, attachAnalyticsCrashHooks, trackAppLaunched, regist
 import { registerPushHandlers } from './ipc/push'
 import { attachPushNotifier } from './push/registry'
 import { registerAppHandlers } from './ipc/app'
+import { isMenuCaptureActive, setMenuCapture, unlessCapturing } from './menu-capture'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
@@ -131,9 +132,9 @@ function buildAppMenu(): void {
         {
           label: 'Settings',
           accelerator: shortcutAccelerator('app.settings'),
-          click: () => {
+          click: unlessCapturing(() => {
             mainWindow?.webContents.send('app:open-settings')
-          },
+          }),
         },
         { type: 'separator' },
         { role: 'hide' },
@@ -156,9 +157,9 @@ function buildAppMenu(): void {
         {
           label: 'Open Chat Beside…',
           accelerator: shortcutAccelerator('chat.dual'),
-          click: () => {
+          click: unlessCapturing(() => {
             mainWindow?.webContents.send('app:open-chat-beside')
-          },
+          }),
         },
       ],
     },
@@ -168,12 +169,12 @@ function buildAppMenu(): void {
         {
           label: 'Reload',
           accelerator: shortcutAccelerator('app.reload'),
-          click: () => { void confirmReload(false) },
+          click: unlessCapturing(() => { void confirmReload(false) }),
         },
         {
           label: 'Force Reload',
           accelerator: shortcutAccelerator('app.force-reload'),
-          click: () => { void confirmReload(true) },
+          click: unlessCapturing(() => { void confirmReload(true) }),
         },
         { role: 'toggleDevTools' },
         { type: 'separator' },
@@ -378,6 +379,12 @@ function createWindow(): BrowserWindow {
     })
   }
 
+  // A reload, crash or close ends any recording the page had started.
+  const endCapture = () => setMenuCapture(false)
+  window.webContents.on('did-start-loading', endCapture)
+  window.webContents.on('render-process-gone', endCapture)
+  window.on('closed', endCapture)
+
   window.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
@@ -396,7 +403,8 @@ function createWindow(): BrowserWindow {
   // Intercept ⌘W / ⌘⇧W - renderer decides whether to close a tab, window, or app.
   // On macOS Ctrl+W is the shell's kill-word, so only ⌘ counts.
   window.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown') return
+    // While Settings records a shortcut, ⌘W is a key to record, not a close.
+    if (input.type !== 'keyDown' || isMenuCaptureActive()) return
     const key: ShortcutKeyInput = { key: input.key, code: input.code, metaKey: input.meta, ctrlKey: input.control, shiftKey: input.shift, altKey: input.alt }
     const shift = matchesShortcut(key, 'terminal.close-window')
     if (shift || matchesShortcut(key, 'terminal.close-tab')) {
@@ -416,6 +424,11 @@ function createWindow(): BrowserWindow {
   })
 
   // Renderer requests actual window close (after checking no panes to close)
+  // Desktop-only (bare ipcMain, never on a BackendHost), so no paired device
+  // can silence the menu.
+  ipcMain.removeAllListeners('app:shortcut-capture')
+  ipcMain.on('app:shortcut-capture', (_event, on: unknown) => setMenuCapture(on === true))
+
   ipcMain.removeAllListeners('app:close-window')
   ipcMain.on('app:close-window', () => {
     window.close()

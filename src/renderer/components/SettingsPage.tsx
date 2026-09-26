@@ -417,6 +417,7 @@ function ShortcutRecorder({ def }: { def: SettingRowDef }) {
   useEffect(() => {
     if (!recording) return
     setShortcutCapture(true)
+    window.api.setShortcutCapture?.(true)
     const stop = () => {
       setRecording(false)
       setProblem(null)
@@ -446,6 +447,7 @@ function ShortcutRecorder({ def }: { def: SettingRowDef }) {
     return () => {
       window.removeEventListener('keydown', listener, true)
       setShortcutCapture(false)
+      window.api.setShortcutCapture?.(false)
     }
   }, [recording, command, setValue])
 

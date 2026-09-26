@@ -24,6 +24,8 @@ const LOCAL_CHANNELS = new Set<string>([
   'app:close-window',
   'app:quit-and-install',
   'app:get-log-paths',
+  // The app menu to silence is this desktop's.
+  'app:shortcut-capture',
   // The machine registry is this laptop's list of remotes, not the VM's.
   ...Object.values(MachineChannels),
   // Pairing and Google minting belong to the machine the user is sitting at.

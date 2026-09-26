@@ -19,7 +19,9 @@
         "e2e/shortcut-rebinding.e2e.mjs",
         "tests/unit/settings-page-render.test.ts",
         "src/preload/index.ts",
-        "tests/unit/keyboard-overrides.test.ts"
+        "tests/unit/keyboard-overrides.test.ts",
+        "src/main/menu-capture.ts",
+        "tests/unit/menu-capture.test.ts"
       ]
     },
     "reactNativeIos": {
@@ -59,7 +61,8 @@
       "e2e/shortcut-rebinding.e2e.mjs (built app, macOS): rebinds the command palette, checks reserved and clashing chords are refused with the reason, that the new chord opens the palette and the old one does not, resets it, and that the app menu's Settings accelerator follows an override and returns on reset. 12/12 checks passed locally.",
       "tests/unit/shortcuts.test.ts: AZERTY and Dvorak record-then-match round trips through the shared eventKey rule, and stored overrides with typing, reserved or clashing chords dropped where they are applied (a stored swap is kept).",
       "tests/unit/keyboard-overrides.test.ts: a failed write reverts the renderer to the stored value, a re-read adopts a value written elsewhere and does not undo a racing write, and main's settings hook fires only after a successful write.",
-      "tests/unit/device-auth.test.ts: a phone-scoped session cannot write keyboard.overrides."
+      "tests/unit/device-auth.test.ts: a phone-scoped session cannot write keyboard.overrides.",
+      "tests/unit/menu-capture.test.ts and e2e/shortcut-rebinding.e2e.mjs: while a shortcut is being recorded the app menu's click handlers (Reload, Settings...) do nothing, so Cmd+R opens no reload prompt and does not reload the page; the menu acts again once recording ends. Capture clears on reload, crash or close."
     ],
     "hardware": [],
     "notExercised": [

@@ -808,6 +808,9 @@ const api = {
   onOpenSettings: (callback: () => void) =>
     transport.on('app:open-settings', () => callback()),
 
+  /** Settings is recording a shortcut: the app menu's items stand down meanwhile. */
+  setShortcutCapture: (on: boolean) => transport.send('app:shortcut-capture', on),
+
   /** The stored shortcut rebinds changed (main has already rebuilt its menu). */
   onKeyboardOverridesChanged: (callback: () => void) =>
     transport.on('app:keyboard-overrides-changed', () => callback()),
