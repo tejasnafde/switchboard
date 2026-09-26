@@ -25,7 +25,7 @@ import { registerDiagnosticsHandlers } from './ipc/diagnostics'
 import { configureAnalytics, attachAnalyticsCrashHooks, trackAppLaunched, registerAnalyticsHandlers } from './analytics'
 import { registerPushHandlers } from './ipc/push'
 import { attachPushNotifier } from './push/registry'
-import { registerAppHandlers } from './ipc/app'
+import { registerAppHandlers, type AppHandlerDependencies } from './ipc/app'
 import { isMenuCaptureActive, setMenuCapture, unlessCapturing } from './menu-capture'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
@@ -193,6 +193,19 @@ function applyKeyboardOverrides(): void {
   buildAppMenu()
   // The window re-reads too, so a write from anywhere reaches both.
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:keyboard-overrides-changed')
+}
+
+/**
+ * The app handlers' dependencies for every desktop registration: at startup
+ * and again when a closed window is reopened, which re-registers the handlers
+ * on a new host. One factory, so the reopened window cannot lose the menu
+ * rebuild that a rebind relies on.
+ */
+function desktopAppHandlerDeps(): AppHandlerDependencies {
+  return {
+    isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false,
+    onSettingChanged: (key) => { if (key === KEYBOARD_OVERRIDES_SETTING) applyKeyboardOverrides() },
+  }
 }
 
 // Custom protocol for onboarding tour videos. Must be registered as
@@ -685,10 +698,7 @@ app.whenReady().then(() => {
   })
 
   registerTerminalHandlers(backendHost)
-  registerAppHandlers(backendHost, {
-    isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false,
-    onSettingChanged: (key) => { if (key === KEYBOARD_OVERRIDES_SETTING) applyKeyboardOverrides() },
-  })
+  registerAppHandlers(backendHost, desktopAppHandlerDeps())
   registerPushHandlers(backendHost)
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
@@ -760,7 +770,7 @@ app.whenReady().then(() => {
         ? new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
         : new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
-      registerAppHandlers(reactivatedHost, { isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false })
+      registerAppHandlers(reactivatedHost, desktopAppHandlerDeps())
       registerPushHandlers(reactivatedHost)
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)

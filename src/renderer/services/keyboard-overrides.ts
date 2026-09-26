@@ -53,8 +53,19 @@ export async function reloadKeyboardOverrides(): Promise<void> {
   loading = Promise.resolve()
 }
 
+// Writes run one at a time: each one rewrites the whole value, so Reset all's
+// row-by-row writes must each start from the one before, and none may land
+// after a later one.
+let queue: Promise<void> = Promise.resolve()
+
 /** `bindings` replaces the defaults (`[]` unbinds); null goes back to the default. */
-export async function setKeyboardOverride(id: string, bindings: string[] | null): Promise<void> {
+export function setKeyboardOverride(id: string, bindings: string[] | null): Promise<void> {
+  const run = queue.then(() => writeOverride(id, bindings))
+  queue = run.catch((err) => log.warn(`writing the shortcut override for ${id} failed`, err))
+  return run
+}
+
+async function writeOverride(id: string, bindings: string[] | null): Promise<void> {
   await loadKeyboardOverrides()
   const next = { ...stored }
   if (bindings === null) delete next[id]

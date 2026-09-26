@@ -8,6 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 let db: string | null
 let failWrites = false
 let onGet: (() => void) | null = null
+// Resolves a write later than the next one, as a slow disk or socket would.
+let setDelays: number[] = []
+let inFlight = 0
+let maxInFlight = 0
 
 async function fresh() {
   vi.resetModules()
@@ -17,8 +21,15 @@ async function fresh() {
       settings: {
         get: async () => { onGet?.(); return db },
         set: async (_key: string, value: string) => {
-          if (failWrites) throw new Error('disk full')
-          db = value
+          inFlight += 1
+          maxInFlight = Math.max(maxInFlight, inFlight)
+          try {
+            await new Promise((r) => setTimeout(r, setDelays.shift() ?? 0))
+            if (failWrites) throw new Error('disk full')
+            db = value
+          } finally {
+            inFlight -= 1
+          }
         },
       },
     },
@@ -34,6 +45,9 @@ beforeEach(() => {
   db = null
   failWrites = false
   onGet = null
+  setDelays = []
+  inFlight = 0
+  maxInFlight = 0
 })
 
 describe('renderer shortcut overrides', () => {
@@ -56,6 +70,30 @@ describe('renderer shortcut overrides', () => {
     failWrites = false
     await s.setKeyboardOverride('app.search', [])
     expect(JSON.parse(db!)).toEqual({ 'chat.new': ['Mod+Shift+U'], 'app.search': [] })
+  })
+
+  it('Reset all: row-by-row writes run one at a time, so a slow one cannot land last', async () => {
+    db = JSON.stringify({ 'chat.new': ['Mod+Shift+U'], 'app.search': [], 'from.newer-build': ['Mod+Shift+Y'] })
+    const s = await fresh()
+    await s.loadKeyboardOverrides()
+    setDelays = [30, 0]
+    // What Reset all does: one write per changed row, fired together.
+    await Promise.all([s.setKeyboardOverride('chat.new', null), s.setKeyboardOverride('app.search', null)])
+    expect(maxInFlight).toBe(1)
+    expect(JSON.parse(db!)).toEqual({ 'from.newer-build': ['Mod+Shift+Y'] })
+    expect(s.label('chat.new')).toBe('⌘⇧O')
+  })
+
+  it('a failed write does not stop the ones queued after it', async () => {
+    const s = await fresh()
+    await s.loadKeyboardOverrides()
+    failWrites = true
+    const first = s.setKeyboardOverride('chat.new', ['Mod+Shift+U'])
+    const second = s.setKeyboardOverride('app.search', [])
+    await expect(first).rejects.toThrow('disk full')
+    failWrites = false
+    await second
+    expect(JSON.parse(db!)).toEqual({ 'app.search': [] })
   })
 
   it('adopts a value written elsewhere when told to re-read', async () => {
@@ -82,6 +120,20 @@ describe('renderer shortcut overrides', () => {
     await s.reloadKeyboardOverrides()
     await write
     expect(s.label('chat.new')).toBe('⌘⇧U')
+  })
+})
+
+describe('every desktop registration of the app handlers rebuilds the menu', () => {
+  it('passes the one deps factory at startup and on window reopen', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const main = readFileSync(join(__dirname, '../../src/main/index.ts'), 'utf8')
+    const calls = [...main.matchAll(/registerAppHandlers\(([^)]*\)?)\)/g)].map((m) => m[1])
+    // startup and the macOS reopen path
+    expect(calls.length).toBeGreaterThanOrEqual(2)
+    for (const args of calls) expect(args).toMatch(/^\w+, desktopAppHandlerDeps\(\)$/)
+    const factory = main.slice(main.indexOf('function desktopAppHandlerDeps'), main.indexOf('// Custom protocol for onboarding'))
+    expect(factory).toContain('applyKeyboardOverrides()')
   })
 })
 
