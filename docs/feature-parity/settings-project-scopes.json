@@ -57,9 +57,7 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/main/db/settings.ts",
-        "src/main/project-settings.ts",
-        "tests/unit/project-settings-backend.test.ts"
+        "src/main/db/settings.ts"
       ]
     },
     "updateRelease": {
