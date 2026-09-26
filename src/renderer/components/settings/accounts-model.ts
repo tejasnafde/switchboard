@@ -47,6 +47,23 @@ export function sortByRoomLeft(
   return [...instances].sort((a, b) => rank(b) - rank(a))
 }
 
+/**
+ * The card order while the page stays open: accounts already shown keep their
+ * place, whatever their usage says now, and only accounts new to the page are
+ * sorted (by the readings at hand) and appended. Re-sorting as each reading
+ * landed made the cards jump; the page sorts afresh the next time it opens.
+ */
+export function stableOrder(
+  shown: readonly string[],
+  instances: readonly ProviderInstance[],
+  usages: Readonly<Record<string, ProviderUsage>>,
+): ProviderInstance[] {
+  const byId = new Map(instances.map((i) => [i.id, i]))
+  const kept = shown.flatMap((id) => byId.get(id) ?? [])
+  const keptIds = new Set(kept.map((i) => i.id))
+  return [...kept, ...sortByRoomLeft(instances.filter((i) => !keptIds.has(i.id)), usages)]
+}
+
 /** "in 2 h 14 min" under a day, the date after that. */
 export function untilReset(resetsAtMs: number | null, nowMs: number): string {
   if (resetsAtMs === null) return ''
@@ -76,11 +93,16 @@ export function accountsSummary(
   instances: readonly ProviderInstance[],
   usages: Readonly<Record<string, ProviderUsage>>,
   nowMs: number,
+  listed = true,
 ): AccountsSummary {
+  // Before the account list or an account's first reading lands, an empty
+  // tile means "not yet", not "nothing to report".
+  const reading = !listed || instances.some((inst) => !usages[inst.id])
+  const pending = { value: '-', detail: 'Reading usage…' }
   const best = sortByRoomLeft(instances, usages)[0]
   const mostRoom = best && roomLeft(usages[best.id]) !== null
     ? { value: best.displayName, detail: windowSummary(usages[best.id]) }
-    : { value: '-', detail: 'No usage reported yet' }
+    : reading ? pending : { value: '-', detail: 'No usage reported yet' }
 
   let soonest: { at: number; name: string; label: string } | null = null
   for (const inst of instances) {
@@ -92,11 +114,11 @@ export function accountsSummary(
   }
   const nextReset = soonest
     ? { value: untilReset(soonest.at, nowMs), detail: `${soonest.name}, ${soonest.label}` }
-    : { value: '-', detail: 'No reset times reported' }
+    : reading ? pending : { value: '-', detail: 'No reset times reported' }
 
   const flagged = instances.filter((inst) => needsAttention(usages[inst.id]))
   const count = flagged.length
-  const attention = {
+  const attention = count === 0 && reading ? { count, ...pending } : {
     count,
     value: count === 0 ? 'None' : `${count} account${count === 1 ? '' : 's'}`,
     detail: count === 0

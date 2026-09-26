@@ -4,10 +4,10 @@
  * card's ⋯ menu; the editor dialog below is the add and edit flow.
  */
 
-import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import type { ProviderInstance } from '@shared/types'
 import type { ProviderUsage, UsageWindow } from '@shared/provider-usage'
-import { fmtResetsAt } from '@shared/provider-usage'
+import { buildWindow, fmtResetsAt } from '@shared/provider-usage'
 import { agentLabel, defaultInstanceId } from '@shared/types'
 import { providerInstanceInitials } from '@shared/provider-instance-initials'
 import {
@@ -40,7 +40,7 @@ import {
   defaultAccountId,
   needsAttention,
   readSettings,
-  sortByRoomLeft,
+  stableOrder,
   untilReset,
   type BarTone,
   type SummaryCell,
@@ -79,13 +79,16 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
   const error = useProviderInstanceStore((s) => s.error)
   const clearError = useProviderInstanceStore((s) => s.clearError)
   const instances = useProviderInstanceStore((s) => s.instances)
-  const fetchUsage = useProviderInstanceStore((s) => s.usage)
+  const loaded = useProviderInstanceStore((s) => s.loaded)
+  const usages = useProviderInstanceStore((s) => s.usages)
+  const usageLoading = useProviderInstanceStore((s) => s.usageLoading)
+  const syncUsage = useProviderInstanceStore((s) => s.syncUsage)
+  const loadUsage = useProviderInstanceStore((s) => s.loadUsage)
   const [editing, setEditing] = useState<ProviderInstance | null>(null)
   const [adding, setAdding] = useState<AgentProvider | null>(null)
-  const [usages, setUsages] = useState<Record<string, ProviderUsage>>({})
   const [stored, setStored] = useState<Record<string, string>>({})
 
-  // Usage probes can take seconds; the page may close first. The effect body
+  // The settings read can land after the page closes. The effect body
   // re-arms the flag because StrictMode runs mount, cleanup, mount.
   const mounted = useRef(true)
   useEffect(() => {
@@ -112,27 +115,23 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
     window.api.settings.set(key, value).catch((err: unknown) => log.warn(`writing ${key} failed`, err))
   }, [])
 
-  const loadUsage = useCallback<LoadUsage>(async (id, opts) => {
-    const usage = await fetchUsage(id, opts)
-    if (mounted.current) setUsages((prev) => ({ ...prev, [id]: usage }))
-  }, [fetchUsage])
-
   const enabled = instances.filter((i) => i.enabled)
 
-  // One read per account on open and after each edit (main drops its cached
-  // reading on save). Main caches for 45s, so reopening the page is free.
-  const requested = useRef(new Set<string>())
+  // Settings' prewarm already read these; this catches accounts added or
+  // edited since, since main drops its cached reading on save.
   const versions = enabled.map((i) => `${i.id}@${i.updatedAt}`).join(' ')
   useEffect(() => {
-    for (const inst of useProviderInstanceStore.getState().instances) {
-      const version = `${inst.id}@${inst.updatedAt}`
-      if (!inst.enabled || requested.current.has(version)) continue
-      requested.current.add(version)
-      void loadUsage(inst.id)
-    }
-  }, [versions, loadUsage])
+    syncUsage()
+  }, [versions, syncUsage])
 
-  const summary = accountsSummary(enabled, usages, Date.now())
+  // Recorded after commit, so a render React discards cannot fix the order.
+  const shown = useRef<string[]>([])
+  const ordered = stableOrder(shown.current, enabled, usages)
+  useLayoutEffect(() => {
+    shown.current = ordered.map((i) => i.id)
+  })
+
+  const summary = accountsSummary(enabled, usages, Date.now(), loaded)
 
   return (
     <div>
@@ -156,7 +155,7 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
 
       <Anchor def={SETTING_ROW.providers}>
         {AGENT_PROVIDERS.map((kind) => {
-          const group = sortByRoomLeft(enabled.filter((i) => i.agentType === kind), usages)
+          const group = ordered.filter((i) => i.agentType === kind)
           const starred = defaultAccountId(kind, instances, {
             scoped: stored[defaultInstanceSettingKey(kind)],
             legacy: stored[SETTING_DEFAULT_INSTANCE_ID],
@@ -171,6 +170,7 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
                   key={inst.id}
                   instance={inst}
                   usage={usages[inst.id]}
+                  refreshing={!!usageLoading[inst.id]}
                   starred={inst.id === starred}
                   model={model}
                   onSetDefault={() => writeSetting(defaultInstanceSettingKey(kind), inst.id)}
@@ -179,7 +179,7 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
                   loadUsage={loadUsage}
                 />
               ))}
-              {group.length === 0 && <div className="text-[12px] text-[var(--text-muted)]">No accounts yet.</div>}
+              {loaded && group.length === 0 && <div className="text-[12px] text-[var(--text-muted)]">No accounts yet.</div>}
             </section>
           )
         })}
@@ -207,7 +207,7 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
 
 function SummaryTile({ title, cell, alarm = false }: { title: string; cell: SummaryCell; alarm?: boolean }) {
   return (
-    <div className="min-w-0 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-[10px]">
+    <div data-summary-tile={title} className="min-w-0 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-[10px]">
       <div className="text-[11.5px] text-[var(--text-secondary)]">{title}</div>
       <div className={cn('truncate text-[18px] font-[600] tabular-nums', alarm && 'text-[var(--error)]')}>{cell.value}</div>
       <div className="truncate text-[11.5px] text-[var(--text-secondary)]" title={cell.detail}>{cell.detail}</div>
@@ -239,6 +239,7 @@ function AddAccountButton({ onPick }: { onPick: (kind: AgentProvider) => void })
 function AccountCard({
   instance,
   usage,
+  refreshing,
   starred,
   model,
   onSetDefault,
@@ -248,6 +249,7 @@ function AccountCard({
 }: {
   instance: ProviderInstance
   usage: ProviderUsage | undefined
+  refreshing: boolean
   starred: boolean
   model: string
   onSetDefault: () => void
@@ -311,13 +313,17 @@ function AccountCard({
   const failed = needsAttention(usage) && !signedOut
   const windows = usage?.status === 'ok' ? usage.windows : []
   const overage = usage?.status === 'ok' ? usage.overage.filter((o) => o.enabled) : []
-  const muted = signedOut || failed ? null : usage === undefined ? 'Loading usage…' : usage.status === 'ok' ? null : usage.message
+  // Until the first reading lands, skeleton bars hold the card at its final
+  // height. OpenCode never reports a quota, only a one-line note.
+  const skeleton = usage === undefined && instance.agentType !== 'opencode'
+  const muted = signedOut || failed ? null : usage === undefined ? (skeleton ? null : 'Loading usage…') : usage.status === 'ok' ? null : usage.message
   const identity = [usage?.plan && `Plan: ${usage.plan}`, usage?.account].filter(Boolean).join(' · ')
 
   return (
     <div
       data-account={instance.id}
-      className="mb-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-[14px] py-3"
+      aria-busy={refreshing && !skeleton}
+      className={cn('mb-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-[14px] py-3 transition-opacity', refreshing && !skeleton && 'opacity-60')}
     >
       <div className="flex items-center gap-[10px]">
         <span
@@ -354,15 +360,17 @@ function AccountCard({
           onSetModel={onSetModel}
           onEdit={onEdit}
           onTest={() => void handleTest()}
-          onRefresh={() => void run('Refreshing usage…', () => loadUsage(instance.id, { force: true }))}
+          onRefresh={() => void loadUsage(instance.id, { force: true })}
           onCopyFolder={instance.effectiveOauthDir ? () => void copy(instance.effectiveOauthDir!, `Copied ${instance.effectiveOauthDir}.`) : null}
           onDelete={isDefault(instance) ? null : () => void handleDelete()}
         />
       </div>
 
-      {windows.length > 0 && (
-        <div className="mt-[10px] grid grid-cols-2 gap-[14px]">
-          {windows.map((w) => <UsageMeter key={w.id} window={w} />)}
+      {(windows.length > 0 || skeleton) && (
+        <div aria-busy={skeleton} className="mt-[10px] grid grid-cols-2 gap-[14px]">
+          {skeleton
+            ? SKELETON_WINDOWS.map((w) => <UsageMeter key={w.id} window={w} placeholder />)
+            : windows.map((w) => <UsageMeter key={w.id} window={w} />)}
         </div>
       )}
       {overage.map((o) => (
@@ -376,8 +384,8 @@ function AccountCard({
           variant="outline"
           size="sm"
           className="mt-2"
-          disabled={busy !== null}
-          onClick={() => void run('Refreshing usage…', () => loadUsage(instance.id, { refreshWithTurn: true }))}
+          disabled={refreshing}
+          onClick={() => void loadUsage(instance.id, { refreshWithTurn: true })}
         >
           Refresh now
         </Button>
@@ -391,9 +399,23 @@ function AccountCard({
   )
 }
 
-function UsageMeter({ window: w }: { window: UsageWindow }) {
+/** Same markup as a real meter with the text hidden, so the heights match. */
+const SKELETON_WINDOWS = ['session', 'weekly'].map((id) =>
+  buildWindow({ id, label: 'Usage', kind: 'other', percent: null, resetsAtMs: null, windowMinutes: null }))
+
+function UsageMeter({ window: w, placeholder = false }: { window: UsageWindow; placeholder?: boolean }) {
   const tone = barTone(w)
   const reset = untilReset(w.resetsAtMs, Date.now())
+  if (placeholder) {
+    return (
+      <div aria-hidden="true">
+        <div className="flex text-[12px]">
+          <span className="w-[45%] rounded-[3px] bg-[var(--bg-tertiary)] text-transparent animate-[sb-pulse_1.4s_ease-in-out_infinite]">{w.label}</span>
+        </div>
+        <div className="mt-[5px] h-[7px] rounded-[4px] bg-[var(--bg-tertiary)] animate-[sb-pulse_1.4s_ease-in-out_infinite]" />
+      </div>
+    )
+  }
   return (
     <div>
       <div className="flex justify-between gap-2 text-[12px] tabular-nums">
