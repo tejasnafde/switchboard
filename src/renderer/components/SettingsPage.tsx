@@ -23,13 +23,13 @@ import { useSettingValues, type SettingValues } from './settings/setting-values'
 import {
   SETTINGS_PAGES,
   SETTING_ROW,
-  SETTING_ROWS,
   PRIVACY_POLICY_URL,
   changedCountByPage,
   defaultValueLabel,
   isSettingChanged,
   pageTitle,
   searchSettingRows,
+  shortcutRows,
   type SettingRowDef,
   type SettingsPageId,
 } from './settings/settings-rows'
@@ -38,6 +38,7 @@ import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Button } from './ui/button'
 import { onEscapeFirst } from './ui/escape-first'
 import { cn } from '../lib/utils'
+import { chordFromEvent, formatBinding, reservedShortcutReason, setShortcutCapture, shortcutClashesFor } from '@shared/shortcuts'
 
 const log = createRendererLogger('component:settings')
 
@@ -122,7 +123,8 @@ function SettingsBody({
 }) {
   const settingValues = useSettingValues()
   const changed = useMemo(() => changedCountByPage(settingValues.values), [settingValues.values])
-  const results = useMemo(() => searchSettingRows(query), [query])
+  // Values in the deps: a rebind changes which keys a shortcut row is found by.
+  const results = useMemo(() => searchSettingRows(query), [query, settingValues.values])
   const searching = query.trim() !== ''
   const context = useMemo(() => ({ ...settingValues, highlight }), [settingValues, highlight])
 
@@ -351,20 +353,115 @@ function ChatPage() {
 }
 
 function KeyboardPage() {
-  const rows = SETTING_ROWS.filter((row) => row.page === 'keyboard')
-  const groups = [...new Set(rows.map((row) => row.section))]
+  const { values, set } = useContext(SettingsContext)
+  const [filter, setFilter] = useState('')
+  // Rebuilt each render so labels and filtering follow the keys in effect.
+  const rows = shortcutRows()
+  const shown = filter.trim() ? searchSettingRows(filter, rows) : rows
+  const changed = rows.filter((row) => isSettingChanged(row, values))
+  const groups = [...new Set(shown.map((row) => row.section))]
   return (
     <>
+      <div className="mb-3 flex items-center gap-2.5">
+        <input
+          type="search"
+          aria-label="Filter shortcuts"
+          placeholder="Filter shortcuts"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          className="min-w-0 flex-1 rounded-[7px] border border-[var(--border)] bg-[var(--bg-surface)] px-2 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:border-[var(--border-focus)]"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={changed.length === 0}
+          onClick={() => { for (const row of changed) set(row.id, row.defaultValue!) }}
+        >
+          Reset all
+        </Button>
+      </div>
+      {groups.length === 0 && <p className="text-[12.5px] text-[var(--text-secondary)]">No shortcut matches.</p>}
       {groups.map((group) => (
         <Section key={group} title={group} card>
-          {rows.filter((row) => row.section === group).map((def) => (
+          {shown.filter((row) => row.section === group).map((def) => (
             <SettingRow key={def.id} def={def}>
-              <Kbd>{def.keys}</Kbd>
+              {def.defaultValue !== undefined ? <ShortcutRecorder def={def} /> : <Kbd>{def.keys}</Kbd>}
             </SettingRow>
           ))}
         </Section>
       ))}
     </>
+  )
+}
+
+/**
+ * Click, then press the new keys. Escape cancels, Backspace unbinds. A chord
+ * the OS or the terminal owns, or one another command already uses, is
+ * refused with the reason and recording carries on.
+ */
+function ShortcutRecorder({ def }: { def: SettingRowDef }) {
+  const [value, setValue] = useRowValue(def)
+  const [recording, setRecording] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const command = def.command!
+
+  useEffect(() => {
+    if (!recording) return
+    setShortcutCapture(true)
+    const stop = () => {
+      setRecording(false)
+      setProblem(null)
+    }
+    // Window capture runs ahead of the app's shortcuts and the dialog's Escape.
+    const listener = (event: KeyboardEvent) => {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      const bare = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+      if (bare && event.key === 'Escape') return stop()
+      if (bare && event.key === 'Backspace') {
+        setValue('')
+        return stop()
+      }
+      const chord = chordFromEvent(event)
+      if (!chord) return
+      const reason = reservedShortcutReason(chord)
+      if (reason) return setProblem(`${formatBinding(chord)}: ${reason}`)
+      const clashes = shortcutClashesFor(command, chord)
+      if (clashes.length > 0) {
+        return setProblem(`${formatBinding(chord)} is already ${clashes.map((c) => c.label).join(', ')}. Change that one first.`)
+      }
+      setValue(chord)
+      stop()
+    }
+    window.addEventListener('keydown', listener, true)
+    return () => {
+      window.removeEventListener('keydown', listener, true)
+      setShortcutCapture(false)
+    }
+  }, [recording, command, setValue])
+
+  const first = value === undefined ? undefined : value.split(' ')[0]
+  const label = first === undefined ? def.keys : first ? formatBinding(first) : ''
+  return (
+    <div className="flex shrink-0 flex-col items-end gap-1">
+      <button
+        type="button"
+        aria-label={`Change the shortcut for ${def.label}`}
+        aria-pressed={recording}
+        title="Click, then press the new keys. Escape cancels, Backspace unbinds."
+        onClick={() => { setRecording((r) => !r); setProblem(null) }}
+        onBlur={() => { setRecording(false); setProblem(null) }}
+        className={cn(
+          'cursor-pointer whitespace-nowrap rounded-[5px] border border-b-2 px-1.5 py-[1px] text-[11.5px] outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          recording
+            ? 'border-[var(--border-focus)] bg-[var(--accent-subtle)] text-[var(--text-primary)]'
+            : 'border-[var(--border)] bg-[var(--bg-tertiary)] [font-family:var(--font-mono)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+        )}
+      >
+        {recording ? 'Press the new shortcut' : label || <span className="text-[var(--text-muted)]">Not set</span>}
+      </button>
+      {problem && <div role="alert" className="max-w-[300px] text-right text-[11.5px] text-[var(--warning)]">{problem}</div>}
+    </div>
   )
 }
 

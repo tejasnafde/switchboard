@@ -17,7 +17,9 @@ import {
   RECENT_SESSION_LIMIT_SETTING,
   parseRecentSessionLimit,
 } from '../sidebar/recent-session-limit'
-import { SETTING_ROW } from './settings-rows'
+import { getShortcut, SHORTCUTS, isRebindable } from '@shared/shortcuts'
+import { loadKeyboardOverrides, setKeyboardOverride } from '../../services/keyboard-overrides'
+import { SETTING_ROW, shortcutValue } from './settings-rows'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('settings:values')
@@ -79,6 +81,13 @@ const BINDINGS: Record<string, Binding> = {
     read: async () => flag((await window.api.settings.get('tour.autoplay')) !== 'false'),
     write: (v) => window.api.settings.set('tour.autoplay', v),
   },
+  ...Object.fromEntries(SHORTCUTS.filter(isRebindable).map((c): [string, Binding] => [`keyboard.${c.id}`, {
+    read: async () => {
+      await loadKeyboardOverrides()
+      return shortcutValue(getShortcut(c.id).bindings)
+    },
+    write: (v) => setKeyboardOverride(c.id, v === shortcutValue(c.bindings) ? null : v.split(' ').filter(Boolean)),
+  }])),
 }
 
 export interface SettingValues {

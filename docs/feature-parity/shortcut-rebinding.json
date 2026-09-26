@@ -1,0 +1,63 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "shortcut-rebinding",
+  "summary": "Let the user change desktop keyboard shortcuts from Settings > Keyboard: record a new chord per command (Escape cancels, Backspace unbinds), a Changed marker and Reset per row, Reset all, and refusal of chords the OS, the terminal or typing owns or that another command already uses. Overrides are stored as one settings value (keyboard.overrides) and applied to the registry's active list, which every matcher, the app menu and the Cmd+W intercept read; the main process rebuilds the menu when the value is written.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/SettingsPage.tsx",
+        "src/renderer/components/settings/settings-rows.ts",
+        "src/renderer/components/settings/setting-values.ts",
+        "src/renderer/services/keyboard-overrides.ts",
+        "src/renderer/services/global-keybindings.ts",
+        "src/renderer/App.tsx",
+        "src/main/index.ts",
+        "src/main/ipc/app.ts",
+        "tests/unit/settings-rows.test.ts",
+        "e2e/shortcut-rebinding.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native client has no keyboard shortcuts and no Keyboard settings page: nothing under apps/mobile/src handles hardware key events, so there is nothing to rebind. The overrides value lives in the desktop's settings table and the phone never reads it."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android client handles no hardware key events (no KeyEvent or onKeyEvent under apps/android/app/src/main) and has no shortcuts page, so there is nothing to rebind."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/shortcuts.ts",
+        "tests/unit/shortcuts.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/shortcuts.ts",
+        "src/renderer/services/keyboard-overrides.ts",
+        "tests/unit/shortcuts.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Desktop code change only, with no schema migration: the overrides are one JSON value in the existing settings key/value table. An older build ignores the key; a build that meets an override for an unknown or fixed command id drops and logs it and keeps it in the stored value, so older and newer builds share one DB. No package identity, signing, deep link, update channel or native module change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/shortcuts.test.ts: merge of overrides over defaults, [] as unbound, unknown/fixed/malformed ids dropped and reported, unparseable JSON falls back to defaults, capture suppresses matching, recorded chords per platform (physical key under Alt and Shift) and that they match the same press, reserved-key refusal on macOS and elsewhere, clash refusal against defaults and stored overrides.",
+      "tests/unit/settings-rows.test.ts: rebindable rows carry a default to mark Changed, fixed rows do not, search finds the effective key after a rebind.",
+      "e2e/shortcut-rebinding.e2e.mjs (built app, macOS): rebinds the command palette, checks reserved and clashing chords are refused with the reason, that the new chord opens the palette and the old one does not, resets it, and that the app menu's Settings accelerator follows an override and returns on reset. 12/12 checks passed locally."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Windows and Linux builds were not run; the Ctrl-as-Mod recording and the reserved list there are covered by unit tests only.",
+      "A native menu accelerator firing from a real key press after a rebind was not driven; the e2e reads the rebuilt menu's accelerator instead.",
+      "With SWITCHBOARD_BACKEND_URL pointing at a remote backend, settings writes go to that backend, so the local main process does not rebuild its menu; renderer-side shortcuts still follow the override."
+    ]
+  }
+}

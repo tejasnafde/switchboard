@@ -139,6 +139,8 @@ export interface AppHandlerDependencies {
   conversationFork?: Pick<ConversationForkCoordinator, 'createOrGet' | 'get'>
   /** True while the thread's provider is mid-turn; see `ProviderRegistry.isTurnInFlight`. */
   isTurnInFlight?: (threadId: string) => boolean
+  /** After a settings write, for values the main process applies live. */
+  onSettingChanged?: (key: string) => void
 }
 
 export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependencies = {}): void {
@@ -252,8 +254,14 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
 
   // Settings
   host.handle(AppChannels.SETTINGS_GET, (key: string) => getSetting(key))
-  host.handle(AppChannels.SETTINGS_SET, (key: string, value: string) => setSetting(key, value))
-  host.handle('settings:remove', (key: string) => removeSetting(key))
+  host.handle(AppChannels.SETTINGS_SET, (key: string, value: string) => {
+    setSetting(key, value)
+    deps.onSettingChanged?.(key)
+  })
+  host.handle('settings:remove', (key: string) => {
+    removeSetting(key)
+    deps.onSettingChanged?.(key)
+  })
 
   // Load persisted projects on renderer request
   host.handle(AppChannels.GET_PROJECTS, async () => {
