@@ -1,5 +1,5 @@
 /**
- * Pure display/default helpers for ProvidersTab.tsx's credential-home
+ * Pure display/default helpers for AccountsPanel.tsx's credential-home
  * display and new-instance auth-mode defaults. A path is only ever shown as
  * a path here - never inferred as an account identity, and never sourced
  * from an env value - so nothing here can leak a secret or an account

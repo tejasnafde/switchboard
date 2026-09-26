@@ -1,10 +1,13 @@
 /**
- * Providers tab - CRUD UI for named provider instances per agent kind.
+ * Accounts & models: one card per provider instance, grouped by agent and
+ * sorted by the room left, under a summary strip. Every action sits in the
+ * card's ⋯ menu; the editor dialog below is the add and edit flow.
  */
 
-import { useEffect, useRef, useState } from 'react'
-import type { AgentType, ProviderInstance } from '@shared/types'
-import type { ProviderUsage } from '@shared/provider-usage'
+import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import type { ProviderInstance } from '@shared/types'
+import type { ProviderUsage, UsageWindow } from '@shared/provider-usage'
+import { fmtResetsAt } from '@shared/provider-usage'
 import { agentLabel, defaultInstanceId } from '@shared/types'
 import { providerInstanceInitials } from '@shared/provider-instance-initials'
 import {
@@ -13,8 +16,9 @@ import {
   oauthLoginCommand,
   suggestedOauthDir,
 } from '@shared/provider-auth-format'
+import { defaultInstanceSettingKey, defaultModelSettingKey, SETTING_DEFAULT_INSTANCE_ID } from '@shared/session-defaults'
+import { defaultModelFor, modelsForAgent } from '@shared/models'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
-import { ProviderUsagePanel } from './ProviderUsagePanel'
 import type { ProviderInstanceUpsertInput } from '../../../preload'
 import {
   credentialHomeDisplay,
@@ -24,8 +28,25 @@ import type { AgentProvider } from '@shared/types'
 import { AGENT_PROVIDERS } from '@shared/types'
 import { confirm } from '../ui/confirm'
 import { onEscapeFirst } from '../ui/escape-first'
+import { Button } from '../ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { cn } from '../../lib/utils'
+import { createRendererLogger } from '../../logger'
+import { SETTING_ROW, type SettingRowDef } from './settings-rows'
+import {
+  accountsSummary,
+  barTone,
+  credentialSummary,
+  defaultAccountId,
+  needsAttention,
+  readSettings,
+  sortByRoomLeft,
+  untilReset,
+  type BarTone,
+  type SummaryCell,
+} from './accounts-model'
 
-const AGENT_KINDS = AGENT_PROVIDERS
+const log = createRendererLogger('settings:accounts')
 
 const DEFAULT_ACCENT_PALETTE = [
   '#ff8a3d',
@@ -36,120 +57,137 @@ const DEFAULT_ACCENT_PALETTE = [
   '#ffd23d',
 ]
 
+const TONE_COLOR: Record<BarTone, string> = {
+  ok: 'var(--success)',
+  warn: 'var(--warning)',
+  bad: 'var(--error)',
+}
+
+const SETTING_KEYS = [
+  SETTING_DEFAULT_INSTANCE_ID,
+  ...AGENT_PROVIDERS.flatMap((kind) => [defaultInstanceSettingKey(kind), defaultModelSettingKey(kind)]),
+]
+
+type LoadUsage = (id: string, opts?: { force?: boolean; refreshWithTurn?: boolean }) => Promise<void>
+
 function isDefault(inst: ProviderInstance): boolean {
   return inst.id === defaultInstanceId(inst.agentType)
 }
 
-export function ProvidersTab() {
-  const loaded = useProviderInstanceStore((s) => s.loaded)
+export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: SettingRowDef; children: ReactNode }> }) {
   const refresh = useProviderInstanceStore((s) => s.refresh)
   const error = useProviderInstanceStore((s) => s.error)
   const clearError = useProviderInstanceStore((s) => s.clearError)
-  const forAgent = useProviderInstanceStore((s) => s.forAgent)
+  const instances = useProviderInstanceStore((s) => s.instances)
+  const fetchUsage = useProviderInstanceStore((s) => s.usage)
   const [editing, setEditing] = useState<ProviderInstance | null>(null)
   const [adding, setAdding] = useState<AgentProvider | null>(null)
+  const [usages, setUsages] = useState<Record<string, ProviderUsage>>({})
+  const [stored, setStored] = useState<Record<string, string>>({})
+
+  // Usage probes can take seconds; the page may close first. The effect body
+  // re-arms the flag because StrictMode runs mount, cleanup, mount.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+
+  // Always re-list: another client or the composer may have changed them.
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
 
   useEffect(() => {
-    if (!loaded) refresh()
-  }, [loaded, refresh])
+    void readSettings(SETTING_KEYS, (key) => window.api.settings.get(key)).then(({ values, failed }) => {
+      for (const { key, reason } of failed) log.warn(`reading ${key} failed`, reason)
+      if (!mounted.current) return
+      // A pick made before the read landed wins.
+      setStored((prev) => ({ ...values, ...prev }))
+    })
+  }, [])
+
+  const writeSetting = useCallback((key: string, value: string) => {
+    setStored((prev) => ({ ...prev, [key]: value }))
+    window.api.settings.set(key, value).catch((err: unknown) => log.warn(`writing ${key} failed`, err))
+  }, [])
+
+  const loadUsage = useCallback<LoadUsage>(async (id, opts) => {
+    const usage = await fetchUsage(id, opts)
+    if (mounted.current) setUsages((prev) => ({ ...prev, [id]: usage }))
+  }, [fetchUsage])
+
+  const enabled = instances.filter((i) => i.enabled)
+
+  // One read per account on open and after each edit (main drops its cached
+  // reading on save). Main caches for 45s, so reopening the page is free.
+  const requested = useRef(new Set<string>())
+  const versions = enabled.map((i) => `${i.id}@${i.updatedAt}`).join(' ')
+  useEffect(() => {
+    for (const inst of useProviderInstanceStore.getState().instances) {
+      const version = `${inst.id}@${inst.updatedAt}`
+      if (!inst.enabled || requested.current.has(version)) continue
+      requested.current.add(version)
+      void loadUsage(inst.id)
+    }
+  }, [versions, loadUsage])
+
+  const summary = accountsSummary(enabled, usages, Date.now())
 
   return (
     <div>
-      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.6 }}>
-        Each agent kind can have multiple named credential sets - useful for
-        switching between work / personal accounts without juggling shell env.
-        Env values are encrypted at rest via Electron safeStorage; the
-        renderer never sees decrypted secrets.
-      </div>
+      <Anchor def={SETTING_ROW.accountsSummary}>
+        <div className="mb-[14px] grid grid-cols-3 gap-[10px]">
+          <SummaryTile title="Most room left" cell={summary.mostRoom} />
+          <SummaryTile title="Next reset" cell={summary.nextReset} />
+          <SummaryTile title="Needs attention" cell={summary.attention} alarm={summary.attention.count > 0} />
+        </div>
+      </Anchor>
 
       {error && (
         <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '10px',
-            padding: '8px 10px',
-            marginBottom: '12px',
-            borderRadius: '4px',
-            border: '1px solid var(--danger, #d04848)',
-            background: 'rgba(208, 72, 72, 0.08)',
-            fontSize: '11px',
-            color: 'var(--text-primary)',
-          }}
           role="alert"
+          className="mb-3 flex items-start gap-[10px] rounded-[6px] border border-[var(--error)] px-[10px] py-2 text-[12px]"
         >
-          <span style={{ flex: 1, lineHeight: 1.5 }}>{error}</span>
-          <button
-            onClick={clearError}
-            style={{
-              fontSize: '11px',
-              padding: '2px 6px',
-              border: '1px solid var(--border)',
-              borderRadius: '3px',
-              background: 'transparent',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-            }}
-          >
-            Dismiss
-          </button>
+          <span className="flex-1 leading-[1.5]">{error}</span>
+          <Button variant="outline" size="sm" onClick={clearError}>Dismiss</Button>
         </div>
       )}
 
-      {AGENT_KINDS.map((kind) => {
-        const kindInstances = forAgent(kind)
-
-        return (
-          <div
-            key={kind}
-            style={{
-              marginBottom: '18px',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
-              padding: '12px 14px',
-              background: 'var(--bg-tertiary)',
-            }}
-          >
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '10px',
-            }}>
-              <div style={{ fontSize: '12px', fontWeight: 600 }}>{agentLabel(kind)}</div>
-              <button
-                onClick={() => setAdding(kind)}
-                style={{
-                  fontSize: '11px',
-                  padding: '4px 10px',
-                  border: '1px solid var(--border)',
-                  borderRadius: '4px',
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                }}
-              >
-                + Add Instance
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {kindInstances.map((inst) => (
-                <ProviderInstanceCard
+      <Anchor def={SETTING_ROW.providers}>
+        {AGENT_PROVIDERS.map((kind) => {
+          const group = sortByRoomLeft(enabled.filter((i) => i.agentType === kind), usages)
+          const starred = defaultAccountId(kind, instances, {
+            scoped: stored[defaultInstanceSettingKey(kind)],
+            legacy: stored[SETTING_DEFAULT_INSTANCE_ID],
+          })
+          const modelKey = defaultModelSettingKey(kind)
+          const model = stored[modelKey] ?? defaultModelFor(kind)
+          return (
+            <section key={kind} className="mb-[18px]">
+              <h3 className="mb-2 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]">{agentLabel(kind)}</h3>
+              {group.map((inst) => (
+                <AccountCard
                   key={inst.id}
                   instance={inst}
+                  usage={usages[inst.id]}
+                  starred={inst.id === starred}
+                  model={model}
+                  onSetDefault={() => writeSetting(defaultInstanceSettingKey(kind), inst.id)}
+                  onSetModel={(id) => writeSetting(modelKey, id)}
                   onEdit={() => setEditing(inst)}
+                  loadUsage={loadUsage}
                 />
               ))}
-              {kindInstances.length === 0 && (
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  No instances yet.
-                </div>
-              )}
-            </div>
-          </div>
-        )
-      })}
+              {group.length === 0 && <div className="text-[12px] text-[var(--text-muted)]">No accounts yet.</div>}
+            </section>
+          )
+        })}
+      </Anchor>
+
+      <Anchor def={SETTING_ROW.addAccount}>
+        <AddAccountButton onPick={setAdding} />
+      </Anchor>
 
       {editing && (
         <ProviderInstanceDialog
@@ -167,210 +205,276 @@ export function ProvidersTab() {
   )
 }
 
-function ProviderInstanceCard({
+function SummaryTile({ title, cell, alarm = false }: { title: string; cell: SummaryCell; alarm?: boolean }) {
+  return (
+    <div className="min-w-0 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-[10px]">
+      <div className="text-[11.5px] text-[var(--text-secondary)]">{title}</div>
+      <div className={cn('truncate text-[18px] font-[600] tabular-nums', alarm && 'text-[var(--error)]')}>{cell.value}</div>
+      <div className="truncate text-[11.5px] text-[var(--text-secondary)]" title={cell.detail}>{cell.detail}</div>
+    </div>
+  )
+}
+
+const menuItemClass = 'flex w-full cursor-pointer items-center justify-between rounded-[5px] border-0 bg-transparent px-2 py-[5px] text-left text-[12.5px] text-[var(--text-primary)] outline-none hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]'
+const menuSurfaceClass = 'sb-floating-surface z-[1200] w-[230px] rounded-[8px] border border-[var(--border)] p-1 shadow-[0_12px_30px_rgba(0,0,0,0.45)]!'
+
+function AddAccountButton({ onPick }: { onPick: (kind: AgentProvider) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm">+ Add account</Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className={menuSurfaceClass}>
+        {AGENT_PROVIDERS.map((kind) => (
+          <button key={kind} type="button" className={menuItemClass} onClick={() => { setOpen(false); onPick(kind) }}>
+            {agentLabel(kind)}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function AccountCard({
   instance,
+  usage,
+  starred,
+  model,
+  onSetDefault,
+  onSetModel,
   onEdit,
+  loadUsage,
 }: {
   instance: ProviderInstance
+  usage: ProviderUsage | undefined
+  starred: boolean
+  model: string
+  onSetDefault: () => void
+  onSetModel: (id: string) => void
   onEdit: () => void
+  loadUsage: LoadUsage
 }) {
   const remove = useProviderInstanceStore((s) => s.remove)
   const test = useProviderInstanceStore((s) => s.test)
-  const fetchUsage = useProviderInstanceStore((s) => s.usage)
-  const accent = instance.accentColor ?? 'var(--accent)'
-  const initials = providerInstanceInitials(instance.displayName)
-  const def = isDefault(instance)
-  const [probe, setProbe] = useState<{ ok: boolean; message: string } | null>(null)
-  const [probing, setProbing] = useState(false)
-  const [usage, setUsage] = useState<ProviderUsage | null>(null)
-  const [usageOpen, setUsageOpen] = useState(false)
-  const [usageLoading, setUsageLoading] = useState(false)
-
-  // A Codex probe can run for seconds; the Settings modal may close first.
-  // The effect body must re-arm the flag: StrictMode runs mount -> cleanup ->
-  // mount, and refs survive that, so a cleanup-only effect would leave this
-  // false for the component's whole life and swallow every setState.
+  const [note, setNote] = useState<{ ok: boolean; message: string } | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
 
-  async function handleTest() {
-    setProbing(true)
-    setProbe(null)
+  async function run(label: string, task: () => Promise<void>) {
+    setBusy(label)
     try {
-      const result = await test(instance.id)
-      if (mounted.current) setProbe(result)
+      await task()
     } finally {
-      if (mounted.current) setProbing(false)
+      if (mounted.current) setBusy(null)
     }
   }
 
-  async function loadUsage(opts?: { force?: boolean; refreshWithTurn?: boolean }) {
-    setUsageLoading(true)
+  const handleTest = () => run('Testing the sign-in…', async () => {
+    setNote(null)
+    const result = await test(instance.id)
+    if (mounted.current) setNote(result)
+  })
+
+  async function copy(text: string, done: string) {
     try {
-      const result = await fetchUsage(instance.id, opts)
-      if (mounted.current) setUsage(result)
-    } finally {
-      if (mounted.current) setUsageLoading(false)
+      await navigator.clipboard.writeText(text)
+      setNote({ ok: true, message: done })
+    } catch (err) {
+      log.warn('clipboard write failed', err)
+      setNote({ ok: false, message: `Copy failed: ${text}` })
     }
   }
 
-  function handleUsageClick() {
-    if (usageOpen) {
-      setUsageOpen(false)
+  function signInAgain() {
+    const command = usage?.command || oauthLoginCommand(instance.agentType, instance.effectiveOauthDir ?? '')
+    if (!command) {
+      onEdit()
       return
     }
-    setUsageOpen(true)
-    if (!usage) void loadUsage()
+    void copy(command, `Copied "${command}". Run it in a terminal, then test the sign-in.`)
   }
+
+  async function handleDelete() {
+    if (await confirm({ title: `Delete "${instance.displayName}"?`, body: 'Its saved credentials are removed from Switchboard.', confirmLabel: 'Delete', destructive: true })) {
+      remove(instance.id).catch((err: unknown) => log.warn('delete failed', err))
+    }
+  }
+
+  const home = credentialHomeDisplay(instance.effectiveOauthDir, instance.effectiveOauthDirSource)
+  const modelLabel = modelsForAgent(instance.agentType).find((m) => m.id === model)?.label ?? model
+  const signedOut = usage?.status === 'unauthenticated'
+  const failed = needsAttention(usage) && !signedOut
+  const windows = usage?.status === 'ok' ? usage.windows : []
+  const overage = usage?.status === 'ok' ? usage.overage.filter((o) => o.enabled) : []
+  const muted = signedOut || failed ? null : usage === undefined ? 'Loading usage…' : usage.status === 'ok' ? null : usage.message
+  const identity = [usage?.plan && `Plan: ${usage.plan}`, usage?.account].filter(Boolean).join(' · ')
 
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        padding: '8px 10px',
-        border: '1px solid var(--border)',
-        borderRadius: '6px',
-        background: 'var(--bg-secondary)',
-        flexWrap: 'wrap',
-      }}
+      data-account={instance.id}
+      className="mb-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-[14px] py-3"
     >
-      <div
-        style={{
-          width: '32px',
-          height: '32px',
-          borderRadius: '50%',
-          background: accent,
-          color: '#fff',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '11px',
-          fontWeight: 600,
-          flexShrink: 0,
-        }}
-      >
-        {initials}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '12px', fontWeight: 500 }}>
-          {instance.displayName}
-          {def && (
-            <span style={{ marginLeft: '6px', fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>
-              (default)
-            </span>
-          )}
-        </div>
-        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
-          {instance.authMode === 'oauth_dir'
-            ? `OAuth dir: ${instance.oauthDir || '-'}`
-            : instance.envKeys.length > 0
-              ? instance.envKeys.map((k) => `${k} ●●●`).join(' · ')
-              : 'No env overrides (uses shell / process env)'}
-        </div>
-        {(instance.agentType === 'codex' || instance.agentType === 'claude-code') && (() => {
-          const home = credentialHomeDisplay(instance.effectiveOauthDir, instance.effectiveOauthDirSource)
-          return (
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Credential home: <code style={{ fontFamily: 'var(--font-mono)' }}>{home.text}</code>
-              {home.warning && (
-                <span style={{ color: 'var(--warning, #d29922)', marginLeft: '6px' }}>
-                  ⚠ {home.warning}
-                </span>
-              )}
-            </div>
-          )
-        })()}
-        {probe && (
-          <div
-            style={{
-              fontSize: '10px',
-              marginTop: '4px',
-              color: probe.ok ? 'var(--success, #3fb950)' : 'var(--danger, #d04848)',
-              wordBreak: 'break-word',
-            }}
-          >
-            {probe.ok ? '✓ ' : '✗ '}{probe.message}
-          </div>
-        )}
-      </div>
-      <button
-        onClick={handleUsageClick}
-        aria-expanded={usageOpen}
-        style={{
-          fontSize: '11px',
-          padding: '3px 8px',
-          border: '1px solid var(--border)',
-          borderRadius: '4px',
-          background: 'transparent',
-          color: 'var(--text-secondary)',
-          cursor: 'pointer',
-        }}
-      >
-        {usageLoading && !usage ? 'Loading…' : usageOpen ? 'Usage ⌃' : 'Usage'}
-      </button>
-      <button
-        onClick={handleTest}
-        disabled={probing}
-        style={{
-          fontSize: '11px',
-          padding: '3px 8px',
-          border: '1px solid var(--border)',
-          borderRadius: '4px',
-          background: 'transparent',
-          color: 'var(--text-secondary)',
-          cursor: probing ? 'default' : 'pointer',
-        }}
-      >
-        {probing ? 'Testing…' : 'Test'}
-      </button>
-      <button
-        onClick={onEdit}
-        style={{
-          fontSize: '11px',
-          padding: '3px 8px',
-          border: '1px solid var(--border)',
-          borderRadius: '4px',
-          background: 'transparent',
-          color: 'var(--text-primary)',
-          cursor: 'pointer',
-        }}
-      >
-        Edit
-      </button>
-      {!def && (
-        <button
-          onClick={async () => {
-            if (await confirm({ title: `Delete instance "${instance.displayName}"?`, confirmLabel: 'Delete', destructive: true })) {
-              void remove(instance.id)
-            }
-          }}
-          style={{
-            fontSize: '11px',
-            padding: '3px 8px',
-            border: '1px solid var(--border)',
-            borderRadius: '4px',
-            background: 'transparent',
-            color: 'var(--danger, #d04848)',
-            cursor: 'pointer',
-          }}
+      <div className="flex items-center gap-[10px]">
+        <span
+          aria-hidden="true"
+          className="flex size-[30px] shrink-0 items-center justify-center rounded-[8px] text-[11px] font-[700] text-white"
+          style={{ background: instance.accentColor ?? 'var(--accent)' }}
         >
-          Delete
-        </button>
-      )}
-      {usageOpen && (
-        <ProviderUsagePanel
-          usage={usage}
-          loading={usageLoading}
-          onRefresh={() => void loadUsage({ force: true })}
-          onRefreshWithTurn={() => void loadUsage({ refreshWithTurn: true })}
+          {providerInstanceInitials(instance.displayName)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-[500]" title={identity || undefined}>
+            {instance.displayName}
+            {starred && <span title="Default account" aria-label="Default account" className="ml-1 text-[12px] text-[var(--warning)]">★</span>}
+          </div>
+          <div className="truncate text-[12px] text-[var(--text-secondary)]">
+            {signedOut ? (
+              <><span className="text-[var(--error)]">Signed out</span>{usage?.message && ` · ${usage.message}`}</>
+            ) : failed ? (
+              <span className="text-[var(--error)]">{usage?.message ?? 'Usage could not be read'}</span>
+            ) : (
+              <>
+                {modelLabel} · <span data-credential>{credentialSummary(instance)}</span>
+                {home.warning && !isDefault(instance) && <span className="text-[var(--warning)]"> · {home.warning}</span>}
+              </>
+            )}
+          </div>
+        </div>
+        {signedOut && <Button size="sm" onClick={signInAgain}>Sign in again</Button>}
+        <AccountMenu
+          instance={instance}
+          starred={starred}
+          model={model}
+          onSetDefault={onSetDefault}
+          onSetModel={onSetModel}
+          onEdit={onEdit}
+          onTest={() => void handleTest()}
+          onRefresh={() => void run('Refreshing usage…', () => loadUsage(instance.id, { force: true }))}
+          onCopyFolder={instance.effectiveOauthDir ? () => void copy(instance.effectiveOauthDir!, `Copied ${instance.effectiveOauthDir}.`) : null}
+          onDelete={isDefault(instance) ? null : () => void handleDelete()}
         />
+      </div>
+
+      {windows.length > 0 && (
+        <div className="mt-[10px] grid grid-cols-2 gap-[14px]">
+          {windows.map((w) => <UsageMeter key={w.id} window={w} />)}
+        </div>
+      )}
+      {overage.map((o) => (
+        <div key={o.id} className="mt-2 text-[12px] text-[var(--text-secondary)]">
+          {[o.label, o.usedPercent !== null && `${Math.round(o.usedPercent)}%`, o.detail, o.blockedReason?.replace(/_/g, ' ')].filter(Boolean).join(' · ')}
+        </div>
+      ))}
+      {muted && <div className="mt-2 text-[12px] text-[var(--text-muted)]">{muted}</div>}
+      {usage?.status === 'refresh-pending' && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2"
+          disabled={busy !== null}
+          onClick={() => void run('Refreshing usage…', () => loadUsage(instance.id, { refreshWithTurn: true }))}
+        >
+          Refresh now
+        </Button>
+      )}
+      {(busy || note) && (
+        <div className={cn('mt-2 break-words text-[12px]', !busy && note && !note.ok ? 'text-[var(--error)]' : 'text-[var(--text-muted)]')}>
+          {busy ?? note?.message}
+        </div>
       )}
     </div>
+  )
+}
+
+function UsageMeter({ window: w }: { window: UsageWindow }) {
+  const tone = barTone(w)
+  const reset = untilReset(w.resetsAtMs, Date.now())
+  return (
+    <div>
+      <div className="flex justify-between gap-2 text-[12px] tabular-nums">
+        <span>{w.label} · {w.usedPercent === null ? '-' : `${Math.round(w.usedPercent)}%`}</span>
+        {reset && (
+          <span title={fmtResetsAt(w.resetsAtMs)} style={{ color: tone === 'ok' ? 'var(--text-secondary)' : TONE_COLOR[tone] }}>
+            resets {reset}
+          </span>
+        )}
+      </div>
+      <div
+        role="progressbar"
+        aria-label={w.label}
+        aria-valuenow={w.usedPercent ?? undefined}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        className="mt-[5px] h-[7px] overflow-hidden rounded-[4px] bg-[var(--bg-tertiary)]"
+      >
+        <div className="h-full rounded-[4px]" style={{ width: `${w.usedPercent ?? 0}%`, background: TONE_COLOR[tone] }} />
+      </div>
+    </div>
+  )
+}
+
+function AccountMenu({
+  instance,
+  starred,
+  model,
+  onSetDefault,
+  onSetModel,
+  onEdit,
+  onTest,
+  onRefresh,
+  onCopyFolder,
+  onDelete,
+}: {
+  instance: ProviderInstance
+  starred: boolean
+  model: string
+  onSetDefault: () => void
+  onSetModel: (id: string) => void
+  onEdit: () => void
+  onTest: () => void
+  onRefresh: () => void
+  onCopyFolder: (() => void) | null
+  onDelete: (() => void) | null
+}) {
+  const [open, setOpen] = useState(false)
+  const [models, setModels] = useState(false)
+  const pick = (action: () => void) => () => { setOpen(false); action() }
+  return (
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); setModels(false) }}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="icon-xs" className="size-[26px] font-[400] text-[var(--text-secondary)]" aria-label={`Actions for ${instance.displayName}`}>⋯</Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className={menuSurfaceClass}>
+        {models ? (
+          <>
+            <button type="button" className={cn(menuItemClass, 'text-[var(--text-secondary)]')} onClick={() => setModels(false)}>
+              ‹ Default model for new {agentLabel(instance.agentType)} chats
+            </button>
+            {modelsForAgent(instance.agentType).map((m) => (
+              <button key={m.id} type="button" className={menuItemClass} aria-pressed={m.id === model} onClick={pick(() => onSetModel(m.id))}>
+                {m.label}
+                {m.id === model && <span aria-hidden="true">✓</span>}
+              </button>
+            ))}
+          </>
+        ) : (
+          <>
+            {!starred && <button type="button" className={menuItemClass} onClick={pick(onSetDefault)}>Set as default</button>}
+            <button type="button" className={menuItemClass} onClick={() => setModels(true)}>Default model <span aria-hidden="true">›</span></button>
+            <button type="button" className={menuItemClass} onClick={pick(onEdit)}>Rename or edit…</button>
+            <button type="button" className={menuItemClass} onClick={pick(onTest)}>Test the sign-in</button>
+            <button type="button" className={menuItemClass} onClick={pick(onRefresh)}>Refresh usage</button>
+            {onCopyFolder && <button type="button" className={menuItemClass} onClick={pick(onCopyFolder)}>Copy the folder path</button>}
+            {onDelete && <button type="button" className={cn(menuItemClass, 'text-[var(--error)]')} onClick={pick(onDelete)}>Delete</button>}
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -444,7 +548,8 @@ function ProviderInstanceDialog({
     try {
       await navigator.clipboard.writeText(text)
       setOauthStatus(`${label} copied.`)
-    } catch {
+    } catch (err) {
+      log.warn('clipboard write failed', err)
       setOauthStatus(`Copy failed. ${label}: ${text}`)
     }
   }
@@ -520,7 +625,7 @@ function ProviderInstanceDialog({
         }}
       >
         <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '14px' }}>
-          {instance ? `Edit Instance - ${agentLabel(kind)}` : `New Instance - ${agentLabel(kind)}`}
+          {instance ? `Edit account - ${agentLabel(kind)}` : `New account - ${agentLabel(kind)}`}
         </div>
 
         <Field label="Display name">

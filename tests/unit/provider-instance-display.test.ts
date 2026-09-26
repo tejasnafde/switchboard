@@ -1,5 +1,5 @@
 /**
- * Pure helpers backing ProvidersTab.tsx's credential-home display and
+ * Pure helpers backing AccountsPanel.tsx's credential-home display and
  * new-instance defaults. Extracted so they're unit-testable without
  * mounting the (untested, .tsx) settings dialog - this project's vitest
  * config runs `.test.ts` files under the `node` environment only.

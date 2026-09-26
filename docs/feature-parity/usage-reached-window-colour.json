@@ -6,7 +6,7 @@
   "surfaces": {
     "desktop": {
       "status": "implemented",
-      "evidence": ["src/renderer/components/settings/ProviderUsagePanel.tsx", "tests/unit/codex-usage-parse.test.ts"]
+      "evidence": ["src/renderer/components/settings/accounts-model.ts", "tests/unit/codex-usage-parse.test.ts"]
     },
     "reactNativeIos": { "status": "not_applicable", "reason": "The phone has no provider usage panel; nothing under apps/mobile reads ProviderUsage." },
     "nativeAndroid": { "status": "not_applicable", "reason": "Native Android has no provider usage panel; nothing under apps/android reads usage windows." },

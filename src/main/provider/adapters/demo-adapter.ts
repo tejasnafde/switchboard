@@ -28,6 +28,8 @@
  * same disk + SQLite merge a real Claude chat does.
  */
 import type { TurnDelivery } from '@shared/turn-delivery'
+import type { AgentType } from '@shared/types'
+import { buildWindow, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
 import { randomUUID } from 'crypto'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
@@ -453,4 +455,30 @@ export function demoAdapters(): Map<ProviderKind, ProviderAdapter> {
     ['codex', new DemoAdapter('codex')],
     ['opencode', new DemoAdapter('opencode')],
   ])
+}
+
+const MINUTE = 60_000
+
+/**
+ * Canned usage for the Accounts page, so a demo launch never reads a real
+ * credential. Times count from `SB_DEMO_NOW` when set, which the visual
+ * suite pins to its frozen renderer clock.
+ */
+export function demoUsage(id: string, agentType: AgentType): ProviderUsage {
+  const now = Number(process.env.SB_DEMO_NOW) || Date.now()
+  const reading = (status: ProviderUsage['status'], windows: UsageWindow[], message?: string): ProviderUsage => ({
+    instanceId: id, agentType, status, plan: null, account: null, windows, overage: [], fetchedAtMs: now,
+    ...(message ? { message } : {}),
+  })
+  const pair = (session: number, sessionReset: number, weekly: number, weeklyReset: number) => [
+    buildWindow({ id: 'five_hour', label: '5-hour session', kind: 'session', percent: session, resetsAtMs: now + sessionReset * MINUTE, windowMinutes: 300 }),
+    buildWindow({ id: 'seven_day', label: 'Weekly', kind: 'weekly', percent: weekly, resetsAtMs: now + weeklyReset * MINUTE, windowMinutes: 10080 }),
+  ]
+  if (agentType === 'opencode') {
+    return reading('not-applicable', [], 'OpenCode runs on your own provider API keys, so there is no subscription quota to report.')
+  }
+  if (id.endsWith('-personal')) return reading('unauthenticated', [], 'the sign-in expired after 30 days without use')
+  if (id.endsWith('-work')) return reading('ok', pair(1, 280, 0, 6 * 1440))
+  if (agentType === 'codex') return reading('ok', pair(18, 182, 9, 3 * 1440))
+  return reading('ok', pair(42, 134, 81, 2 * 1440))
 }

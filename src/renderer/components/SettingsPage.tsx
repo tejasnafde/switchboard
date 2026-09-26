@@ -15,7 +15,7 @@ import {
 } from '@shared/diagnostics-report'
 import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../logger'
-import { ProvidersTab } from './settings/ProvidersTab'
+import { AccountsPanel } from './settings/AccountsPanel'
 import { MobilePairingTab } from './settings/MobilePairingTab'
 import { LaunchConfigsPanel } from './settings/LaunchConfigsPanel'
 import { ArchivedPanel } from './settings/ArchivedPanel'
@@ -248,7 +248,7 @@ export function SettingsPageBody({ page }: { page: SettingsPageId }) {
       {page === 'general' && <GeneralPage />}
       {page === 'appearance' && <AppearancePage />}
       {page === 'chat' && <ChatPage />}
-      {page === 'accounts' && <SettingAnchor def={SETTING_ROW.providers}><ProvidersTab /></SettingAnchor>}
+      {page === 'accounts' && <AccountsPanel Anchor={SettingAnchor} />}
       {page === 'projects' && (
         <Section title={SETTING_ROW.launchConfigs.section}>
           <SettingAnchor def={SETTING_ROW.launchConfigs}><LaunchConfigsPanel /></SettingAnchor>

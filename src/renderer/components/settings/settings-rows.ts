@@ -124,10 +124,20 @@ const ROWS = {
     description: 'Show per-file diffs inline after each turn. Off shows a "Changed N files" button that expands them for that turn only.',
     defaultValue: 'false',
   },
+  accountsSummary: {
+    id: 'accounts.summary', page: 'accounts', section: 'Summary',
+    label: 'Usage summary',
+    description: 'The account with the most room left, the next reset, and how many accounts are signed out or failing.',
+  },
   providers: {
     id: 'accounts.instances', page: 'accounts', section: 'Accounts',
     label: 'Provider accounts',
-    description: 'Named credential sets for Claude Code, Codex and OpenCode, their default models, and each account\'s usage limits.',
+    description: 'Named credential sets for Claude Code, Codex and OpenCode with their usage limits and reset times. Each account\'s menu sets the default account and default model, renames it, tests or repeats the sign-in, refreshes usage, copies its folder path, or deletes it.',
+  },
+  addAccount: {
+    id: 'accounts.add', page: 'accounts', section: 'Accounts',
+    label: 'Add account',
+    description: 'A new named account for Claude Code, Codex or OpenCode, signed in through its own folder or an API key.',
   },
   launchConfigs: {
     id: 'projects.launchConfigs', page: 'projects', section: 'Launch configs',
