@@ -14,6 +14,7 @@ import { WorktreeSizeCache } from '../../src/main/worktree-inspect'
 import {
   buildWorktreeInventory,
   removeManagedWorktree,
+  updateWorktreeProtection,
   type WorktreeManagerDeps,
 } from '../../src/main/worktree-manager'
 
@@ -101,7 +102,8 @@ describe('worktree inventory', () => {
     protection = { projects: [], worktrees: [kept] }
     const plain = join(root, 'plain')
     mkdirSync(plain)
-    const { rows, errors } = await buildWorktreeInventory([repo, plain], deps())
+    const withPlain = { ...deps(), listProjects: () => [{ path: repo, name: 'repo' }, { path: plain, name: 'plain' }] }
+    const { rows, errors } = await buildWorktreeInventory([repo, plain], withPlain)
     expect(errors).toEqual([])
     expect(rows).toHaveLength(2)
     expect(rows.find((r) => pathKey(r.path) === pathKey(mine))?.owned).toBe(true)
@@ -185,6 +187,59 @@ describe('removeManagedWorktree', () => {
   it('refuses a path that is not one of the repo\'s worktrees', async () => {
     const result = await removeManagedWorktree({ projectPath: repo, worktreePath: join(root, 'elsewhere'), acknowledged: null }, deps())
     expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/not a worktree/i) })
+  })
+})
+
+describe('only configured projects', () => {
+  function otherRepoWithWorktree(): { other: string; wt: string } {
+    const other = join(root, 'other')
+    git(root, 'init', '-q', '-b', 'main', other)
+    writeFileSync(join(other, 'README.md'), 'other\n')
+    git(other, 'add', '.')
+    git(other, 'commit', '-q', '-m', 'init')
+    const wt = join(other, WORKTREE_DIR_REL, 'clean')
+    git(other, 'worktree', 'add', '-q', '-b', 'kanban/clean', wt)
+    return { other, wt }
+  }
+
+  it('refuses to remove a clean worktree of a repository that is not a Switchboard project', async () => {
+    const { other, wt } = otherRepoWithWorktree()
+    const result = await removeManagedWorktree({ projectPath: other, worktreePath: wt, acknowledged: null }, deps())
+    expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/not a project in switchboard/i) })
+    expect(existsSync(wt)).toBe(true)
+  })
+
+  it('accepts the configured project under another spelling', async () => {
+    const path = addWorktree('clean')
+    const alias = join(root, 'alias')
+    symlinkSync(repo, alias, 'junction')
+    expect(await removeManagedWorktree({ projectPath: alias, worktreePath: path, acknowledged: null }, deps())).toEqual({ ok: true })
+    expect(existsSync(path)).toBe(false)
+  })
+
+  it('lists nothing for an unconfigured project, and says so', async () => {
+    const { other } = otherRepoWithWorktree()
+    const { rows, errors } = await buildWorktreeInventory([other], deps())
+    expect(rows).toEqual([])
+    expect(errors).toEqual([{ projectPath: other, message: expect.stringMatching(/not a project in switchboard/i) }])
+  })
+
+  it('protects only a configured project or a worktree of one, and unprotects only what is listed', async () => {
+    const { other, wt: otherWorktree } = otherRepoWithWorktree()
+    await expect(updateWorktreeProtection({ target: 'project', path: other, protected: true }, deps())).rejects.toThrow(/not a project/i)
+    await expect(updateWorktreeProtection({ target: 'worktree', path: otherWorktree, protected: true }, deps())).rejects.toThrow(/not a worktree of a project/i)
+    await expect(updateWorktreeProtection({ target: 'project', path: other, protected: false }, deps())).rejects.toThrow(/not protected/i)
+    expect(protection).toEqual({ projects: [], worktrees: [] })
+
+    const mine = addWorktree('mine')
+    await updateWorktreeProtection({ target: 'project', path: repo, protected: true }, deps())
+    await updateWorktreeProtection({ target: 'worktree', path: mine, protected: true }, deps())
+    expect(protection).toEqual({ projects: [repo], worktrees: [mine] })
+
+    // An entry left behind by a project that is gone can still be cleared.
+    protection = { projects: [repo, other], worktrees: [mine] }
+    await updateWorktreeProtection({ target: 'project', path: other, protected: false }, deps())
+    expect(protection.projects).toEqual([repo])
   })
 })
 

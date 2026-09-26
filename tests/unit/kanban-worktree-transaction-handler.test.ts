@@ -378,7 +378,7 @@ describe('Kanban worktree transaction compatibility handlers', () => {
     const runner = vi.fn(async (args: string[]) => ({ stdout: args[0] === 'rev-list' ? '0\n' : '', stderr: '' }))
     registerKanbanHandlers(host, {
       worktreeManager: {
-        listProjects: () => [],
+        listProjects: () => [{ path: '/repo', name: 'repo' }],
         ownedPaths: () => owned,
         chatLinks: () => new Map(),
         readProtection: () => ({ projects: [], worktrees: [] }),
@@ -389,6 +389,8 @@ describe('Kanban worktree transaction compatibility handlers', () => {
     })
     const removeStale = host.handlers.get(KanbanChannels.REMOVE_STALE_WORKTREE)!
 
+    await expect(removeStale('/elsewhere', registered, { force: true }))
+      .rejects.toThrow(/not a project in switchboard/i)
     await expect(removeStale('/repo', '/repo/.switchboard/worktrees-evil', { force: true }))
       .rejects.toThrow(/not a worktree of this repository/i)
     await expect(removeStale('/repo', registered, { force: true }))

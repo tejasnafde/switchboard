@@ -68,6 +68,21 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) 
   return out
 }
 
+/**
+ * The configured project `path` names, under any spelling, or null. Every
+ * channel that takes a project path goes through this, so a caller cannot
+ * point the manager at a repository the user never added.
+ */
+function configuredProject(path: unknown, deps: WorktreeManagerDeps): { path: string; name: string } | null {
+  if (typeof path !== 'string' || path === '') return null
+  const key = pathKey(path)
+  return deps.listProjects().find((p) => pathKey(p.path) === key) ?? null
+}
+
+function notConfigured(path: unknown): string {
+  return `Not a project in Switchboard: ${String(path)}`
+}
+
 function isNotARepo(err: unknown): boolean {
   return /not a git repository/i.test(err instanceof Error ? err.message : String(err))
 }
@@ -124,9 +139,17 @@ export async function buildWorktreeInventory(
   projectPaths: readonly string[] | undefined,
   deps: WorktreeManagerDeps,
 ): Promise<WorktreeInventory> {
-  const paths = projectPaths ?? deps.listProjects().map((p) => p.path)
   const rows: WorktreeRow[] = []
   const errors: WorktreeInventory['errors'] = []
+  const paths: string[] = []
+  const requestedPaths: readonly unknown[] = projectPaths === undefined
+    ? deps.listProjects().map((p) => p.path)
+    : Array.isArray(projectPaths) ? projectPaths : [projectPaths]
+  for (const requested of requestedPaths) {
+    const project = configuredProject(requested, deps)
+    if (project) paths.push(project.path)
+    else errors.push({ projectPath: String(requested), message: notConfigured(requested) })
+  }
   // Two projects in one repository list the same worktrees; show each once.
   const seen = new Set<string>()
   for (const projectPath of paths) {
@@ -165,26 +188,32 @@ export async function removeManagedWorktree(
   request: WorktreeRemovalRequest,
   deps: WorktreeManagerDeps,
 ): Promise<WorktreeRemovalResult> {
+  const project = configuredProject(request?.projectPath, deps)
+  if (!project) {
+    log.warn(`refused removal in unconfigured project ${String(request?.projectPath)}`)
+    return { ok: false, error: notConfigured(request?.projectPath) }
+  }
+  if (typeof request.worktreePath !== 'string') return { ok: false, error: 'A worktree path is required.' }
   const target = pathKey(request.worktreePath)
   let worktrees: WorktreeInfo[]
   try {
-    worktrees = await listWorktrees(request.projectPath, deps.runner)
+    worktrees = await listWorktrees(project.path, deps.runner)
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
-    log.warn(`remove: could not list worktrees of ${request.projectPath}: ${error}`)
+    log.warn(`remove: could not list worktrees of ${project.path}: ${error}`)
     return { ok: false, error }
   }
   const wt = worktrees.find((w) => pathKey(w.path) === target)
   if (!wt) return { ok: false, error: `Not a worktree of this repository: ${request.worktreePath}` }
 
-  const row = await toRow(await projectContext(request.projectPath, deps), wt, deps.runner)
+  const row = await toRow(await projectContext(project.path, deps), wt, deps.runner)
   const verdict = removalVerdict(row, request.acknowledged)
   if (!verdict.ok) {
     log.info(`refused to remove ${wt.path}: ${verdict.reason}`)
     return { ok: false, error: verdict.reason }
   }
   try {
-    await removeWorktree(request.projectPath, wt.path, { force: verdict.force, deleteBranch: verdict.deleteBranch }, deps.runner)
+    await removeWorktree(project.path, wt.path, { force: verdict.force, deleteBranch: verdict.deleteBranch }, deps.runner)
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     log.warn(`git worktree remove failed for ${wt.path}: ${error}`)
@@ -195,9 +224,42 @@ export async function removeManagedWorktree(
   return { ok: true }
 }
 
-export function updateWorktreeProtection(patch: WorktreeProtectionPatch, deps: WorktreeManagerDeps): WorktreeProtection {
-  const next = applyProtectionPatch(deps.readProtection(), patch)
+/**
+ * Protecting needs a configured project, or a worktree of one. Unprotecting
+ * only needs the path to be in the list, so an entry left behind by a removed
+ * project can still be cleared.
+ */
+export async function updateWorktreeProtection(
+  patch: WorktreeProtectionPatch,
+  deps: WorktreeManagerDeps,
+): Promise<WorktreeProtection> {
+  const current = deps.readProtection()
+  const listed = (patch.target === 'project' ? current.projects : current.worktrees).map(pathKey)
+  const allowed = patch.protected
+    ? patch.target === 'project'
+      ? configuredProject(patch.path, deps) !== null
+      : await isWorktreeOfConfiguredProject(patch.path, deps)
+    : listed.includes(pathKey(patch.path))
+  if (!allowed) {
+    log.warn(`refused to ${patch.protected ? 'protect' : 'unprotect'} ${patch.target} ${patch.path}`)
+    throw new Error(patch.protected
+      ? `Not a ${patch.target === 'project' ? 'project' : 'worktree of a project'} in Switchboard: ${patch.path}`
+      : `Not protected: ${patch.path}`)
+  }
+  const next = applyProtectionPatch(current, patch)
   deps.writeProtection(next)
   log.info(`${patch.protected ? 'protected' : 'unprotected'} ${patch.target} ${patch.path}`)
   return next
+}
+
+async function isWorktreeOfConfiguredProject(path: string, deps: WorktreeManagerDeps): Promise<boolean> {
+  const key = pathKey(path)
+  for (const project of deps.listProjects()) {
+    try {
+      if ((await listWorktrees(project.path, deps.runner)).some((wt) => pathKey(wt.path) === key)) return true
+    } catch (err) {
+      log.debug(`protect: could not list worktrees of ${project.path}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  return false
 }
