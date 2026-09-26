@@ -59,7 +59,8 @@ export interface DesktopNewChatIntent {
   machineId: string
   checkout: 'project' | 'worktree'
   agentType: Exclude<AgentType, 'terminal'>
-  runtimeMode: RuntimeMode
+  /** Absent: nobody chose one and the project's overrides were unknown, so the backend picks it. */
+  runtimeMode?: RuntimeMode
   /** Ref a new worktree branches from. Defaults to HEAD. */
   baseRef?: string
   /** Pre-minted by a caller that must find the conversation again (a draft's first send). */
@@ -81,7 +82,7 @@ export interface AuthoritativeDesktopSession {
   worktreePath: string
   worktreeBranch: string
   title: string
-  runtimeMode: RuntimeMode
+  runtimeMode?: RuntimeMode
   managedTerminalIds: string[]
 }
 
@@ -91,7 +92,7 @@ export interface ParentCheckoutCreationIntent {
   projectPath: string
   machineId: string
   agentType: Exclude<AgentType, 'terminal'>
-  runtimeMode: RuntimeMode
+  runtimeMode?: RuntimeMode
   title: string
   existingWorktree?: { path: string; branch: string }
 }
@@ -214,7 +215,7 @@ export function createDesktopNewChatCoordinator(
           worktreePath: snapshot.worktreePath,
           worktreeBranch: snapshot.branch,
           title: owner.title ?? 'New conversation',
-          runtimeMode: activeRequest.launch?.initialAgent?.runtimeMode ?? 'sandbox',
+          runtimeMode: activeRequest.launch?.initialAgent?.runtimeMode,
           managedTerminalIds: snapshot.startupReceipt.terminalIds,
         })
       }
@@ -285,7 +286,7 @@ export function createDesktopNewChatCoordinator(
         launch: {
           initialAgent: {
             provider: intent.agentType,
-            runtimeMode: intent.runtimeMode,
+            ...(intent.runtimeMode ? { runtimeMode: intent.runtimeMode } : {}),
             ...(intent.model ? { model: intent.model } : {}),
             ...(intent.instanceId ? { instanceId: intent.instanceId } : {}),
           },

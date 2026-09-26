@@ -49,6 +49,21 @@ export function defaultRuntimeModeFor(projectPath: string | null | undefined): R
   return isRuntimeMode(mode) ? mode : storeDefaultRuntimeMode
 }
 
+/** The mode to send to the backend: none while the session's mode is unresolved, so the backend decides. */
+export function runtimeModeToSend(session: Pick<AgentSession, 'runtimeMode' | 'runtimeModeUnresolved'> | undefined): RuntimeMode | undefined {
+  if (!session || session.runtimeModeUnresolved) return undefined
+  return session.runtimeMode
+}
+
+/** Take the mode the backend started an unresolved session in (the `startSession` reply). */
+export function adoptStartedRuntimeMode(sessionId: string, started: unknown): void {
+  const session = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
+  if (!session?.runtimeModeUnresolved) return
+  const mode = (started as { runtimeMode?: unknown } | null | undefined)?.runtimeMode
+  if (isRuntimeMode(mode)) useAgentStore.getState().setRuntimeMode(sessionId, mode)
+  else log.warn(`startSession for ${sessionId} reported no runtime mode; the chat keeps showing its guess`)
+}
+
 /** The project's own runtime-mode override, which beats a mode carried over from another chat. */
 export function projectRuntimeModeOverride(projectPath: string | null | undefined): RuntimeMode | undefined {
   const mode = projectOverride(projectPath, SETTING_DEFAULT_RUNTIME_MODE)
@@ -135,6 +150,13 @@ interface AgentSession {
   title?: string
   /** Permission mode for this session (sandbox / accept-edits / full-access / plan) */
   runtimeMode: RuntimeMode
+  /**
+   * `runtimeMode` is only a guess: nobody chose it and the project's
+   * overrides could not be read. The session sends no mode, so the backend
+   * resolves it, and adopts the one the backend reports. Cleared by any
+   * `setRuntimeMode`.
+   */
+  runtimeModeUnresolved?: boolean
   /** Model identifier (provider-specific - e.g. 'claude-opus-4-5' or 'gpt-5') */
   model?: string
   /**
@@ -540,7 +562,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   setRuntimeMode: (sessionId, mode) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, runtimeMode: mode } : s
+        s.id === sessionId ? { ...s, runtimeMode: mode, runtimeModeUnresolved: undefined } : s
       ),
     })),
 

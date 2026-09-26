@@ -8,7 +8,7 @@ import { createRendererLogger } from '../../logger'
 import { isRuntimeMode } from '@shared/session-defaults'
 import type { KanbanCard } from '@shared/kanban'
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
-import { useAgentStore, defaultRuntimeModeFor, type RuntimeMode } from '../../stores/agent-store'
+import { useAgentStore, adoptStartedRuntimeMode, defaultRuntimeModeFor, type RuntimeMode } from '../../stores/agent-store'
 import { ensureProjectOverrides } from '../../stores/project-settings-store'
 import { emitSessionCreated } from '../../services/session-events'
 import type { AgentType, ConversationRow } from '@shared/types'
@@ -28,6 +28,9 @@ const launchLog = createRendererLogger('kanban:launch')
  *   4. `KANBAN_DEFAULT_RUNTIME_MODE` ('accept-edits') as the final
  *      fallback - matches the kanban-create-modal default.
  *
+ * Undefined when it would come from tier 3 and the project's overrides
+ * could not be read: the launch then sends no mode and the backend picks it.
+ *
  * `cardRuntimeMode` is the strongest signal, but we still consult the DB
  * before it on the reuse path so a stored override (e.g. user toggled to
  * full-access mid-turn) survives reopening through the play button.
@@ -38,7 +41,7 @@ export async function resolveCardRuntimeMode(
   cardRuntimeMode: RuntimeMode | null | undefined,
   conversationId: string | null | undefined,
   projectPath?: string,
-): Promise<RuntimeMode> {
+): Promise<RuntimeMode | undefined> {
   if (conversationId) {
     try {
       const res = await window.api?.app?.getConversationRuntimeMode?.(conversationId)
@@ -51,7 +54,10 @@ export async function resolveCardRuntimeMode(
     }
   }
   if (isRuntimeMode(cardRuntimeMode)) return cardRuntimeMode
-  await ensureProjectOverrides(projectPath)
+  if (!(await ensureProjectOverrides(projectPath))) {
+    launchLog.warn(`overrides for ${projectPath} are unknown: the card's chat lets the backend pick its mode`)
+    return undefined
+  }
   return defaultRuntimeModeFor(projectPath) ?? KANBAN_DEFAULT_RUNTIME_MODE
 }
 
@@ -164,7 +170,7 @@ export async function launchCardChat(
       ])
       if (runtimeModeResult.status === 'fulfilled') {
         const persisted = runtimeModeResult.value
-        if (persisted !== existing.runtimeMode) {
+        if (persisted && persisted !== existing.runtimeMode) {
           useAgentStore.getState().setRuntimeMode(existing.id, persisted)
           window.api?.provider?.setRuntimeMode?.(existing.id, persisted).catch((err) => {
             log('setRuntimeMode failed on reuse', { sessionId: existing.id, err: String(err) })
@@ -213,6 +219,7 @@ export async function launchCardChat(
     projectPath,
     title,
     runtimeMode,
+    ...(runtimeMode === undefined ? { runtimeModeUnresolved: true } : {}),
   })
   useAgentStore.getState().setActiveSession(sessionId)
 
@@ -235,17 +242,21 @@ export async function launchCardChat(
   //    surface as a system message in the chat, not a thrown error,
   //    because the session is already registered and the user can retry.
   try {
-    await api.provider.startSession({
+    const started = await api.provider.startSession({
       threadId: sessionId,
       provider: 'claude',
       cwd,
       runtimeMode,
     })
+    adoptStartedRuntimeMode(sessionId, started)
     // Persist the chosen mode against the freshly-created conversation row
-    // so subsequent reopens (incl. via card click) restore it.
-    api.app.setConversationRuntimeMode?.(sessionId, runtimeMode).catch((err) => {
-      log('setConversationRuntimeMode failed after launch', { sessionId, err: String(err) })
-    })
+    // so subsequent reopens (incl. via card click) restore it. A mode the
+    // backend picked is not stored: it would outrank the project's override.
+    if (runtimeMode) {
+      api.app.setConversationRuntimeMode?.(sessionId, runtimeMode).catch((err) => {
+        log('setConversationRuntimeMode failed after launch', { sessionId, err: String(err) })
+      })
+    }
   } catch (err) {
     log('startSession failed', { err: String(err) })
     useAgentStore.getState().updateStatus(sessionId, 'error')

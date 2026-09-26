@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth } from './stores/layout-store'
-import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from './stores/agent-store'
+import { useAgentStore, setStoreDefaultRuntimeMode, runtimeModeToSend, type RuntimeMode } from './stores/agent-store'
 import { classifyCloseFocus, type ClosestEl } from './close-focus'
 import { useBookmarkStore } from './stores/bookmark-store'
 import { useThemeStore } from './stores/theme-store'
@@ -527,7 +527,8 @@ export function App() {
     worktreeBranch?: string
     managedTerminalIds?: string[]
     title: string
-    runtimeMode: RuntimeMode
+    /** Absent when nobody chose one and the project's overrides were unknown: the backend decides. */
+    runtimeMode?: RuntimeMode
   }) => {
     window.api.routing.bind(session.id, session.machineId)
     // A draft's first send created this conversation: hand its message and its
@@ -546,6 +547,7 @@ export function App() {
     }
     addSession({
       ...session,
+      ...(session.runtimeMode === undefined ? { runtimeModeUnresolved: true } : {}),
       ...(draft?.model ? { model: draft.model } : {}),
       ...(draft?.instanceId ? { instanceId: draft.instanceId } : {}),
       ...(draft?.reasoningEffort ? { reasoningEffort: draft.reasoningEffort } : {}),
@@ -553,7 +555,8 @@ export function App() {
     if (draft?.model) window.api.app.setConversationModel?.(session.id, draft.model).catch((err: unknown) => log.warn('carry draft model failed', err))
     if (draft?.instanceId) window.api.app.setConversationProviderInstanceId(session.id, draft.instanceId).catch((err: unknown) => log.warn('carry draft instance failed', err))
     if (draft?.reasoningEffort) window.api.app.setConversationReasoningEffort(session.id, draft.reasoningEffort).catch((err: unknown) => log.warn('carry draft effort failed', err))
-    if (draft) window.api.app.setConversationRuntimeMode?.(session.id, session.runtimeMode).catch((err: unknown) => log.warn('persist runtime mode failed', err))
+    // An unresolved mode is not stored: a stored mode would outrank the project's override on the backend.
+    if (draft && session.runtimeMode) window.api.app.setConversationRuntimeMode?.(session.id, session.runtimeMode).catch((err: unknown) => log.warn('persist runtime mode failed', err))
     selectChatSession(session.id)
     if (session.machineId === 'local') {
       emitSessionCreated({
@@ -652,6 +655,7 @@ export function App() {
         machineId,
         title: 'New chat',
         runtimeMode,
+        ...(runtimeMode === undefined ? { runtimeModeUnresolved: true } : {}),
         ...(carry?.model ? { model: carry.model } : {}),
         ...(carry?.instanceId ? { instanceId: carry.instanceId } : {}),
         ...(carry?.reasoningEffort ? { reasoningEffort: carry.reasoningEffort } : {}),
@@ -733,7 +737,7 @@ export function App() {
           checkout: checkout === 'worktree' ? 'worktree' : 'project',
           ...(checkout === 'existing' && draft.draft.existing ? { existingWorktree: draft.draft.existing } : {}),
           agentType: draft.type,
-          runtimeMode: draft.runtimeMode,
+          runtimeMode: runtimeModeToSend(draft),
           baseRef: draft.draft.baseRef,
           conversationId,
           ...(draft.model ? { model: draft.model } : {}),

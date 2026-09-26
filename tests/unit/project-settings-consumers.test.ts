@@ -25,7 +25,7 @@ const OTHER = '/work/other'
 beforeEach(() => {
   useAgentStore.setState({ sessions: [], activeSessionId: null })
   setStoreDefaultRuntimeMode('accept-edits')
-  useProjectSettingsStore.setState({ byProject: { [APP]: { 'chat.defaultRuntimeMode': 'plan', 'chat.followUpDefault': 'queue' } } })
+  useProjectSettingsStore.setState({ byProject: { [APP]: { 'chat.defaultRuntimeMode': 'plan', 'chat.followUpDefault': 'queue' }, [OTHER]: {} } })
 })
 
 describe('runtime mode for new chats', () => {

@@ -19,8 +19,8 @@ const log = createRendererLogger('store:project-settings')
 
 interface ProjectSettingsState {
   byProject: Readonly<Record<string, ProjectOverrides>>
-  /** Replace the overrides of these projects with what the backend holds. */
-  load: (projectPaths: readonly string[]) => Promise<void>
+  /** Replace the overrides of these projects with what the backend holds. False when the read failed. */
+  load: (projectPaths: readonly string[]) => Promise<boolean>
   setOverride: (projectPath: string, key: ScopableSettingKey, value: string) => Promise<void>
   removeOverride: (projectPath: string, key: ScopableSettingKey) => Promise<void>
 }
@@ -28,12 +28,14 @@ interface ProjectSettingsState {
 export const useProjectSettingsStore = create<ProjectSettingsState>((set, get) => ({
   byProject: {},
   load: async (projectPaths) => {
-    if (projectPaths.length === 0) return
+    if (projectPaths.length === 0) return true
     try {
       const loaded = await window.api.settings.projectOverrides([...projectPaths])
       set((state) => ({ byProject: { ...state.byProject, ...loaded } }))
+      return true
     } catch (err) {
       log.warn('could not load project overrides', err)
+      return false
     }
   },
   setOverride: async (projectPath, key, value) => {
@@ -60,23 +62,25 @@ export const useProjectSettingsStore = create<ProjectSettingsState>((set, get) =
 }))
 
 // One read per project at a time, so a new chat and the sidebar's boot load share it.
-const pending = new Map<string, Promise<void>>()
+const pending = new Map<string, Promise<boolean>>()
 
 /**
- * Wait until this project's overrides are in the cache. Anything that picks
- * a value once, at creation (a new chat's mode and environment), must await
- * this: a synchronous read of a cold cache takes the global value, and the
- * chat then sends it explicitly, so the backend's own resolution never runs.
- * A failed read is not cached, so the next call asks again.
+ * Wait until this project's overrides are in the cache, and say whether they
+ * are. Anything that picks a value once, at creation (a new chat's mode and
+ * environment), must await this: a synchronous read of a cold cache takes
+ * the global value, and the chat then sends it explicitly, so the backend's
+ * own resolution never runs. False means the overrides are unknown (the read
+ * failed); the caller must not treat the global value as the project's. A
+ * failed read is not cached, so the next call asks again.
  */
-export async function ensureProjectOverrides(projectPath: string | null | undefined): Promise<void> {
-  if (!projectPath || projectPath in useProjectSettingsStore.getState().byProject) return
+export async function ensureProjectOverrides(projectPath: string | null | undefined): Promise<boolean> {
+  if (!projectPath || projectPath in useProjectSettingsStore.getState().byProject) return true
   let read = pending.get(projectPath)
   if (!read) {
     read = useProjectSettingsStore.getState().load([projectPath]).finally(() => pending.delete(projectPath))
     pending.set(projectPath, read)
   }
-  await read
+  return read
 }
 
 export function projectOverride(projectPath: string | null | undefined, key: ScopableSettingKey): string | undefined {

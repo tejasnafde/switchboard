@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { useAgentStore, type RuntimeMode } from '../../stores/agent-store'
+import { useAgentStore, adoptStartedRuntimeMode, runtimeModeToSend, type RuntimeMode } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useKanbanStore } from '../../stores/kanban-store'
@@ -788,6 +788,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         }
       }
       const handoffInjected = wireMessage !== message
+      // Unresolved: no mode goes to the backend, on the turn or the start, so it picks the project's.
+      const modeToSend = runtimeModeToSend(useAgentStore.getState().sessions.find((s) => s.id === sessionId))
 
       const origin = extras?.origin ?? desktopTurnAttempts.originFor(
         sessionId,
@@ -813,7 +815,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         displayBody: handoffInjected ? (extras?.displayBody ?? message) : extras?.displayBody,
         pillsMeta: handoffInjected ? (extras?.pillsMeta ?? {}) : extras?.pillsMeta,
         images: messageImages,
-        runtimeMode,
+        runtimeMode: modeToSend,
         handoff,
         autoTitleText: message,
         // The backend holds a queued message until the running turn ends.
@@ -832,7 +834,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       // turn or a persisted system bubble.
       const providerApi = window.api.provider
       const providerKind = providerKindFor(agentType)
-      const effectiveMode = runtimeMode
+      const effectiveMode = modeToSend
 
       const submissionDependencies: DesktopTurnSubmissionDependencies = {
         startSession: async () => {
@@ -843,7 +845,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             const linkedCard = useKanbanStore.getState().findByConversationId(sessionId)
             const cwd = sessionForCwd?.worktreePath ?? linkedCard?.worktreePath ?? projectPath ?? '.'
             window.api.routing.bind(sessionId, sessionForCwd?.machineId ?? 'local')
-            await providerApi.startSession({
+            const started = await providerApi.startSession({
               threadId: sessionId,
               provider: providerKind,
               cwd,
@@ -853,6 +855,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               reasoningEffort,
               instanceId,
             })
+            adoptStartedRuntimeMode(sessionId, started)
           } catch (error) {
             providerStartedRef.current.delete(sessionId)
             updateStatus(sessionId, 'idle')

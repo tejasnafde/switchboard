@@ -15,6 +15,9 @@ import { useAgentStore, defaultRuntimeModeFor, projectRuntimeModeOverride } from
 import { useLayoutStore } from '../stores/layout-store'
 import { effectiveLocalSetting, ensureProjectOverrides, useEffectiveSetting } from '../stores/project-settings-store'
 import { getDefaultSessionEnvMode, type SessionEnvMode } from './session-env-mode'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('service:effective-settings')
 
 function useSessionProjectPath(sessionId: string | null | undefined): string | undefined {
   return useAgentStore((s) => (sessionId ? s.sessions.find((x) => x.id === sessionId)?.projectPath : undefined))
@@ -35,12 +38,21 @@ export function useShowFileDiffCards(sessionId: string | null | undefined): bool
 /**
  * The mode and environment a new chat in this project starts with. A mode
  * carried over from the focused chat applies unless the project overrides it.
+ *
+ * When the project's overrides cannot be read, `runtimeMode` is undefined
+ * unless a mode was carried over: the chat must then send none, so the
+ * backend (which reads the overrides itself) decides. Where a chat runs is
+ * decided here and nowhere else, so it falls back to the global value.
  */
 export async function newChatDefaultsFor(
   projectPath: string,
   carriedMode?: RuntimeMode,
-): Promise<{ runtimeMode: RuntimeMode; envMode: SessionEnvMode }> {
-  const [globalEnvMode] = await Promise.all([getDefaultSessionEnvMode(), ensureProjectOverrides(projectPath)])
+): Promise<{ runtimeMode: RuntimeMode | undefined; envMode: SessionEnvMode }> {
+  const [globalEnvMode, known] = await Promise.all([getDefaultSessionEnvMode(), ensureProjectOverrides(projectPath)])
+  if (!known) {
+    log.warn(`overrides for ${projectPath} are unknown: the new chat uses the global environment and lets the backend pick its mode`)
+    return { runtimeMode: carriedMode, envMode: globalEnvMode }
+  }
   const envMode = effectiveLocalSetting(SETTING_SESSION_ENV_MODE, projectPath, globalEnvMode) === 'worktree' ? 'worktree' : 'local'
   return {
     runtimeMode: projectRuntimeModeOverride(projectPath) ?? carriedMode ?? defaultRuntimeModeFor(projectPath),
