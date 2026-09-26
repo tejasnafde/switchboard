@@ -1,0 +1,54 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "accounts-no-layout-shift",
+  "summary": "Settings' Accounts & models page no longer shifts while usage readings land. Usage reads start when Settings opens, on any page, and are kept in the provider-instance store so a reopened page shows the last readings at once. Cards reserve their final height with skeleton bars, keep their order while the page stays open (sorted by the readings at hand when first shown), keep the previous values dimmed during a refresh, and the summary tiles show a placeholder instead of a wrong 'None' until every first reading is in.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/settings/AccountsPanel.tsx",
+        "src/renderer/components/settings/accounts-model.ts",
+        "src/renderer/components/SettingsPage.tsx",
+        "src/renderer/stores/provider-instance-store.ts",
+        "tests/unit/accounts-model.test.ts",
+        "e2e/accounts-no-shift.e2e.mjs",
+        "e2e/visual-regressions.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native app has no account settings page: nothing under apps/mobile/src calls provider-instances:usage, so there is no usage list to shift."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android calls provider-instances:list only to pick an instance for a new session and never reads usage, so it has no usage page to shift."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": ["src/main/ipc/provider-instances.ts"],
+      "reason": "No channel or payload change. Only under SB_DEMO_ADAPTER=1, the new SB_DEMO_USAGE_DELAY_MS staggers the canned demoUsage answers so the e2e check can watch them land one at a time. The main-process usage cache (45s) is reused as is; no polling was added."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, setting or migration; the readings live in renderer memory only."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer-only behaviour over the existing usage channel; no package identity, signing, deep link or update-channel change, and an older backend answers the same calls."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/accounts-model.test.ts pins stableOrder (sorted by the readings at hand the first time, shown cards keep their place, new accounts appended, removed ones dropped) and the summary placeholders while a first reading is outstanding.",
+      "e2e/accounts-no-shift.e2e.mjs records every card's and summary tile's box on each frame with staggered demo readings and asserts none moves or resizes after first paint on load, on a manual refresh (bars kept, dimmed) and on reopen (cached bars at once). With the skeleton disabled it fails, naming every card that moved.",
+      "e2e/visual-regressions.e2e.mjs screens phase passes against the unchanged settings-accounts baselines.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against real accounts: every reading comes from demoUsage. A real Codex probe takes seconds, which is the case the skeleton and prewarm are for.",
+      "A card whose first reading is signed out, an error, refresh-pending or reports enabled overage, or more than two windows, still changes height once, since that cannot be known before the reading."
+    ]
+  }
+}
