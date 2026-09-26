@@ -23,7 +23,7 @@ import {
   type WorktreeRemovalAck,
   type WorktreeRow,
 } from '@shared/worktree-manager'
-import { getProjects, getSetting, listInUseWorktreePaths, listWorktreeChatLinks, setSetting } from './db/database'
+import { getDb, getProjects, getSetting, listInUseWorktreePaths, listWorktreeChatLinks, setSetting } from './db/database'
 import { listWorktrees, pathKey, protectionFor, removeWorktree, type GitRunner } from './worktree'
 import { inspectWorktreeGit, resolveBaseRef, WorktreeSizeCache } from './worktree-inspect'
 import { createMainLogger } from './logger'
@@ -36,7 +36,11 @@ export interface WorktreeManagerDeps {
   ownedPaths(projectPath: string): Set<string>
   chatLinks(projectPath: string): Map<string, WorktreeChatLink>
   readProtection(): WorktreeProtection
-  writeProtection(protection: WorktreeProtection): void
+  /**
+   * Read, change and write the protection row as one step, so two writers
+   * cannot both start from the same old value and lose one change.
+   */
+  updateProtection(mutate: (current: WorktreeProtection) => WorktreeProtection): WorktreeProtection
   sizes: WorktreeSizeCache
   /** Test seam; the default shells out to git. */
   runner?: GitRunner
@@ -48,7 +52,13 @@ export function defaultWorktreeManagerDeps(): WorktreeManagerDeps {
     ownedPaths: (projectPath) => listInUseWorktreePaths(projectPath),
     chatLinks: (projectPath) => listWorktreeChatLinks(projectPath),
     readProtection: () => parseWorktreeProtection(getSetting(WORKTREE_PROTECTION_SETTING)),
-    writeProtection: (protection) => setSetting(WORKTREE_PROTECTION_SETTING, JSON.stringify(protection)),
+    // IMMEDIATE takes the write lock before the read, so another process on
+    // the same database (a second backend) cannot slip a write in between.
+    updateProtection: (mutate) => getDb().transaction(() => {
+      const next = mutate(parseWorktreeProtection(getSetting(WORKTREE_PROTECTION_SETTING)))
+      setSetting(WORKTREE_PROTECTION_SETTING, JSON.stringify(next))
+      return next
+    }).immediate(),
     sizes: new WorktreeSizeCache(),
   }
 }
@@ -220,7 +230,7 @@ export async function removeManagedWorktree(
     return { ok: false, error }
   }
   deps.sizes.invalidate(wt.path)
-  log.info(`removed worktree ${wt.path}${verdict.force ? ` (confirmed losing ${row.git?.uncommittedFiles} files)` : ''}`)
+  log.info(`removed worktree ${wt.path}${row.git && (row.git.uncommittedFiles || row.git.ignoredFiles) ? ` (confirmed losing ${row.git.uncommittedFiles} uncommitted, ${row.git.ignoredFiles} ignored)` : ''}`)
   return { ok: true }
 }
 
@@ -233,21 +243,28 @@ export async function updateWorktreeProtection(
   patch: WorktreeProtectionPatch,
   deps: WorktreeManagerDeps,
 ): Promise<WorktreeProtection> {
-  const current = deps.readProtection()
-  const listed = (patch.target === 'project' ? current.projects : current.worktrees).map(pathKey)
+  // The checks that await run first; the write below starts from the row as
+  // it is at write time, never from a copy read before an await.
+  const key = pathKey(patch.path)
+  const listIn = (p: WorktreeProtection) => (patch.target === 'project' ? p.projects : p.worktrees)
   const allowed = patch.protected
     ? patch.target === 'project'
       ? configuredProject(patch.path, deps) !== null
       : await isWorktreeOfConfiguredProject(patch.path, deps)
-    : listed.includes(pathKey(patch.path))
+    : listIn(deps.readProtection()).some((p) => pathKey(p) === key)
   if (!allowed) {
     log.warn(`refused to ${patch.protected ? 'protect' : 'unprotect'} ${patch.target} ${patch.path}`)
     throw new Error(patch.protected
       ? `Not a ${patch.target === 'project' ? 'project' : 'worktree of a project'} in Switchboard: ${patch.path}`
       : `Not protected: ${patch.path}`)
   }
-  const next = applyProtectionPatch(current, patch)
-  deps.writeProtection(next)
+  const next = deps.updateProtection((current) => {
+    // Drop the path under any spelling first, so an unprotect clears it and a
+    // protect never stores it twice.
+    const field = patch.target === 'project' ? 'projects' : 'worktrees'
+    const without = { ...current, [field]: listIn(current).filter((p) => pathKey(p) !== key) }
+    return applyProtectionPatch(without, patch)
+  })
   log.info(`${patch.protected ? 'protected' : 'unprotected'} ${patch.target} ${patch.path}`)
   return next
 }

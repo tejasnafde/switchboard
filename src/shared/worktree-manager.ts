@@ -12,6 +12,14 @@
 export interface WorktreeGitState {
   /** Lines of `git status --porcelain`: modified, staged and untracked entries. */
   uncommittedFiles: number
+  /**
+   * Ignored entries that are not regenerable build output (a `.env`, local
+   * config). `git worktree remove` deletes them without `--force`, so they
+   * count as a loss like uncommitted files. A fully ignored folder is one entry.
+   */
+  ignoredFiles: number
+  /** The first few of those entries, for the confirm and the row label. */
+  ignoredSample: string[]
   /** Commits reachable from this worktree's HEAD and from no other branch or remote. */
   unpushedCommits: number
   /** HEAD is an ancestor of the repository's default branch. */
@@ -117,11 +125,42 @@ export function applyProtectionPatch(protection: WorktreeProtection, patch: Work
  */
 export type WorktreeCategory = 'in_use' | 'protected' | 'has_changes' | 'safe'
 
+/**
+ * Ignored output a build or an install recreates, so losing it loses no work.
+ * Matched on the entry's top-level folder; `node_modules` anywhere, since a
+ * monorepo keeps one per package.
+ */
+export const REGENERABLE_IGNORED_DIRS: readonly string[] = [
+  'node_modules', 'dist', 'out', 'build', '.next', '.nuxt', '.svelte-kit', 'coverage',
+  '.turbo', '.cache', '.parcel-cache', '.vite', 'target', '__pycache__', '.pytest_cache',
+  '.mypy_cache', '.ruff_cache', '.venv', 'venv', '.gradle', '.dart_tool', '.expo',
+]
+
+export function isRegenerableIgnored(entry: string): boolean {
+  const segments = entry.replace(/\\/g, '/').split('/').filter(Boolean)
+  if (segments.length === 0) return false
+  return REGENERABLE_IGNORED_DIRS.includes(segments[0]) || segments.includes('node_modules')
+}
+
+/**
+ * The ignored entries that hold local work, from `git ls-files -o -i
+ * --exclude-standard --directory`. That listing also names a folder whose
+ * only ignored content is listed on its own (`pkg/` beside
+ * `pkg/node_modules/`); such a container is dropped, so it neither counts nor
+ * hides what it holds.
+ */
+export function ignoredLosses(entries: readonly string[]): string[] {
+  const clean = entries.map((e) => e.replace(/\\/g, '/')).filter((e) => e !== '')
+  return clean.filter((entry) =>
+    !isRegenerableIgnored(entry) &&
+    !(entry.endsWith('/') && clean.some((other) => other !== entry && other.startsWith(entry))))
+}
+
 export function classifyWorktree(row: WorktreeRow): WorktreeCategory {
   if (row.owned) return 'in_use'
   if (row.protectedBy || row.locked) return 'protected'
   if (!row.git) return 'has_changes'
-  if (row.git.uncommittedFiles > 0 || row.git.unpushedCommits > 0) return 'has_changes'
+  if (row.git.uncommittedFiles > 0 || row.git.ignoredFiles > 0 || row.git.unpushedCommits > 0) return 'has_changes'
   return 'safe'
 }
 
@@ -152,6 +191,8 @@ export function filterCounts(rows: readonly WorktreeRow[]): Record<WorktreeFilte
 export interface WorktreeRemovalAck {
   uncommittedFiles: number
   unpushedCommits: number
+  /** Optional on the wire: a client older than ignored-file detection acknowledges none. */
+  ignoredFiles?: number
 }
 
 export type WorktreeRemovalVerdict =
@@ -176,10 +217,10 @@ export function removalVerdict(row: WorktreeRow, ack: WorktreeRemovalAck | null)
   if (row.protectedBy === 'worktree') return { ok: false, reason: 'This worktree is protected.' }
   if (row.locked) return { ok: false, reason: 'Git has this worktree locked. Unlock it with `git worktree unlock` first.' }
   if (!row.git) return { ok: false, reason: 'Could not read the git state of this worktree, so it is not removed.' }
-  const { uncommittedFiles, unpushedCommits } = row.git
-  if (uncommittedFiles > 0 || unpushedCommits > 0) {
+  const { uncommittedFiles, unpushedCommits, ignoredFiles } = row.git
+  if (uncommittedFiles > 0 || unpushedCommits > 0 || ignoredFiles > 0) {
     if (!ack) return { ok: false, reason: `Removing this worktree would lose ${lossSummary(row.git)}; it needs a confirm.` }
-    if (ack.uncommittedFiles < uncommittedFiles || ack.unpushedCommits < unpushedCommits) {
+    if (ack.uncommittedFiles < uncommittedFiles || ack.unpushedCommits < unpushedCommits || (ack.ignoredFiles ?? 0) < ignoredFiles) {
       return { ok: false, reason: `The worktree changed since you confirmed: it now has ${lossSummary(row.git)}. Review it again.` }
     }
   }
@@ -198,8 +239,17 @@ function plural(n: number, word: string): string {
 export function lossSummary(git: WorktreeGitState): string {
   const parts: string[] = []
   if (git.uncommittedFiles > 0) parts.push(plural(git.uncommittedFiles, 'uncommitted file'))
+  if (git.ignoredFiles > 0) parts.push(ignoredSummary(git))
   if (git.unpushedCommits > 0) parts.push(plural(git.unpushedCommits, 'unpushed commit'))
   return parts.join(', ')
+}
+
+/** ".env", ".env and 2 other ignored files", or "3 ignored files" when no name is known. */
+export function ignoredSummary(git: WorktreeGitState): string {
+  const [first] = git.ignoredSample
+  if (!first) return plural(git.ignoredFiles, 'ignored file')
+  if (git.ignoredFiles === 1) return `ignored ${first}`
+  return `${first} and ${plural(git.ignoredFiles - 1, 'other ignored file')}`
 }
 
 /** The confirm body for removing a worktree with changes: names every loss, and what survives. */
@@ -207,9 +257,11 @@ export function removalConfirmBody(row: WorktreeRow): string {
   const git = row.git
   if (!git) return ''
   const lines: string[] = []
-  if (git.uncommittedFiles > 0) {
-    lines.push(`${plural(git.uncommittedFiles, 'uncommitted file')} will be deleted and cannot be recovered.`)
-  }
+  const deleted = [
+    git.uncommittedFiles > 0 ? plural(git.uncommittedFiles, 'uncommitted file') : null,
+    git.ignoredFiles > 0 ? ignoredSummary(git) : null,
+  ].filter(Boolean)
+  if (deleted.length > 0) lines.push(`${deleted.join(' and ')} will be deleted and cannot be recovered.`)
   if (git.unpushedCommits > 0) {
     const one = git.unpushedCommits === 1
     const commits = `${plural(git.unpushedCommits, 'unpushed commit')} ${one ? 'exists' : 'exist'} nowhere else`

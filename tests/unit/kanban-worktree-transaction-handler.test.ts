@@ -382,7 +382,7 @@ describe('Kanban worktree transaction compatibility handlers', () => {
         ownedPaths: () => owned,
         chatLinks: () => new Map(),
         readProtection: () => ({ projects: [], worktrees: [] }),
-        writeProtection: vi.fn(),
+        updateProtection: vi.fn(),
         sizes: new WorktreeSizeCache(async () => 0),
         runner,
       },

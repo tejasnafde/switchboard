@@ -120,7 +120,7 @@ export function WorktreesPanel({ state, onManageProtection }: {
           projectPath: row.projectPath,
           worktreePath: row.path,
           acknowledged: acknowledge && row.git
-            ? { uncommittedFiles: row.git.uncommittedFiles, unpushedCommits: row.git.unpushedCommits }
+            ? { uncommittedFiles: row.git.uncommittedFiles, unpushedCommits: row.git.unpushedCommits, ignoredFiles: row.git.ignoredFiles }
             : null,
         })
         if (!result.ok) failures.push(`${row.branch ?? row.path}: ${result.error}`)
@@ -150,8 +150,8 @@ export function WorktreesPanel({ state, onManageProtection }: {
     if (!(await confirm({
       title: `Remove ${row.branch ?? 'this worktree'}?`,
       body: removalConfirmBody(row),
-      // Unpushed commits on a branch survive; only uncommitted files, or a detached HEAD's commits, are lost.
-      confirmLabel: row.git?.uncommittedFiles || !row.branch ? 'Remove and lose changes' : 'Remove worktree',
+      // Unpushed commits on a branch survive; uncommitted or ignored files, or a detached HEAD's commits, are lost.
+      confirmLabel: row.git?.uncommittedFiles || row.git?.ignoredFiles || !row.branch ? 'Remove and lose changes' : 'Remove worktree',
       destructive: true,
     }))) return
     await removeRows([row], true)

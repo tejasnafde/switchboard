@@ -13,14 +13,14 @@ function row(path: string, overrides: Partial<WorktreeRow> = {}): WorktreeRow {
   return {
     projectPath: '/repo', projectName: 'repo', path, branch: `b/${path}`, head: 'abc', prunable: false,
     locked: false, owned: false, chat: null, protectedBy: null,
-    git: { uncommittedFiles: 0, unpushedCommits: 0, merged: true },
+    git: { uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: true },
     ...overrides,
   }
 }
 
 describe('worktree list', () => {
   const safe = row('/a')
-  const changed = row('/b', { git: { uncommittedFiles: 2, unpushedCommits: 0, merged: false } })
+  const changed = row('/b', { git: { uncommittedFiles: 2, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: false } })
   const inUse = row('/c', { owned: true })
   const guarded = row('/d', { protectedBy: 'project', projectName: 'bot' })
 

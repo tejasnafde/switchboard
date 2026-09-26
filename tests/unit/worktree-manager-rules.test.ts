@@ -5,6 +5,10 @@ import {
   filterCounts,
   formatBytes,
   gitStateLabel,
+  ignoredLosses,
+  ignoredSummary,
+  isRegenerableIgnored,
+  REGENERABLE_IGNORED_DIRS,
   matchesFilter,
   parseProtectionPatch,
   parseWorktreeProtection,
@@ -26,17 +30,18 @@ function row(overrides: Partial<WorktreeRow> = {}): WorktreeRow {
     owned: false,
     chat: null,
     protectedBy: null,
-    git: { uncommittedFiles: 0, unpushedCommits: 0, merged: true },
+    git: { uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: true },
     ...overrides,
   }
 }
 
-const dirty = (files: number, commits = 0) => ({ uncommittedFiles: files, unpushedCommits: commits, merged: false })
+const dirty = (files: number, commits = 0) => ({ uncommittedFiles: files, ignoredFiles: 0, ignoredSample: [] as string[], unpushedCommits: commits, merged: false })
+const ignoring = (...names: string[]) => ({ uncommittedFiles: 0, ignoredFiles: names.length, ignoredSample: names.slice(0, 3), unpushedCommits: 0, merged: true })
 
 describe('classifyWorktree', () => {
   it('calls a clean worktree with nothing unpushed safe, merged or not', () => {
     expect(classifyWorktree(row())).toBe('safe')
-    expect(classifyWorktree(row({ git: { uncommittedFiles: 0, unpushedCommits: 0, merged: false } }))).toBe('safe')
+    expect(classifyWorktree(row({ git: { uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: false } }))).toBe('safe')
   })
 
   it('puts uncommitted files, unpushed commits and unreadable git state under Has changes', () => {
@@ -139,7 +144,7 @@ describe('protection', () => {
 describe('labels', () => {
   it('keeps normal states plain and marks only the exceptions', () => {
     expect(gitStateLabel(row())).toEqual({ text: 'Merged, clean', tone: 'muted' })
-    expect(gitStateLabel(row({ git: { uncommittedFiles: 0, unpushedCommits: 0, merged: false } })).text).toBe('Pushed, clean')
+    expect(gitStateLabel(row({ git: { uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: false } })).text).toBe('Pushed, clean')
     expect(gitStateLabel(row({ git: dirty(3) }))).toEqual({ text: '3 uncommitted files', tone: 'warn' })
     expect(gitStateLabel(row({ git: dirty(1, 1) })).text).toBe('1 uncommitted file, 1 unpushed commit')
     expect(gitStateLabel(row({ owned: true, chat: { kind: 'chat', id: 'c', title: 'T', archived: false } })))
@@ -158,5 +163,46 @@ describe('labels', () => {
     expect(formatBytes(512)).toBe('512 B')
     expect(formatBytes(20 * 1024 * 1024)).toBe('20 MB')
     expect(formatBytes(1.45 * 1024 ** 3)).toBe('1.4 GB')
+  })
+})
+
+describe('ignored files', () => {
+  it('treats regenerable build output as no loss, top-level or node_modules anywhere', () => {
+    for (const dir of ['node_modules', 'dist', 'out', 'build', '.next', 'coverage', '.turbo']) {
+      expect(REGENERABLE_IGNORED_DIRS).toContain(dir)
+      expect(isRegenerableIgnored(`${dir}/`)).toBe(true)
+    }
+    expect(isRegenerableIgnored('packages/app/node_modules/')).toBe(true)
+    expect(isRegenerableIgnored('dist\\bundle.js')).toBe(true)
+    expect(isRegenerableIgnored('.env')).toBe(false)
+    expect(isRegenerableIgnored('src/dist/')).toBe(false)
+    expect(isRegenerableIgnored('secrets/')).toBe(false)
+  })
+
+  it('keeps local work, and drops folders listed only because they hold other listed entries', () => {
+    expect(ignoredLosses(['.env', 'a.log', 'dist/', 'node_modules/', 'pkg/', 'pkg/node_modules/', 'secrets/', '']))
+      .toEqual(['.env', 'a.log', 'secrets/'])
+    expect(ignoredLosses(['q/', 'q/x.log'])).toEqual(['q/x.log'])
+  })
+
+  it('makes a row Has changes and names the files', () => {
+    const r = row({ git: ignoring('.env', 'local.json', 'secrets/') })
+    expect(classifyWorktree(r)).toBe('has_changes')
+    expect(ignoredSummary(r.git!)).toBe('.env and 2 other ignored files')
+    expect(ignoredSummary(ignoring('.env'))).toBe('ignored .env')
+    expect(gitStateLabel(r)).toEqual({ text: '.env and 2 other ignored files', tone: 'warn' })
+    expect(removalConfirmBody(r)).toBe('.env and 2 other ignored files will be deleted and cannot be recovered.')
+    expect(removalConfirmBody(row({ git: { ...ignoring('.env'), uncommittedFiles: 2 } })))
+      .toBe('2 uncommitted files and ignored .env will be deleted and cannot be recovered.')
+  })
+
+  it('needs the ignored files acknowledged like uncommitted ones, without forcing', () => {
+    const r = row({ git: ignoring('.env', 'local.json') })
+    expect(removalVerdict(r, null).ok).toBe(false)
+    // An older client acknowledges no ignored files.
+    expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0 }).ok).toBe(false)
+    expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0, ignoredFiles: 1 }).ok).toBe(false)
+    expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0, ignoredFiles: 2 }))
+      .toEqual({ ok: true, force: false, deleteBranch: 'kanban/a' })
   })
 })

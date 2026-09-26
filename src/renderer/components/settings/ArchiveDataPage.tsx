@@ -33,7 +33,7 @@ export function ArchiveDataPage({ meta, Anchor, onOpenProjects }: {
         </button>
         <h2 className="mb-1 text-[18px] font-[600]">Worktrees</h2>
         <p className="mb-[18px] text-[13px] text-[var(--text-secondary)]">
-          Remove what you no longer need. A worktree with uncommitted changes or unpushed commits is never removed in a batch.
+          Remove what you no longer need. A worktree with uncommitted changes, ignored local files (such as a .env) or unpushed commits is never removed in a batch.
         </p>
         <WorktreesPanel state={worktrees} onManageProtection={onOpenProjects} />
       </>

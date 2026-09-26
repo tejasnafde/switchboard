@@ -13,7 +13,7 @@ import { promisify } from 'node:util'
 import { access, lstat, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { WorktreeInfo } from '@shared/kanban'
-import type { WorktreeGitState } from '@shared/worktree-manager'
+import { ignoredLosses, type WorktreeGitState } from '@shared/worktree-manager'
 import type { GitRunner } from './worktree'
 import { createMainLogger } from './logger'
 
@@ -24,6 +24,8 @@ const defaultRunner: GitRunner = async (args, cwd) => {
   const res = await execFileP('git', args, { cwd, timeout: 15_000, maxBuffer: 8 * 1024 * 1024 })
   return { stdout: res.stdout, stderr: res.stderr }
 }
+
+const IGNORED_SAMPLE_SIZE = 3
 
 function exitCode(err: unknown): unknown {
   return err && typeof err === 'object' && 'code' in err ? (err as { code: unknown }).code : undefined
@@ -72,9 +74,18 @@ export async function inspectWorktreeGit(
   runner: GitRunner = defaultRunner,
 ): Promise<WorktreeGitState> {
   let uncommittedFiles = 0
+  let ignored: string[] = []
   if (!wt.prunable && await isDirectory(wt.path)) {
     const { stdout } = await runner(['status', '--porcelain'], wt.path)
     uncommittedFiles = stdout.split('\n').filter((line) => line.trim() !== '').length
+    // `git worktree remove` deletes ignored files without --force, so an
+    // ignored .env is a loss too. --directory reports a fully ignored folder
+    // once instead of every file in it.
+    const { stdout: listed } = await runner(
+      ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
+      wt.path,
+    )
+    ignored = ignoredLosses(listed.split('\0'))
   }
 
   // Commits reachable from this HEAD and from no other branch or remote:
@@ -94,7 +105,7 @@ export async function inspectWorktreeGit(
     // Exit 1 is git's "not an ancestor"; anything else is a real failure.
     if (exitCode(err) !== 1) throw err
   }
-  return { uncommittedFiles, unpushedCommits, merged }
+  return { uncommittedFiles, ignoredFiles: ignored.length, ignoredSample: ignored.slice(0, IGNORED_SAMPLE_SIZE), unpushedCommits, merged }
 }
 
 // ─── Size on disk ────────────────────────────────────────────────────
