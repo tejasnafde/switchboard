@@ -89,6 +89,21 @@ export interface WorktreeProtectionPatch {
   protected: boolean
 }
 
+/** The patch as it arrives over IPC, where nothing but this checks its shape; null when malformed. */
+export function parseProtectionPatch(value: unknown): WorktreeProtectionPatch | null {
+  if (!value || typeof value !== 'object') return null
+  const { target, path, protected: on } = value as Record<string, unknown>
+  if (target !== 'project' && target !== 'worktree') return null
+  if (typeof path !== 'string' || !isAbsolutePath(path)) return null
+  if (typeof on !== 'boolean') return null
+  return { target, path, protected: on }
+}
+
+/** POSIX or Windows absolute; `node:path` is not available to the shared layer. */
+function isAbsolutePath(path: string): boolean {
+  return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\')
+}
+
 export function applyProtectionPatch(protection: WorktreeProtection, patch: WorktreeProtectionPatch): WorktreeProtection {
   const key = patch.target === 'project' ? 'projects' : 'worktrees'
   const without = protection[key].filter((p) => p !== patch.path)

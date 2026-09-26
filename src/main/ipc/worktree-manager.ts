@@ -5,7 +5,7 @@
 import { isAbsolute } from 'node:path'
 import type { BackendHost } from '../backend/host'
 import { WorktreeManagerChannels } from '@shared/ipc-channels'
-import type { WorktreeProtectionPatch } from '@shared/worktree-manager'
+import { parseProtectionPatch } from '@shared/worktree-manager'
 import {
   buildWorktreeInventory,
   defaultWorktreeManagerDeps,
@@ -42,7 +42,9 @@ export function registerWorktreeManagerHandlers(
 
   host.handle(WorktreeManagerChannels.GET_PROTECTION, async () => deps.readProtection())
 
-  host.handle(WorktreeManagerChannels.SET_PROTECTION, async (patch: WorktreeProtectionPatch) => {
+  host.handle(WorktreeManagerChannels.SET_PROTECTION, async (raw: unknown) => {
+    const patch = parseProtectionPatch(raw)
+    if (!patch) throw new Error('Invalid worktree protection change: needs target project|worktree, an absolute path and protected true|false.')
     return updateWorktreeProtection(patch, deps)
   })
 }

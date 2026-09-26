@@ -31,9 +31,11 @@ describe('isChannelAllowed', () => {
     expect(isChannelAllowed(PHONE_SCOPES, AppChannels.SAVE_LAUNCH_CONFIG)).toBe(false)
   })
 
-  it('keeps a phone from removing worktrees, while it may still read them', () => {
+  it('keeps a phone from removing or unprotecting worktrees, while it may still read them', () => {
     expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.REMOVE)).toBe(false)
     expect(isChannelAllowed(PHONE_SCOPES, KanbanChannels.REMOVE_STALE_WORKTREE)).toBe(false)
+    expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.SET_PROTECTION)).toBe(false)
+    expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.GET_PROTECTION)).toBe(true)
     expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.INVENTORY)).toBe(true)
     expect(isChannelAllowed(FULL_SCOPES, WorktreeManagerChannels.REMOVE)).toBe(true)
   })

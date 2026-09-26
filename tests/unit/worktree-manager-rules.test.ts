@@ -6,6 +6,7 @@ import {
   formatBytes,
   gitStateLabel,
   matchesFilter,
+  parseProtectionPatch,
   parseWorktreeProtection,
   protectionSource,
   removalConfirmBody,
@@ -111,6 +112,20 @@ describe('protection', () => {
     p = applyProtectionPatch(p, { target: 'worktree', path: '/w', protected: true })
     expect(p.worktrees).toEqual(['/w'])
     expect(applyProtectionPatch(p, { target: 'worktree', path: '/w', protected: false }).worktrees).toEqual([])
+  })
+
+  it('accepts only a well-formed protection patch from IPC', () => {
+    expect(parseProtectionPatch({ target: 'project', path: '/repo', protected: true }))
+      .toEqual({ target: 'project', path: '/repo', protected: true })
+    expect(parseProtectionPatch({ target: 'worktree', path: 'C:\\repo\\wt', protected: false })?.target).toBe('worktree')
+    for (const bad of [
+      null, 'x', {},
+      { target: 'repo', path: '/repo', protected: true },
+      { target: 'project', path: 'relative/repo', protected: true },
+      { target: 'project', path: 42, protected: true },
+      { target: 'project', path: '/repo', protected: 0 },
+      { target: 'project', path: '/repo' },
+    ]) expect(parseProtectionPatch(bad)).toBeNull()
   })
 
   it('reports the project before the worktree', () => {
