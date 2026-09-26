@@ -1,0 +1,85 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "settings-worktree-manager",
+  "summary": "Settings > Archive & data > Worktrees: a safe worktree manager across every project, also the body of the kanban board's worktree dialog (scoped to one project there), so there is one list and one removal path. Each row shows the project, the branch (ellipsis, full path on hover), the linked chat or card, the git state (Merged, clean / Pushed, clean as muted text; N uncommitted files or N unpushed commits in amber with an icon; In use with a lock) and the size on disk, measured lazily per row by `du` in a child process, cached for 10 minutes and throttled to two at a time. Underline filter tabs with counts: All, Safe to remove, Has changes, In use. Only worktrees that lose nothing can be ticked for a batch; a worktree with changes is removed on its own after a confirm() naming what is lost; an in-use worktree has a disabled checkbox and is never removed. The backend re-lists, re-reads ownership, protection and git state at removal time and refuses when the losses grew past what was confirmed; deletion is git worktree remove (with --force only for acknowledged uncommitted files), and a branch is deleted only when it holds no commit found on any other branch or remote. Protection: a per-project switch under Settings > Projects and a per-worktree lock in the manager, stored as the settings row worktrees.protection on the backend that owns the worktrees, so a remote backend honours it; protected and git-locked worktrees are hidden from the tabs and never counted as stale by findStaleWorktrees. The legacy kanban:remove-stale-worktree channel now goes through the same guard with nothing acknowledged, and both removal channels need the admin scope, so a paired phone cannot call them.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/settings/WorktreesPanel.tsx",
+        "src/renderer/components/settings/worktree-list.ts",
+        "src/renderer/components/settings/ArchiveDataPage.tsx",
+        "src/renderer/components/settings/WorktreeProtectionPanel.tsx",
+        "src/renderer/components/settings/settings-rows.ts",
+        "src/renderer/components/SettingsPage.tsx",
+        "src/renderer/components/kanban/WorktreeManagerModal.tsx",
+        "src/preload/worktree-manager-api.ts",
+        "src/preload/index.ts",
+        "src/main/index.ts",
+        "tests/unit/worktree-list.test.ts",
+        "tests/unit/settings-page-render.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native app neither lists nor removes worktrees: apps/mobile only offers worktree CREATION for a new session (lib/worktree-capability.ts, lib/new-session-creation.ts) and never calls kanban:list-worktrees, kanban:remove-stale-worktree or any worktree-manager channel. Protection lives on the backend, so it applies to whatever backend the phone is paired with without phone changes, and the phone's chat scope is now refused the two removal channels."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android has no worktree list or removal screen and calls no worktree listing or removal channel (nothing under apps/android references list-worktrees, remove-stale-worktree or worktree-manager). The protect flag is honoured by the backend it talks to; its chat-scoped session cannot call the removal channels."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/worktree-manager.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/device-auth.ts",
+        "src/shared/kanban.ts",
+        "src/main/worktree-manager.ts",
+        "src/main/worktree-inspect.ts",
+        "src/main/worktree.ts",
+        "src/main/ipc/worktree-manager.ts",
+        "src/main/ipc/kanban.ts",
+        "src/main/db/worktree-links.ts",
+        "src/server/index.ts",
+        "tests/unit/worktree-manager-rules.test.ts",
+        "tests/unit/worktree-manager-git.test.ts",
+        "tests/unit/kanban-worktree-transaction-handler.test.ts",
+        "tests/unit/device-auth.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/worktree-manager.ts",
+        "src/main/db/worktree-links.ts",
+        "tests/unit/worktree-manager-rules.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "src/main/ipc/kanban.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test",
+      "tests/unit/worktree-manager-rules.test.ts: classification (safe / has changes / in use / protected, locked, unreadable git), tab counts, the removal verdict (refusals, acknowledgement required and must cover current losses, --force only for uncommitted files, branch kept when it holds unpushed commits), protection parse and patch, labels and the confirm body",
+      "tests/unit/worktree-manager-git.test.ts: real git repositories in a temp dir removed after each test - git state of clean, dirty and ahead worktrees, the main checkout never listed, owned and protected rows, a locked worktree, removal of a clean worktree and its empty kanban branch, refusal of in-use and protected worktrees, a stale acknowledgement refused, a branch with unpushed commits kept, findStaleWorktrees skipping protected and locked worktrees, and the size cache (dedupe, refresh, two at a time, du on a real directory)",
+      "tests/unit/kanban-worktree-transaction-handler.test.ts: the legacy stale removal channel goes through the guard and ignores its old force flag",
+      "tests/unit/device-auth.test.ts: a phone session is refused worktree-manager:remove and kanban:remove-stale-worktree, and may still read the inventory",
+      "A one-off Playwright drive of the built app (SB_E2E_BACKGROUND=1, private TMPDIR, demo workspace with a clean, a dirty and an ahead worktree): the Archive & data summary, the manager's tabs and rows, the confirm for a worktree with an unpushed commit, the Chat column hidden at a narrow window, and the Projects page protection switches were captured and looked at. No removal was clicked in that run; removal is covered against real git by worktree-manager-git.test.ts."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No covered visual baseline changed (the Settings baseline is the General page and the kanban baseline is the board), so the screens phase was not re-run locally; CI runs it.",
+      "Removing a worktree owned by an archived chat or a done card is not offered here: owned worktrees stay In use and are removed from their chat or card, which goes through canonical worktree identity.",
+      "A remote backend older than this change has no worktree-manager channels; the page shows the inventory error rather than a list."
+    ]
+  }
+}

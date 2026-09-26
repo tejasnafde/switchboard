@@ -34,7 +34,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'projects', title: 'Projects', description: 'Settings that belong to one project.' },
   { id: 'keyboard', title: 'Keyboard', description: 'Every shortcut, with the keys for this computer.' },
   { id: 'devices', title: 'Devices & machines', description: 'Phones paired with this Mac.' },
-  { id: 'data', title: 'Archive & data', description: 'Archived chats.' },
+  { id: 'data', title: 'Archive & data', description: 'Archived chats and worktrees.' },
   { id: 'about', title: 'About', description: 'A unified developer workspace that multiplexes terminals and agent chats.' },
 ]
 
@@ -144,6 +144,11 @@ const ROWS = {
     label: 'Project launch configs',
     description: 'The terminals a chat in each project opens with, and the worktree setup command.',
   },
+  worktreeProtection: {
+    id: 'projects.worktreeProtection', page: 'projects', section: 'Worktree protection',
+    label: 'Protected projects',
+    description: 'A protected project\'s worktrees are never offered for cleanup or counted as stale.',
+  },
   mobile: {
     id: 'devices.mobile', page: 'devices', section: 'Mobile pairing',
     label: 'Mobile pairing',
@@ -153,6 +158,11 @@ const ROWS = {
     id: 'data.archived', page: 'data', section: 'Archived conversations',
     label: 'Archived conversations',
     description: 'Search and unarchive the chats you archived from the sidebar.',
+  },
+  worktrees: {
+    id: 'data.worktrees', page: 'data', section: 'Worktrees',
+    label: 'Worktrees',
+    description: 'Size, git state and linked chat of every worktree, with a cleanup that never loses work unasked.',
   },
   about: {
     id: 'about.app', page: 'about', section: 'Switchboard',

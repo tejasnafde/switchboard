@@ -18,7 +18,8 @@ import { createRendererLogger } from '../logger'
 import { AccountsPanel } from './settings/AccountsPanel'
 import { MobilePairingTab } from './settings/MobilePairingTab'
 import { LaunchConfigsPanel } from './settings/LaunchConfigsPanel'
-import { ArchivedPanel } from './settings/ArchivedPanel'
+import { ArchiveDataPage } from './settings/ArchiveDataPage'
+import { WorktreeProtectionPanel } from './settings/WorktreeProtectionPanel'
 import { useSettingValues, type SettingValues } from './settings/setting-values'
 import {
   SETTINGS_PAGES,
@@ -174,7 +175,7 @@ function SettingsBody({
         <div className="max-w-[760px]">
           {searching
             ? <SearchResults query={query} results={results} onOpen={(row) => onNavigate(row.page, row.id)} />
-            : <SettingsPageBody page={page} />}
+            : <SettingsPageBody page={page} onNavigate={onNavigate} />}
         </div>
       </main>
     </SettingsContext.Provider>
@@ -239,8 +240,11 @@ function Highlighted({ text, query }: { text: string; query: string }) {
   )
 }
 
-export function SettingsPageBody({ page }: { page: SettingsPageId }) {
+export function SettingsPageBody({ page, onNavigate }: { page: SettingsPageId; onNavigate?: (page: SettingsPageId) => void }) {
   const meta = SETTINGS_PAGES.find((p) => p.id === page)!
+  if (page === 'data') {
+    return <ArchiveDataPage meta={meta} Anchor={SettingAnchor} onOpenProjects={onNavigate && (() => onNavigate('projects'))} />
+  }
   return (
     <>
       <h2 className="mb-1 text-[18px] font-[600]">{meta.title}</h2>
@@ -250,19 +254,19 @@ export function SettingsPageBody({ page }: { page: SettingsPageId }) {
       {page === 'chat' && <ChatPage />}
       {page === 'accounts' && <AccountsPanel Anchor={SettingAnchor} />}
       {page === 'projects' && (
-        <Section title={SETTING_ROW.launchConfigs.section}>
-          <SettingAnchor def={SETTING_ROW.launchConfigs}><LaunchConfigsPanel /></SettingAnchor>
-        </Section>
+        <>
+          <Section title={SETTING_ROW.launchConfigs.section}>
+            <SettingAnchor def={SETTING_ROW.launchConfigs}><LaunchConfigsPanel /></SettingAnchor>
+          </Section>
+          <Section title={SETTING_ROW.worktreeProtection.section}>
+            <SettingAnchor def={SETTING_ROW.worktreeProtection}><WorktreeProtectionPanel /></SettingAnchor>
+          </Section>
+        </>
       )}
       {page === 'keyboard' && <KeyboardPage />}
       {page === 'devices' && (
         <Section title={SETTING_ROW.mobile.section}>
           <SettingAnchor def={SETTING_ROW.mobile}><MobilePairingTab /></SettingAnchor>
-        </Section>
-      )}
-      {page === 'data' && (
-        <Section title={SETTING_ROW.archived.section}>
-          <SettingAnchor def={SETTING_ROW.archived}><ArchivedPanel /></SettingAnchor>
         </Section>
       )}
       {page === 'about' && <AboutPage />}

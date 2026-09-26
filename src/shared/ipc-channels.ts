@@ -171,6 +171,23 @@ export const KanbanChannels = {
   REMOVE_STALE_WORKTREE: 'kanban:remove-stale-worktree',
 } as const
 
+/**
+ * Settings > Archive & data > Worktrees, and the kanban board's worktree
+ * dialog. Rules in `shared/worktree-manager.ts`; the backend re-checks every
+ * removal against fresh git state.
+ */
+export const WorktreeManagerChannels = {
+  /** (projectPaths?: string[]) -> WorktreeInventory. Every project when omitted. */
+  INVENTORY: 'worktree-manager:inventory',
+  /** (path, { refresh? }) -> { bytes: number | null }. Cached; computed in a child process. */
+  SIZE: 'worktree-manager:size',
+  /** ({ projectPath, worktreePath, acknowledged }) -> { ok: true } | { ok: false, error }. */
+  REMOVE: 'worktree-manager:remove',
+  GET_PROTECTION: 'worktree-manager:get-protection',
+  /** (WorktreeProtectionPatch) -> WorktreeProtection. */
+  SET_PROTECTION: 'worktree-manager:set-protection',
+} as const
+
 export const FilesChannels = {
   /** Lean directory listing (name/isDir) - remote add-project path autocomplete. */
   LIST_DIR: 'files:list-dir',

@@ -19,6 +19,7 @@ export * from './messages'
 export * from './settings'
 export * from './kanban'
 export * from './bookmarks'
+export * from './worktree-links'
 
 let db: Database.Database | null = null
 

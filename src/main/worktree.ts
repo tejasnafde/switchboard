@@ -27,6 +27,7 @@ import { access } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { createMainLogger } from './logger'
 import type { WorktreeInfo } from '@shared/kanban'
+import { protectionSource, type WorktreeProtection } from '@shared/worktree-manager'
 
 const log = createMainLogger('worktree')
 const execFileP = promisify(execFile)
@@ -96,8 +97,9 @@ export async function removeWorktree(
  * `git worktree list --porcelain` parser. Each record is a blank-line
  * separated block of `key value` lines. Linked worktrees (the ones we
  * care about) carry `worktree`, `HEAD`, and either `branch refs/heads/X`
- * or `detached`. The main checkout is included; we filter it out so the
- * UI shows only managed worktrees.
+ * or `detached`. The main checkout is always the first record; we drop it,
+ * and `mainPath` too, so neither the real checkout nor the project itself
+ * (when a project is opened from a linked worktree) is ever offered as one.
  */
 export function parseWorktreeList(porcelain: string, mainPath: string): WorktreeInfo[] {
   const out: WorktreeInfo[] = []
@@ -105,14 +107,19 @@ export function parseWorktreeList(porcelain: string, mainPath: string): Worktree
   // the skip-main comparison works on Windows too (`resolve('/repo')` yields
   // `D:\repo` there, which would otherwise never match a raw '/repo' input).
   const mainResolved = resolve(mainPath)
-  let cur: Partial<WorktreeInfo> & { _detached?: boolean; _prunable?: boolean } = {}
+  let cur: Partial<WorktreeInfo> & { _detached?: boolean; _prunable?: boolean; _locked?: boolean } = {}
+  let seenMain = false
   const flush = () => {
-    if (cur.path && cur.head && cur.path !== mainResolved) {
+    if (!cur.path) return
+    const isMain = !seenMain
+    seenMain = true
+    if (!isMain && cur.head && cur.path !== mainResolved) {
       out.push({
         path: cur.path,
         head: cur.head,
         branch: cur.branch ?? null,
         prunable: cur._prunable ?? false,
+        locked: cur._locked ?? false,
         inUse: false,
       })
     }
@@ -128,6 +135,7 @@ export function parseWorktreeList(porcelain: string, mainPath: string): Worktree
     else if (key === 'branch') cur.branch = val.replace(/^refs\/heads\//, '')
     else if (key === 'detached') cur._detached = true
     else if (key === 'prunable') cur._prunable = true
+    else if (key === 'locked') cur._locked = true
   }
   flush()
   return out
@@ -145,19 +153,24 @@ export async function listWorktrees(
  * Find worktrees the user can probably nuke: prunable (per git itself),
  * or reachable on disk but the directory is missing, or referenced by
  * no kanban card. Caller passes the set of paths still in use by cards;
- * everything else under the managed root is considered stale.
+ * everything else under the managed root is considered stale, except what
+ * `protection` covers (the whole project, or one worktree) and what git
+ * has locked.
  */
 export async function findStaleWorktrees(
   repoPath: string,
   inUsePaths: Set<string>,
   runner: GitRunner = defaultRunner,
+  protection: WorktreeProtection = { projects: [], worktrees: [] },
 ): Promise<WorktreeInfo[]> {
+  if (protection.projects.includes(repoPath)) return []
   const all = await listWorktrees(repoPath, runner)
   const root = worktreeRootFor(repoPath)
   const stale: WorktreeInfo[] = []
   for (const wt of all) {
     const underManagedRoot = wt.path.startsWith(root)
     if (!underManagedRoot) continue // user-created worktree, leave alone
+    if (wt.locked || protectionSource(protection, repoPath, wt.path)) continue
     const exists = await pathExists(wt.path)
     const orphaned = !inUsePaths.has(wt.path)
     if (wt.prunable || !exists || orphaned) {
