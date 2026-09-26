@@ -1,0 +1,72 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "settings-json",
+  "summary": "Settings step 6: Open settings as JSON. Settings > About writes <userData>/settings.json from the settings DB ({ $schema, settings, projects, keyboard }, only values that differ from the default, from an explicit allow-list in src/shared/settings-file.ts) and a JSON Schema beside it, then opens it in the embedded IDE beside a local chat or in the system editor. The main process watches the folder: a save is parsed, checked with the same rules as the page (each setting's accepted values, SCOPABLE_SETTINGS for project overrides, applyShortcutOverrides' refusal rules for rebinds) and applied through the normal write paths, so the menu rebuilds and the window re-reads the stores it changed; invalid JSON applies nothing and is never rewritten, refused entries are named in a one-line banner and logged, and a removed key resets to its default. A settings write from the page, a phone or the IPC rewrites the file unless it changed on disk since Switchboard last wrote or applied it. The DB stays the source of truth.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/settings-file.ts",
+        "src/main/ipc/settings-file.ts",
+        "src/main/index.ts",
+        "src/preload/index.ts",
+        "src/preload/hybrid-transport.ts",
+        "src/renderer/components/SettingsPage.tsx",
+        "src/renderer/components/settings/settings-rows.ts",
+        "src/renderer/components/settings/setting-values.ts",
+        "src/renderer/components/settings/settings-json-open.ts",
+        "src/renderer/services/settings-file-sync.ts",
+        "src/renderer/services/analytics-pref.ts",
+        "src/renderer/stores/theme-store.ts",
+        "src/renderer/App.tsx",
+        "tests/unit/settings-file-sync.test.ts",
+        "e2e/settings-json.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The file lives in the desktop's userData beside its settings DB and is edited with a desktop editor; a phone has no file to open. Settings the file changes are written through the ordinary settings rows, so the phone reads them over settings:get exactly as it reads a change made on the desktop page."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as the phone: no file on the device, and the settings it writes reach Android over the existing settings:get reads. No channel Android calls changed."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/settings-file.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/ipc/app.ts",
+        "tests/unit/settings-file.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/settings-file.ts",
+        "src/shared/settings-file.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test (vitest: the allow-list equals the Settings page's value rows with the same defaults and choices; the projection leaves defaults, off-list keys, secrets and another build's rebinds out; the plan refuses invalid JSON, unknown keys, bad values, non-object sections, unscopable project keys, reserved, typing, unknown, fixed and clashing shortcuts, resets removed keys, keeps another build's rebinds, accepts a swap, and writes nothing for its own output; the sync ignores its own writes and the writes its apply makes, never rewrites a broken or unapplied file and reports it, does not recreate a deleted file, resumes an existing file untouched, and debounces a burst of watcher events)",
+      "npm run build:fast && SB_E2E_BACKGROUND=1 node e2e/settings-json.e2e.mjs (14 checks: Open writes the file and schema and hands it to the stubbed system editor, an edit on disk changes the theme and follow-up rows and the banner names a reserved shortcut, a UI toggle rewrites the file, invalid JSON is reported, not applied and not overwritten by a later UI change)"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Opening in the embedded IDE (a local chat open, code-server installed) was not driven end to end; it uses the existing openInViewer path with an absolute path, and the e2e covers the system-editor fallback with shell.openPath stubbed.",
+      "Schema completion inside the workbench was not checked by eye; the schema content is unit-tested.",
+      "Edits made while Switchboard is closed are not applied at the next launch: resume adopts the file as it is and the next settings change rewrites it from the DB.",
+      "The remote-backend disabled state was checked by reading the code (window.api.settingsFile.available is false when SWITCHBOARD_BACKEND_URL is set), not in a remote session."
+    ]
+  }
+}

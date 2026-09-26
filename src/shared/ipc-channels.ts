@@ -135,6 +135,23 @@ export const AppChannels = {
   MARK_READ: 'app:mark-read',
 } as const
 
+/**
+ * `settings.json` beside the settings DB (`shared/settings-file.ts`). Desktop
+ * only: served on ipcMain, never to a phone or over a remote backend, since
+ * the file is on the machine the window runs on.
+ */
+export const SettingsFileChannels = {
+  /** Write the file and its schema from the DB, start watching, and answer the path. */
+  OPEN: 'settings-file:open',
+  /** Open the file in the system editor, when the embedded IDE cannot. */
+  OPEN_EXTERNAL: 'settings-file:open-external',
+  STATUS: 'settings-file:status',
+  /** Push: the status changed (a save applied, refused, or a write skipped). */
+  STATUS_CHANGED: 'settings-file:status-changed',
+  /** Push: a save changed these settings keys, for the window to re-read. */
+  APPLIED: 'settings-file:applied',
+} as const
+
 export const MachineChannels = {
   LIST: 'machines:list',
   CREATE: 'machines:create',

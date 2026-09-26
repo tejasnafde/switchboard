@@ -35,6 +35,10 @@ export async function setAnalyticsEnabled(enabled: boolean): Promise<void> {
   }
 }
 
+export function invalidateAnalyticsCache(): void {
+  cached = null
+}
+
 /** True when the first-launch notice has not been dismissed yet. */
 export async function shouldShowAnalyticsNotice(): Promise<boolean> {
   try {

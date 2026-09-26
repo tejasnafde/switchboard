@@ -89,6 +89,7 @@ import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conve
 import { loadCursorConversation } from '../cursor/store'
 import { importCursorSnapshot } from '../db/cursor-import'
 import { getSettingForProject, listProjectOverrides, removeProjectOverride, setProjectOverride } from '../project-settings'
+import { projectOverrideKey } from '@shared/project-settings'
 
 const log = createLogger('ipc:app')
 
@@ -139,7 +140,10 @@ export interface AppHandlerDependencies {
   conversationFork?: Pick<ConversationForkCoordinator, 'createOrGet' | 'get'>
   /** True while the thread's provider is mid-turn; see `ProviderRegistry.isTurnInFlight`. */
   isTurnInFlight?: (threadId: string) => boolean
-  /** After a settings write, for values the main process applies live. */
+  /**
+   * After a settings write, for values the main process applies live. A
+   * project override passes `projectOverrideKey(<path as sent>, key)`.
+   */
   onSettingChanged?: (key: string) => void
 }
 
@@ -264,10 +268,14 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   })
   host.handle(AppChannels.SETTINGS_PROJECT_OVERRIDES, (projectPaths: unknown) =>
     listProjectOverrides(Array.isArray(projectPaths) ? projectPaths.filter((p): p is string => typeof p === 'string') : []))
-  host.handle(AppChannels.SETTINGS_PROJECT_OVERRIDE_SET, (projectPath: string, key: string, value: string) =>
-    setProjectOverride(projectPath, key, value))
-  host.handle(AppChannels.SETTINGS_PROJECT_OVERRIDE_REMOVE, (projectPath: string, key: string) =>
-    removeProjectOverride(projectPath, key))
+  host.handle(AppChannels.SETTINGS_PROJECT_OVERRIDE_SET, (projectPath: string, key: string, value: string) => {
+    setProjectOverride(projectPath, key, value)
+    deps.onSettingChanged?.(projectOverrideKey(projectPath, key))
+  })
+  host.handle(AppChannels.SETTINGS_PROJECT_OVERRIDE_REMOVE, (projectPath: string, key: string) => {
+    removeProjectOverride(projectPath, key)
+    deps.onSettingChanged?.(projectOverrideKey(projectPath, key))
+  })
 
   // Load persisted projects on renderer request
   host.handle(AppChannels.GET_PROJECTS, async () => {

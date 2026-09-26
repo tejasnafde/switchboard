@@ -4,7 +4,7 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
-import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels, SettingsFileChannels } from '@shared/ipc-channels'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent, WorktreeInfo } from '@shared/kanban'
@@ -554,6 +554,19 @@ const api = {
       transport.invoke(AppChannels.SETTINGS_PROJECT_OVERRIDE_SET, projectPath, key, value),
     removeProjectOverride: (projectPath: string, key: string): Promise<void> =>
       transport.invoke(AppChannels.SETTINGS_PROJECT_OVERRIDE_REMOVE, projectPath, key),
+  },
+
+  /** `settings.json` beside this desktop's settings DB. Not offered while the window drives a remote backend. */
+  settingsFile: {
+    available: !backendUrl,
+    open: (): Promise<{ path: string }> => transport.invoke(SettingsFileChannels.OPEN),
+    openExternal: (): Promise<{ ok: boolean; error?: string }> => transport.invoke(SettingsFileChannels.OPEN_EXTERNAL),
+    status: (): Promise<import('@shared/settings-file').SettingsFileStatus> => transport.invoke(SettingsFileChannels.STATUS),
+    onStatus: (callback: (status: import('@shared/settings-file').SettingsFileStatus) => void) =>
+      transport.on<[import('@shared/settings-file').SettingsFileStatus]>(SettingsFileChannels.STATUS_CHANGED, (status) => callback(status)),
+    /** A save changed these stored settings keys. */
+    onApplied: (callback: (keys: string[]) => void) =>
+      transport.on<[string[]]>(SettingsFileChannels.APPLIED, (keys) => callback(keys)),
   },
 
   // ─── Provider instances (named credential sets per agent kind) ───

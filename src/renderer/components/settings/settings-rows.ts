@@ -213,6 +213,11 @@ const ROWS = {
     label: 'Jump to a step',
     description: 'Play one clip of the tour.',
   },
+  settingsJson: {
+    id: 'about.settingsJson', page: 'about', section: 'Advanced',
+    label: 'Open settings as JSON',
+    description: 'For power users. The file is the same source as this page: saving it changes the settings here, and a change here rewrites it.',
+  },
   diagnostics: {
     id: 'about.diagnostics', page: 'about', section: 'Diagnostics',
     label: 'Diagnostics',

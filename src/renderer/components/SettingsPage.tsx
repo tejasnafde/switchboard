@@ -34,6 +34,10 @@ import {
 } from './settings/project-scope'
 import type { PickerProject } from './settings/project-picker-options'
 import { useProjectSettingsStore } from '../stores/project-settings-store'
+import { useLayoutStore } from '../stores/layout-store'
+import { useAgentStore } from '../stores/agent-store'
+import { settingsFileBanner, type SettingsFileStatus } from '@shared/settings-file'
+import { settingsJsonOpenTarget } from './settings/settings-json-open'
 import type { Workspace } from '@shared/types'
 import {
   SETTINGS_PAGES,
@@ -72,10 +76,12 @@ interface SettingsContextValue extends SettingValues {
   setScope: (scope: string | null) => void
   projects: PickerProject[]
   workspaces: Workspace[]
+  /** Close Settings, for a row that opens something behind it. */
+  close: () => void
 }
 
 const SettingsContext = createContext<SettingsContextValue>({
-  values: {}, set: () => {}, highlight: null, scope: null, setScope: () => {}, projects: [], workspaces: [],
+  values: {}, set: () => {}, highlight: null, scope: null, setScope: () => {}, projects: [], workspaces: [], close: () => {},
 })
 
 /**
@@ -159,8 +165,8 @@ function SettingsBody({
   const results = useMemo(() => searchSettingRows(query), [query, settingValues.values])
   const searching = query.trim() !== ''
   const context = useMemo(
-    () => ({ ...settingValues, highlight, scope, setScope, projects, workspaces }),
-    [settingValues, highlight, scope, projects, workspaces],
+    () => ({ ...settingValues, highlight, scope, setScope, projects, workspaces, close: onClose }),
+    [settingValues, highlight, scope, projects, workspaces, onClose],
   )
 
   return (
@@ -209,6 +215,7 @@ function SettingsBody({
       </nav>
       <main className="min-w-0 flex-1 overflow-auto bg-[var(--bg-primary)] px-[30px] py-[22px]">
         <div className="max-w-[760px]">
+          <SettingsFileBanner />
           {searching
             ? <SearchResults query={query} results={results} onOpen={(row) => onNavigate(row.page, row.id)} />
             : <SettingsPageBody page={page} onNavigate={onNavigate} />}
@@ -637,10 +644,80 @@ function AboutPage() {
       <Section title="Feature tour" card>
         <TourRows />
       </Section>
+      <Section title={SETTING_ROW.settingsJson.section} card>
+        <SettingsJsonRow />
+      </Section>
       <SettingAnchor def={SETTING_ROW.diagnostics}>
         <DiagnosticsSection />
       </SettingAnchor>
     </>
+  )
+}
+
+function SettingsJsonRow() {
+  const { close } = useContext(SettingsContext)
+  const available = typeof window !== 'undefined' && window.api?.settingsFile?.available === true
+  const [problem, setProblem] = useState<string | null>(null)
+  const open = async () => {
+    setProblem(null)
+    try {
+      const { path } = await window.api.settingsFile.open()
+      const layout = useLayoutStore.getState()
+      const sessionId = layout.companionSessionId()
+      const session = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
+      if (settingsJsonOpenTarget(session) === 'ide') {
+        layout.openInViewer(path, null, sessionId)
+        close()
+        return
+      }
+      const opened = await window.api.settingsFile.openExternal()
+      if (!opened.ok) setProblem(`Wrote ${path}, but no editor opened it: ${opened.error ?? 'unknown error'}.`)
+    } catch (err) {
+      log.warn('opening settings.json failed', err)
+      setProblem('Could not write settings.json. The log has the reason.')
+    }
+  }
+  return (
+    <SettingRow
+      def={SETTING_ROW.settingsJson}
+      below={
+        !available
+          ? <div className="mt-0.5 text-[11.5px] text-[var(--text-muted)]">The file is beside this Mac's settings, and this window uses a remote backend's.</div>
+          : problem && <div role="alert" className="mt-0.5 text-[11.5px] text-[var(--warning)]">{problem}</div>
+      }
+    >
+      <Button variant="outline" size="sm" disabled={!available} onClick={() => void open()}>Open</Button>
+    </SettingRow>
+  )
+}
+
+/** One line naming what the last settings.json save could not apply, or a write it skipped. */
+function SettingsFileBanner() {
+  const [status, setStatus] = useState<SettingsFileStatus | null>(null)
+  useEffect(() => {
+    const api = window.api.settingsFile
+    if (!api?.available) return
+    let cancelled = false
+    api.status()
+      .then((next) => { if (!cancelled) setStatus(next) })
+      .catch((err) => log.warn('reading the settings.json status failed', err))
+    const off = api.onStatus(setStatus)
+    return () => {
+      cancelled = true
+      off()
+    }
+  }, [])
+  const line = status && settingsFileBanner(status)
+  if (!line) return null
+  return (
+    <div
+      role="status"
+      title={line}
+      data-testid="settings-file-banner"
+      className="mb-3 truncate rounded-[7px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-1.5 text-[12px] text-[var(--warning)]"
+    >
+      {line}
+    </div>
   )
 }
 
