@@ -6,7 +6,7 @@
  * without being searchable, or be found under a label the page does not show.
  * Pure so the search and the changed-count rules are unit-tested.
  */
-import { currentPlatform, shortcutLabel, shortcutsFor, type ShortcutPlatform } from '@shared/shortcuts'
+import { currentPlatform, isRebindable, shortcutLabel, shortcutsFor, SHORTCUTS, type ShortcutPlatform } from '@shared/shortcuts'
 import { DEFAULT_RECENT_SESSION_LIMIT } from '../sidebar/recent-session-limit'
 
 export type SettingsPageId =
@@ -50,6 +50,8 @@ export interface SettingRowDef {
   defaultLabel?: string
   /** A shortcut row's keys, shown and searched. */
   keys?: string
+  /** A shortcut row's registry command id. */
+  command?: string
 }
 
 export const PRIVACY_POLICY_URL = 'https://tn07.dev/privacy'
@@ -183,9 +185,13 @@ const ROWS = {
 
 export const SETTING_ROW: { readonly [K in keyof typeof ROWS]: SettingRowDef } = ROWS
 
+/** A shortcut row's value: its bindings space-separated, '' when unbound. */
+export const shortcutValue = (bindings: readonly string[]): string => bindings.join(' ')
+
 /**
- * One read-only row per command in the shortcut registry, sectioned by its
- * group, labelled with this platform's keys. Rebinding comes later.
+ * One row per command in the shortcut registry, sectioned by its group,
+ * labelled with this platform's effective keys. Rebindable commands hold a
+ * value, so they get the Changed marker and Reset like any other setting.
  */
 export function shortcutRows(platform: ShortcutPlatform = currentPlatform()): SettingRowDef[] {
   return shortcutsFor(platform).map((c) => ({
@@ -194,15 +200,21 @@ export function shortcutRows(platform: ShortcutPlatform = currentPlatform()): Se
     section: c.group,
     label: c.label,
     keys: shortcutLabel(c.id, platform),
+    command: c.id,
+    defaultLabel: shortcutLabel(c.id, platform, SHORTCUTS),
+    defaultValue: isRebindable(c) ? shortcutValue(SHORTCUTS.find((d) => d.id === c.id)!.bindings) : undefined,
   }))
 }
 
-/** The search index: every row above plus one per shortcut, in page order. */
-export const SETTING_ROWS: readonly SettingRowDef[] = (() => {
+/** Every row above plus one per shortcut, in page order, with the keys in effect now. */
+export function settingRows(): SettingRowDef[] {
   const rows: SettingRowDef[] = [...Object.values(ROWS), ...shortcutRows()]
   const order = SETTINGS_PAGES.map((p) => p.id)
   return rows.sort((a, b) => order.indexOf(a.page) - order.indexOf(b.page))
-})()
+}
+
+/** The search index as of load; search itself reads `settingRows()` so it finds rebound keys. */
+export const SETTING_ROWS: readonly SettingRowDef[] = settingRows()
 
 export function pageTitle(id: SettingsPageId): string {
   return SETTINGS_PAGES.find((p) => p.id === id)?.title ?? id
@@ -213,7 +225,7 @@ export function pageTitle(id: SettingsPageId): string {
  * across the label, description, section, page title and keys. Empty query,
  * no results: the page shows its own content instead.
  */
-export function searchSettingRows(query: string, rows: readonly SettingRowDef[] = SETTING_ROWS): SettingRowDef[] {
+export function searchSettingRows(query: string, rows: readonly SettingRowDef[] = settingRows()): SettingRowDef[] {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
   if (terms.length === 0) return []
   return rows.filter((row) => {

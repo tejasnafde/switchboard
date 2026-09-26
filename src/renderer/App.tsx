@@ -27,6 +27,8 @@ import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
 import { ConfirmHost, unlessConfirmOpen } from './components/ui/confirm'
+import { loadKeyboardOverrides } from './services/keyboard-overrides'
+import { isShortcutCaptureActive } from '@shared/shortcuts'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/feature-registry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/context-bridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
@@ -270,6 +272,10 @@ export function App() {
   // Load bookmarks on mount
   useEffect(() => { void useBookmarkStore.getState().load() }, [])
 
+  useEffect(() => {
+    loadKeyboardOverrides().catch((err) => log.warn('loading shortcut overrides failed; using the defaults', err))
+  }, [])
+
   // Unread is shared with the phone, so opening a chat here clears it there.
   useEffect(() => initSharedReadState(), [])
 
@@ -455,6 +461,8 @@ export function App() {
   useEffect(() => {
     if (typeof window.api?.onClosePaneOrWindow !== 'function') return
     const remove = window.api.onClosePaneOrWindow(unlessConfirmOpen((opts: { shift?: boolean }) => {
+      // Main intercepts ⌘W before the page sees it; Settings is recording it.
+      if (isShortcutCaptureActive()) return
       // Route ⌘W by focus context.
       const focus = classifyCloseFocus(document.activeElement as unknown as ClosestEl | null)
       const layoutState = useLayoutStore.getState()

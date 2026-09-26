@@ -58,7 +58,9 @@ import {
 const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { AgentType } from '@shared/types'
-import { matchesShortcut, shortcutAccelerator, type ShortcutKeyInput } from '@shared/shortcuts'
+import {
+  KEYBOARD_OVERRIDES_SETTING, matchesShortcut, setActiveShortcutOverrides, shortcutAccelerator, type ShortcutKeyInput,
+} from '@shared/shortcuts'
 
 /** Unpackaged means a dev run, where a stale instance is the usual lock holder. */
 const isDev = !app.isPackaged
@@ -115,6 +117,79 @@ async function confirmReload(force: boolean): Promise<void> {
   } finally {
     reloadDialogOpen = false
   }
+}
+
+// App menu - needed for ⌘, to reach the renderer. Rebuilt when the user
+// rebinds a shortcut, since accelerators are fixed once the menu is built.
+function buildAppMenu(): void {
+  const menuTemplate: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Settings',
+          accelerator: shortcutAccelerator('app.settings'),
+          click: () => {
+            mainWindow?.webContents.send('app:open-settings')
+          },
+        },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'Chat',
+      submenu: [
+        {
+          label: 'Open Chat Beside…',
+          accelerator: shortcutAccelerator('chat.dual'),
+          click: () => {
+            mainWindow?.webContents.send('app:open-chat-beside')
+          },
+        },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        {
+          label: 'Reload',
+          accelerator: shortcutAccelerator('app.reload'),
+          click: () => { void confirmReload(false) },
+        },
+        {
+          label: 'Force Reload',
+          accelerator: shortcutAccelerator('app.force-reload'),
+          click: () => { void confirmReload(true) },
+        },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
+        { type: 'separator' }, { role: 'togglefullscreen' },
+      ],
+    },
+    { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }] },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate))
+}
+
+function applyKeyboardOverrides(): void {
+  const ignored = setActiveShortcutOverrides(getSetting(KEYBOARD_OVERRIDES_SETTING))
+  if (ignored.length > 0) menuLog.warn('ignoring shortcut overrides this build cannot use', ignored)
+  buildAppMenu()
 }
 
 // Custom protocol for onboarding tour videos. Must be registered as
@@ -320,7 +395,7 @@ function createWindow(): BrowserWindow {
   // On macOS Ctrl+W is the shell's kill-word, so only ⌘ counts.
   window.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return
-    const key: ShortcutKeyInput = { key: input.key, metaKey: input.meta, ctrlKey: input.control, shiftKey: input.shift, altKey: input.alt }
+    const key: ShortcutKeyInput = { key: input.key, code: input.code, metaKey: input.meta, ctrlKey: input.control, shiftKey: input.shift, altKey: input.alt }
     const shift = matchesShortcut(key, 'terminal.close-window')
     if (shift || matchesShortcut(key, 'terminal.close-tab')) {
       event.preventDefault()
@@ -564,69 +639,7 @@ app.whenReady().then(() => {
     }
   }
 
-  // App menu - needed for ⌘, to reach the renderer
-  const menuTemplate: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        {
-          label: 'Settings',
-          accelerator: shortcutAccelerator('app.settings'),
-          click: () => {
-            mainWindow?.webContents.send('app:open-settings')
-          },
-        },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
-        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
-      ],
-    },
-    {
-      label: 'Chat',
-      submenu: [
-        {
-          label: 'Open Chat Beside…',
-          accelerator: shortcutAccelerator('chat.dual'),
-          click: () => {
-            mainWindow?.webContents.send('app:open-chat-beside')
-          },
-        },
-      ],
-    },
-    {
-      label: 'View',
-      submenu: [
-        {
-          label: 'Reload',
-          accelerator: shortcutAccelerator('app.reload'),
-          click: () => { void confirmReload(false) },
-        },
-        {
-          label: 'Force Reload',
-          accelerator: shortcutAccelerator('app.force-reload'),
-          click: () => { void confirmReload(true) },
-        },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
-        { type: 'separator' }, { role: 'togglefullscreen' },
-      ],
-    },
-    { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }] },
-  ]
-  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate))
+  applyKeyboardOverrides()
 
   mainWindow = createWindow()
 
@@ -657,7 +670,10 @@ app.whenReady().then(() => {
   })
 
   registerTerminalHandlers(backendHost)
-  registerAppHandlers(backendHost, { isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false })
+  registerAppHandlers(backendHost, {
+    isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false,
+    onSettingChanged: (key) => { if (key === KEYBOARD_OVERRIDES_SETTING) applyKeyboardOverrides() },
+  })
   registerPushHandlers(backendHost)
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)

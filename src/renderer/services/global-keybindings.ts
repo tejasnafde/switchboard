@@ -1,4 +1,4 @@
-import { currentPlatform, matchShortcut, SHORTCUTS, type ShortcutCommand, type ShortcutKeyInput, type ShortcutPlatform } from '@shared/shortcuts'
+import { activeShortcuts, currentPlatform, matchShortcut, type ShortcutCommand, type ShortcutKeyInput, type ShortcutPlatform } from '@shared/shortcuts'
 
 export type GlobalKeyAction =
   | { type: 'toggle-sidebar' }
@@ -55,7 +55,7 @@ const ACTIONS: Record<string, GlobalKeyAction | ((index: number) => GlobalKeyAct
 export function resolveGlobalKeydown(
   e: GlobalKeyInput,
   platform: ShortcutPlatform = currentPlatform(),
-  commands: readonly ShortcutCommand[] = SHORTCUTS,
+  commands: readonly ShortcutCommand[] = activeShortcuts(),
 ): GlobalKeyAction | null {
   for (const [id, action] of Object.entries(ACTIONS)) {
     const index = matchShortcut(e, id, platform, commands)
