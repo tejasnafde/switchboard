@@ -5,7 +5,7 @@
 import { isAbsolute } from 'node:path'
 import type { BackendHost } from '../backend/host'
 import { WorktreeManagerChannels } from '@shared/ipc-channels'
-import { parseProtectionPatch } from '@shared/worktree-manager'
+import { parseProtectionPatch, parseRemovalAck } from '@shared/worktree-manager'
 import {
   buildWorktreeInventory,
   defaultWorktreeManagerDeps,
@@ -37,6 +37,8 @@ export function registerWorktreeManagerHandlers(
   })
 
   host.handle(WorktreeManagerChannels.REMOVE, async (request: WorktreeRemovalRequest) => {
+    const ack = parseRemovalAck(request?.acknowledged)
+    if (!ack.ok) return { ok: false, error: ack.error }
     return removeManagedWorktree(request, deps)
   })
 

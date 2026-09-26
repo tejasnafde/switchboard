@@ -96,6 +96,7 @@ export function WorktreesPanel({ state, onManageProtection }: {
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [actionWarning, setActionWarning] = useState<string | null>(null)
   const sizes = useWorktreeSizes(rows)
   const counts = useMemo(() => filterCounts(rows), [rows])
   const shown = useMemo(() => visibleRows(rows, filter, showProtected), [rows, filter, showProtected])
@@ -113,7 +114,9 @@ export function WorktreesPanel({ state, onManageProtection }: {
   const removeRows = async (targets: WorktreeRow[], acknowledge: boolean) => {
     setBusy(true)
     setActionError(null)
+    setActionWarning(null)
     const failures: string[] = []
+    const warnings: string[] = []
     for (const row of targets) {
       try {
         const result = await window.api.worktreeManager.remove({
@@ -124,12 +127,17 @@ export function WorktreesPanel({ state, onManageProtection }: {
             : null,
         })
         if (!result.ok) failures.push(`${row.branch ?? row.path}: ${result.error}`)
+        else if (result.warning) {
+          log.warn('worktree removed with a warning', row.path, result.warning)
+          warnings.push(result.warning)
+        }
       } catch (err) {
         log.warn('worktree remove failed', row.path, err)
         failures.push(`${row.branch ?? row.path}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
     if (failures.length > 0) setActionError(failures.join('\n'))
+    if (warnings.length > 0) setActionWarning(warnings.join('\n'))
     setBusy(false)
     await reload()
   }
@@ -194,6 +202,9 @@ export function WorktreesPanel({ state, onManageProtection }: {
 
       {(error || actionError) && (
         <div role="alert" className="mb-2 whitespace-pre-line text-[12px] text-[var(--error)]">{error ?? actionError}</div>
+      )}
+      {actionWarning && (
+        <div role="status" className="mb-2 whitespace-pre-line text-[12px] text-[var(--warning)]">{actionWarning}</div>
       )}
       {inventory?.errors.map((e) => (
         <div key={e.projectPath} className="mb-2 text-[12px] text-[var(--warning)]">Could not list {e.projectPath}: {e.message}</div>
@@ -283,7 +294,7 @@ function WorktreeListRow({ row, checked, size, disabled, onToggle, onRemove, onP
         {row.chat ? `${row.chat.title}${row.chat.archived ? ' · archived' : ''}` : 'none'}
       </span>
       <span
-        title={state.title}
+        title={state.title ?? state.text}
         className={cn(
           'inline-flex min-w-0 items-center gap-[5px] text-[12px]',
           state.tone === 'warn' ? 'text-[var(--warning)]' : 'text-[var(--text-secondary)]',

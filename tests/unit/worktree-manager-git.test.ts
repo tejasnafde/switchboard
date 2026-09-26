@@ -144,7 +144,7 @@ describe('removeManagedWorktree', () => {
 
   it('refuses an in-use or protected worktree even with an acknowledgement', async () => {
     const path = addWorktree('busy')
-    const ack = { uncommittedFiles: 10, unpushedCommits: 10 }
+    const ack = { uncommittedFiles: 10, unpushedCommits: 10, ignoredFiles: 10 }
     owned = new Set([path])
     expect(await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: ack }, deps())).toMatchObject({ ok: false })
     owned = new Set()
@@ -160,15 +160,37 @@ describe('removeManagedWorktree', () => {
     expect(await removeManagedWorktree({ ...request, acknowledged: null }, deps())).toMatchObject({ ok: false })
     expect(existsSync(join(path, 'one.txt'))).toBe(true)
 
-    const confirmed = { uncommittedFiles: 1, unpushedCommits: 0 }
+    const confirmed = { uncommittedFiles: 1, unpushedCommits: 0, ignoredFiles: 0 }
     writeFileSync(join(path, 'two.txt'), '2\n')
     const stale = await removeManagedWorktree({ ...request, acknowledged: confirmed }, deps())
     expect(stale).toMatchObject({ ok: false, error: expect.stringMatching(/changed since you confirmed/) })
     expect(existsSync(path)).toBe(true)
 
-    expect(await removeManagedWorktree({ ...request, acknowledged: { uncommittedFiles: 2, unpushedCommits: 0 } }, deps()))
+    expect(await removeManagedWorktree({ ...request, acknowledged: { uncommittedFiles: 2, unpushedCommits: 0, ignoredFiles: 0 } }, deps()))
       .toEqual({ ok: true })
     expect(existsSync(path)).toBe(false)
+  })
+
+  it('refuses a truthy acknowledgement with missing counts, keeping the uncommitted files', async () => {
+    const path = addWorktree('dirty')
+    writeFileSync(join(path, 'work.txt'), 'draft\n')
+    const result = await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: {} as never }, deps())
+    expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/invalid removal confirmation/i) })
+    expect(existsSync(join(path, 'work.txt'))).toBe(true)
+  })
+
+  it('reports a kept branch as a warning when git refuses to delete it', async () => {
+    const path = addWorktree('shared')
+    writeFileSync(join(path, 'a.txt'), 'a\n')
+    git(path, 'add', '.')
+    git(path, 'commit', '-q', '-m', 'shared')
+    // Another branch holds the commit, so nothing is unpushed, but main has
+    // not merged it, so `git branch -d` refuses.
+    git(repo, 'branch', 'keep', 'kanban/shared')
+    const result = await removeManagedWorktree({ projectPath: repo, worktreePath: path, acknowledged: null }, deps())
+    expect(result).toEqual({ ok: true, warning: expect.stringMatching(/branch kanban\/shared was kept: .*not fully merged/) })
+    expect(existsSync(path)).toBe(false)
+    expect(branches()).toContain('kanban/shared')
   })
 
   it('never deletes a branch holding unpushed commits', async () => {
@@ -177,7 +199,7 @@ describe('removeManagedWorktree', () => {
     git(path, 'add', '.')
     git(path, 'commit', '-q', '-m', 'ahead')
     const result = await removeManagedWorktree(
-      { projectPath: repo, worktreePath: path, acknowledged: { uncommittedFiles: 0, unpushedCommits: 1 } },
+      { projectPath: repo, worktreePath: path, acknowledged: { uncommittedFiles: 0, unpushedCommits: 1, ignoredFiles: 0 } },
       deps(),
     )
     expect(result).toEqual({ ok: true })

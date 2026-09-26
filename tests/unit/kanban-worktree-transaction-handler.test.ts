@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
   card: null as KanbanCard | null,
   createPlainCard: vi.fn(),
   setKanbanWorktree: vi.fn(),
-  removeWorktree: vi.fn(),
+  removeWorktree: vi.fn(async () => ({})),
   listWorktrees: vi.fn(async () => [] as Array<{ path: string }>),
   inUsePaths: new Set<string>(),
   creationKey: null as { machineId: string; creationId: string } | null,

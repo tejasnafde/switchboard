@@ -110,7 +110,7 @@ export async function removeWorktree(
   worktreePath: string,
   opts: { force?: boolean; deleteBranch?: string | null } = {},
   runner: GitRunner = defaultRunner,
-): Promise<void> {
+): Promise<{ branchWarning?: string }> {
   const args = ['worktree', 'remove']
   if (opts.force) args.push('--force')
   args.push(worktreePath)
@@ -130,9 +130,19 @@ export async function removeWorktree(
     try {
       await runner(['branch', '-d', opts.deleteBranch], repoPath)
     } catch (err) {
-      log.warn(`branch delete (${opts.deleteBranch}) failed: ${err instanceof Error ? err.message : String(err)}`)
+      // The worktree is gone either way; the caller reports the kept branch.
+      const reason = err instanceof Error ? err.message : String(err)
+      log.warn(`branch delete (${opts.deleteBranch}) failed: ${reason}`)
+      return { branchWarning: `The worktree was removed, but branch ${opts.deleteBranch} was kept: ${gitErrorLine(reason)}` }
     }
   }
+  return {}
+}
+
+/** Git's own `error:` line from a failed command's message, else the whole message. */
+function gitErrorLine(message: string): string {
+  const line = message.split('\n').find((l) => l.startsWith('error:'))
+  return line ? line.slice('error:'.length).trim() : message
 }
 
 /**

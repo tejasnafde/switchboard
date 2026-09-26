@@ -15,6 +15,7 @@ import {
   applyProtectionPatch,
   baseName,
   parseWorktreeProtection,
+  parseRemovalAck,
   removalVerdict,
   type WorktreeChatLink,
   type WorktreeInventory,
@@ -192,12 +193,18 @@ export interface WorktreeRemovalRequest {
   acknowledged: WorktreeRemovalAck | null
 }
 
-export type WorktreeRemovalResult = { ok: true } | { ok: false; error: string }
+/** `warning`: the worktree is gone but something after it (deleting its branch) did not happen. */
+export type WorktreeRemovalResult = { ok: true; warning?: string } | { ok: false; error: string }
 
 export async function removeManagedWorktree(
   request: WorktreeRemovalRequest,
   deps: WorktreeManagerDeps,
 ): Promise<WorktreeRemovalResult> {
+  const ack = parseRemovalAck(request?.acknowledged)
+  if (!ack.ok) {
+    log.warn(`refused removal with a malformed confirmation: ${ack.error}`)
+    return { ok: false, error: ack.error }
+  }
   const project = configuredProject(request?.projectPath, deps)
   if (!project) {
     log.warn(`refused removal in unconfigured project ${String(request?.projectPath)}`)
@@ -217,13 +224,19 @@ export async function removeManagedWorktree(
   if (!wt) return { ok: false, error: `Not a worktree of this repository: ${request.worktreePath}` }
 
   const row = await toRow(await projectContext(project.path, deps), wt, deps.runner)
-  const verdict = removalVerdict(row, request.acknowledged)
+  const verdict = removalVerdict(row, ack.ack)
   if (!verdict.ok) {
     log.info(`refused to remove ${wt.path}: ${verdict.reason}`)
     return { ok: false, error: verdict.reason }
   }
+  let removed: { branchWarning?: string }
   try {
-    await removeWorktree(project.path, wt.path, { force: verdict.force, deleteBranch: verdict.deleteBranch }, deps.runner)
+    // Residual risk, accepted: the state above is re-read just before this
+    // call, not locked. A file written into the worktree after that re-check
+    // and before git finishes is deleted too when `--force` is set (that is,
+    // when uncommitted files were confirmed), and an ignored file written in
+    // that window is deleted either way.
+    removed = await removeWorktree(project.path, wt.path, { force: verdict.force, deleteBranch: verdict.deleteBranch }, deps.runner)
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     log.warn(`git worktree remove failed for ${wt.path}: ${error}`)
@@ -231,7 +244,7 @@ export async function removeManagedWorktree(
   }
   deps.sizes.invalidate(wt.path)
   log.info(`removed worktree ${wt.path}${row.git && (row.git.uncommittedFiles || row.git.ignoredFiles) ? ` (confirmed losing ${row.git.uncommittedFiles} uncommitted, ${row.git.ignoredFiles} ignored)` : ''}`)
-  return { ok: true }
+  return removed.branchWarning ? { ok: true, warning: removed.branchWarning } : { ok: true }
 }
 
 /**

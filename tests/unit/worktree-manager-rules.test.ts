@@ -10,6 +10,7 @@ import {
   isRegenerableIgnored,
   REGENERABLE_IGNORED_DIRS,
   matchesFilter,
+  parseRemovalAck,
   parseProtectionPatch,
   parseWorktreeProtection,
   protectionSource,
@@ -76,7 +77,7 @@ describe('removalVerdict', () => {
   })
 
   it('never removes an owned, protected, locked or unreadable worktree, whatever was acknowledged', () => {
-    const ack = { uncommittedFiles: 99, unpushedCommits: 99 }
+    const ack = { uncommittedFiles: 99, unpushedCommits: 99, ignoredFiles: 99 }
     for (const r of [row({ owned: true }), row({ protectedBy: 'project' }), row({ protectedBy: 'worktree' }), row({ locked: true }), row({ git: null })]) {
       expect(removalVerdict(r, ack).ok).toBe(false)
     }
@@ -89,15 +90,15 @@ describe('removalVerdict', () => {
   })
 
   it('refuses when the worktree gained changes after the confirm', () => {
-    const verdict = removalVerdict(row({ git: dirty(5) }), { uncommittedFiles: 1, unpushedCommits: 0 })
+    const verdict = removalVerdict(row({ git: dirty(5) }), { uncommittedFiles: 1, unpushedCommits: 0, ignoredFiles: 0 })
     expect(!verdict.ok && verdict.reason).toMatch(/changed since you confirmed/)
-    expect(removalVerdict(row({ git: dirty(0, 2) }), { uncommittedFiles: 0, unpushedCommits: 1 }).ok).toBe(false)
+    expect(removalVerdict(row({ git: dirty(0, 2) }), { uncommittedFiles: 0, unpushedCommits: 1, ignoredFiles: 0 }).ok).toBe(false)
   })
 
   it('forces only for uncommitted files, and keeps a branch that holds unpushed commits', () => {
-    expect(removalVerdict(row({ git: dirty(2) }), { uncommittedFiles: 2, unpushedCommits: 0 }))
+    expect(removalVerdict(row({ git: dirty(2) }), { uncommittedFiles: 2, unpushedCommits: 0, ignoredFiles: 0 }))
       .toEqual({ ok: true, force: true, deleteBranch: 'kanban/a' })
-    expect(removalVerdict(row({ git: dirty(0, 1) }), { uncommittedFiles: 0, unpushedCommits: 1 }))
+    expect(removalVerdict(row({ git: dirty(0, 1) }), { uncommittedFiles: 0, unpushedCommits: 1, ignoredFiles: 0 }))
       .toEqual({ ok: true, force: false, deleteBranch: null })
   })
 })
@@ -199,10 +200,46 @@ describe('ignored files', () => {
   it('needs the ignored files acknowledged like uncommitted ones, without forcing', () => {
     const r = row({ git: ignoring('.env', 'local.json') })
     expect(removalVerdict(r, null).ok).toBe(false)
-    // An older client acknowledges no ignored files.
-    expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0 }).ok).toBe(false)
+    // An acknowledgement without the ignored count is malformed, not zero.
+    expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0 })).toMatchObject({ ok: false, reason: expect.stringMatching(/invalid removal confirmation/i) })
     expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0, ignoredFiles: 1 }).ok).toBe(false)
     expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0, ignoredFiles: 2 }))
       .toEqual({ ok: true, force: false, deleteBranch: 'kanban/a' })
+  })
+})
+
+describe('parseRemovalAck', () => {
+  const valid = { uncommittedFiles: 2, unpushedCommits: 0, ignoredFiles: 1 }
+
+  it('takes no acknowledgement as nothing acknowledged, and a well-formed one as is', () => {
+    expect(parseRemovalAck(null)).toEqual({ ok: true, ack: null })
+    expect(parseRemovalAck(undefined)).toEqual({ ok: true, ack: null })
+    expect(parseRemovalAck(valid)).toEqual({ ok: true, ack: valid })
+  })
+
+  it('refuses missing, NaN, negative, fractional, string and extra-field counts', () => {
+    const bad: unknown[] = [
+      {},
+      { uncommittedFiles: 2, unpushedCommits: 0 },
+      { ...valid, uncommittedFiles: Number.NaN },
+      { ...valid, unpushedCommits: -1 },
+      { ...valid, ignoredFiles: 1.5 },
+      { ...valid, uncommittedFiles: Number.POSITIVE_INFINITY },
+      { ...valid, uncommittedFiles: '2' },
+      { ...valid, force: true },
+      [2, 0, 1],
+      'yes',
+      true,
+    ]
+    for (const value of bad) {
+      expect(parseRemovalAck(value)).toMatchObject({ ok: false, error: expect.stringMatching(/invalid removal confirmation/i) })
+    }
+  })
+
+  it('makes removalVerdict refuse a truthy malformed acknowledgement instead of letting it pass the loss check', () => {
+    // `undefined < 3` is false, so `{}` used to cover any loss.
+    const verdict = removalVerdict(row({ git: dirty(3) }), {})
+    expect(verdict).toMatchObject({ ok: false, reason: expect.stringMatching(/invalid removal confirmation/i) })
+    expect(removalVerdict(row(), { ...valid, extra: 1 }).ok).toBe(false)
   })
 })

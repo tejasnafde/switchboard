@@ -191,8 +191,34 @@ export function filterCounts(rows: readonly WorktreeRow[]): Record<WorktreeFilte
 export interface WorktreeRemovalAck {
   uncommittedFiles: number
   unpushedCommits: number
-  /** Optional on the wire: a client older than ignored-file detection acknowledges none. */
-  ignoredFiles?: number
+  ignoredFiles: number
+}
+
+const ACK_FIELDS = ['uncommittedFiles', 'unpushedCommits', 'ignoredFiles'] as const
+
+/**
+ * The acknowledgement as it arrives over IPC. Null or absent means nothing
+ * was acknowledged. Anything else must be exactly the three counts, each a
+ * non-negative integer: a missing or non-numeric count would otherwise pass
+ * the loss comparison (`undefined < 3` is false) and let a dirty worktree be
+ * force-removed without a real confirm.
+ */
+export function parseRemovalAck(value: unknown): { ok: true; ack: WorktreeRemovalAck | null } | { ok: false; error: string } {
+  if (value === null || value === undefined) return { ok: true, ack: null }
+  const invalid = (why: string) => ({ ok: false as const, error: `Invalid removal confirmation: ${why}.` })
+  if (typeof value !== 'object' || Array.isArray(value)) return invalid('expected an object of counts')
+  const fields = Object.keys(value)
+  const unknown = fields.filter((f) => !(ACK_FIELDS as readonly string[]).includes(f))
+  if (unknown.length > 0) return invalid(`unknown field ${unknown.join(', ')}`)
+  const record = value as Record<string, unknown>
+  for (const field of ACK_FIELDS) {
+    const n = record[field]
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) return invalid(`${field} must be a whole number of 0 or more`)
+  }
+  return {
+    ok: true,
+    ack: { uncommittedFiles: record.uncommittedFiles as number, unpushedCommits: record.unpushedCommits as number, ignoredFiles: record.ignoredFiles as number },
+  }
 }
 
 export type WorktreeRemovalVerdict =
@@ -209,7 +235,11 @@ export type WorktreeRemovalVerdict =
  * - `--force` only when there are uncommitted files (git refuses otherwise).
  * - The branch is deleted only when it holds no commit found nowhere else.
  */
-export function removalVerdict(row: WorktreeRow, ack: WorktreeRemovalAck | null): WorktreeRemovalVerdict {
+export function removalVerdict(row: WorktreeRow, rawAck: unknown): WorktreeRemovalVerdict {
+  // Checked here as well as at the IPC boundary, so no caller can skip it.
+  const parsed = parseRemovalAck(rawAck)
+  if (!parsed.ok) return { ok: false, reason: parsed.error }
+  const { ack } = parsed
   if (row.owned) {
     return { ok: false, reason: 'This worktree is in use. Remove it from the chat or card that owns it.' }
   }
@@ -220,7 +250,7 @@ export function removalVerdict(row: WorktreeRow, ack: WorktreeRemovalAck | null)
   const { uncommittedFiles, unpushedCommits, ignoredFiles } = row.git
   if (uncommittedFiles > 0 || unpushedCommits > 0 || ignoredFiles > 0) {
     if (!ack) return { ok: false, reason: `Removing this worktree would lose ${lossSummary(row.git)}; it needs a confirm.` }
-    if (ack.uncommittedFiles < uncommittedFiles || ack.unpushedCommits < unpushedCommits || (ack.ignoredFiles ?? 0) < ignoredFiles) {
+    if (ack.uncommittedFiles < uncommittedFiles || ack.unpushedCommits < unpushedCommits || ack.ignoredFiles < ignoredFiles) {
       return { ok: false, reason: `The worktree changed since you confirmed: it now has ${lossSummary(row.git)}. Review it again.` }
     }
   }
