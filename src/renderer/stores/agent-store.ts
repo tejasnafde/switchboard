@@ -14,7 +14,8 @@ import type { RuntimeEvent } from '@shared/provider-events'
 import { NO_QUEUED_TURNS, applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { FollowSuggestionMode } from '@shared/follow-suggestions'
-import { isRuntimeMode } from '@shared/session-defaults'
+import { isRuntimeMode, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
+import { effectiveLocalSetting, projectOverride } from './project-settings-store'
 import { isDraftSessionId, type DraftChatOptions } from '@shared/new-chat-draft'
 import type {
   ForkLineageMetadata,
@@ -40,6 +41,18 @@ export function getStoreDefaultRuntimeMode(): RuntimeMode {
 }
 export function setStoreDefaultRuntimeMode(mode: RuntimeMode): void {
   storeDefaultRuntimeMode = mode
+}
+
+/** The mode a new chat in this project starts in: its override, else the store default. */
+export function defaultRuntimeModeFor(projectPath: string | null | undefined): RuntimeMode {
+  const mode = effectiveLocalSetting(SETTING_DEFAULT_RUNTIME_MODE, projectPath, storeDefaultRuntimeMode)
+  return isRuntimeMode(mode) ? mode : storeDefaultRuntimeMode
+}
+
+/** The project's own runtime-mode override, which beats a mode carried over from another chat. */
+export function projectRuntimeModeOverride(projectPath: string | null | undefined): RuntimeMode | undefined {
+  const mode = projectOverride(projectPath, SETTING_DEFAULT_RUNTIME_MODE)
+  return isRuntimeMode(mode) ? mode : undefined
 }
 
 export interface DriftSuggestion {
@@ -295,7 +308,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           ...session,
           messages: [],
           unreadCount: 0,
-          runtimeMode: session.runtimeMode ?? storeDefaultRuntimeMode,
+          runtimeMode: session.runtimeMode ?? defaultRuntimeModeFor(session.projectPath),
         },
       ],
       activeSessionId: state.activeSessionId ?? session.id,

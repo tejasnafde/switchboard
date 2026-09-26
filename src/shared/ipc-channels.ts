@@ -117,6 +117,15 @@ export const AppChannels = {
    * chat-scoped device even though the channel itself is open.
    */
   SETTINGS_SET: 'settings:set',
+  /**
+   * Per-project overrides of the settings in `SCOPABLE_SETTINGS`. The backend
+   * owns the path normalisation, so every client lands on the same rows.
+   * `settings:get` takes an optional project path as its second argument and
+   * then answers with the effective value (override, else global).
+   */
+  SETTINGS_PROJECT_OVERRIDES: 'settings:project-overrides',
+  SETTINGS_PROJECT_OVERRIDE_SET: 'settings:project-override-set',
+  SETTINGS_PROJECT_OVERRIDE_REMOVE: 'settings:project-override-remove',
   /** External IPv4 addresses of this machine - mobile pairing QR host picker. */
   LAN_ADDRESSES: 'app:lan-addresses',
   /**

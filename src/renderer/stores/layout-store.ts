@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createRendererLogger } from '../logger'
 import { useAgentStore } from './agent-store'
+import { SETTING_SHOW_FILE_DIFFS } from '@shared/project-settings'
 import { FOLLOW_UP_DEFAULT_KEY, parseFollowUpDefault, type TurnDelivery } from '@shared/turn-delivery'
 import {
   companionSessionId,
@@ -185,7 +186,7 @@ const APP_VIEW_KEY = 'layout.appView'
 const DATA_SCIENCE_MODE_KEY = 'layout.dataScienceMode'
 const KANBAN_WS_FILTER_KEY = 'layout.kanbanWorkspaceFilter'
 const KANBAN_PROJECT_FILTER_KEY = 'layout.kanbanProjectFilter'
-const SHOW_FILE_DIFF_CARDS_KEY = 'chat.showFileDiffs'
+const SHOW_FILE_DIFF_CARDS_KEY = SETTING_SHOW_FILE_DIFFS
 const LOCAL_TREE_EXPANDED_KEY = 'sidebar.localTreeExpanded'
 const OFFLINE_MACHINES_EXPANDED_KEY = 'sidebar.offlineMachinesExpanded'
 

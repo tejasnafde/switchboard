@@ -11,6 +11,7 @@
  * surface runs an agent. This is a reduction in blast radius, not a sandbox.
  */
 import { KEYBOARD_OVERRIDES_SETTING } from './shortcuts'
+import { governedSettingKey } from './project-settings'
 
 /** `terminal` is separate because a PTY is arbitrary code execution and nothing
  *  on the phone needs it. */
@@ -62,17 +63,24 @@ const ADMIN_ONLY_SETTING_KEYS: readonly string[] = [
 ]
 
 /** Arg-level, because the channel is legitimately open. Enforced beside the
- *  channel check so no other route reaches the row. */
+ *  channel check so no other route reaches the row. A project override is
+ *  gated as the setting it overrides: one project's default mode grants as
+ *  much as the machine's. */
 export function isSettingWriteAllowed(scopes: readonly DeviceScope[], key: unknown): boolean {
   if (typeof key !== 'string') return true // shape errors belong to the handler
-  if (!ADMIN_ONLY_SETTING_KEYS.includes(key)) return true
+  if (!ADMIN_ONLY_SETTING_KEYS.includes(governedSettingKey(key))) return true
   return scopes.includes('admin')
 }
 
 /** The frame-level form both hosts enforce: removing a protected key is a write too. */
 export function isSettingsFrameAllowed(scopes: readonly DeviceScope[], channel: string, args: unknown): boolean {
-  if (channel !== 'settings:set' && channel !== 'settings:remove') return true
-  return isSettingWriteAllowed(scopes, Array.isArray(args) ? args[0] : undefined)
+  const list = Array.isArray(args) ? args : []
+  if (channel === 'settings:set' || channel === 'settings:remove') return isSettingWriteAllowed(scopes, list[0])
+  // (projectPath, settingKey, value?)
+  if (channel === 'settings:project-override-set' || channel === 'settings:project-override-remove') {
+    return isSettingWriteAllowed(scopes, list[1])
+  }
+  return true
 }
 
 /** Whether a session holding `scopes` may call `channel`. */

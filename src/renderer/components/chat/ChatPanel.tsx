@@ -58,6 +58,7 @@ import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type ChatMessage } from '@shared/types'
 import { defaultInstanceSettingKey } from '@shared/session-defaults'
 import { useLayoutStore } from '../../stores/layout-store'
+import { useFollowUpDefault } from '../../services/effective-settings'
 import type { ChatSlot } from '../../services/chat-workspace'
 import { focusComposer } from '../../services/composer-registry'
 import {
@@ -101,7 +102,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const slotSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).own)
   const focusedChatSlot = useLayoutStore((state) => state.focusedChatSlot)
   const focusChatSlot = useLayoutStore((state) => state.focusChatSlot)
-  const followUpDefault = useLayoutStore((state) => state.followUpDefault)
   const activeSession = useAgentStore((s) => {
     const resolvedId = sessionIdOverride ?? (chatSlot ? slotSessionId : s.activeSessionId)
     return s.sessions.find((sess) => sess.id === resolvedId)
@@ -152,6 +152,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   }, [messages])
   const hasSession = activeSession !== undefined
   const sessionId = activeSession?.id ?? null
+  const followUpDefault = useFollowUpDefault(sessionId)
   const projectPath = activeSession?.projectPath
   const resumeSessionId = activeSession?.resumeSessionId
   const chatTitle = activeSession?.title ?? 'New conversation'

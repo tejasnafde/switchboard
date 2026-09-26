@@ -36,6 +36,10 @@ interface NewSessionRemote {
 
     fun getSetting(key: String, callback: (RemoteResponse<String?>) -> Unit)
 
+    /** [key] as it applies to [projectPath]: its override, else the machine value. */
+    fun getProjectSetting(key: String, projectPath: String, callback: (RemoteResponse<String?>) -> Unit) =
+        getSetting(key, callback)
+
     fun createConversation(
         input: CreateConversation,
         callback: (RemoteResponse<CommandBody>) -> Unit,
@@ -636,7 +640,7 @@ class NewSessionCoordinator(
                 }
             }
         }
-        remote.getSetting(DEFAULT_RUNTIME_MODE_KEY) { accept(0, it) }
+        remote.getProjectSetting(DEFAULT_RUNTIME_MODE_KEY, projectPath) { accept(0, it) }
         remote.getSetting("$DEFAULT_MODEL_PREFIX$agentType") { accept(1, it) }
         remote.getSetting(DEFAULT_INSTANCE_ID_KEY) { accept(2, it) }
     }
@@ -893,7 +897,10 @@ class SwitchboardNewSessionRemote(
         client.listProviderInstances(callback).let { Unit }
 
     override fun getSetting(key: String, callback: (RemoteResponse<String?>) -> Unit) =
-        client.getSetting(key, callback).let { Unit }
+        client.getSetting(key, callback = callback).let { Unit }
+
+    override fun getProjectSetting(key: String, projectPath: String, callback: (RemoteResponse<String?>) -> Unit) =
+        client.getSetting(key, projectPath, callback).let { Unit }
 
     override fun createConversation(
         input: CreateConversation,

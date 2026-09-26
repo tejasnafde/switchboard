@@ -4,7 +4,7 @@ import { MessageBubble } from './MessageBubble'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentStore } from '../../stores/agent-store'
 import { useSkillStore } from '../../stores/skill-store'
-import { useLayoutStore } from '../../stores/layout-store'
+import { useShowFileDiffCards } from '../../services/effective-settings'
 import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from './turn-presentation'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 
@@ -154,7 +154,7 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
   const turnsLengthRef = useRef(turns.length)
   turnsLengthRef.current = turns.length
 
-  const showFileDiffCards = useLayoutStore((s) => s.showFileDiffCards)
+  const showFileDiffCards = useShowFileDiffCards(sessionId)
   // Per-turn override: expanding one collapsed "Changed N files" group only
   // affects that group, keyed by its first message id (stable across
   // re-renders since presentation re-derives from the same message objects).

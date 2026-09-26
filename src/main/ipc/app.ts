@@ -15,7 +15,6 @@ import {
   removeProject,
   renameProject,
   getProjects,
-  getSetting,
   setSetting,
   removeSetting,
   createConversation,
@@ -89,6 +88,7 @@ import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage,
 import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conversation-sidebar-role'
 import { loadCursorConversation } from '../cursor/store'
 import { importCursorSnapshot } from '../db/cursor-import'
+import { getSettingForProject, listProjectOverrides, removeProjectOverride, setProjectOverride } from '../project-settings'
 
 const log = createLogger('ipc:app')
 
@@ -253,7 +253,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   })
 
   // Settings
-  host.handle(AppChannels.SETTINGS_GET, (key: string) => getSetting(key))
+  host.handle(AppChannels.SETTINGS_GET, (key: string, projectPath?: string) => getSettingForProject(key, projectPath))
   host.handle(AppChannels.SETTINGS_SET, (key: string, value: string) => {
     setSetting(key, value)
     deps.onSettingChanged?.(key)
@@ -262,6 +262,12 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     removeSetting(key)
     deps.onSettingChanged?.(key)
   })
+  host.handle(AppChannels.SETTINGS_PROJECT_OVERRIDES, (projectPaths: unknown) =>
+    listProjectOverrides(Array.isArray(projectPaths) ? projectPaths.filter((p): p is string => typeof p === 'string') : []))
+  host.handle(AppChannels.SETTINGS_PROJECT_OVERRIDE_SET, (projectPath: string, key: string, value: string) =>
+    setProjectOverride(projectPath, key, value))
+  host.handle(AppChannels.SETTINGS_PROJECT_OVERRIDE_REMOVE, (projectPath: string, key: string) =>
+    removeProjectOverride(projectPath, key))
 
   // Load persisted projects on renderer request
   host.handle(AppChannels.GET_PROJECTS, async () => {

@@ -8,7 +8,7 @@ import { createRendererLogger } from '../../logger'
 import { isRuntimeMode } from '@shared/session-defaults'
 import type { KanbanCard } from '@shared/kanban'
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
-import { useAgentStore, getStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
+import { useAgentStore, defaultRuntimeModeFor, type RuntimeMode } from '../../stores/agent-store'
 import { emitSessionCreated } from '../../services/session-events'
 import type { AgentType, ConversationRow } from '@shared/types'
 
@@ -22,7 +22,8 @@ const launchLog = createRendererLogger('kanban:launch')
  *      - checked for reused launches; reflects any mid-conversation mode
  *      changes the user made after the initial launch.
  *   3. The user's last-chosen default this session
- *      (`getStoreDefaultRuntimeMode()`), seeded from settings at boot.
+ *      (`defaultRuntimeModeFor(projectPath)`, the project's override or
+ *      the default seeded from settings at boot).
  *   4. `KANBAN_DEFAULT_RUNTIME_MODE` ('accept-edits') as the final
  *      fallback - matches the kanban-create-modal default.
  *
@@ -35,6 +36,7 @@ const launchLog = createRendererLogger('kanban:launch')
 export async function resolveCardRuntimeMode(
   cardRuntimeMode: RuntimeMode | null | undefined,
   conversationId: string | null | undefined,
+  projectPath?: string,
 ): Promise<RuntimeMode> {
   if (conversationId) {
     try {
@@ -48,7 +50,7 @@ export async function resolveCardRuntimeMode(
     }
   }
   if (isRuntimeMode(cardRuntimeMode)) return cardRuntimeMode
-  return getStoreDefaultRuntimeMode() ?? KANBAN_DEFAULT_RUNTIME_MODE
+  return defaultRuntimeModeFor(projectPath) ?? KANBAN_DEFAULT_RUNTIME_MODE
 }
 
 export interface CardLaunchInit {
@@ -155,7 +157,7 @@ export async function launchCardChat(
       // synchronous throw from either rejects that entry instead of
       // skipping the other fix-up.
       const [runtimeModeResult, modelResult] = await Promise.allSettled([
-        (async () => resolveCardRuntimeMode(card.runtimeMode, existing.id))(),
+        (async () => resolveCardRuntimeMode(card.runtimeMode, existing.id, card.projectPath))(),
         (async () => window.api?.app?.getConversationModel?.(existing.id))(),
       ])
       if (runtimeModeResult.status === 'fulfilled') {
@@ -190,7 +192,7 @@ export async function launchCardChat(
   // Pull the real source of truth instead of hardcoding 'sandbox'. New cards
   // (no linked conversation) inherit the user's last-chosen default; reused
   // cards that lost their in-memory session pull from the DB row.
-  const runtimeMode = await resolveCardRuntimeMode(card.runtimeMode, card.conversationId)
+  const runtimeMode = await resolveCardRuntimeMode(card.runtimeMode, card.conversationId, card.projectPath)
   log('starting new session', {
     cardId: card.id,
     sessionId,

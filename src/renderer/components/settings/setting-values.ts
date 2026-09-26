@@ -6,7 +6,9 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { parseFollowUpDefault } from '@shared/turn-delivery'
+import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
 import { useLayoutStore } from '../../stores/layout-store'
+import { getStoreDefaultRuntimeMode, setStoreDefaultRuntimeMode } from '../../stores/agent-store'
 import { useThemeStore, type ThemeName } from '../../stores/theme-store'
 import { areNotificationsEnabled, setNotificationsEnabled } from '../../services/notifications'
 import { getDefaultSessionEnvMode, setDefaultSessionEnvMode, type SessionEnvMode } from '../../services/session-env-mode'
@@ -72,6 +74,17 @@ const BINDINGS: Record<string, Binding> = {
   [SETTING_ROW.envMode.id]: {
     read: () => getDefaultSessionEnvMode(),
     write: (v) => setDefaultSessionEnvMode(v as SessionEnvMode),
+  },
+  [SETTING_ROW.runtimeMode.id]: {
+    read: async () => {
+      const stored = await window.api.settings.get(SETTING_DEFAULT_RUNTIME_MODE)
+      return isRuntimeMode(stored) ? stored : getStoreDefaultRuntimeMode()
+    },
+    write: async (v) => {
+      if (!isRuntimeMode(v)) return
+      setStoreDefaultRuntimeMode(v)
+      await window.api.settings.set(SETTING_DEFAULT_RUNTIME_MODE, v)
+    },
   },
   [SETTING_ROW.fileDiffs.id]: {
     read: async () => flag(useLayoutStore.getState().showFileDiffCards),

@@ -8,12 +8,14 @@
  */
 import {
   getConversationAgentType,
+  getConversationExecutionRoot,
   getConversationModel,
   getConversationProviderInstanceId,
   getConversationRuntimeMode,
   getSetting,
 } from '../db/database'
 import { getProviderInstanceFull } from '../db/provider-instances'
+import { effectiveBackendSetting } from '../project-settings'
 import {
   defaultInstanceSettingKey,
   defaultModelSettingKey,
@@ -26,7 +28,7 @@ import {
 } from '@shared/session-defaults'
 import type { AgentType } from '@shared/types'
 
-function machineDefaults(agentType: AgentType): SessionDefaults {
+function machineDefaults(agentType: AgentType, projectPath: string | null): SessionDefaults {
   const scoped = getSetting(defaultInstanceSettingKey(agentType)) ?? undefined
   const legacy = getSetting(SETTING_DEFAULT_INSTANCE_ID) ?? undefined
   // The legacy key predates per-agent scoping - only honor it while it still
@@ -34,7 +36,8 @@ function machineDefaults(agentType: AgentType): SessionDefaults {
   // through it can never be handed to a Claude/OpenCode session.
   const legacyAgentType = legacy ? getProviderInstanceFull(legacy)?.agentType ?? null : null
   return {
-    runtimeMode: getSetting(SETTING_DEFAULT_RUNTIME_MODE) ?? undefined,
+    // A project can override the mode its new chats start in.
+    runtimeMode: effectiveBackendSetting(SETTING_DEFAULT_RUNTIME_MODE, projectPath),
     // Per agent: one global key would hand an OpenCode model to Claude.
     model: getSetting(defaultModelSettingKey(agentType)) ?? undefined,
     instanceId: resolveMachineInstanceId({ agentType, scoped, legacy, legacyAgentType }),
@@ -53,14 +56,21 @@ function conversationDefaults(threadId: string, agentType: AgentType): SessionDe
   }
 }
 
+/**
+ * `cwd` stands in for the project when the conversation row does not exist
+ * yet. A worktree chat's row names its parent project, whose overrides it
+ * follows.
+ */
 export function sessionDefaultsFor(
   threadId: string,
   agentType: AgentType,
   requested: SessionDefaults,
+  cwd?: string,
 ): ResolvedSessionDefaults {
+  const projectPath = getConversationExecutionRoot(threadId)?.projectPath ?? cwd ?? null
   return resolveSessionDefaults({
     requested,
     conversation: conversationDefaults(threadId, agentType),
-    machine: machineDefaults(agentType),
+    machine: machineDefaults(agentType, projectPath),
   })
 }
