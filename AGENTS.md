@@ -465,6 +465,7 @@ compares them with `e2e/snapshots/<screen>-<theme>-darwin.png`. The CI job
 diff PNGs are in the `visual-regressions` artifact (locally:
 `e2e/artifacts/visual/`).
 
+- Running e2e on a machine someone is using: `export SB_E2E_BACKGROUND=1` first. On macOS the test app then runs as an accessory app and its windows open with `showInactive()`, so they never take focus; every launcher passes `process.env` through. Leave it unset for the behaviour phase, which reads the real screen.
 - A deliberate visual change: `SB_VISUAL_SCOPE=screens SB_UPDATE_SNAPSHOTS=1 npm run test:e2e:visual`, then Read every changed PNG before committing it. Never refresh baselines to make a red run green without looking.
 - Everything that varies is pinned: renderer clock (`FROZEN_NOW`, UTC), 1x scale, sRGB, window size, animations and caret, the demo turn's duration (scripted, not wall-clock). Turn timestamps are masked because the main process stamps them. A new source of drift must be pinned the same way, not absorbed by raising the tolerance.
 - Translucent is compared as the app's own pixels flattened over a fixed two-colour backdrop, because the real desktop behind the window is never the same twice.

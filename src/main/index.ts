@@ -234,6 +234,13 @@ function loadWindowBounds(): SavedBounds | null {
   }
 }
 
+// E2E runs set SB_E2E_BACKGROUND=1 so their windows never take focus from the
+// person at the machine: an accessory app gets no Dock icon and is not
+// activated, and showInactive() draws the window without making it key.
+// Not for the visual behaviour phase, which reads the real screen.
+const e2eBackground = process.platform === 'darwin' && process.env.SB_E2E_BACKGROUND === '1'
+if (e2eBackground) app.setActivationPolicy('accessory')
+
 function createWindow(): BrowserWindow {
   const iconPath = join(app.getAppPath(), 'resources/icons/switchboard-logo-1024.png')
 
@@ -245,6 +252,7 @@ function createWindow(): BrowserWindow {
     x: saved?.x,
     y: saved?.y,
     minWidth: 800,
+    show: !e2eBackground,
     minHeight: 600,
     title: 'Switchboard',
     icon: nativeImage.createFromPath(iconPath),
@@ -261,6 +269,8 @@ function createWindow(): BrowserWindow {
       webviewTag: true,
     },
   })
+
+  if (e2eBackground) window.once('ready-to-show', () => window.showInactive())
 
   if (process.platform === 'darwin') {
     window.webContents.on('did-finish-load', () => {

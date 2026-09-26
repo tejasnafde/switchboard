@@ -1,0 +1,40 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "e2e-background-windows",
+  "summary": "With SB_E2E_BACKGROUND=1, macOS e2e runs open the app as an accessory app with an inactive window so tests never take focus.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": ["src/main/index.ts"]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Only the Electron main process reads the variable; the phone app has no e2e window."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Only the Electron main process reads the variable; Android has no e2e window."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No backend endpoint or wire contract changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No persisted data or migration changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Released builds never set the variable, so window behaviour is unchanged for users."
+    }
+  },
+  "verification": {
+    "automated": [
+      "SB_E2E_BACKGROUND=1 node e2e/radix-overlays.e2e.mjs (68 checks)",
+      "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens node e2e/visual-regressions.e2e.mjs"
+    ],
+    "hardware": ["Frontmost app sampled every 2 s during both runs on a Mac in use; the test app never came to the front."],
+    "notExercised": ["The visual behaviour phase, which must run without the variable."]
+  }
+}
