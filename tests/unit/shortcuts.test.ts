@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
-  applyShortcutOverrides, findShortcutClashes, formatBinding, matchesBinding, matchShortcut, parseBinding,
-  shortcutAccelerator, shortcutLabel, shortcutsFor, SHORTCUTS, type ShortcutKeyInput,
+  activeShortcuts, applyShortcutOverrides as resolve, chordFromEvent, findShortcutClashes, formatBinding, isRebindable,
+  matchesBinding, matchShortcut, parseBinding, reservedShortcutReason, setActiveShortcutOverrides, setShortcutCapture,
+  shortcutAccelerator, shortcutClashesFor, shortcutLabel, shortcutsFor, SHORTCUTS, type ShortcutKeyInput,
 } from '@shared/shortcuts'
+
+const applyShortcutOverrides = (o: unknown) => resolve(o).commands
 
 const ev = (key: string, mods: Partial<Omit<ShortcutKeyInput, 'key'>> = {}): ShortcutKeyInput =>
   ({ key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...mods })
@@ -98,7 +101,221 @@ describe('overrides', () => {
   })
 })
 
+describe('stored overrides', () => {
+  afterEach(() => {
+    setActiveShortcutOverrides(null)
+    setShortcutCapture(false)
+  })
+
+  it('merges over the defaults, [] unbinds, and reports what it drops', () => {
+    const { commands, ignored } = resolve({
+      'chat.interrupt': ['Mod+.'],
+      'app.search': [],
+      'from.a-newer-build': ['Mod+Shift+Y'],
+      'composer.send': ['Mod+Enter'],
+      'app.reload': 'Mod+R',
+    })
+    expect(ignored).toEqual(['from.a-newer-build', 'composer.send', 'app.reload'])
+    expect(shortcutLabel('chat.interrupt', 'mac', commands)).toBe('⌘.')
+    expect(shortcutLabel('app.search', 'mac', commands)).toBe('')
+    expect(shortcutAccelerator('app.search', commands)).toBeUndefined()
+    expect(matchShortcut(ev('f', { metaKey: true, shiftKey: true }), 'app.search', 'mac', commands)).toBe(-1)
+    expect(shortcutLabel('composer.send', 'mac', commands)).toBe('Enter')
+    expect(commands.length).toBe(SHORTCUTS.length)
+  })
+
+  it('tolerates a stored value that is not an object', () => {
+    expect(resolve(null).commands).toEqual(SHORTCUTS)
+    expect(resolve(['Mod+K']).commands).toEqual(SHORTCUTS)
+  })
+
+  it('the active list feeds every lookup, and garbage falls back to the defaults', () => {
+    expect(setActiveShortcutOverrides(JSON.stringify({ 'chat.quick-prompt': ['Mod+Shift+Y'], nope: ['Mod+1'] }))).toEqual(['nope'])
+    expect(shortcutLabel('chat.quick-prompt', 'other')).toBe('Ctrl+Shift+Y')
+    expect(matchShortcut(ev('y', { metaKey: true, shiftKey: true }), 'chat.quick-prompt', 'mac')).toBe(0)
+    expect(setActiveShortcutOverrides('{not json')).toEqual(['(unparseable value)'])
+    expect(activeShortcuts()).toBe(SHORTCUTS)
+  })
+
+  it('matches nothing while Settings records a chord', () => {
+    setShortcutCapture(true)
+    expect(matchShortcut(ev('b', { metaKey: true }), 'app.toggle-sidebar', 'mac')).toBe(-1)
+  })
+
+  it('keeps range, composer and find-bar keys fixed', () => {
+    const fixed = SHORTCUTS.filter((c) => !isRebindable(c)).map((c) => c.id)
+    expect(fixed).toEqual(['terminal.focus-window', 'composer.send', 'composer.newline', 'composer.send-other', 'question.pick', 'search.next', 'search.prev', 'search.close'])
+  })
+})
+
+describe('recording a chord', () => {
+  const key = (k: string, code: string, mods: Partial<Omit<ShortcutKeyInput, 'key'>> = {}) => ({ ...ev(k, mods), code })
+
+  it('names ⌘ Mod on macOS and Ctrl Mod elsewhere', () => {
+    expect(chordFromEvent(key('k', 'KeyK', { metaKey: true }), 'mac')).toBe('Mod+K')
+    expect(chordFromEvent(key('k', 'KeyK', { ctrlKey: true }), 'mac')).toBe('Ctrl+K')
+    expect(chordFromEvent(key('k', 'KeyK', { ctrlKey: true }), 'other')).toBe('Mod+K')
+    expect(chordFromEvent(key('k', 'KeyK', { metaKey: true }), 'other')).toBeNull()
+  })
+
+  it('records the physical key under ⌥ and ⇧, and waits while only modifiers are down', () => {
+    expect(chordFromEvent(key('˚', 'KeyK', { metaKey: true, altKey: true }), 'mac')).toBe('Mod+Alt+K')
+    expect(chordFromEvent(key('!', 'Digit1', { metaKey: true, shiftKey: true }), 'mac')).toBe('Mod+Shift+1')
+    expect(chordFromEvent(key('ArrowUp', 'ArrowUp', { metaKey: true }), 'mac')).toBe('Mod+ArrowUp')
+    expect(chordFromEvent(key('Meta', 'MetaLeft', { metaKey: true }), 'mac')).toBeNull()
+  })
+
+  it('the recorded chord then matches the same key press', () => {
+    const press = key('˚', 'KeyK', { metaKey: true, altKey: true })
+    expect(matchesBinding(press, chordFromEvent(press, 'mac')!, 'mac')).toBe(true)
+    const shifted = key('!', 'Digit1', { ctrlKey: true, shiftKey: true })
+    expect(matchesBinding(shifted, chordFromEvent(shifted, 'other')!, 'other')).toBe(true)
+  })
+})
+
+describe('other keyboard layouts', () => {
+  const key = (k: string, code: string, mods: Partial<Omit<ShortcutKeyInput, 'key'>> = {}) => ({ ...ev(k, mods), code })
+  const roundTrip = (press: ShortcutKeyInput, platform: 'mac' | 'other' = 'mac') => {
+    const chord = chordFromEvent(press, platform)!
+    return { chord, fires: matchesBinding(press, chord, platform) }
+  }
+
+  it.each([
+    // AZERTY: the key labelled A sits where QWERTY has Q, W where Z is.
+    ['AZERTY ⌘A', key('a', 'KeyQ', { metaKey: true }), 'Mod+A'],
+    ['AZERTY ⌘W', key('w', 'KeyZ', { metaKey: true }), 'Mod+W'],
+    ['AZERTY ⌘& (unshifted digit row)', key('&', 'Digit1', { metaKey: true }), 'Mod+&'],
+    ['AZERTY ⌘⇧1', key('1', 'Digit1', { metaKey: true, shiftKey: true }), 'Mod+Shift+1'],
+    ['AZERTY ⌘⌥Z', key('Â', 'KeyW', { metaKey: true, altKey: true }), 'Mod+Alt+W'],
+    // Dvorak: T sits on QWERTY's K, P on R.
+    ['Dvorak ⌘T', key('t', 'KeyK', { metaKey: true }), 'Mod+T'],
+    ['Dvorak ⌘⇧P', key('P', 'KeyR', { metaKey: true, shiftKey: true }), 'Mod+Shift+P'],
+    ['Dvorak ⌘⌥K', key('˚', 'KeyK', { metaKey: true, altKey: true }), 'Mod+Alt+K'],
+  ] as const)('%s records the chord that then fires on the same press', (_name, press, chord) => {
+    expect(roundTrip(press)).toEqual({ chord, fires: true })
+  })
+
+  it('an AZERTY ⌘A is select-all, not quit, and ⌘W does not answer to QWERTY ⌘Z', () => {
+    expect(reservedShortcutReason(chordFromEvent(key('a', 'KeyQ', { metaKey: true }), 'mac')!, 'mac')).toMatch(/select all/)
+    expect(matchesBinding(key('z', 'KeyZ', { metaKey: true }), 'Mod+W', 'mac')).toBe(false)
+  })
+
+  it('the defaults follow the layout letter: ⌘⇧P on Dvorak opens the palette', () => {
+    expect(matchShortcut(key('P', 'KeyR', { metaKey: true, shiftKey: true }), 'app.command-palette', 'mac', SHORTCUTS)).toBe(0)
+    expect(matchShortcut(key('R', 'KeyR', { metaKey: true, shiftKey: true }), 'app.command-palette', 'mac', SHORTCUTS)).toBe(-1)
+  })
+
+  it('works the same with Ctrl as Mod off macOS', () => {
+    expect(roundTrip(key('w', 'KeyZ', { ctrlKey: true }), 'other')).toEqual({ chord: 'Mod+W', fires: true })
+  })
+})
+
+describe('validating stored overrides where they are applied', () => {
+  it.each([
+    ['a typing key', { 'chat.new': ['Enter'] }],
+    ['a bare letter', { 'chat.new': ['K'] }],
+    ['a reserved OS key', { 'chat.new': ['Mod+Q'] }],
+    ['an editing key', { 'chat.new': ['Mod+C'] }],
+    ['a Ctrl key on macOS', { 'chat.new': ['Ctrl+K'] }],
+    ['a key another command has', { 'chat.new': ['Mod+B'] }],
+    ['one bad binding among good ones', { 'chat.new': ['Mod+Shift+Y', 'Enter'] }],
+  ])('drops %s', (_what, overrides) => {
+    const { commands, ignored } = resolve(overrides, SHORTCUTS, 'mac')
+    expect(ignored).toEqual(['chat.new'])
+    expect(shortcutLabel('chat.new', 'mac', commands)).toBe('⌘⇧O')
+  })
+
+  it('drops both sides when two overrides take the same key', () => {
+    const { ignored } = resolve({ 'chat.new': ['Mod+Shift+Y'], 'app.search': ['Mod+Shift+Y'] }, SHORTCUTS, 'mac')
+    expect(ignored).toEqual(['chat.new', 'app.search'])
+  })
+
+  it('keeps a swap, whatever order it was stored in', () => {
+    // Settings stores the unbind first, so the freed key's new owner comes after it.
+    const swap = { 'app.toggle-sidebar': ['Mod+Shift+F'], 'app.search': ['Mod+B'] }
+    const { commands, ignored } = resolve(swap, SHORTCUTS, 'mac')
+    expect(ignored).toEqual([])
+    expect(shortcutLabel('app.search', 'mac', commands)).toBe('⌘B')
+    expect(shortcutLabel('app.toggle-sidebar', 'mac', commands)).toBe('⌘⇧F')
+  })
+
+  it('re-checks a default that comes back when its override is dropped', () => {
+    // toggle-sidebar's ⌘J clashes with toggle-terminal and is dropped, which
+    // brings back its default ⌘B, now taken by app.search: drop that too.
+    const { commands, ignored } = resolve({ 'app.toggle-sidebar': ['Mod+J'], 'app.search': ['Mod+B'] }, SHORTCUTS, 'mac')
+    expect(ignored).toEqual(['app.toggle-sidebar', 'app.search'])
+    expect(findShortcutClashes(commands, 'mac')).toEqual(findShortcutClashes(SHORTCUTS, 'mac'))
+  })
+
+  it('judges reserved keys per platform', () => {
+    expect(resolve({ 'chat.new': ['Mod+D'] }, SHORTCUTS, 'mac').ignored).toEqual([])
+    expect(resolve({ 'chat.new': ['Mod+D'] }, SHORTCUTS, 'other').ignored).toEqual(['chat.new'])
+  })
+})
+
+describe('reserved keys', () => {
+  it.each([
+    ['Mod+Q', 'mac', /quits/],
+    ['Mod+Space', 'mac', /Spotlight/],
+    ['Mod+C', 'mac', /copy/],
+    ['Ctrl+K', 'mac', /terminal/],
+    ['Alt+K', 'mac', /special character/],
+    ['K', 'mac', /types text/],
+    ['Shift+K', 'other', /types text/],
+    ['Enter', 'other', /Typing/],
+    ['Shift+Tab', 'mac', /Typing/],
+    ['Mod+C', 'other', /interrupts/],
+    ['Mod+D', 'other', /ends input/],
+    ['Alt+F4', 'other', /closes the window/],
+  ] as const)('%s on %s is refused', (binding, platform, reason) => {
+    expect(reservedShortcutReason(binding, platform)).toMatch(reason)
+  })
+
+  it.each([
+    ['Mod+.', 'mac'], ['Mod+Shift+Y', 'other'], ['F3', 'mac'], ['Alt+K', 'other'], ['Alt+Backspace', 'mac'], ['Mod+D', 'mac'],
+  ] as const)('%s on %s is free', (binding, platform) => {
+    expect(reservedShortcutReason(binding, platform)).toBeNull()
+  })
+
+  it('leaves every default binding of a rebindable command usable', () => {
+    for (const platform of ['mac', 'other'] as const) {
+      for (const c of shortcutsFor(platform, SHORTCUTS).filter(isRebindable)) {
+        for (const b of c.bindings) expect(reservedShortcutReason(b, platform), `${c.id} ${b} ${platform}`).toBeNull()
+      }
+    }
+  })
+})
+
+describe('clash refusal', () => {
+  it('names the command a candidate chord collides with', () => {
+    expect(shortcutClashesFor('app.search', 'Mod+B', 'mac', SHORTCUTS).map((c) => c.id)).toEqual(['app.toggle-sidebar'])
+    expect(shortcutClashesFor('app.search', 'Mod+Shift+Y', 'mac', SHORTCUTS)).toEqual([])
+  })
+
+  it('ignores disjoint scopes and the overlaps the defaults ship with', () => {
+    // approval and the card modal never show at once
+    expect(shortcutClashesFor('approval.commit-note', 'Mod+Enter', 'mac', SHORTCUTS)).toEqual([])
+    // ⌘⌫ in a terminal is both stop-agent and kill-line, deliberately
+    expect(shortcutClashesFor('chat.interrupt', 'Mod+Backspace', 'mac', SHORTCUTS)).toEqual([])
+  })
+
+  it('checks against the stored overrides, not only the defaults', () => {
+    const cmds = applyShortcutOverrides({ 'chat.interrupt': ['Mod+.'] })
+    expect(shortcutClashesFor('app.search', 'Mod+.', 'mac', cmds).map((c) => c.id)).toEqual(['chat.interrupt'])
+    // the freed ⌘⌫ still belongs to the terminal's kill-line
+    expect(shortcutClashesFor('app.search', 'Mod+Backspace', 'mac', cmds).map((c) => c.id)).toEqual(['terminal.kill-line'])
+  })
+
+  it('excuses a default overlap only on its own key', () => {
+    const cmds = applyShortcutOverrides({ 'terminal.kill-line': ['Mod+Shift+Backspace'] })
+    expect(shortcutClashesFor('chat.interrupt', 'Mod+Shift+Backspace', 'mac', cmds).map((c) => c.id)).toEqual(['terminal.kill-line'])
+  })
+})
+
 describe('clash detection', () => {
+  // A raw list, since applyShortcutOverrides now drops a clashing override.
+  const rebind = (id: string, bindings: string[]) => SHORTCUTS.map((c) => (c.id === id ? { ...c, bindings } : c))
+
   // Both are deliberate: the global handler for ⌘⌫ yields to text inputs
   // (xterm's textarea counts), and ⌘K in a terminal both opens the quick
   // prompt and clears the screen, as it always has.
@@ -111,19 +328,19 @@ describe('clash detection', () => {
   })
 
   it('flags an override that collides in an overlapping scope, not a disjoint one', () => {
-    const clash = applyShortcutOverrides({ 'app.search': ['Mod+B'] })
+    const clash = rebind('app.search', ['Mod+B'])
     expect(findShortcutClashes(clash, 'other')).toEqual([{ binding: 'Mod+B', a: 'app.toggle-sidebar', b: 'app.search' }])
     // approval and card-modal both use Mod+Enter, but never at the same time
     expect(findShortcutClashes(SHORTCUTS, 'other').some((c) => c.binding === 'Mod+Enter')).toBe(false)
   })
 
   it('compares a shifted symbol with its unshifted key', () => {
-    const clash = applyShortcutOverrides({ 'app.search': ['Mod+Shift+}'] })
+    const clash = rebind('app.search', ['Mod+Shift+}'])
     expect(findShortcutClashes(clash, 'other')).toEqual([{ binding: 'Mod+Shift+}', a: 'app.search', b: 'terminal.next-tab' }])
   })
 
   it('treats Mod and Ctrl as the same key off macOS', () => {
-    const clash = applyShortcutOverrides({ 'app.search': ['Ctrl+B'] })
+    const clash = rebind('app.search', ['Ctrl+B'])
     expect(findShortcutClashes(clash, 'other')).toHaveLength(1)
     expect(findShortcutClashes(clash, 'mac')).toEqual(findShortcutClashes(SHORTCUTS, 'mac'))
   })

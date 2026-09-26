@@ -17,7 +17,9 @@ import {
   RECENT_SESSION_LIMIT_SETTING,
   parseRecentSessionLimit,
 } from '../sidebar/recent-session-limit'
-import { SETTING_ROW } from './settings-rows'
+import { currentPlatform, getShortcut, isRebindable, shortcutsFor, SHORTCUTS } from '@shared/shortcuts'
+import { loadKeyboardOverrides, setKeyboardOverride } from '../../services/keyboard-overrides'
+import { SETTING_ROW, shortcutValue } from './settings-rows'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('settings:values')
@@ -79,6 +81,14 @@ const BINDINGS: Record<string, Binding> = {
     read: async () => flag((await window.api.settings.get('tour.autoplay')) !== 'false'),
     write: (v) => window.api.settings.set('tour.autoplay', v),
   },
+  // Same platform filter as the rows: the macOS-only terminal keys have no row elsewhere.
+  ...Object.fromEntries(shortcutsFor(currentPlatform(), SHORTCUTS).filter(isRebindable).map((c): [string, Binding] => [`keyboard.${c.id}`, {
+    read: async () => {
+      await loadKeyboardOverrides()
+      return shortcutValue(getShortcut(c.id).bindings)
+    },
+    write: (v) => setKeyboardOverride(c.id, v === shortcutValue(c.bindings) ? null : v.split(' ').filter(Boolean)),
+  }])),
 }
 
 export interface SettingValues {
@@ -111,7 +121,13 @@ export function useSettingValues(): SettingValues {
       log.warn(`no binding for ${id}`)
       return
     }
-    Promise.resolve(binding.write(value)).catch((err) => log.warn(`writing ${id} failed`, err))
+    Promise.resolve(binding.write(value)).catch((err) => {
+      log.warn(`writing ${id} failed`, err)
+      // Show what is actually stored, not the value that failed to save.
+      binding.read()
+        .then((stored) => setValues((prev) => ({ ...prev, [id]: stored })))
+        .catch((readErr) => log.warn(`re-reading ${id} failed`, readErr))
+    })
   }, [])
 
   return { values, set }

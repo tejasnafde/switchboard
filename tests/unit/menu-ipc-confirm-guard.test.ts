@@ -21,8 +21,9 @@ describe('menu IPC while a confirm is open', () => {
   it('knows every channel main sends from the menu or an intercepted key', () => {
     const main = readFileSync(join(__dirname, '../../src/main/index.ts'), 'utf8')
     const sent = [...main.matchAll(/webContents\.send\('(app:[a-z-]+)'/g)].map((match) => match[1])
-    // Window state, not a user action: it only restyles translucency.
-    const notActions = ['app:fullscreen-changed']
+    // State, not user actions: one restyles translucency, the other re-reads
+    // the stored shortcut rebinds, which must happen even under a confirm.
+    const notActions = ['app:fullscreen-changed', 'app:keyboard-overrides-changed']
     // A new menu channel needs a guarded receiver above before it joins this list.
     expect(new Set(sent.filter((channel) => !notActions.includes(channel))))
       .toEqual(new Set(['app:open-settings', 'app:open-chat-beside', 'app:close-pane-or-window']))

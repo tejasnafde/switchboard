@@ -8,7 +8,7 @@ import {
   isSettingChanged,
   searchSettingRows,
 } from '../../src/renderer/components/settings/settings-rows'
-import { shortcutsFor } from '../../src/shared/shortcuts'
+import { formatBinding, setActiveShortcutOverrides, shortcutsFor } from '../../src/shared/shortcuts'
 
 describe('settings rows', () => {
   it('gives every row a unique id on a known page', () => {
@@ -83,6 +83,27 @@ describe('shortcut rows', () => {
   it('indexes them for search, so keys are searchable', () => {
     const keys = shortcutRows()[0].keys!
     expect(searchSettingRows(keys).some((r) => r.page === 'keyboard')).toBe(true)
+  })
+
+  it('search finds the key in effect, not the default, once rebound', () => {
+    setActiveShortcutOverrides(JSON.stringify({ 'app.toggle-terminal': ['Mod+Alt+Shift+F9'] }))
+    try {
+      const label = formatBinding('Mod+Alt+Shift+F9')
+      expect(searchSettingRows(label).map((r) => r.id)).toEqual(['keyboard.app.toggle-terminal'])
+    } finally {
+      setActiveShortcutOverrides(null)
+    }
+  })
+
+  it('gives rebindable rows a value to mark as changed, and fixed rows none', () => {
+    const rows = shortcutRows('mac')
+    const row = (id: string) => rows.find((r) => r.command === id)!
+    expect(row('chat.interrupt')).toMatchObject({ defaultValue: 'Mod+Backspace', defaultLabel: '⌘⌫' })
+    expect(row('app.toggle-sidebar').defaultValue).toBe('Mod+B Mod+Shift+B')
+    expect(row('composer.send').defaultValue).toBeUndefined()
+    expect(isSettingChanged(row('chat.interrupt'), { 'keyboard.chat.interrupt': 'Mod+.' })).toBe(true)
+    expect(isSettingChanged(row('chat.interrupt'), { 'keyboard.chat.interrupt': '' })).toBe(true)
+    expect(changedCountByPage({ 'keyboard.chat.interrupt': 'Mod+.' }).keyboard).toBe(1)
   })
 })
 

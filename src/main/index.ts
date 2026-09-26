@@ -25,7 +25,8 @@ import { registerDiagnosticsHandlers } from './ipc/diagnostics'
 import { configureAnalytics, attachAnalyticsCrashHooks, trackAppLaunched, registerAnalyticsHandlers } from './analytics'
 import { registerPushHandlers } from './ipc/push'
 import { attachPushNotifier } from './push/registry'
-import { registerAppHandlers } from './ipc/app'
+import { registerAppHandlers, type AppHandlerDependencies } from './ipc/app'
+import { isMenuCaptureActive, setMenuCapture, unlessCapturing } from './menu-capture'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
@@ -59,7 +60,9 @@ import {
 const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { AgentType } from '@shared/types'
-import { matchesShortcut, shortcutAccelerator, type ShortcutKeyInput } from '@shared/shortcuts'
+import {
+  KEYBOARD_OVERRIDES_SETTING, matchesShortcut, setActiveShortcutOverrides, shortcutAccelerator, type ShortcutKeyInput,
+} from '@shared/shortcuts'
 
 /** Unpackaged means a dev run, where a stale instance is the usual lock holder. */
 const isDev = !app.isPackaged
@@ -115,6 +118,94 @@ async function confirmReload(force: boolean): Promise<void> {
     }
   } finally {
     reloadDialogOpen = false
+  }
+}
+
+// App menu - needed for ⌘, to reach the renderer. Rebuilt when the user
+// rebinds a shortcut, since accelerators are fixed once the menu is built.
+function buildAppMenu(): void {
+  const menuTemplate: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Settings',
+          accelerator: shortcutAccelerator('app.settings'),
+          click: unlessCapturing(() => {
+            mainWindow?.webContents.send('app:open-settings')
+          }),
+        },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'Chat',
+      submenu: [
+        {
+          label: 'Open Chat Beside…',
+          accelerator: shortcutAccelerator('chat.dual'),
+          click: unlessCapturing(() => {
+            mainWindow?.webContents.send('app:open-chat-beside')
+          }),
+        },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        {
+          label: 'Reload',
+          accelerator: shortcutAccelerator('app.reload'),
+          click: unlessCapturing(() => { void confirmReload(false) }),
+        },
+        {
+          label: 'Force Reload',
+          accelerator: shortcutAccelerator('app.force-reload'),
+          click: unlessCapturing(() => { void confirmReload(true) }),
+        },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
+        { type: 'separator' }, { role: 'togglefullscreen' },
+      ],
+    },
+    { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }] },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate))
+}
+
+function applyKeyboardOverrides(): void {
+  const ignored = setActiveShortcutOverrides(getSetting(KEYBOARD_OVERRIDES_SETTING))
+  if (ignored.length > 0) menuLog.warn('ignoring shortcut overrides this build cannot use', ignored)
+  buildAppMenu()
+  // The window re-reads too, so a write from anywhere reaches both.
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:keyboard-overrides-changed')
+}
+
+/**
+ * The app handlers' dependencies for every desktop registration: at startup
+ * and again when a closed window is reopened, which re-registers the handlers
+ * on a new host. One factory, so the reopened window cannot lose the menu
+ * rebuild that a rebind relies on.
+ */
+function desktopAppHandlerDeps(): AppHandlerDependencies {
+  return {
+    isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false,
+    onSettingChanged: (key) => { if (key === KEYBOARD_OVERRIDES_SETTING) applyKeyboardOverrides() },
   }
 }
 
@@ -302,6 +393,12 @@ function createWindow(): BrowserWindow {
     })
   }
 
+  // A reload, crash or close ends any recording the page had started.
+  const endCapture = () => setMenuCapture(false)
+  window.webContents.on('did-start-loading', endCapture)
+  window.webContents.on('render-process-gone', endCapture)
+  window.on('closed', endCapture)
+
   window.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
@@ -320,8 +417,9 @@ function createWindow(): BrowserWindow {
   // Intercept ⌘W / ⌘⇧W - renderer decides whether to close a tab, window, or app.
   // On macOS Ctrl+W is the shell's kill-word, so only ⌘ counts.
   window.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown') return
-    const key: ShortcutKeyInput = { key: input.key, metaKey: input.meta, ctrlKey: input.control, shiftKey: input.shift, altKey: input.alt }
+    // While Settings records a shortcut, ⌘W is a key to record, not a close.
+    if (input.type !== 'keyDown' || isMenuCaptureActive()) return
+    const key: ShortcutKeyInput = { key: input.key, code: input.code, metaKey: input.meta, ctrlKey: input.control, shiftKey: input.shift, altKey: input.alt }
     const shift = matchesShortcut(key, 'terminal.close-window')
     if (shift || matchesShortcut(key, 'terminal.close-tab')) {
       event.preventDefault()
@@ -340,6 +438,11 @@ function createWindow(): BrowserWindow {
   })
 
   // Renderer requests actual window close (after checking no panes to close)
+  // Desktop-only (bare ipcMain, never on a BackendHost), so no paired device
+  // can silence the menu.
+  ipcMain.removeAllListeners('app:shortcut-capture')
+  ipcMain.on('app:shortcut-capture', (_event, on: unknown) => setMenuCapture(on === true))
+
   ipcMain.removeAllListeners('app:close-window')
   ipcMain.on('app:close-window', () => {
     window.close()
@@ -565,69 +668,7 @@ app.whenReady().then(() => {
     }
   }
 
-  // App menu - needed for ⌘, to reach the renderer
-  const menuTemplate: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        {
-          label: 'Settings',
-          accelerator: shortcutAccelerator('app.settings'),
-          click: () => {
-            mainWindow?.webContents.send('app:open-settings')
-          },
-        },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
-        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
-      ],
-    },
-    {
-      label: 'Chat',
-      submenu: [
-        {
-          label: 'Open Chat Beside…',
-          accelerator: shortcutAccelerator('chat.dual'),
-          click: () => {
-            mainWindow?.webContents.send('app:open-chat-beside')
-          },
-        },
-      ],
-    },
-    {
-      label: 'View',
-      submenu: [
-        {
-          label: 'Reload',
-          accelerator: shortcutAccelerator('app.reload'),
-          click: () => { void confirmReload(false) },
-        },
-        {
-          label: 'Force Reload',
-          accelerator: shortcutAccelerator('app.force-reload'),
-          click: () => { void confirmReload(true) },
-        },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
-        { type: 'separator' }, { role: 'togglefullscreen' },
-      ],
-    },
-    { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }] },
-  ]
-  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate))
+  applyKeyboardOverrides()
 
   mainWindow = createWindow()
 
@@ -658,7 +699,7 @@ app.whenReady().then(() => {
   })
 
   registerTerminalHandlers(backendHost)
-  registerAppHandlers(backendHost, { isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false })
+  registerAppHandlers(backendHost, desktopAppHandlerDeps())
   registerPushHandlers(backendHost)
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
@@ -731,7 +772,7 @@ app.whenReady().then(() => {
         ? new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
         : new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
-      registerAppHandlers(reactivatedHost, { isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false })
+      registerAppHandlers(reactivatedHost, desktopAppHandlerDeps())
       registerPushHandlers(reactivatedHost)
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)

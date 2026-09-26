@@ -6,10 +6,9 @@
  */
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SettingsPageBody } from '../../src/renderer/components/SettingsPage'
 import { SETTINGS_PAGES, SETTING_ROWS, PRIVACY_POLICY_URL } from '../../src/renderer/components/settings/settings-rows'
-import { SETTING_BINDING_IDS } from '../../src/renderer/components/settings/setting-values'
 
 describe('Settings pages', () => {
   for (const page of SETTINGS_PAGES) {
@@ -26,8 +25,19 @@ describe('Settings pages', () => {
     expect(html).toContain(`href="${PRIVACY_POLICY_URL}"`)
   })
 
-  it('binds every row that has a default, and nothing else', () => {
-    const withDefault = SETTING_ROWS.filter((row) => row.defaultValue !== undefined).map((row) => row.id)
-    expect([...SETTING_BINDING_IDS].sort()).toEqual(withDefault.sort())
+  // Both lists are built at import from the platform, so each one re-imports
+  // with navigator.platform pinned (the macOS-only terminal keys differ).
+  it.each(['MacIntel', 'Linux x86_64', 'Win32'])('binds every row that has a default, and nothing else, on %s', async (platform) => {
+    vi.resetModules()
+    vi.stubGlobal('navigator', { platform })
+    try {
+      const rows = await import('../../src/renderer/components/settings/settings-rows')
+      const values = await import('../../src/renderer/components/settings/setting-values')
+      const withDefault = rows.SETTING_ROWS.filter((row) => row.defaultValue !== undefined).map((row) => row.id)
+      expect([...values.SETTING_BINDING_IDS].sort()).toEqual(withDefault.sort())
+      expect(withDefault.includes('keyboard.terminal.kill-word')).toBe(platform === 'MacIntel')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

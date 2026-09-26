@@ -12,11 +12,11 @@ import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, type WsFrame } from '@s
 import {
   isChannelAllowed,
   isFileMutationAllowed,
-  isSettingWriteAllowed,
+  isSettingsFrameAllowed,
   PHONE_SCOPES,
   type DeviceScope,
 } from '@shared/device-auth'
-import { AppChannels, FilesChannels } from '@shared/ipc-channels'
+import { FilesChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
 import { hashClientScope, withBackendRequestContext } from './request-context'
@@ -137,8 +137,7 @@ export class TcpHost implements BackendHost {
     }
     if (
       (frame.k === 'req' || frame.k === 'snd')
-      && frame.ch === AppChannels.SETTINGS_SET
-      && !isSettingWriteAllowed(this.deviceScopes, (frame.args as unknown[] | undefined)?.[0])
+      && !isSettingsFrameAllowed(this.deviceScopes, frame.ch, frame.args)
     ) {
       log.warn(`denied ${frame.ch} - protected settings key, outside this device's scopes`)
       if (frame.k === 'req') {
