@@ -27,7 +27,7 @@ import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
 import { ConfirmHost, unlessConfirmOpen } from './components/ui/confirm'
-import { loadKeyboardOverrides } from './services/keyboard-overrides'
+import { loadKeyboardOverrides, reloadKeyboardOverrides } from './services/keyboard-overrides'
 import { isShortcutCaptureActive } from '@shared/shortcuts'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/feature-registry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/context-bridge'
@@ -274,6 +274,10 @@ export function App() {
 
   useEffect(() => {
     loadKeyboardOverrides().catch((err) => log.warn('loading shortcut overrides failed; using the defaults', err))
+    if (typeof window.api?.onKeyboardOverridesChanged !== 'function') return
+    return window.api.onKeyboardOverridesChanged(() => {
+      reloadKeyboardOverrides().catch((err) => log.warn('re-reading shortcut overrides failed', err))
+    })
   }, [])
 
   // Unread is shared with the phone, so opening a chat here clears it there.

@@ -154,40 +154,64 @@ export function matchesBinding(e: ShortcutKeyInput, binding: string, platform: S
   const wantMeta = platform === 'mac' && b.mod
   const wantCtrl = b.ctrl || (platform !== 'mac' && b.mod)
   if (e.metaKey !== wantMeta || e.ctrlKey !== wantCtrl || e.shiftKey !== b.shift || e.altKey !== b.alt) return false
+  return eventKey(e) === b.key
+}
+
+/**
+ * The key a keydown names, lowercased: the one rule both matching and the
+ * Settings recorder use, so a recorded chord always fires on the same press.
+ * The layout's character, so ⌘A on AZERTY is A and ⌘T on Dvorak is T. When
+ * ⌥ or ⇧ turned it into something else (⌥K is ˚, ⇧1 is !), the physical key
+ * instead; a shifted letter is still that letter on any layout. The physical
+ * fallback is US positions (KeyK is K), and without a code the US Shift
+ * symbols stand in (`}` is `]`).
+ */
+export function eventKey(e: Pick<ShortcutKeyInput, 'key' | 'code' | 'shiftKey' | 'altKey'>): string {
   // Chromium autofill can dispatch a keydown with no key.
-  const key = e.key === ' ' ? 'space' : e.key?.toLowerCase() ?? ''
-  if (key === b.key || (e.shiftKey && UNSHIFTED[key] === b.key)) return true
-  // ⌥ and ⇧ change the character (⌥K is ˚, ⇧1 is !), so fall back to the
-  // physical key. ponytail: US positions only; unmodified keys still follow
-  // the layout's character, so ⌘Q on AZERTY stays the key labelled Q.
-  return (e.altKey || e.shiftKey) && keyFromCode(e.code) === b.key
+  const typed = e.key === ' ' ? 'space' : e.key?.toLowerCase() ?? ''
+  const letter = typed.length === 1 && typed !== typed.toUpperCase()
+  if (typed.length === 1 && !e.altKey && (!e.shiftKey || letter)) return typed
+  const physical = keyFromCode(e.code)
+  if (physical && (typed.length === 1 || e.altKey)) return physical
+  return (e.shiftKey && UNSHIFTED[typed]) || typed
 }
 
 export interface ResolvedShortcuts {
   commands: ShortcutCommand[]
-  /** Override ids that were dropped: unknown (another build's), fixed, or malformed. */
+  /** Override ids that were dropped: unknown (another build's), fixed, malformed, reserved or clashing. */
   ignored: string[]
 }
 
 /**
  * The registry with stored overrides applied. Anything this build cannot use
  * is dropped and reported rather than thrown, so an older and a newer build
- * can share one settings DB.
+ * can share one settings DB. The Settings page's rules are enforced here too
+ * (reserved and typing keys, clashes), because this is what binds the keys:
+ * a value written by anything else cannot take Enter or ⌘Q.
  */
 export function applyShortcutOverrides(
   overrides: unknown,
   commands: readonly ShortcutCommand[] = SHORTCUTS,
+  platform: ShortcutPlatform = currentPlatform(),
 ): ResolvedShortcuts {
   const map = overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides as Record<string, unknown> : {}
   const byId = new Map(commands.map((c) => [c.id, c]))
   const ignored = Object.keys(map).filter((id) => {
     const c = byId.get(id)
     const o = map[id]
-    return !c || !isRebindable(c) || !Array.isArray(o) || !o.every((b) => typeof b === 'string' && parseBinding(b))
+    return !c || !isRebindable(c) || !Array.isArray(o)
+      || !o.every((b) => typeof b === 'string' && parseBinding(b) && !reservedShortcutReason(b, platform))
   })
+  const kept = Object.keys(map).filter((id) => !ignored.includes(id))
+  const withOverrides = (ids: string[]) => commands.map((c) => (ids.includes(c.id) ? { ...c, bindings: map[c.id] as string[] } : c))
+  // Clashes are judged against the whole result, not in stored order: swapping
+  // two keys in Settings stores an order that is only clash-free once both apply.
+  // ponytail: a dropped override falls back to its default, which is not re-checked.
+  const applied = withOverrides(kept)
+  const clashing = kept.filter((id) => (map[id] as string[]).some((b) => shortcutClashesFor(id, b, platform, applied).length > 0))
   return {
-    commands: commands.map((c) => (c.id in map && !ignored.includes(c.id) ? { ...c, bindings: map[c.id] as string[] } : c)),
-    ignored,
+    commands: withOverrides(kept.filter((id) => !clashing.includes(id))),
+    ignored: [...ignored, ...clashing],
   }
 }
 
@@ -321,16 +345,16 @@ export function findShortcutClashes(
 
 /**
  * The binding a keydown would record, or null while only modifiers are down
- * (or for the Windows key, which no binding can name). Uses the physical key
- * for letters, digits and punctuation, so ⌥K records `Alt+K`, not `Alt+˚`.
+ * (or for the Windows key, which no binding can name). The key comes from
+ * `eventKey`, the rule matching uses, so ⌥K records `Alt+K`, not `Alt+˚`.
  */
 export function chordFromEvent(e: ShortcutKeyInput, platform: ShortcutPlatform = currentPlatform()): string | null {
   if (['Meta', 'Control', 'Shift', 'Alt', 'OS', 'Dead'].includes(e.key)) return null
   if (platform !== 'mac' && e.metaKey) return null
-  const physical = keyFromCode(e.code)
-  const raw = physical ?? (e.key === ' ' ? 'space' : e.key)
+  const raw = eventKey(e)
   if (!raw || raw === '+') return null
-  const key = raw.length === 1 ? raw.toUpperCase() : raw === 'space' ? 'Space' : raw
+  // Named keys keep the browser's spelling (ArrowUp, F3).
+  const key = raw.length === 1 ? raw.toUpperCase() : raw === 'space' ? 'Space' : e.key
   const mod = platform === 'mac' ? e.metaKey : e.ctrlKey
   const ctrl = platform === 'mac' && e.ctrlKey
   return [mod && 'Mod', ctrl && 'Ctrl', e.shiftKey && 'Shift', e.altKey && 'Alt', key].filter(Boolean).join('+')

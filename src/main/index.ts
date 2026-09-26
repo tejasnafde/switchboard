@@ -190,6 +190,8 @@ function applyKeyboardOverrides(): void {
   const ignored = setActiveShortcutOverrides(getSetting(KEYBOARD_OVERRIDES_SETTING))
   if (ignored.length > 0) menuLog.warn('ignoring shortcut overrides this build cannot use', ignored)
   buildAppMenu()
+  // The window re-reads too, so a write from anywhere reaches both.
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:keyboard-overrides-changed')
 }
 
 // Custom protocol for onboarding tour videos. Must be registered as

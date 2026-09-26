@@ -82,6 +82,11 @@ describe('isChannelAllowed', () => {
     expect(isSettingWriteAllowed(PHONE_SCOPES, 'google.clientSecret')).toBe(false)
   })
 
+  it("keeps a phone from rebinding the desktop's keyboard shortcuts", () => {
+    expect(isSettingWriteAllowed(PHONE_SCOPES, 'keyboard.overrides')).toBe(false)
+    expect(isSettingWriteAllowed(FULL_SCOPES, 'keyboard.overrides')).toBe(true)
+  })
+
   it('still lets a phone write the ordinary settings it owns', () => {
     for (const key of ['projectOrder', 'chat.defaultModel.claude-code', 'ui.theme']) {
       expect(isSettingWriteAllowed(PHONE_SCOPES, key)).toBe(true)

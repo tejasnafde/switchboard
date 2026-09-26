@@ -173,6 +173,78 @@ describe('recording a chord', () => {
   })
 })
 
+describe('other keyboard layouts', () => {
+  const key = (k: string, code: string, mods: Partial<Omit<ShortcutKeyInput, 'key'>> = {}) => ({ ...ev(k, mods), code })
+  const roundTrip = (press: ShortcutKeyInput, platform: 'mac' | 'other' = 'mac') => {
+    const chord = chordFromEvent(press, platform)!
+    return { chord, fires: matchesBinding(press, chord, platform) }
+  }
+
+  it.each([
+    // AZERTY: the key labelled A sits where QWERTY has Q, W where Z is.
+    ['AZERTY ⌘A', key('a', 'KeyQ', { metaKey: true }), 'Mod+A'],
+    ['AZERTY ⌘W', key('w', 'KeyZ', { metaKey: true }), 'Mod+W'],
+    ['AZERTY ⌘& (unshifted digit row)', key('&', 'Digit1', { metaKey: true }), 'Mod+&'],
+    ['AZERTY ⌘⇧1', key('1', 'Digit1', { metaKey: true, shiftKey: true }), 'Mod+Shift+1'],
+    ['AZERTY ⌘⌥Z', key('Â', 'KeyW', { metaKey: true, altKey: true }), 'Mod+Alt+W'],
+    // Dvorak: T sits on QWERTY's K, P on R.
+    ['Dvorak ⌘T', key('t', 'KeyK', { metaKey: true }), 'Mod+T'],
+    ['Dvorak ⌘⇧P', key('P', 'KeyR', { metaKey: true, shiftKey: true }), 'Mod+Shift+P'],
+    ['Dvorak ⌘⌥K', key('˚', 'KeyK', { metaKey: true, altKey: true }), 'Mod+Alt+K'],
+  ] as const)('%s records the chord that then fires on the same press', (_name, press, chord) => {
+    expect(roundTrip(press)).toEqual({ chord, fires: true })
+  })
+
+  it('an AZERTY ⌘A is select-all, not quit, and ⌘W does not answer to QWERTY ⌘Z', () => {
+    expect(reservedShortcutReason(chordFromEvent(key('a', 'KeyQ', { metaKey: true }), 'mac')!, 'mac')).toMatch(/select all/)
+    expect(matchesBinding(key('z', 'KeyZ', { metaKey: true }), 'Mod+W', 'mac')).toBe(false)
+  })
+
+  it('the defaults follow the layout letter: ⌘⇧P on Dvorak opens the palette', () => {
+    expect(matchShortcut(key('P', 'KeyR', { metaKey: true, shiftKey: true }), 'app.command-palette', 'mac', SHORTCUTS)).toBe(0)
+    expect(matchShortcut(key('R', 'KeyR', { metaKey: true, shiftKey: true }), 'app.command-palette', 'mac', SHORTCUTS)).toBe(-1)
+  })
+
+  it('works the same with Ctrl as Mod off macOS', () => {
+    expect(roundTrip(key('w', 'KeyZ', { ctrlKey: true }), 'other')).toEqual({ chord: 'Mod+W', fires: true })
+  })
+})
+
+describe('validating stored overrides where they are applied', () => {
+  it.each([
+    ['a typing key', { 'chat.new': ['Enter'] }],
+    ['a bare letter', { 'chat.new': ['K'] }],
+    ['a reserved OS key', { 'chat.new': ['Mod+Q'] }],
+    ['an editing key', { 'chat.new': ['Mod+C'] }],
+    ['a Ctrl key on macOS', { 'chat.new': ['Ctrl+K'] }],
+    ['a key another command has', { 'chat.new': ['Mod+B'] }],
+    ['one bad binding among good ones', { 'chat.new': ['Mod+Shift+Y', 'Enter'] }],
+  ])('drops %s', (_what, overrides) => {
+    const { commands, ignored } = resolve(overrides, SHORTCUTS, 'mac')
+    expect(ignored).toEqual(['chat.new'])
+    expect(shortcutLabel('chat.new', 'mac', commands)).toBe('⌘⇧O')
+  })
+
+  it('drops both sides when two overrides take the same key', () => {
+    const { ignored } = resolve({ 'chat.new': ['Mod+Shift+Y'], 'app.search': ['Mod+Shift+Y'] }, SHORTCUTS, 'mac')
+    expect(ignored).toEqual(['chat.new', 'app.search'])
+  })
+
+  it('keeps a swap, whatever order it was stored in', () => {
+    // Settings stores the unbind first, so the freed key's new owner comes after it.
+    const swap = { 'app.toggle-sidebar': ['Mod+Shift+F'], 'app.search': ['Mod+B'] }
+    const { commands, ignored } = resolve(swap, SHORTCUTS, 'mac')
+    expect(ignored).toEqual([])
+    expect(shortcutLabel('app.search', 'mac', commands)).toBe('⌘B')
+    expect(shortcutLabel('app.toggle-sidebar', 'mac', commands)).toBe('⌘⇧F')
+  })
+
+  it('judges reserved keys per platform', () => {
+    expect(resolve({ 'chat.new': ['Mod+D'] }, SHORTCUTS, 'mac').ignored).toEqual([])
+    expect(resolve({ 'chat.new': ['Mod+D'] }, SHORTCUTS, 'other').ignored).toEqual(['chat.new'])
+  })
+})
+
 describe('reserved keys', () => {
   it.each([
     ['Mod+Q', 'mac', /quits/],
@@ -233,6 +305,9 @@ describe('clash refusal', () => {
 })
 
 describe('clash detection', () => {
+  // A raw list, since applyShortcutOverrides now drops a clashing override.
+  const rebind = (id: string, bindings: string[]) => SHORTCUTS.map((c) => (c.id === id ? { ...c, bindings } : c))
+
   // Both are deliberate: the global handler for ⌘⌫ yields to text inputs
   // (xterm's textarea counts), and ⌘K in a terminal both opens the quick
   // prompt and clears the screen, as it always has.
@@ -245,19 +320,19 @@ describe('clash detection', () => {
   })
 
   it('flags an override that collides in an overlapping scope, not a disjoint one', () => {
-    const clash = applyShortcutOverrides({ 'app.search': ['Mod+B'] })
+    const clash = rebind('app.search', ['Mod+B'])
     expect(findShortcutClashes(clash, 'other')).toEqual([{ binding: 'Mod+B', a: 'app.toggle-sidebar', b: 'app.search' }])
     // approval and card-modal both use Mod+Enter, but never at the same time
     expect(findShortcutClashes(SHORTCUTS, 'other').some((c) => c.binding === 'Mod+Enter')).toBe(false)
   })
 
   it('compares a shifted symbol with its unshifted key', () => {
-    const clash = applyShortcutOverrides({ 'app.search': ['Mod+Shift+}'] })
+    const clash = rebind('app.search', ['Mod+Shift+}'])
     expect(findShortcutClashes(clash, 'other')).toEqual([{ binding: 'Mod+Shift+}', a: 'app.search', b: 'terminal.next-tab' }])
   })
 
   it('treats Mod and Ctrl as the same key off macOS', () => {
-    const clash = applyShortcutOverrides({ 'app.search': ['Ctrl+B'] })
+    const clash = rebind('app.search', ['Ctrl+B'])
     expect(findShortcutClashes(clash, 'other')).toHaveLength(1)
     expect(findShortcutClashes(clash, 'mac')).toEqual(findShortcutClashes(SHORTCUTS, 'mac'))
   })

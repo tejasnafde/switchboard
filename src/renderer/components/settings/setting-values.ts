@@ -121,7 +121,13 @@ export function useSettingValues(): SettingValues {
       log.warn(`no binding for ${id}`)
       return
     }
-    Promise.resolve(binding.write(value)).catch((err) => log.warn(`writing ${id} failed`, err))
+    Promise.resolve(binding.write(value)).catch((err) => {
+      log.warn(`writing ${id} failed`, err)
+      // Show what is actually stored, not the value that failed to save.
+      binding.read()
+        .then((stored) => setValues((prev) => ({ ...prev, [id]: stored })))
+        .catch((readErr) => log.warn(`re-reading ${id} failed`, readErr))
+    })
   }, [])
 
   return { values, set }

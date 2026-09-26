@@ -808,6 +808,10 @@ const api = {
   onOpenSettings: (callback: () => void) =>
     transport.on('app:open-settings', () => callback()),
 
+  /** The stored shortcut rebinds changed (main has already rebuilt its menu). */
+  onKeyboardOverridesChanged: (callback: () => void) =>
+    transport.on('app:keyboard-overrides-changed', () => callback()),
+
   onOpenChatBeside: (callback: () => void) =>
     transport.on('app:open-chat-beside', () => callback()),
 

@@ -2,7 +2,9 @@
  * The user's shortcut rebinds, stored as one JSON settings value. Loading
  * applies them to the registry's active list, which every matcher reads, so a
  * change takes effect on the next keydown. The main process re-reads the same
- * value when it is written (menu accelerators, ⌘W).
+ * value when it is written (menu accelerators, ⌘W) and tells the window, which
+ * re-reads too, so the window, the menu and the stored value agree whoever
+ * wrote it.
  */
 import { KEYBOARD_OVERRIDES_SETTING, setActiveShortcutOverrides } from '@shared/shortcuts'
 import { createRendererLogger } from '../logger'
@@ -13,10 +15,19 @@ const log = createRendererLogger('service:keyboard-overrides')
 // does not erase another build's.
 let stored: Record<string, unknown> = {}
 let loading: Promise<void> | null = null
+// Bumped by every write, so a re-read that raced one does not undo it.
+let writes = 0
 
-function apply(raw: string | null): void {
+function adopt(raw: string | null): void {
   const ignored = setActiveShortcutOverrides(raw)
   if (ignored.length > 0) log.warn('ignoring shortcut overrides this build cannot use', ignored)
+  try {
+    const parsed: unknown = raw ? JSON.parse(raw) : {}
+    stored = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+  } catch (err) {
+    stored = {}
+    log.warn('stored shortcut overrides are not JSON; starting from the defaults', err)
+  }
 }
 
 /**
@@ -25,20 +36,21 @@ function apply(raw: string | null): void {
  */
 export function loadKeyboardOverrides(): Promise<void> {
   loading ??= window.api.settings.get(KEYBOARD_OVERRIDES_SETTING)
-    .then((raw) => {
-      apply(raw)
-      try {
-        const parsed: unknown = raw ? JSON.parse(raw) : {}
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) stored = parsed as Record<string, unknown>
-      } catch (err) {
-        log.warn('stored shortcut overrides are not JSON; starting from the defaults', err)
-      }
-    })
+    .then(adopt)
     .catch((err) => {
       loading = null
       throw err
     })
   return loading
+}
+
+/** Re-reads the stored value, unless a write started meanwhile (its own notice follows). */
+export async function reloadKeyboardOverrides(): Promise<void> {
+  const before = writes
+  const raw = await window.api.settings.get(KEYBOARD_OVERRIDES_SETTING)
+  if (writes !== before) return
+  adopt(raw)
+  loading = Promise.resolve()
 }
 
 /** `bindings` replaces the defaults (`[]` unbinds); null goes back to the default. */
@@ -47,8 +59,15 @@ export async function setKeyboardOverride(id: string, bindings: string[] | null)
   const next = { ...stored }
   if (bindings === null) delete next[id]
   else next[id] = bindings
-  stored = next
   const raw = JSON.stringify(next)
-  apply(raw)
-  await window.api.settings.set(KEYBOARD_OVERRIDES_SETTING, raw)
+  writes += 1
+  adopt(raw)
+  try {
+    await window.api.settings.set(KEYBOARD_OVERRIDES_SETTING, raw)
+  } catch (err) {
+    // Main rebuilds its menu only after a successful write, so go back to what
+    // is stored instead of keeping keys the menu and the next launch lack.
+    await reloadKeyboardOverrides().catch((reloadErr) => log.warn('re-reading shortcut overrides failed', reloadErr))
+    throw err
+  }
 }

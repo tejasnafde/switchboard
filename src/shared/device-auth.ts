@@ -10,6 +10,7 @@
  * administer pairings. It CAN do everything the chat surface does, and that
  * surface runs an agent. This is a reduction in blast radius, not a sandbox.
  */
+import { KEYBOARD_OVERRIDES_SETTING } from './shortcuts'
 
 /** `terminal` is separate because a PTY is arbitrary code execution and nothing
  *  on the phone needs it. */
@@ -46,11 +47,14 @@ const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> =
  * say (the phone routinely does not) and the OAuth client consent runs against.
  * Writable, those let a stolen phone credential grant itself full access.
  * Reads stay open: neither is a secret and the phone seeds its picker from one.
+ * The desktop's keyboard shortcuts are not a phone's to change either: the
+ * phone has no Keyboard page, and a rebind moves keys under the user's hands.
  */
 const ADMIN_ONLY_SETTING_KEYS: readonly string[] = [
   'chat.defaultRuntimeMode',
   'google.clientId',
   'google.clientSecret',
+  KEYBOARD_OVERRIDES_SETTING,
 ]
 
 /** Arg-level, because the channel is legitimately open. Enforced beside the
