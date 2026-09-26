@@ -43,8 +43,11 @@ export interface KanbanCard {
   status: KanbanStatus
   /** Optional spend ceiling in USD; null = no cap. */
   costCapUsd: number | null
-  /** Initial runtime mode at launch. Not a live mirror - once a session exists, the chat panel owns the live mode. */
-  runtimeMode: RuntimeMode
+  /**
+   * Initial runtime mode at launch. Not a live mirror - once a session exists, the chat panel owns the live mode.
+   * Null when nobody picked one: the chat then sends no mode and the backend applies the project's default.
+   */
+  runtimeMode: RuntimeMode | null
   /** Cumulative reported cost for the linked session. Null until first update. */
   costUsedUsd: number | null
   /** Set when the user clicks "Start" - links the card to a chat session. */
@@ -68,7 +71,7 @@ export interface KanbanCardCreate {
   /** Initial column. Older clients omit this and continue to create backlog cards. */
   status?: KanbanStatus
   costCapUsd?: number | null
-  /** Initial runtime mode for the agent. Defaults to `KANBAN_DEFAULT_RUNTIME_MODE` (`accept-edits`) when omitted. */
+  /** Initial runtime mode for the agent, only when the user picked one. Omitted, the card has none (the project default applies). */
   runtimeMode?: RuntimeMode
   /** If true, the main process will create a git worktree under the project's `.switchboard/worktrees/` dir. */
   withWorktree?: boolean

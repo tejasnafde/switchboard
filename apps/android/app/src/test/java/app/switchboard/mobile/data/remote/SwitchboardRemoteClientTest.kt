@@ -150,6 +150,10 @@ class SwitchboardRemoteClientTest {
         client.getSetting("default-runtime-mode") {}
         assertCall(rpc, "settings:get", JsonString("default-runtime-mode"))
 
+        rpc.reply(JsonString("plan"))
+        client.getSetting("default-runtime-mode", "/repo") {}
+        assertCall(rpc, "settings:get", JsonString("default-runtime-mode"), JsonString("/repo"))
+
         rpc.reply(obj("ok" to JsonBoolean(true)))
         client.setSetting("theme", "dark") {}
         assertCall(rpc, "settings:set", JsonString("theme"), JsonString("dark"))

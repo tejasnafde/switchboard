@@ -11,13 +11,14 @@
  * The cache pattern mirrors `notifications.ts` - one read on first
  * access, one write to flip; persisted via the existing settings KV.
  */
+import { SETTING_SESSION_ENV_MODE } from '@shared/project-settings'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('service:session-env-mode')
 
 export type SessionEnvMode = 'local' | 'worktree'
 
-const SETTING_KEY = 'defaultSessionEnvMode'
+const SETTING_KEY = SETTING_SESSION_ENV_MODE
 const DEFAULT_MODE: SessionEnvMode = 'local'
 
 let cached: SessionEnvMode | null = null

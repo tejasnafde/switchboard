@@ -1,0 +1,89 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "settings-project-scopes",
+  "summary": "Settings step 4: a project can override four Chat & agents settings (follow-up while the agent works, where new chats run, the runtime mode new chats start in, file diff cards). The list lives in src/shared/project-settings.ts (SCOPABLE_SETTINGS); each override is one settings row keyed project:<pathKey>:<settingKey>, pathKey being the worktree manager's normalised path, and resolves as project override ?? global ?? default through one pure effectiveSetting. The backend serves settings:project-overrides / -override-set / -override-remove and answers settings:get(key, projectPath) with the effective value; START_SESSION resolves the machine runtime mode for the chat's project (a worktree chat's parent). Desktop: a Scope combobox on Chat & agents (All projects, Recent, by workspace, override counts), Overridden marker and Reset per row, non-scopable rows disabled with a reason, a new Runtime mode row, search results showing effective values, and a Projects list with launch config and override counts and Open. The phone and Android read the runtime-mode default for the project they start a session in. Unknown setting keys in override rows are logged and ignored, never deleted.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/SettingsPage.tsx",
+        "src/renderer/components/settings/project-scope.ts",
+        "src/renderer/components/settings/settings-rows.ts",
+        "src/renderer/components/settings/setting-values.ts",
+        "src/renderer/stores/project-settings-store.ts",
+        "src/renderer/services/effective-settings.ts",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/components/kanban/card-launch.ts",
+        "src/renderer/App.tsx",
+        "src/preload/index.ts",
+        "tests/unit/project-settings-consumers.test.ts",
+        "tests/unit/project-settings-cold-cache.test.ts",
+        "tests/unit/session-runtime-mode-rule.test.ts",
+        "e2e/project-scopes.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/screens/NewSessionScreen.tsx",
+        "apps/mobile/src/lib/__tests__/api.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/NewSessionCoordinator.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClientTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/project-settings.ts",
+        "src/shared/device-auth.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/project-settings.ts",
+        "src/main/ipc/app.ts",
+        "src/main/provider/session-defaults.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/project-settings.test.ts",
+        "tests/unit/project-settings-backend.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/settings.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "apps/mobile/src/lib/api.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test (vitest: scopable list, resolution order, pathKey junction and Windows case variant, unknown-key tolerance, device-auth gating of override keys, backend and renderer consumers, the first new chat in a project with a cold renderer cache, a failed override read that leaves the new chat and kanban launch mode unset so the backend picks it, and one rule for every session that enters the renderer store (initialRuntimeMode: a mode nobody chose is unresolved and never sent), with a source guard that no other path builds a session)",
+      "npm test --prefix apps/mobile (getSessionDefaults passes the project path)",
+      "npm run build:fast && node e2e/project-scopes.e2e.mjs (12 checks: the first new chat after launch starts in a stored override, Scope pick, override stored, new chat in the project starts in Plan, a chat in another project does not, Projects page count and Open, Reset removes the row)",
+      "SB_VISUAL_SCOPE=screens node e2e/visual-regressions.e2e.mjs (no covered screen changed)"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Android: the Kotlin change (getSetting with a project path, NewSessionCoordinator reading the project's runtime mode) was not compiled or run here; no JDK was available on this machine. CI's Android job covers it.",
+      "The phone was not driven on a device; the client change is covered by the jest api test.",
+      "Older backends ignore the extra settings:get argument and answer with the machine value, and have no override channels, so Settings on a desktop pointed at one shows no overrides; not exercised against a real older server.",
+      "In multi-machine mode the renderer's override cache reads the base backend, so a remote machine's project shows the base backend's overrides in Settings while that machine's own START_SESSION uses its own DB."
+    ]
+  }
+}

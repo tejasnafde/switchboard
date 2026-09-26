@@ -257,12 +257,17 @@ class SwitchboardRemoteClient(
         callback,
     )
 
+    /**
+     * With [projectPath] the backend answers with that project's override when
+     * it has one. An older backend ignores the extra argument.
+     */
     fun getSetting(
         key: String,
+        projectPath: String? = null,
         callback: (RemoteResponse<String?>) -> Unit,
     ) = call(
         BackendChannels.GetSetting,
-        array(JsonString(key)),
+        projectPath?.let { array(JsonString(key), JsonString(it)) } ?: array(JsonString(key)),
         RemoteDecoders::setting,
         callback,
     )

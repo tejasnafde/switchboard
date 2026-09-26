@@ -18,6 +18,7 @@ import { useAgentStore } from '../../stores/agent-store'
 import { useMachineStore } from '../../stores/machine-store'
 import { useBookmarkStore } from '../../stores/bookmark-store'
 import { useLayoutStore } from '../../stores/layout-store'
+import { useProjectSettingsStore } from '../../stores/project-settings-store'
 import { onSessionRename, emitSessionRename, onSessionCreated, onSessionActivity } from '../../services/session-events'
 import { bumpSessionActivity } from './session-activity'
 import { serializeConversationToMarkdown, suggestedExportFilename } from '../../services/export-markdown'
@@ -269,6 +270,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       setSidebarCollapsedProjects(saved.map((p) => p.path))
     }
     setProjects(saved)
+    void useProjectSettingsStore.getState().load(saved.map((p) => p.path))
   }, [setSidebarCollapsedProjects])
 
   useEffect(() => {

@@ -1347,7 +1347,7 @@ export class ProviderRegistry implements PeerToolHost {
           status: this.sessionStatus.get(opts.threadId) ?? 'idle',
           runtimeMode: sessionDefaultsFor(opts.threadId, toAgentProvider(opts.provider), {
             runtimeMode: opts.runtimeMode,
-          }).runtimeMode,
+          }, opts.cwd).runtimeMode,
           cwd: this.sessionCwd.get(opts.threadId) ?? live?.cwd ?? opts.cwd,
           createdAt: live?.createdAt ?? Date.now(),
         } satisfies ProviderSession
@@ -1399,7 +1399,7 @@ export class ProviderRegistry implements PeerToolHost {
         runtimeMode: opts.runtimeMode,
         model: opts.model,
         instanceId: opts.instanceId,
-      })
+      }, opts.cwd)
       opts = { ...opts, ...defaults }
 
       log.info(`startSession ${opts.threadId} provider=${opts.provider} cwd=${opts.cwd} mode=${defaults.runtimeMode} instance=${defaults.instanceId ?? '(default)'}`)

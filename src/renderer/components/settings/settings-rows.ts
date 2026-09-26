@@ -8,6 +8,10 @@
  */
 import { currentPlatform, isRebindable, shortcutLabel, shortcutsFor, SHORTCUTS, type ShortcutPlatform } from '@shared/shortcuts'
 import { DEFAULT_RECENT_SESSION_LIMIT } from '../sidebar/recent-session-limit'
+import { FOLLOW_UP_DEFAULT_KEY } from '@shared/turn-delivery'
+import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
+import { SETTING_SESSION_ENV_MODE, SETTING_SHOW_FILE_DIFFS, type ScopableSettingKey } from '@shared/project-settings'
+import { RUNTIME_MODE_OPTIONS } from '../chat/runtime-mode-options'
 
 export type SettingsPageId =
   | 'general'
@@ -52,6 +56,10 @@ export interface SettingRowDef {
   keys?: string
   /** A shortcut row's registry command id. */
   command?: string
+  /** The settings key a project can override this row under (`SCOPABLE_SETTINGS`). */
+  scopeKey?: ScopableSettingKey
+  /** A select or segmented row's choices, shown in the control and in search results. */
+  options?: ReadonlyArray<{ value: string; label: string }>
 }
 
 export const PRIVACY_POLICY_URL = 'https://tn07.dev/privacy'
@@ -106,6 +114,8 @@ const ROWS = {
     description: 'What Enter does with a message sent mid-turn. Steer hands it to the agent at its next step; Queue holds it until the turn ends. ⌥Enter does the other one. OpenCode always queues.',
     defaultValue: 'steer',
     defaultLabel: 'Steer',
+    scopeKey: FOLLOW_UP_DEFAULT_KEY,
+    options: [{ value: 'steer', label: 'Steer' }, { value: 'queue', label: 'Queue' }],
   },
   streaming: {
     id: 'chat.streaming', page: 'chat', section: 'While the agent works',
@@ -119,12 +129,24 @@ const ROWS = {
     description: "Which option is highlighted first. You still choose for every new thread. Local runs the agent in the project root; New worktree creates a fresh git worktree off HEAD so parallel threads don't trample each other.",
     defaultValue: 'local',
     defaultLabel: 'Local (project root)',
+    scopeKey: SETTING_SESSION_ENV_MODE,
+    options: [{ value: 'local', label: 'Local (project root)' }, { value: 'worktree', label: 'New worktree' }],
+  },
+  runtimeMode: {
+    id: 'chat.runtimeMode', page: 'chat', section: 'Defaults for new chats',
+    label: 'Runtime mode',
+    description: 'The mode a new chat starts in. Picking a mode in a chat also makes it the default for the next one.',
+    defaultValue: 'sandbox',
+    defaultLabel: 'Supervised',
+    scopeKey: SETTING_DEFAULT_RUNTIME_MODE,
+    options: RUNTIME_MODE_OPTIONS.map(({ value, label }) => ({ value, label })),
   },
   fileDiffs: {
     id: 'chat.fileDiffs', page: 'chat', section: 'In the chat',
     label: 'Show file diff cards in chat',
     description: 'Show per-file diffs inline after each turn. Off shows a "Changed N files" button that expands them for that turn only.',
     defaultValue: 'false',
+    scopeKey: SETTING_SHOW_FILE_DIFFS,
   },
   accountsSummary: {
     id: 'accounts.summary', page: 'accounts', section: 'Summary',
@@ -140,6 +162,11 @@ const ROWS = {
     id: 'accounts.add', page: 'accounts', section: 'Accounts',
     label: 'Add account',
     description: 'A new named account for Claude Code, Codex or OpenCode, signed in through its own folder or an API key.',
+  },
+  projectList: {
+    id: 'projects.list', page: 'projects', section: 'Projects',
+    label: 'Project overrides',
+    description: 'Each project with its launch configs and the Chat & agents settings it overrides. Open shows that project\'s scope.',
   },
   launchConfigs: {
     id: 'projects.launchConfigs', page: 'projects', section: 'Launch configs',

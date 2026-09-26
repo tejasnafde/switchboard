@@ -118,7 +118,7 @@ export default function NewSessionScreen({ route, navigation }: Props) {
     if (!client) return
     let cancelled = false
     client
-      .getSessionDefaults(agentType)
+      .getSessionDefaults(agentType, projectPath)
       .then((defaults) => {
         if (cancelled) return
         if (isRuntimeMode(defaults.runtimeMode)) setMode(defaults.runtimeMode)
@@ -129,7 +129,7 @@ export default function NewSessionScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true
     }
-  }, [connectionId, agentType, activeWorktreeCreation])
+  }, [connectionId, agentType, activeWorktreeCreation, projectPath])
 
   const agentInstances = useMemo(() => profilesFor(instances, provider), [instances, provider])
   const selectedInstance = agentInstances.find((i) => i.id === instanceId) ?? agentInstances[0]

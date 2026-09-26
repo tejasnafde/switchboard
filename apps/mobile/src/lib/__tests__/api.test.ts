@@ -91,3 +91,17 @@ describe('SwitchboardClient.setConversationProviderInstanceId', () => {
     )
   })
 })
+
+describe('SwitchboardClient.getSessionDefaults - project scope', () => {
+  it('asks the backend for the runtime mode of the project the session starts in', async () => {
+    const transport = fakeTransport({
+      'settings:get': (key, projectPath) => {
+        if (key !== 'chat.defaultRuntimeMode') return null
+        return projectPath === '/repo/app' ? 'plan' : 'sandbox'
+      },
+    })
+    const client = new SwitchboardClient(transport)
+    expect((await client.getSessionDefaults('claude-code', '/repo/app')).runtimeMode).toBe('plan')
+    expect((await client.getSessionDefaults('claude-code')).runtimeMode).toBe('sandbox')
+  })
+})

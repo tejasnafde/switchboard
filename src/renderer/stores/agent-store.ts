@@ -14,7 +14,8 @@ import type { RuntimeEvent } from '@shared/provider-events'
 import { NO_QUEUED_TURNS, applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { FollowSuggestionMode } from '@shared/follow-suggestions'
-import { isRuntimeMode } from '@shared/session-defaults'
+import { isRuntimeMode, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
+import { effectiveLocalSetting, projectOverride } from './project-settings-store'
 import { isDraftSessionId, type DraftChatOptions } from '@shared/new-chat-draft'
 import type {
   ForkLineageMetadata,
@@ -40,6 +41,51 @@ export function getStoreDefaultRuntimeMode(): RuntimeMode {
 }
 export function setStoreDefaultRuntimeMode(mode: RuntimeMode): void {
   storeDefaultRuntimeMode = mode
+}
+
+/** The mode a new chat in this project starts in: its override, else the store default. */
+export function defaultRuntimeModeFor(projectPath: string | null | undefined): RuntimeMode {
+  const mode = effectiveLocalSetting(SETTING_DEFAULT_RUNTIME_MODE, projectPath, storeDefaultRuntimeMode)
+  return isRuntimeMode(mode) ? mode : storeDefaultRuntimeMode
+}
+
+/**
+ * The one rule for a session's starting mode, applied wherever a session
+ * enters the store (`addSession`, `adoptLiveSessions`), so no path can skip
+ * it. `chosen` is a mode someone decided: the user, a mode carried over from
+ * another chat, a card's own mode, the conversation's stored mode, or the
+ * backend's live descriptor. Without one the session is unresolved: it shows
+ * the renderer's default (the project override when known, else the global
+ * one) only as a guess, sends no mode, and the backend's `sessionDefaultsFor`
+ * decides. A renderer default is never sent as if it were a choice.
+ */
+export function initialRuntimeMode(
+  projectPath: string | null | undefined,
+  chosen: unknown,
+): { runtimeMode: RuntimeMode; runtimeModeUnresolved?: true } {
+  if (isRuntimeMode(chosen)) return { runtimeMode: chosen }
+  return { runtimeMode: defaultRuntimeModeFor(projectPath), runtimeModeUnresolved: true }
+}
+
+/** The mode to send to the backend: none while the session's mode is unresolved, so the backend decides. */
+export function runtimeModeToSend(session: Pick<AgentSession, 'runtimeMode' | 'runtimeModeUnresolved'> | undefined): RuntimeMode | undefined {
+  if (!session || session.runtimeModeUnresolved) return undefined
+  return session.runtimeMode
+}
+
+/** Take the mode the backend started an unresolved session in (the `startSession` reply). */
+export function adoptStartedRuntimeMode(sessionId: string, started: unknown): void {
+  const session = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
+  if (!session?.runtimeModeUnresolved) return
+  const mode = (started as { runtimeMode?: unknown } | null | undefined)?.runtimeMode
+  if (isRuntimeMode(mode)) useAgentStore.getState().setRuntimeMode(sessionId, mode)
+  else log.warn(`startSession for ${sessionId} reported no runtime mode; the chat keeps showing its guess`)
+}
+
+/** The project's own runtime-mode override, which beats a mode carried over from another chat. */
+export function projectRuntimeModeOverride(projectPath: string | null | undefined): RuntimeMode | undefined {
+  const mode = projectOverride(projectPath, SETTING_DEFAULT_RUNTIME_MODE)
+  return isRuntimeMode(mode) ? mode : undefined
 }
 
 export interface DriftSuggestion {
@@ -122,6 +168,13 @@ interface AgentSession {
   title?: string
   /** Permission mode for this session (sandbox / accept-edits / full-access / plan) */
   runtimeMode: RuntimeMode
+  /**
+   * `runtimeMode` is only a guess: nobody chose it and the project's
+   * overrides could not be read. The session sends no mode, so the backend
+   * resolves it, and adopts the one the backend reports. Cleared by any
+   * `setRuntimeMode`.
+   */
+  runtimeModeUnresolved?: boolean
   /** Model identifier (provider-specific - e.g. 'claude-opus-4-5' or 'gpt-5') */
   model?: string
   /**
@@ -191,7 +244,8 @@ interface AgentStore {
     | { sessionId: string; messageId?: string; messageTimestamp?: number; stamp: number; query?: string }
     | null
 
-  addSession: (session: Omit<AgentSession, 'messages' | 'unreadCount' | 'runtimeMode'> & { runtimeMode?: RuntimeMode }) => void
+  /** `runtimeMode` only when someone chose it; absent, the session is unresolved (`initialRuntimeMode`). */
+  addSession: (session: Omit<AgentSession, 'messages' | 'unreadCount' | 'runtimeMode' | 'runtimeModeUnresolved'> & { runtimeMode?: RuntimeMode }) => void
   removeSession: (id: string) => void
   setActiveSession: (id: string) => void
   /** Clear the badge without focusing the session - a `thread.read` from
@@ -295,7 +349,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           ...session,
           messages: [],
           unreadCount: 0,
-          runtimeMode: session.runtimeMode ?? storeDefaultRuntimeMode,
+          ...initialRuntimeMode(session.projectPath, session.runtimeMode),
         },
       ],
       activeSessionId: state.activeSessionId ?? session.id,
@@ -378,7 +432,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           projectPath: s.cwd,
           machineId,
           unreadCount: 0,
-          runtimeMode: isRuntimeMode(s.runtimeMode) ? s.runtimeMode : 'sandbox',
+          ...initialRuntimeMode(s.cwd, s.runtimeMode),
           model: s.model,
           instanceId: s.instanceId,
           resumeSessionId: s.sessionId,
@@ -527,7 +581,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   setRuntimeMode: (sessionId, mode) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, runtimeMode: mode } : s
+        s.id === sessionId ? { ...s, runtimeMode: mode, runtimeModeUnresolved: undefined } : s
       ),
     })),
 

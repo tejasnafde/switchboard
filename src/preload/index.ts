@@ -547,6 +547,13 @@ const api = {
     get: (key: string) => transport.invoke('settings:get', key),
     set: (key: string, value: string) => transport.invoke('settings:set', key, value),
     remove: (key: string) => transport.invoke('settings:remove', key),
+    /** Each project's overrides, keyed by the path as given. */
+    projectOverrides: (projectPaths: string[]): Promise<Record<string, import('@shared/project-settings').ProjectOverrides>> =>
+      transport.invoke(AppChannels.SETTINGS_PROJECT_OVERRIDES, projectPaths),
+    setProjectOverride: (projectPath: string, key: string, value: string): Promise<void> =>
+      transport.invoke(AppChannels.SETTINGS_PROJECT_OVERRIDE_SET, projectPath, key, value),
+    removeProjectOverride: (projectPath: string, key: string): Promise<void> =>
+      transport.invoke(AppChannels.SETTINGS_PROJECT_OVERRIDE_REMOVE, projectPath, key),
   },
 
   // ─── Provider instances (named credential sets per agent kind) ───

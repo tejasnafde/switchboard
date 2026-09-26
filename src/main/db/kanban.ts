@@ -31,8 +31,16 @@ interface KanbanRow {
   completed_at: number | null
 }
 
-/** Coerce a stored runtime-mode string back into the typed union; legacy/unknown → default. */
-function normalizeRuntimeMode(raw: string | null | undefined): RuntimeMode {
+/**
+ * The column is NOT NULL, so a card nobody picked a mode for stores ''
+ * (`UNSET_RUNTIME_MODE`) and reads back as null. An older build reads '' as
+ * its default, so a downgrade still works. Other legacy/unknown values map
+ * to the default.
+ */
+export const UNSET_RUNTIME_MODE = ''
+
+function normalizeRuntimeMode(raw: string | null | undefined): RuntimeMode | null {
+  if (raw === UNSET_RUNTIME_MODE) return null
   return isRuntimeMode(raw) ? raw : KANBAN_DEFAULT_RUNTIME_MODE
 }
 
@@ -65,7 +73,7 @@ function rowToCard(r: KanbanRow): KanbanCard {
 
 export function createKanbanCard(id: string, input: KanbanCardCreate): KanbanCard {
   const tagsJson = JSON.stringify(input.tags ?? [])
-  const runtimeMode = input.runtimeMode ?? KANBAN_DEFAULT_RUNTIME_MODE
+  const runtimeMode = input.runtimeMode ?? UNSET_RUNTIME_MODE
   getDb().prepare(`
     INSERT INTO kanban_cards (id, project_path, title, description, tags, status, cost_cap_usd, runtime_mode)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)

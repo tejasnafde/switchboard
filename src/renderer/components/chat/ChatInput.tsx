@@ -14,7 +14,8 @@ import {
 import { coversFor, reconcileSelectedModel } from '@shared/model-reconcile'
 import { followUpDelivery, sendAction, waitsForIdle, type TurnDelivery } from '@shared/turn-delivery'
 import { followOffNotice, followSuggestionView, type FollowSuggestionMode } from '@shared/follow-suggestions'
-import { useLayoutStore } from '../../stores/layout-store'
+import { useFollowUpDefault } from '../../services/effective-settings'
+import { RUNTIME_MODE_OPTIONS } from './runtime-mode-options'
 import { ArrowUpIcon, StopSquareIcon } from './chat-icons'
 import {
   modelsForAgent,
@@ -179,15 +180,6 @@ function composerActionsInset(showStop: boolean): string {
 const EMPTY_PILLS: import('../../stores/draft-store').DraftPill[] = []
 const EMPTY_IMAGES: import('../../stores/draft-store').ImageAttachment[] = []
 
-// Short labels only: a native select is as wide as its longest option, and
-// the long text pushed the footer onto a second row. The detail is a tooltip.
-const RUNTIME_MODE_OPTIONS: Array<{ value: RuntimeMode; label: string; detail: string }> = [
-  { value: 'sandbox', label: 'Supervised', detail: 'Ask before commands and file changes' },
-  { value: 'accept-edits', label: 'Auto-accept edits', detail: 'Ask before other actions' },
-  { value: 'auto', label: 'Auto', detail: 'The agent approves routine actions. OpenCode still asks.' },
-  { value: 'full-access', label: 'Full access', detail: 'No prompts' },
-  { value: 'plan', label: 'Plan', detail: 'No execution' },
-]
 
 export function ChatInput({
   sessionId,
@@ -543,7 +535,7 @@ export function ChatInput({
       )
     : 'send'
   const composerErrorColor = recovery?.ambiguous ? 'var(--warning)' : 'var(--error)'
-  const followUpDefault = useLayoutStore((s) => s.followUpDefault)
+  const followUpDefault = useFollowUpDefault(sessionId)
   const showStop = isRunning && !!onInterrupt
   const sendButton = isSubmitting
     ? { label: 'Sending', tooltip: 'Sending…' }

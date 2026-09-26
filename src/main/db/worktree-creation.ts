@@ -740,7 +740,8 @@ export class SqliteWorktreeCreationStore {
           draft.description ?? '',
           JSON.stringify(draft.tags ?? []),
           draft.status ?? 'backlog',
-          draft.runtimeMode ?? 'accept-edits',
+          // '' is an unset mode (see UNSET_RUNTIME_MODE in db/kanban.ts).
+          draft.runtimeMode ?? '',
           draft.costCapUsd ?? null,
           input.creationId,
           input.now,

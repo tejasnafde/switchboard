@@ -15,7 +15,8 @@ function isIntent(value: unknown): value is DesktopNewChatIntent {
     && typeof input.machineId === 'string'
     && input.checkout === 'worktree'
     && (input.agentType === 'claude-code' || input.agentType === 'codex' || input.agentType === 'opencode')
-    && isRuntimeMode(input.runtimeMode)
+    // Absent when the backend was left to pick it.
+    && (input.runtimeMode === undefined || isRuntimeMode(input.runtimeMode))
 }
 
 export function createDesktopNewChatJournal(storage: Pick<Storage, 'getItem' | 'setItem'>):

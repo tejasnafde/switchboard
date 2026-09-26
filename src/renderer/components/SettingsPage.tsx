@@ -23,6 +23,19 @@ import { ArchiveDataPage } from './settings/ArchiveDataPage'
 import { WorktreeProtectionPanel } from './settings/WorktreeProtectionPanel'
 import { useSettingValues, type SettingValues } from './settings/setting-values'
 import {
+  ALL_PROJECTS_SCOPE,
+  launchConfigCount,
+  overrideCount,
+  projectSummary,
+  scopedRow,
+  scopeOptions,
+  valueLabel,
+  type ScopedRow,
+} from './settings/project-scope'
+import type { PickerProject } from './settings/project-picker-options'
+import { useProjectSettingsStore } from '../stores/project-settings-store'
+import type { Workspace } from '@shared/types'
+import {
   SETTINGS_PAGES,
   SETTING_ROW,
   PRIVACY_POLICY_URL,
@@ -54,9 +67,16 @@ interface SettingsPageProps {
 
 interface SettingsContextValue extends SettingValues {
   highlight: string | null
+  /** The project whose overrides Chat & agents shows and edits; null is All projects. */
+  scope: string | null
+  setScope: (scope: string | null) => void
+  projects: PickerProject[]
+  workspaces: Workspace[]
 }
 
-const SettingsContext = createContext<SettingsContextValue>({ values: {}, set: () => {}, highlight: null })
+const SettingsContext = createContext<SettingsContextValue>({
+  values: {}, set: () => {}, highlight: null, scope: null, setScope: () => {}, projects: [], workspaces: [],
+})
 
 /**
  * Settings as a full-window page: navigation and search on the left, one
@@ -132,11 +152,16 @@ function SettingsBody({
   onClose: () => void
 }) {
   const settingValues = useSettingValues()
+  const [scope, setScope] = useState<string | null>(null)
+  const { projects, workspaces } = useSettingsProjects()
   const changed = useMemo(() => changedCountByPage(settingValues.values), [settingValues.values])
   // Values in the deps: a rebind changes which keys a shortcut row is found by.
   const results = useMemo(() => searchSettingRows(query), [query, settingValues.values])
   const searching = query.trim() !== ''
-  const context = useMemo(() => ({ ...settingValues, highlight }), [settingValues, highlight])
+  const context = useMemo(
+    () => ({ ...settingValues, highlight, scope, setScope, projects, workspaces }),
+    [settingValues, highlight, scope, projects, workspaces],
+  )
 
   return (
     <SettingsContext.Provider value={context}>
@@ -201,14 +226,40 @@ function ChevronLeftIcon() {
   )
 }
 
+/** The projects and workspaces the Scope control and the Projects page list, loaded once per open. */
+function useSettingsProjects(): { projects: PickerProject[]; workspaces: Workspace[] } {
+  const [projects, setProjects] = useState<PickerProject[]>([])
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  useEffect(() => {
+    window.api.app.getProjects()
+      .then((rows: PickerProject[]) => {
+        setProjects(rows ?? [])
+        void useProjectSettingsStore.getState().load((rows ?? []).map((row) => row.path))
+      })
+      .catch((err: unknown) => log.warn('getProjects failed, the Scope control lists no projects', err))
+    window.api.app.workspaces.list()
+      .then((list: Workspace[]) => setWorkspaces(list ?? []))
+      .catch((err: unknown) => log.warn('workspaces.list failed, the Scope control shows no workspace groups', err))
+  }, [])
+  return { projects, workspaces }
+}
+
+function projectName(projects: PickerProject[], path: string): string {
+  return projects.find((project) => project.path === path)?.name ?? path
+}
+
 function SearchResults({ query, results, onOpen }: { query: string; results: SettingRowDef[]; onOpen: (row: SettingRowDef) => void }) {
   const trimmed = query.trim()
+  const { values, scope, projects } = useContext(SettingsContext)
+  const overrides = useProjectSettingsStore((state) => (scope ? state.byProject[scope] : undefined))
   return (
     <>
       <h2 className="mb-1 text-[18px] font-[600]">
         {results.length} result{results.length === 1 ? '' : 's'} for "{trimmed}"
       </h2>
-      <p className="mb-[18px] text-[13px] text-[var(--text-secondary)]">Every page is searched.</p>
+      <p className="mb-[18px] text-[13px] text-[var(--text-secondary)]">
+        Every page is searched.{scope && ` Chat & agents values are for ${projectName(projects, scope)}.`}
+      </p>
       <SettingsCard>
         {results.length === 0 ? (
           <div className="px-[14px] py-3 text-[12.5px] text-[var(--text-secondary)]">No setting matches.</div>
@@ -227,11 +278,25 @@ function SearchResults({ query, results, onOpen }: { query: string; results: Set
               )}
             </span>
             {row.keys && <Kbd>{row.keys}</Kbd>}
+            {!row.keys && row.defaultValue !== undefined && (
+              <ResultValue row={row} state={scopedRow(row, scope, values[row.id], overrides)} />
+            )}
             <span className="shrink-0 text-[11.5px] text-[var(--text-muted)]">Open</span>
           </button>
         ))}
       </SettingsCard>
     </>
+  )
+}
+
+function ResultValue({ row, state }: { row: SettingRowDef; state: ScopedRow }) {
+  const label = valueLabel(row, state.value)
+  if (label === undefined) return null
+  return (
+    <span className="shrink-0 text-[12px] text-[var(--text-secondary)]">
+      {label}
+      {state.overridden && <span className="ml-1.5 text-[11px] text-[var(--text-muted)]">• Overridden</span>}
+    </span>
   )
 }
 
@@ -266,6 +331,9 @@ export function SettingsPageBody({ page, onNavigate }: { page: SettingsPageId; o
       {page === 'accounts' && <AccountsPanel Anchor={SettingAnchor} />}
       {page === 'projects' && (
         <>
+          <Section title={SETTING_ROW.projectList.section}>
+            <SettingAnchor def={SETTING_ROW.projectList}><ProjectList onNavigate={onNavigate} /></SettingAnchor>
+          </Section>
           <Section title={SETTING_ROW.launchConfigs.section}>
             <SettingAnchor def={SETTING_ROW.launchConfigs}><LaunchConfigsPanel /></SettingAnchor>
           </Section>
@@ -340,9 +408,10 @@ function AppearancePage() {
 function ChatPage() {
   return (
     <>
+      <ScopeControl />
       <Section title="While the agent works" card>
         <SettingRow def={SETTING_ROW.followUp}>
-          <SegmentedControl def={SETTING_ROW.followUp} options={[{ value: 'steer', label: 'Steer' }, { value: 'queue', label: 'Queue' }]} />
+          <SegmentedControl def={SETTING_ROW.followUp} options={SETTING_ROW.followUp.options!} />
         </SettingRow>
         <SettingRow def={SETTING_ROW.streaming}>
           <ToggleControl def={SETTING_ROW.streaming} />
@@ -350,10 +419,10 @@ function ChatPage() {
       </Section>
       <Section title="Defaults for new chats" card>
         <SettingRow def={SETTING_ROW.envMode}>
-          <SelectControl
-            def={SETTING_ROW.envMode}
-            options={[{ value: 'local', label: 'Local (project root)' }, { value: 'worktree', label: 'New worktree' }]}
-          />
+          <SelectControl def={SETTING_ROW.envMode} options={SETTING_ROW.envMode.options!} />
+        </SettingRow>
+        <SettingRow def={SETTING_ROW.runtimeMode}>
+          <SelectControl def={SETTING_ROW.runtimeMode} options={SETTING_ROW.runtimeMode.options!} />
         </SettingRow>
       </Section>
       <Section title="In the chat" card>
@@ -362,6 +431,85 @@ function ChatPage() {
         </SettingRow>
       </Section>
     </>
+  )
+}
+
+/**
+ * Chat & agents' Scope: All projects edits the global values; a project
+ * shows its effective values and edits its overrides.
+ */
+function ScopeControl() {
+  const { scope, setScope, projects, workspaces } = useContext(SettingsContext)
+  const byProject = useProjectSettingsStore((state) => state.byProject)
+  const options = useMemo(() => scopeOptions(projects, workspaces, byProject), [projects, workspaces, byProject])
+  return (
+    <div className="mb-[18px]">
+      <div className="flex items-center gap-2">
+        <span className="text-[12px] text-[var(--text-secondary)]">Scope</span>
+        <Combobox
+          aria-label="Scope"
+          value={scope ?? ALL_PROJECTS_SCOPE}
+          onValueChange={(value) => setScope(value === ALL_PROJECTS_SCOPE ? null : value)}
+          options={options}
+          searchPlaceholder="Search projects"
+          emptyText="No project matches."
+          className="min-w-[180px] max-w-[320px]"
+        />
+      </div>
+      {scope && (
+        <p data-testid="settings-scope-note" className="mt-2 text-[12px] text-[var(--text-secondary)]">
+          Overrides for <b className="font-[600] text-[var(--text-primary)]">{projectName(projects, scope)}</b>. A row with no override uses the All projects value.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Settings > Projects: one row per project with its counts, and Open, which shows its scope on Chat & agents. */
+function ProjectList({ onNavigate }: { onNavigate?: (page: SettingsPageId) => void }) {
+  const { projects, setScope } = useContext(SettingsContext)
+  const byProject = useProjectSettingsStore((state) => state.byProject)
+  const [launchConfigs, setLaunchConfigs] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    for (const project of projects) {
+      window.api.app.getLaunchConfig(project.path)
+        .then((yaml: string | null) => {
+          if (!cancelled) setLaunchConfigs((prev) => ({ ...prev, [project.path]: launchConfigCount(yaml) }))
+        })
+        .catch((err: unknown) => log.warn(`could not count the launch configs of ${project.path}`, err))
+    }
+    return () => { cancelled = true }
+  }, [projects])
+
+  if (projects.length === 0) {
+    return <div className="text-[12px] text-[var(--text-muted)]">No projects added yet.</div>
+  }
+  return (
+    <SettingsCard>
+      {projects.map((project) => (
+        <div key={project.path} data-project-row={project.path} className="flex items-center gap-4 border-t border-[var(--border)] px-[14px] py-2.5 first:border-t-0">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-[500]" title={project.path}>{project.name}</div>
+            <div className="mt-0.5 text-[12px] text-[var(--text-secondary)]">
+              {projectSummary(launchConfigs[project.path], overrideCount(byProject[project.path]))}
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={`Open ${project.name} overrides`}
+            onClick={() => {
+              setScope(project.path)
+              onNavigate?.('chat')
+            }}
+          >
+            Open
+          </Button>
+        </div>
+      ))}
+    </SettingsCard>
   )
 }
 
@@ -555,7 +703,8 @@ function SettingAnchor({ def, children }: { def: SettingRowDef; children: ReactN
 /**
  * One row: label and description from its definition, a muted "Changed"
  * after the label and a Reset beside the control once its value differs from
- * the default, and the control.
+ * the default, and the control. In a project's scope the marker is
+ * "Overridden" instead and Reset removes the override.
  */
 function SettingRow({ def, extra, below, children }: {
   def: SettingRowDef
@@ -565,15 +714,19 @@ function SettingRow({ def, extra, below, children }: {
   below?: ReactNode
   children?: ReactNode
 }) {
-  const { values, set } = useContext(SettingsContext)
+  const { values, set, scope } = useContext(SettingsContext)
   const { ref, active } = useHighlightTarget(def.id)
-  const changed = isSettingChanged(def, values)
+  const scoped = useScopedRow(def)
+  const inScope = scope !== null && def.page === 'chat'
+  const changed = !inScope && isSettingChanged(def, values)
+  const removeOverride = useProjectSettingsStore((state) => state.removeOverride)
   return (
     <div
       ref={ref}
       tabIndex={-1}
       data-setting-row={def.id}
       data-changed={changed || undefined}
+      data-overridden={scoped.overridden || undefined}
       className={cn(
         'flex items-center gap-4 border-t border-[var(--border)] px-[14px] py-3 outline-none first:border-t-0',
         active && 'bg-[var(--accent-subtle)]',
@@ -591,14 +744,37 @@ function SettingRow({ def, extra, below, children }: {
               Changed
             </span>
           )}
+          {scoped.overridden && (
+            <span
+              title={`Overrides the All projects value (${valueLabel(def, values[def.id]) ?? ''})`}
+              className="ml-2 inline-flex shrink-0 cursor-default items-center gap-[5px] text-[11px] font-[500] tracking-[0.02em] text-[var(--text-muted)]"
+            >
+              <span aria-hidden="true" className="size-[5px] rounded-full bg-[var(--text-secondary)]" />
+              Overridden
+            </span>
+          )}
         </div>
         {(def.description || extra) && (
           <div className="mt-0.5 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
             {def.description}{def.description && extra ? ' ' : null}{extra}
           </div>
         )}
+        {scoped.disabledReason && (
+          <div className="mt-0.5 text-[11.5px] text-[var(--text-muted)]">{scoped.disabledReason}</div>
+        )}
         {below}
       </div>
+      {scoped.overridden && def.scopeKey && scope && (
+        <button
+          type="button"
+          data-setting-reset
+          aria-label={`Reset ${def.label} override`}
+          onClick={() => void removeOverride(scope, def.scopeKey!)}
+          className="shrink-0 cursor-pointer rounded-[4px] border-0 bg-transparent px-1 text-[11.5px] text-[var(--text-muted)] outline-none hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Reset
+        </button>
+      )}
       {changed && def.defaultValue !== undefined && (
         <button
           type="button"
@@ -615,13 +791,26 @@ function SettingRow({ def, extra, below, children }: {
   )
 }
 
-function useRowValue(def: SettingRowDef): [string | undefined, (value: string) => void] {
-  const { values, set } = useContext(SettingsContext)
-  return [values[def.id], useCallback((value: string) => set(def.id, value), [set, def.id])]
+function useScopedRow(def: SettingRowDef): ScopedRow {
+  const { values, scope } = useContext(SettingsContext)
+  const overrides = useProjectSettingsStore((state) => (scope ? state.byProject[scope] : undefined))
+  return scopedRow(def, scope, values[def.id], overrides)
+}
+
+/** The value a control shows, its setter (an override in a project's scope), and whether it is disabled. */
+function useRowValue(def: SettingRowDef): [string | undefined, (value: string) => void, boolean] {
+  const { set, scope } = useContext(SettingsContext)
+  const scoped = useScopedRow(def)
+  const setOverride = useProjectSettingsStore((state) => state.setOverride)
+  const write = useCallback((value: string) => {
+    if (scope && def.page === 'chat' && def.scopeKey) void setOverride(scope, def.scopeKey, value)
+    else set(def.id, value)
+  }, [set, setOverride, scope, def])
+  return [scoped.value, write, scoped.value === undefined || scoped.disabledReason !== undefined]
 }
 
 function ToggleControl({ def, onToggle }: { def: SettingRowDef; onToggle?: (on: boolean) => void }) {
-  const [value, setValue] = useRowValue(def)
+  const [value, setValue, disabled] = useRowValue(def)
   const on = value === 'true'
   return (
     <button
@@ -629,7 +818,7 @@ function ToggleControl({ def, onToggle }: { def: SettingRowDef; onToggle?: (on: 
       role="switch"
       aria-checked={on}
       aria-labelledby={labelId(def.id)}
-      disabled={value === undefined}
+      disabled={disabled}
       onClick={() => { setValue(String(!on)); onToggle?.(!on) }}
       className={cn(
         'relative h-[18px] w-8 shrink-0 cursor-pointer rounded-full border-0 p-0 outline-none transition-colors duration-100 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50',
@@ -647,23 +836,23 @@ function ToggleControl({ def, onToggle }: { def: SettingRowDef; onToggle?: (on: 
   )
 }
 
-function SelectControl({ def, options }: { def: SettingRowDef; options: Array<{ value: string; label: string }> }) {
-  const [value, setValue] = useRowValue(def)
+function SelectControl({ def, options }: { def: SettingRowDef; options: ReadonlyArray<{ value: string; label: string }> }) {
+  const [value, setValue, disabled] = useRowValue(def)
   return (
     <Combobox
       searchable={false}
       aria-label={def.label}
       value={value ?? def.defaultValue ?? ''}
-      disabled={value === undefined}
+      disabled={disabled}
       onValueChange={setValue}
-      options={options}
+      options={[...options]}
       className="shrink-0"
     />
   )
 }
 
-function SegmentedControl({ def, options }: { def: SettingRowDef; options: Array<{ value: string; label: string }> }) {
-  const [value, setValue] = useRowValue(def)
+function SegmentedControl({ def, options }: { def: SettingRowDef; options: ReadonlyArray<{ value: string; label: string }> }) {
+  const [value, setValue, disabled] = useRowValue(def)
   return (
     <div role="group" aria-labelledby={labelId(def.id)} className="inline-flex shrink-0 overflow-hidden rounded-[6px] border border-[var(--border)]">
       {options.map((o) => (
@@ -671,6 +860,7 @@ function SegmentedControl({ def, options }: { def: SettingRowDef; options: Array
           key={o.value}
           type="button"
           aria-pressed={value === o.value}
+          disabled={disabled}
           onClick={() => setValue(o.value)}
           className={cn(
             'cursor-pointer border-0 border-l border-solid border-l-[var(--border)] px-2.5 py-[3px] text-[12px] outline-none first:border-l-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',

@@ -138,8 +138,15 @@ export class SwitchboardClient {
   }
 
   /** Shared backend settings used by theme and provider preferences. */
-  getSetting(key: string): Promise<string | null> {
-    return this.transport.invoke('settings:get', key)
+  /**
+   * With `projectPath`, the backend answers with that project's override
+   * when it has one. An older backend ignores the extra argument and answers
+   * with the machine value.
+   */
+  getSetting(key: string, projectPath?: string): Promise<string | null> {
+    return projectPath === undefined
+      ? this.transport.invoke('settings:get', key)
+      : this.transport.invoke('settings:get', key, projectPath)
   }
 
   setSetting(key: string, value: string): Promise<unknown> {
@@ -157,10 +164,12 @@ export class SwitchboardClient {
    * `listInstances` confirms it still names an instance of the requested
    * agent kind - otherwise a Codex pick made before scoping existed would
    * prefill a brand-new Claude/OpenCode session with it.
+   *
+   * The mode is read for `projectPath`, which may override it.
    */
-  async getSessionDefaults(agentType: string): Promise<SessionDefaults> {
+  async getSessionDefaults(agentType: string, projectPath?: string): Promise<SessionDefaults> {
     const [runtimeMode, model, scopedInstanceId] = await Promise.all([
-      this.getSetting(SETTING_DEFAULT_RUNTIME_MODE),
+      this.getSetting(SETTING_DEFAULT_RUNTIME_MODE, projectPath),
       this.getSetting(defaultModelSettingKey(agentType)),
       this.getSetting(defaultInstanceSettingKey(agentType)),
     ])
