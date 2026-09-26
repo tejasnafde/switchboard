@@ -18,13 +18,13 @@ import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, isReplayableEventChanne
 import {
   isChannelAllowed,
   isFileMutationAllowed,
-  isSettingWriteAllowed,
+  isSettingsFrameAllowed,
   FULL_SCOPES,
   PHONE_SCOPES,
   type DeviceScope,
 } from '@shared/device-auth'
 import { EventReplayBuffer } from '@shared/event-replay-buffer'
-import { AppChannels, FilesChannels } from '@shared/ipc-channels'
+import { FilesChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
 import { hashClientScope, withBackendRequestContext } from './request-context'
@@ -227,8 +227,7 @@ export class WsHost implements BackendHost {
     if (
       (frame.k === 'req' || frame.k === 'snd') &&
       state?.scopes &&
-      frame.ch === AppChannels.SETTINGS_SET &&
-      !isSettingWriteAllowed(state.scopes, (frame.args as unknown[] | undefined)?.[0])
+      !isSettingsFrameAllowed(state.scopes, frame.ch, frame.args)
     ) {
       log.warn(`denied ${frame.ch} - protected settings key, outside this device's scopes`)
       if (frame.k === 'req') {

@@ -239,6 +239,14 @@ describe('validating stored overrides where they are applied', () => {
     expect(shortcutLabel('app.toggle-sidebar', 'mac', commands)).toBe('⌘⇧F')
   })
 
+  it('re-checks a default that comes back when its override is dropped', () => {
+    // toggle-sidebar's ⌘J clashes with toggle-terminal and is dropped, which
+    // brings back its default ⌘B, now taken by app.search: drop that too.
+    const { commands, ignored } = resolve({ 'app.toggle-sidebar': ['Mod+J'], 'app.search': ['Mod+B'] }, SHORTCUTS, 'mac')
+    expect(ignored).toEqual(['app.toggle-sidebar', 'app.search'])
+    expect(findShortcutClashes(commands, 'mac')).toEqual(findShortcutClashes(SHORTCUTS, 'mac'))
+  })
+
   it('judges reserved keys per platform', () => {
     expect(resolve({ 'chat.new': ['Mod+D'] }, SHORTCUTS, 'mac').ignored).toEqual([])
     expect(resolve({ 'chat.new': ['Mod+D'] }, SHORTCUTS, 'other').ignored).toEqual(['chat.new'])

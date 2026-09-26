@@ -65,6 +65,12 @@ export function isSettingWriteAllowed(scopes: readonly DeviceScope[], key: unkno
   return scopes.includes('admin')
 }
 
+/** The frame-level form both hosts enforce: removing a protected key is a write too. */
+export function isSettingsFrameAllowed(scopes: readonly DeviceScope[], channel: string, args: unknown): boolean {
+  if (channel !== 'settings:set' && channel !== 'settings:remove') return true
+  return isSettingWriteAllowed(scopes, Array.isArray(args) ? args[0] : undefined)
+}
+
 /** Whether a session holding `scopes` may call `channel`. */
 export function isChannelAllowed(scopes: readonly DeviceScope[], channel: string): boolean {
   for (const [scope, prefixes] of Object.entries(SCOPE_REQUIRED_PREFIXES) as Array<

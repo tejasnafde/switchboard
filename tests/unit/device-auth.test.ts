@@ -11,6 +11,7 @@ import {
   isChannelAllowed,
   isFileMutationAllowed,
   isSettingWriteAllowed,
+  isSettingsFrameAllowed,
   isPairingCodeUsable,
   isRevoked,
   toView,
@@ -85,6 +86,14 @@ describe('isChannelAllowed', () => {
   it("keeps a phone from rebinding the desktop's keyboard shortcuts", () => {
     expect(isSettingWriteAllowed(PHONE_SCOPES, 'keyboard.overrides')).toBe(false)
     expect(isSettingWriteAllowed(FULL_SCOPES, 'keyboard.overrides')).toBe(true)
+  })
+
+  it('treats removing a protected key as writing it, at the frame level', () => {
+    expect(isSettingsFrameAllowed(PHONE_SCOPES, 'settings:remove', ['keyboard.overrides'])).toBe(false)
+    expect(isSettingsFrameAllowed(PHONE_SCOPES, 'settings:set', ['keyboard.overrides', '{}'])).toBe(false)
+    expect(isSettingsFrameAllowed(FULL_SCOPES, 'settings:remove', ['keyboard.overrides'])).toBe(true)
+    expect(isSettingsFrameAllowed(PHONE_SCOPES, 'settings:remove', ['notifications.enabled'])).toBe(true)
+    expect(isSettingsFrameAllowed(PHONE_SCOPES, 'settings:get', ['keyboard.overrides'])).toBe(true)
   })
 
   it('still lets a phone write the ordinary settings it owns', () => {

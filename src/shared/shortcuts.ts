@@ -206,13 +206,18 @@ export function applyShortcutOverrides(
   const withOverrides = (ids: string[]) => commands.map((c) => (ids.includes(c.id) ? { ...c, bindings: map[c.id] as string[] } : c))
   // Clashes are judged against the whole result, not in stored order: swapping
   // two keys in Settings stores an order that is only clash-free once both apply.
-  // ponytail: a dropped override falls back to its default, which is not re-checked.
-  const applied = withOverrides(kept)
-  const clashing = kept.filter((id) => (map[id] as string[]).some((b) => shortcutClashesFor(id, b, platform, applied).length > 0))
-  return {
-    commands: withOverrides(kept.filter((id) => !clashing.includes(id))),
-    ignored: [...ignored, ...clashing],
+  // A dropped override brings its default back, which can clash with an
+  // override kept so far, so repeat until nothing clashes.
+  let remaining = kept
+  const clashing: string[] = []
+  for (;;) {
+    const applied = withOverrides(remaining)
+    const round = remaining.filter((id) => (map[id] as string[]).some((b) => shortcutClashesFor(id, b, platform, applied).length > 0))
+    if (round.length === 0) break
+    clashing.push(...round)
+    remaining = remaining.filter((id) => !round.includes(id))
   }
+  return { commands: withOverrides(remaining), ignored: [...ignored, ...clashing] }
 }
 
 let active: readonly ShortcutCommand[] = SHORTCUTS
