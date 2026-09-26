@@ -37,6 +37,10 @@ const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
 
 const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> = {
   terminal: ['app:save-launch-config'],
+  // Removing a worktree can delete uncommitted work once a confirm is passed
+  // along, and unprotecting one reopens it to cleanup. Nothing on the phone
+  // does either.
+  admin: ['worktree-manager:remove', 'worktree-manager:set-protection', 'kanban:remove-stale-worktree'],
 }
 
 /**
