@@ -8,7 +8,10 @@ import {
 } from '@shared/launch-config'
 import { launchConfigListReducer } from '../../services/launch-config-list-reducer'
 import { saveLaunchConfigFor } from './launch-config-save'
+import { projectPickerOptions, type PickerProject } from './project-picker-options'
+import type { Workspace } from '@shared/types'
 import { confirm } from '../ui/confirm'
+import { Combobox, type ComboboxOption } from '../ui/combobox'
 import { onEscapeFirst } from '../ui/escape-first'
 import { createRendererLogger } from '../../logger'
 
@@ -30,14 +33,23 @@ const DEFAULT_LAUNCH_CONFIG_YAML = `# Terminals to spawn when a chat in this pro
 terminals: []
 `
 
-interface LaunchConfigProjectRow {
-  path: string
-  name: string
-}
+const SETUP_DEFAULT_POLICY_OPTIONS: ComboboxOption[] = [
+  { value: 'ask', label: 'Ask' },
+  { value: 'run', label: 'Run' },
+  { value: 'skip', label: 'Skip' },
+]
+
+const SETUP_STARTUP_POLICY_OPTIONS: ComboboxOption[] = [
+  { value: 'wait-for-setup', label: 'Wait for setup' },
+  { value: 'start-immediately', label: 'Start immediately' },
+]
+
+const SETUP_SELECT_CLASS = 'mt-1 flex w-full rounded-[3px] bg-[var(--bg-primary)] px-[7px] py-[5px] text-[11px]'
 
 /** Settings > Projects: each project's `.switchboard/launch-config.yaml`. */
 export function LaunchConfigsPanel() {
-  const [launchConfigProjects, setLaunchConfigProjectRows] = useState<LaunchConfigProjectRow[]>([])
+  const [launchConfigProjects, setLaunchConfigProjectRows] = useState<PickerProject[]>([])
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [selectedLaunchConfigProject, setSelectedLaunchConfigProject] = useState<string | null>(null)
   // Parsed config drives the launch config list. The body editor is a per-launch config
   // YAML buffer; on save we feed it back into the reducer + serialize.
@@ -68,13 +80,21 @@ export function LaunchConfigsPanel() {
 
   // Load the project list once; the first project is selected by default.
   useEffect(() => {
-    window.api.app.getProjects().then((rows: LaunchConfigProjectRow[]) => {
+    window.api.app.getProjects().then((rows: PickerProject[]) => {
       setLaunchConfigProjectRows(rows ?? [])
       if (rows?.length && !selectedLaunchConfigProject) setSelectedLaunchConfigProject(rows[0].path)
     }).catch((err) => {
       log.warn('getProjects failed for launch configs tab', err)
     })
   }, [selectedLaunchConfigProject])
+
+  useEffect(() => {
+    window.api.app.workspaces.list().then(setWorkspaces).catch((err) => {
+      log.warn('workspaces.list failed, the project picker shows no workspace groups', err)
+    })
+  }, [])
+
+  const projectOptions = useMemo(() => projectPickerOptions(launchConfigProjects, workspaces), [launchConfigProjects, workspaces])
 
   // When selected project changes, load + parse its yaml
   useEffect(() => {
@@ -257,25 +277,16 @@ export function LaunchConfigsPanel() {
       </div>
     ) : (
       <>
-        <select
+        <Combobox
+          aria-label="Project"
           value={selectedLaunchConfigProject ?? ''}
-          onChange={(e) => setSelectedLaunchConfigProject(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '6px 8px',
-            borderRadius: '4px',
-            border: '1px solid var(--border)',
-            background: 'var(--bg-tertiary)',
-            color: 'var(--text-primary)',
-            fontSize: '12px',
-            marginBottom: '10px',
-            outline: 'none',
-          }}
-        >
-          {launchConfigProjects.map((p) => (
-            <option key={p.path} value={p.path}>{p.name}</option>
-          ))}
-        </select>
+          onValueChange={setSelectedLaunchConfigProject}
+          options={projectOptions}
+          placeholder="Choose a project"
+          searchPlaceholder="Search projects"
+          emptyText="No project matches."
+          className="mb-2.5 flex w-full rounded-[4px] px-2 py-1.5"
+        />
 
         <div style={{
           display: 'grid',
@@ -299,26 +310,23 @@ export function LaunchConfigsPanel() {
           </label>
           <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
             Default policy
-            <select
+            <Combobox
+              searchable={false}
               value={setupDefaultPolicy}
-              onChange={(event) => setSetupDefaultPolicy(event.target.value as WorktreeSetupConfig['defaultPolicy'])}
-              style={{ width: '100%', marginTop: '4px', padding: '5px 7px', border: '1px solid var(--border)', borderRadius: '3px', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '11px' }}
-            >
-              <option value="ask">Ask</option>
-              <option value="run">Run</option>
-              <option value="skip">Skip</option>
-            </select>
+              onValueChange={(value) => setSetupDefaultPolicy(value as WorktreeSetupConfig['defaultPolicy'])}
+              options={SETUP_DEFAULT_POLICY_OPTIONS}
+              className={SETUP_SELECT_CLASS}
+            />
           </label>
           <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
             Workspace startup
-            <select
+            <Combobox
+              searchable={false}
               value={setupStartupPolicy}
-              onChange={(event) => setSetupStartupPolicy(event.target.value as WorktreeSetupConfig['startupPolicy'])}
-              style={{ width: '100%', marginTop: '4px', padding: '5px 7px', border: '1px solid var(--border)', borderRadius: '3px', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '11px' }}
-            >
-              <option value="wait-for-setup">Wait for setup</option>
-              <option value="start-immediately">Start immediately</option>
-            </select>
+              onValueChange={(value) => setSetupStartupPolicy(value as WorktreeSetupConfig['startupPolicy'])}
+              options={SETUP_STARTUP_POLICY_OPTIONS}
+              className={SETUP_SELECT_CLASS}
+            />
           </label>
           <button
             onClick={handleSaveWorktreeSetup}

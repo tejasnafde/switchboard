@@ -324,6 +324,27 @@ async function settingsDialog() {
   await win.keyboard.press('Escape')
   check('settings: Escape cancels a launch-config name field, not Settings',
     await settings.getByPlaceholder('launch config name').count() === 0 && await settings.isVisible())
+  // The launch-config project picker is a searchable combobox.
+  const projectPicker = settings.getByRole('combobox', { name: 'Project', exact: true })
+  const projectList = win.getByRole('dialog', { name: 'Project', exact: true })
+  const pickerHasFocus = () => focusSettlesOn(`document.activeElement?.getAttribute('role') === 'combobox' && document.activeElement.getAttribute('aria-label') === 'Project'`)
+  await projectPicker.click()
+  await projectList.waitFor({ state: 'visible' })
+  check('project picker: search has focus', (await focused())?.placeholder === 'Search projects')
+  check('project picker: lists both projects', await projectList.getByRole('option').count() === 2)
+  await win.keyboard.type('no-such-project')
+  check('project picker: search filters', await projectList.getByText('No project matches.').isVisible())
+  await win.keyboard.press('Escape')
+  check('project picker: Escape closes it, not Settings', await hidden(projectList) && await settings.isVisible())
+  check('project picker: focus returns to the trigger', await pickerHasFocus())
+  const other = (await projectPicker.textContent())?.includes('acme-console') ? 'notes-cli' : 'acme-console'
+  await win.keyboard.press('Enter')
+  await projectList.waitFor({ state: 'visible' })
+  await win.keyboard.type(other.slice(0, 4))
+  check('project picker: typing narrows the list', await projectList.getByRole('option').count() === 1)
+  await win.keyboard.press('Enter')
+  check('project picker: Enter picks the match and closes it', await hidden(projectList) && (await projectPicker.textContent())?.includes(other))
+  check('project picker: focus returns to the trigger after a pick', await pickerHasFocus())
   // The provider editor sits inside Settings; Escape closes only the editor.
   await settings.getByRole('button', { name: /^Accounts & models/ }).click()
   await settings.getByRole('button', { name: '+ Add account' }).click()

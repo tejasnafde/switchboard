@@ -36,6 +36,7 @@ import {
 import { RECENT_SESSION_LIMITS } from './sidebar/recent-session-limit'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Button } from './ui/button'
+import { Combobox } from './ui/combobox'
 import { onEscapeFirst } from './ui/escape-first'
 import { cn } from '../lib/utils'
 
@@ -538,15 +539,15 @@ function ToggleControl({ def, onToggle }: { def: SettingRowDef; onToggle?: (on: 
 function SelectControl({ def, options }: { def: SettingRowDef; options: Array<{ value: string; label: string }> }) {
   const [value, setValue] = useRowValue(def)
   return (
-    <select
+    <Combobox
+      searchable={false}
       aria-label={def.label}
-      value={value ?? def.defaultValue}
+      value={value ?? def.defaultValue ?? ''}
       disabled={value === undefined}
-      onChange={(event) => setValue(event.target.value)}
-      className="shrink-0 cursor-pointer rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-1 text-[12px] text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+      onValueChange={setValue}
+      options={options}
+      className="shrink-0"
+    />
   )
 }
 

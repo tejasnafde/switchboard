@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "settings-combobox",
+  "summary": "Every native <select> in desktop Settings becomes a Radix popover + cmdk combobox (components/ui/combobox.tsx). The launch-config project picker is searchable and lists recent projects first, then projects by sidebar workspace under headings. The worktree setup policies, the mobile pairing host, Recent conversations and New chat environment use the same control without the search box. Values, settings keys and behaviour are unchanged; only the control changes.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/ui/combobox.tsx",
+        "src/renderer/components/ui/combobox-options.ts",
+        "src/renderer/components/settings/project-picker-options.ts",
+        "src/renderer/components/settings/LaunchConfigsPanel.tsx",
+        "src/renderer/components/settings/MobilePairingTab.tsx",
+        "src/renderer/components/SettingsPage.tsx",
+        "tests/unit/combobox-options.test.ts",
+        "tests/unit/project-picker-options.test.ts",
+        "e2e/radix-overlays.e2e.mjs",
+        "e2e/visual-regressions.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native app has no launch-config editor, mobile pairing host picker or sidebar-recents setting; nothing under apps/mobile/src renders these desktop Settings controls."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android has none of these desktop Settings controls; its Settings screen does not edit launch configs, pairing hosts or the desktop sidebar/new-chat settings."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No channel or payload change. The project picker reads the existing app:get-projects and workspace list calls the sidebar already uses."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, migration or setting key change: each control writes the same value to the same setting or launch-config.yaml field as the select it replaces."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer-only change with no new dependency (cmdk and @radix-ui/react-popover were already installed); no package identity, signing, deep link or update-channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/combobox-options.test.ts pins the substring filter (label, hint, keywords, order kept) and grouping.",
+      "tests/unit/project-picker-options.test.ts pins the project order: recent first by newest chat, then workspaces by sort order, then ungrouped, and same-name disambiguation.",
+      "e2e/radix-overlays.e2e.mjs opens the project combobox inside Settings, checks the search has focus, filters, Escape closes only the popover and returns focus to the trigger, then picks a project by typing and Enter.",
+      "e2e/visual-regressions.e2e.mjs settings screens re-baselined in Dark, Light and Translucent; the screens phase passed twice without updating.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The mobile pairing host picker was not driven by an e2e; its Custom hostname focus hand-off was checked by reading the code only.",
+      "Screen reader announcement of the combobox was not tested."
+    ]
+  }
+}

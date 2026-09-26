@@ -11,11 +11,12 @@
  * device as each one re-pairs.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MobilePairingStatus } from '@shared/types'
 import type { DeviceSessionView } from '@shared/device-auth'
 import QRCode from 'qrcode'
 import { GoogleMintPanel } from './GoogleMintPanel'
+import { Combobox } from '../ui/combobox'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('settings:mobile-pairing')
@@ -255,8 +256,12 @@ export function MobilePairingTab() {
     }
   }, [serverCommand])
 
+  // Picking "Custom hostname" moves focus to its field, not back to the picker.
+  const customHostInputRef = useRef<HTMLInputElement>(null)
+  const focusCustomHostOnClose = useRef(false)
   const onSelectHost = useCallback((value: string) => {
     if (value === CUSTOM_HOST) {
+      focusCustomHostOnClose.current = true
       setCustomHost(true)
       setHost('')
     } else {
@@ -266,6 +271,13 @@ export function MobilePairingTab() {
   }, [])
 
   const selectValue = customHost ? CUSTOM_HOST : host
+  // One row per address: the same one on two interfaces would be two rows with one value.
+  const hostOptions = useMemo(() => [
+    ...lanAddrs
+      .filter((a, i) => lanAddrs.findIndex((b) => b.address === a.address) === i)
+      .map((a) => ({ value: a.address, label: `${a.address} (${a.iface})` })),
+    { value: CUSTOM_HOST, label: 'Custom hostname…' },
+  ], [lanAddrs])
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -313,20 +325,23 @@ export function MobilePairingTab() {
       <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
         <div style={{ flex: 2, minWidth: 0 }}>
           <div style={fieldLabelStyle}>Host</div>
-          <select
+          <Combobox
+            searchable={false}
+            aria-label="Host"
             value={selectValue}
-            onChange={(e) => onSelectHost(e.target.value)}
-            style={{ ...inputStyle, fontFamily: 'inherit', cursor: 'pointer' }}
-          >
-            {lanAddrs.map((a) => (
-              <option key={`${a.iface}-${a.address}`} value={a.address}>
-                {a.address} ({a.iface})
-              </option>
-            ))}
-            <option value={CUSTOM_HOST}>Custom hostname…</option>
-          </select>
+            onValueChange={onSelectHost}
+            options={hostOptions}
+            onCloseAutoFocus={(event) => {
+              if (!focusCustomHostOnClose.current) return
+              focusCustomHostOnClose.current = false
+              event.preventDefault()
+              customHostInputRef.current?.focus()
+            }}
+            className="flex w-full rounded-[4px] px-2 py-1.5"
+          />
           {customHost && (
             <input
+              ref={customHostInputRef}
               autoFocus
               value={host}
               onChange={(e) => setHost(e.target.value.trim())}
