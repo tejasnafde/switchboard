@@ -2,8 +2,8 @@
 /**
  * Open settings as JSON, against the built app (npm run build:fast first):
  * Open writes settings.json and its schema; an edit on disk changes the
- * Settings page and names what it skipped; a change in the UI rewrites the
- * file; a file that is not valid JSON applies nothing and is not rewritten.
+ * Settings page and names what it skipped, and a UI change then leaves it
+ * alone until the save is clean; a change in the UI rewrites a clean file; a file that is not valid JSON applies nothing and is not rewritten.
  * The system editor is stubbed, so nothing opens on the desktop. Uses the
  * demo adapter and an isolated profile; temp dirs are removed on exit.
  */
@@ -67,11 +67,11 @@ try {
   check('the file holds only changed values, and no secrets', initial.settings['analytics.enabled'] === false
     && initial.settings['tour.autoplay'] === false && !('analytics.noticeSeen' in initial.settings), JSON.stringify(initial.settings))
 
-  // Edit on disk: a valid theme and follow-up, plus a reserved shortcut.
+  // Edit on disk: a valid theme and follow-up, plus a shortcut refused on every platform (a bare letter types text).
   writeFileSync(file, JSON.stringify({
     ...initial,
     settings: { ...initial.settings, theme: 'light', 'chat.followUpDefault': 'queue' },
-    keyboard: { 'app.search': ['Mod+Q'] },
+    keyboard: { 'app.search': ['A'] },
   }, null, 2))
   check('the theme applies from the file', await until(() => win.evaluate(() => document.documentElement.className === 'theme-light')))
   await settings.getByRole('navigation', { name: 'Settings pages' }).getByRole('button', { name: /^Appearance/ }).click()
@@ -82,8 +82,19 @@ try {
   await settings.getByRole('navigation', { name: 'Settings pages' }).getByRole('button', { name: /^Chat & agents/ }).click()
   check('the follow-up row changed', await until(() => settings.locator('[data-setting-row="chat.followUp"]').getByRole('button', { name: 'Queue', pressed: true }).isVisible()))
 
-  // A change in the UI reaches the file.
+  // The file still asks for a shortcut it did not get, so a UI change leaves it alone.
+  const refused = readFileSync(file, 'utf8')
   await settings.locator('[data-setting-row="chat.fileDiffs"]').getByRole('switch').click()
+  check('a UI change does not erase a refused entry', await until(async () => /was not written/.test((await banner.textContent()) ?? '')))
+  check('the file with the refused entry is untouched', readFileSync(file, 'utf8') === refused)
+
+  // Once the save is clean, a change in the UI reaches the file.
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(refused), keyboard: {} }, null, 2))
+  await banner.waitFor({ state: 'hidden', timeout: 5000 })
+  // The clean file leaves file diffs out, so the save put them back to the default (off).
+  const diffs = settings.locator('[data-setting-row="chat.fileDiffs"]').getByRole('switch')
+  check('the clean save resets a key it leaves out', await until(async () => (await diffs.getAttribute('aria-checked')) === 'false'))
+  await diffs.click()
   check('a UI change rewrites the file', await until(() => readJson().settings['chat.showFileDiffs'] === true))
   check('keeping what the file set', readJson().settings.theme === 'light')
 

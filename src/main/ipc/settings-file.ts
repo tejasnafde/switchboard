@@ -6,7 +6,7 @@
  */
 import { app, ipcMain, shell, type BrowserWindow } from 'electron'
 import { SettingsFileChannels } from '@shared/ipc-channels'
-import { FILE_SETTINGS, type SettingsFileOp, type SettingsSnapshot } from '@shared/settings-file'
+import { FILE_SETTINGS, SETTINGS_FILE_SYNCED_HASH_KEY, type SettingsFileOp, type SettingsSnapshot } from '@shared/settings-file'
 import { KEYBOARD_OVERRIDES_SETTING } from '@shared/shortcuts'
 import { PROJECT_OVERRIDE_PREFIX, isScopableSetting, parseProjectOverrideKey, projectOverrideKey } from '@shared/project-settings'
 import { getProjects, getSetting, listSettingsWithPrefix, removeSetting, setSetting } from '../db/database'
@@ -107,6 +107,10 @@ export function registerSettingsFileHandlers(deps: SettingsFileHostDeps): Settin
     projectKey: pathKey,
     applyOps,
     onStatus: (status) => send(SettingsFileChannels.STATUS_CHANGED, status),
+    syncedHash: {
+      load: () => getSetting(SETTINGS_FILE_SYNCED_HASH_KEY),
+      save: (hash) => setSetting(SETTINGS_FILE_SYNCED_HASH_KEY, hash),
+    },
     log,
   })
   sync = created

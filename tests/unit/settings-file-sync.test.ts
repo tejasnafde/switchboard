@@ -29,6 +29,9 @@ function fakeDb(initial: SettingsSnapshot = { settings: {}, projects: {}, keyboa
 
 let dir: string
 let sync: SettingsFileSync
+/** The persisted sync marker; survives a new SettingsFileSync the way the settings row survives a restart. */
+let savedHash: string | null
+const syncedHash = { load: () => savedHash, save: (hash: string) => { savedHash = hash } }
 let statuses: SettingsFileStatus[]
 let store: ReturnType<typeof fakeDb>
 const log = { info: vi.fn(), warn: vi.fn() }
@@ -43,10 +46,28 @@ function make(initial?: SettingsSnapshot) {
     projectKey: (path) => path,
     applyOps: store.applyOps,
     onStatus: (status) => statuses.push(status),
+    syncedHash,
     log,
     debounceMs: 5,
   })
   return sync
+}
+
+/** A new process over the same folder and DB, as after a restart. */
+function restart() {
+  sync.dispose()
+  statuses = []
+  sync = new SettingsFileSync({
+    dir,
+    readSnapshot: store.readSnapshot,
+    projectLabel: (key) => key,
+    projectKey: (path) => path,
+    applyOps: store.applyOps,
+    onStatus: (status) => statuses.push(status),
+    syncedHash,
+    log,
+    debounceMs: 5,
+  })
 }
 
 const file = () => join(dir, 'settings.json')
@@ -60,6 +81,7 @@ function userWrite(content: string) {
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'sb-settings-file-test-'))
+  savedHash = null
 })
 
 afterEach(() => {
@@ -100,7 +122,7 @@ describe('SettingsFileSync', () => {
     }
     sync = new SettingsFileSync({
       dir, readSnapshot: store.readSnapshot, projectLabel: (k) => k, projectKey: (p) => p,
-      applyOps: (ops) => store.applyOps(ops), onStatus: () => {}, log, debounceMs: 5,
+      applyOps: (ops) => store.applyOps(ops), onStatus: () => {}, syncedHash, log, debounceMs: 5,
     })
     await sync.open()
     const content = JSON.stringify({ settings: { theme: 'light', 'defaultSessionEnvMode': 'local' } })
@@ -132,14 +154,46 @@ describe('SettingsFileSync', () => {
     expect(readFileSync(file(), 'utf8')).toBe('{ "settings": { "theme": ')
   })
 
-  it('reports skipped entries and applies the rest', async () => {
+  it.each(['MacIntel', 'Linux x86_64', 'Win32'])('reports skipped entries and applies the rest (%s)', async (platform) => {
+    // Every rule applyShortcutOverrides uses reads this; "A" alone types text on every platform.
+    vi.stubGlobal('navigator', { platform })
+    try {
+      make()
+      await sync.open()
+      const edit = JSON.stringify({ settings: { theme: 'neon', notificationsEnabled: false }, keyboard: { 'app.search': ['A'] } })
+      userWrite(edit)
+      expect(await sync.applyFile()).toBe(false)
+      expect(store.db.settings).toEqual({ notificationsEnabled: 'false' })
+      expect(statuses.at(-1)?.skipped.map((s) => s.entry)).toEqual(['settings.theme', 'keyboard.app.search'])
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('settings.json skipped settings.theme'))
+
+      // Not in sync while it asks for what it did not get, so a UI change does not erase the refused entries.
+      store.db.settings['chat.showFileDiffs'] = 'true'
+      await sync.writeIfUnedited()
+      expect(readFileSync(file(), 'utf8')).toBe(edit)
+      expect(statuses.at(-1)?.writeSkipped).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('a write that fails keeps the file out of sync', async () => {
     make()
     await sync.open()
-    userWrite(JSON.stringify({ settings: { theme: 'neon', notificationsEnabled: false }, keyboard: { 'app.search': ['Mod+Q'] } }))
-    await sync.applyFile()
-    expect(store.db.settings).toEqual({ notificationsEnabled: 'false' })
-    expect(statuses.at(-1)?.skipped.map((s) => s.entry)).toEqual(['settings.theme', 'keyboard.app.search'])
-    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('settings.json skipped settings.theme'))
+    const applyOps = store.applyOps
+    // The desktop glue logs a failed write and leaves its key out of the answer.
+    store.applyOps = (ops) => applyOps(ops).slice(1)
+    sync.dispose()
+    sync = new SettingsFileSync({
+      dir, readSnapshot: store.readSnapshot, projectLabel: (k) => k, projectKey: (p) => p,
+      applyOps: (ops) => store.applyOps(ops), onStatus: (status) => statuses.push(status), syncedHash, log, debounceMs: 5,
+    })
+    const edit = JSON.stringify({ settings: { theme: 'light', notificationsEnabled: false } })
+    userWrite(edit)
+    expect(await sync.applyFile()).toBe(false)
+    expect(statuses.at(-1)?.skipped).toEqual([{ entry: '1 of 2 writes', reason: 'could not be saved; the log has the error' }])
+    await sync.writeIfUnedited()
+    expect(readFileSync(file(), 'utf8')).toBe(edit)
   })
 
   it('rewrites the file when a setting changes elsewhere', async () => {
@@ -170,6 +224,19 @@ describe('SettingsFileSync', () => {
     expect(statuses.at(-1)?.writeSkipped).toBe(false)
   })
 
+  it('treats changed content as an edit even when the mtime did not move', async () => {
+    make()
+    await sync.open()
+    const { mtime } = statSync(file())
+    const edit = JSON.stringify({ settings: { theme: 'light' } })
+    writeFileSync(file(), edit)
+    utimesSync(file(), mtime, mtime)
+    store.db.settings.notificationsEnabled = 'false'
+    await sync.writeIfUnedited()
+    expect(readFileSync(file(), 'utf8')).toBe(edit)
+    expect(statuses.at(-1)?.writeSkipped).toBe(true)
+  })
+
   it('a deleted file resets nothing and is not recreated by a UI change', async () => {
     make({ settings: { theme: 'light' }, projects: {}, keyboard: {} })
     await sync.open()
@@ -181,10 +248,11 @@ describe('SettingsFileSync', () => {
     expect(existsSync(file())).toBe(false)
   })
 
-  it('resume picks up an existing file as it is, without writing it', async () => {
-    writeFileSync(file(), '{"settings":{"theme":"light"}}')
+  it('resume adopts a file it wrote itself without applying or rewriting it', async () => {
+    make({ settings: { theme: 'light' }, projects: {}, keyboard: {} })
+    await sync.open()
     const before = statSync(file()).mtimeMs
-    make()
+    restart()
     await sync.resume()
     expect(statSync(file()).mtimeMs).toBe(before)
     expect(store.applied).toEqual([])
@@ -192,6 +260,41 @@ describe('SettingsFileSync', () => {
     sync.onDbChanged()
     await sync.flush()
     expect(readJson().settings).toEqual({ theme: 'system' })
+  })
+
+  it('resume applies a file edited while the app was closed, before any DB change rewrites it', async () => {
+    make()
+    await sync.open()
+    restart()
+    // Edited between runs.
+    userWrite(JSON.stringify({ settings: { theme: 'light' } }))
+    await sync.resume()
+    expect(store.db.settings).toEqual({ theme: 'light' })
+    store.db.settings.notificationsEnabled = 'false'
+    sync.onDbChanged()
+    await sync.flush()
+    expect(readJson().settings).toEqual({ theme: 'light', notificationsEnabled: false })
+  })
+
+  it('resume keeps a file broken while the app was closed, and reports it', async () => {
+    make({ settings: { theme: 'light' }, projects: {}, keyboard: {} })
+    await sync.open()
+    restart()
+    userWrite('{ "settings": ')
+    await sync.resume()
+    expect(store.applied).toEqual([])
+    expect(statuses.at(-1)).toMatchObject({ path: file(), parseError: expect.stringMatching(/^not valid JSON/) })
+    sync.onDbChanged()
+    await sync.flush()
+    expect(readFileSync(file(), 'utf8')).toBe('{ "settings": ')
+  })
+
+  it('resume treats a file with no sync marker as an edit, which a matching DB applies as nothing', async () => {
+    writeFileSync(file(), '{"settings":{"theme":"light"}}')
+    make({ settings: { theme: 'light' }, projects: {}, keyboard: {} })
+    await sync.resume()
+    expect(store.applied).toEqual([[]])
+    expect(savedHash).not.toBeNull()
   })
 
   it('debounces a burst of watcher events into one apply', async () => {

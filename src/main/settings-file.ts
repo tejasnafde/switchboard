@@ -8,14 +8,18 @@
  * paths. Invalid JSON applies nothing and is never overwritten.
  *
  * DB to file: a settings write made anywhere else rewrites the file, except
- * when the file changed on disk since Switchboard last wrote or applied it
- * (edits not applied yet, or a parse error), which the status reports.
+ * when its content differs from what Switchboard last wrote or fully applied
+ * (a save not applied yet, a parse error, or entries that were refused),
+ * which the status reports.
  *
- * Our own writes are recognised by content, so the watcher event they cause
- * applies nothing. Electron-free, with the DB behind `deps`, for the tests.
+ * Our own writes are recognised by a content hash, kept in the DB so that a
+ * file edited while the app was closed is applied at the next launch. The
+ * watcher event our own write causes applies nothing. Electron-free, with
+ * the DB behind `deps`, for the tests.
  */
 import { watch, type FSWatcher } from 'node:fs'
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   IDLE_SETTINGS_FILE_STATUS,
@@ -30,12 +34,6 @@ import {
   type SettingsFileStatus,
   type SettingsSnapshot,
 } from '@shared/settings-file'
-
-/** Why `text` is not a JSON object, or null when it is one. */
-function jsonError(text: string): string | null {
-  const plan = planSettingsFileApply(text, { settings: {}, projects: {}, keyboard: {} }, { projectKey: (p) => p })
-  return plan.ok ? null : plan.error
-}
 
 export interface SettingsFileLog {
   info(...args: unknown[]): void
@@ -53,19 +51,18 @@ export interface SettingsFileDeps {
   /** Run the writes through the normal paths; answers the settings keys that changed. */
   applyOps: (ops: SettingsFileOp[]) => string[]
   onStatus: (status: SettingsFileStatus) => void
+  /** Where the hash of the last synced content is kept (a settings row), so a restart can tell an edit from our own write. */
+  syncedHash: { load: () => string | null; save: (hash: string) => void }
   log: SettingsFileLog
   debounceMs?: number
 }
 
-/** What the file held when Switchboard last wrote it or applied it. */
-interface Synced {
-  content: string
-  mtimeMs: number
-}
+const contentHash = (content: string): string => createHash('sha256').update(content).digest('hex')
 
 export class SettingsFileSync {
   readonly path: string
-  private synced: Synced | null = null
+  /** Hash of what the file held when Switchboard last wrote it or fully applied it; persisted across restarts. */
+  private syncedHash: string | null
   private status: SettingsFileStatus = IDLE_SETTINGS_FILE_STATUS
   private watcher: FSWatcher | null = null
   private fileTimer: ReturnType<typeof setTimeout> | null = null
@@ -78,41 +75,45 @@ export class SettingsFileSync {
 
   constructor(private readonly deps: SettingsFileDeps) {
     this.path = join(deps.dir, SETTINGS_FILE_NAME)
+    this.syncedHash = deps.syncedHash.load()
   }
 
   getStatus(): SettingsFileStatus {
     return this.status
   }
 
-  /** At launch: pick up a file left by an earlier run, as it is, without applying or rewriting it. */
-  async resume(): Promise<void> {
-    const current = await this.readCurrent()
-    if (!current) return
-    this.synced = current
-    this.active = true
-    this.setStatus({ ...IDLE_SETTINGS_FILE_STATUS, path: this.path })
-    this.startWatching()
+  /**
+   * At launch: pick up a file left by an earlier run. A file that differs
+   * from what Switchboard last wrote was edited while the app was closed, so
+   * it is applied like a save before any DB change can rewrite it.
+   */
+  resume(): Promise<void> {
+    return this.enqueue(async () => {
+      const current = await this.readCurrent()
+      if (!current) return
+      this.active = true
+      this.startWatching()
+      if (this.isEdited(current)) await this.applyFile()
+      else this.setStatus({ ...IDLE_SETTINGS_FILE_STATUS, path: this.path })
+    })
   }
 
   /**
-   * Write the schema and the file from the DB, then watch it. A file that is
-   * not valid JSON is left as it is, so reopening it cannot erase the edit,
-   * and a save not yet applied is applied first.
+   * Write the schema and the file from the DB, then watch it. A save not yet
+   * applied is applied first; a file that is not valid JSON, or that asked for
+   * something it did not get, is left as it is so the edit is not lost.
    */
   open(): Promise<string> {
     return this.enqueue(async () => {
       await mkdir(this.deps.dir, { recursive: true })
       await writeFile(join(this.deps.dir, SETTINGS_SCHEMA_FILE_NAME), `${JSON.stringify(settingsFileSchema(), null, 2)}\n`)
       const current = await this.readCurrent()
-      const parseError = current ? jsonError(current.content) : null
-      if (parseError) {
-        this.deps.log.warn(`settings.json left as it is on open: ${parseError}`)
-        this.setStatus({ ...this.status, path: this.path, parseError })
+      const kept = current !== null && this.isEdited(current) && !(await this.applyFile())
+      if (kept) {
+        this.deps.log.warn('settings.json left as it is on open: it holds edits that were not fully applied')
       } else {
-        const applied = current && this.isEdited(current)
-        if (applied) await this.applyFile()
         await this.writeFromDb()
-        this.setStatus({ path: this.path, parseError: null, skipped: applied ? this.status.skipped : [], writeSkipped: false })
+        this.setStatus({ path: this.path, parseError: null, skipped: [], writeSkipped: false })
       }
       this.active = true
       this.startWatching()
@@ -135,7 +136,7 @@ export class SettingsFileSync {
     if (this.fileTimer) clearTimeout(this.fileTimer)
     this.fileTimer = setTimeout(() => {
       this.fileTimer = null
-      void this.enqueue(() => this.applyFile())
+      void this.enqueue(async () => { await this.applyFile() })
     }, this.deps.debounceMs ?? 150)
   }
 
@@ -144,7 +145,7 @@ export class SettingsFileSync {
     if (this.fileTimer) {
       clearTimeout(this.fileTimer)
       this.fileTimer = null
-      void this.enqueue(() => this.applyFile())
+      void this.enqueue(async () => { await this.applyFile() })
     }
     if (this.dbTimer) {
       clearTimeout(this.dbTimer)
@@ -161,38 +162,44 @@ export class SettingsFileSync {
     if (this.dbTimer) clearTimeout(this.dbTimer)
   }
 
-  /** Parse the file and apply what it asks for. */
-  async applyFile(): Promise<void> {
+  /**
+   * Parse the file and apply what it asks for. True when the DB now holds
+   * everything the file says; only then is the file in sync, so an entry
+   * that was refused or a write that failed keeps the file from being
+   * rewritten until the user fixes it.
+   */
+  async applyFile(): Promise<boolean> {
     const current = await this.readCurrent()
     // A deleted file is not an empty one: it resets nothing.
-    if (!current) return
-    if (current.content === this.synced?.content) {
-      this.synced = current
-      return
-    }
-    const plan = planSettingsFileApply(current.content, this.deps.readSnapshot(), { projectKey: this.deps.projectKey })
+    if (!current) return false
+    if (!this.isEdited(current)) return true
+    const plan = planSettingsFileApply(current, this.deps.readSnapshot(), { projectKey: this.deps.projectKey })
     if (!plan.ok) {
       this.deps.log.warn(`settings.json not applied: ${plan.error}`)
-      this.setStatus({ ...this.status, parseError: plan.error })
-      return
+      this.setStatus({ ...this.status, path: this.path, parseError: plan.error })
+      return false
     }
-    if (plan.skipped.length > 0) this.deps.log.warn(`settings.json skipped ${describeSkipped(plan.skipped, plan.skipped.length)}`)
+    const skipped = [...plan.skipped]
     this.applying = true
     try {
       const changed = this.deps.applyOps(plan.ops)
       if (changed.length > 0) this.deps.log.info('applied settings.json', changed)
+      const failed = plan.ops.length - changed.length
+      if (failed > 0) skipped.push({ entry: `${failed} of ${plan.ops.length} writes`, reason: 'could not be saved; the log has the error' })
     } finally {
       this.applying = false
     }
-    this.synced = current
-    this.setStatus({ path: this.path, parseError: null, skipped: plan.skipped, writeSkipped: false })
+    if (skipped.length > 0) this.deps.log.warn(`settings.json skipped ${describeSkipped(skipped, skipped.length)}`)
+    else this.markSynced(current)
+    this.setStatus({ path: this.path, parseError: null, skipped, writeSkipped: false })
+    return skipped.length === 0
   }
 
   /** Rewrite the file from the DB unless it holds edits not yet applied. */
   async writeIfUnedited(): Promise<void> {
     const current = await this.readCurrent()
     // Deleted by the user: stays deleted until the next Open.
-    if (!current) return
+    if (current === null) return
     if (this.isEdited(current)) {
       this.deps.log.info('settings.json has edits that were not applied; not rewriting it')
       this.setStatus({ ...this.status, writeSkipped: true })
@@ -202,9 +209,21 @@ export class SettingsFileSync {
     if (this.status.writeSkipped) this.setStatus({ ...this.status, writeSkipped: false })
   }
 
-  /** Changed on disk since Switchboard last wrote or applied it. */
-  private isEdited(current: Synced): boolean {
-    return !this.synced || (current.content !== this.synced.content && current.mtimeMs > this.synced.mtimeMs)
+  /** Differs, by content, from what Switchboard last wrote or fully applied. mtime is not trusted: it can be coarse or unchanged. */
+  private isEdited(content: string): boolean {
+    return contentHash(content) !== this.syncedHash
+  }
+
+  private markSynced(content: string): void {
+    const hash = contentHash(content)
+    if (hash === this.syncedHash) return
+    this.syncedHash = hash
+    try {
+      this.deps.syncedHash.save(hash)
+    } catch (err) {
+      // In memory it still holds, so only a restart would re-apply the file, which changes nothing.
+      this.deps.log.warn('saving the settings.json sync marker failed', err)
+    }
   }
 
   private async writeFromDb(): Promise<void> {
@@ -214,14 +233,12 @@ export class SettingsFileSync {
     const tmp = `${this.path}.tmp`
     await writeFile(tmp, content)
     await rename(tmp, this.path)
-    const { mtimeMs } = await stat(this.path)
-    this.synced = { content, mtimeMs }
+    this.markSynced(content)
   }
 
-  private async readCurrent(): Promise<Synced | null> {
+  private async readCurrent(): Promise<string | null> {
     try {
-      const [content, info] = await Promise.all([readFile(this.path, 'utf8'), stat(this.path)])
-      return { content, mtimeMs: info.mtimeMs }
+      return await readFile(this.path, 'utf8')
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') this.deps.log.warn('reading settings.json failed', err)
       return null

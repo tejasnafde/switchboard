@@ -55,6 +55,8 @@ import {
 
 export const SETTINGS_FILE_NAME = 'settings.json'
 export const SETTINGS_SCHEMA_FILE_NAME = 'settings.schema.json'
+/** Internal settings row: sha256 of what the file held when Switchboard last wrote or fully applied it. Never in the file. */
+export const SETTINGS_FILE_SYNCED_HASH_KEY = 'settingsFile.syncedHash'
 
 type FileValue = string | number | boolean
 

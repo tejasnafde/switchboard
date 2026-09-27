@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "settings-json",
-  "summary": "Settings step 6: Open settings as JSON. Settings > About writes <userData>/settings.json from the settings DB ({ $schema, settings, projects, keyboard }, only values that differ from the default, from an explicit allow-list in src/shared/settings-file.ts) and a JSON Schema beside it, then opens it in the embedded IDE beside a local chat or in the system editor. The main process watches the folder: a save is parsed, checked with the same rules as the page (each setting's accepted values, SCOPABLE_SETTINGS for project overrides, applyShortcutOverrides' refusal rules for rebinds) and applied through the normal write paths, so the menu rebuilds and the window re-reads the stores it changed; invalid JSON applies nothing and is never rewritten, refused entries are named in a one-line banner and logged, and a removed key resets to its default. A settings write from the page, a phone or the IPC rewrites the file unless it changed on disk since Switchboard last wrote or applied it. The DB stays the source of truth.",
+  "summary": "Settings step 6: Open settings as JSON. Settings > About writes <userData>/settings.json from the settings DB ({ $schema, settings, projects, keyboard }, only values that differ from the default, from an explicit allow-list in src/shared/settings-file.ts) and a JSON Schema beside it, then opens it in the embedded IDE beside a local chat or in the system editor. The main process watches the folder: a save is parsed, checked with the same rules as the page (each setting's accepted values, SCOPABLE_SETTINGS for project overrides, applyShortcutOverrides' refusal rules for rebinds) and applied through the normal write paths, so the menu rebuilds and the window re-reads the stores it changed; invalid JSON applies nothing and is never rewritten, refused entries are named in a one-line banner and logged, and a removed key resets to its default. A settings write from the page, a phone or the IPC rewrites the file unless its content differs from what Switchboard last wrote or fully applied (a save not yet applied, a parse error, refused entries or a failed write). The hash of that content is kept in a settings row, so a file edited while the app was closed is applied at the next launch, or kept with the banner when it does not parse. The DB stays the source of truth.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -42,11 +42,8 @@
       ]
     },
     "storageDataMigration": {
-      "status": "implemented",
-      "evidence": [
-        "src/main/settings-file.ts",
-        "src/shared/settings-file.ts"
-      ]
+      "status": "not_applicable",
+      "reason": "No table, column or migration. The file is a projection of existing settings rows written beside the DB on demand, and the one new row (settingsFile.syncedHash, the sha256 of the last synced file content) is an ordinary key/value settings row that an older build ignores; deleting either the file or the row only makes the next launch or Open re-apply the file, which writes nothing when it matches the DB."
     },
     "updateRelease": {
       "status": "implemented",
@@ -58,14 +55,14 @@
   "verification": {
     "automated": [
       "npm run typecheck",
-      "npm test (vitest: the allow-list equals the Settings page's value rows with the same defaults and choices; the projection leaves defaults, off-list keys, secrets and another build's rebinds out; the plan refuses invalid JSON, unknown keys, bad values, non-object sections, unscopable project keys, reserved, typing, unknown, fixed and clashing shortcuts, resets removed keys, keeps another build's rebinds, accepts a swap, and writes nothing for its own output; the sync ignores its own writes and the writes its apply makes, never rewrites a broken or unapplied file and reports it, does not recreate a deleted file, resumes an existing file untouched, and debounces a burst of watcher events)",
-      "npm run build:fast && SB_E2E_BACKGROUND=1 node e2e/settings-json.e2e.mjs (14 checks: Open writes the file and schema and hands it to the stubbed system editor, an edit on disk changes the theme and follow-up rows and the banner names a reserved shortcut, a UI toggle rewrites the file, invalid JSON is reported, not applied and not overwritten by a later UI change)"
+      "npm test (vitest: the allow-list equals the Settings page's value rows with the same defaults and choices; the projection leaves defaults, off-list keys, secrets and another build's rebinds out; the plan refuses invalid JSON, unknown keys, bad values, non-object sections, unscopable project keys, reserved, typing, unknown, fixed and clashing shortcuts, resets removed keys, keeps another build's rebinds, accepts a swap, and writes nothing for its own output; the sync ignores its own writes and the writes its apply makes, treats any changed content as an edit whatever the mtime, never rewrites a broken, unapplied, partly refused or partly failed file and reports it, does not recreate a deleted file, adopts its own file at launch, applies a file edited while closed (or keeps and reports a broken one), and debounces a burst of watcher events)",
+      "FORCE_PLATFORM=linux|win32|darwin with a one-off vitest setup that overrides process.platform and navigator.platform: tests/unit/settings-file-sync.test.ts and tests/unit/settings-file.test.ts pass on all three (the skipped-entry test uses a typing key, refused on every platform, and also runs per platform with navigator stubbed)",
+      "npm run build:fast && SB_E2E_BACKGROUND=1 node e2e/settings-json.e2e.mjs (17 checks: Open writes the file and schema and hands it to the stubbed system editor, an edit on disk changes the theme and follow-up rows and the banner names a refused shortcut, a UI toggle leaves a file with a refused entry alone and rewrites it once the save is clean (a key the clean save leaves out resets), invalid JSON is reported, not applied and not overwritten by a later UI change)"
     ],
     "hardware": [],
     "notExercised": [
       "Opening in the embedded IDE (a local chat open, code-server installed) was not driven end to end; it uses the existing openInViewer path with an absolute path, and the e2e covers the system-editor fallback with shell.openPath stubbed.",
       "Schema completion inside the workbench was not checked by eye; the schema content is unit-tested.",
-      "Edits made while Switchboard is closed are not applied at the next launch: resume adopts the file as it is and the next settings change rewrites it from the DB.",
       "The remote-backend disabled state was checked by reading the code (window.api.settingsFile.available is false when SWITCHBOARD_BACKEND_URL is set), not in a remote session."
     ]
   }
