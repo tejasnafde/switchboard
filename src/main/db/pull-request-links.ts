@@ -26,6 +26,11 @@ export function ensurePullRequestLinkSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_conversation_pull_requests_pr
       ON conversation_pull_requests(host, owner, repo, number);
+
+    CREATE TABLE IF NOT EXISTS conversation_pr_history_scans (
+      conversation_id TEXT PRIMARY KEY,
+      scanned_at      INTEGER NOT NULL
+    );
   `)
 }
 
@@ -106,4 +111,28 @@ export function listLinkableChats(projectPaths: readonly string[], limit = 200):
      ORDER BY updated_at DESC LIMIT ?`,
   ).all(...projectPaths, limit) as ChatRow[]
   return rows.map(toChat)
+}
+
+/** Root chats the one-time history scan has not read yet, newest first. */
+export function listUnscannedPullRequestHistoryScanTargets(limit: number): { id: string; projectPath: string }[] {
+  return getDb().prepare(
+    `SELECT c.id, c.project_path AS projectPath
+       FROM conversations c
+       LEFT JOIN conversation_pr_history_scans s ON s.conversation_id = c.id
+      WHERE s.conversation_id IS NULL
+        AND c.agent_type != 'terminal'
+        AND NOT EXISTS (
+          SELECT 1 FROM thread_sessions ts
+           WHERE ts.claude_session_id = c.id AND ts.thread_id != c.id
+        )
+      ORDER BY c.updated_at DESC
+      LIMIT ?`,
+  ).all(Math.max(1, limit)) as { id: string; projectPath: string }[]
+}
+
+export function markPullRequestHistoryScanned(threadId: string, now = Date.now()): void {
+  getDb().prepare(
+    `INSERT INTO conversation_pr_history_scans (conversation_id, scanned_at) VALUES (?, ?)
+     ON CONFLICT(conversation_id) DO UPDATE SET scanned_at = excluded.scanned_at`,
+  ).run(resolveRootThreadId(threadId), now)
 }

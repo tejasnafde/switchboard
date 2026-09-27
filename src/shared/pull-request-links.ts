@@ -31,6 +31,22 @@ export interface PrLinkChat {
 
 export type PrLinkResult = { ok: true } | { ok: false; message: string }
 
+/** "Find linked PRs in this chat". `capped`: only the first `capChars` characters of the chat were read. */
+export type PrHistoryScanResult =
+  | { ok: true; linked: number; capped: boolean; capChars: number }
+  | { ok: false; message: string }
+
+/** What the manual scan tells the user. */
+export function historyScanSummary(result: PrHistoryScanResult): { title: string; body?: string } {
+  if (!result.ok) return { title: 'Could not scan this chat', body: result.message }
+  const title = result.linked === 0
+    ? 'No new pull requests found'
+    : `Linked ${result.linked} pull request${result.linked === 1 ? '' : 's'}`
+  const parts = ["Only pull requests of this chat's project repository are linked, and one you unlinked stays unlinked."]
+  if (result.capped) parts.push(`This chat is long, so only its first ${result.capChars.toLocaleString('en-US')} characters were read.`)
+  return { title, body: parts.join(' ') }
+}
+
 /** Owner and repository are case-insensitive on both hosts; links are stored lower case. */
 export function normalizePrRef(ref: PrRef): PrRef {
   return { host: ref.host, owner: ref.owner.toLowerCase(), name: ref.name.toLowerCase(), number: ref.number }

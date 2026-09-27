@@ -75,7 +75,10 @@ export function registerAppDesktopHandlers(window: BrowserWindow): void {
   ipcMain.handle(AppChannels.RELAUNCH, () => {
     log.info('relaunching app...')
     app.relaunch()
-    app.exit(0)
+    // quit(), not exit(): exit() skips the teardown (PTYs, providers, the
+    // database) and can crash on Windows mid child-process spawn - see the
+    // smoke-test note in main/index.ts.
+    app.quit()
   })
 
   ipcMain.handle(AppChannels.EXPORT_MARKDOWN, async (_event, params: { suggestedFilename: string; content: string }) => {

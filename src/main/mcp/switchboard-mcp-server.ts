@@ -226,3 +226,10 @@ export function switchboardMcpServer(): SwitchboardMcpServer {
   shared ??= new SwitchboardMcpServer()
   return shared
 }
+
+/** Quit: stop the shared listener if one was ever created. */
+export async function stopSwitchboardMcpServer(): Promise<void> {
+  const server = shared
+  shared = null
+  await server?.stop()
+}

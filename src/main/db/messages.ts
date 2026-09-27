@@ -123,6 +123,15 @@ export function getMessagesForConversation(conversationId: string): MessageRow[]
   ).all(conversationId) as MessageRow[]
 }
 
+/** Text columns only, one row at a time, oldest first: for readers that may stop early. */
+export function iterateMessageTextForConversation(
+  conversationId: string,
+): IterableIterator<{ content: string; tool_calls: string | null }> {
+  return getDb().prepare(
+    'SELECT content, tool_calls FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC'
+  ).iterate(conversationId) as IterableIterator<{ content: string; tool_calls: string | null }>
+}
+
 export function getMessageForConversationById(
   conversationId: string,
   id: string,

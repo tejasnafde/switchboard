@@ -51,4 +51,28 @@ export class QuitCoordinator {
   prepare(): Promise<void> {
     return this.startDrain()
   }
+
+  /**
+   * The quit never happened (an update install that did not start): the next
+   * quit tears down again. Refused while a teardown is still running.
+   */
+  rearm(): boolean {
+    if (this.drain && !this.done) return false
+    this.drain = null
+    this.done = false
+    this.quitRequestScheduled = false
+    return true
+  }
+
+  /**
+   * rearm() now if no teardown is running, otherwise once it settles; then
+   * onRearmed. A drain never rejects, so the wait always ends.
+   */
+  async rearmWhenSettled(onRearmed: () => void): Promise<void> {
+    if (!this.rearm()) {
+      await this.drain
+      if (!this.rearm()) return
+    }
+    onRearmed()
+  }
 }

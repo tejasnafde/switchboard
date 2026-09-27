@@ -18,7 +18,7 @@ process.on('unhandledRejection', (reason) => {
   crashLog.error('unhandled rejection', msg)
 })
 
-import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, powerMonitor, protocol, net, screen } from 'electron'
+import { app, BrowserWindow, crashReporter, dialog, shell, nativeImage, ipcMain, Menu, powerMonitor, protocol, net, screen } from 'electron'
 import { join, basename } from 'path'
 import { registerTerminalHandlers, shutdownTerminals, livePtyCount } from './ipc/terminal'
 import { registerDiagnosticsHandlers } from './ipc/diagnostics'
@@ -28,7 +28,7 @@ import { attachPushNotifier } from './push/registry'
 import { registerAppHandlers, type AppHandlerDependencies } from './ipc/app'
 import { isMenuCaptureActive, setMenuCapture, unlessCapturing } from './menu-capture'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
-import { registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
+import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
 import { isSettingsFileKey } from '@shared/settings-file'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
@@ -41,17 +41,23 @@ import type { PartialClientConfig } from '@shared/google-oauth'
 import { MobileEndpoint } from './backend/mobile-server'
 import { registerGitHandlers } from './ipc/git'
 import { registerSttHandlers } from './ipc/stt'
-import { registerIdeHandlers } from './ipc/ide'
+import { registerIdeHandlers, resumeIdeAfterAbortedQuit, shutdownIde } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
-import { attachPullRequestAutoLink, registerPullRequestHandlers } from './ipc/pull-requests'
+import { attachPullRequestAutoLink, registerPullRequestHandlers, startPullRequestHistoryScan } from './ipc/pull-requests'
 import { tryResolveProviderInstance } from './db/provider-instances'
 import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
 import { QuitCoordinator } from './quit-coordinator'
+import { InstallAttempt } from './install-attempt'
+import { runShutdownSequence } from './shutdown-sequence'
+import { isQuitSmoke, reportQuitSmoke, runQuitSmoke } from './smoke-quit'
+import { stopSwitchboardMcpServer } from './mcp/switchboard-mcp-server'
+import { closeAllLaunchConfigWatchers } from './launch-config/launch-config-store'
+import { closeAllHeadWatchers } from './git/head-watcher'
 import { ProviderRegistry } from './provider/provider-registry'
 import { disposeUsageProbes } from './provider/usage'
-import { getDb, closeDb, getSetting, setSetting, getProjects } from './db/database'
+import { getDb, closeDb, getSetting, setSetting, getProjects, reopenDbAfterAbortedQuit } from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
 import { getLogDir, getLogFilePath, createMainLogger } from './logger'
 import { warmShellEnv } from './shell-env'
@@ -79,22 +85,39 @@ let providerRegistry: ProviderRegistry | null = null
 let worktreeCreationRuntime: WorktreeCreationRuntime | null = null
 /** Mobile pairing WS endpoint (null when no token is configured). */
 let mobileEndpoint: MobileEndpoint | null = null
-/** True once the user has asked for restart-and-install; repeats are dropped. */
-let installRequested = false
 
-// PTYs first, and awaited - see shutdownTerminals for why the old
-// synchronous kill still crashed on quit.
+// One ordered, awaited teardown (see shutdown-sequence.ts). PTYs first - see
+// shutdownTerminals for why the old synchronous kill still crashed on quit.
+// Every writer stops before the database closes, and the file watchers close
+// here rather than being left for process exit to tear down.
+const shutdownLog = createMainLogger('app:shutdown')
 const quitCoordinator = new QuitCoordinator(
   async () => {
-    await shutdownTerminals()
-    providerRegistry?.stopAll()
-    disposeUsageProbes()
-    void stopAllMachineConnections()
-    mobileEndpoint?.close()
-    closeDb()
+    const reports = await runShutdownSequence([
+      { name: 'window-bounds', run: () => { if (mainWindow) saveWindowBounds(mainWindow) } },
+      { name: 'terminals', run: shutdownTerminals },
+      { name: 'providers', run: () => providerRegistry?.stopAll(), timeoutMs: 5_000 },
+      { name: 'push', run: () => { detachPush?.(); detachPush = null; detachAutoLink?.(); detachAutoLink = null } },
+      { name: 'switchboard-mcp', run: stopSwitchboardMcpServer },
+      { name: 'ide', run: shutdownIde },
+      { name: 'usage-probes', run: disposeUsageProbes },
+      { name: 'machines', run: stopAllMachineConnections },
+      { name: 'mobile-endpoint', run: () => mobileEndpoint?.close() },
+      {
+        name: 'file-watchers',
+        run: () => {
+          disposeSettingsFileSync()
+          closeAllLaunchConfigWatchers()
+          closeAllHeadWatchers()
+        },
+      },
+      { name: 'database', run: () => closeDb({ forQuit: true }) },
+    ], { log: shutdownLog })
+    if (isQuitSmoke()) reportQuitSmoke(reports)
   },
   () => app.quit(),
 )
+const installAttempt = new InstallAttempt(quitCoordinator)
 
 // ⌘R / ⌘⇧R go through a confirm dialog instead of the raw reload roles -
 // a stray reload kills terminal panes and in-flight agent turns.
@@ -336,6 +359,15 @@ function loadWindowBounds(): SavedBounds | null {
   }
 }
 
+function saveWindowBounds(window: BrowserWindow): void {
+  if (window.isDestroyed()) return
+  try {
+    setSetting('windowBounds', JSON.stringify({ ...window.getNormalBounds(), maximized: window.isMaximized() }))
+  } catch (err) {
+    log.warn('failed to persist window bounds', err)
+  }
+}
+
 // E2E runs set SB_E2E_BACKGROUND=1 so their windows never take focus from the
 // person at the machine: an accessory app gets no Dock icon and is not
 // activated, and showInactive() draws the window without making it key.
@@ -439,12 +471,10 @@ function createWindow(): BrowserWindow {
 
   // Restore maximized state and remember bounds for next launch.
   if (saved?.maximized) window.maximize()
+  // A quit saves them in its first teardown step instead, while the database
+  // is still open; by the time windows close it has been closed for good.
   window.on('close', () => {
-    try {
-      setSetting('windowBounds', JSON.stringify({ ...window.getNormalBounds(), maximized: window.isMaximized() }))
-    } catch (err) {
-      log.warn('failed to persist window bounds', err)
-    }
+    if (!quitCoordinator.isQuitting) saveWindowBounds(window)
   })
 
   // Renderer requests actual window close (after checking no panes to close)
@@ -461,25 +491,26 @@ function createWindow(): BrowserWindow {
   // Quit + relaunch into a downloaded update. Repeat clicks are dropped.
   ipcMain.removeAllListeners('app:quit-and-install')
   ipcMain.on('app:quit-and-install', () => {
-    if (installRequested) return
-    installRequested = true
-    reportInstallStatus(window, { kind: 'installing' })
-    // prepare(), not a bare teardown: it marks quit as already-drained, so
-    // the before-quit hook below won't preventDefault the quit Squirrel
-    // fires to run the install.
-    void quitCoordinator.prepare().then(() => quitAndInstall())
-    // quitAndInstall replaces the process; if we are still here the install
-    // never took (purged staging file, spawn failure). Un-latch so a retry
-    // isn't silently dropped - teardown is idempotent.
-    setTimeout(() => {
-      if (!installRequested) return
-      installRequested = false
-      log.warn('still running after quitAndInstall - install did not start')
-      reportInstallStatus(window, {
-        kind: 'error',
-        message: 'The update could not start. Quit and reopen the app, then check for updates again.',
-      })
-    }, 15_000)
+    const started = installAttempt.start({
+      install: quitAndInstall,
+      // quitAndInstall replaces the process; if we are still here the install
+      // never took (purged staging file, spawn failure).
+      onAborted: () => {
+        log.warn('still running after quitAndInstall - install did not start')
+        reportInstallStatus(window, {
+          kind: 'error',
+          message: 'The update could not start. Quit and reopen the app, then check for updates again.',
+        })
+      },
+      // Let the database and IDE come back; the next quit tears down again.
+      // PTYs and agent sessions stay stopped until the relaunch the message
+      // asks for.
+      onRecovered: () => {
+        reopenDbAfterAbortedQuit()
+        resumeIdeAfterAbortedQuit()
+      },
+    })
+    if (started) reportInstallStatus(window, { kind: 'installing' })
   })
 
   // Expose log paths for Settings/About
@@ -592,11 +623,25 @@ function registerTourProtocol(): void {
 // with `--smoke-test` to catch import-time failures (e.g. ERR_REQUIRE_ESM
 // from an ESM-only dep that got externalized as CJS) before we cut a tag.
 // Registered before the real whenReady handler so it fires first and
-// terminates the process before any window/DB initialization runs.
+// quits before any window/DB initialization runs.
+//
+// app.quit(), never app.exit(): exit() calls the C runtime's exit() straight
+// away, whose atexit destructors free Chromium's sandbox broker while a
+// thread-pool worker is still spawning the startup child processes. On
+// Windows that was an intermittent 0xC0000005 in
+// sandbox::ThreadPool::RegisterWait (10 of 150 launches on windows-latest;
+// quit() 0 of 150). quit() runs the orderly shutdown that drains those tasks.
+// SB_SMOKE_CRASH_DIR keeps a local minidump of any crash in either smoke mode
+// for CI to upload.
+const smokeDumpDir = process.env.SB_SMOKE_CRASH_DIR
+if (smokeDumpDir && (process.argv.includes('--smoke-test') || isQuitSmoke())) {
+  app.setPath('crashDumps', smokeDumpDir)
+  crashReporter.start({ uploadToServer: false })
+}
 if (process.argv.includes('--smoke-test')) {
   app.whenReady().then(() => {
-    console.log('[smoke-test] main module loaded + app ready, exiting 0')
-    app.exit(0)
+    createMainLogger('smoke').info('[smoke-test] main module loaded + app ready, quitting')
+    app.quit()
   })
 }
 
@@ -770,11 +815,20 @@ app.whenReady().then(() => {
     idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
   })
   detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, backendHost)
+  startPullRequestHistoryScan()
   providerRegistry.registerIpcHandlers()
 
   // All handlers are recorded on the endpoint now; start listening if a token
   // is already saved. Later Settings saves re-apply() live over IPC.
   mobileEndpoint.apply()
+
+  if (isQuitSmoke()) {
+    // On failure no teardown report is printed, which the launcher counts as a failed run.
+    runQuitSmoke(mainWindow, () => app.quit()).catch((err) => {
+      crashLog.error('[smoke-quit] could not open the session to quit from', err)
+      app.quit()
+    })
+  }
 
   app.on('activate', () => {
     if (quitCoordinator.isQuitting) return

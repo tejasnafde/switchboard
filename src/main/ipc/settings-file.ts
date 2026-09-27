@@ -78,6 +78,13 @@ export function settingsFileSync(): SettingsFileSync | null {
   return sync
 }
 
+/** Quit: stop watching settings.json. Safe to call more than once. */
+export function disposeSettingsFileSync(): void {
+  const current = sync
+  sync = null
+  current?.dispose()
+}
+
 export function registerSettingsFileHandlers(deps: SettingsFileHostDeps): SettingsFileSync {
   const send = (channel: string, ...args: unknown[]) => {
     const window = deps.getWindow()
