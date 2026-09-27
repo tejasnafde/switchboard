@@ -26,6 +26,14 @@ describe('layout-store appView', () => {
     expect(useLayoutStore.getState().appView).toBe('chats')
   })
 
+  it('toggleAppView from Reviews opens the board, and the board goes back to chats', () => {
+    useLayoutStore.getState().setAppView('reviews')
+    useLayoutStore.getState().toggleAppView()
+    expect(useLayoutStore.getState().appView).toBe('kanban')
+    useLayoutStore.getState().toggleAppView()
+    expect(useLayoutStore.getState().appView).toBe('chats')
+  })
+
   it('setAppView writes the value directly', () => {
     useLayoutStore.getState().setAppView('kanban')
     expect(useLayoutStore.getState().appView).toBe('kanban')

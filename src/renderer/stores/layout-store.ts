@@ -60,7 +60,7 @@ export type RightPaneMode = 'terminal' | 'files'
  * + project clicks drive the board's filter (and clicking a session
  * exits back to chats). ⌘⇧K toggles. Persisted via settings DB.
  */
-export type AppView = 'chats' | 'kanban'
+export type AppView = 'chats' | 'kanban' | 'reviews'
 
 interface LayoutStore {
   sidebarWidth: number
@@ -78,7 +78,7 @@ interface LayoutStore {
   toggleRightPaneMode: () => void
 
   /**
-   * Top-level app view ('chats' | 'kanban'). Toggle with ⌘⇧K.
+   * Top-level app view ('chats' | 'kanban' | 'reviews'). ⌘⇧K toggles the board.
    * `kanbanWorkspaceFilter` scopes the board to one workspace id, or null
    * for "All workspaces" / unassigned. `kanbanProjectFilter` further
    * narrows to a single project path; null = every project in scope.
@@ -316,7 +316,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     set({ appView: v })
   },
   toggleAppView: () => {
-    const next: AppView = get().appView === 'chats' ? 'kanban' : 'chats'
+    const next: AppView = get().appView === 'kanban' ? 'chats' : 'kanban'
     try {
       persistSetting(APP_VIEW_KEY, next)
     } catch (err) {
@@ -507,7 +507,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       catch { return [] }
     }
     const mode: RightPaneMode = modeStr === 'files' ? 'files' : 'terminal'
-    const appView: AppView = appViewStr === 'kanban' ? 'kanban' : 'chats'
+    const appView: AppView = appViewStr === 'kanban' || appViewStr === 'reviews' ? appViewStr : 'chats'
     const dataScienceMode = dsModeStr === 'true'
     useLayoutStore.setState({
       sidebarCollapsedProjects: parse(projJson),

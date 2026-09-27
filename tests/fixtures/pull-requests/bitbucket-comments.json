@@ -1,0 +1,12 @@
+{
+  "pagelen": 100,
+  "values": [
+    { "id": 1, "content": { "raw": "Cap the jitter too." }, "user": { "display_name": "pankaj", "nickname": "pankaj" }, "created_on": "2026-09-27T09:10:00+00:00", "inline": { "path": "sync/worker.py", "from": null, "to": 86 }, "links": { "html": { "href": "https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/612/_/diff#comment-1" } } },
+    { "id": 2, "content": { "raw": "Done in a1b2c3d." }, "user": { "display_name": "Tejas Nafde", "nickname": "tejas" }, "created_on": "2026-09-27T10:15:00+00:00", "inline": { "path": "sync/worker.py", "from": null, "to": 86 }, "parent": { "id": 1 } },
+    { "id": 3, "content": { "raw": "Nested reply." }, "user": { "display_name": "pankaj" }, "created_on": "2026-09-27T10:16:00+00:00", "parent": { "id": 2 } },
+    { "id": 4, "content": { "raw": "This was the old retry." }, "user": { "display_name": "backend" }, "created_on": "2026-09-27T09:20:00+00:00", "inline": { "path": "sync/worker.py", "from": 84, "to": null } , "resolution": { "type": "resolved", "created_on": "2026-09-27T10:00:00+00:00" } },
+    { "id": 5, "content": { "raw": "Outdated note." }, "user": { "display_name": "backend" }, "created_on": "2026-09-27T09:25:00+00:00", "inline": { "path": "tests/test_worker.py", "from": null, "to": 14, "outdated": true } },
+    { "id": 6, "content": { "raw": "Nice work overall." }, "user": { "display_name": "akshaya" }, "created_on": "2026-09-27T09:30:00+00:00" },
+    { "id": 7, "content": { "raw": "" }, "user": { "display_name": "backend" }, "created_on": "2026-09-27T09:31:00+00:00", "deleted": true, "inline": { "path": "sync/config.py", "from": null, "to": 3 } }
+  ]
+}

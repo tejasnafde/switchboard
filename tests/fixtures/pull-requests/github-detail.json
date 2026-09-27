@@ -1,0 +1,42 @@
+{
+  "data": {
+    "viewer": { "login": "tejasnafde" },
+    "repository": { "pullRequest": {
+      "number": 162,
+      "title": "Resume the IAP event stream",
+      "url": "https://github.com/tejasnafde/switchboard/pull/162",
+      "state": "OPEN",
+      "isDraft": false,
+      "createdAt": "2026-09-27T07:00:00Z",
+      "updatedAt": "2026-09-27T08:00:00Z",
+      "mergedAt": null,
+      "headRefName": "fix/iap-resume",
+      "baseRefName": "main",
+      "headRefOid": "aa11bb22cc33",
+      "additions": 40,
+      "deletions": 2,
+      "changedFiles": 3,
+      "author": { "login": "tejasnafde", "name": "Tejas Nafde", "avatarUrl": null },
+      "baseRef": { "branchProtectionRule": { "requiredApprovingReviewCount": 2 } },
+      "reviewRequests": { "nodes": [ { "requestedReviewer": { "__typename": "User", "login": "pankaj", "name": null, "avatarUrl": null } } ] },
+      "latestReviews": { "nodes": [
+        { "state": "APPROVED", "submittedAt": "2026-09-27T07:30:00Z", "author": { "login": "akshaya", "avatarUrl": null } },
+        { "state": "CHANGES_REQUESTED", "submittedAt": "2026-09-27T07:40:00Z", "author": { "login": "backend", "avatarUrl": null } }
+      ] },
+      "reviewThreads": { "totalCount": 2, "nodes": [ { "isResolved": false }, { "isResolved": true } ] },
+      "commits": { "nodes": [ { "commit": { "statusCheckRollup": { "state": "FAILURE", "contexts": { "nodes": [
+        { "__typename": "CheckRun", "name": "Test (macos-14)", "status": "COMPLETED", "conclusion": "FAILURE", "startedAt": "2026-09-27T07:01:00Z", "completedAt": "2026-09-27T07:03:00Z", "detailsUrl": "https://github.com/x/y/actions/runs/3" }
+      ] } } } } ] },
+      "body": "Resumes from the last seq.\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n\n\n\nTested on geoiq-ssg-dev-in.",
+      "mergeable": "CONFLICTING",
+      "timelineItems": { "nodes": [
+        { "__typename": "PullRequestCommit", "commit": { "oid": "c1", "committedDate": "2026-09-27T07:00:00Z", "messageHeadline": "Keep the cursor", "author": { "user": { "login": "tejasnafde", "avatarUrl": null } } } },
+        { "__typename": "PullRequestCommit", "commit": { "oid": "c2", "committedDate": "2026-09-27T07:05:00Z", "messageHeadline": "Replay from seq", "author": { "user": { "login": "tejasnafde", "avatarUrl": null } } } },
+        { "__typename": "PullRequestReview", "state": "APPROVED", "submittedAt": "2026-09-27T07:30:00Z", "author": { "login": "akshaya", "avatarUrl": null }, "comments": { "totalCount": 0 } },
+        { "__typename": "PullRequestReview", "state": "CHANGES_REQUESTED", "submittedAt": "2026-09-27T07:40:00Z", "author": { "login": "backend", "avatarUrl": null }, "comments": { "totalCount": 2 } },
+        { "__typename": "IssueComment", "createdAt": "2026-09-27T07:50:00Z", "body": "Looks close.  <!-- bot -->\nOne more thing.", "author": { "login": "pankaj", "avatarUrl": null } },
+        { "__typename": "PullRequestReview", "state": "PENDING", "submittedAt": null, "author": { "login": "tejasnafde", "avatarUrl": null }, "comments": { "totalCount": 1 } }
+      ] }
+    } }
+  }
+}

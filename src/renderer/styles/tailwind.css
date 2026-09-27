@@ -30,6 +30,7 @@
 @source '../components/kanban/kanban-modal-classes.ts';
 @source '../components/SettingsPage.tsx';
 @source '../components/settings';
+@source '../components/reviews';
 
 @theme inline {
   --spacing: 0.25rem;

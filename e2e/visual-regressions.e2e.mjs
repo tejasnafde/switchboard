@@ -579,6 +579,16 @@ async function captureThemeScreens(win, theme) {
   await win.getByRole('button', { name: 'Board', exact: true }).click()
   await win.getByText('Trace webhook retries', { exact: true }).first().waitFor({ state: 'visible' })
   await snapScreen(win, 'kanban', theme, win, [sidebar])
+
+  // Reviews reads the demo pull requests (SB_DEMO_ADAPTER): the mock's data,
+  // no host, no credentials. The first row (#612, a failed build) opens.
+  await win.getByRole('button', { name: 'Reviews', exact: true }).click()
+  const reviews = win.locator('[data-reviews-view]')
+  await reviews.getByText('Replaces the fixed 30 s retry', { exact: false }).waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'reviews', theme, win, [sidebar])
+  await reviews.getByRole('tab', { name: /^Files/ }).click()
+  await reviews.locator('[data-pr-thread]').first().waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'reviews-files', theme, win, [sidebar])
   await win.getByRole('button', { name: 'Chats', exact: true }).click()
 
   // A turn held open on an approval, with a draft in the composer so it

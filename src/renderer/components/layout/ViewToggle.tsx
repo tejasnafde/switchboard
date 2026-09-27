@@ -1,8 +1,8 @@
 import { useLayoutStore } from '../../stores/layout-store'
 
 /**
- * Segmented "Chats / Board" toggle in the title bar. Mirrors ⌘⇧K so the
- * mode swap is discoverable without the keyboard shortcut. Sits inside
+ * Segmented "Chats / Board / Reviews" toggle in the title bar. Board mirrors
+ * ⌘⇧K so the mode swap is discoverable without the keyboard shortcut. Sits inside
  * the drag region but opts out via WebkitAppRegion: 'no-drag' so clicks
  * land on the buttons.
  */
@@ -37,7 +37,7 @@ export function ViewToggle(): React.ReactElement {
         cursor: 'pointer',
         WebkitAppRegion: 'no-drag',
       }}
-      title="Toggle Chats ↔ Board (⌘⇧K)"
+      title="Chats, Board (⌘⇧K) or Reviews"
     >
       <button
         type="button"
@@ -52,6 +52,13 @@ export function ViewToggle(): React.ReactElement {
         onClick={() => setAppView('kanban')}
       >
         Board
+      </button>
+      <button
+        type="button"
+        style={appView === 'reviews' ? activeBtn : baseBtn}
+        onClick={() => setAppView('reviews')}
+      >
+        Reviews
       </button>
     </span>
   )

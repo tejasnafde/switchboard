@@ -270,6 +270,29 @@ export const WorktreeCreationChannels = {
  * VIEWING tells the backend which thread a device has open, so it is not
  * notified about the screen already in the user's hand.
  */
+/**
+ * Reviews: pull request data read from GitHub (gh CLI) and Bitbucket Cloud
+ * where the backend runs. Read-only. A paired phone may call these.
+ */
+export const PullRequestChannels = {
+  LIST: 'pull-requests:list',
+  DETAIL: 'pull-requests:detail',
+  FILES: 'pull-requests:files',
+  CONVERSATIONS: 'pull-requests:conversations',
+  CHECKS: 'pull-requests:checks',
+} as const
+
+/**
+ * Source control accounts for Reviews. Admin-scoped as a prefix in
+ * `shared/device-auth.ts`: a phone can neither read nor set them.
+ */
+export const SourceControlChannels = {
+  STATUS: 'source-control:status',
+  SET_BITBUCKET: 'source-control:set-bitbucket',
+  REMOVE_BITBUCKET: 'source-control:remove-bitbucket',
+  TEST: 'source-control:test',
+} as const
+
 export const PushChannels = {
   REGISTER: 'push:register',
   UNREGISTER: 'push:unregister',

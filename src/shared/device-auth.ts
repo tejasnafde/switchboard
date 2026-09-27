@@ -31,7 +31,9 @@ const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
   terminal: ['terminal:'],
   // Without this, a paired device could mint itself another session and revoke
   // every other device. Revocation must be out of reach of a revocable credential.
-  admin: ['mobile-pairing:'],
+  // Source control accounts hold a host token. Status is gated too: it names
+  // the account, and nothing on the phone configures one.
+  admin: ['mobile-pairing:', 'source-control:'],
   // `chat` gates nothing on its own. It is the baseline every session has.
   chat: [],
 }

@@ -1,0 +1,10 @@
+{
+  "pagelen": 500,
+  "values": [
+    { "status": "modified", "lines_added": 2, "lines_removed": 1, "old": { "path": "sync/worker.py" }, "new": { "path": "sync/worker.py" } },
+    { "status": "added", "lines_added": 3, "lines_removed": 0, "old": null, "new": { "path": "sync/backoff.py" } },
+    { "status": "removed", "lines_added": 0, "lines_removed": 2, "old": { "path": "sync/legacy.py" }, "new": null },
+    { "status": "renamed", "lines_added": 0, "lines_removed": 0, "old": { "path": "docs/old name.md" }, "new": { "path": "docs/new name.md" } },
+    { "status": "added", "lines_added": 0, "lines_removed": 0, "old": null, "new": { "path": "assets/logo.png" } }
+  ]
+}

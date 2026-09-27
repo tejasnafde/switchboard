@@ -1,0 +1,7 @@
+[
+  { "filename": "src/shared/iap-tunnel.ts", "status": "modified", "additions": 2, "deletions": 1, "patch": "@@ -10,4 +10,5 @@ export function decode(\n const a = 1\n-const b = 2\n+const b = 3\n+const c = 4\n const d = 5\n\\ No newline at end of file" },
+  { "filename": "docs/new.md", "status": "added", "additions": 1, "deletions": 0, "patch": "@@ -0,0 +1 @@\n+hello" },
+  { "filename": "assets/logo.png", "status": "added", "additions": 0, "deletions": 0 },
+  { "filename": "src/main/renamed.ts", "previous_filename": "src/main/old.ts", "status": "renamed", "additions": 0, "deletions": 0 },
+  { "filename": "package-lock.json", "status": "modified", "additions": 9000, "deletions": 4000 }
+]

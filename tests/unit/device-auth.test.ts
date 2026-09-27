@@ -20,7 +20,7 @@ import {
   PAIRING_CODE_TTL_MS,
   type DeviceSession,
 } from '../../src/shared/device-auth'
-import { AppChannels, KanbanChannels, WorktreeManagerChannels } from '../../src/shared/ipc-channels'
+import { AppChannels, KanbanChannels, PullRequestChannels, SourceControlChannels, WorktreeManagerChannels } from '../../src/shared/ipc-channels'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '../../src/shared/session-defaults'
 
 describe('isChannelAllowed', () => {
@@ -60,6 +60,16 @@ describe('isChannelAllowed', () => {
       'C:\\Users\\Tejas\\Switchboard',
       'c:\\users\\tejas\\switchboard\\.SWITCHBOARD\\WORKSPACE.yaml',
     )).toBe(false)
+  })
+
+  it('lets a phone read pull requests but never source control credentials', () => {
+    for (const channel of Object.values(PullRequestChannels)) {
+      expect(isChannelAllowed(PHONE_SCOPES, channel)).toBe(true)
+    }
+    for (const channel of Object.values(SourceControlChannels)) {
+      expect(isChannelAllowed(PHONE_SCOPES, channel)).toBe(false)
+      expect(isChannelAllowed(FULL_SCOPES, channel)).toBe(true)
+    }
   })
 
   it('keeps a phone away from minting Google credentials on the desktop', () => {

@@ -4,11 +4,24 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
-import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels, SettingsFileChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels, SettingsFileChannels, PullRequestChannels, SourceControlChannels } from '@shared/ipc-channels'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent, WorktreeInfo } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
+import type {
+  BitbucketCredentialInput,
+  PrChangedFile,
+  PrCheck,
+  PrConversation,
+  PrDetail,
+  PrHost,
+  PrListData,
+  PrRef,
+  PrResult,
+  SourceControlStatus,
+  SourceControlTestResult,
+} from '@shared/pull-requests'
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
@@ -509,6 +522,25 @@ const api = {
         DESKTOP_VIEWER_REF,
         viewing ? threadId : null,
       ),
+  },
+
+  // ─── Reviews (read-only pull requests) ─────
+  pullRequests: {
+    list: (): Promise<PrResult<PrListData>> => transport.invoke(PullRequestChannels.LIST),
+    detail: (ref: PrRef): Promise<PrResult<PrDetail>> => transport.invoke(PullRequestChannels.DETAIL, ref),
+    files: (ref: PrRef): Promise<PrResult<PrChangedFile[]>> => transport.invoke(PullRequestChannels.FILES, ref),
+    conversations: (ref: PrRef): Promise<PrResult<PrConversation[]>> => transport.invoke(PullRequestChannels.CONVERSATIONS, ref),
+    checks: (ref: PrRef): Promise<PrResult<PrCheck[]>> => transport.invoke(PullRequestChannels.CHECKS, ref),
+  },
+
+  sourceControl: {
+    status: (): Promise<SourceControlStatus> => transport.invoke(SourceControlChannels.STATUS),
+    setBitbucket: (input: BitbucketCredentialInput): Promise<{ ok: boolean; message?: string }> =>
+      transport.invoke(SourceControlChannels.SET_BITBUCKET, input),
+    removeBitbucket: (): Promise<{ ok: boolean }> => transport.invoke(SourceControlChannels.REMOVE_BITBUCKET),
+    /** `input` tests an unsaved email + token; without it the saved account is tested. */
+    test: (host: PrHost, input?: BitbucketCredentialInput): Promise<SourceControlTestResult> =>
+      transport.invoke(SourceControlChannels.TEST, host, input),
   },
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────

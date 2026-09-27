@@ -34,7 +34,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'general', title: 'General', description: 'How Switchboard behaves on this Mac.' },
   { id: 'appearance', title: 'Appearance', description: 'How the window looks.' },
   { id: 'chat', title: 'Chat & agents', description: 'Defaults for new and running chats.' },
-  { id: 'accounts', title: 'Accounts & models', description: 'The accounts each agent signs in with, and how much of each one is used.' },
+  { id: 'accounts', title: 'Accounts & models', description: 'The accounts each agent signs in with, how much of each one is used, and the source control accounts for Reviews.' },
   { id: 'projects', title: 'Projects', description: 'Settings that belong to one project.' },
   { id: 'keyboard', title: 'Keyboard', description: 'Every shortcut, with the keys for this computer.' },
   { id: 'devices', title: 'Devices & machines', description: 'Phones paired with this Mac.' },
@@ -162,6 +162,11 @@ const ROWS = {
     id: 'accounts.add', page: 'accounts', section: 'Accounts',
     label: 'Add account',
     description: 'A new named account for Claude Code, Codex or OpenCode, signed in through its own folder or an API key.',
+  },
+  sourceControl: {
+    id: 'accounts.sourceControl', page: 'accounts', section: 'Source control',
+    label: 'Source control',
+    description: 'The Bitbucket Cloud email and API token, and the GitHub gh login, that Reviews reads pull requests with. The token is stored encrypted on this computer.',
   },
   projectList: {
     id: 'projects.list', page: 'projects', section: 'Projects',
