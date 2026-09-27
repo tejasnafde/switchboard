@@ -103,6 +103,14 @@ describe('unified diff', () => {
     expect(parseHunks(patch).truncated).toBe(false)
   })
 
+  it('parses a CRLF patch like an LF one', () => {
+    const patch = ['@@ -1,2 +1,2 @@ fn()', ' a', '-b', '+c'].join('\r\n')
+    const parsed = parseHunks(patch)
+    expect(parsed).toEqual(parseHunks(patch.replace(/\r\n/g, '\n')))
+    expect(parsed.hunks[0].header).toBe('@@ -1,2 +1,2 @@ fn()')
+    expect(parsed.hunks[0].lines.map((l) => l.text)).toEqual(['a', 'b', 'c'])
+  })
+
   it('reads quoted paths with spaces and a pure rename', () => {
     const files = splitGitDiff('diff --git "a/x y.md" "b/z w.md"\nsimilarity index 100%\nrename from x y.md\nrename to z w.md\n')
     expect(files).toEqual([{ oldPath: 'x y.md', newPath: 'z w.md', binary: false, patch: '' }])

@@ -5,7 +5,7 @@
  */
 import { create } from 'zustand'
 import { prKey, type PrChangedFile, type PrCheck, type PrConversation, type PrDetail, type PrError, type PrListData, type PrRef, type PrResult, type PrSummary } from '@shared/pull-requests'
-import { shouldRefreshPullRequests, type PrRefreshReason } from '@shared/pull-request-refresh'
+import { pullRequestChanged, shouldRefreshPullRequests, type PrRefreshReason } from '@shared/pull-request-refresh'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:reviews')
@@ -99,10 +99,10 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const changed = new Set<string>()
     for (const pr of result.data.prs) {
       const before = findSummary(previous, prKey(pr.ref))
-      if (before && before.updatedAt !== pr.updatedAt) changed.add(prKey(pr.ref))
+      if (before && pullRequestChanged(before, pr)) changed.add(prKey(pr.ref))
     }
     set((st) => {
-      // A PR that changed on the host loses its cached tabs.
+      // A PR that changed on the host (edits, checks, conversations) loses its cached tabs.
       const resources = { ...st.resources }
       for (const key of changed) delete resources[key]
       return { loading: false, listError: null, list: result.data, resources }

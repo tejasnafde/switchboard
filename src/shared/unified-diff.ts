@@ -15,13 +15,18 @@ export interface ParsedHunks {
   truncated: boolean
 }
 
+/** A server, a proxy or a Windows checkout can hand over CRLF; a stray CR would end up in every path and line. */
+function toLf(text: string): string {
+  return text.replace(/\r\n/g, '\n')
+}
+
 export function parseHunks(patch: string, maxLines = MAX_DIFF_LINES_PER_FILE): ParsedHunks {
   const hunks: DiffHunk[] = []
   let current: DiffHunk | null = null
   let oldLine = 0
   let newLine = 0
   let kept = 0
-  for (const raw of patch.split('\n')) {
+  for (const raw of toLf(patch).split('\n')) {
     const header = HUNK_HEADER.exec(raw)
     if (header) {
       if (kept >= maxLines) return { hunks, truncated: true }
@@ -66,7 +71,7 @@ function stripPrefix(path: string): string | null {
 /** Cut a multi-file `git diff` into files. Paths come from the ---/+++ lines, falling back to the `diff --git` line. */
 export function splitGitDiff(text: string): GitDiffFile[] {
   const files: GitDiffFile[] = []
-  const chunks = text.split(/^diff --git /m).slice(1)
+  const chunks = toLf(text).split(/^diff --git /m).slice(1)
   for (const chunk of chunks) {
     const lines = chunk.split('\n')
     const head = /^"?a\/(.+?)"? "?b\/(.+?)"?$/.exec(lines[0] ?? '')

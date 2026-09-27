@@ -3,7 +3,8 @@
  * faster) and the per-PR cache keyed by updated time.
  */
 import { describe, expect, it } from 'vitest'
-import { nextRefreshDelay, PR_FOCUS_MIN_GAP_MS, PR_REFRESH_INTERVAL_MS, shouldRefreshPullRequests } from '../../src/shared/pull-request-refresh'
+import { nextRefreshDelay, PR_FOCUS_MIN_GAP_MS, PR_REFRESH_INTERVAL_MS, pullRequestChanged, shouldRefreshPullRequests } from '../../src/shared/pull-request-refresh'
+import { rollupChecks, type PrSummary } from '../../src/shared/pull-requests'
 import { VersionedCache } from '../../src/main/pull-requests/cache'
 
 const T = 1_000_000_000
@@ -43,6 +44,28 @@ describe('nextRefreshDelay', () => {
     expect(nextRefreshDelay(null, T)).toBe(0)
     expect(nextRefreshDelay(T - 60_000, T)).toBe(PR_REFRESH_INTERVAL_MS - 60_000)
     expect(nextRefreshDelay(T - 2 * PR_REFRESH_INTERVAL_MS, T)).toBe(0)
+  })
+})
+
+describe('pullRequestChanged', () => {
+  const base = {
+    updatedAt: 1000,
+    checks: rollupChecks([{ state: 'pending' }, { state: 'success' }]),
+    unresolvedConversations: 2,
+  } as PrSummary
+
+  it('is false for the same PR, true when it was updated', () => {
+    expect(pullRequestChanged(base, { ...base })).toBe(false)
+    expect(pullRequestChanged(base, { ...base, updatedAt: 2000 })).toBe(true)
+  })
+
+  it('sees a check finishing that did not bump the updated time', () => {
+    expect(pullRequestChanged(base, { ...base, checks: rollupChecks([{ state: 'failure' }, { state: 'success' }]) })).toBe(true)
+    expect(pullRequestChanged(base, { ...base, checks: rollupChecks([{ state: 'pending' }, { state: 'success' }, { state: 'pending' }]) })).toBe(true)
+  })
+
+  it('sees a conversation resolved without a new comment', () => {
+    expect(pullRequestChanged(base, { ...base, unresolvedConversations: 1 })).toBe(true)
   })
 })
 

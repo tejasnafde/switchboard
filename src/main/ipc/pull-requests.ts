@@ -100,8 +100,14 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     }
   })
 
+  // A failed removal still rejects, so the Settings card reports it instead of showing the account as gone.
   host.handle(SourceControlChannels.REMOVE_BITBUCKET, () => {
-    credentials.remove()
+    try {
+      credentials.remove()
+    } catch (err) {
+      log.error('removing Bitbucket credentials failed', err instanceof Error ? err.message : 'error')
+      throw err
+    }
     bitbucket = null
     return { ok: true }
   })

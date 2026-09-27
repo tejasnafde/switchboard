@@ -72,6 +72,7 @@
         "tests/unit/pull-request-refresh.test.ts",
         "tests/unit/pull-request-service.test.ts",
         "tests/unit/source-control-credentials.test.ts",
+        "tests/unit/pull-requests-ipc.test.ts",
         "tests/unit/device-auth.test.ts"
       ]
     },
@@ -89,7 +90,8 @@
       "npm run typecheck passed (main + renderer).",
       "npm test passed (see the PR for counts). New: pull-requests-github-map (GraphQL list/detail/threads and REST files fixtures, gh error classes, a missing repo reported on its own, token never asked for), pull-requests-bitbucket-map (pullrequests, participants, comments with nested replies and resolution, commit statuses, diffstat + diff, activity; fake fetch for 401/403/404/429/offline, no token sent to another origin, enrichment cache), pull-request-remote (https/ssh/scp remotes, upstream before origin), pull-request-groups (every group and phrase), pull-request-refresh (5 minute interval, 1 minute focus floor, VersionedCache expiry and LRU), pull-request-service (repo detection, no_account / needs_desktop per host, refusing repositories that are not projects), source-control-credentials (encrypted file, refusal without safeStorage, nothing on the settings.json allow-list), review-states (one line + one fix per error kind), device-auth (a phone may call pull-requests:* and none of source-control:*).",
       "SB_VISUAL_SCOPE=screens e2e/visual-regressions.e2e.mjs: new reviews and reviews-files baselines in Dark, Light and Translucent from the demo provider (SB_DEMO_ADAPTER=1). chat, kanban and confirm-dialog changed only inside the title-bar toggle box (x 1068-1225, y 7-31) for the third button; settings-accounts changed for the longer page description and scrollbar. Every other rewritten PNG had no pixel over the threshold and was restored. Two further runs without updating both passed.",
-      "Live read-only check of the GitHub provider against tejasnafde/switchboard with the local gh login: list (16 PRs, rollups, threads), detail of #159 (sizes, activity, 6 checks with durations), 5 review threads, 10 changed files with parsed hunks, and a missing PR mapped to not_found."
+      "Live read-only check of the GitHub provider against tejasnafde/switchboard with the local gh login: list (16 PRs, rollups, threads), detail of #159 (sizes, activity, 6 checks with durations), 5 review threads, 10 changed files with parsed hunks, and a missing PR mapped to not_found.",
+      "Round 2: the diff parser normalises CRLF (a Windows checkout turned the raw diff fixture into CRLF and the path lookup missed); tests feed a CRLF Bitbucket diff and a CRLF GitHub patch, and both fail without the fix. .gitattributes pins tests/fixtures/pull-requests/** to LF. A failed Bitbucket account removal is logged and still rejects (pull-requests-ipc). Cached tabs are dropped when a PR's check rollup or open-conversation count changes, not only its updated time (pullRequestChanged)."
     ],
     "hardware": [
       "Every new baseline PNG, plus Conversations, Checks, jump-to-file, the list filter and the Source control settings cards, was opened and checked by eye on this Mac."

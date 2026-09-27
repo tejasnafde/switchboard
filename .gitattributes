@@ -1,0 +1,3 @@
+# Recorded host responses are byte-exact API output: keep them LF on every
+# checkout (Windows autocrlf turned the raw diff into CRLF and broke its test).
+tests/fixtures/pull-requests/** text eol=lf

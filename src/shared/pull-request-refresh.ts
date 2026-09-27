@@ -4,6 +4,7 @@
  * the last read does nothing, so switching windows back and forth cannot
  * hammer the host; a manual refresh always goes.
  */
+import type { PrSummary } from './pull-requests'
 
 export const PR_REFRESH_INTERVAL_MS = 5 * 60_000
 export const PR_FOCUS_MIN_GAP_MS = 60_000
@@ -34,4 +35,17 @@ export function shouldRefreshPullRequests(state: PrRefreshState, reason: PrRefre
 export function nextRefreshDelay(lastFetchAt: number | null, now: number): number {
   if (lastFetchAt === null) return 0
   return Math.max(0, lastFetchAt + PR_REFRESH_INTERVAL_MS - now)
+}
+
+/**
+ * Whether a PR's cached tabs are stale after a list refresh. The updated time
+ * alone misses what the host does not count as an update: a Bitbucket commit
+ * status, or a conversation resolved without a new comment.
+ */
+export function pullRequestChanged(before: PrSummary, after: PrSummary): boolean {
+  const a = before.checks
+  const b = after.checks
+  return before.updatedAt !== after.updatedAt
+    || a.state !== b.state || a.total !== b.total || a.passed !== b.passed || a.failed !== b.failed || a.pending !== b.pending
+    || before.unresolvedConversations !== after.unresolvedConversations
 }

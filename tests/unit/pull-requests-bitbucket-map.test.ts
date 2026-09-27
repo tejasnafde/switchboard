@@ -112,6 +112,14 @@ describe('mapBbFiles', () => {
     ])
     expect(files[2].hunks[0].lines.every((l) => l.kind === 'del')).toBe(true)
   })
+
+  it('reads a CRLF diff exactly like an LF one, with no CR left in paths or text', () => {
+    // Pinned to LF by .gitattributes; a server or a proxy can still send CRLF.
+    const lf = readFileSync(join(dir, 'bitbucket-diff.txt'), 'utf8').replace(/\r\n/g, '\n')
+    const crlf = mapBbFiles(fixture('bitbucket-diffstat.json').values, lf.replace(/\n/g, '\r\n'))
+    expect(crlf).toEqual(mapBbFiles(fixture('bitbucket-diffstat.json').values, lf))
+    expect(JSON.stringify(crlf)).not.toContain('\\r')
+  })
 })
 
 describe('mapBbActivity and mapBbDetail', () => {
