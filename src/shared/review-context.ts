@@ -151,9 +151,14 @@ function hunkLine(line: DiffHunk['lines'][number]): string {
   return `${mark}${line.text}`
 }
 
-/** The unified diff lines from `start` to `end` on one side, with `radius` lines of context, or `null` when they are not in the file's hunks. */
+/**
+ * The unified diff lines from `start` to `end` on one side, with `radius`
+ * lines of context, from every hunk the range touches (a range can span
+ * several), or `null` when none of it is in the file's hunks.
+ */
 export function diffAround(file: PrChangedFile | undefined, side: 'new' | 'old', start: number, end = start, radius = DIFF_RADIUS): string | null {
   if (!file) return null
+  const parts: string[] = []
   for (const hunk of file.hunks) {
     const at = (l: DiffHunk['lines'][number]) => (side === 'old' ? (l.kind !== 'add' ? l.oldLine : null) : (l.kind !== 'del' ? l.newLine : null))
     const first = hunk.lines.findIndex((l) => { const n = at(l); return n !== null && n >= start && n <= end })
@@ -162,9 +167,9 @@ export function diffAround(file: PrChangedFile | undefined, side: 'new' | 'old',
     hunk.lines.forEach((l, i) => { const n = at(l); if (n !== null && n >= start && n <= end) last = i })
     const from = Math.max(0, first - radius)
     const to = Math.min(hunk.lines.length, last + radius + 1)
-    return [hunk.header, ...hunk.lines.slice(from, to).map(hunkLine)].join('\n')
+    parts.push([hunk.header, ...hunk.lines.slice(from, to).map(hunkLine)].join('\n'))
   }
-  return null
+  return parts.length > 0 ? parts.join('\n') : null
 }
 
 export function conversationItem(c: PrConversation, files: readonly PrChangedFile[]): ReviewContextItem {

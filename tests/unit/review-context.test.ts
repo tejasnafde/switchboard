@@ -39,6 +39,26 @@ describe('diffAround', () => {
     ].join('\n'))
   })
 
+  it('includes every hunk a selection spans', () => {
+    const twoHunks: PrChangedFile = {
+      ...file,
+      hunks: parseHunks([
+        '@@ -10,2 +10,2 @@',
+        '-a = 1',
+        '+a = 2',
+        ' b = 1',
+        '@@ -40,2 +40,2 @@',
+        ' c = 1',
+        '-d = 1',
+        '+d = 2',
+      ].join('\n')).hunks,
+    }
+    expect(diffAround(twoHunks, 'new', 10, 41, 0)).toBe([
+      '@@ -10,2 +10,2 @@', '+a = 2', ' b = 1',
+      '@@ -40,2 +40,2 @@', ' c = 1', '-d = 1', '+d = 2',
+    ].join('\n'))
+  })
+
   it('finds a removed line on the old side, and nothing outside the hunks', () => {
     expect(diffAround(file, 'old', 86, 86, 0)).toBe('@@ -84,7 +84,8 @@ class SyncWorker:\n-        delay = base')
     expect(diffAround(file, 'new', 400)).toBeNull()

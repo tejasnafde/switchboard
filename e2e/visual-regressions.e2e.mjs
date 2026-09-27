@@ -506,7 +506,7 @@ async function captureThemeScreens(win, theme) {
   // it: a sidebar change then moves only the sidebar baselines.
   const sidebar = win.locator('.sidebar-root')
   // The seeded link to #612 (linkPullRequest) shows in the chat header once the demo PR list is read.
-  await win.locator('[data-linked-pr]').filter({ hasText: 'build failed' }).first().waitFor({ state: 'visible', timeout: 20_000 })
+  await win.locator('[data-linked-pr][title*="build failed"]').first().waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'chat', theme, win, [turnTimes, sidebar])
   await snapScreen(win, 'sidebar', theme, sidebar)
 

@@ -73,11 +73,15 @@ export function LinkedPrControl({ sessionId }: { sessionId: string }) {
           type="button"
           data-linked-pr
           aria-label={`Linked pull request #${first.link.ref.number}${phrase ? `, ${phrase}` : ''}`}
-          className="inline-flex h-[20px] max-w-[36%] min-w-[29px] shrink overflow-hidden @max-[360px]:hidden cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-surface)] px-2 text-[11.5px] text-[var(--text-secondary)] hover:border-[var(--border-focus)]"
+          title={phrase ? `#${first.link.ref.number} ${phrase}` : undefined}
+          // Gives way before the chat title (shrink-[1000] against the title's 1),
+          // down to icon + number; the phrase shows only in a wide header and
+          // the whole control hides in a narrow one.
+          className="inline-flex h-[20px] min-w-min shrink-[1000] overflow-hidden @max-[360px]:hidden cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-surface)] px-2 text-[11.5px] text-[var(--text-secondary)] hover:border-[var(--border-focus)]"
         >
           <PrStatusIcon pr={first.pr} />
           <b className="shrink-0 font-[500] text-[var(--text-primary)]">#{first.link.ref.number}</b>
-          {phrase && <span className="min-w-0 truncate">{phrase}</span>}
+          {phrase && <span className="hidden min-w-0 truncate @min-[760px]:inline">{phrase}</span>}
           {rows.length > 1 && <span className="text-[var(--text-muted)]">+{rows.length - 1}</span>}
           <Icon name="chev" size={11} tone="dim" />
         </button>

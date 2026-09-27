@@ -30,7 +30,10 @@
         "e2e/visual-regressions.e2e.mjs",
         "e2e/fixtures/demo-workspace.mjs",
         "e2e/snapshots",
-        "tests/unit/review-pill-round-trip.test.ts"
+        "tests/unit/review-pill-round-trip.test.ts",
+        "src/renderer/components/reviews/ask-chat-pick.ts",
+        "src/renderer/styles/global.css",
+        "tests/unit/ask-chat-pick.test.ts"
       ]
     },
     "reactNativeIos": {
@@ -90,7 +93,8 @@
       "npm run typecheck passed (main + renderer), and apps/mobile tsc.",
       "npm test passed. New: pull-request-links (URL matcher for both hosts, wrong paths, a number running into letters, no cross-project link, client reference validation, the header phrase, and the auto-linker: deltas joined before matching so /pull/6 + 12 links #612, tool output, reasoning text ignored, notify once), pull-request-links-db (a link written or removed through a rotated provider session id lands on the root conversation and reads back from either id; linked chats carry every id of their thread; an automatic link never revives one the user removed while a manual link does), review-context (label like the mock and capped at the stored label limit, the plain text expansion with host, repo, number, place, side, reviewer, comment and diff, check and line items, the 12 KiB cap naming what was left out, a single oversized item cut short), review-pill-round-trip (draft expansion, submission validation, stored reload with the kind, desktop chip, phone text). The mobile jest suite passed.",
       "e2e/review-to-chat.e2e.mjs against the built app with the demo adapter (12 checks, all passed): the seeded link shows in the chat header as '#612 build failed · 3 open conversations'; Open in Reviews selects the PR; Ask the agent on the failed check and Send all 3 open conversations each add one review pill to the linked chat; the sent message stores both tokens in its display body, the expansion in its provider text and kind 'review' in its pill metadata, and the bubble draws the chips; Unlink removes the stored link and the header control; selected diff lines with no linked chat open the chooser, which offers no chat of another project, and with the link back the same selection lands as one pill.",
-      "SB_VISUAL_SCOPE=screens e2e/visual-regressions.e2e.mjs with the demo chat linked to #612 (seedDatabase linkPullRequest): chat and confirm-dialog changed only inside the chat header (the linked-PR control and the title it narrows); reviews changed in the failed-check callout (Ask the agent) and below the Checks card (Linked chat). Every other rewritten PNG had no pixel over the threshold and was restored. Two further runs without updating both passed."
+      "SB_VISUAL_SCOPE=screens e2e/visual-regressions.e2e.mjs with the demo chat linked to #612 (seedDatabase linkPullRequest): chat and confirm-dialog changed only inside the chat header (the linked-PR control and the title it narrows); reviews changed in the failed-check callout (Ask the agent) and below the Checks card (Linked chat). Every other rewritten PNG had no pixel over the threshold and was restored. Two further runs without updating both passed.",
+      "Round 2: the chooser links the picked chat before it delivers and, on a refused or failed link, keeps the dialog open with the reason and delivers nothing (ask-chat-pick); diffAround returns every hunk a selection spans (review-context, fails on the previous code). The chat header gives the title its natural width (.chat-identity flex 0 1 auto, the project capped at 24ch and shrinking faster): the linked-PR control shrinks first, down to icon + number, shows its phrase only in a header of 760 px or more (tooltip and popover otherwise) and hides under 360 px. e2e/review-to-chat checks the compact control and whole title at the default size and the phrase with a whole title in a 1900 px window. Baselines rewritten: chat and confirm-dialog (header), approval and queued-message (their titles were already cut by the old flex basis and now show whole); the rest restored; two screens runs without updating passed."
     ],
     "hardware": [
       "Every changed baseline PNG was opened and checked by eye on this Mac, including the narrow chat, where the control hides itself below a 360 px header."

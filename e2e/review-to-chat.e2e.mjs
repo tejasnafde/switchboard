@@ -64,8 +64,19 @@ try {
   await win.locator('.sidebar-recent-row').filter({ hasText: CHAT }).first().click()
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible' })
   const header = win.locator('[data-linked-pr]')
-  await header.filter({ hasText: 'build failed' }).waitFor({ state: 'visible', timeout: 20_000 })
+  await win.locator('[data-linked-pr][title*="build failed"]').waitFor({ state: 'visible', timeout: 20_000 })
   check('chat header shows the linked PR', (await header.innerText()).includes('#612'), await header.innerText())
+  // The title wins: at the default width the control is compact (icon + number),
+  // in a wide header it carries the phrase, and the title is never cut.
+  const titleFits = () => win.locator('.chat-identity-title').first().evaluate((el) => el.scrollWidth <= el.clientWidth)
+  const phraseShown = () => header.locator('span.truncate').isVisible()
+  check('default width: compact control, whole title', !(await phraseShown()) && await titleFits())
+  const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize())
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1900, 900))
+  await win.waitForTimeout(400)
+  check('wide header: phrase shown, whole title', await phraseShown() && (await header.innerText()).includes('build failed') && await titleFits())
+  await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), size)
+  await win.waitForTimeout(400)
 
   await header.click()
   await win.getByRole('button', { name: 'Open in Reviews' }).click()

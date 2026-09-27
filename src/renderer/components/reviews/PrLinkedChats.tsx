@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dia
 import { Button } from '../ui/button'
 import { CardRow, SideCard } from './review-ui'
 import { deliverReviewContext, openReviewChat } from './review-to-chat'
+import { linkThenDeliver } from './ask-chat-pick'
 
 const log = createRendererLogger('reviews:links')
 
@@ -124,19 +125,22 @@ function AskChatBody() {
   const linkable = useLinkableChats(pending.pr)
   const options = useMemo(() => chatOptions(linkable, linked), [linkable, linked])
 
+  const [error, setError] = useState<string | null>(null)
+
+  // The dialog stays open with the reason when the link fails, and nothing is delivered.
   const pick = async (id: string) => {
     const chat = [...linked, ...linkable].find((c) => c.id === id)
-    useReviewStore.getState().setPendingAsk(null)
     if (!chat) return
-    if (linked.length === 0) {
-      try {
-        const result = await window.api.pullRequests.link(chat.id, pending.pr)
-        if (!result.ok) log.warn('linking the picked chat failed', result.message)
-      } catch (err) {
-        log.warn('linking the picked chat failed', err)
-      }
-    }
-    await deliverReviewContext(chat, pending)
+    setError(null)
+    const failed = await linkThenDeliver(
+      linked.length === 0,
+      () => window.api.pullRequests.link(chat.id, pending.pr),
+      async () => {
+        useReviewStore.getState().setPendingAsk(null)
+        await deliverReviewContext(chat, pending)
+      },
+    )
+    setError(failed)
   }
 
   return (
@@ -160,6 +164,7 @@ function AskChatBody() {
         className="w-full"
         contentClassName="z-[1400]"
       />
+      {error && <div role="alert" className="text-[12px] text-[var(--error)]">{error}</div>}
     </DialogContent>
   )
 }
