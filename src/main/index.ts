@@ -45,7 +45,7 @@ import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
-import { attachPullRequestAutoLink, registerPullRequestHandlers } from './ipc/pull-requests'
+import { attachPullRequestAutoLink, registerPullRequestHandlers, startPullRequestHistoryScan } from './ipc/pull-requests'
 import { tryResolveProviderInstance } from './db/provider-instances'
 import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
 import { QuitCoordinator } from './quit-coordinator'
@@ -770,6 +770,7 @@ app.whenReady().then(() => {
     idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
   })
   detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, backendHost)
+  startPullRequestHistoryScan()
   providerRegistry.registerIpcHandlers()
 
   // All handlers are recorded on the endpoint now; start listening if a token
