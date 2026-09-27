@@ -235,6 +235,9 @@ export class IapTransport implements Transport {
     }
     held.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
     for (const evt of held) this.applyEvent(evt)
+    // Baseline even with no event yet, or the next hello cannot tell events
+    // from before this tunnel from events missed after it.
+    if (ready) this.lastSeq = Math.max(this.lastSeq, ready.seq)
   }
 
   private applyEvent(frame: Extract<WsFrame, { k: 'evt' }>): void {

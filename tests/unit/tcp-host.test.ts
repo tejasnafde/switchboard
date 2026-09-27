@@ -262,6 +262,17 @@ describe('TcpHost resume', () => {
     expect(await r.next()).toMatchObject({ k: 'ready', gap: true, replayed: 0 })
   })
 
+  it('answers a same-epoch cursor of 0 with gap once anything was emitted', async () => {
+    const { host, port } = await boot()
+    const first = await dial(port)
+    first.socket.write(hello(0))
+    const { epoch } = (await first.r.next()) as { epoch: string }
+    host.emit('provider:event', { n: 1 })
+    const second = await dial(port)
+    second.socket.write(hello(0, epoch))
+    expect(await second.r.next()).toMatchObject({ k: 'ready', gap: true, replayed: 0 })
+  })
+
   it('terminal output takes no sequence number', async () => {
     const { host, port } = await boot(undefined, ['chat', 'terminal'])
     const { r } = await dial(port)

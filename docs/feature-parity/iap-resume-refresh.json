@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "iap-resume-refresh",
-  "summary": "Clients reaching a VM through the IAP tunnel (TcpHost) now resume the event stream like WebSocket clients do: TcpHost sequences and buffers replayable events and answers hello { since, epoch } with a replay or gap, and the phone's IapTransport carries its cursor across tunnels and fires onResumeGap, so a dropped tunnel re-seeds the open thread and the conversation list instead of leaving them stale. A host that cannot replay makes a resuming client re-seed on every reconnect.",
+  "summary": "Clients reaching a VM through the IAP tunnel (TcpHost) now resume the event stream like WebSocket clients do: TcpHost sequences and buffers replayable events and answers hello { since, epoch } with a replay or gap, and the phone's IapTransport carries its cursor across tunnels and fires onResumeGap, so a dropped tunnel re-seeds the open thread and the conversation list instead of leaving them stale. A host that cannot replay makes a resuming client re-seed on every reconnect. Both client transports take the first ready's seq as their cursor, and a same-epoch cursor of 0 is answered with gap once anything was emitted, so an event missed after an idle connection is never silently dropped.",
   "surfaces": {
     "desktop": {
       "status": "not_applicable",
@@ -13,8 +13,7 @@
       "evidence": [
         "apps/mobile/src/lib/iap-transport.ts",
         "apps/mobile/src/stores/connections.ts",
-        "apps/mobile/src/screens/ConversationsScreen.tsx",
-        "tests/unit/iap-transport-resume.test.ts"
+        "apps/mobile/src/screens/ConversationsScreen.tsx"
       ]
     },
     "nativeAndroid": {
@@ -31,8 +30,11 @@
         "src/main/backend/ws-host.ts",
         "src/shared/event-replay-buffer.ts",
         "src/shared/ws-protocol.ts",
+        "src/shared/ws-transport.ts",
+        "tests/unit/iap-transport-resume.test.ts",
         "tests/unit/tcp-host.test.ts",
-        "tests/unit/ws-resume.test.ts"
+        "tests/unit/ws-resume.test.ts",
+        "tests/unit/event-replay-buffer.test.ts"
       ]
     },
     "storageDataMigration": {
@@ -48,7 +50,10 @@
     "automated": [
       "tests/unit/iap-transport-resume.test.ts: drop and reconnect with an in-order replay that skips already-seen events, host-reported gap, epoch change, first connect never a gap, old host without event_replay_v1 (one re-seed despite two readies), and a pre-hello host that never answers (events flow, re-seed after the ready timeout)",
       "tests/unit/tcp-host.test.ts: TcpHost replays missed events before ready, answers a foreign-epoch cursor with gap, leaves terminal output unsequenced, and skips the post-auth ready when the auth line carries resume: true",
-      "tests/unit/ws-resume.test.ts: WsHost resume unchanged after moving its hello verdict into resumeFrom"
+      "tests/unit/ws-resume.test.ts: WsHost resume unchanged after moving its hello verdict into resumeFrom",
+      "tests/unit/ws-resume.test.ts: a WsTransport that connected after events were emitted and saw none replays exactly the event missed while it was away (fails without the ready baseline)",
+      "tests/unit/event-replay-buffer.test.ts: resumeFrom answers a first hello as fresh, a same-epoch cursor of 0 as gap once anything was emitted (never a replay from the start), and a foreign epoch as gap only if the cursor had seen something",
+      "tests/unit/iap-transport-resume.test.ts / tcp-host.test.ts: the first ready sets the IAP cursor while keeping events held before it; TcpHost answers a same-epoch cursor of 0 with gap"
     ],
     "hardware": [],
     "notExercised": [

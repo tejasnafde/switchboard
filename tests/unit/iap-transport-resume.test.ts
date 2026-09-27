@@ -117,6 +117,18 @@ describe('IapTransport resume', () => {
     expect(b.transport.resumeState()).toEqual({ since: 4, epoch: 'e1' })
   })
 
+  it('takes the first ready as the baseline, keeping events held before it', () => {
+    const a = tunnel()
+    a.relay.line(evt(51, 51))
+    a.relay.line(ready('e1', 50))
+    expect(a.transport.resumeState()).toEqual({ since: 51, epoch: 'e1' })
+    expect(a.seen).toEqual([{ n: 51 }])
+
+    const idle = tunnel()
+    idle.relay.line(ready('e1', 50))
+    expect(idle.transport.resumeState()).toEqual({ since: 50, epoch: 'e1' })
+  })
+
   it('re-seeds when the host reports a gap', () => {
     const b = tunnel({ since: 2, epoch: 'e1' })
     b.relay.line(ready('e1', 900, true))
