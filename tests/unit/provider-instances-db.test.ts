@@ -15,6 +15,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // ─── safeStorage mock (via the runtime shim) ───────────────────
 let safeStorageAvailable = true
+let decryptCalls = 0
 const safeStoragePrefix = Buffer.from([0xAA, 0xBB])
 
 vi.mock('../../src/main/runtime', () => ({
@@ -27,6 +28,7 @@ vi.mock('../../src/main/runtime', () => ({
           isEncryptionAvailable: () => true,
           encryptString: (s: string) => Buffer.concat([safeStoragePrefix, Buffer.from(s, 'utf-8')]),
           decryptString: (buf: Buffer) => {
+            decryptCalls++
             if (!buf.subarray(0, safeStoragePrefix.length).equals(safeStoragePrefix)) {
               throw new Error('mock safeStorage: bad ciphertext')
             }
@@ -155,6 +157,7 @@ vi.mock('../../src/main/db/database', () => ({
 beforeEach(() => {
   seedDefaults()
   safeStorageAvailable = true
+  decryptCalls = 0
   delete process.env.SWITCHBOARD_SECRET
 })
 
@@ -340,6 +343,70 @@ describe('upsertProviderInstance', () => {
     safeStorageAvailable = false
     const listed = listProviderInstances().find((i) => i.displayName === 'Work')
     expect(listed?.envKeys).toEqual(['CODEX_TOKEN', 'OPENAI_API_KEY'])
+  })
+})
+
+describe('decrypt budget (each decrypt can be a keychain prompt)', () => {
+  beforeEach(async () => {
+    (await loadModule()).clearDecryptedEnvCache()
+  })
+
+  it('an oauth_dir instance never decrypts for a usage read', async () => {
+    const { upsertProviderInstance, getProviderInstanceFull } = await loadModule()
+    const { usageNeedsEnv } = await import('../../src/main/provider/usage/index')
+    const wire = upsertProviderInstance({
+      agentType: 'claude-code',
+      displayName: 'Work',
+      authMode: 'oauth_dir',
+      oauthDir: '/tmp/switchboard-vitest/claude-work',
+      env: { ANTHROPIC_BASE_URL: 'https://example.invalid' },
+    })
+    decryptCalls = 0
+    const meta = getProviderInstanceFull(wire.id, { withEnv: false })
+    expect(meta?.authMode).toBe('oauth_dir')
+    expect(meta?.env).toEqual({})
+    expect(usageNeedsEnv(meta!)).toBe(false)
+    expect(decryptCalls).toBe(0)
+  })
+
+  it('only an env-mode Claude or Codex instance needs its env for usage', async () => {
+    const { usageNeedsEnv } = await import('../../src/main/provider/usage/index')
+    expect(usageNeedsEnv({ authMode: 'env', agentType: 'claude-code' })).toBe(true)
+    expect(usageNeedsEnv({ authMode: 'env', agentType: 'codex' })).toBe(true)
+    expect(usageNeedsEnv({ authMode: 'env', agentType: 'opencode' })).toBe(false)
+    expect(usageNeedsEnv({ authMode: 'oauth_dir', agentType: 'codex' })).toBe(false)
+  })
+
+  it('decrypts an env once per process, and again after an upsert or delete', async () => {
+    const { upsertProviderInstance, getProviderInstanceFull, deleteProviderInstance } = await loadModule()
+    const wire = upsertProviderInstance({ agentType: 'codex', displayName: 'Work', env: { CODEX_TOKEN: 'secret-1' } })
+    decryptCalls = 0
+    expect(getProviderInstanceFull(wire.id)?.env).toEqual({ CODEX_TOKEN: 'secret-1' })
+    const again = getProviderInstanceFull(wire.id)
+    expect(decryptCalls).toBe(1)
+    // A caller mutating its copy must not poison the cache.
+    again!.env.CODEX_TOKEN = 'changed'
+    expect(getProviderInstanceFull(wire.id)?.env).toEqual({ CODEX_TOKEN: 'secret-1' })
+    expect(decryptCalls).toBe(1)
+
+    upsertProviderInstance({ id: wire.id, agentType: 'codex', displayName: 'Work', env: { CODEX_TOKEN: 'secret-2' } })
+    expect(getProviderInstanceFull(wire.id)?.env).toEqual({ CODEX_TOKEN: 'secret-2' })
+    expect(decryptCalls).toBe(2)
+
+    const other = upsertProviderInstance({ agentType: 'codex', displayName: 'Other', env: { CODEX_TOKEN: 'secret-3' } })
+    getProviderInstanceFull(other.id)
+    const before = decryptCalls
+    expect(deleteProviderInstance(wire.id)).toBe(true)
+    getProviderInstanceFull(other.id)
+    expect(decryptCalls).toBe(before + 1)
+  })
+
+  it('never decrypts an overlay its key list proves empty', async () => {
+    const { upsertProviderInstance, getProviderInstanceFull } = await loadModule()
+    const wire = upsertProviderInstance({ agentType: 'codex', displayName: 'Empty', env: {} })
+    decryptCalls = 0
+    expect(getProviderInstanceFull(wire.id)?.env).toEqual({})
+    expect(decryptCalls).toBe(0)
   })
 })
 

@@ -265,25 +265,61 @@ describe('BitbucketProvider', () => {
 })
 
 describe('testBitbucket', () => {
-  it('reports the workspaces and repositories the token can see', async () => {
-    const { impl } = fakeFetch({
+  const repos = [
+    { host: 'bitbucket' as const, owner: 'geoiq', name: 'ssg-bot-v2' },
+    { host: 'bitbucket' as const, owner: 'geoiq', name: 'retailiq' },
+    { host: 'bitbucket' as const, owner: 'personal', name: 'notes' },
+  ]
+
+  it('checks each project repository and names the ones it cannot reach', async () => {
+    const { impl, calls } = fakeFetch({
       '/user': { body: { display_name: 'Tejas Nafde' } },
-      '/user/permissions/repositories': { body: { values: [
-        { repository: { full_name: 'geoiq/ssg-bot-v2' } },
-        { repository: { full_name: 'geoiq/retailiq' } },
-        { repository: { full_name: 'personal/notes' } },
-      ] } },
+      '/repositories/geoiq/ssg-bot-v2': { body: {} },
+      '/repositories/geoiq/retailiq': { body: {} },
     })
-    const result = await testBitbucket(new BitbucketClient(creds, impl))
-    expect(result).toEqual({
-      ok: true,
-      message: 'Signed in as Tejas Nafde. Works for 3 repositories in geoiq, personal.',
-      workspaces: [{ name: 'geoiq', repositories: 2 }, { name: 'personal', repositories: 1 }],
+    const result = await testBitbucket(new BitbucketClient(creds, impl), repos)
+    expect(result).toEqual({ ok: true, message: 'Signed in as Tejas Nafde. Works for 2 of your 3 project repositories; no access to personal/notes.' })
+    expect(calls.map((c) => c.url.split('?')[0].slice(BITBUCKET_API.length)).sort()).toEqual([
+      '/repositories/geoiq/retailiq', '/repositories/geoiq/ssg-bot-v2', '/repositories/personal/notes', '/user',
+    ])
+    expect(calls.some((c) => c.url.includes('/user/permissions'))).toBe(false)
+  })
+
+  it('says so when every repository works, or there are none', async () => {
+    const { impl } = fakeFetch({ '/user': { body: { display_name: 'Tejas' } }, '/repositories/geoiq/ssg-bot-v2': { body: {} } })
+    expect(await testBitbucket(new BitbucketClient(creds, impl), repos.slice(0, 1))).toEqual({ ok: true, message: 'Signed in as Tejas. Works for your project repository.' })
+    expect(await testBitbucket(new BitbucketClient(creds, impl), [])).toEqual({ ok: true, message: 'Signed in as Tejas. None of your projects points at a Bitbucket repository yet.' })
+  })
+
+  it('names the repository scope when the token cannot read any', async () => {
+    const { impl } = fakeFetch({
+      '/user': { body: {} },
+      '/repositories/geoiq/ssg-bot-v2': { status: 403, body: {} },
+      '/repositories/geoiq/retailiq': { status: 403, body: {} },
+      '/repositories/personal/notes': { status: 403, body: {} },
     })
+    const result = await testBitbucket(new BitbucketClient(creds, impl), repos)
+    expect(result.ok).toBe(false)
+    expect(result.message).toBe('Works for 0 of your 3 project repositories; no access to geoiq/retailiq, geoiq/ssg-bot-v2, personal/notes. The API token may be missing the read:repository:bitbucket scope.')
+  })
+
+  it('caps the repositories it checks', async () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({ host: 'bitbucket' as const, owner: 'ws', name: `r${i}` }))
+    const routes: Record<string, Route> = { '/user': { body: {} } }
+    for (const r of many) routes[`/repositories/ws/${r.name}`] = { body: {} }
+    const { impl, calls } = fakeFetch(routes)
+    const result = await testBitbucket(new BitbucketClient(creds, impl), many)
+    expect(calls).toHaveLength(21)
+    expect(result.message).toBe('Works for all 20 of your project repositories. Checked the first 20 of 25.')
   })
 
   it('says why a rejected token failed', async () => {
     const { impl } = fakeFetch({ '/user': { status: 401, body: {} } })
-    expect(await testBitbucket(new BitbucketClient(creds, impl))).toEqual({ ok: false, message: 'Bitbucket rejected the email and API token.' })
+    expect(await testBitbucket(new BitbucketClient(creds, impl), repos)).toEqual({ ok: false, message: 'Bitbucket rejected the email and API token.' })
+  })
+
+  it('names the user scope when /user is forbidden', async () => {
+    const { impl } = fakeFetch({ '/user': { status: 403, body: {} } })
+    expect(await testBitbucket(new BitbucketClient(creds, impl), repos)).toEqual({ ok: false, message: 'The API token is missing the read:user:bitbucket scope.' })
   })
 })

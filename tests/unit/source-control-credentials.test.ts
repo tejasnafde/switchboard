@@ -10,7 +10,7 @@ import { join } from 'node:path'
 
 vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
 
-import { BITBUCKET_CREDENTIAL_FILE, BitbucketCredentialStore, validateBitbucketInput } from '../../src/main/pull-requests/credentials'
+import { BITBUCKET_CREDENTIAL_FILE, BITBUCKET_METADATA_FILE, BitbucketCredentialStore, validateBitbucketInput } from '../../src/main/pull-requests/credentials'
 import { FILE_SETTINGS } from '../../src/shared/settings-file'
 
 const dirs: string[] = []
@@ -54,6 +54,7 @@ describe('BitbucketCredentialStore', () => {
     store.save(creds)
     store.remove()
     expect(existsSync(join(root, BITBUCKET_CREDENTIAL_FILE))).toBe(false)
+    expect(existsSync(join(root, BITBUCKET_METADATA_FILE))).toBe(false)
     expect(store.status()).toEqual({ state: 'unconfigured' })
   })
 
@@ -68,11 +69,37 @@ describe('BitbucketCredentialStore', () => {
     expect(() => noKeyring.save(creds)).toThrow()
   })
 
-  it('treats an unreadable file as not configured', () => {
+  it('treats an unreadable file as no credentials when a request needs them', () => {
     const root = tempDir()
     new BitbucketCredentialStore(() => root, () => fakeCrypto).save(creds)
     const broken = new BitbucketCredentialStore(() => root, () => ({ ...fakeCrypto, decryptString: () => { throw new Error('bad key') } }))
-    expect(broken.status()).toEqual({ state: 'unconfigured' })
+    expect(broken.read()).toBeNull()
+  })
+
+  it('status never decrypts, even in a fresh process', () => {
+    const root = tempDir()
+    new BitbucketCredentialStore(() => root, () => fakeCrypto).save(creds)
+    const decryptString = vi.fn(fakeCrypto.decryptString)
+    const isEncryptionAvailable = vi.fn(() => true)
+    const relaunched = new BitbucketCredentialStore(() => root, () => ({ ...fakeCrypto, decryptString, isEncryptionAvailable }))
+    expect(relaunched.status()).toEqual({ state: 'configured', email: 'me@example.com' })
+    expect(relaunched.status()).toEqual({ state: 'configured', email: 'me@example.com' })
+    expect(decryptString).not.toHaveBeenCalled()
+    expect(isEncryptionAvailable).not.toHaveBeenCalled()
+    expect(readFileSync(join(root, BITBUCKET_METADATA_FILE), 'utf8')).not.toContain('ATATT')
+    expect(relaunched.read()).toEqual(creds)
+    expect(decryptString).toHaveBeenCalledTimes(1)
+  })
+
+  it('decrypts a file saved before the metadata existed once, then never for status', () => {
+    const root = tempDir()
+    new BitbucketCredentialStore(() => root, () => fakeCrypto).save(creds)
+    rmSync(join(root, BITBUCKET_METADATA_FILE))
+    const decryptString = vi.fn(fakeCrypto.decryptString)
+    const crypto = () => ({ ...fakeCrypto, decryptString })
+    expect(new BitbucketCredentialStore(() => root, crypto).status()).toEqual({ state: 'configured', email: 'me@example.com' })
+    expect(new BitbucketCredentialStore(() => root, crypto).status()).toEqual({ state: 'configured', email: 'me@example.com' })
+    expect(decryptString).toHaveBeenCalledTimes(1)
   })
 })
 

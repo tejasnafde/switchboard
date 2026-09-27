@@ -21,7 +21,7 @@ import type {
   RepoRef,
   SourceControlTestResult,
 } from '@shared/pull-requests'
-import { prKey } from '@shared/pull-requests'
+import { BITBUCKET_READ_SCOPES, prKey } from '@shared/pull-requests'
 import { createMainLogger } from '../logger'
 import { VersionedCache } from './cache'
 import {
@@ -49,6 +49,8 @@ const MAX_PAGES = 5
 const MERGED_WINDOW_DAYS = 7
 /** Running checks are re-read after this even when the PR has not changed. */
 const PENDING_CHECKS_MAX_AGE_MS = 4 * 60_000
+const BB_REJECTED = 'Bitbucket rejected the email and API token.'
+const BB_MISSING_SCOPE = `The API token is missing a scope this needs (${BITBUCKET_READ_SCOPES.join(', ')}).`
 
 export type FetchLike = (url: string, init: { method?: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{
   ok: boolean
@@ -96,8 +98,8 @@ export class BitbucketClient {
     const path = new URL(url).pathname
     log.warn('Bitbucket answered with an error', { path, status: res.status, method: write?.method ?? 'GET' })
     if (write) throw new PrHostError(await bitbucketWriteError(res))
-    if (res.status === 401) throw new PrHostError({ kind: 'token_rejected', host: 'bitbucket', message: 'Bitbucket rejected the email and API token.' })
-    if (res.status === 403) throw new PrHostError({ kind: 'token_rejected', host: 'bitbucket', message: 'The API token is missing a scope this needs (read pull requests, read pipelines).' })
+    if (res.status === 401) throw new PrHostError({ kind: 'token_rejected', host: 'bitbucket', message: BB_REJECTED })
+    if (res.status === 403) throw new PrHostError({ kind: 'token_rejected', host: 'bitbucket', message: BB_MISSING_SCOPE })
     if (res.status === 404) throw new PrHostError({ kind: 'not_found', host: 'bitbucket', message: 'Bitbucket could not find it, or this account cannot see it.' })
     if (res.status === 429) {
       const retryAfter = Number(res.headers.get('retry-after'))
@@ -161,8 +163,8 @@ export async function bitbucketWriteError(res: { status: number; headers: { get(
   const err = (kind: PrError['kind'], fallback: string): PrError => ({ kind, host: 'bitbucket', message: said || fallback })
   switch (res.status) {
     case 400: return err('invalid', 'Bitbucket refused the input.')
-    case 401: return { kind: 'token_rejected', host: 'bitbucket', message: 'Bitbucket rejected the email and API token.' }
-    case 403: return err('forbidden', 'Bitbucket does not let this account do that. The API token needs the write pull requests scope.')
+    case 401: return { kind: 'token_rejected', host: 'bitbucket', message: BB_REJECTED }
+    case 403: return err('forbidden', 'Bitbucket does not let this account do that. The API token needs the write:pullrequest:bitbucket scope.')
     case 404: return err('stale', 'Bitbucket could not find it; it may have been deleted.')
     case 409: return err('conflict', 'Bitbucket refused because of the pull request state.')
     case 429: {
@@ -364,29 +366,52 @@ export class BitbucketProvider implements PullRequestProvider {
   }
 }
 
-/** Settings > Source control > Test: one read, reporting what the account can see. */
-export async function testBitbucket(client: BitbucketClient): Promise<SourceControlTestResult> {
+/** Repositories checked by one Test, and how many at once. */
+const TEST_MAX_REPOS = 20
+const TEST_CONCURRENCY = 4
+
+/**
+ * Settings > Source control > Test. `/user` proves the credentials, then one
+ * read of each Bitbucket repository the projects point at says whether the
+ * token reaches it. (Atlassian removed `/user/permissions/repositories`, the
+ * cross-workspace listing this used to call.)
+ */
+export async function testBitbucket(client: BitbucketClient, repos: RepoRef[]): Promise<SourceControlTestResult> {
+  let who = ''
   try {
     const user = await client.json<{ display_name?: string }>('/user')
-    const perms = await client.paged<{ repository?: { full_name?: string } }>('/user/permissions/repositories?pagelen=100', 3)
-    const counts = new Map<string, number>()
-    for (const p of perms) {
-      const workspace = p.repository?.full_name?.split('/')[0]
-      if (workspace) counts.set(workspace, (counts.get(workspace) ?? 0) + 1)
-    }
-    const workspaces = [...counts].map(([name, repositories]) => ({ name, repositories })).sort((a, b) => b.repositories - a.repositories)
-    const total = perms.length
-    const who = user.display_name ? `Signed in as ${user.display_name}. ` : ''
-    const message = total === 0
-      ? `${who}The token works but sees no repositories.`
-      : `${who}Works for ${total} ${total === 1 ? 'repository' : 'repositories'} in ${workspaces.map((w) => w.name).join(', ')}.`
-    return { ok: true, message, workspaces }
+    if (user.display_name) who = `Signed in as ${user.display_name}. `
   } catch (err) {
     if (err instanceof PrHostError) {
       log.warn('Bitbucket test failed', { kind: err.error.kind })
-      return { ok: false, message: err.error.message }
+      const message = err.error.message === BB_MISSING_SCOPE ? 'The API token is missing the read:user:bitbucket scope.' : err.error.message
+      return { ok: false, message }
     }
     log.error('Bitbucket test failed unexpectedly', err)
     return { ok: false, message: 'The test failed; see the log.' }
   }
+  const checked = repos.slice(0, TEST_MAX_REPOS)
+  if (checked.length === 0) return { ok: true, message: `${who}None of your projects points at a Bitbucket repository yet.` }
+
+  const failures: Array<{ name: string; error: PrError | null }> = []
+  const queue = [...checked]
+  await Promise.all(Array.from({ length: Math.min(TEST_CONCURRENCY, queue.length) }, async () => {
+    for (let repo = queue.shift(); repo; repo = queue.shift()) {
+      try {
+        await client.json(`${repoPath(repo)}?fields=full_name`)
+      } catch (err) {
+        if (!(err instanceof PrHostError)) log.error('Bitbucket repository check failed unexpectedly', err)
+        failures.push({ name: `${repo.owner}/${repo.name}`, error: err instanceof PrHostError ? err.error : null })
+      }
+    }
+  }))
+  const works = checked.length - failures.length
+  const noun = checked.length === 1 ? 'project repository' : 'project repositories'
+  let message = works === checked.length
+    ? `${who}Works for ${checked.length === 1 ? 'your' : `all ${checked.length} of your`} ${noun}.`
+    : `${who}Works for ${works} of your ${checked.length} ${noun}; no access to ${failures.map((f) => f.name).sort().join(', ')}.`
+  if (failures.some((f) => f.error?.message === BB_MISSING_SCOPE)) message += ' The API token may be missing the read:repository:bitbucket scope.'
+  if (failures.some((f) => f.error?.kind === 'offline')) message += ' Some checks could not reach bitbucket.org.'
+  if (repos.length > checked.length) message += ` Checked the first ${checked.length} of ${repos.length}.`
+  return { ok: works > 0, message }
 }
