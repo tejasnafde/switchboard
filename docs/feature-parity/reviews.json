@@ -76,11 +76,8 @@
       ]
     },
     "storageDataMigration": {
-      "status": "implemented",
-      "evidence": [
-        "src/main/pull-requests/credentials.ts",
-        "tests/unit/source-control-credentials.test.ts"
-      ]
+      "status": "not_applicable",
+      "reason": "No database schema change and no migration. The Bitbucket email + API token live in one new file, userData/source-control/bitbucket.bin, encrypted with Electron safeStorage and written only when the user saves an account (src/main/pull-requests/credentials.ts, tested in tests/unit/source-control-credentials.test.ts); it is not in the settings table, so settings.json and settings:get never see it. The existing layout.appView settings row gains the value 'reviews'; an older build reading it falls back to chats. PR data is cached in memory only."
     },
     "updateRelease": {
       "status": "not_applicable",
