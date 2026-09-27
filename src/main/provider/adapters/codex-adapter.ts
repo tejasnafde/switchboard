@@ -1482,7 +1482,10 @@ export class CodexAdapter implements ProviderAdapter {
       const elicitation = parseMcpElicitation(request.params)
       if (!elicitation) {
         const message = 'Unsupported Codex MCP elicitation request. The tool call was cancelled because Switchboard cannot render this request shape.'
-        log.warn(`${message} ${truncateLogPayload(JSON.stringify(request.params ?? {}))}`)
+        // Shape only: the message and field values can carry user data.
+        const params = asRecord(request.params)
+        const fieldNames = Object.keys(asRecord(asRecord(params?.requestedSchema)?.properties) ?? {})
+        log.warn(message, { mode: params?.mode, serverName: params?.serverName, fieldNames })
         active.onEvent({
           type: 'error',
           threadId,
