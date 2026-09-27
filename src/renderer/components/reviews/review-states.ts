@@ -3,7 +3,8 @@
  * and one fix each), per-host notices above the list, and short times.
  * Pure, so the rules are tested without rendering.
  */
-import { PR_HOST_LABEL, type PrError, type PrListData, type PrSummary } from '@shared/pull-requests'
+import { MERGE_STRATEGY_LABEL } from '@shared/pull-request-writes'
+import { HOST_CAPABILITIES, PR_HOST_LABEL, type MergeStrategy, type PrCheck, type PrError, type PrListData, type PrSummary } from '@shared/pull-requests'
 
 export type ReviewFixAction = 'settings' | 'retry' | null
 
@@ -42,8 +43,34 @@ export function describePrError(error: PrError): ReviewNotice {
       return { id, line: 'This repository is not on GitHub or Bitbucket Cloud.', fix: 'Reviews reads pull requests from github.com and bitbucket.org remotes.', action: null }
     case 'not_found':
       return { id, line: error.message, fix: 'Check that this account can see the repository.', action: 'retry', actionLabel: 'Retry' }
+    case 'forbidden':
+      return { id, line: error.message, fix: `${host} did not allow it for this account.`, action: null }
+    case 'conflict':
+      return { id, line: error.message, fix: `Open the pull request in ${host} to see what blocks it.`, action: 'retry', actionLabel: 'Retry' }
+    case 'stale':
+      return { id, line: error.message, fix: 'Reviews refreshed the pull request; check it and try again.', action: 'retry', actionLabel: 'Retry' }
+    case 'invalid':
+      return { id, line: error.message, fix: 'Nothing was sent.', action: null }
     case 'unknown':
       return { id, line: error.message, fix: 'Retry, or check the log for details.', action: 'retry', actionLabel: 'Retry' }
+  }
+}
+
+/** One line under a write control that failed: the reason, and for account or network trouble, the fix. */
+export function writeErrorText(error: PrError): string {
+  const notice = describePrError(error)
+  if (error.kind === 'forbidden' || error.kind === 'conflict' || error.kind === 'stale' || error.kind === 'invalid' || error.kind === 'unknown') {
+    return notice.line
+  }
+  return `${notice.line} ${notice.fix}`
+}
+
+/** The merge confirm names the target branch and the strategy, which is what cannot be undone. */
+export function mergeConfirmCopy(pr: Pick<PrSummary, 'ref' | 'sourceBranch' | 'targetBranch' | 'title'>, strategy: MergeStrategy): { title: string; body: string; confirmLabel: string } {
+  return {
+    title: `Merge #${pr.ref.number} into ${pr.targetBranch}?`,
+    body: `"${pr.title}" merges ${pr.sourceBranch} into ${pr.targetBranch} on ${PR_HOST_LABEL[pr.ref.host]}. Strategy: ${MERGE_STRATEGY_LABEL[strategy].toLowerCase()}. This cannot be undone from Switchboard.`,
+    confirmLabel: 'Merge',
   }
 }
 
@@ -126,4 +153,12 @@ export function groupFilesByDir<T extends { path: string }>(files: readonly T[])
 
 export function fileName(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1)
+}
+
+/** Why a failed check has no Re-run, or `null` when it has one. */
+export function rerunUnavailable(pr: Pick<PrSummary, 'ref'>, check: Pick<PrCheck, 'rerunId'>): string | null {
+  const caps = HOST_CAPABILITIES[pr.ref.host]
+  if (!caps.rerunChecks) return caps.rerunUnavailable
+  if (!check.rerunId) return 'Only GitHub Actions runs re-run from here. Re-run this check where it ran.'
+  return null
 }

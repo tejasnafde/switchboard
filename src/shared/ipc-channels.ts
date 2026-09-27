@@ -291,6 +291,22 @@ export const PullRequestChannels = {
 } as const
 
 /**
+ * The human write actions on a pull request, one channel per action, each
+ * `(ref, input)` -> `PrResult<PrWriteDone>` (`shared/pull-request-writes.ts`).
+ * Admin-scoped in `shared/device-auth.ts`: a paired phone calls none of them.
+ */
+export const PullRequestWriteChannels = {
+  REPLY: 'pull-requests:reply',
+  RESOLVE: 'pull-requests:resolve',
+  UNRESOLVE: 'pull-requests:unresolve',
+  COMMENT: 'pull-requests:comment',
+  INLINE_COMMENT: 'pull-requests:inline-comment',
+  SUBMIT_REVIEW: 'pull-requests:submit-review',
+  MERGE: 'pull-requests:merge',
+  RERUN_CHECK: 'pull-requests:rerun-check',
+} as const
+
+/**
  * Source control accounts for Reviews. Admin-scoped as a prefix in
  * `shared/device-auth.ts`: a phone can neither read nor set them.
  */

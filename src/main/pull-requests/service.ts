@@ -1,10 +1,29 @@
 /**
  * Reviews backend: finds each project's repository from its git remotes,
- * asks the right host for its pull requests, and answers the detail reads.
- * Every method returns a `PrResult`, never throws, so the renderer and the
- * phone get one shape for "worked" and "why not".
+ * asks the right host for its pull requests, answers the detail reads, and
+ * runs the human writes. Every method returns a `PrResult`, never throws, so
+ * the renderer and the phone get one shape for "worked" and "why not".
+ *
+ * A write validates its input again here, whatever the client checked, and
+ * re-reads what it targets first (the thread, the diff line, the head and
+ * blockers before a merge), so a stale screen cannot post to the wrong place.
  */
 import {
+  findConversation,
+  lineInDiff,
+  mergePrecheck,
+  validateComment,
+  validateInlineComment,
+  validateMerge,
+  validateReply,
+  validateRerun,
+  validateResolve,
+  validateSubmitReview,
+  type PrResource,
+  type PrWriteDone,
+} from '@shared/pull-request-writes'
+import {
+  HOST_CAPABILITIES,
   repoKey,
   type BitbucketAccountState,
   type PrChangedFile,
@@ -22,7 +41,7 @@ import {
 } from '@shared/pull-requests'
 import { repoFromRemotes } from '@shared/pull-request-remote'
 import { createMainLogger } from '../logger'
-import { toPrError, type PullRequestProvider } from './provider'
+import { PrHostError, toPrError, type PullRequestProvider } from './provider'
 
 const log = createMainLogger('pull-requests:service')
 
@@ -189,5 +208,108 @@ export class PullRequestService {
 
   checks(ref: unknown): Promise<PrResult<PrCheck[]>> {
     return this.read(ref, 'checks', (p, r) => p.checks(r))
+  }
+
+  // ─── Writes ────────────────────────────────────────────────────
+
+  private async write(
+    ref: unknown,
+    action: string,
+    refresh: PrResource[],
+    fn: (p: PullRequestProvider, ref: PrRef) => Promise<void>,
+  ): Promise<PrResult<PrWriteDone>> {
+    const target = await this.resolve(ref)
+    if ('error' in target) return { ok: false, error: target.error }
+    try {
+      await fn(target.provider, target.ref)
+      log.info('pull request write done', { action, host: target.ref.host, number: target.ref.number })
+      return { ok: true, data: { refresh } }
+    } catch (err) {
+      const error = toPrError(err, target.ref.host)
+      log.warn(`pull request ${action} failed`, { host: target.ref.host, number: target.ref.number, kind: error.kind })
+      return { ok: false, error }
+    }
+  }
+
+  private static unwrap<T>(v: { ok: true; value: T } | { ok: false; error: PrError }): T {
+    if (!v.ok) throw new PrHostError(v.error)
+    return v.value
+  }
+
+  private async conversationOf(p: PullRequestProvider, ref: PrRef, id: string) {
+    const conversation = findConversation(await p.conversations(ref), id)
+    if (!conversation) throw new PrHostError({ kind: 'stale', host: ref.host, message: 'That conversation is no longer on the pull request.' })
+    return conversation
+  }
+
+  reply(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
+    return this.write(ref, 'reply', ['conversations', 'detail'], async (p, r) => {
+      const { conversationId, body } = PullRequestService.unwrap(validateReply(r.host, input))
+      await this.conversationOf(p, r, conversationId)
+      await p.reply(r, conversationId, body)
+    })
+  }
+
+  setResolved(ref: unknown, input: unknown, resolved: boolean): Promise<PrResult<PrWriteDone>> {
+    return this.write(ref, resolved ? 'resolve' : 'unresolve', ['conversations', 'detail'], async (p, r) => {
+      const { conversationId } = PullRequestService.unwrap(validateResolve(r.host, input))
+      await this.conversationOf(p, r, conversationId)
+      await p.setResolved(r, conversationId, resolved)
+    })
+  }
+
+  comment(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
+    return this.write(ref, 'comment', ['detail'], async (p, r) => {
+      const { body } = PullRequestService.unwrap(validateComment(r.host, input))
+      await p.comment(r, body)
+    })
+  }
+
+  inlineComment(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
+    return this.write(ref, 'inline comment', ['conversations', 'detail'], async (p, r) => {
+      const comment = PullRequestService.unwrap(validateInlineComment(r.host, input))
+      if (!lineInDiff(await p.files(r), comment)) {
+        throw new PrHostError({ kind: 'stale', host: r.host, message: `${comment.path}:${comment.line} is not in the diff any more.` })
+      }
+      await p.inlineComment(r, comment)
+    })
+  }
+
+  submitReview(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
+    return this.write(ref, 'review', ['conversations', 'detail'], async (p, r) => {
+      const review = PullRequestService.unwrap(validateSubmitReview(r.host, input))
+      const [detail, files] = await Promise.all([p.detail(r), review.comments.length > 0 ? p.files(r) : Promise.resolve([])])
+      if (review.event !== 'comment') {
+        if (detail.viewer.isAuthor) {
+          throw new PrHostError({ kind: 'forbidden', host: r.host, message: 'You cannot approve or request changes on your own pull request.' })
+        }
+        if (detail.state !== 'open') throw new PrHostError({ kind: 'stale', host: r.host, message: `This pull request is ${detail.state} now.` })
+      }
+      const gone = review.comments.find((c) => !lineInDiff(files, c))
+      if (gone) throw new PrHostError({ kind: 'stale', host: r.host, message: `${gone.path}:${gone.line} is not in the diff any more. Remove that comment and submit again.` })
+      await p.submitReview(r, review)
+    })
+  }
+
+  merge(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
+    return this.write(ref, 'merge', ['detail', 'checks'], async (p, r) => {
+      const merge = PullRequestService.unwrap(validateMerge(r.host, input))
+      const refused = mergePrecheck(await p.detail(r), merge)
+      if (refused) throw new PrHostError(refused)
+      await p.merge(r, merge.strategy, merge.expectedHeadSha)
+    })
+  }
+
+  rerunCheck(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
+    return this.write(ref, 'rerun', ['checks', 'detail'], async (p, r) => {
+      const { checkId } = PullRequestService.unwrap(validateRerun(r.host, input))
+      const caps = HOST_CAPABILITIES[r.host]
+      if (!caps.rerunChecks) throw new PrHostError({ kind: 'forbidden', host: r.host, message: caps.rerunUnavailable ?? 'This host cannot re-run checks.' })
+      const check = (await p.checks(r)).find((c) => c.id === checkId)
+      if (!check) throw new PrHostError({ kind: 'stale', host: r.host, message: 'That check is no longer on the head commit.' })
+      if (check.state !== 'failure') throw new PrHostError({ kind: 'stale', host: r.host, message: `${check.name} is not failed any more.` })
+      if (!check.rerunId) throw new PrHostError({ kind: 'invalid', host: r.host, message: `${check.name} is not a GitHub Actions run; re-run it where it ran.` })
+      await p.rerunCheck(r, check)
+    })
   }
 }

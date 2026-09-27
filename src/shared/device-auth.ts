@@ -11,6 +11,7 @@
  * surface runs an agent. This is a reduction in blast radius, not a sandbox.
  */
 import { KEYBOARD_OVERRIDES_SETTING } from './shortcuts'
+import { PullRequestWriteChannels } from './ipc-channels'
 import { governedSettingKey } from './project-settings'
 
 /** `terminal` is separate because a PTY is arbitrary code execution and nothing
@@ -43,7 +44,15 @@ const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> =
   // Removing a worktree can delete uncommitted work once a confirm is passed
   // along, and unprotecting one reopens it to cleanup. Nothing on the phone
   // does either.
-  admin: ['worktree-manager:remove', 'worktree-manager:set-protection', 'kanban:remove-stale-worktree'],
+  // Pull request writes post, approve and merge as the user on GitHub or
+  // Bitbucket. The phone has no Reviews screen yet; reply and resolve may
+  // open to it in a later release. The reads stay open.
+  admin: [
+    'worktree-manager:remove',
+    'worktree-manager:set-protection',
+    'kanban:remove-stale-worktree',
+    ...Object.values(PullRequestWriteChannels),
+  ],
 }
 
 /**

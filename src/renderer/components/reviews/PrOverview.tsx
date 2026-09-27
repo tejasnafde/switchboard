@@ -1,14 +1,17 @@
 /**
- * Overview tab: a failed-checks callout, the description, the activity feed,
- * and on the right the merge blockers, reviewers and checks. Read-only: the
- * merge card says what blocks a merge; merging happens on the host.
+ * Overview tab: a failed-checks callout, the description, the activity feed
+ * with a comment box, and on the right the merge blockers (and the strategy
+ * the header's Merge uses), reviewers and checks with Re-run on a failure.
  */
 import { fmtDuration } from '@shared/format'
-import { PR_HOST_LABEL, type MergeBlocker, type PrDetail, type PrReviewer, type PrSummary } from '@shared/pull-requests'
+import { effectiveMergeStrategy, MERGE_STRATEGY_LABEL } from '@shared/pull-request-writes'
+import { PR_HOST_LABEL, repoKey, type MergeBlocker, type PrDetail, type PrReviewer, type PrSummary } from '@shared/pull-requests'
 import { checkItem } from '@shared/review-context'
 import { MarkdownWithCopyControls } from '../chat/MarkdownWithCopyControls'
 import { Button } from '../ui/button'
+import { useReviewStore } from '../../stores/review-store'
 import { Loaded, usePrResource } from './PrDetailPane'
+import { PrCommentBox, RerunButton } from './PrWriteControls'
 import { shortAgo } from './review-states'
 import { Avatar, CardRow, CHECK_ICON, Icon, openExternal, SideCard, type IconName, type IconTone } from './review-ui'
 import { LinkedChatsCard } from './PrLinkedChats'
@@ -43,6 +46,8 @@ export function PrOverview({ summary, now }: { summary: PrSummary; now: number }
 
 function OverviewBody({ pr, now }: { pr: PrDetail; now: number }) {
   const failed = pr.checkList.filter((c) => c.state === 'failure')
+  const picked = useReviewStore((s) => s.mergeStrategy[repoKey(pr.ref)])
+  const strategy = effectiveMergeStrategy(pr.mergeStrategies, picked)
   const approvals = pr.approvals.required !== null && pr.approvals.required > 0
     ? `${pr.approvals.given} of ${pr.approvals.required}`
     : `${pr.approvals.given} approved`
@@ -84,11 +89,12 @@ function OverviewBody({ pr, now }: { pr: PrDetail; now: number }) {
               <span className="text-[12px] text-[var(--text-muted)] tabular-nums">{shortAgo(a.at, now)}</span>
             </div>
           ))}
+          <PrCommentBox pr={pr} />
         </section>
       </div>
       <div>
         {pr.state === 'open' && (
-          <SideCard title="Merge">
+          <SideCard title="Merge" right={strategy ? MERGE_STRATEGY_LABEL[strategy].toLowerCase() : undefined}>
             <div className="p-3">
               {pr.mergeBlockers.length > 0 ? (
                 <>
@@ -129,6 +135,7 @@ function OverviewBody({ pr, now }: { pr: PrDetail; now: number }) {
               <span className="ml-auto text-[12px] text-[var(--text-secondary)] tabular-nums">
                 {c.durationMs !== null ? fmtDuration(c.durationMs) : c.state === 'pending' ? 'running' : ''}
               </span>
+              <RerunButton pr={pr} check={c} />
             </CardRow>
           ))}
         </SideCard>

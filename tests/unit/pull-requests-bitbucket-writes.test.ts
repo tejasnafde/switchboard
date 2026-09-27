@@ -1,0 +1,155 @@
+/**
+ * Bitbucket writes against a fake fetch: each request's method, URL and JSON
+ * body, the review that is comments first and then approve or request
+ * changes (and how it reports a failure part way), the merge strategy names,
+ * and the typed errors. No test reaches bitbucket.org.
+ */
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+
+import { BITBUCKET_API, BitbucketClient, BitbucketProvider, bitbucketWriteError, type FetchLike } from '../../src/main/pull-requests/bitbucket'
+import { mapBbMergeStrategies } from '../../src/main/pull-requests/bitbucket-map'
+import type { PrRef } from '../../src/shared/pull-requests'
+
+const ref: PrRef = { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2', number: 612 }
+const PR = `${BITBUCKET_API}/repositories/geoiq/ssg-bot-v2/pullrequests/612`
+
+interface Answer { status: number; body?: unknown; headers?: Record<string, string> }
+interface Sent { method: string; url: string; body: unknown; contentType: string | undefined }
+
+function fakeFetch(answers: Answer[] = []) {
+  const sent: Sent[] = []
+  const impl: FetchLike = vi.fn(async (url, init) => {
+    sent.push({ method: init.method ?? 'GET', url, body: init.body ? JSON.parse(init.body) : undefined, contentType: init.headers['Content-Type'] })
+    const a = answers.shift() ?? { status: 200, body: {} }
+    const text = a.body === undefined ? '' : JSON.stringify(a.body)
+    return {
+      ok: a.status >= 200 && a.status < 300,
+      status: a.status,
+      headers: { get: (name: string) => a.headers?.[name.toLowerCase()] ?? null },
+      json: async () => a.body,
+      text: async () => text,
+    }
+  })
+  const provider = new BitbucketProvider(new BitbucketClient({ email: 'me@example.com', apiToken: 'tok-secret' }, impl))
+  return { provider, sent }
+}
+
+describe('Bitbucket write requests', () => {
+  it('replies under the conversation root', async () => {
+    const { provider, sent } = fakeFetch()
+    await provider.reply(ref, '812', 'Done in a1b2c3d.')
+    expect(sent).toEqual([{ method: 'POST', url: `${PR}/comments`, body: { content: { raw: 'Done in a1b2c3d.' }, parent: { id: 812 } }, contentType: 'application/json' }])
+  })
+
+  it('resolves with POST and unresolves with DELETE on the root comment', async () => {
+    const { provider, sent } = fakeFetch([{ status: 200, body: {} }, { status: 204 }])
+    await provider.setResolved(ref, '812', true)
+    await provider.setResolved(ref, '812', false)
+    expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
+      ['POST', `${PR}/comments/812/resolve`, undefined],
+      ['DELETE', `${PR}/comments/812/resolve`, undefined],
+    ])
+  })
+
+  it('anchors a line comment with to on the new side and from on the old side', async () => {
+    const { provider, sent } = fakeFetch()
+    await provider.inlineComment(ref, { path: 'sync/worker.py', side: 'new', line: 86, body: 'Cap it.' })
+    await provider.inlineComment(ref, { path: 'sync/worker.py', side: 'old', line: 84, startLine: 82, body: 'Why?' })
+    await provider.comment(ref, 'On the whole PR')
+    expect(sent.map((s) => s.body)).toEqual([
+      { content: { raw: 'Cap it.' }, inline: { path: 'sync/worker.py', to: 86 } },
+      { content: { raw: 'Why?' }, inline: { path: 'sync/worker.py', from: 84, start_from: 82 } },
+      { content: { raw: 'On the whole PR' } },
+    ])
+  })
+
+  it('submits a review as the comments, the summary, then the verdict', async () => {
+    const { provider, sent } = fakeFetch()
+    await provider.submitReview(ref, { event: 'request_changes', body: 'Two things.', comments: [
+      { path: 'a.py', side: 'new', line: 1, body: 'one' },
+      { path: 'b.py', side: 'new', line: 2, body: 'two' },
+    ] })
+    expect(sent.map((s) => [s.method, s.url.replace(PR, '')])).toEqual([
+      ['POST', '/comments'],
+      ['POST', '/comments'],
+      ['POST', '/comments'],
+      ['POST', '/request-changes'],
+    ])
+    expect(sent[2].body).toEqual({ content: { raw: 'Two things.' } })
+  })
+
+  it('approves without a summary comment when there is none', async () => {
+    const { provider, sent } = fakeFetch()
+    await provider.submitReview(ref, { event: 'approve', body: '', comments: [] })
+    expect(sent.map((s) => [s.method, s.url])).toEqual([['POST', `${PR}/approve`]])
+  })
+
+  it('says how many comments went when a review fails part way', async () => {
+    const { provider, sent } = fakeFetch([{ status: 201, body: {} }, { status: 429, headers: { 'retry-after': '30' } }])
+    await expect(provider.submitReview(ref, { event: 'comment', body: '', comments: [
+      { path: 'a.py', side: 'new', line: 1, body: 'one' },
+      { path: 'b.py', side: 'new', line: 2, body: 'two' },
+    ] })).rejects.toMatchObject({ error: { kind: 'rate_limited', postedComments: 1 } })
+    expect(sent).toHaveLength(2)
+  })
+
+  it('merges with the Bitbucket strategy name', async () => {
+    const { provider, sent } = fakeFetch([{ status: 200, body: {} }, { status: 202 }])
+    await provider.merge(ref, 'merge_commit')
+    await provider.merge(ref, 'rebase')
+    expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
+      ['POST', `${PR}/merge`, { type: 'pullrequest', merge_strategy: 'merge_commit' }],
+      ['POST', `${PR}/merge`, { type: 'pullrequest', merge_strategy: 'rebase_fast_forward' }],
+    ])
+  })
+
+  it('never sends a re-run: the API has none', async () => {
+    const { provider, sent } = fakeFetch()
+    await expect(provider.rerunCheck()).rejects.toMatchObject({ error: { kind: 'forbidden' } })
+    expect(sent).toHaveLength(0)
+  })
+})
+
+describe('bitbucketWriteError', () => {
+  const res = (status: number, body?: unknown, headers: Record<string, string> = {}) => ({
+    status,
+    headers: { get: (n: string) => headers[n.toLowerCase()] ?? null },
+    text: async () => (body === undefined ? '' : JSON.stringify(body)),
+  })
+
+  it.each([
+    [400, { error: { message: 'Bad request', detail: 'inline.to must be on the diff' } }, 'invalid', 'Bad request: inline.to must be on the diff'],
+    [401, undefined, 'token_rejected', 'Bitbucket rejected the email and API token.'],
+    [403, { error: { message: 'You cannot approve your own pull request' } }, 'forbidden', 'You cannot approve your own pull request'],
+    [404, undefined, 'stale', 'Bitbucket could not find it; it may have been deleted.'],
+    [409, { error: { message: 'Pull request has unresolved merge conflicts' } }, 'conflict', 'Pull request has unresolved merge conflicts'],
+    [500, 'not json', 'unknown', 'Bitbucket answered 500.'],
+  ])('%d -> %s', async (status, body, kind, message) => {
+    expect(await bitbucketWriteError(res(status, body))).toEqual({ kind, host: 'bitbucket', message })
+  })
+
+  it('carries the retry time of a rate limit', async () => {
+    const error = await bitbucketWriteError(res(429, undefined, { 'retry-after': '60' }))
+    expect(error.kind).toBe('rate_limited')
+    expect(error.retryAt).toBeGreaterThan(Date.now())
+  })
+
+  it('never puts the token in an error', async () => {
+    const { provider } = fakeFetch([{ status: 403, body: { error: { message: 'Forbidden' } } }])
+    const err = await provider.comment(ref, 'x').catch((e: unknown) => e)
+    expect(JSON.stringify(err)).not.toContain('tok-secret')
+  })
+})
+
+describe('mapBbMergeStrategies', () => {
+  it('maps the destination branch strategies, merge commit first', () => {
+    expect(mapBbMergeStrategies({ destination: { branch: { name: 'main', merge_strategies: ['squash', 'rebase_fast_forward', 'merge_commit', 'something_new'] } } }))
+      .toEqual(['merge_commit', 'squash', 'rebase'])
+  })
+
+  it('falls back to Bitbucket defaults when the branch does not list them', () => {
+    expect(mapBbMergeStrategies({ destination: { branch: { name: 'main' } } })).toEqual(['merge_commit', 'fast_forward', 'squash'])
+  })
+})

@@ -1,6 +1,6 @@
 /**
- * One pull request: the header (host path, title, branches, size) and the
- * Overview / Files / Conversations / Checks tabs. Each tab loads its own
+ * One pull request: the header (host path, title, branches, size, and Merge
+ * or Review) and the Overview / Files / Conversations / Checks tabs. Each tab loads its own
  * data on first open through the review store.
  */
 import { useEffect, type ReactNode } from 'react'
@@ -11,6 +11,7 @@ import { Button } from '../ui/button'
 import { PrChecks } from './PrChecks'
 import { PrConversations } from './PrConversations'
 import { PrFiles } from './PrFiles'
+import { PrHeaderActions } from './PrHeaderActions'
 import { PrOverview } from './PrOverview'
 import { agoPhrase, describePrError } from './review-states'
 import { Icon, NoticeView, openExternal } from './review-ui'
@@ -87,6 +88,7 @@ export function PrDetailPane({ summary, now }: { summary: PrSummary; now: number
           <Button variant="ghost" size="sm" onClick={() => openExternal(pr.url)}>
             <Icon name="ext" />Open in {host}
           </Button>
+          <PrHeaderActions pr={pr} />
         </div>
         <div className="mt-[6px] mb-3 flex flex-wrap items-center gap-[6px] text-[12.5px] text-[var(--text-secondary)]">
           <Branch name={pr.sourceBranch} />into<Branch name={pr.targetBranch} />

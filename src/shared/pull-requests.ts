@@ -7,7 +7,8 @@
  * `HOST_CAPABILITIES` says which features a host has at all, so the UI can
  * tell "zero" from "unknown".
  *
- * Read-only in this release: nothing here describes a write.
+ * The human write actions (reply, resolve, comment, review, merge, re-run)
+ * take the inputs in `pull-request-writes.ts`.
  */
 
 export type PrHost = 'github' | 'bitbucket'
@@ -63,6 +64,8 @@ export interface PrCheck {
   description: string | null
   url: string | null
   durationMs: number | null
+  /** What the host re-runs (a GitHub Actions run id); `null` when this check cannot be re-run from here. */
+  rerunId: string | null
 }
 
 export interface ChecksRollup {
@@ -137,9 +140,14 @@ export interface PrDetail extends PrSummary {
   description: string
   headSha: string | null
   mergeBlockers: MergeBlocker[]
+  /** Strategies the repository allows, merge commit first (`orderMergeStrategies`). */
+  mergeStrategies: MergeStrategy[]
   activity: PrActivity[]
   checkList: PrCheck[]
 }
+
+/** Neutral names; each host maps its own. GitHub has the first three. */
+export type MergeStrategy = 'merge_commit' | 'squash' | 'rebase' | 'fast_forward' | 'squash_fast_forward' | 'rebase_merge'
 
 export interface PrComment {
   id: string
@@ -196,6 +204,9 @@ export interface HostCapabilities {
   requiredApprovals: boolean
   /** Check durations come from the check itself, not from when its status was first and last posted. */
   exactCheckDurations: boolean
+  /** Failed checks can be re-run from Switchboard. When `false`, `rerunUnavailable` says why. */
+  rerunChecks: boolean
+  rerunUnavailable: string | null
 }
 
 /**
@@ -203,9 +214,16 @@ export interface HostCapabilities {
  * whole pull request show in Activity.
  */
 export const HOST_CAPABILITIES: Record<PrHost, HostCapabilities> = {
-  github: { requiredApprovals: true, exactCheckDurations: true },
-  // Bitbucket branch restrictions need repository admin to read.
-  bitbucket: { requiredApprovals: false, exactCheckDurations: false },
+  // Only GitHub Actions runs re-run; a check from another app has `rerunId: null`.
+  github: { requiredApprovals: true, exactCheckDurations: true, rerunChecks: true, rerunUnavailable: null },
+  // Bitbucket branch restrictions need repository admin to read. Its REST API
+  // can start a new pipeline but has no re-run of a failed one.
+  bitbucket: {
+    requiredApprovals: false,
+    exactCheckDurations: false,
+    rerunChecks: false,
+    rerunUnavailable: "Bitbucket's API cannot re-run a pipeline. Re-run it on bitbucket.org from the check's Details.",
+  },
 }
 
 export type PrErrorKind =
@@ -217,6 +235,14 @@ export type PrErrorKind =
   | 'needs_desktop'
   | 'gh_missing'
   | 'not_found'
+  /** Writes: the host or the account does not allow this (your own PR, missing permission). */
+  | 'forbidden'
+  /** Writes: the host refused because of the PR's state (not mergeable, a pending review already open). */
+  | 'conflict'
+  /** Writes: the PR changed since it was shown (new head, a blocker appeared, the thread is gone). */
+  | 'stale'
+  /** Writes: the input was refused before anything was sent. */
+  | 'invalid'
   | 'unknown'
 
 export interface PrError {
@@ -225,6 +251,8 @@ export interface PrError {
   message: string
   /** Rate limits: when the host says to try again. */
   retryAt?: number
+  /** A review that failed part way (Bitbucket posts comments one by one): how many pending comments were posted. */
+  postedComments?: number
 }
 
 export type PrResult<T> = { ok: true; data: T } | { ok: false; error: PrError }

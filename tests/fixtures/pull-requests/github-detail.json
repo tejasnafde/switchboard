@@ -1,7 +1,7 @@
 {
   "data": {
     "viewer": { "login": "tejasnafde" },
-    "repository": { "pullRequest": {
+    "repository": { "mergeCommitAllowed": true, "squashMergeAllowed": true, "rebaseMergeAllowed": false, "pullRequest": {
       "number": 162,
       "title": "Resume the IAP event stream",
       "url": "https://github.com/tejasnafde/switchboard/pull/162",

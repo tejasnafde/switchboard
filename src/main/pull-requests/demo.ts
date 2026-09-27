@@ -3,12 +3,20 @@
  * visual regression harness): the mock's data, no network, no credentials.
  * Times count back from SB_DEMO_NOW so the frozen renderer clock labels
  * them the same on every run.
+ *
+ * Writes never leave the process: each is recorded on
+ * `globalThis.__sbDemoPrWrites` (the e2e reads it from the main process) and
+ * applied to an in-memory overlay, so the screens show the result.
  */
+import type { InlineCommentInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import {
   mergeBlockers,
   rollupChecks,
+  type MergeStrategy,
+  type PrActivity,
   type PrChangedFile,
   type PrCheck,
+  type PrComment,
   type PrConversation,
   type PrDetail,
   type PrPerson,
@@ -39,7 +47,8 @@ const REPOS: Record<string, RepoRef> = {
 }
 
 function check(name: string, state: PrCheck['state'], durationMs: number | null): PrCheck {
-  return { id: name, name, state, description: null, url: null, durationMs }
+  // Failed demo checks re-run on GitHub (an Actions run); Bitbucket's never do.
+  return { id: name, name, state, description: null, url: null, durationMs, rerunId: state === 'failure' ? '9001' : null }
 }
 
 interface Scripted {
@@ -101,20 +110,21 @@ function scripted(now: number): Scripted[] {
   const reviewer = (p: PrPerson, state: PrReviewer['state'], requested = true): PrReviewer => ({ person: p, state, requested })
 
   const botChecks = [check('lint', 'success', 62_000), check('unit', 'success', 220_000), check('integration', 'failure', null), check('build image', 'success', 131_000)]
+  // Bitbucket comment ids are numbers; the write validation refuses anything else.
   const botConversations: PrConversation[] = [
     {
-      id: 'c1', path: 'sync/worker.py', line: 86, side: 'new', resolved: false, outdated: false,
+      id: '101', path: 'sync/worker.py', line: 86, side: 'new', resolved: false, outdated: false,
       comments: [
-        { id: 'c1a', author: PANKAJ, body: 'Cap the jitter too. With 20 % on top of a 300 s cap, two workers can still meet at the ceiling.', createdAt: now - 2 * HOUR, url: null },
+        { id: '1011', author: PANKAJ, body: 'Cap the jitter too. With 20 % on top of a 300 s cap, two workers can still meet at the ceiling.', createdAt: now - 2 * HOUR, url: null },
       ],
     },
     {
-      id: 'c2', path: 'sync/worker.py', line: 111, side: 'new', resolved: false, outdated: false,
-      comments: [{ id: 'c2a', author: PANKAJ, body: 'Log the delay as well, or the retry line says nothing about the backoff.', createdAt: now - 2 * HOUR, url: null }],
+      id: '102', path: 'sync/worker.py', line: 111, side: 'new', resolved: false, outdated: false,
+      comments: [{ id: '1021', author: PANKAJ, body: 'Log the delay as well, or the retry line says nothing about the backoff.', createdAt: now - 2 * HOUR, url: null }],
     },
     {
-      id: 'c3', path: 'tests/test_worker.py', line: 14, side: 'new', resolved: false, outdated: false,
-      comments: [{ id: 'c3a', author: BACKEND, body: 'This test sleeps for real; use the fake clock.', createdAt: now - 40 * MIN, url: null }],
+      id: '103', path: 'tests/test_worker.py', line: 14, side: 'new', resolved: false, outdated: false,
+      comments: [{ id: '1031', author: BACKEND, body: 'This test sleeps for real; use the fake clock.', createdAt: now - 40 * MIN, url: null }],
     },
   ]
   const bot = base({ ...REPOS.bot, number: 612 }, {
@@ -231,11 +241,69 @@ function scripted(now: number): Scripted[] {
   ]
 }
 
+export interface DemoPrWrite {
+  action: string
+  ref: PrRef
+  input: unknown
+}
+
+declare global {
+  var __sbDemoPrWrites: DemoPrWrite[] | undefined
+}
+
+const MERGE_STRATEGIES: Record<'github' | 'bitbucket', MergeStrategy[]> = {
+  github: ['merge_commit', 'squash', 'rebase'],
+  bitbucket: ['merge_commit', 'squash', 'fast_forward'],
+}
+
+/** What the recorded writes changed, applied over the scripted data on every read. */
+interface Overlay {
+  replies: Map<string, PrComment[]>
+  resolved: Map<string, boolean>
+  threads: Map<number, PrConversation[]>
+  activity: Map<number, PrActivity[]>
+  merged: Set<number>
+  review: Map<number, PrReviewer['state']>
+  rerun: Set<string>
+}
+
 class DemoProvider implements PullRequestProvider {
+  private readonly overlay: Overlay = {
+    replies: new Map(), resolved: new Map(), threads: new Map(), activity: new Map(), merged: new Set(), review: new Map(), rerun: new Set(),
+  }
+  private seq = 0
+
   constructor(readonly host: 'github' | 'bitbucket', private readonly now: () => number) {}
 
+  private apply(s: Scripted): Scripted {
+    const o = this.overlay
+    const n = s.summary.ref.number
+    const conversations = [...s.conversations, ...(o.threads.get(n) ?? [])].map((c) => ({
+      ...c,
+      resolved: o.resolved.get(c.id) ?? c.resolved,
+      comments: [...c.comments, ...(o.replies.get(c.id) ?? [])],
+    }))
+    const checkList = s.checkList.map((c) => (o.rerun.has(`${n}:${c.id}`) ? { ...c, state: 'pending' as const, durationMs: null } : c))
+    const verdict = o.review.get(n)
+    const reviewers = verdict
+      ? [...s.summary.reviewers.filter((r) => r.person.login !== ME.login), { person: ME, state: verdict, requested: true }]
+      : s.summary.reviewers
+    const merged = o.merged.has(n)
+    const summary: PrSummary = {
+      ...s.summary,
+      state: merged ? 'merged' : s.summary.state,
+      mergedAt: merged ? this.now() : s.summary.mergedAt,
+      unresolvedConversations: s.conversations.length > 0 || o.threads.has(n) ? conversations.filter((c) => !c.resolved).length : s.summary.unresolvedConversations,
+      checks: rollupChecks(checkList),
+      reviewers,
+      approvals: { ...s.summary.approvals, given: reviewers.filter((r) => r.state === 'approved').length },
+      viewer: verdict ? { ...s.summary.viewer, isRequestedReviewer: false, hasReviewed: true } : s.summary.viewer,
+    }
+    return { ...s, summary, conversations, checkList, activity: [...s.activity, ...(o.activity.get(n) ?? [])] }
+  }
+
   private all(): Scripted[] {
-    return scripted(this.now()).filter((s) => s.summary.ref.host === this.host)
+    return scripted(this.now()).filter((s) => s.summary.ref.host === this.host).map((s) => this.apply(s))
   }
 
   private find(ref: PrRef): Scripted {
@@ -251,7 +319,15 @@ class DemoProvider implements PullRequestProvider {
 
   async detail(ref: PrRef): Promise<PrDetail> {
     const s = this.find(ref)
-    return { ...s.summary, description: s.description, headSha: 'a1b2c3d', mergeBlockers: mergeBlockers(s.summary), activity: s.activity, checkList: s.checkList }
+    return {
+      ...s.summary,
+      description: s.description,
+      headSha: 'a1b2c3d',
+      mergeBlockers: mergeBlockers(s.summary),
+      mergeStrategies: MERGE_STRATEGIES[this.host],
+      activity: s.activity,
+      checkList: s.checkList,
+    }
   }
 
   async files(ref: PrRef): Promise<PrChangedFile[]> {
@@ -264,6 +340,65 @@ class DemoProvider implements PullRequestProvider {
 
   async checks(ref: PrRef): Promise<PrCheck[]> {
     return this.find(ref).checkList
+  }
+
+  private record(action: string, ref: PrRef, input: unknown): void {
+    globalThis.__sbDemoPrWrites ??= []
+    globalThis.__sbDemoPrWrites.push({ action, ref, input })
+  }
+
+  private mine(body: string): PrComment {
+    return { id: String(900_000 + ++this.seq), author: ME, body, createdAt: this.now(), url: null }
+  }
+
+  private addThread(ref: PrRef, c: InlineCommentInput): void {
+    const list = this.overlay.threads.get(ref.number) ?? []
+    list.push({ id: String(900_000 + ++this.seq), path: c.path, line: c.line, side: c.side, resolved: false, outdated: false, comments: [this.mine(c.body)] })
+    this.overlay.threads.set(ref.number, list)
+  }
+
+  private addActivity(ref: PrRef, summary: string, detail: string | null): void {
+    const list = this.overlay.activity.get(ref.number) ?? []
+    list.push({ id: `demo-activity-${++this.seq}`, kind: 'commented', actor: ME, summary, detail, at: this.now() })
+    this.overlay.activity.set(ref.number, list)
+  }
+
+  async reply(ref: PrRef, conversationId: string, body: string): Promise<void> {
+    this.record('reply', ref, { conversationId, body })
+    this.overlay.replies.set(conversationId, [...(this.overlay.replies.get(conversationId) ?? []), this.mine(body)])
+  }
+
+  async setResolved(ref: PrRef, conversationId: string, resolved: boolean): Promise<void> {
+    this.record(resolved ? 'resolve' : 'unresolve', ref, { conversationId })
+    this.overlay.resolved.set(conversationId, resolved)
+  }
+
+  async comment(ref: PrRef, body: string): Promise<void> {
+    this.record('comment', ref, { body })
+    this.addActivity(ref, 'commented', body)
+  }
+
+  async inlineComment(ref: PrRef, comment: InlineCommentInput): Promise<void> {
+    this.record('inline-comment', ref, comment)
+    this.addThread(ref, comment)
+  }
+
+  async submitReview(ref: PrRef, review: SubmitReviewInput): Promise<void> {
+    this.record('submit-review', ref, review)
+    for (const c of review.comments) this.addThread(ref, c)
+    const verdict = review.event === 'approve' ? 'approved' : review.event === 'request_changes' ? 'changes_requested' : 'commented'
+    this.overlay.review.set(ref.number, verdict)
+    this.addActivity(ref, verdict === 'approved' ? 'approved' : verdict === 'changes_requested' ? 'requested changes' : 'reviewed', review.body || null)
+  }
+
+  async merge(ref: PrRef, strategy: MergeStrategy, headSha: string): Promise<void> {
+    this.record('merge', ref, { strategy, headSha })
+    this.overlay.merged.add(ref.number)
+  }
+
+  async rerunCheck(ref: PrRef, check: PrCheck): Promise<void> {
+    this.record('rerun-check', ref, { checkId: check.id, rerunId: check.rerunId })
+    this.overlay.rerun.add(`${ref.number}:${check.id}`)
   }
 }
 

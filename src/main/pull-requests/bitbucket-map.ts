@@ -4,12 +4,14 @@
  * Shapes follow developer.atlassian.com/cloud/bitbucket/rest (pullrequests,
  * diffstat, comments, activity, commit statuses).
  */
+import { orderMergeStrategies } from '@shared/pull-request-writes'
 import {
   mergeBlockers,
   rollupChecks,
   stripHtmlComments,
   type ChangedFileStatus,
   type CheckState,
+  type MergeStrategy,
   type PrActivity,
   type PrChangedFile,
   type PrCheck,
@@ -48,7 +50,7 @@ export interface BbPullRequest {
   draft?: boolean
   author?: BbUser
   source: { branch: { name: string }; commit?: { hash: string } | null }
-  destination: { branch: { name: string } }
+  destination: { branch: { name: string; merge_strategies?: string[]; default_merge_strategy?: string } }
   comment_count?: number
   created_on: string
   updated_on: string
@@ -190,6 +192,7 @@ export function mapBbStatuses(statuses: readonly BbStatus[]): PrCheck[] {
       url: s.url || null,
       // First post to last post: close to the run time for Pipelines, which posts at start and end.
       durationMs: state !== 'pending' && created !== null && updated !== null && updated > created ? updated - created : null,
+      rerunId: null,
     }
   })
 }
@@ -277,6 +280,24 @@ export function mapBbActivity(entries: readonly BbActivity[]): PrActivity[] {
   return deduped.sort((a, b) => a.at - b.at)
 }
 
+const BB_STRATEGY: Record<string, MergeStrategy> = {
+  merge_commit: 'merge_commit',
+  squash: 'squash',
+  fast_forward: 'fast_forward',
+  squash_fast_forward: 'squash_fast_forward',
+  rebase_fast_forward: 'rebase',
+  rebase_merge: 'rebase_merge',
+}
+
+/** Bitbucket's defaults when the destination branch does not list its strategies. */
+const BB_DEFAULT_STRATEGIES: MergeStrategy[] = ['merge_commit', 'squash', 'fast_forward']
+
+export function mapBbMergeStrategies(pr: Pick<BbPullRequest, 'destination'>): MergeStrategy[] {
+  const listed = pr.destination.branch.merge_strategies
+  if (!listed) return orderMergeStrategies(BB_DEFAULT_STRATEGIES)
+  return orderMergeStrategies(listed.map((s) => BB_STRATEGY[s]).filter((s): s is MergeStrategy => !!s))
+}
+
 export function mapBbDetail(
   repo: RepoRef,
   pr: BbPullRequest,
@@ -297,6 +318,7 @@ export function mapBbDetail(
     description: stripHtmlComments(pr.description ?? ''),
     headSha: pr.source.commit?.hash ?? null,
     mergeBlockers: mergeBlockers(withStats, { conflicts: diffstat.some((d) => d.status === 'merge conflict') }),
+    mergeStrategies: mapBbMergeStrategies(pr),
     activity: mapBbActivity(activity),
     checkList: extra.checks,
   }

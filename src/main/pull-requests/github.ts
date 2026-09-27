@@ -3,14 +3,19 @@
  * pull requests, reviews, threads and checks, `gh api` (REST) for changed
  * files with their patches. gh holds the token; Switchboard never asks for
  * it, so nothing here can print one.
+ *
+ * Writes send their JSON body on stdin (`--input -`), never as `-F` fields,
+ * which would read a body starting with `@` as a file name.
  */
 import { execFile } from 'node:child_process'
-import type { PrChangedFile, PrCheck, PrConversation, PrDetail, PrRef, RepoRef } from '@shared/pull-requests'
+import type { InlineCommentInput, ReviewEvent, SubmitReviewInput } from '@shared/pull-request-writes'
+import type { MergeStrategy, PrChangedFile, PrCheck, PrConversation, PrDetail, PrRef, RepoRef } from '@shared/pull-requests'
 import { repoKey } from '@shared/pull-requests'
 import { childProcessEnv } from '../shell-env'
 import { createMainLogger } from '../logger'
 import {
   classifyGhError,
+  classifyGhWriteError,
   mapGhChecks,
   mapGhDetail,
   mapGhFiles,
@@ -19,6 +24,7 @@ import {
   type GhPullFile,
   type GhPullRequest,
   type GhPullRequestDetail,
+  type GhRepoMergeSettings,
   type GhReviewThread,
 } from './github-map'
 import { PrHostError, type PullRequestProvider, type RepoListResult } from './provider'
@@ -32,7 +38,8 @@ export interface GhRunResult {
   code: number | string | null
 }
 
-export type GhRunner = (args: string[]) => Promise<GhRunResult>
+/** `input` is written to gh's stdin (the request body of a `--input -` call). */
+export type GhRunner = (args: string[], opts?: { input?: string }) => Promise<GhRunResult>
 
 const GH_TIMEOUT_MS = 30_000
 const OPEN_PER_REPO = 30
@@ -41,13 +48,40 @@ const MERGED_PER_REPO = 15
 const REPOS_PER_QUERY = 8
 const MAX_FILE_PAGES = 3
 
-export const defaultGhRunner: GhRunner = (args) =>
+export const defaultGhRunner: GhRunner = (args, opts = {}) =>
   new Promise((resolve) => {
-    execFile('gh', args, { env: childProcessEnv(), timeout: GH_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+    const child = execFile('gh', args, { env: childProcessEnv(), timeout: GH_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
       const code = err ? ((err as NodeJS.ErrnoException).code ?? (err as { code?: number }).code ?? 1) : 0
       resolve({ stdout: String(stdout), stderr: String(stderr), code })
     })
+    if (opts.input !== undefined) {
+      child.stdin?.on('error', (err) => log.warn('writing to gh stdin failed', { err: String(err) }))
+      child.stdin?.end(opts.input)
+    }
   })
+
+const MERGE_METHOD: Partial<Record<MergeStrategy, string>> = { merge_commit: 'merge', squash: 'squash', rebase: 'rebase' }
+const REVIEW_EVENT: Record<ReviewEvent, string> = { comment: 'COMMENT', approve: 'APPROVE', request_changes: 'REQUEST_CHANGES' }
+
+/** A line comment in the REST shape both `pulls/:n/comments` and `pulls/:n/reviews` take. */
+export function ghLineComment(c: InlineCommentInput): Record<string, string | number> {
+  const side = c.side === 'old' ? 'LEFT' : 'RIGHT'
+  const out: Record<string, string | number> = { path: c.path, line: c.line, side, body: c.body }
+  if (c.startLine !== undefined) {
+    out.start_line = c.startLine
+    out.start_side = side
+  }
+  return out
+}
+
+const REPLY_MUTATION = `mutation($thread: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $thread, body: $body }) { comment { id } }
+}`
+const RESOLVE_MUTATION = `mutation($thread: ID!) { resolveReviewThread(input: { threadId: $thread }) { thread { id isResolved } } }`
+const UNRESOLVE_MUTATION = `mutation($thread: ID!) { unresolveReviewThread(input: { threadId: $thread }) { thread { id isResolved } } }`
+const HEAD_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { pullRequest(number: $number) { headRefOid } }
+}`
 
 const PR_FIELDS = `
   number title url state isDraft createdAt updatedAt mergedAt
@@ -75,7 +109,7 @@ export function buildListQuery(repos: readonly RepoRef[]): string {
 
 const DETAIL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   viewer { login }
-  repository(owner: $owner, name: $name) { pullRequest(number: $number) {
+  repository(owner: $owner, name: $name) { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed pullRequest(number: $number) {
     ${PR_FIELDS}
     body mergeable
     timelineItems(last: 30, itemTypes: [PULL_REQUEST_REVIEW, ISSUE_COMMENT, MERGED_EVENT, PULL_REQUEST_COMMIT]) { nodes {
@@ -180,11 +214,12 @@ export class GitHubProvider implements PullRequestProvider {
   }
 
   async detail(ref: PrRef): Promise<PrDetail> {
-    const body = await this.graphql<{ viewer: { login: string }; repository: { pullRequest: GhPullRequestDetail | null } | null }>(
+    const body = await this.graphql<{ viewer: { login: string }; repository: (GhRepoMergeSettings & { pullRequest: GhPullRequestDetail | null }) | null }>(
       DETAIL_QUERY, { owner: ref.owner, name: ref.name, number: ref.number })
-    const pr = body.data?.repository?.pullRequest
-    if (!pr) throw new PrHostError({ kind: 'not_found', host: 'github', message: `Pull request #${ref.number} was not found.` })
-    return mapGhDetail(ref, pr, body.data?.viewer.login ?? '')
+    const repo = body.data?.repository
+    const pr = repo?.pullRequest
+    if (!repo || !pr) throw new PrHostError({ kind: 'not_found', host: 'github', message: `Pull request #${ref.number} was not found.` })
+    return mapGhDetail(ref, pr, body.data?.viewer.login ?? '', repo)
   }
 
   async conversations(ref: PrRef): Promise<PrConversation[]> {
@@ -207,5 +242,93 @@ export class GitHubProvider implements PullRequestProvider {
       if (files.length < 100) break
     }
     return mapGhFiles(all)
+  }
+
+  // ─── Writes ────────────────────────────────────────────────────
+
+  /** One REST write with a JSON body. Returns the parsed answer (may be `null` for 204). */
+  private async rest<T = unknown>(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: object): Promise<T | null> {
+    const args = ['api', '--method', method, path]
+    if (body) args.push('--input', '-')
+    const res = await this.run(args, body ? { input: JSON.stringify(body) } : {})
+    if (res.code !== 0) {
+      const error = classifyGhWriteError(res)
+      log.warn('GitHub write refused', { method, path, kind: error.kind })
+      throw new PrHostError(error)
+    }
+    return parseJson<T>(res.stdout)
+  }
+
+  private async mutate(query: string, variables: Record<string, string>): Promise<void> {
+    const res = await this.run(['api', 'graphql', '--input', '-'], { input: JSON.stringify({ query, variables }) })
+    const body = parseJson<GraphqlResponse<unknown>>(res.stdout)
+    if (res.code !== 0 || body?.errors?.length) {
+      const error = classifyGhWriteError(res)
+      log.warn('GitHub mutation refused', { kind: error.kind })
+      throw new PrHostError(error)
+    }
+  }
+
+  private repoPath(ref: PrRef): string {
+    return `repos/${ref.owner}/${ref.name}`
+  }
+
+  async reply(_ref: PrRef, conversationId: string, body: string): Promise<void> {
+    await this.mutate(REPLY_MUTATION, { thread: conversationId, body })
+  }
+
+  async setResolved(_ref: PrRef, conversationId: string, resolved: boolean): Promise<void> {
+    await this.mutate(resolved ? RESOLVE_MUTATION : UNRESOLVE_MUTATION, { thread: conversationId })
+  }
+
+  async comment(ref: PrRef, body: string): Promise<void> {
+    await this.rest('POST', `${this.repoPath(ref)}/issues/${ref.number}/comments`, { body })
+  }
+
+  async inlineComment(ref: PrRef, comment: InlineCommentInput): Promise<void> {
+    const pr = await this.pullRequestQuery<{ headRefOid: string }>(HEAD_QUERY, ref)
+    await this.rest('POST', `${this.repoPath(ref)}/pulls/${ref.number}/comments`, { commit_id: pr.headRefOid, ...ghLineComment(comment) })
+  }
+
+  /**
+   * With pending comments: create a pending review holding them, then submit
+   * it, so the comments and the verdict land together. A submit that fails
+   * deletes the pending review, which would otherwise block the next try
+   * ("one pending review per pull request").
+   */
+  async submitReview(ref: PrRef, review: SubmitReviewInput): Promise<void> {
+    const reviews = `${this.repoPath(ref)}/pulls/${ref.number}/reviews`
+    const event = REVIEW_EVENT[review.event]
+    if (review.comments.length === 0) {
+      await this.rest('POST', reviews, { event, body: review.body })
+      return
+    }
+    const pending = await this.rest<{ id?: number }>('POST', reviews, { comments: review.comments.map(ghLineComment) })
+    const id = pending?.id
+    if (!Number.isInteger(id)) throw new PrHostError({ kind: 'unknown', host: 'github', message: 'GitHub did not return the pending review.' })
+    try {
+      await this.rest('POST', `${reviews}/${id}/events`, { event, body: review.body })
+    } catch (err) {
+      try {
+        await this.rest('DELETE', `${reviews}/${id}`)
+      } catch (cleanup) {
+        log.warn('deleting the unsent pending review failed', { number: ref.number, err: String(cleanup) })
+      }
+      throw err
+    }
+  }
+
+  /** `sha` makes GitHub refuse (409) when the head moved after the service's pre-check. */
+  async merge(ref: PrRef, strategy: MergeStrategy, headSha: string): Promise<void> {
+    const method = MERGE_METHOD[strategy]
+    if (!method) throw new PrHostError({ kind: 'invalid', host: 'github', message: 'GitHub has no such merge strategy.' })
+    await this.rest('PUT', `${this.repoPath(ref)}/pulls/${ref.number}/merge`, { merge_method: method, sha: headSha })
+  }
+
+  async rerunCheck(ref: PrRef, check: PrCheck): Promise<void> {
+    if (!check.rerunId || !/^[0-9]{1,20}$/.test(check.rerunId)) {
+      throw new PrHostError({ kind: 'invalid', host: 'github', message: 'This check is not a GitHub Actions run.' })
+    }
+    await this.rest('POST', `${this.repoPath(ref)}/actions/runs/${check.rerunId}/rerun-failed-jobs`)
   }
 }

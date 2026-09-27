@@ -20,7 +20,7 @@ import {
   PAIRING_CODE_TTL_MS,
   type DeviceSession,
 } from '../../src/shared/device-auth'
-import { AppChannels, KanbanChannels, PullRequestChannels, SourceControlChannels, WorktreeManagerChannels } from '../../src/shared/ipc-channels'
+import { AppChannels, KanbanChannels, PullRequestChannels, PullRequestWriteChannels, SourceControlChannels, WorktreeManagerChannels } from '../../src/shared/ipc-channels'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '../../src/shared/session-defaults'
 
 describe('isChannelAllowed', () => {
@@ -39,6 +39,26 @@ describe('isChannelAllowed', () => {
     expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.GET_PROTECTION)).toBe(true)
     expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.INVENTORY)).toBe(true)
     expect(isChannelAllowed(FULL_SCOPES, WorktreeManagerChannels.REMOVE)).toBe(true)
+  })
+
+  it('keeps a phone from every pull request write while it may still read and link', () => {
+    const writes = Object.values(PullRequestWriteChannels)
+    expect(writes).toEqual([
+      'pull-requests:reply',
+      'pull-requests:resolve',
+      'pull-requests:unresolve',
+      'pull-requests:comment',
+      'pull-requests:inline-comment',
+      'pull-requests:submit-review',
+      'pull-requests:merge',
+      'pull-requests:rerun-check',
+    ])
+    for (const channel of writes) {
+      expect(isChannelAllowed(PHONE_SCOPES, channel), channel).toBe(false)
+      expect(isChannelAllowed(FULL_SCOPES, channel), channel).toBe(true)
+    }
+    expect(isChannelAllowed(PHONE_SCOPES, PullRequestChannels.DETAIL)).toBe(true)
+    expect(isChannelAllowed(PHONE_SCOPES, PullRequestChannels.LINK)).toBe(true)
   })
 
   it('keeps chat-only file mutations away from the command-bearing launch config', () => {

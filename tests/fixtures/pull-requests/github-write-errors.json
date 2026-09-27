@@ -1,0 +1,93 @@
+{
+  "_note": "gh 2.x output for refused writes, shaped after GitHub's documented REST and GraphQL error bodies. Never recorded from a live write: Switchboard's tests do not call a host write endpoint.",
+  "cases": [
+    {
+      "name": "merge on a moved head",
+      "code": 1,
+      "stdout": "{\"message\":\"Head branch was modified. Review and try the merge again.\",\"documentation_url\":\"https://docs.github.com/rest/pulls/pulls#merge-a-pull-request\",\"status\":\"409\"}",
+      "stderr": "gh: Head branch was modified. Review and try the merge again. (HTTP 409)\n",
+      "kind": "stale",
+      "message": "Head branch was modified. Review and try the merge again."
+    },
+    {
+      "name": "merge that GitHub will not do",
+      "code": 1,
+      "stdout": "{\"message\":\"Pull Request is not mergeable\",\"documentation_url\":\"https://docs.github.com/rest/pulls/pulls#merge-a-pull-request\",\"status\":\"405\"}",
+      "stderr": "gh: Pull Request is not mergeable (HTTP 405)\n",
+      "kind": "conflict",
+      "message": "Pull Request is not mergeable"
+    },
+    {
+      "name": "approving your own pull request",
+      "code": 1,
+      "stdout": "{\"message\":\"Unprocessable Entity\",\"errors\":[\"Can not approve your own pull request\"],\"documentation_url\":\"https://docs.github.com/rest/pulls/reviews#create-a-review-for-a-pull-request\",\"status\":\"422\"}",
+      "stderr": "gh: Unprocessable Entity (HTTP 422)\n",
+      "kind": "forbidden",
+      "message": "Unprocessable Entity: Can not approve your own pull request"
+    },
+    {
+      "name": "a pending review already open",
+      "code": 1,
+      "stdout": "{\"message\":\"Unprocessable Entity\",\"errors\":[\"User can only have one pending review per pull request\"],\"status\":\"422\"}",
+      "stderr": "gh: Unprocessable Entity (HTTP 422)\n",
+      "kind": "conflict",
+      "message": "Unprocessable Entity: User can only have one pending review per pull request"
+    },
+    {
+      "name": "a line outside the diff",
+      "code": 1,
+      "stdout": "{\"message\": \"Validation Failed\", \"errors\": [{\"resource\": \"PullRequestReviewComment\", \"code\": \"invalid\", \"field\": \"line\", \"message\": \"pull_request_review_thread.line must be part of the diff\"}], \"status\": \"422\"}",
+      "stderr": "gh: Validation Failed (HTTP 422)\n",
+      "kind": "invalid",
+      "message": "Validation Failed: pull_request_review_thread.line must be part of the diff"
+    },
+    {
+      "name": "no push access",
+      "code": 1,
+      "stdout": "{\"message\":\"Resource not accessible by integration\",\"documentation_url\":\"https://docs.github.com/rest\",\"status\":\"403\"}",
+      "stderr": "gh: Resource not accessible by integration (HTTP 403)\n",
+      "kind": "forbidden",
+      "message": "Resource not accessible by integration"
+    },
+    {
+      "name": "secondary rate limit",
+      "code": 1,
+      "stdout": "{\"message\":\"You have exceeded a secondary rate limit. Please wait a few minutes before you try again.\",\"status\":\"403\"}",
+      "stderr": "gh: You have exceeded a secondary rate limit. Please wait a few minutes before you try again. (HTTP 403)\n",
+      "kind": "rate_limited",
+      "message": "GitHub rate limit reached."
+    },
+    {
+      "name": "GraphQL: thread you cannot resolve",
+      "code": 1,
+      "stdout": "{\"data\":{\"resolveReviewThread\":null},\"errors\":[{\"type\":\"FORBIDDEN\",\"path\":[\"resolveReviewThread\"],\"message\":\"tejas does not have permission to resolve this thread.\"}]}",
+      "stderr": "gh: tejas does not have permission to resolve this thread.\n",
+      "kind": "forbidden",
+      "message": "tejas does not have permission to resolve this thread."
+    },
+    {
+      "name": "GraphQL: thread gone",
+      "code": 1,
+      "stdout": "{\"data\":{\"addPullRequestReviewThreadReply\":null},\"errors\":[{\"type\":\"NOT_FOUND\",\"path\":[\"addPullRequestReviewThreadReply\"],\"message\":\"Could not resolve to a node with the global id of 'PRRT_gone'\"}]}",
+      "stderr": "gh: Could not resolve to a node with the global id of 'PRRT_gone'\n",
+      "kind": "stale",
+      "message": "Could not resolve to a node with the global id of 'PRRT_gone'"
+    },
+    {
+      "name": "signed out",
+      "code": 1,
+      "stdout": "{\"message\":\"Bad credentials\",\"status\":\"401\"}",
+      "stderr": "gh: Bad credentials (HTTP 401)\n",
+      "kind": "token_rejected",
+      "message": "gh is signed out or its token was rejected."
+    },
+    {
+      "name": "no network",
+      "code": 1,
+      "stdout": "",
+      "stderr": "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com\n",
+      "kind": "offline",
+      "message": "Could not reach github.com."
+    }
+  ]
+}
