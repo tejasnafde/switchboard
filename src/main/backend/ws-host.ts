@@ -23,7 +23,7 @@ import {
   PHONE_SCOPES,
   type DeviceScope,
 } from '@shared/device-auth'
-import { EventReplayBuffer } from '@shared/event-replay-buffer'
+import { EventReplayBuffer, resumeFrom } from '@shared/event-replay-buffer'
 import { FilesChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
@@ -345,15 +345,7 @@ export class WsHost implements BackendHost {
       return
     }
     const requested = frame.since ?? 0
-    const sameEpoch = frame.epoch === this.epoch
-    // A cursor from another process indexes a sequence space that no longer
-    // exists, so replaying against it would deliver the wrong events entirely.
-    // `requested`, not the zeroed cursor: a cross-epoch client HAS lost events,
-    // and reporting otherwise would let it stitch a broken transcript.
-    const result =
-      sameEpoch && requested > 0
-        ? this.replay.since(requested, (channel) => isChannelAllowed(scopes, channel))
-        : { frames: [], gap: requested > 0 }
+    const result = resumeFrom(this.replay, this.epoch, frame, (channel) => isChannelAllowed(scopes, channel))
     // Replay BEFORE the ready marker: the client releases held frames on ready,
     // so anything after it is applied out of order and then swallowed by the
     // duplicate guard. Nothing is sent on a gap - the client re-seeds anyway.
