@@ -9,7 +9,7 @@
  * stopping the session revokes the token.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -128,11 +128,26 @@ describe('the stdio bridge against the server', () => {
   it('drops a bridge whose token it does not know', async () => {
     const server = new SwitchboardMcpServer({ bridgeDir: () => bridgeDir })
     const launch = await server.open('chat-1', () => [echo])
-    const client = connect({ ...launch, env: { ...launch.env, SWITCHBOARD_MCP_TOKEN: 'forged' } })
+    const forged = join(bridgeDir, 'forged.token')
+    writeFileSync(forged, 'forged')
+    const client = connect({ ...launch, env: { ...launch.env, SWITCHBOARD_MCP_TOKEN_FILE: forged } })
     const answered = vi.fn()
     void client.request('initialize', {}).then(answered)
     await client.exited
     expect(answered).not.toHaveBeenCalled()
+    await server.stop()
+  })
+
+  it('keeps the token off every command line: the launch names a file only this user can read', async () => {
+    const server = new SwitchboardMcpServer({ bridgeDir: () => bridgeDir })
+    const launch = await server.open('chat-1', () => [echo])
+    const file = launch.env.SWITCHBOARD_MCP_TOKEN_FILE
+    const token = readFileSync(file, 'utf8')
+    expect(token.length).toBeGreaterThan(20)
+    expect(JSON.stringify(launch)).not.toContain(token)
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o077).toBe(0)
+    server.close('chat-1')
+    expect(() => statSync(file)).toThrow()
     await server.stop()
   })
 

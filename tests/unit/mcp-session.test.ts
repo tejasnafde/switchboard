@@ -78,6 +78,34 @@ describe('McpSession', () => {
     expect(signals.every((sig) => sig.aborted)).toBe(true)
   })
 
+  it('reports progress on a waiting call that carries a progress token, and stops when it ends', async () => {
+    let finish: () => void = () => {}
+    const slow: McpTool = { ...echo, call: () => new Promise((resolve) => { finish = () => resolve(toolText('done')) }) }
+    const sent: Array<Record<string, unknown>> = []
+    const s = new McpSession({ serverName: 's', serverVersion: '1', tools: [slow], send: (m) => sent.push(m as Record<string, unknown>), progressIntervalMs: 5 })
+    s.handle({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'echo', _meta: { progressToken: 'p1' } } })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    const progress = sent.filter((m) => m.method === 'notifications/progress').map((m) => m.params as { progressToken: string; progress: number })
+    expect(progress.length).toBeGreaterThan(1)
+    expect(progress.every((p) => p.progressToken === 'p1')).toBe(true)
+    expect(progress.map((p) => p.progress)).toEqual([...progress.keys()].map((i) => i + 1))
+    finish()
+    await tick()
+    const count = sent.length
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(sent.length).toBe(count)
+    expect(sent.at(-1)).toMatchObject({ id: 4, result: { content: [{ text: 'done' }] } })
+  })
+
+  it('sends no progress for a call without a token', async () => {
+    const sent: unknown[] = []
+    const s = new McpSession({ serverName: 's', serverVersion: '1', tools: [{ ...echo, call: () => new Promise(() => {}) }], send: (m) => sent.push(m), progressIntervalMs: 5 })
+    s.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo' } })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(sent).toEqual([])
+    s.close()
+  })
+
   it('ignores notifications and responses it did not ask for', () => {
     const send = vi.fn()
     const s = new McpSession({ serverName: 's', serverVersion: '1', tools: [], send })

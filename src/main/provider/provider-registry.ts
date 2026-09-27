@@ -288,7 +288,6 @@ export class ProviderRegistry implements PeerToolHost {
    */
   private readonly agentApprovals = new AgentApprovalBroker({
     publish: (event) => this.publish(event),
-    onWaiting: (threadId, waiting) => this.sessionAdapters.get(threadId)?.setAwaitingUser?.(threadId, waiting),
     sameChat: (a, b) => a === b || resolveRootThreadId(a) === resolveRootThreadId(b),
   })
 
@@ -297,12 +296,6 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** Pull request writes per chat, shared by every client of this backend. */
   private readonly agentWriteBudget = new AgentWriteBudget()
-
-  /**
-   * Live runtime mode per session, for the MCP tools: the mode can change per
-   * turn and mid-turn, and the server enforces plan mode itself.
-   */
-  private sessionRuntimeModes = new Map<string, RuntimeMode>()
 
   /**
    * Hop depth of each thread's current turn - how many consecutive
@@ -750,7 +743,9 @@ export class ProviderRegistry implements PeerToolHost {
   private async openSwitchboardMcp(threadId: string, provider: ProviderKind): Promise<SwitchboardMcpLaunch | null> {
     if (!this.switchboardMcp) return null
     const chatId = (): string => resolveRootThreadId(threadId)
-    const runtimeMode = (): RuntimeMode => this.sessionRuntimeModes.get(threadId) ?? 'sandbox'
+    // The adapter's own record, which applies a queued message's mode only when it starts.
+    const runtimeMode = (): RuntimeMode =>
+      this.sessionAdapters.get(threadId)?.runtimeModeOf?.(threadId) ?? this.sessionDescriptors.get(threadId)?.runtimeMode ?? 'sandbox'
     const publish = (event: RuntimeEvent): void => this.publish(event)
     try {
       return await this.switchboardMcp.open(threadId, () => [
@@ -1123,7 +1118,6 @@ export class ProviderRegistry implements PeerToolHost {
           if (queuedId) {
             this.queuedTurns.expect(queuedId, queuedTurnComposerText(input.providerText, input.displayBody, input.pillsMeta), Date.now())
           }
-          if (input.runtimeMode) this.sessionRuntimeModes.set(threadId, input.runtimeMode)
           try {
             await adapter.sendTurn(threadId, input.providerText, input.runtimeMode, input.images, input.delivery, queuedId)
           } catch (error) {
@@ -1201,7 +1195,6 @@ export class ProviderRegistry implements PeerToolHost {
       this.turnDepth.delete(threadId)
       this.agentApprovals.closeThread(threadId)
       this.switchboardMcp?.close(threadId)
-      this.sessionRuntimeModes.delete(threadId)
       this.pendingRequests.delete(threadId)
       this.checkpoints.clear(threadId)
       this.driftWatcher.onSessionStopped(threadId)
@@ -1519,7 +1512,6 @@ export class ProviderRegistry implements PeerToolHost {
       this.sessionEpochs.set(opts.threadId, executionEpoch)
       const switchboardMcp = await this.openSwitchboardMcp(opts.threadId, opts.provider)
       if (switchboardMcp) enrichedOpts.switchboardMcp = switchboardMcp
-      this.sessionRuntimeModes.set(opts.threadId, defaults.runtimeMode ?? 'sandbox')
       const session = await adapter.startSession(enrichedOpts, (event) => {
         if (this.sessionEpochs.get(opts.threadId) !== executionEpoch) return
         if (event.type === 'session') latestSessionId = event.sessionId
@@ -1545,7 +1537,6 @@ export class ProviderRegistry implements PeerToolHost {
         })
       }
       this.sessionAdapters.set(opts.threadId, adapter)
-      this.sessionRuntimeModes.set(opts.threadId, session.runtimeMode)
       this.sessionCwd.set(opts.threadId, session.cwd)
       // Kept so `listSessions` can describe this session to a client that
       // connects later, rather than only to the one that started it.
@@ -1567,7 +1558,6 @@ export class ProviderRegistry implements PeerToolHost {
         }
         if (!this.sessionAdapters.has(initialOpts.threadId)) {
           this.switchboardMcp?.close(initialOpts.threadId)
-          this.sessionRuntimeModes.delete(initialOpts.threadId)
         }
         rejectStart(err)
         throw err
@@ -1849,7 +1839,6 @@ export class ProviderRegistry implements PeerToolHost {
         const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(threadId), undefined)
         if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
         releasePreparation()
-        if (runtimeMode) this.sessionRuntimeModes.set(threadId, runtimeMode)
         try {
           await adapter.sendTurn(threadId, message, runtimeMode, acceptedImages)
         } catch (error) {
@@ -1904,7 +1893,6 @@ export class ProviderRegistry implements PeerToolHost {
     this.host.handle(ProviderChannels.SET_RUNTIME_MODE, async (threadId: string, mode: RuntimeMode) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return
-      this.sessionRuntimeModes.set(threadId, mode)
       await adapter.setRuntimeMode(threadId, mode)
     })
 

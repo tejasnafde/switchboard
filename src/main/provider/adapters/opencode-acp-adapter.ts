@@ -747,6 +747,10 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     active.onEvent({ type: 'request.closed', threadId, requestId, decision })
   }
 
+  runtimeModeOf(threadId: string): RuntimeMode | undefined {
+    return this.sessions.get(threadId)?.session.runtimeMode
+  }
+
   async setRuntimeMode(threadId: string, mode: RuntimeMode): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return

@@ -253,6 +253,21 @@ describe('reply_to_conversation', () => {
   })
 })
 
+describe('a call the agent cancels after the approval', () => {
+  it('posts nothing, since the agent would never hear it happened', async () => {
+    const controller = new AbortController()
+    const { tools, calls } = setup({
+      answer: () => {
+        queueMicrotask(() => controller.abort())
+        return { decision: 'approve' as const, response: {} }
+      },
+    })
+    const reply = tools.find((t) => t.name === 'reply_to_conversation')!
+    await reply.call({ conversationId: 'PRRT_1', text: 'Done.' }, { signal: controller.signal })
+    expect(calls).toEqual([])
+  })
+})
+
 describe('resolve_conversation', () => {
   it('resolves after the card', async () => {
     const { call, calls, events } = setup({ answer: approve() })

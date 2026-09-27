@@ -31,7 +31,7 @@ export type FeedItem =
   | { kind: 'text'; id: string; text: string; stream: 'assistant' | 'reasoning' | 'plan'; done: boolean; durationMs?: number }
   | { kind: 'tool'; id: string; toolName: string; input: unknown; output?: string; state: 'running' | 'done' }
   | { kind: 'denial'; id: string; toolName: string; reason: string }
-  | { kind: 'approval'; id: string; requestId: string; toolName: string; detail: string; requestType: string; state: 'pending' | 'approve' | 'deny' }
+  | { kind: 'approval'; id: string; requestId: string; toolName: string; detail: string; requestType: string; state: 'pending' | 'approve' | 'deny'; desktopOnly?: boolean }
   | { kind: 'question'; id: string; requestId: string; questions: Question[]; answers?: string[][] }
   | { kind: 'plan'; id: string; planId: string; markdown: string }
   | { kind: 'fileEdit'; id: string; relPath: string; changeKind: 'add' | 'modify' | 'delete'; oldContent: string; newContent: string }
@@ -357,6 +357,8 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
                 detail: event.detail,
                 requestType: event.requestType,
                 state: 'pending',
+                // A pull request write an agent asked for: the backend takes its approval from the desktop only.
+                ...(event.hostWrite ? { desktopOnly: true } : {}),
               },
             ],
           }

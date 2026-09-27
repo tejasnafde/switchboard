@@ -10,13 +10,15 @@
  * the chat (the provider registry), because the chat's mode, events and
  * approval cards live there.
  */
+import { randomBytes } from 'node:crypto'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { createMainLogger } from '../logger'
 import { appVersion, userDataDir } from '../runtime'
 import { McpSession, type McpTool } from './mcp-session'
 import { McpTokens } from './mcp-tokens'
-import { ensureStdioBridge, MCP_AUTH_KEY, MCP_PORT_ENV, MCP_TOKEN_ENV } from './stdio-bridge'
+import { ensureStdioBridge, MCP_AUTH_KEY, MCP_PORT_ENV, MCP_TOKEN_FILE_ENV } from './stdio-bridge'
 
 const log = createMainLogger('mcp:server')
 
@@ -49,6 +51,7 @@ export interface SwitchboardMcpServerOptions {
 interface ChatEntry {
   tools: () => McpTool[]
   sockets: Set<Socket>
+  tokenFile: string
 }
 
 export class SwitchboardMcpServer {
@@ -56,8 +59,21 @@ export class SwitchboardMcpServer {
   private readonly chats = new Map<string, ChatEntry>()
   private server: Server | null = null
   private listening: Promise<number> | null = null
+  /** Written once per process: the script is a constant. */
+  private bridge: { script: string; tokenDir: string } | null = null
 
   constructor(private readonly opts: SwitchboardMcpServerOptions = {}) {}
+
+  private bridgeFiles(): { script: string; tokenDir: string } {
+    if (this.bridge) return this.bridge
+    const dir = (this.opts.bridgeDir ?? (() => join(userDataDir(), 'mcp')))()
+    const tokenDir = join(dir, 'tokens')
+    // Tokens live in memory; a file left by an earlier process names nothing.
+    rmSync(tokenDir, { recursive: true, force: true })
+    mkdirSync(tokenDir, { recursive: true, mode: 0o700 })
+    this.bridge = { script: ensureStdioBridge(dir), tokenDir }
+    return this.bridge
+  }
 
   /**
    * Give a chat its token and return how its agent launches the bridge.
@@ -65,15 +81,16 @@ export class SwitchboardMcpServer {
    */
   async open(threadId: string, tools: () => McpTool[]): Promise<SwitchboardMcpLaunch> {
     const port = await this.listen()
-    const bridge = ensureStdioBridge((this.opts.bridgeDir ?? (() => join(userDataDir(), 'mcp')))())
+    const { script, tokenDir } = this.bridgeFiles()
     this.close(threadId)
-    const token = this.tokens.mint(threadId)
-    this.chats.set(threadId, { tools, sockets: new Set() })
+    const tokenFile = join(tokenDir, `${randomBytes(8).toString('hex')}.token`)
+    writeFileSync(tokenFile, this.tokens.mint(threadId), { mode: 0o600 })
+    this.chats.set(threadId, { tools, sockets: new Set(), tokenFile })
     return {
       // Electron's own binary runs as Node with ELECTRON_RUN_AS_NODE; the headless server is Node already.
       command: process.execPath,
-      args: [bridge],
-      env: { ELECTRON_RUN_AS_NODE: '1', [MCP_PORT_ENV]: String(port), [MCP_TOKEN_ENV]: token },
+      args: [script],
+      env: { ELECTRON_RUN_AS_NODE: '1', [MCP_PORT_ENV]: String(port), [MCP_TOKEN_FILE_ENV]: tokenFile },
     }
   }
 
@@ -83,6 +100,7 @@ export class SwitchboardMcpServer {
     const entry = this.chats.get(threadId)
     if (!entry) return
     this.chats.delete(threadId)
+    rmSync(entry.tokenFile, { force: true })
     for (const socket of entry.sockets) socket.destroy()
   }
 

@@ -6,7 +6,7 @@
  * "the state is right in the store but wrong on screen".
  */
 import React from 'react'
-import { ToolItem, TextItem } from '../ThreadFeedItems'
+import { ApprovalItem, ToolItem, TextItem } from '../ThreadFeedItems'
 import type { FeedItem } from '../../stores/chat'
 import { renderComponent } from '../../test/render'
 
@@ -119,5 +119,32 @@ describe('TextItem', () => {
     const text = v.texts().join(' ')
     expect(text).toContain('Working on it.')
     expect(text).not.toContain('agent_dig')
+  })
+})
+
+describe('ApprovalItem', () => {
+  type Approval = Extract<FeedItem, { kind: 'approval' }>
+  const approval = (over: Partial<Approval> = {}): Approval => ({
+    kind: 'approval',
+    id: 'a-1',
+    requestId: 'sbmcp_1',
+    toolName: 'mcp__switchboard__reply_to_conversation',
+    detail: 'Reply on app #612',
+    requestType: 'tool',
+    state: 'pending',
+    ...over,
+  })
+
+  it('offers Approve and Deny for an ordinary approval', () => {
+    const text = renderComponent(<ApprovalItem item={approval()} onDecide={() => {}} />).texts().join(' ')
+    expect(text).toContain('Approve')
+    expect(text).toContain('Deny')
+  })
+
+  it('offers only Deny for a pull request write, which the desktop approves', () => {
+    const texts = renderComponent(<ApprovalItem item={approval({ desktopOnly: true })} onDecide={() => {}} />).texts()
+    expect(texts).not.toContain('Approve')
+    expect(texts).toContain('Deny')
+    expect(texts.join(' ')).toContain('Approve this on the desktop')
   })
 })

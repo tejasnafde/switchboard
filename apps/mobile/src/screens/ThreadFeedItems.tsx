@@ -133,11 +133,14 @@ export const ApprovalItem = memo(function ApprovalItem({
       <Text style={styles.toolOutput} numberOfLines={6}>
         {item.detail}
       </Text>
+      {pending && item.desktopOnly && <Text style={styles.toolOutput}>Approve this on the desktop. You can deny it here.</Text>}
       {pending && (
         <View style={styles.buttonRow}>
-          <Pressable style={[styles.actionButton, styles.approveButton]} onPress={() => onDecide(item.requestId, 'approve')}>
-            <Text style={styles.actionLabel}>Approve</Text>
-          </Pressable>
+          {!item.desktopOnly && (
+            <Pressable style={[styles.actionButton, styles.approveButton]} onPress={() => onDecide(item.requestId, 'approve')}>
+              <Text style={styles.actionLabel}>Approve</Text>
+            </Pressable>
+          )}
           <Pressable style={[styles.actionButton, styles.denyButton]} onPress={() => onDecide(item.requestId, 'deny')}>
             <Text style={styles.actionLabel}>Deny</Text>
           </Pressable>

@@ -39,8 +39,6 @@ export type AgentApprovalAnswer = { ok: true } | { ok: false; message: string }
 
 export interface AgentApprovalBrokerDeps {
   publish(event: RuntimeEvent): void
-  /** A thread started or stopped waiting on a card, so its adapter can hold its stall watchdog. */
-  onWaiting?(threadId: string, waiting: boolean): void
   /** Whether two ids name the same chat (a rotated provider session id vs. the root). */
   sameChat?(a: string, b: string): boolean
   ttlMs?: number
@@ -83,16 +81,13 @@ export class AgentApprovalBroker {
             log.info(`card ${requestId} closed without an answer: ${outcome.reason}`)
           }
           this.deps.publish({ type: 'request.closed', threadId: req.threadId, requestId, decision: outcome.decision as ApprovalDecision })
-          if (!this.hasOpenCard(req.threadId)) this.deps.onWaiting?.(req.threadId, false)
           resolve(outcome)
         },
       }
-      const firstForThread = !this.hasOpenCard(req.threadId)
       this.open.set(requestId, card)
       timer = setTimeout(() => card.settle({ decision: 'deny', reason: 'expired' }), this.ttlMs)
       timer.unref?.()
       req.signal?.addEventListener('abort', onAbort, { once: true })
-      if (firstForThread) this.deps.onWaiting?.(req.threadId, true)
       this.deps.publish({
         type: 'request.opened',
         threadId: req.threadId,
@@ -138,10 +133,5 @@ export class AgentApprovalBroker {
 
   closeAll(): void {
     for (const card of [...this.open.values()]) card.settle({ decision: 'deny', reason: 'stopped' })
-  }
-
-  private hasOpenCard(threadId: string): boolean {
-    for (const card of this.open.values()) if (card.threadId === threadId) return true
-    return false
   }
 }

@@ -11,31 +11,26 @@ const card: HostWriteCard = {
 
 function broker(ttlMs?: number) {
   const events: RuntimeEvent[] = []
-  const waiting: Array<[string, boolean]> = []
   const b = new AgentApprovalBroker({
     publish: (e) => events.push(e),
-    onWaiting: (t, w) => waiting.push([t, w]),
     sameChat: (a, c) => a.replace('rotated-', '') === c.replace('rotated-', ''),
     ...(ttlMs ? { ttlMs } : {}),
   })
   const opened = () => events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
-  return { b, events, waiting, opened }
+  return { b, events, opened }
 }
 
 afterEach(() => vi.useRealTimers())
 
 describe('AgentApprovalBroker', () => {
   it('opens a card on the chat and returns the approval with the edited text', async () => {
-    const { b, events, opened, waiting } = broker()
+    const { b, events, opened } = broker()
     const answer = b.ask({ threadId: 't1', toolName: 'mcp__switchboard__reply_to_conversation', detail: 'd', hostWrite: card })
     expect(opened()).toMatchObject({ threadId: 't1', requestType: 'tool', hostWrite: card })
     expect(AgentApprovalBroker.owns(opened().requestId)).toBe(true)
-    expect(waiting).toEqual([['t1', true]])
-
     expect(b.respond('t1', opened().requestId, 'approve', { text: 'edited', resolve: true }, true)).toEqual({ ok: true })
     await expect(answer).resolves.toEqual({ decision: 'approve', response: { text: 'edited', resolve: true } })
     expect(events.at(-1)).toEqual({ type: 'request.closed', threadId: 't1', requestId: opened().requestId, decision: 'approve' })
-    expect(waiting.at(-1)).toEqual(['t1', false])
   })
 
   it('refuses a host write approval from a device that cannot write to a host, and keeps the card open', async () => {
@@ -94,18 +89,6 @@ describe('AgentApprovalBroker', () => {
     expect(settled).toBe(false)
     b.closeAll()
     await two
-  })
-
-  it('reports waiting until the last card of a thread closes', async () => {
-    const { b, events, waiting } = broker()
-    const first = b.ask({ threadId: 't1', toolName: 'x', detail: 'd' })
-    const second = b.ask({ threadId: 't1', toolName: 'x', detail: 'd' })
-    const [a, c] = events.filter((e) => e.type === 'request.opened') as Array<Extract<RuntimeEvent, { type: 'request.opened' }>>
-    b.respond('t1', a.requestId, 'deny', {}, true)
-    expect(waiting).toEqual([['t1', true]])
-    b.respond('t1', c.requestId, 'deny', {}, true)
-    expect(waiting).toEqual([['t1', true], ['t1', false]])
-    await Promise.all([first, second])
   })
 })
 

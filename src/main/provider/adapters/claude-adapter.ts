@@ -668,12 +668,8 @@ export class ClaudeAdapter implements ProviderAdapter {
   readonly provider = 'claude' as const
   private sessions = new Map<string, ActiveSession>()
 
-  /** An MCP approval card is open: the tool call is blocked on the user, not stalled. */
-  setAwaitingUser(threadId: string, waiting: boolean): void {
-    const active = this.sessions.get(threadId)
-    if (!active) return
-    if (waiting) active.watchdog.suspend()
-    else active.watchdog.resume(Date.now())
+  runtimeModeOf(threadId: string): RuntimeMode | undefined {
+    return this.sessions.get(threadId)?.session.runtimeMode
   }
 
   async isAvailable(): Promise<boolean> {

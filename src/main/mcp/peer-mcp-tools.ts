@@ -19,8 +19,15 @@ import {
   PEER_SEND_TOOL_NAME,
   type PeerToolHost,
 } from '../provider/peer-tools'
-import type { AgentApprovalBroker } from './agent-approvals'
+import type { AgentApprovalBroker, AgentApprovalDenyReason } from './agent-approvals'
 import { toolText, type McpTool } from './mcp-session'
+
+const PEER_DENIED: Record<AgentApprovalDenyReason, string> = {
+  user: 'User denied permission',
+  expired: 'The approval expired without an answer. Nothing was sent.',
+  cancelled: 'The call was cancelled before the user answered. Nothing was sent.',
+  stopped: 'The session stopped before the user answered. Nothing was sent.',
+}
 
 export interface PeerMcpToolContext {
   threadId: string
@@ -78,11 +85,8 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
             detail: JSON.stringify(input, null, 2).slice(0, 500),
             signal,
           })
-          if (outcome.decision === 'deny') {
-            return toolText(outcome.reason === 'expired'
-              ? 'The approval expired without an answer. Nothing was sent.'
-              : 'User denied permission', true)
-          }
+          if (outcome.decision === 'deny') return toolText(PEER_DENIED[outcome.reason], true)
+          if (signal.aborted) return toolText(PEER_DENIED.cancelled, true)
         }
         return handlers.sendMessage(input)
       },

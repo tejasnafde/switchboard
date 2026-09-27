@@ -11,6 +11,13 @@ import { createMainLogger } from '../logger'
 
 const log = createMainLogger('mcp:session')
 
+/**
+ * How often a call still running reports progress. OpenCode calls MCP tools
+ * with a timeout (30s by default) that progress resets, and a call waiting on
+ * an approval card can run for minutes. Not configurable over ACP otherwise.
+ */
+const PROGRESS_INTERVAL_MS = 10_000
+
 /** Newest first. A client asking for one of these gets it echoed back. */
 export const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const
 
@@ -59,6 +66,7 @@ export interface McpSessionOptions {
   instructions?: string
   tools: readonly McpTool[]
   send(message: unknown): void
+  progressIntervalMs?: number
 }
 
 export class McpSession {
@@ -138,7 +146,7 @@ export class McpSession {
   }
 
   private async callTool(id: JsonRpcId, params: unknown): Promise<void> {
-    const p = (params ?? {}) as { name?: unknown; arguments?: unknown }
+    const p = (params ?? {}) as { name?: unknown; arguments?: unknown; _meta?: { progressToken?: unknown } }
     const tool = this.opts.tools.find((t) => t.name === p.name)
     if (!tool) {
       this.error(id, -32602, `Unknown tool: ${String(p.name)}`)
@@ -149,6 +157,15 @@ export class McpSession {
       : {}
     const controller = new AbortController()
     this.inflight.set(id, controller)
+    const progressToken = p._meta?.progressToken
+    let progress = 0
+    const keepalive = typeof progressToken === 'string' || typeof progressToken === 'number'
+      ? setInterval(() => {
+        if (this.closed || controller.signal.aborted) return
+        this.opts.send({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken, progress: ++progress, message: 'Waiting on Switchboard' } })
+      }, this.opts.progressIntervalMs ?? PROGRESS_INTERVAL_MS)
+      : null
+    keepalive?.unref?.()
     let result: McpToolResult
     try {
       result = await tool.call(args, { signal: controller.signal })
@@ -158,6 +175,7 @@ export class McpSession {
       log.error(`tool ${tool.name} threw`, err)
       result = toolText(`Switchboard could not run ${tool.name}: ${err instanceof Error ? err.message : String(err)}`, true)
     } finally {
+      if (keepalive) clearInterval(keepalive)
       this.inflight.delete(id)
     }
     // A cancelled request gets no response, per the protocol.

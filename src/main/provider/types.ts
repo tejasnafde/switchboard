@@ -214,11 +214,11 @@ export interface ProviderAdapter {
   listModels?(threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>>
 
   /**
-   * The Switchboard MCP server opened or closed an approval card for this
-   * thread. The agent is blocked inside one of our tool calls meanwhile, so an
-   * adapter with a stall watchdog holds it, as it does for its own approvals.
+   * The mode the session runs its CURRENT turn in. The Switchboard MCP server
+   * enforces plan mode itself, and a queued message's mode applies only when
+   * that message starts, which only the adapter knows.
    */
-  setAwaitingUser?(threadId: string, waiting: boolean): void
+  runtimeModeOf?(threadId: string): RuntimeMode | undefined
 }
 
 // Re-export Effect for internal adapter use (avoids extra imports elsewhere)

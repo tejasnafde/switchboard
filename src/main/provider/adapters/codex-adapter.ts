@@ -1239,6 +1239,10 @@ export class CodexAdapter implements ProviderAdapter {
     })
   }
 
+  runtimeModeOf(threadId: string): RuntimeMode | undefined {
+    return this.sessions.get(threadId)?.session.runtimeMode
+  }
+
   async setRuntimeMode(threadId: string, mode: import('../types').RuntimeMode): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
