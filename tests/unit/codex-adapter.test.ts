@@ -1086,7 +1086,7 @@ describe('CodexAdapter', () => {
       args: ['/Users/me/Library/Application Support/switchboard/mcp/switchboard-mcp.cjs'],
       env: { ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_MCP_PORT: '51234', SWITCHBOARD_MCP_TOKEN: 'tok' },
     }
-    const confirm = (id: number, serverName: string) => JSON.stringify({
+    const confirm = (id: number, serverName: string, tool = 'reply_to_conversation') => JSON.stringify({
       jsonrpc: '2.0',
       id,
       method: 'mcpServer/elicitation/request',
@@ -1095,7 +1095,7 @@ describe('CodexAdapter', () => {
         turnId: 'turn-1',
         serverName,
         mode: 'form',
-        message: `Allow the ${serverName} MCP server to run tool "reply_to_conversation"?`,
+        message: `Allow the ${serverName} MCP server to run tool "${tool}"?`,
         requestedSchema: { type: 'object', properties: {} },
         _meta: null,
       },
@@ -1130,6 +1130,20 @@ describe('CodexAdapter', () => {
 
       expect(onEvent.mock.calls.map(([event]) => event.type)).not.toContain('request.opened')
       expect(writes.map((line) => JSON.parse(line))).toContainEqual({ jsonrpc: '2.0', id: 905, result: { action: 'accept', content: {}, _meta: null } })
+    })
+
+    it('accepts the confirm for the line comment and review tools without a second card', async () => {
+      const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+      const onEvent = vi.fn()
+      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox', switchboardMcp: launch }, onEvent)
+
+      lastChild?.stdout.write(confirm(908, 'switchboard', 'comment_on_line'))
+      lastChild?.stdout.write(confirm(909, 'switchboard', 'draft_review'))
+      await new Promise((resolve) => setImmediate(resolve))
+
+      expect(onEvent.mock.calls.map(([event]) => event.type)).not.toContain('request.opened')
+      const answers = writes.map((line) => JSON.parse(line))
+      for (const id of [908, 909]) expect(answers).toContainEqual({ jsonrpc: '2.0', id, result: { action: 'accept', content: {}, _meta: null } })
     })
 
     it('still asks for another server\'s tool', async () => {

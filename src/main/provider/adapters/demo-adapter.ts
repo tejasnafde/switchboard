@@ -13,6 +13,10 @@
  *   - text says "reply to the review" -> a Switchboard MCP pull request write
  *                           card (reply on demo PR #612, the mock's quote),
  *                           held until answered; nothing is ever posted
+ *   - text says "draft a review" -> a Switchboard MCP draft review card
+ *                           (three line comments on demo PR #161, which the
+ *                           user did not write, so every verdict is offered);
+ *                           held until answered; nothing is ever posted
  *   - text says "run"    -> asks approval for `npm test` and holds the turn
  *                           open until it is answered (ApprovalCard, and the
  *                           running composer for the visual regression suite)
@@ -31,7 +35,7 @@
  * same disk + SQLite merge a real Claude chat does.
  */
 import type { TurnDelivery } from '@shared/turn-delivery'
-import { AGENT_REPLY_MAX_CHARS, hostWriteDetail, type HostWriteCard } from '@shared/agent-host-writes'
+import { AGENT_REPLY_MAX_CHARS, hostWriteDetail, type HostWriteCard, type HostWriteDiffLine } from '@shared/agent-host-writes'
 import { agentLabel, toAgentProvider, type AgentType } from '@shared/types'
 import { buildWindow, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
 import { randomUUID } from 'crypto'
@@ -51,6 +55,32 @@ import { denialMessage } from '../policy'
 import { createMainLogger } from '../../logger'
 
 const log = createMainLogger('provider:demo')
+
+const ctx = (newLine: number, text: string): HostWriteDiffLine => ({ kind: 'context', text, oldLine: newLine - 4, newLine, target: false })
+const add = (newLine: number, text: string, target = false): HostWriteDiffLine => ({ kind: 'add', text, oldLine: null, newLine, target })
+
+/** The draft review the "draft a review" script opens: demo PR #161, the Kanban cost cap. */
+const DEMO_REVIEW: HostWriteCard['review'] = {
+  summary: 'The cap works and the migration is safe to re-run. Two things before it merges: a cap of 0 is treated as no cap, and the input takes negative numbers.',
+  comments: [
+    {
+      id: 'c1', path: 'src/main/db/kanban.ts', side: 'new', line: 88,
+      text: 'A cap of 0 falls through as falsy here, so it means "no cap". Compare with null instead.',
+      excerpt: [ctx(87, '  const used = card.cost_used_usd ?? 0'), add(88, '  if (!card.cost_cap_usd) return false', true), add(89, '  return used >= card.cost_cap_usd')],
+    },
+    {
+      id: 'c2', path: 'src/renderer/components/kanban/CardModal.tsx', side: 'new', line: 141,
+      text: 'Add min={0} and reject a negative value in the save handler too; the field is typed but not checked.',
+      excerpt: [add(140, '        <input'), add(141, '          type="number"', true), add(142, '          value={costCap ?? \'\'}')],
+    },
+    {
+      id: 'c3', path: 'src/shared/kanban.ts', side: 'new', line: 12,
+      text: 'Nit: costCapUsd, to match the column name.',
+      excerpt: [ctx(11, 'export interface KanbanCard {'), add(12, '  cap?: number | null', true), ctx(13, '  status: KanbanStatus')],
+    },
+  ],
+  verdicts: ['comment', 'approve', 'request_changes'],
+}
 
 const FIXED_AUTH_TS = [
   "import { verifyState } from './state'",
@@ -339,6 +369,32 @@ export class DemoAdapter implements ProviderAdapter {
       session.onEvent({ type: 'request.closed', threadId, requestId, decision: decision === 'cancelled' ? 'deny' : decision })
       if (decision === 'cancelled') return
       await this.say(threadId, turn, decision === 'approve' ? 'Replied on worker.py:86.' : 'Left that conversation for you.')
+    } else if (/draft a review/i.test(message)) {
+      await this.say(threadId, turn, 'I read the diff. Here is a draft with three line comments; the verdict is yours.')
+      if (turn.cancelled) return
+      const card: HostWriteCard = {
+        action: 'review',
+        agentLabel: agentLabel(toAgentProvider(this.provider)),
+        host: 'github',
+        prLabel: 'switchboard #161',
+        url: null,
+        location: null,
+        quote: null,
+        review: DEMO_REVIEW,
+        maxChars: AGENT_REPLY_MAX_CHARS,
+      }
+      const requestId = `demo_req_${++this.seq}`
+      const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
+        session.approvals.set(requestId, resolve)
+        emit({
+          type: 'request.opened', threadId, requestId, requestType: 'tool',
+          toolName: 'mcp__switchboard__draft_review', detail: hostWriteDetail(card), hostWrite: card,
+        })
+      })
+      session.approvals.delete(requestId)
+      session.onEvent({ type: 'request.closed', threadId, requestId, decision: decision === 'cancelled' ? 'deny' : decision })
+      if (decision === 'cancelled') return
+      await this.say(threadId, turn, decision === 'approve' ? 'Your review is on #161.' : 'Nothing was posted.')
     } else if (/\brun\b/i.test(message)) {
       await this.say(threadId, turn, 'Running the auth tests to confirm the fix.')
       // Interrupted before the approval opened: registering it now would

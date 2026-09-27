@@ -104,6 +104,27 @@ describe('DemoAdapter (tour recorder script)', () => {
     expect(events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: card.requestId, decision: 'approve' })
   }, 20_000)
 
+  it('a draft review opens one review card with every verdict offered and none chosen, and posts nothing', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Draft a review of the pull request.', 'sandbox')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no card yet')
+    }, { timeout: 5_000, interval: 50 })
+    const card = events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
+    expect(card.toolName).toBe('mcp__switchboard__draft_review')
+    expect(card.hostWrite).toMatchObject({ action: 'review', prLabel: 'switchboard #161' })
+    expect(card.hostWrite?.review?.comments).toHaveLength(3)
+    expect(card.hostWrite?.review?.verdicts).toEqual(['comment', 'approve', 'request_changes'])
+    expect(card.detail).toContain('Review switchboard #161 with 3 line comments')
+    await adapter.respondToRequest('t1', card.requestId, 'deny')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+    }, { timeout: 5_000, interval: 50 })
+    expect(events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: card.requestId, decision: 'deny' })
+  }, 20_000)
+
   it('interrupting a turn blocked on an approval closes the approval without completing', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []

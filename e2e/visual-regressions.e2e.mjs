@@ -660,6 +660,29 @@ async function captureThemeScreens(win, theme) {
   await settle(win)
   await hostWriteCard.scrollIntoViewIfNeeded()
   await snapScreen(win, 'host-write-approval', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
+
+  // An agent's draft review on its card: three line comments with their diff
+  // lines, and one button per verdict, none chosen (demo PR #161, which the
+  // user did not write; nothing is posted). Deny the reply card first so the
+  // turn ends and the next one can start.
+  await hostWriteCard.getByRole('button', { name: 'Deny', exact: true }).click()
+  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await editor.click()
+  await win.keyboard.type('Draft a review of the pull request.')
+  await win.keyboard.press('Enter')
+  const reviewCard = win.locator('[data-host-write-card="review"][data-status="pending"]').first()
+  await reviewCard.waitFor({ state: 'visible', timeout: 20_000 })
+  await reviewCard.locator('[data-host-write-actions]').evaluate((el) => el.scrollIntoView({ block: 'end' }))
+  await settle(win)
+  await snapScreen(win, 'host-review-draft', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(800, 720))
+  await settle(win)
+  const reviewOverflow = await reviewCard.evaluate((el) => el.scrollWidth - el.clientWidth)
+  if (reviewOverflow > 0) screenFailures.push(`host-review-draft-narrow-${theme.toLowerCase()}: the card overflows ${reviewOverflow}px`)
+  const reviewListOverflow = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
+  if (reviewListOverflow > 0) screenFailures.push(`host-review-draft-narrow-${theme.toLowerCase()}: the message list scrolls ${reviewListOverflow}px sideways`)
+  await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }), SCREEN_SIZE)
+  await settle(win)
 }
 
 async function runThemeScreens() {

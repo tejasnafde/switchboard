@@ -243,9 +243,12 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     linkedPrs: (chatId) => listConversationPullRequests(chatId).map((link) => link.ref),
     detail: (ref) => getService().detail(ref),
     conversations: (ref) => getService().conversations(ref),
+    files: (ref) => getService().files(ref),
     reply: (ref, input) => getService().reply(ref, input),
     setResolved: (ref, input, resolved) => getService().setResolved(ref, input, resolved),
     rerunCheck: (ref, input) => getService().rerunCheck(ref, input),
+    inlineComment: (ref, input) => getService().inlineComment(ref, input),
+    submitReview: (ref, input) => getService().submitReview(ref, input),
   })
   host.handle(PullRequestChannels.LIST, async () => withHidden(await getService().list()))
   host.handle(PullRequestChannels.DETAIL, (ref: unknown) => getService().detail(ref))

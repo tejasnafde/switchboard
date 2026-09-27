@@ -1,8 +1,9 @@
 /**
- * The pull request tools of the Switchboard MCP server: two reads that run
- * without asking and three writes that each open one Switchboard approval
- * card. Approve, request changes and merge are deliberately absent: those
- * stay the user's.
+ * The pull request tools of the Switchboard MCP server: three reads that run
+ * without asking and five writes that each open one Switchboard approval
+ * card. Merging is deliberately absent, and so is a verdict: `draft_review`
+ * hands the user a draft, and the user picks Comment, Request changes or
+ * Approve in the card.
  *
  * Every tool works only on pull requests linked to the calling chat, and
  * every refusal is tool output with `isError`, never a throw, so the model
@@ -10,18 +11,38 @@
  */
 import {
   AGENT_REPLY_MAX_CHARS,
+  AGENT_REVIEW_MAX_BYTES,
+  AGENT_REVIEW_MAX_COMMENTS,
   checkReplyText,
   hostWriteDetail,
   hostWriteGate,
   withViaMarker,
   type HostWriteCard,
+  type HostWriteReview,
 } from '@shared/agent-host-writes'
+import {
+  checkCommentText,
+  checkLineTarget,
+  checkReviewDraft,
+  diffExcerpt,
+  lineLocation,
+  reviewFromResponse,
+  type DraftLineComment,
+} from '@shared/agent-pr-review'
 import { findPullRequestUrls, normalizePrRef } from '@shared/pull-request-links'
-import type { PrWriteDone } from '@shared/pull-request-writes'
+import {
+  lineInDiff,
+  REVIEW_EVENT_LABEL,
+  reviewEventsFor,
+  type InlineCommentInput,
+  type PrWriteDone,
+  type SubmitReviewInput,
+} from '@shared/pull-request-writes'
 import {
   HOST_CAPABILITIES,
   PR_HOST_LABEL,
   prKey,
+  type PrChangedFile,
   type PrConversation,
   type PrDetail,
   type PrRef,
@@ -32,6 +53,7 @@ import { createMainLogger } from '../logger'
 import type { AgentApprovalBroker, AgentApprovalOutcome } from './agent-approvals'
 import type { AgentWriteBudget } from './agent-write-budget'
 import { toolText, type McpTool, type McpToolResult } from './mcp-session'
+import { diffPage } from './pr-diff-page'
 
 const log = createMainLogger('mcp:pr-tools')
 
@@ -40,6 +62,9 @@ export const PR_CONVERSATIONS_TOOL = 'list_pr_conversations'
 export const PR_REPLY_TOOL = 'reply_to_conversation'
 export const PR_RESOLVE_TOOL = 'resolve_conversation'
 export const PR_RERUN_TOOL = 'rerun_check'
+export const PR_DIFF_TOOL = 'get_pr_diff'
+export const PR_COMMENT_TOOL = 'comment_on_line'
+export const PR_REVIEW_TOOL = 'draft_review'
 
 /** What the tools need from Reviews. `PullRequestService` satisfies the reads and writes. */
 export interface AgentPullRequestAccess {
@@ -47,9 +72,12 @@ export interface AgentPullRequestAccess {
   linkedPrs(chatId: string): PrRef[]
   detail(ref: PrRef): Promise<PrResult<PrDetail>>
   conversations(ref: PrRef): Promise<PrResult<PrConversation[]>>
+  files(ref: PrRef): Promise<PrResult<PrChangedFile[]>>
   reply(ref: PrRef, input: { conversationId: string; body: string }): Promise<PrResult<PrWriteDone>>
   setResolved(ref: PrRef, input: { conversationId: string }, resolved: boolean): Promise<PrResult<PrWriteDone>>
   rerunCheck(ref: PrRef, input: { checkId: string }): Promise<PrResult<PrWriteDone>>
+  inlineComment(ref: PrRef, input: InlineCommentInput): Promise<PrResult<PrWriteDone>>
+  submitReview(ref: PrRef, input: SubmitReviewInput): Promise<PrResult<PrWriteDone>>
 }
 
 let registeredAccess: AgentPullRequestAccess | null = null
@@ -78,6 +106,9 @@ export interface PrToolContext {
 }
 
 const QUOTE_MAX_CHARS = 600
+/** Diff lines either side of the target: more for one comment, fewer per comment in a review. */
+const COMMENT_EXCERPT_RADIUS = 3
+const REVIEW_EXCERPT_RADIUS = 1
 const COMMENT_MAX_CHARS = 3_000
 const DESCRIPTION_MAX_CHARS = 4_000
 
@@ -219,7 +250,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     description: [
       'Status of a pull request linked to this chat: state, branches, head commit, checks (with the ids rerun_check takes),',
       'reviews and approvals, open conversation count and what blocks the merge. Read-only; runs without asking.',
-      'Approving, requesting changes and merging are the user\'s, not yours; no tool does them.',
+      `Merging is the user's, not yours; no tool does it. The review verdict is the user's too: ${PR_REVIEW_TOOL} only drafts.`,
     ].join('\n'),
     inputSchema: { type: 'object', properties: { pr: PR_ARG }, additionalProperties: false },
     annotations: { title: 'Pull request status', readOnlyHint: true, openWorldHint: true },
@@ -428,5 +459,194 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     },
   }
 
-  return [statusTool, conversationsTool, replyTool, resolveTool, rerunTool]
+  const diffTool: McpTool = {
+    name: PR_DIFF_TOOL,
+    description: [
+      'The changed files of a pull request linked to this chat, with their hunks and the old and new line numbers of',
+      `every diff line. Read it before ${PR_COMMENT_TOOL} or ${PR_REVIEW_TOOL}: a comment can only land on a line shown here.`,
+      'Long diffs come in pages of about 60 KiB; the end of each page says what it left out and which page to ask for next.',
+      '"path" narrows it to one file or a directory. Read-only; runs without asking.',
+    ].join('\n'),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pr: PR_ARG,
+        path: { type: 'string', description: 'Only this file, or every file under this directory.' },
+        page: { type: 'integer', minimum: 1, description: 'The page to read, from 1. The previous page says which comes next.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: 'Pull request diff', readOnlyHint: true, openWorldHint: true },
+    async call(args) {
+      const p = pick(args)
+      if ('content' in p) return p
+      if (args.path !== undefined && typeof args.path !== 'string') return toolText('"path" is a file or directory path of the diff.', true)
+      const page = typeof args.page === 'string' && /^\d{1,6}$/.test(args.page) ? Number(args.page) : args.page
+      if (page !== undefined && typeof page !== 'number') return toolText('"page" is a page number, from 1.', true)
+      const read = await p.access.files(p.ref)
+      if (!read.ok) return toolText(read.error.message, true)
+      const heading = `Diff of ${PR_HOST_LABEL[p.ref.host]} ${p.ref.owner}/${p.ref.name} #${p.ref.number}.`
+      const out = diffPage(read.data, { heading, path: args.path as string | undefined, page })
+      return out.ok ? toolText(out.text) : toolText(out.message, true)
+    },
+  }
+
+  const TARGET_PROPS = {
+    path: { type: 'string', description: `The file path as ${PR_DIFF_TOOL} shows it.` },
+    line: { type: 'integer', minimum: 1, description: `The line number from ${PR_DIFF_TOOL}: the new line number for side "new", the old one for side "old".` },
+    side: { type: 'string', enum: ['new', 'old'], description: '"new" (default) for an added or unchanged line, "old" for a deleted line.' },
+  }
+
+  const notInDiff = (files: PrChangedFile[], targets: DraftLineComment[]): string[] =>
+    targets.filter((t) => !lineInDiff(files, t)).map(lineLocation)
+
+  const commentTool: McpTool = {
+    name: PR_COMMENT_TOOL,
+    description: [
+      'Start a new inline comment on one line of a pull request linked to this chat.',
+      `Read the diff with ${PR_DIFF_TOOL} first: the line must be one the diff shows, on that side.`,
+      `For more than one comment, prefer ONE ${PR_REVIEW_TOOL} over several of these, so the user answers one card, not many.`,
+      `To answer an existing thread, use ${PR_REPLY_TOOL} instead.`,
+      'The user sees the comment in a Switchboard approval card, can edit it, and decides whether it is posted.',
+      `It is posted as the user, ending with a "via Switchboard" line. At most ${AGENT_REPLY_MAX_CHARS} characters. Refused in plan mode.`,
+    ].join('\n'),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pr: PR_ARG,
+        ...TARGET_PROPS,
+        text: { type: 'string', description: 'The comment. Do not add a signature; Switchboard adds its marker line.' },
+      },
+      required: ['path', 'line', 'text'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Comment on a line', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    async call(args, { signal }) {
+      const p = pick(args)
+      if ('content' in p) return p
+      const target = checkLineTarget(args)
+      if (!target.ok) return toolText(target.message, true)
+      const draft = checkCommentText(args.text)
+      if (!draft.ok) return toolText(draft.message, true)
+      const gated = refusePlan(PR_COMMENT_TOOL)
+      if (gated) return gated
+      const files = await p.access.files(p.ref)
+      if (!files.ok) return toolText(files.error.message, true)
+      const where = lineLocation(target.value)
+      if (!lineInDiff(files.data, target.value)) {
+        return toolText(`${where} is not a line the diff shows on the ${target.value.side} side. Call ${PR_DIFF_TOOL} and pick a line from it. Nothing was sent.`, true)
+      }
+      const outcome = await ask(PR_COMMENT_TOOL, card(p.ref, 'comment', {
+        location: where,
+        replyText: draft.value,
+        excerpt: diffExcerpt(files.data, target.value, COMMENT_EXCERPT_RADIUS),
+      }), signal)
+      if ('content' in outcome) return outcome
+      if (outcome.decision === 'deny') return declined(outcome)
+      const changed = afterApproval(p.ref, PR_COMMENT_TOOL, signal)
+      if (changed) return changed
+
+      const final = outcome.response.text === undefined ? draft : checkCommentText(outcome.response.text)
+      if (!final.ok) return toolText(`The edited comment was refused: ${final.message} Nothing was posted.`, true)
+      const posted = await p.access.inlineComment(p.ref, { ...target.value, body: withViaMarker(final.value) })
+      if (!posted.ok) return toolText(`Posting failed: ${posted.error.message} Nothing was posted.`, true)
+      log.info('agent line comment posted', { host: p.ref.host, number: p.ref.number })
+      const edited = final.value !== draft.value ? ` The user edited your comment first; what was posted:\n${final.value}` : ''
+      return toolText(`Posted the comment at ${where} on ${prLabel(p.ref)}.${edited}`)
+    },
+  }
+
+  const reviewTool: McpTool = {
+    name: PR_REVIEW_TOOL,
+    description: [
+      'Draft a review of a pull request linked to this chat: a summary plus inline comments on lines of the diff.',
+      `Read the diff with ${PR_DIFF_TOOL} first; every comment must be on a line it shows, on that side.`,
+      `Prefer ONE draft_review with all your comments over several ${PR_COMMENT_TOOL} calls.`,
+      'The user reviews the draft in a Switchboard card, edits or removes any comment and the summary, and picks the verdict',
+      'themselves: Comment, Request changes or Approve (Approve and Request changes only on a pull request they did not write).',
+      'You cannot pick or suggest a verdict, and there is no argument for one. Nothing is posted if the user denies.',
+      `Everything is posted as the user, each comment and the summary ending with a "via Switchboard" line.`,
+      `At most ${AGENT_REVIEW_MAX_COMMENTS} comments, ${AGENT_REPLY_MAX_CHARS} characters each, ${AGENT_REVIEW_MAX_BYTES / 1024} KiB in all. Refused in plan mode.`,
+    ].join('\n'),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pr: PR_ARG,
+        summary: { type: 'string', description: 'The review summary: what the change does well, what must change, and why.' },
+        comments: {
+          type: 'array',
+          maxItems: AGENT_REVIEW_MAX_COMMENTS,
+          description: 'Inline comments, one per line. May be empty.',
+          items: {
+            type: 'object',
+            properties: { ...TARGET_PROPS, text: { type: 'string', description: 'The comment. No signature.' } },
+            required: ['path', 'line', 'text'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['summary', 'comments'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Draft a review', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    async call(args, { signal }) {
+      const p = pick(args)
+      if ('content' in p) return p
+      const draft = checkReviewDraft(args)
+      if (!draft.ok) return toolText(draft.message, true)
+      const gated = refusePlan(PR_REVIEW_TOOL)
+      if (gated) return gated
+      const { summary, comments } = draft.value
+      const [detail, files] = await Promise.all([
+        p.access.detail(p.ref),
+        comments.length > 0 ? p.access.files(p.ref) : Promise.resolve({ ok: true as const, data: [] }),
+      ])
+      if (!detail.ok) return toolText(detail.error.message, true)
+      if (!files.ok) return toolText(files.error.message, true)
+      const missing = notInDiff(files.data, comments)
+      if (missing.length > 0) {
+        return toolText(`Not lines the diff shows: ${missing.join(', ')}. Call ${PR_DIFF_TOOL}, fix their line and side, and send the whole draft again. Nothing was sent.`, true)
+      }
+      // Both hosts refuse a verdict from the author, and on a PR that is not open.
+      const commentOnly = detail.data.viewer.isAuthor ? 'author' : detail.data.state !== 'open' ? 'closed' : undefined
+      const review: HostWriteReview = {
+        summary,
+        comments: comments.map((c, i) => ({ id: `c${i + 1}`, ...c, excerpt: diffExcerpt(files.data, c, REVIEW_EXCERPT_RADIUS) })),
+        verdicts: commentOnly ? ['comment'] : reviewEventsFor(detail.data.viewer),
+        ...(commentOnly ? { commentOnly } : {}),
+      }
+      const outcome = await ask(PR_REVIEW_TOOL, card(p.ref, 'review', { url: detail.data.url, review }), signal)
+      if ('content' in outcome) return outcome
+      if (outcome.decision === 'deny') return declined(outcome)
+      const changed = afterApproval(p.ref, PR_REVIEW_TOOL, signal)
+      if (changed) return changed
+
+      const final = reviewFromResponse(p.ref.host, review, outcome.response)
+      if (!final.ok) return toolText(final.message, true)
+      const { verdict } = final.value
+      const submitted = await p.access.submitReview(p.ref, {
+        event: verdict,
+        body: withViaMarker(final.value.summary),
+        comments: final.value.comments.map((c) => ({ path: c.path, side: c.side, line: c.line, body: withViaMarker(c.text) })),
+      })
+      if (!submitted.ok) {
+        const posted = submitted.error.postedComments ?? 0
+        return toolText(posted > 0
+          ? `Submitting the review failed part way: ${submitted.error.message} ${posted} of its comments were posted. Do not submit it again; tell the user.`
+          : `Submitting the review failed: ${submitted.error.message} Nothing was posted.`, true)
+      }
+      log.info('agent review submitted', { host: p.ref.host, number: p.ref.number, verdict, comments: final.value.comments.length })
+      const notes = [
+        final.value.removed > 0 ? `removed ${final.value.removed} of your comments` : '',
+        final.value.edited > 0 ? `edited ${final.value.edited}` : '',
+        final.value.summary !== summary ? 'edited the summary' : '',
+      ].filter(Boolean)
+      return toolText(
+        `The user submitted the review on ${prLabel(p.ref)} as ${REVIEW_EVENT_LABEL[verdict]}, with ${final.value.comments.length} inline comments.` +
+        `${notes.length > 0 ? ` They ${notes.join(', ')} first.` : ''} Do not post these comments again.`,
+      )
+    },
+  }
+
+  return [statusTool, conversationsTool, diffTool, replyTool, resolveTool, rerunTool, commentTool, reviewTool]
 }
