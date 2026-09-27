@@ -62,6 +62,22 @@ describe('event resume', () => {
     expect(seen).toEqual([1, 2, 3])
   })
 
+  it('baselines on ready, so an event missed after an idle connection is replayed alone', async () => {
+    const { host, url } = await setup()
+    host.emit('provider:event', 1)
+    host.emit('provider:event', 2)
+    const seen: number[] = []
+    client = new WsTransport(url)
+    client.on('provider:event', (n) => seen.push(n as number))
+    await client.invoke('__ready__').catch(() => {})
+    await settle()
+
+    dropClients()
+    host.emit('provider:event', 3)
+    await settle(900)
+    expect(seen).toEqual([3])
+  })
+
   it('does not redeliver events the client already applied', async () => {
     const { host, url } = await setup()
     const seen: number[] = []

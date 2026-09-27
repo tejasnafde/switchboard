@@ -491,6 +491,9 @@ export class WsTransport implements Transport {
     this.resumeHold = null
     held.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
     for (const evt of held) this.applyEvent(evt)
+    // Baseline even with no event yet, or the next hello cannot tell events
+    // from before this socket from events missed after it.
+    this.lastSeq = Math.max(this.lastSeq, frame.seq)
   }
 
   supportsCapability(capability: string): boolean | undefined {

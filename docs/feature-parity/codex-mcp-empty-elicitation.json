@@ -1,0 +1,64 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "codex-mcp-empty-elicitation",
+  "summary": "Codex app-server sends an MCP form elicitation with an empty properties object when it needs permission for a non-read-only MCP tool in sandbox-style modes. The Codex adapter now treats that shape as a standard approval request instead of cancelling it silently, applies the shared runtime permission policy, keeps fielded forms on the existing question path, and emits a visible error plus a log entry for unsupported elicitation shapes before cancelling them.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/codex-adapter.ts",
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "src/renderer/components/chat/ApprovalCard.tsx",
+        "tests/unit/codex-adapter.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "tests/unit/mobile-chat-store.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadEventDecoder.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "src/main/provider/policy.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "tests/unit/codex-adapter.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data, schema, migration, persisted conversation setting, or upgrade path changed. The adapter only changes how one live JSON-RPC request from Codex app-server is classified and answered."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, update channel, capability flag, or release packaging changed. This is a backward-compatible backend adapter fix using the existing request.opened, request.closed, tool.denied, question.asked, and error runtime events."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm test -- tests/unit/codex-adapter.test.ts --maxWorkers=2: confirms empty MCP form elicitations open a request.opened approval card, map approve to action accept with empty content, map deny to action decline, obey plan/full-access/sandbox runtime policy, keep fielded forms on question.asked, and emit a visible error for unsupported shapes before cancelling.",
+      "npm run typecheck: main and renderer TypeScript checks passed.",
+      "npm test -- --maxWorkers=2: 457 test files passed, 4638 tests passed, 3 skipped.",
+      "npm run validate:feature-parity -- --base origin/main: passed."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live Codex app-server MCP tool was run against a real MCP server; the regression is covered with mocked JSON-RPC frames matching the observed wire shape.",
+      "React Native/iOS and native Android were not run on devices for this pass. Their approval rendering paths already consume the same request.opened event emitted by the backend, and this change adds no new client event shape."
+    ]
+  }
+}

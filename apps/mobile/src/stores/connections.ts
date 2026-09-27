@@ -17,7 +17,7 @@ import type { WsTransport } from '@shared/ws-transport'
 import { createLogger } from '@shared/logger'
 export { parsePairingUrl } from '../lib/pairing'
 import { SwitchboardClient } from '../lib/api'
-import { IapTransport } from '../lib/iap-transport'
+import { IapTransport, type IapResumeState } from '../lib/iap-transport'
 import { foregroundAction } from '../lib/app-lifecycle'
 import {
   deleteConnectionToken,
@@ -94,6 +94,16 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'er
 /** Runtime-only: clients live outside the store so persist never touches them. */
 const clients = new Map<string, SwitchboardClient>()
 const eventUnsubs = new Map<string, () => void>()
+/** An IAP tunnel is rebuilt on every reconnect, so its cursor outlives it here. */
+const iapResume = new Map<string, IapResumeState>()
+
+/** The backend could not replay everything we missed, so the cached feed for
+ *  this backend has a hole in it. Drop it and re-seed rather than showing a
+ *  transcript that is quietly missing turns. */
+function reseed(id: string, label: string): void {
+  log.warn('backend could not replay missed events, re-seeding', label)
+  useChatStore.getState().invalidateConnection(id)
+}
 
 export function getClient(connectionId: string): SwitchboardClient | undefined {
   return clients.get(connectionId)
@@ -136,6 +146,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
 
       removeConnection: (id) => {
         get().disconnect(id)
+        iapResume.delete(id)
         void deleteConnectionToken(id)
         set((s) => {
           const status = { ...s.status }
@@ -175,7 +186,9 @@ export const useConnectionsStore = create<ConnectionsState>()(
             },
             accessToken,
             backendToken: config.token,
+            resume: iapResume.get(id),
           })
+          transport.onResumeGap = () => reseed(id, config.label)
           transport.onStateChange = (state) =>
             get().setStatus(id, state === 'connected' ? 'connected' : 'disconnected')
           client = new SwitchboardClient(transport)
@@ -207,13 +220,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
             void saveConnectionToken(id, undefined)
             get().updateConnection(id, { session, pairing: undefined, token: undefined })
           }
-          // The backend could not replay everything we missed, so the cached
-          // feed for this backend has a hole in it. Drop it and re-seed rather
-          // than showing a transcript that is quietly missing turns.
-          transport.onResumeGap = () => {
-            log.warn('backend could not replay missed events, re-seeding', config.label)
-            useChatStore.getState().invalidateConnection(id)
-          }
+          transport.onResumeGap = () => reseed(id, config.label)
           // Status rides the transport's own lifecycle - open/reconnect/terminal
           // all reflect live, so a dropped tunnel can't leave a stale green dot.
           transport.onStateChange = (state) => {
@@ -261,6 +268,8 @@ export const useConnectionsStore = create<ConnectionsState>()(
       disconnect: (id) => {
         eventUnsubs.get(id)?.()
         eventUnsubs.delete(id)
+        const transport = clients.get(id)?.transport
+        if (transport instanceof IapTransport) iapResume.set(id, transport.resumeState())
         clients.get(id)?.close()
         clients.delete(id)
         get().setStatus(id, 'disconnected')

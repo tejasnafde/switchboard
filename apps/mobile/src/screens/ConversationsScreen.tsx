@@ -1,8 +1,8 @@
 /**
- * Conversation list for one project on a paired backend. Fetches on focus,
+ * Conversation list for one project on a paired backend. Fetches on focus and after a resume gap,
  * newest first, with live status dots and unread badges from the chat store.
  */
-import { memo, useCallback, useLayoutEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -138,6 +138,15 @@ export default function ConversationsScreen({ route, navigation }: Props) {
       void load()
     }, [load]),
   )
+
+  // A resume gap means the rows' status lines may have missed events too.
+  const staleGeneration = useChatStore((s) => s.staleGeneration)
+  const seenGeneration = useRef(staleGeneration)
+  useEffect(() => {
+    if (staleGeneration === seenGeneration.current) return
+    seenGeneration.current = staleGeneration
+    void load()
+  }, [staleGeneration, load])
 
   useLayoutEffect(() => {
     navigation.setOptions({

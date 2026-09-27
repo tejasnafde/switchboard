@@ -1019,19 +1019,214 @@ describe('CodexAdapter', () => {
     })
   })
 
-  it('cancels unsupported MCP elicitations so the provider cannot wait forever', async () => {
+  it('opens an approval card for empty MCP form elicitations and accepts with empty content', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
 
     await adapter.startSession({
       threadId: 'thread-1',
       provider: 'codex',
       cwd: '/tmp/project',
-    }, vi.fn())
+      runtimeMode: 'sandbox',
+    }, onEvent)
 
     lastChild?.stdout.write(JSON.stringify({
       jsonrpc: '2.0',
       id: 904,
+      method: 'mcpServer/elicitation/request',
+      params: {
+        threadId: 'codex-thread-1',
+        turnId: 'turn-1',
+        serverName: 'imagegen',
+        mode: 'form',
+        message: 'Allow the imagegen MCP server to run tool "generate"?',
+        requestedSchema: {
+          type: 'object',
+          properties: {},
+        },
+        _meta: null,
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const opened = onEvent.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'request.opened')
+    expect(opened).toMatchObject({
+      type: 'request.opened',
+      threadId: 'thread-1',
+      requestType: 'tool',
+      toolName: 'imagegen.generate',
+      detail: 'Allow the imagegen MCP server to run tool "generate"?',
+    })
+
+    await adapter.respondToRequest('thread-1', opened.requestId, 'approve')
+
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual({
+      jsonrpc: '2.0',
+      id: 904,
+      result: {
+        action: 'accept',
+        content: {},
+        _meta: null,
+      },
+    })
+    expect(onEvent.mock.calls.map(([event]) => event)).toContainEqual({
+      type: 'request.closed',
+      threadId: 'thread-1',
+      requestId: opened.requestId,
+      decision: 'approve',
+    })
+  })
+
+  it('declines empty MCP form elicitations when the approval is denied', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      runtimeMode: 'sandbox',
+    }, onEvent)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 905,
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'github',
+        mode: 'form',
+        message: 'Allow the github MCP server to run tool "create_issue"?',
+        requestedSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const opened = onEvent.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'request.opened')
+    expect(opened).toBeTruthy()
+
+    await adapter.respondToRequest('thread-1', opened.requestId, 'deny')
+
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual({
+      jsonrpc: '2.0',
+      id: 905,
+      result: { action: 'decline', content: null, _meta: null },
+    })
+    expect(onEvent.mock.calls.map(([event]) => event)).toContainEqual({
+      type: 'request.closed',
+      threadId: 'thread-1',
+      requestId: opened.requestId,
+      decision: 'deny',
+    })
+  })
+
+  it('applies runtime policy to empty MCP form elicitations', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+
+    async function sendEmptyMcpConfirm(
+      runtimeMode: 'plan' | 'full-access' | 'sandbox' | 'accept-edits',
+      params: Record<string, unknown> = {
+        serverName: 'filesystem',
+        mode: 'form',
+        message: 'Allow the filesystem MCP server to run tool "write_file"?',
+        requestedSchema: { type: 'object', properties: {} },
+      },
+    ) {
+      writes.length = 0
+      const adapter = new CodexAdapter()
+      const onEvent = vi.fn()
+
+      await adapter.startSession({
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        runtimeMode,
+      }, onEvent)
+
+      lastChild?.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: 906,
+        method: 'mcpServer/elicitation/request',
+        params,
+      }) + '\n')
+      await new Promise((resolve) => setImmediate(resolve))
+
+      return { onEvent, messages: writes.map((line) => JSON.parse(line)) }
+    }
+
+    const plan = await sendEmptyMcpConfirm('plan')
+    expect(plan.onEvent.mock.calls.map(([event]) => event)).toContainEqual({
+      type: 'tool.denied',
+      threadId: 'thread-1',
+      toolName: 'filesystem.write_file',
+      reason: expect.stringContaining('Plan mode'),
+      mode: 'plan',
+    })
+    expect(plan.onEvent.mock.calls.some(([event]) => event.type === 'request.opened')).toBe(false)
+    expect(plan.messages).toContainEqual({
+      jsonrpc: '2.0',
+      id: 906,
+      result: { action: 'decline', content: null, _meta: null },
+    })
+
+    const fullAccess = await sendEmptyMcpConfirm('full-access')
+    expect(fullAccess.onEvent.mock.calls.some(([event]) => event.type === 'request.opened')).toBe(false)
+    expect(fullAccess.messages).toContainEqual({
+      jsonrpc: '2.0',
+      id: 906,
+      result: { action: 'accept', content: {}, _meta: null },
+    })
+
+    const sandbox = await sendEmptyMcpConfirm('sandbox')
+    expect(sandbox.onEvent.mock.calls.some(([event]) => event.type === 'request.opened')).toBe(true)
+    expect(sandbox.messages.some((message) => message.id === 906 && message.result?.action)).toBe(false)
+
+    const acceptEdits = await sendEmptyMcpConfirm('accept-edits')
+    expect(acceptEdits.onEvent.mock.calls.some(([event]) => event.type === 'request.opened')).toBe(true)
+    expect(acceptEdits.messages.some((message) => message.id === 906 && message.result?.action)).toBe(false)
+
+    const fallbackName = await sendEmptyMcpConfirm('plan', {
+      serverName: 'fetch',
+      mode: 'form',
+      message: 'Please approve this MCP operation.',
+      requestedSchema: { type: 'object', properties: {} },
+    })
+    expect(fallbackName.onEvent.mock.calls.map(([event]) => event)).toContainEqual({
+      type: 'tool.denied',
+      threadId: 'thread-1',
+      toolName: 'fetch',
+      reason: expect.stringContaining('Plan mode'),
+      mode: 'plan',
+    })
+    expect(fallbackName.messages).toContainEqual({
+      jsonrpc: '2.0',
+      id: 906,
+      result: { action: 'decline', content: null, _meta: null },
+    })
+  })
+
+  it('surfaces unsupported MCP elicitations before cancelling them', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 907,
       method: 'mcpServer/elicitation/request',
       params: {
         threadId: 'codex-thread-1',
@@ -1046,9 +1241,14 @@ describe('CodexAdapter', () => {
     }) + '\n')
     await new Promise((resolve) => setImmediate(resolve))
 
+    expect(onEvent.mock.calls.map(([event]) => event)).toContainEqual({
+      type: 'error',
+      threadId: 'thread-1',
+      message: expect.stringContaining('Unsupported Codex MCP elicitation'),
+    })
     expect(writes.map((line) => JSON.parse(line))).toContainEqual({
       jsonrpc: '2.0',
-      id: 904,
+      id: 907,
       result: { action: 'cancel', content: null, _meta: null },
     })
   })
