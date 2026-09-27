@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffPage, matchesPathFilter, PR_DIFF_LINE_CHARS, PR_DIFF_PAGE_BYTES } from '../../src/main/mcp/pr-diff-page'
+import { clipBytes, diffPage, matchesPathFilter, PR_DIFF_LINE_CHARS, PR_DIFF_PAGE_BYTES } from '../../src/main/mcp/pr-diff-page'
 import type { DiffLine, PrChangedFile } from '../../src/shared/pull-requests'
 
 const heading = 'Diff of GitHub acme/app #612.'
@@ -118,6 +118,39 @@ describe('diffPage', () => {
     }
     const out = pageOf([f]).text
     expect(out).toContain('  9  9 | a\n-10    | b\n+   10 | c\n')
+  })
+
+  it('keeps every page within the byte cap with long multi-byte paths, headers and many files', () => {
+    // Multi-byte paths far past what a page shows: every path is over 1.5 KiB in UTF-8.
+    const longDir = `docs/${'文'.repeat(300)}`
+    const files: PrChangedFile[] = Array.from({ length: 60 }, (_, i) => file(
+      `${longDir}/${'🙂'.repeat(200)}-${i}.md`,
+      i % 10 === 0 ? 300 : 20,
+      { oldPath: `${longDir}/old-${'é'.repeat(900)}-${i}.md`, status: 'renamed' },
+      (n) => `${'ß'.repeat(399)} ${n}`,
+    ))
+    for (const f of files) f.hunks = f.hunks.map((h) => ({ ...h, header: `${h.header} ${'函数'.repeat(800)}` }))
+    // Files the filter leaves out, with paths as long, so the footer carries two full lists.
+    const unmatched = Array.from({ length: 40 }, (_, i) => file(`other/${'語'.repeat(1_000)}-${i}.ts`, 3))
+    const heading = `Diff of GitHub ${'組織'.repeat(500)}/repo #1.`
+    for (const req of [{}, { path: longDir }]) {
+      const all = [...files, ...unmatched]
+      const first = diffPage(all, { heading, ...req })
+      expect(first.ok).toBe(true)
+      if (!first.ok) continue
+      expect(first.pages).toBeGreaterThan(3)
+      for (let page = 1; page <= first.pages; page++) {
+        const out = diffPage(all, { heading, ...req, page })
+        if (!out.ok) throw new Error(out.message)
+        expect(Buffer.byteLength(out.text, 'utf8')).toBeLessThanOrEqual(PR_DIFF_PAGE_BYTES)
+      }
+    }
+  })
+
+  it('clips a path it shows on a code point boundary', () => {
+    expect(clipBytes('ab🙂cd', 7)).toBe('ab…')
+    expect(clipBytes('short', 300)).toBe('short')
+    expect(Buffer.byteLength(clipBytes('🙂'.repeat(500), 300))).toBeLessThanOrEqual(300)
   })
 
   it('says a PR with no changed files has none', () => {
