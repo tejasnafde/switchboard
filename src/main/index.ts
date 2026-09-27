@@ -18,7 +18,7 @@ process.on('unhandledRejection', (reason) => {
   crashLog.error('unhandled rejection', msg)
 })
 
-import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, powerMonitor, protocol, net, screen } from 'electron'
+import { app, BrowserWindow, crashReporter, dialog, shell, nativeImage, ipcMain, Menu, powerMonitor, protocol, net, screen } from 'electron'
 import { join, basename } from 'path'
 import { registerTerminalHandlers, shutdownTerminals, livePtyCount } from './ipc/terminal'
 import { registerDiagnosticsHandlers } from './ipc/diagnostics'
@@ -594,9 +594,15 @@ function registerTourProtocol(): void {
 // Registered before the real whenReady handler so it fires first and
 // terminates the process before any window/DB initialization runs.
 if (process.argv.includes('--smoke-test')) {
+  const dumpDir = process.env.SB_SMOKE_CRASH_DIR
+  if (dumpDir) {
+    app.setPath('crashDumps', dumpDir)
+    crashReporter.start({ uploadToServer: false })
+  }
   app.whenReady().then(() => {
     console.log('[smoke-test] main module loaded + app ready, exiting 0')
-    app.exit(0)
+    if (process.env.SB_SMOKE_EXIT === 'quit') app.quit()
+    else app.exit(0)
   })
 }
 
