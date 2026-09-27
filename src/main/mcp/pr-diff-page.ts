@@ -74,9 +74,10 @@ function lineText(l: DiffHunk['lines'][number], width: number): { text: string; 
   const oldCol = (l.oldLine === null ? '' : String(l.oldLine)).padStart(width)
   const newCol = (l.newLine === null ? '' : String(l.newLine)).padStart(width)
   // Characters are code points, so the cut never splits a surrogate pair.
-  const chars = l.text.length > PR_DIFF_LINE_CHARS ? Array.from(l.text) : null
-  const cut = chars !== null && chars.length > PR_DIFF_LINE_CHARS
-  const body = cut ? `${chars.slice(0, PR_DIFF_LINE_CHARS).join('')}… (line cut)` : l.text
+  let end = 0
+  for (let n = 0; n < PR_DIFF_LINE_CHARS && end < l.text.length; n++) end += l.text.codePointAt(end)! > 0xffff ? 2 : 1
+  const cut = end < l.text.length
+  const body = cut ? `${l.text.slice(0, end)}… (line cut)` : l.text
   return { text: `${mark}${oldCol} ${newCol} | ${body}\n`, cut }
 }
 

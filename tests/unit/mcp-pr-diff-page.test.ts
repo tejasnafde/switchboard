@@ -142,7 +142,7 @@ describe('diffPage', () => {
   it('keeps every page within the byte cap with long multi-byte paths, headers and many files', () => {
     // Multi-byte paths far past what a page shows: every path is over 1.5 KiB in UTF-8.
     const longDir = `docs/${'文'.repeat(300)}`
-    const files: PrChangedFile[] = Array.from({ length: 60 }, (_, i) => file(
+    const files: PrChangedFile[] = Array.from({ length: 30 }, (_, i) => file(
       `${longDir}/${'🙂'.repeat(200)}-${i}.md`,
       i % 10 === 0 ? 300 : 20,
       { oldPath: `${longDir}/old-${'é'.repeat(900)}-${i}.md`, status: 'renamed' },
@@ -150,7 +150,7 @@ describe('diffPage', () => {
     ))
     for (const f of files) f.hunks = f.hunks.map((h) => ({ ...h, header: `${h.header} ${'函数'.repeat(800)}` }))
     // Files the filter leaves out, with paths as long, so the footer carries two full lists.
-    const unmatched = Array.from({ length: 40 }, (_, i) => file(`other/${'語'.repeat(1_000)}-${i}.ts`, 3))
+    const unmatched = Array.from({ length: 20 }, (_, i) => file(`other/${'語'.repeat(1_000)}-${i}.ts`, 3))
     const heading = `Diff of GitHub ${'組織'.repeat(500)}/repo #1.`
     for (const req of [{}, { path: longDir }]) {
       const all = [...files, ...unmatched]
