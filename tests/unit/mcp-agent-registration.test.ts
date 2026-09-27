@@ -4,6 +4,7 @@ import {
   CODEX_SWITCHBOARD_TOOL_TIMEOUT_SEC,
   codexSwitchboardMcpArgs,
   isSwitchboardCodexElicitation,
+  isSwitchboardOpencodeReadTool,
   isSwitchboardOpencodeTool,
 } from '../../src/main/mcp/agent-registration'
 import { HOST_WRITE_APPROVAL_TTL_MS } from '../../src/shared/agent-host-writes'
@@ -52,5 +53,12 @@ describe('OpenCode', () => {
     expect(isSwitchboardOpencodeTool('switchboard_x_delete_repo')).toBe(false)
     expect(isSwitchboardOpencodeTool('switchboard_made_up_tool')).toBe(false)
     expect(isSwitchboardOpencodeTool('github_create_issue')).toBe(false)
+  })
+
+  it('knows the diff, line comment and review tools, and only the diff as a read plan mode allows', () => {
+    for (const tool of ['get_pr_diff', 'comment_on_line', 'draft_review']) expect(isSwitchboardOpencodeTool(`switchboard_${tool}`)).toBe(true)
+    expect(isSwitchboardOpencodeReadTool('switchboard_get_pr_diff')).toBe(true)
+    expect(isSwitchboardOpencodeReadTool('switchboard_comment_on_line')).toBe(false)
+    expect(isSwitchboardOpencodeReadTool('switchboard_draft_review')).toBe(false)
   })
 })

@@ -398,6 +398,22 @@ describe('OpenCode permission requests', () => {
     expect(onEvent.mock.calls.map(([e]) => e.type)).toContain('request.opened')
   })
 
+  it('allows the diff, line comment and review tools without a card', async () => {
+    const { onEvent } = await start(true)
+    for (const tool of ['switchboard_get_pr_diff', 'switchboard_comment_on_line', 'switchboard_draft_review']) {
+      expect(await client!.requestPermission(permission(tool))).toEqual({ outcome: { outcome: 'selected', optionId: 'once' } })
+    }
+    expect(onEvent.mock.calls.map(([e]) => e.type)).not.toContain('request.opened')
+  })
+
+  it('in plan mode, allows get_pr_diff but denies comment_on_line and draft_review', async () => {
+    await start(true, vi.fn(), 'plan')
+    expect(await client!.requestPermission(permission('switchboard_get_pr_diff'))).toEqual({ outcome: { outcome: 'selected', optionId: 'once' } })
+    for (const tool of ['switchboard_comment_on_line', 'switchboard_draft_review']) {
+      expect(await client!.requestPermission(permission(tool))).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } })
+    }
+  })
+
   it('in plan mode, allows our read tools but denies our write tools', async () => {
     await start(true, vi.fn(), 'plan')
     const read = await client!.requestPermission(permission('switchboard_get_pr_status'))

@@ -5,7 +5,17 @@ import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
 import { openExternal } from '../reviews/review-ui'
 import { createRendererLogger } from '../../logger'
-import { hostWriteButtons, hostWriteContext, hostWriteResponse, replyTextProblem, type HostWriteButton } from './host-write-card'
+import {
+  hostWriteButtons,
+  hostWriteContext,
+  hostWriteResponse,
+  initialReviewDraft,
+  replyTextProblem,
+  reviewButtonProblem,
+  type HostWriteButton,
+  type ReviewDraftState,
+} from './host-write-card'
+import { DiffExcerpt, ReviewDraftFields } from './HostWriteReviewParts'
 
 const log = createRendererLogger('chat:host-write-card')
 
@@ -16,13 +26,15 @@ interface HostWriteApprovalCardProps {
 
 /**
  * The approval for a pull request write an agent asked for through the
- * Switchboard MCP server: who asked, the reviewer being answered, the reply
- * as an editable draft, and what it posts. The text left in the box is the
- * text that is posted.
+ * Switchboard MCP server: who asked, the reviewer being answered or the diff
+ * lines being commented on, the text as an editable draft, and what it posts.
+ * The text left in the boxes is the text that is posted. A draft review ends
+ * in one button per verdict the user may give, none of them preselected.
  */
 export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCardProps) {
   const card = message.approval?.hostWrite
   const [text, setText] = useState(card?.replyText ?? '')
+  const [draft, setDraft] = useState<ReviewDraftState>(() => initialReviewDraft(card?.review))
   // `pending` flips only when request.closed round-trips; this stops a double post before then.
   const submitRef = useRef(false)
   const [submitting, setSubmitting] = useState<HostWriteButton['id'] | null>(null)
@@ -33,13 +45,20 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
   const pending = status === 'pending'
   const buttons = hostWriteButtons(card)
   const problem = replyTextProblem(card, text)
+  const buttonProblem = (b: HostWriteButton): string | null => {
+    if (b.decision !== 'approve') return null
+    return b.verdict ? reviewButtonProblem(card, b.verdict, draft) : problem
+  }
+  // A review shows why its mildest verdict is off; a stricter one says why in its tooltip.
+  const mildest = buttons.find((b) => b.verdict)
+  const shownProblem = card.action === 'review' ? (mildest ? buttonProblem(mildest) : null) : problem
 
   const choose = (button: HostWriteButton) => {
     if (submitRef.current) return
-    if (button.decision === 'approve' && problem) return
+    if (buttonProblem(button)) return
     submitRef.current = true
     setSubmitting(button.id)
-    const response = button.decision === 'approve' ? hostWriteResponse(card, button.id, text) : undefined
+    const response = button.decision === 'approve' ? hostWriteResponse(card, button, text, draft) : undefined
     Promise.resolve(onDecide(reqId, button.decision, undefined, response)).catch((err) => {
       // ChatPanel already put the failure in the chat; let the user try again.
       log.warn('decision failed, re-enabling card', { reqId, button: button.id, err })
@@ -62,7 +81,7 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
         <span className="text-[13px] font-[600] text-[var(--text-primary)]">{hostWriteTitle(card)}</span>
         {!pending && (
           <span className={cn('ml-auto text-[11px] font-[600] uppercase', status === 'accepted' ? 'text-[var(--success)]' : 'text-[var(--error)]')}>
-            {status === 'accepted' ? 'Approved' : 'Not posted'}
+            {status === 'accepted' ? (card.action === 'review' ? 'Submitted' : 'Approved') : 'Not posted'}
           </span>
         )}
       </div>
@@ -79,13 +98,28 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
             <b>{card.quote.author}:</b> {card.quote.body}
           </div>
         )}
+        {card.excerpt && <DiffExcerpt lines={card.excerpt} />}
       </div>
 
-      {card.action === 'reply' && (
+      {card.action === 'review' && card.review && (
+        <>
+          <ReviewDraftFields review={card.review} draft={draft} editable={pending && submitting === null} onChange={setDraft} />
+          <div className="flex flex-wrap gap-x-2 px-3 pb-2 text-[11px] text-[var(--text-muted)]">
+            <span>
+              Posted as you, the summary and each comment ending with "via Switchboard". You pick the verdict.
+              {card.review.commentOnly === 'author' && ' You wrote this pull request, so only Comment is offered.'}
+              {card.review.commentOnly === 'closed' && ' This pull request is not open, so only Comment is offered.'}
+            </span>
+            {pending && shownProblem && <span role="alert" className="ml-auto text-[var(--error)]">{shownProblem}</span>}
+          </div>
+        </>
+      )}
+
+      {(card.action === 'reply' || card.action === 'comment') && (
         <div className="px-3 pb-2">
-          <div className="mb-1 text-[11px] text-[var(--text-muted)]">{pending ? 'Reply, editable' : 'Reply'}</div>
+          <div className="mb-1 text-[11px] text-[var(--text-muted)]">{card.action === 'comment' ? (pending ? 'Comment, editable' : 'Comment') : (pending ? 'Reply, editable' : 'Reply')}</div>
           <textarea
-            aria-label="Reply to post"
+            aria-label={card.action === 'comment' ? 'Comment to post' : 'Reply to post'}
             value={text}
             readOnly={!pending || submitting !== null}
             onChange={(e) => setText(e.target.value)}
@@ -114,7 +148,8 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
               key={b.id}
               size="sm"
               variant={b.primary ? 'default' : b.decision === 'deny' ? 'ghost' : 'outline'}
-              disabled={submitting !== null || (b.decision === 'approve' && problem !== null)}
+              disabled={submitting !== null || buttonProblem(b) !== null}
+              title={buttonProblem(b) ?? undefined}
               aria-busy={submitting === b.id || undefined}
               onClick={() => choose(b)}
             >

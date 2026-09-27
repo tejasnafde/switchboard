@@ -1,7 +1,8 @@
 /**
  * Pull request writes an AGENT asks for through the Switchboard MCP server
- * (reply to a review conversation, resolve one, re-run a failed check), and
- * the approval card each one shows before anything reaches a host.
+ * (reply to a review conversation, resolve one, re-run a failed check, comment
+ * on a line, draft a review), and the approval card each one shows before
+ * anything reaches a host.
  *
  * The card rides the ordinary `request.opened` / `request.closed` events with
  * a `hostWrite` payload, so a client that does not know the payload still
@@ -9,7 +10,8 @@
  * `provider:respond-to-request` with an optional `HostWriteResponse`: the
  * text the user edited in the card is the text that gets posted.
  */
-import type { PrHost } from './pull-requests'
+import type { DiffLineKind, PrHost } from './pull-requests'
+import type { ReviewEvent } from './pull-request-writes'
 import type { RuntimeMode } from './provider-events'
 
 /** The last line of everything an agent posts, so a reader knows a person did not type it. */
@@ -28,7 +30,44 @@ export const AGENT_WRITE_WINDOW_MS = 10 * 60_000
  */
 export const HOST_WRITE_APPROVAL_TTL_MS = 10 * 60_000
 
-export type HostWriteAction = 'reply' | 'resolve' | 'rerun'
+/** A draft review holds at most this many inline comments; the human form allows more. */
+export const AGENT_REVIEW_MAX_COMMENTS = 30
+/** The summary and every comment of a draft review together, in UTF-8 bytes. */
+export const AGENT_REVIEW_MAX_BYTES = 40 * 1024
+
+export type HostWriteAction = 'reply' | 'resolve' | 'rerun' | 'comment' | 'review'
+
+/** A diff line shown in the card around the line a comment lands on. */
+export interface HostWriteDiffLine {
+  kind: DiffLineKind
+  text: string
+  oldLine: number | null
+  newLine: number | null
+  /** The line the comment is on. */
+  target: boolean
+}
+
+export interface HostWriteReviewComment {
+  /** Minted by the server ("c1", "c2"); the card answers with it. */
+  id: string
+  path: string
+  side: 'new' | 'old'
+  line: number
+  text: string
+  excerpt: HostWriteDiffLine[]
+}
+
+export interface HostWriteReview {
+  summary: string
+  comments: HostWriteReviewComment[]
+  /**
+   * The verdicts the card offers, from who the user is on this PR (an author
+   * gets Comment only). Never a choice: the card pre-selects none of them.
+   */
+  verdicts: ReviewEvent[]
+  /** Why only Comment is offered: the user wrote the PR, or it is not open. */
+  commentOnly?: 'author' | 'closed'
+}
 
 export interface HostWriteCard {
   action: HostWriteAction
@@ -42,8 +81,12 @@ export interface HostWriteCard {
   location: string | null
   /** The reviewer comment the reply answers, or the conversation being resolved. */
   quote: { author: string; body: string } | null
-  /** The agent's draft; the card lets the user edit it. Reply only. */
+  /** The agent's draft; the card lets the user edit it. Reply and comment. */
   replyText?: string
+  /** The diff around the line. Comment only. */
+  excerpt?: HostWriteDiffLine[]
+  /** Review only. */
+  review?: HostWriteReview
   /** The agent asked to resolve after replying, so "Post and resolve" is the primary button. */
   suggestResolve?: boolean
   /** Re-run only. */
@@ -53,10 +96,16 @@ export interface HostWriteCard {
 
 /** What the card sends back with an approval. */
 export interface HostWriteResponse {
-  /** The reply as the user left it in the card. */
+  /** The reply or the comment as the user left it in the card. */
   text?: string
   /** "Post and resolve" (true) or "Post only" (false). Absent from a client that shows a plain approval, which runs what the agent asked. */
   resolve?: boolean
+  /** Review: the verdict the user picked. A review approved without one posts nothing. */
+  verdict?: ReviewEvent
+  /** Review: the summary as the user left it. */
+  summary?: string
+  /** Review: the comments the user kept, by id, with their text as edited. A removed comment is absent. */
+  comments?: Array<{ id: string; text: string }>
 }
 
 export type AgentToolGate = 'allow' | 'deny' | 'card'
@@ -100,15 +149,29 @@ export function hostWriteDetail(card: HostWriteCard): string {
   if (card.action === 'reply') lines.push(`Reply on ${where}${card.suggestResolve ? ', then resolve' : ''}`)
   if (card.action === 'resolve') lines.push(`Resolve the conversation on ${where}`)
   if (card.action === 'rerun') lines.push(`Re-run ${card.checkName ?? 'a failed check'} on ${card.prLabel}`)
+  if (card.action === 'comment') lines.push(`Comment on ${where}`)
+  if (card.action === 'review') lines.push(`Review ${card.prLabel} with ${card.review?.comments.length ?? 0} line comments`)
   if (card.quote) lines.push('', `${card.quote.author}: ${card.quote.body}`)
   if (card.replyText) lines.push('', card.replyText)
+  if (card.review) {
+    if (card.review.summary) lines.push('', card.review.summary)
+    for (const c of card.review.comments) lines.push('', `${c.path}:${c.line}: ${capDetail(c.text)}`)
+  }
   lines.push('', 'Answer this on the desktop: a phone cannot post to a pull request.')
   return lines.join('\n')
+}
+
+const DETAIL_COMMENT_CHARS = 300
+
+function capDetail(text: string): string {
+  return text.length > DETAIL_COMMENT_CHARS ? `${text.slice(0, DETAIL_COMMENT_CHARS)}…` : text
 }
 
 export function hostWriteTitle(card: HostWriteCard): string {
   if (card.action === 'reply') return card.suggestResolve ? 'Reply and resolve a review conversation' : 'Reply to a review conversation'
   if (card.action === 'resolve') return 'Resolve a review conversation'
+  if (card.action === 'comment') return 'Comment on a line'
+  if (card.action === 'review') return 'Submit a review'
   return 'Re-run a failed check'
 }
 
@@ -116,8 +179,17 @@ export function hostWriteTitle(card: HostWriteCard): string {
 export function parseHostWriteResponse(value: unknown): HostWriteResponse {
   if (!value || typeof value !== 'object') return {}
   const r = value as Record<string, unknown>
+  const comments = Array.isArray(r.comments)
+    ? r.comments.flatMap((c: unknown) => {
+      const item = c as Record<string, unknown> | null
+      return item && typeof item.id === 'string' && typeof item.text === 'string' ? [{ id: item.id, text: item.text }] : []
+    })
+    : undefined
   return {
     ...(typeof r.text === 'string' ? { text: r.text } : {}),
     ...(typeof r.resolve === 'boolean' ? { resolve: r.resolve } : {}),
+    ...(r.verdict === 'comment' || r.verdict === 'approve' || r.verdict === 'request_changes' ? { verdict: r.verdict } : {}),
+    ...(typeof r.summary === 'string' ? { summary: r.summary } : {}),
+    ...(comments ? { comments } : {}),
   }
 }

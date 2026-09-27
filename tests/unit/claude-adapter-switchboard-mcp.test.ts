@@ -83,6 +83,15 @@ describe('Claude canUseTool for the Switchboard tools', () => {
     await adapter.stopSession('t1')
   })
 
+  it('allows the diff, line comment and review tools without a card', async () => {
+    const { adapter, onEvent } = await startTurn('sandbox', true)
+    for (const tool of ['get_pr_diff', 'comment_on_line', 'draft_review']) {
+      expect((await captured!.canUseTool(`mcp__switchboard__${tool}`, {})).behavior).toBe('allow')
+    }
+    expect(onEvent.mock.calls.map(([e]) => e.type)).not.toContain('request.opened')
+    await adapter.stopSession('t1')
+  })
+
   it('allows them in plan mode too, where the server does the refusing', async () => {
     const { adapter } = await startTurn('plan', true)
     expect((await captured!.canUseTool('mcp__switchboard__send_agent_message', {})).behavior).toBe('allow')

@@ -67,6 +67,13 @@ describe('parseHostWriteResponse', () => {
     expect(parseHostWriteResponse(null)).toEqual({})
     expect(parseHostWriteResponse({ text: 3, resolve: 'yes' })).toEqual({})
   })
+
+  it('keeps a review\'s verdict, summary and kept comments, dropping malformed ones', () => {
+    expect(parseHostWriteResponse({
+      verdict: 'approve', summary: 'LGTM', comments: [{ id: 'c1', text: 'ok' }, { id: 2, text: 'x' }, null, { id: 'c3' }], merge: true,
+    })).toEqual({ verdict: 'approve', summary: 'LGTM', comments: [{ id: 'c1', text: 'ok' }] })
+    expect(parseHostWriteResponse({ verdict: 'merge', comments: 'c1' })).toEqual({})
+  })
 })
 
 describe('hostWriteDetail', () => {
@@ -79,9 +86,29 @@ describe('hostWriteDetail', () => {
   })
 })
 
+describe('hostWriteDetail for the new comment writes', () => {
+  it('names a line comment and every comment of a review, cut short', () => {
+    expect(hostWriteDetail({ ...card, action: 'comment', suggestResolve: undefined, quote: null, replyText: 'Log it.' })).toContain('Comment on ssg-bot-v2 #612 · sync/worker.py:88')
+    const review = hostWriteDetail({
+      ...card, action: 'review', location: null, quote: null, replyText: undefined, suggestResolve: undefined,
+      review: { summary: 'Two notes.', verdicts: ['comment'], comments: [{ id: 'c1', path: 'a.py', side: 'new', line: 3, text: 'x'.repeat(400), excerpt: [] }] },
+    })
+    expect(review).toContain('Review ssg-bot-v2 #612 with 1 line comments')
+    expect(review).toContain('Two notes.')
+    expect(review).toContain(`a.py:3: ${'x'.repeat(300)}…`)
+    expect(review).toContain('desktop')
+  })
+})
+
 describe('push for a host write card', () => {
   it('tells the phone to approve at the desktop', () => {
     const push = pushForEvent({ type: 'request.opened', threadId: 't1', requestId: 'sbmcp_1', requestType: 'tool', toolName: 'mcp__switchboard__reply_to_conversation', detail: '', hostWrite: card })
     expect(push?.body).toBe('Approve at the desktop: Reply and resolve a review conversation on ssg-bot-v2 #612')
+  })
+
+  it('names a draft review', () => {
+    const review: HostWriteCard = { ...card, action: 'review', review: { summary: 's', comments: [], verdicts: ['comment'] } }
+    const push = pushForEvent({ type: 'request.opened', threadId: 't1', requestId: 'sbmcp_2', requestType: 'tool', toolName: 'mcp__switchboard__draft_review', detail: '', hostWrite: review })
+    expect(push?.body).toBe('Approve at the desktop: Submit a review on ssg-bot-v2 #612')
   })
 })
