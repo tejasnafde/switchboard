@@ -109,7 +109,9 @@ describe('diffPage', () => {
 
   it('never cuts a line inside a surrogate pair', () => {
     const out = pageOf([file('emoji.txt', 1, {}, () => `${'a'.repeat(PR_DIFF_LINE_CHARS - 1)}\u{1F600}tail`)]).text
-    expect(out).toContain(`${'a'.repeat(PR_DIFF_LINE_CHARS - 1)}… (line cut)`)
+    expect(out).toContain(`${'a'.repeat(PR_DIFF_LINE_CHARS - 1)}\u{1F600}… (line cut)`)
+    // Counted in code points: 400 emoji are 800 UTF-16 units but not a long line.
+    expect(pageOf([file('wide.txt', 1, {}, () => '\u{1F600}'.repeat(PR_DIFF_LINE_CHARS))]).text).not.toContain('(line cut)')
     expect(out).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
   })
 
