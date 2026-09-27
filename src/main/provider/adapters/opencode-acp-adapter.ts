@@ -204,6 +204,10 @@ function collectMcpNamesFromConfig(config: Record<string, unknown>, out: Set<str
   }
 }
 
+function opencodeGlobalConfigHome(env: Record<string, string | undefined>): string | null {
+  return env.HOME || homedir() || null
+}
+
 async function collectConfiguredOpencodeMcpServers(
   cwd: string,
   env: Record<string, string | undefined>,
@@ -214,8 +218,9 @@ async function collectConfiguredOpencodeMcpServers(
   if (xdgConfig) {
     files.push(join(xdgConfig, 'opencode', 'opencode.json'), join(xdgConfig, 'opencode', 'opencode.jsonc'))
   }
-  if (env.HOME) {
-    files.push(join(env.HOME, '.config', 'opencode', 'opencode.json'), join(env.HOME, '.config', 'opencode', 'opencode.jsonc'))
+  const configHome = opencodeGlobalConfigHome(env)
+  if (configHome) {
+    files.push(join(configHome, '.config', 'opencode', 'opencode.json'), join(configHome, '.config', 'opencode', 'opencode.jsonc'))
   }
   if (env.OPENCODE_CONFIG) files.push(env.OPENCODE_CONFIG)
 
@@ -244,22 +249,59 @@ async function collectConfiguredOpencodeMcpServers(
   return [...names].sort()
 }
 
+type OpencodePermissionValue = 'allow' | 'ask' | 'deny'
+
+const OPENCODE_PERMISSION_STRENGTH: Record<OpencodePermissionValue, number> = {
+  allow: 0,
+  ask: 1,
+  deny: 2,
+}
+
+function isOpencodePermissionValue(value: unknown): value is OpencodePermissionValue {
+  return value === 'allow' || value === 'ask' || value === 'deny'
+}
+
+function permissionIsAtLeastAsProtective(value: unknown, baseline: OpencodePermissionValue): boolean {
+  return isOpencodePermissionValue(value)
+    && OPENCODE_PERMISSION_STRENGTH[value] >= OPENCODE_PERMISSION_STRENGTH[baseline]
+}
+
+function generatedRulesForScalarDefault(
+  generated: Record<string, unknown>,
+  baseline: OpencodePermissionValue,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(generated)) {
+    if (permissionIsAtLeastAsProtective(value, baseline)) out[key] = value
+  }
+  return out
+}
+
 function mergeOpencodeInlineConfig(existing: string | undefined, injected: string): string {
   if (!existing) return injected
   const base = parseOpencodeConfigObject(existing, 'existing OPENCODE_CONFIG_CONTENT')
   const extra = parseOpencodeConfigObject(injected, 'Switchboard OPENCODE_CONFIG_CONTENT')
   if (!base || !extra) return injected
-  const basePermission = base.permission && typeof base.permission === 'object' && !Array.isArray(base.permission)
-    ? base.permission as Record<string, unknown>
-    : {}
   const extraPermission = extra.permission && typeof extra.permission === 'object' && !Array.isArray(extra.permission)
     ? extra.permission as Record<string, unknown>
+    : {}
+  if (isOpencodePermissionValue(base.permission)) {
+    return JSON.stringify({
+      ...base,
+      permission: {
+        '*': base.permission,
+        ...generatedRulesForScalarDefault(extraPermission, base.permission),
+      },
+    })
+  }
+  const basePermission = base.permission && typeof base.permission === 'object' && !Array.isArray(base.permission)
+    ? base.permission as Record<string, unknown>
     : {}
   return JSON.stringify({
     ...base,
     permission: {
-      ...basePermission,
       ...extraPermission,
+      ...basePermission,
     },
   })
 }

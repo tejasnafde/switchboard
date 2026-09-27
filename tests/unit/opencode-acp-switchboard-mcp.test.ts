@@ -5,13 +5,22 @@
  * the server opens its own.
  */
 import { EventEmitter } from 'node:events'
+import { promises as fs } from 'node:fs'
 import { PassThrough } from 'node:stream'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 
+const osMock = vi.hoisted(() => ({ homedir: '/tmp/sb-e2e-ocperm-missing-home' }))
 const newSessionCalls: Array<Record<string, unknown>> = []
 const spawnedEnvs: Array<Record<string, string | undefined>> = []
+const scratchDirs: string[] = []
 let client: { requestPermission(p: RequestPermissionRequest): Promise<unknown> } | null = null
+
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  return { ...actual, homedir: () => osMock.homedir }
+})
 
 vi.mock('child_process', () => ({
   spawn: vi.fn((_bin: unknown, _args: unknown, opts: { env: Record<string, string | undefined> }) => {
@@ -94,6 +103,14 @@ beforeEach(() => {
   client = null
 })
 
+afterEach(async () => {
+  for (const dir of scratchDirs.splice(0)) {
+    if (dir.startsWith('/tmp/sb-e2e-ocperm.')) {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  }
+})
+
 describe('OpenCode registration', () => {
   it('passes the server to session/new', async () => {
     await start(true)
@@ -130,6 +147,54 @@ describe('OpenCode registration', () => {
           command: ['node', 'server.mjs'],
         },
       },
+    })
+  })
+
+  it('keeps a scalar user deny as the effective MCP permission', async () => {
+    await start(true, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_CONTENT: '{"permission":"deny","mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    })
+    const permission = JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission
+    expect(Object.keys(permission)).toEqual(['*'])
+    expect(permission['*']).toBe('deny')
+  })
+
+  it('keeps explicit user rules after generated wildcard rules', async () => {
+    await start(false, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_CONTENT: '{"permission":{"github_delete":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    })
+    const permission = JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission
+    expect(Object.keys(permission)).toEqual(['github_*', 'github_delete'])
+    expect(permission).toEqual({
+      'github_*': 'ask',
+      github_delete: 'deny',
+    })
+  })
+
+  it('does not overwrite existing user permission keys', async () => {
+    await start(true, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_CONTENT: '{"permission":{"github_*":"deny","switchboard_*":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    })
+    expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toEqual({
+      'github_*': 'deny',
+      'switchboard_*': 'deny',
+    })
+  })
+
+  it('uses homedir as the global OpenCode config fallback when HOME is absent', async () => {
+    const dir = await fs.mkdtemp('/tmp/sb-e2e-ocperm.')
+    scratchDirs.push(dir)
+    osMock.homedir = dir
+    await fs.mkdir(join(dir, '.config', 'opencode'), { recursive: true })
+    await fs.writeFile(
+      join(dir, '.config', 'opencode', 'opencode.json'),
+      '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    )
+
+    await start(false)
+
+    expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toEqual({
+      'github_*': 'ask',
     })
   })
 })
