@@ -32,7 +32,7 @@
  */
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { AGENT_REPLY_MAX_CHARS, hostWriteDetail, type HostWriteCard } from '@shared/agent-host-writes'
-import type { AgentType } from '@shared/types'
+import { agentLabel, toAgentProvider, type AgentType } from '@shared/types'
 import { buildWindow, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
 import { randomUUID } from 'crypto'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
@@ -317,7 +317,7 @@ export class DemoAdapter implements ProviderAdapter {
       if (turn.cancelled) return
       const card: HostWriteCard = {
         action: 'reply',
-        agentLabel: 'Claude',
+        agentLabel: agentLabel(toAgentProvider(this.provider)),
         host: 'bitbucket',
         prLabel: 'ssg-bot-v2 #612',
         url: null,

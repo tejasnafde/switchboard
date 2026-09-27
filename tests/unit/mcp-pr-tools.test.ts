@@ -289,6 +289,20 @@ describe('what changed while the card was open', () => {
     expect(ctx.calls).toEqual([])
   })
 
+  it('posts the reply but does not resolve when the chat switched to plan mode during the post', async () => {
+    const ctx = setup({ answer: () => ({ decision: 'approve' as const, response: { resolve: true } }) })
+    const post = ctx.access.reply
+    vi.mocked(post).mockImplementation(async (ref, input) => {
+      ctx.calls.push({ op: 'reply', ref, input })
+      ctx.setMode('plan')
+      return { ok: true } as Awaited<ReturnType<typeof post>>
+    })
+    const result = await ctx.call('reply_to_conversation', { conversationId: 'PRRT_1', text: 'Done.', resolve: true })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('did not resolve')
+    expect(ctx.calls.map((c) => c.op)).toEqual(['reply'])
+  })
+
   it('re-runs nothing when the PR was unlinked', async () => {
     let access: AgentPullRequestAccess | null = null
     const ctx = setup({ answer: () => { vi.mocked(access!.linkedPrs).mockReturnValue([OTHER]); return { decision: 'approve' as const, response: {} } } })

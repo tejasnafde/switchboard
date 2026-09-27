@@ -340,6 +340,10 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
 
       const edited = final.text !== draft.text ? ` The user edited your reply first; what was posted:\n${final.text}` : ''
       if (!resolve) return toolText(`Posted the reply on ${prLabel(p.ref)}${location(conversation) ? ` at ${location(conversation)}` : ''}. The conversation stays open.${edited}`)
+      // The post can take a while: check the link and the mode again before the second write.
+      if (afterApproval(p.ref, PR_REPLY_TOOL, signal)) {
+        return toolText(`Posted the reply on ${prLabel(p.ref)}, but did not resolve the conversation: the chat's link or mode changed while the reply was posting. Do not post the reply again.${edited}`, true)
+      }
       const resolved = await p.access.setResolved(p.ref, { conversationId: conversation.id }, true)
       if (!resolved.ok) {
         return toolText(`Posted the reply, but resolving the conversation failed: ${resolved.error.message} Do not post the reply again.${edited}`, true)
