@@ -85,3 +85,20 @@ export class EventReplayBuffer {
     this.bytes = 0
   }
 }
+
+/**
+ * Answer a `hello`. A cursor from another process indexes a sequence space that
+ * no longer exists, so it gets `gap` (with nothing replayed) rather than the
+ * wrong events. `since`, not a zeroed cursor, decides: a cross-epoch client that
+ * saw anything HAS lost events.
+ */
+export function resumeFrom(
+  buffer: EventReplayBuffer,
+  epoch: string,
+  hello: { since?: number; epoch?: string },
+  allow?: (channel: string) => boolean,
+): ReplayResult {
+  const since = hello.since ?? 0
+  if (hello.epoch === epoch && since > 0) return buffer.since(since, allow)
+  return { frames: [], gap: since > 0 }
+}

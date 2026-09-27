@@ -12,6 +12,7 @@ import app.switchboard.mobile.platform.protocol.NonRetryableTransportFailure
 import app.switchboard.mobile.platform.protocol.TransportScheduler
 import app.switchboard.mobile.protocol.Credential
 import app.switchboard.mobile.protocol.DisconnectCause
+import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
@@ -396,11 +397,14 @@ private class IapLineConnection(
     }
 }
 
+// `resume` asks TcpHost to answer the coordinator's hello with a replay or a
+// gap, instead of a `ready` sent before the hello that always says no gap.
 private fun tcpHostAuthenticationLine(token: String): String = JsonCodec.encode(
     JsonObject(
         linkedMapOf(
             "k" to JsonString("auth"),
             "token" to JsonString(token),
+            "resume" to JsonBoolean(true),
         ),
     ),
 )

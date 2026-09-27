@@ -8,6 +8,11 @@
  * subprotocol frames outside (see @shared/iap-tunnel), our newline-delimited
  * JSON inside. The relay needs periodic ACKs or it stalls, and
  * `Origin: bot:iap-tunneler` or it accepts the socket then says nothing.
+ *
+ * One instance per tunnel: the owner builds a new one after a drop and hands it
+ * the old one's `resumeState()`, which is sent as `hello { since, epoch }` like
+ * WsTransport's. A host that cannot replay (no `event_replay_v1`, or silent on
+ * hello, as TcpHost was before 2026-08-19) fires `onResumeGap` on every resume.
  */
 import {
   IapFrameParser,
@@ -28,6 +33,14 @@ const DEFAULT_TIMEOUT_MS = 30_000
 const PROVIDER_TIMEOUT_MS = 200_000
 /** ACK once this many unacknowledged bytes have arrived. */
 const ACK_THRESHOLD_BYTES = 32 * 1024
+/** A host older than hello support never answers it; stop waiting after this. */
+const READY_TIMEOUT_MS = 10_000
+const REPLAY_CAPABILITY = 'event_replay_v1'
+
+export interface IapResumeState {
+  since: number
+  epoch: string | null
+}
 
 export type IapTransportState = 'connected' | 'closed'
 
@@ -44,6 +57,9 @@ export interface IapTransportOptions {
   /** Shared secret the VM's TcpHost expects (SWITCHBOARD_TOKEN). */
   backendToken?: string
   timeoutMs?: number
+  /** The previous tunnel's cursor. Absent on a first connect, where there is
+   *  nothing to be stale about. */
+  resume?: IapResumeState
 }
 
 function stripTrailingUndefined(args: unknown[]): unknown[] {
@@ -69,12 +85,24 @@ export class IapTransport implements Transport {
   private readonly timeoutMs: number
   private readonly backendToken?: string
   private capabilities: ReadonlySet<string> | null = null
+  private readonly resuming: boolean
+  private lastSeq: number
+  private epoch: string | null
+  /** Sequenced events held until `ready`, so a replay lands before newer live
+   *  frames. Null once this tunnel's handshake has settled. */
+  private resumeHold: Array<Extract<WsFrame, { k: 'evt' }>> | null = []
+  private readyTimer: ReturnType<typeof setTimeout> | null = null
 
   onStateChange: ((state: IapTransportState) => void) | null = null
+  /** The host could not replay what we missed, so the owner must re-seed. */
+  onResumeGap: (() => void) | null = null
 
   constructor(opts: IapTransportOptions) {
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.backendToken = opts.backendToken
+    this.resuming = opts.resume !== undefined
+    this.lastSeq = opts.resume?.since ?? 0
+    this.epoch = opts.resume?.epoch ?? null
 
     const url = iapConnectUrl(opts.target)
     // RN's WebSocket takes a third options arg for headers; lib.dom's signature
@@ -97,10 +125,16 @@ export class IapTransport implements Transport {
       if (this.closed) return
       log.info('iap tunnel open', `${opts.target.instance}:${opts.target.port}`)
       this.open = true
-      // TcpHost wants the auth line first, ahead of anything queued.
+      // TcpHost wants the auth line first, ahead of anything queued. `resume`
+      // tells it to answer our hello instead of sending ready straight away.
       if (this.backendToken) {
-        this.sendLine(JSON.stringify({ k: 'auth', token: this.backendToken }))
+        this.sendLine(JSON.stringify({ k: 'auth', token: this.backendToken, resume: true }))
       }
+      this.sendLine(encodeFrame({ k: 'hello', since: this.lastSeq, epoch: this.epoch ?? undefined }))
+      this.readyTimer = setTimeout(() => {
+        log.warn('backend did not answer hello, treating it as unable to replay')
+        this.settle(null)
+      }, READY_TIMEOUT_MS)
       for (const line of this.outbox.splice(0)) this.sendLine(line)
       this.onStateChange?.('connected')
     }
@@ -172,11 +206,50 @@ export class IapTransport implements Transport {
       if (frame.ok) entry.resolve(frame.result)
       else entry.reject(new Error(frame.error))
     } else if (frame.k === 'evt') {
-      const set = this.listeners.get(frame.ch)
-      if (set) for (const fn of set) fn(...frame.args)
+      if (this.resumeHold !== null && frame.seq !== undefined && frame.seq > this.lastSeq) {
+        this.resumeHold.push(frame)
+        return
+      }
+      this.applyEvent(frame)
     } else if (frame.k === 'ready') {
       this.capabilities = new Set(frame.capabilities ?? [])
+      // An old host sends a second ready (after auth, then for hello).
+      if (this.resumeHold !== null) this.settle(frame)
     }
+  }
+
+  /** `ready` is null when the host never answered hello. */
+  private settle(ready: Extract<WsFrame, { k: 'ready' }> | null): void {
+    if (this.readyTimer) clearTimeout(this.readyTimer)
+    this.readyTimer = null
+    const held = this.resumeHold ?? []
+    this.resumeHold = null
+    const canReplay = ready !== null && this.capabilities?.has(REPLAY_CAPABILITY) === true
+    const epochChanged = ready !== null && this.epoch !== null && this.epoch !== ready.epoch
+    if (ready) this.epoch = ready.epoch
+    if (this.resuming && (!canReplay || epochChanged || ready?.gap)) {
+      log.warn(canReplay ? 'replay gap, re-seeding' : 'backend cannot replay, re-seeding')
+      if (ready) this.lastSeq = ready.seq
+      this.onResumeGap?.()
+      return
+    }
+    held.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    for (const evt of held) this.applyEvent(evt)
+  }
+
+  private applyEvent(frame: Extract<WsFrame, { k: 'evt' }>): void {
+    if (frame.seq !== undefined) {
+      // A replay can overlap frames the previous tunnel already delivered.
+      if (frame.seq <= this.lastSeq) return
+      this.lastSeq = frame.seq
+    }
+    const set = this.listeners.get(frame.ch)
+    if (set) for (const fn of set) fn(...frame.args)
+  }
+
+  /** Hand this to the next tunnel's `resume` option. */
+  resumeState(): IapResumeState {
+    return { since: this.lastSeq, epoch: this.epoch }
   }
 
   supportsCapability(capability: string): boolean | undefined {
@@ -207,6 +280,8 @@ export class IapTransport implements Transport {
     if (this.closed) return
     this.closed = true
     this.open = false
+    if (this.readyTimer) clearTimeout(this.readyTimer)
+    this.readyTimer = null
     for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer)
       reject(new Error(reason))
