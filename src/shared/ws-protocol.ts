@@ -47,6 +47,10 @@ export const BACKEND_CAPABILITIES = [
    *  by `ProviderChannels.LIST_QUEUED_TURNS`, and can be sent into the running
    *  turn now (`PROMOTE_QUEUED_TURN`) or taken back (`CANCEL_QUEUED_TURN`). */
   'turn_queue_controls_v1',
+  /** `hello { since, epoch }` is answered with a replay of missed events or
+   *  `gap`. TcpHost lacked it, so an IAP client that sees no such capability
+   *  must re-seed on every reconnect. */
+  'event_replay_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

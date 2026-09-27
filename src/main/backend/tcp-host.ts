@@ -5,10 +5,16 @@
  *
  * With a token set, the first line must be {"k":"auth","token":...} or the
  * socket is destroyed, and emit() never reaches an unauthenticated client.
+ *
+ * Resume works as on WsHost: `hello { since, epoch }` is answered with the
+ * missed events and `ready`. An auth line carrying `resume: true` promises that
+ * hello, so the legacy `ready` sent straight after auth is skipped; otherwise it
+ * would answer the client's hello first, with `gap: false`.
  */
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Server, Socket } from 'node:net'
-import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, type WsFrame } from '@shared/ws-protocol'
+import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
+import { EventReplayBuffer, resumeFrom, type ReplayResult } from '@shared/event-replay-buffer'
 import {
   isChannelAllowed,
   isFileMutationAllowed,
@@ -50,6 +56,8 @@ export class TcpHost implements BackendHost {
   private readonly clients = new Set<Client>()
   private disposed = false
   private readonly epoch = randomUUID()
+  private seq = 0
+  private readonly replay = new EventReplayBuffer()
 
   constructor(
     server: Server,
@@ -111,7 +119,7 @@ export class TcpHost implements BackendHost {
         client.socket.destroy()
         return
       }
-      const msg = parsed as { k?: unknown; token?: unknown }
+      const msg = parsed as { k?: unknown; token?: unknown; resume?: unknown }
       if (msg.k !== 'auth' || !tokenMatches(this.token as string, msg.token)) {
         log.warn('bad or missing auth token, dropping client')
         client.socket.destroy()
@@ -119,7 +127,7 @@ export class TcpHost implements BackendHost {
       }
       client.authed = true
       this.write(client, { k: 'res', id: 0, ok: true, result: 'authed' })
-      this.writeReady(client)
+      if (msg.resume !== true) this.writeReady(client, { frames: [], gap: false })
       return
     }
 
@@ -189,17 +197,25 @@ export class TcpHost implements BackendHost {
         )
       }
     } else if (frame.k === 'hello') {
-      this.writeReady(client)
+      const result = resumeFrom(this.replay, this.epoch, frame)
+      if (result.frames.length > 0 || result.gap) {
+        log.info(`client resumed from ${frame.since ?? 0}: ${result.gap ? 'gap, told to re-seed' : `replayed ${result.frames.length}`}`)
+      }
+      this.writeReady(client, result)
     }
   }
 
-  private writeReady(client: Client): void {
+  /** Replay BEFORE the ready marker: the client releases held frames on ready.
+   *  Nothing is replayed on a gap, the client re-seeds anyway. */
+  private writeReady(client: Client, result: ReplayResult): void {
+    if (client.socket.destroyed) return
+    if (!result.gap) for (const encoded of result.frames) client.socket.write(encoded + '\n')
     this.write(client, {
       k: 'ready',
       epoch: this.epoch,
-      seq: 0,
-      replayed: 0,
-      gap: false,
+      seq: this.seq,
+      replayed: result.gap ? 0 : result.frames.length,
+      gap: result.gap,
       capabilities: [...BACKEND_CAPABILITIES],
     })
   }
@@ -221,7 +237,10 @@ export class TcpHost implements BackendHost {
 
   emit(channel: string, ...args: unknown[]): void {
     if (!isChannelAllowed(this.deviceScopes, channel)) return
-    const line = encodeFrame({ k: 'evt', ch: channel, args }) + '\n'
+    const seq = isReplayableEventChannel(channel) ? ++this.seq : undefined
+    const encoded = encodeFrame({ k: 'evt', ch: channel, args, seq })
+    if (seq !== undefined) this.replay.push(seq, encoded, channel)
+    const line = encoded + '\n'
     for (const client of this.clients) {
       // Unauthed sockets must never receive session events.
       if (client.authed && !client.socket.destroyed) client.socket.write(line)

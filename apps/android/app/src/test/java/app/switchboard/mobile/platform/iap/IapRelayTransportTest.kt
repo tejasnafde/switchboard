@@ -63,7 +63,7 @@ class IapRelayTransportTest {
         assertEquals(listOf("open"), fixture.callbacks.events)
         assertEquals(
             listOf(
-                "{\"k\":\"auth\",\"token\":\"backend-secret\"}\n",
+                "{\"k\":\"auth\",\"token\":\"backend-secret\",\"resume\":true}\n",
                 "queued-one\n",
                 "queued-two\n",
             ),

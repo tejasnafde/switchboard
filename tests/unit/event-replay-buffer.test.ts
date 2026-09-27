@@ -5,7 +5,7 @@
  * silent hole, which is the failure this whole mechanism exists to prevent.
  */
 import { describe, it, expect } from 'vitest'
-import { EventReplayBuffer } from '../../src/shared/event-replay-buffer'
+import { EventReplayBuffer, resumeFrom } from '../../src/shared/event-replay-buffer'
 
 const frame = (seq: number, pad = ''): string => JSON.stringify({ k: 'evt', seq, pad })
 
@@ -80,5 +80,31 @@ describe('EventReplayBuffer', () => {
     const buf = new EventReplayBuffer()
     for (let i = 1; i <= 3; i++) buf.push(i, frame(i))
     expect(buf.since(3)).toEqual({ frames: [], gap: false })
+  })
+})
+
+describe('resumeFrom', () => {
+  const filled = (): EventReplayBuffer => {
+    const buf = new EventReplayBuffer()
+    for (let i = 1; i <= 3; i++) buf.push(i, frame(i), 'provider:event')
+    return buf
+  }
+
+  it('replays after a same-epoch cursor', () => {
+    expect(resumeFrom(filled(), 'e1', { since: 1, epoch: 'e1' })).toEqual({ frames: [frame(2), frame(3)], gap: false })
+  })
+
+  it('a first hello (no epoch) is fresh, not a gap', () => {
+    expect(resumeFrom(filled(), 'e1', { since: 0 })).toEqual({ frames: [], gap: false })
+  })
+
+  it('a same-epoch cursor of 0 is a gap once anything was emitted, never a replay from the start', () => {
+    expect(resumeFrom(filled(), 'e1', { since: 0, epoch: 'e1' })).toEqual({ frames: [], gap: true })
+    expect(resumeFrom(new EventReplayBuffer(), 'e1', { since: 0, epoch: 'e1' })).toEqual({ frames: [], gap: false })
+  })
+
+  it('a cursor from another epoch is a gap only if it had seen something', () => {
+    expect(resumeFrom(filled(), 'e2', { since: 2, epoch: 'e1' })).toEqual({ frames: [], gap: true })
+    expect(resumeFrom(filled(), 'e2', { since: 0, epoch: 'e1' })).toEqual({ frames: [], gap: false })
   })
 })

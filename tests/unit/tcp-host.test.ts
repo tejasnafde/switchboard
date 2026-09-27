@@ -231,3 +231,64 @@ describe('TcpHost.dispose', () => {
     // macOS CI against vitest's 5s default, which blocked a release.
   }, 20_000)
 })
+
+describe('TcpHost resume', () => {
+  const hello = (since: number, epoch?: string): string => JSON.stringify({ k: 'hello', since, epoch }) + '\n'
+
+  it('replays what a returning client missed, then sends ready', async () => {
+    const { host, port } = await boot()
+    const first = await dial(port)
+    first.socket.write(hello(0))
+    const ready = (await first.r.next()) as { epoch: string; capabilities: string[] }
+    expect(ready.capabilities).toContain('event_replay_v1')
+    host.emit('provider:event', { n: 1 })
+    expect(await first.r.next()).toMatchObject({ seq: 1, args: [{ n: 1 }] })
+    first.socket.destroy()
+
+    host.emit('provider:event', { n: 2 })
+    host.emit('provider:event', { n: 3 })
+    const second = await dial(port)
+    second.socket.write(hello(1, ready.epoch))
+    expect(await second.r.next()).toMatchObject({ seq: 2, args: [{ n: 2 }] })
+    expect(await second.r.next()).toMatchObject({ seq: 3, args: [{ n: 3 }] })
+    expect(await second.r.next()).toMatchObject({ k: 'ready', seq: 3, replayed: 2, gap: false })
+  })
+
+  it('answers a cursor from another process with gap and no replay', async () => {
+    const { host, port } = await boot()
+    host.emit('provider:event', { n: 1 })
+    const { socket, r } = await dial(port)
+    socket.write(hello(5, 'previous-process'))
+    expect(await r.next()).toMatchObject({ k: 'ready', gap: true, replayed: 0 })
+  })
+
+  it('answers a same-epoch cursor of 0 with gap once anything was emitted', async () => {
+    const { host, port } = await boot()
+    const first = await dial(port)
+    first.socket.write(hello(0))
+    const { epoch } = (await first.r.next()) as { epoch: string }
+    host.emit('provider:event', { n: 1 })
+    const second = await dial(port)
+    second.socket.write(hello(0, epoch))
+    expect(await second.r.next()).toMatchObject({ k: 'ready', gap: true, replayed: 0 })
+  })
+
+  it('terminal output takes no sequence number', async () => {
+    const { host, port } = await boot(undefined, ['chat', 'terminal'])
+    const { r } = await dial(port)
+    await new Promise((res) => setTimeout(res, 30))
+    host.emit(TerminalChannels.OUTPUT, 'x')
+    expect(await r.next()).not.toHaveProperty('seq')
+  })
+
+  it('an auth line with resume: true waits for the hello instead of sending ready', async () => {
+    const { host, port } = await boot('s3cret')
+    const { socket, r } = await dial(port)
+    socket.write(JSON.stringify({ k: 'auth', token: 's3cret', resume: true }) + '\n')
+    expect(await r.next()).toMatchObject({ result: 'authed' })
+    host.emit('provider:event', { n: 1 })
+    expect(await r.next()).toMatchObject({ k: 'evt', seq: 1 })
+    socket.write(hello(0))
+    expect(await r.next()).toMatchObject({ k: 'ready', seq: 1 })
+  })
+})

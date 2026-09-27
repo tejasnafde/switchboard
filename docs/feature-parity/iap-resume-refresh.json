@@ -1,0 +1,65 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "iap-resume-refresh",
+  "summary": "Clients reaching a VM through the IAP tunnel (TcpHost) now resume the event stream like WebSocket clients do: TcpHost sequences and buffers replayable events and answers hello { since, epoch } with a replay or gap, and the phone's IapTransport carries its cursor across tunnels and fires onResumeGap, so a dropped tunnel re-seeds the open thread and the conversation list instead of leaving them stale. A host that cannot replay makes a resuming client re-seed on every reconnect. Both client transports take the first ready's seq as their cursor, and a same-epoch cursor of 0 is answered with gap once anything was emitted, so an event missed after an idle connection is never silently dropped.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop app reaches remote backends through WsTransport over an SSH tunnel, which already resumes. TcpHost runs in the Electron main process only as a backend (src/main/ipc/machines.ts constructs it unchanged); its changes are recorded under sharedBackendApi."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/iap-transport.ts",
+        "apps/mobile/src/stores/connections.ts",
+        "apps/mobile/src/screens/ConversationsScreen.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/iap/IapRelayTransport.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/iap/IapRelayTransportTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/backend/tcp-host.ts",
+        "src/main/backend/ws-host.ts",
+        "src/shared/event-replay-buffer.ts",
+        "src/shared/ws-protocol.ts",
+        "src/shared/ws-transport.ts",
+        "tests/unit/iap-transport-resume.test.ts",
+        "tests/unit/tcp-host.test.ts",
+        "tests/unit/ws-resume.test.ts",
+        "tests/unit/event-replay-buffer.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "The replay buffer and the phone's resume cursor are in memory only. No persisted shape, table or migration changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Wire-compatible in both directions: an old TcpHost ignores the auth line's resume flag and never advertises event_replay_v1 (the phone then re-seeds on reconnect), and an old phone never sends resume: true so a new TcpHost keeps sending ready after auth. The iOS change is JS-only and ships over OTA; the Android change is a one-field auth-line addition in the next APK. No package identity, signing or channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/iap-transport-resume.test.ts: drop and reconnect with an in-order replay that skips already-seen events, host-reported gap, epoch change, first connect never a gap, old host without event_replay_v1 (one re-seed despite two readies), and a pre-hello host that never answers (events flow, re-seed after the ready timeout)",
+      "tests/unit/tcp-host.test.ts: TcpHost replays missed events before ready, answers a foreign-epoch cursor with gap, leaves terminal output unsequenced, and skips the post-auth ready when the auth line carries resume: true",
+      "tests/unit/ws-resume.test.ts: WsHost resume unchanged after moving its hello verdict into resumeFrom",
+      "tests/unit/ws-resume.test.ts: a WsTransport that connected after events were emitted and saw none replays exactly the event missed while it was away (fails without the ready baseline)",
+      "tests/unit/event-replay-buffer.test.ts: resumeFrom answers a first hello as fresh, a same-epoch cursor of 0 as gap once anything was emitted (never a replay from the start), and a foreign epoch as gap only if the cursor had seen something",
+      "tests/unit/iap-transport-resume.test.ts / tcp-host.test.ts: the first ready sets the IAP cursor while keeping events held before it; TcpHost answers a same-epoch cursor of 0 with gap"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live run against a real IAP tunnel (geoiq-ssg-dev-in) on a phone: the drop/reconnect path is covered only by the fake relay socket in tests/unit/iap-transport-resume.test.ts.",
+      "Android against an old TcpHost still treats every reconnect as no gap, as before this change: its shared ConnectionStateMachine accepts the first ready and has no capability check. Only new hosts give Android the gap signal.",
+      "The ConversationsScreen reload on a resume gap has no jest coverage; it is a data refetch, not a rendered change."
+    ]
+  }
+}
