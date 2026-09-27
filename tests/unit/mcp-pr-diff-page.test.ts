@@ -96,6 +96,12 @@ describe('diffPage', () => {
     expect(out).toContain(`2 lines longer than ${PR_DIFF_LINE_CHARS} characters were cut.`)
   })
 
+  it('never cuts a line inside a surrogate pair', () => {
+    const out = pageOf([file('emoji.txt', 1, {}, () => `${'a'.repeat(PR_DIFF_LINE_CHARS - 1)}\u{1F600}tail`)]).text
+    expect(out).toContain(`${'a'.repeat(PR_DIFF_LINE_CHARS - 1)}… (line cut)`)
+    expect(out).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
+  })
+
   it('names binary, truncated and hunkless files instead of showing nothing', () => {
     const out = pageOf([
       file('logo.png', 0, { binary: true }),
