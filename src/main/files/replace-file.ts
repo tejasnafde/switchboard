@@ -6,13 +6,14 @@
  * process has the target open (an editor, antivirus, a concurrent read).
  * That lock is usually released within milliseconds, so the rename is
  * retried with a short backoff (about 500 ms in all, like graceful-fs). If
- * the target stays locked, the content is written into it in place: not
- * atomic, but a locked file still accepts a write where it refuses a rename,
- * and losing the save is worse than a brief partial read.
+ * the target stays locked, the temp file is removed, the target is left as
+ * it was and the lock error is thrown. There is no in-place fallback:
+ * writing the target directly truncates it first, so a write that then
+ * fails leaves only a prefix, and a damaged file is worse than a failed save.
  *
  * The caller checks the target before calling, but a retry happens later,
  * and an editor may have saved in between. `stillSafe` is asked again before
- * each retried rename and before the fallback; when it answers false the
+ * each retried rename; when it answers false the
  * target is left alone and `TargetChangedError` is thrown. One stat and one
  * rename apart, a gap remains that only a lock could close: neither POSIX
  * nor NTFS has an atomic compare-and-rename, and editors ignore advisory locks.
@@ -37,7 +38,7 @@ export interface ReplaceFileOptions {
   tmp?: string
   ops?: ReplaceFileOps
   sleep?: (ms: number) => Promise<void>
-  /** Whether the target may still be replaced; asked before each retry and before the fallback. */
+  /** Whether the target may still be replaced; asked before each retried rename. */
   stillSafe?: () => Promise<boolean>
 }
 
@@ -89,10 +90,8 @@ export async function replaceFile(target: string, content: string, opts: Replace
     }
   } catch (err) {
     await removeTmp(tmp, ops, log)
-    if (!isLocked(err)) throw err
-    await ensureSafe()
-    log.warn(`rename over ${target} still failing (${(err as NodeJS.ErrnoException).code}); writing it in place`)
-    await ops.writeFile(target, content)
+    if (isLocked(err)) log.warn(`rename over ${target} still failing (${(err as NodeJS.ErrnoException).code}); left as it was`)
+    throw err
   }
 }
 

@@ -113,8 +113,8 @@ export class SettingsFileSync {
       if (kept) {
         this.deps.log.warn('settings.json left as it is on open: it holds edits that were not fully applied')
       } else {
-        const written = await this.writeFromDb(current)
-        this.setStatus({ path: this.path, parseError: null, skipped: [], writeSkipped: !written })
+        const result = await this.writeFromDb(current)
+        this.setStatus({ path: this.path, parseError: null, skipped: [], writeSkipped: result === 'changed', writeFailed: result === 'failed' })
       }
       this.active = true
       this.startWatching()
@@ -192,7 +192,7 @@ export class SettingsFileSync {
     }
     if (skipped.length > 0) this.deps.log.warn(`settings.json skipped ${describeSkipped(skipped, skipped.length)}`)
     else this.markSynced(current)
-    this.setStatus({ path: this.path, parseError: null, skipped, writeSkipped: false })
+    this.setStatus({ path: this.path, parseError: null, skipped, writeSkipped: false, writeFailed: false })
     return skipped.length === 0
   }
 
@@ -206,8 +206,10 @@ export class SettingsFileSync {
       this.setStatus({ ...this.status, writeSkipped: true })
       return
     }
-    const writeSkipped = !(await this.writeFromDb(current))
-    if (this.status.writeSkipped !== writeSkipped) this.setStatus({ ...this.status, writeSkipped })
+    const result = await this.writeFromDb(current)
+    const writeSkipped = result === 'changed'
+    const writeFailed = result === 'failed'
+    if (this.status.writeSkipped !== writeSkipped || this.status.writeFailed !== writeFailed) this.setStatus({ ...this.status, writeSkipped, writeFailed })
   }
 
   /** Differs, by content, from what Switchboard last wrote or fully applied. mtime is not trusted: it can be coarse or unchanged. */
@@ -231,20 +233,25 @@ export class SettingsFileSync {
    * Replace the file with the DB's projection. `expected` is what the file
    * held when the caller checked it (null: absent); a retry waiting on a
    * Windows lock re-checks it, so an edit saved meanwhile is not overwritten.
-   * False when that edit left the file as it is.
+   * 'changed' when that edit left the file as it is; 'failed' when the write
+   * failed (a lock that outlasted the retries), with the file untouched and
+   * not marked synced, so the next change or Open writes it again.
    */
-  private async writeFromDb(expected: string | null): Promise<boolean> {
+  private async writeFromDb(expected: string | null): Promise<'written' | 'changed' | 'failed'> {
     const file = projectSettingsFile(this.deps.readSnapshot(), { projectLabel: this.deps.projectLabel })
     const content = serializeSettingsFile(file)
     try {
       await replaceFile(this.path, content, { log: this.deps.log, stillSafe: () => this.stillHolds(expected) })
     } catch (err) {
-      if (!(err instanceof TargetChangedError)) throw err
-      this.deps.log.warn('settings.json changed while its rewrite waited for a lock; left as it is')
-      return false
+      if (err instanceof TargetChangedError) {
+        this.deps.log.warn('settings.json changed while its rewrite waited for a lock; left as it is')
+        return 'changed'
+      }
+      this.deps.log.warn('writing settings.json failed', err)
+      return 'failed'
     }
     this.markSynced(content)
-    return true
+    return 'written'
   }
 
   private async stillHolds(expected: string | null): Promise<boolean> {

@@ -42,13 +42,14 @@ describe('replaceFile', () => {
     expect(readdirSync(dir)).toEqual(['settings.json'])
   })
 
-  it('writes in place once the retries run out, and removes the temp file', async () => {
+  it('throws the lock error once the retries run out, leaving the target as it was', async () => {
     const { dir, target, ops, sleep, log } = setup(Infinity, 'EBUSY')
-    await replaceFile(target, 'new', { log, ops, sleep })
-    expect(readFileSync(target, 'utf8')).toBe('new')
+    writeFileSync(target, 'old')
+    await expect(replaceFile(target, 'new', { log, ops, sleep })).rejects.toMatchObject({ code: 'EBUSY' })
+    expect(readFileSync(target, 'utf8')).toBe('old')
     expect(ops.rename).toHaveBeenCalledTimes(RENAME_RETRY_DELAYS_MS.length + 1)
     expect(RENAME_RETRY_DELAYS_MS.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(500)
-    expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining('writing it in place'))
+    expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining('left as it was'))
     expect(readdirSync(dir)).toEqual(['settings.json'])
   })
 
@@ -100,15 +101,12 @@ describe('replaceFile', () => {
     expect(readdirSync(dir)).toEqual(['settings.json'])
   })
 
-  it('leaves a target edited before the in-place fallback alone', async () => {
-    const { dir, target, ops, sleep, log } = setup(Infinity)
+  it('checks the target before every retry, not after the last one', async () => {
+    const { target, ops, sleep, log } = setup(Infinity)
     writeFileSync(target, 'old')
-    const stillSafe = vi.fn(async () => stillSafe.mock.calls.length <= RENAME_RETRY_DELAYS_MS.length)
-    await expect(replaceFile(target, 'new', { log, ops, sleep, stillSafe })).rejects.toBeInstanceOf(TargetChangedError)
-    expect(ops.rename).toHaveBeenCalledTimes(RENAME_RETRY_DELAYS_MS.length + 1)
-    expect(stillSafe).toHaveBeenCalledTimes(RENAME_RETRY_DELAYS_MS.length + 1)
+    const stillSafe = vi.fn(async () => true)
+    await expect(replaceFile(target, 'new', { log, ops, sleep, stillSafe })).rejects.toMatchObject({ code: 'EPERM' })
+    expect(stillSafe).toHaveBeenCalledTimes(RENAME_RETRY_DELAYS_MS.length)
     expect(readFileSync(target, 'utf8')).toBe('old')
-    expect(log.warn).not.toHaveBeenCalledWith(expect.stringContaining('writing it in place'))
-    expect(readdirSync(dir)).toEqual(['settings.json'])
   })
 })

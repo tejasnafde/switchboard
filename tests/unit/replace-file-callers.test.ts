@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { SettingsFileStatus } from '@shared/settings-file'
 
 // A rename that fails the way Windows does while the target is open, and can edit the target meanwhile.
 const hook = vi.hoisted(() => ({ onRename: null as null | ((from: string, to: string) => void) }))
@@ -43,22 +44,27 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+function makeSync() {
+  const db = { settings: {} as Record<string, string>, projects: {}, keyboard: {} }
+  let savedHash: string | null = null
+  const statuses: SettingsFileStatus[] = []
+  const sync = new SettingsFileSync({
+    dir,
+    readSnapshot: () => structuredClone(db),
+    projectLabel: (key) => key,
+    projectKey: (path) => path,
+    applyOps: () => [],
+    onStatus: (status) => statuses.push(status),
+    syncedHash: { load: () => savedHash, save: (hash) => { savedHash = hash } },
+    log: { info: vi.fn(), warn: vi.fn() },
+    debounceMs: 60_000,
+  })
+  return { db, statuses, sync }
+}
+
 describe('a replacement waiting on a Windows lock', () => {
   it('settings.json: an edit saved meanwhile is kept and reported as unapplied', async () => {
-    const db = { settings: {} as Record<string, string>, projects: {}, keyboard: {} }
-    let savedHash: string | null = null
-    const statuses: { writeSkipped: boolean }[] = []
-    const sync = new SettingsFileSync({
-      dir,
-      readSnapshot: () => structuredClone(db),
-      projectLabel: (key) => key,
-      projectKey: (path) => path,
-      applyOps: () => [],
-      onStatus: (status) => statuses.push(status),
-      syncedHash: { load: () => savedHash, save: (hash) => { savedHash = hash } },
-      log: { info: vi.fn(), warn: vi.fn() },
-      debounceMs: 60_000,
-    })
+    const { db, statuses, sync } = makeSync()
     await sync.open()
     const file = join(dir, 'settings.json')
     const edit = JSON.stringify({ settings: { theme: 'light' } })
@@ -69,6 +75,36 @@ describe('a replacement waiting on a Windows lock', () => {
     expect(readFileSync(file, 'utf8')).toBe(edit)
     expect(statuses.at(-1)?.writeSkipped).toBe(true)
     expect(readdirSync(dir).sort()).toEqual(['settings.json', 'settings.schema.json'])
+  })
+
+  it('settings.json: a lock that outlasts the retries leaves the file alone, says so, and the next change writes it', async () => {
+    const { db, statuses, sync } = makeSync()
+    await sync.open()
+    const file = join(dir, 'settings.json')
+    const before = readFileSync(file, 'utf8')
+    hook.onRename = () => { throw eperm() }
+    db.settings.theme = 'light'
+    await sync.writeIfUnedited()
+    expect(readFileSync(file, 'utf8')).toBe(before)
+    expect(statuses.at(-1)).toMatchObject({ writeFailed: true, writeSkipped: false })
+    expect(readdirSync(dir).sort()).toEqual(['settings.json', 'settings.schema.json'])
+
+    hook.onRename = null
+    db.settings.notificationsEnabled = 'false'
+    await sync.writeIfUnedited()
+    sync.dispose()
+    expect(JSON.parse(readFileSync(file, 'utf8')).settings).toEqual({ theme: 'light', notificationsEnabled: false })
+    expect(statuses.at(-1)?.writeFailed).toBe(false)
+  })
+
+  it('writeFileSafe: a lock that outlasts the retries is an ordinary failed save', async () => {
+    const file = join(dir, 'a.ts')
+    writeFileSync(file, 'old\n')
+    hook.onRename = () => { throw eperm() }
+    const result = await writeFileSafe(file, 'new\n')
+    expect(result).toEqual({ ok: false, error: expect.stringContaining('EPERM') })
+    expect(readFileSync(file, 'utf8')).toBe('old\n')
+    expect(readdirSync(dir)).toEqual(['a.ts'])
   })
 
   it('writeFileSafe: an edit saved meanwhile is a conflict, not overwritten', async () => {

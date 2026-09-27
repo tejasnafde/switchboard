@@ -440,9 +440,11 @@ export interface SettingsFileStatus {
   skipped: SkippedEntry[]
   /** A change made in the app was not written, because the file had edits not yet applied. */
   writeSkipped: boolean
+  /** A change made in the app could not be written (the file stayed locked, or the write failed); the next change or Open tries again. */
+  writeFailed: boolean
 }
 
-export const IDLE_SETTINGS_FILE_STATUS: SettingsFileStatus = { path: null, parseError: null, skipped: [], writeSkipped: false }
+export const IDLE_SETTINGS_FILE_STATUS: SettingsFileStatus = { path: null, parseError: null, skipped: [], writeSkipped: false, writeFailed: false }
 
 /** The banner's one line, or null when there is nothing to say. */
 export function settingsFileBanner(status: SettingsFileStatus): string | null {
@@ -450,6 +452,7 @@ export function settingsFileBanner(status: SettingsFileStatus): string | null {
   if (status.parseError) parts.push(`settings.json was not applied: ${status.parseError}. Fix it and save again.`)
   else if (status.skipped.length > 0) parts.push(`settings.json skipped ${describeSkipped(status.skipped)}.`)
   if (status.writeSkipped) parts.push('A change made here was not written to settings.json, because it has edits that were not applied.')
+  else if (status.writeFailed) parts.push('A change made here could not be written to settings.json; the log has the error. The next change or Open tries again.')
   return parts.length > 0 ? parts.join(' ') : null
 }
 
