@@ -28,6 +28,7 @@ import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
 import { ConfirmHost, unlessConfirmOpen } from './components/ui/confirm'
 import { loadKeyboardOverrides, reloadKeyboardOverrides } from './services/keyboard-overrides'
+import { attachSettingsFileSync } from './services/settings-file-sync'
 import { isShortcutCaptureActive } from '@shared/shortcuts'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/feature-registry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/context-bridge'
@@ -279,6 +280,8 @@ export function App() {
       reloadKeyboardOverrides().catch((err) => log.warn('re-reading shortcut overrides failed', err))
     })
   }, [])
+
+  useEffect(() => attachSettingsFileSync(), [])
 
   // Unread is shared with the phone, so opening a chat here clears it there.
   useEffect(() => initSharedReadState(), [])

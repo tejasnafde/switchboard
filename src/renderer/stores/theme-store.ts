@@ -35,6 +35,8 @@ interface ThemeStore {
   theme: ThemeName
   setTheme: (theme: ThemeName) => void
   loadSavedTheme: () => void
+  /** Show a theme written by something else (settings.json) without writing it back; null is the default. */
+  adoptStoredTheme: (saved: string | null) => void
 }
 
 export const useThemeStore = create<ThemeStore>((set) => ({
@@ -57,6 +59,12 @@ export const useThemeStore = create<ThemeStore>((set) => ({
     }).catch((err) => {
       log.warn('failed to load saved theme setting - keeping default', err)
     })
+  },
+
+  adoptStoredTheme: (saved) => {
+    const theme: ThemeName = saved && SAVED.has(saved as ThemeName) ? saved as ThemeName : 'dark'
+    apply(theme)
+    set({ theme })
   },
 }))
 

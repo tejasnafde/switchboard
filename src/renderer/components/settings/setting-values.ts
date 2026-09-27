@@ -21,6 +21,7 @@ import {
 } from '../sidebar/recent-session-limit'
 import { currentPlatform, getShortcut, isRebindable, shortcutsFor, SHORTCUTS } from '@shared/shortcuts'
 import { loadKeyboardOverrides, setKeyboardOverride } from '../../services/keyboard-overrides'
+import { SETTINGS_CHANGED_ELSEWHERE } from '../../services/settings-file-sync'
 import { SETTING_ROW, shortcutValue } from './settings-rows'
 import { createRendererLogger } from '../../logger'
 
@@ -116,14 +117,26 @@ export function useSettingValues(): SettingValues {
 
   useEffect(() => {
     let cancelled = false
-    for (const [id, binding] of Object.entries(BINDINGS)) {
-      binding.read()
-        .then((value) => {
-          if (!cancelled && !touched.current.has(id)) setValues((prev) => ({ ...prev, [id]: value }))
-        })
-        .catch((err) => log.warn(`reading ${id} failed`, err))
+    const readAll = () => {
+      for (const [id, binding] of Object.entries(BINDINGS)) {
+        binding.read()
+          .then((value) => {
+            if (!cancelled && !touched.current.has(id)) setValues((prev) => ({ ...prev, [id]: value }))
+          })
+          .catch((err) => log.warn(`reading ${id} failed`, err))
+      }
     }
-    return () => { cancelled = true }
+    readAll()
+    // A settings.json save is newer than anything picked here, so every row re-reads.
+    const onChangedElsewhere = () => {
+      touched.current.clear()
+      readAll()
+    }
+    window.addEventListener(SETTINGS_CHANGED_ELSEWHERE, onChangedElsewhere)
+    return () => {
+      cancelled = true
+      window.removeEventListener(SETTINGS_CHANGED_ELSEWHERE, onChangedElsewhere)
+    }
   }, [])
 
   const set = useCallback((id: string, value: string) => {

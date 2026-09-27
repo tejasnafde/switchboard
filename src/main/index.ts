@@ -28,6 +28,8 @@ import { attachPushNotifier } from './push/registry'
 import { registerAppHandlers, type AppHandlerDependencies } from './ipc/app'
 import { isMenuCaptureActive, setMenuCapture, unlessCapturing } from './menu-capture'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
+import { registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
+import { isSettingsFileKey } from '@shared/settings-file'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost, type BackendHost } from './backend/host'
@@ -205,8 +207,14 @@ function applyKeyboardOverrides(): void {
 function desktopAppHandlerDeps(): AppHandlerDependencies {
   return {
     isTurnInFlight: (id) => providerRegistry?.isTurnInFlight(id) ?? false,
-    onSettingChanged: (key) => { if (key === KEYBOARD_OVERRIDES_SETTING) applyKeyboardOverrides() },
+    onSettingChanged,
   }
+}
+
+/** After any settings write, from the UI, a phone, or a settings.json save. */
+function onSettingChanged(key: string): void {
+  if (key === KEYBOARD_OVERRIDES_SETTING) applyKeyboardOverrides()
+  if (isSettingsFileKey(key)) settingsFileSync()?.onDbChanged()
 }
 
 // Custom protocol for onboarding tour videos. Must be registered as
@@ -702,6 +710,8 @@ app.whenReady().then(() => {
   registerAppHandlers(backendHost, desktopAppHandlerDeps())
   registerPushHandlers(backendHost)
   registerAppDesktopHandlers(mainWindow)
+  // Once, not per window: the handlers live on ipcMain and read the current window.
+  registerSettingsFileHandlers({ getWindow: () => mainWindow, onSettingChanged })
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
   registerSttHandlers(backendHost)
