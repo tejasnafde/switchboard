@@ -2,7 +2,7 @@
  * Bitbucket Cloud REST 2.0 JSON -> neutral pull request types. Pure.
  *
  * Shapes follow developer.atlassian.com/cloud/bitbucket/rest (pullrequests,
- * diffstat, comments, activity, commit statuses).
+ * diffstat, conflicts, comments, activity, commit statuses).
  */
 import { orderMergeStrategies } from '@shared/pull-request-writes'
 import {
@@ -61,7 +61,7 @@ export interface BbPullRequest {
 }
 
 export interface BbDiffstat {
-  status: 'added' | 'removed' | 'modified' | 'renamed' | 'merge conflict' | 'local deleted' | 'remote deleted'
+  status: 'added' | 'removed' | 'modified' | 'renamed' | 'local deleted' | 'remote deleted'
   lines_added: number
   lines_removed: number
   old?: { path: string } | null
@@ -105,12 +105,20 @@ export interface BbViewer {
 export interface BbEnrichment {
   checks: PrCheck[]
   unresolvedConversations: number | null
-  conflictedFiles: string[]
+  /** `null` when the conflicts read failed, so the list says nothing rather than "no conflicts". */
+  conflictedFiles: string[] | null
 }
 
-/** Bitbucket marks a file "merge conflict" in the diffstat; that is the only place it says so. */
-export function conflictedPaths(diffstat: readonly BbDiffstat[]): string[] {
-  return diffstat.filter((d) => d.status === 'merge conflict').map((d) => d.new?.path ?? d.old?.path ?? '').filter(Boolean)
+/** One entry of `GET /pullrequests/{id}/conflicts` (`file_conflict` in the REST reference). */
+export interface BbFileConflict {
+  path?: string
+  scenario?: string
+  message?: string
+}
+
+/** Conflicted paths, once each, in the order Bitbucket lists them. */
+export function conflictedPaths(conflicts: readonly BbFileConflict[]): string[] {
+  return [...new Set(conflicts.map((c) => c.path ?? '').filter(Boolean))]
 }
 
 export interface BbWorkspaceMember {
@@ -177,7 +185,7 @@ export function mapBbSummary(repo: RepoRef, pr: BbPullRequest, viewer: BbViewer,
     changedFiles: null,
     unresolvedConversations: extra?.unresolvedConversations ?? null,
     // Only an open PR is enriched; merged and declined ones cannot conflict any more.
-    mergeConflicts: pr.state !== 'OPEN' ? false : extra ? extra.conflictedFiles.length > 0 : null,
+    mergeConflicts: pr.state !== 'OPEN' ? false : extra?.conflictedFiles ? extra.conflictedFiles.length > 0 : null,
     conflictedFiles: extra?.conflictedFiles ?? [],
     checks: rollupChecks(extra?.checks ?? []),
     reviewers,
@@ -321,12 +329,12 @@ export function mapBbDetail(
   repo: RepoRef,
   pr: BbPullRequest,
   viewer: BbViewer,
-  extra: Omit<BbEnrichment, 'conflictedFiles'>,
+  extra: BbEnrichment,
   diffstat: readonly BbDiffstat[],
   activity: readonly BbActivity[],
   canWriteRepo = false,
 ): PrDetail {
-  const summary = mapBbSummary(repo, pr, viewer, { ...extra, conflictedFiles: conflictedPaths(diffstat) })
+  const summary = mapBbSummary(repo, pr, viewer, extra)
   const withStats: PrSummary = {
     ...summary,
     additions: diffstat.reduce((n, d) => n + d.lines_added, 0),
@@ -350,12 +358,13 @@ const FILE_STATUS: Record<BbDiffstat['status'], ChangedFileStatus> = {
   removed: 'deleted',
   modified: 'modified',
   renamed: 'renamed',
-  'merge conflict': 'conflicted',
   'local deleted': 'deleted',
   'remote deleted': 'deleted',
 }
 
-export function mapBbFiles(diffstat: readonly BbDiffstat[], diffText: string): PrChangedFile[] {
+/** `conflictedFiles` come from the conflicts read: the diffstat does not mark them. */
+export function mapBbFiles(diffstat: readonly BbDiffstat[], diffText: string, conflictedFiles: readonly string[] = []): PrChangedFile[] {
+  const conflicted = new Set(conflictedFiles)
   const patches = new Map<string, ReturnType<typeof splitGitDiff>[number]>()
   for (const file of splitGitDiff(diffText)) patches.set((file.newPath ?? file.oldPath) ?? '', file)
   return diffstat.map((d) => {
@@ -365,7 +374,7 @@ export function mapBbFiles(diffstat: readonly BbDiffstat[], diffText: string): P
     return {
       path,
       oldPath: d.status === 'renamed' ? d.old?.path ?? null : null,
-      status: FILE_STATUS[d.status] ?? 'modified',
+      status: conflicted.has(path) ? 'conflicted' : FILE_STATUS[d.status] ?? 'modified',
       additions: d.lines_added,
       deletions: d.lines_removed,
       binary: !!patch?.binary,

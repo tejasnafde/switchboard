@@ -116,7 +116,7 @@ export interface PrSummary {
   unresolvedConversations: number | null
   /** Conflicts with the target branch; `null` while the host has not worked it out. Always `false` once merged or closed. */
   mergeConflicts: boolean | null
-  /** The conflicted paths when the host names them (Bitbucket's diffstat). GitHub never does, so this is empty there. */
+  /** The conflicted paths when the host names them (Bitbucket's pull request conflicts endpoint). GitHub never does, so this is empty there. */
   conflictedFiles: string[]
   checks: ChecksRollup
   reviewers: PrReviewer[]

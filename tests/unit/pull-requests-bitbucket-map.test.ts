@@ -149,7 +149,7 @@ describe('mapBbActivity and mapBbDetail', () => {
       repo,
       open[0],
       viewer,
-      { checks: mapBbStatuses(statuses), unresolvedConversations: 2 },
+      { checks: mapBbStatuses(statuses), unresolvedConversations: 2, conflictedFiles: [] },
       fixture('bitbucket-diffstat.json').values,
       fixture('bitbucket-activity.json').values,
     )
@@ -161,23 +161,27 @@ describe('mapBbActivity and mapBbDetail', () => {
     expect(detail.viewerCanManage).toBe(true)
   })
 
-  it('reads conflicts from the diffstat and names the files', () => {
-    const conflict = fixture('bitbucket-diffstat-conflict.json').values
-    expect(conflictedPaths(conflict)).toEqual(['sync/worker.py', 'sync/config.py'])
-    const detail = mapBbDetail(repo, open[1], viewer, { checks: [], unresolvedConversations: 0 }, conflict, [])
+  it('names each conflicted file once, from the conflicts read', () => {
+    const conflicted = conflictedPaths(fixture('bitbucket-conflicts.json').values)
+    expect(conflicted).toEqual(['sync/worker.py', 'sync/config.py'])
+    const extra = { checks: [], unresolvedConversations: 0, conflictedFiles: conflicted }
+    const detail = mapBbDetail(repo, open[1], viewer, extra, fixture('bitbucket-diffstat.json').values, [])
     expect([detail.mergeConflicts, detail.conflictedFiles]).toEqual([true, ['sync/worker.py', 'sync/config.py']])
     expect(detail.mergeBlockers.map((b) => b.label)).toEqual(['Conflicts with main'])
     // #88 is someone else's: only someone with write access may decline or edit it.
     expect(detail.viewerCanManage).toBe(false)
-    expect(mapBbDetail(repo, open[1], viewer, { checks: [], unresolvedConversations: 0 }, conflict, [], true).viewerCanManage).toBe(true)
+    expect(mapBbDetail(repo, open[1], viewer, extra, [], [], true).viewerCanManage).toBe(true)
+  })
+
+  it('says nothing about conflicts when the conflicts read failed', () => {
+    expect(mapBbSummary(repo, open[0], viewer, { checks: [], unresolvedConversations: 0, conflictedFiles: null }).mergeConflicts).toBeNull()
   })
 
   it('marks a conflicted file as conflicted, not modified', () => {
-    const files = mapBbFiles(fixture('bitbucket-diffstat-conflict.json').values, '')
-    expect(files.map((f) => [f.path, f.status])).toEqual([
+    const files = mapBbFiles(fixture('bitbucket-diffstat.json').values, '', ['sync/worker.py'])
+    expect(files.map((f) => [f.path, f.status]).slice(0, 2)).toEqual([
       ['sync/worker.py', 'conflicted'],
       ['sync/backoff.py', 'added'],
-      ['sync/config.py', 'conflicted'],
     ])
   })
 })
@@ -219,7 +223,9 @@ function providerRoutes(): Record<string, Route> {
     [`${base}/pullrequests/88/comments`]: { body: { values: [] } },
     [`${base}/commit/a1b2c3d4e5f6/statuses`]: { body: fixture('bitbucket-statuses.json') },
     [`${base}/commit/ffee00/statuses`]: { body: { values: [] } },
-    [`${base}/pullrequests/612/diffstat`]: { body: fixture('bitbucket-diffstat-conflict.json') },
+    [`${base}/pullrequests/612/conflicts`]: { body: fixture('bitbucket-conflicts.json') },
+    [`${base}/pullrequests/88/conflicts`]: { body: { values: [] } },
+    [`${base}/pullrequests/612/diffstat`]: { body: fixture('bitbucket-diffstat.json') },
     [`${base}/pullrequests/88/diffstat`]: { body: fixture('bitbucket-diffstat.json') },
   }
 }
@@ -272,19 +278,42 @@ describe('BitbucketProvider', () => {
     expect([result.prs[1].mergeConflicts, result.prs[2].mergeConflicts]).toEqual([false, false])
   })
 
-  it('re-reads the diffstat when the target branch moves, which is how a conflict appears on an unchanged PR', async () => {
+  it('reads conflicts from the pull request conflicts endpoint, not the diffstat', async () => {
+    const { impl, calls } = fakeFetch(providerRoutes())
+    await new BitbucketProvider(new BitbucketClient(creds, impl), () => Date.parse('2026-09-27T12:00:00Z')).list([repo])
+    expect(calls.some((c) => new URL(c.url).pathname === `/2.0${base}/pullrequests/612/conflicts`)).toBe(true)
+    // The list reads no diffstat; that is only for changed files.
+    expect(calls.some((c) => c.url.includes('/diffstat'))).toBe(false)
+  })
+
+  it('keeps listing when one conflicts read fails, with the conflict state unknown', async () => {
+    const routes = providerRoutes()
+    routes[`${base}/pullrequests/612/conflicts`] = { status: 404, body: {} }
+    const { impl } = fakeFetch(routes)
+    const [result] = await new BitbucketProvider(new BitbucketClient(creds, impl), () => Date.parse('2026-09-27T12:00:00Z')).list([repo])
+    expect(result.error).toBeNull()
+    expect([result.prs[0].mergeConflicts, result.prs[0].unresolvedConversations]).toEqual([null, 2])
+  })
+
+  it('marks the conflicted files in the Files tab', async () => {
+    const { impl } = fakeFetch({ ...providerRoutes(), [`${base}/pullrequests/612/diff`]: { body: '' } })
+    const files = await new BitbucketProvider(new BitbucketClient(creds, impl)).files({ ...repo, number: 612 })
+    expect(files.filter((f) => f.status === 'conflicted').map((f) => f.path)).toEqual(['sync/worker.py'])
+  })
+
+  it('re-reads the conflicts when the target branch moves, which is how a conflict appears on an unchanged PR', async () => {
     const routes = providerRoutes()
     const { impl, calls } = fakeFetch(routes)
     const provider = new BitbucketProvider(new BitbucketClient(creds, impl), () => Date.parse('2026-09-27T12:00:00Z'))
-    const diffstatCalls = () => calls.filter((c) => c.url.includes('/612/diffstat')).length
+    const conflictCalls = () => calls.filter((c) => c.url.includes('/612/conflicts')).length
     await provider.list([repo])
     await provider.list([repo])
-    expect(diffstatCalls()).toBe(1)
+    expect(conflictCalls()).toBe(1)
     const moved = fixture('bitbucket-pullrequests-open.json')
     moved.values[0].destination.commit.hash = 'feedfacecafe'
     routes[`${base}/pullrequests#OPEN`] = { body: moved }
     await provider.list([repo])
-    expect(diffstatCalls()).toBe(2)
+    expect(conflictCalls()).toBe(2)
   })
 
   it('re-reads enrichment only when the PR changed or its checks were running', async () => {

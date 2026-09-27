@@ -1,8 +1,0 @@
-{
-  "pagelen": 500,
-  "values": [
-    { "status": "merge conflict", "lines_added": 42, "lines_removed": 9, "old": { "path": "sync/worker.py" }, "new": { "path": "sync/worker.py" } },
-    { "status": "added", "lines_added": 31, "lines_removed": 0, "old": null, "new": { "path": "sync/backoff.py" } },
-    { "status": "merge conflict", "lines_added": 4, "lines_removed": 1, "old": { "path": "sync/config.py" }, "new": { "path": "sync/config.py" } }
-  ]
-}

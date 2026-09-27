@@ -1,0 +1,10 @@
+{
+  "pagelen": 100,
+  "page": 1,
+  "size": 3,
+  "values": [
+    { "type": "file_conflict", "path": "sync/worker.py", "scenario": "content", "message": "File modified in both source and destination" },
+    { "type": "file_conflict", "path": "sync/config.py", "scenario": "content", "message": "File modified in both source and destination" },
+    { "type": "file_conflict", "path": "sync/config.py", "scenario": "mode", "message": "File mode changed in both source and destination" }
+  ]
+}

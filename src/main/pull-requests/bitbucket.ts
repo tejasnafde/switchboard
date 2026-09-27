@@ -38,6 +38,7 @@ import {
   type BbComment,
   type BbDiffstat,
   type BbEnrichment,
+  type BbFileConflict,
   type BbPullRequest,
   type BbStatus,
   type BbViewer,
@@ -232,15 +233,32 @@ export class BitbucketProvider implements PullRequestProvider {
     return this.viewer
   }
 
-  /** The list cannot say whether a PR conflicts, so the list reads the diffstat too; the detail reads its own. */
-  private async fetchEnrichment(ref: PrRef, pr: BbPullRequest, withConflicts: boolean): Promise<BbEnrichment> {
+  /** The list cannot say whether a PR conflicts, so it reads the conflicts with the checks and comments. */
+  private async fetchEnrichment(ref: PrRef, pr: BbPullRequest): Promise<BbEnrichment> {
     const hash = pr.source.commit?.hash
-    const [statuses, comments, diffstat] = await Promise.all([
+    const [statuses, comments, conflictedFiles] = await Promise.all([
       hash ? this.client.paged<BbStatus>(`${repoPath(ref)}/commit/${hash}/statuses?pagelen=100`, 1) : Promise.resolve([]),
       this.client.paged<BbComment>(`${prPath(ref)}/comments?pagelen=100`),
-      withConflicts ? this.diffstat(ref) : Promise.resolve([]),
+      pr.state === 'OPEN' ? this.conflicts(ref) : Promise.resolve([]),
     ])
-    return { checks: mapBbStatuses(statuses), unresolvedConversations: unresolvedCount(mapBbComments(comments)), conflictedFiles: conflictedPaths(diffstat) }
+    return { checks: mapBbStatuses(statuses), unresolvedConversations: unresolvedCount(mapBbComments(comments)), conflictedFiles }
+  }
+
+  /**
+   * `GET /pullrequests/{id}/conflicts` (read:pullrequest, redirecting to the
+   * repository's file-conflicts). The diffstat's old "merge conflict" status
+   * came from the merge preview Atlassian removed on 2026-09-04. `null` when
+   * the read fails for anything but the account or the network, so one
+   * unreadable answer blanks the conflict state instead of the whole list.
+   */
+  private async conflicts(ref: PrRef): Promise<string[] | null> {
+    try {
+      return conflictedPaths(await this.client.paged<BbFileConflict>(`${prPath(ref)}/conflicts?pagelen=100`))
+    } catch (err) {
+      if (!(err instanceof PrHostError) || err.error.kind === 'token_rejected' || err.error.kind === 'offline') throw err
+      log.warn('reading pull request conflicts failed', { number: ref.number, kind: err.error.kind })
+      return null
+    }
   }
 
   private diffstat(ref: PrRef): Promise<BbDiffstat[]> {
@@ -258,7 +276,7 @@ export class BitbucketProvider implements PullRequestProvider {
     const version = `${pr.updated_on}|${pr.destination.commit?.hash ?? ''}`
     const cached = this.enrichment.get(key, version)
     if (cached) return cached
-    const fresh = await this.fetchEnrichment(ref, pr, true)
+    const fresh = await this.fetchEnrichment(ref, pr)
     const running = fresh.checks.some((c) => c.state === 'pending')
     this.enrichment.set(key, version, fresh, running ? { maxAgeMs: PENDING_CHECKS_MAX_AGE_MS } : {})
     return fresh
@@ -329,7 +347,7 @@ export class BitbucketProvider implements PullRequestProvider {
     const viewer = await this.currentUser()
     const pr = await this.client.json<BbPullRequest>(prPath(ref))
     const [extra, diffstat, activity, canWrite] = await Promise.all([
-      this.fetchEnrichment(ref, pr, false),
+      this.fetchEnrichment(ref, pr),
       this.diffstat(ref),
       this.client.paged<BbActivity>(`${prPath(ref)}/activity?pagelen=50`, 1),
       this.canWriteRepo(ref),
@@ -338,11 +356,12 @@ export class BitbucketProvider implements PullRequestProvider {
   }
 
   async files(ref: PrRef): Promise<PrChangedFile[]> {
-    const [diffstat, diff] = await Promise.all([
+    const [diffstat, diff, conflicted] = await Promise.all([
       this.diffstat(ref),
       this.client.text(`${prPath(ref)}/diff`),
+      this.conflicts(ref),
     ])
-    return mapBbFiles(diffstat, diff)
+    return mapBbFiles(diffstat, diff, conflicted ?? [])
   }
 
   async conversations(ref: PrRef): Promise<PrConversation[]> {
