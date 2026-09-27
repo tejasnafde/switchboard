@@ -25,6 +25,9 @@ const PATHS = {
   draft: <><circle cx="12" cy="12" r="9" strokeDasharray="3 3" /></>,
   spark: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />,
   chev: <path d="M6 9l6 6 6-6" />,
+  conflict: <><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17v.01" /></>,
+  more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
+  plus: <path d="M12 5v14M5 12h14" />,
 } as const
 
 export type IconName = keyof typeof PATHS
@@ -58,6 +61,7 @@ export function Icon({ name, tone = 'plain', size = 14, className }: { name: Ico
 }
 
 export const ROW_ICON: Record<PrRowIcon, { name: IconName; tone: IconTone; label: string }> = {
+  conflict: { name: 'conflict', tone: 'warn', label: 'Merge conflicts' },
   failed: { name: 'x', tone: 'bad', label: 'Checks failed' },
   review: { name: 'msg', tone: 'warn', label: 'Your review' },
   conversation: { name: 'msg', tone: 'warn', label: 'Open conversations' },

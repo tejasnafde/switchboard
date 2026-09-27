@@ -11,6 +11,7 @@ import { ensureConversationForkSchema } from './conversation-fork'
 import { ensureWorktreeCreationSchema } from './worktree-creation'
 import { ensureBookmarksTable } from './bookmarks'
 import { ensurePullRequestLinkSchema } from './pull-request-links'
+import { ensurePullRequestHiddenSchema } from './pull-request-hidden'
 
 const log = createLogger('db')
 
@@ -22,6 +23,7 @@ export * from './kanban'
 export * from './bookmarks'
 export * from './worktree-links'
 export * from './pull-request-links'
+export * from './pull-request-hidden'
 
 let db: Database.Database | null = null
 /** Set by the quit path: a write after it must fail, not reopen the file. */
@@ -618,6 +620,7 @@ function migrate(db: Database.Database): void {
   recoverUndispatchedTurns(db)
   ensureWorktreeCreationSchema(db)
   ensurePullRequestLinkSchema(db)
+  ensurePullRequestHiddenSchema(db)
 
   log.info('database migrated')
 }

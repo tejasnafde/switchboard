@@ -3,7 +3,7 @@
  * one status phrase its row shows.
  */
 import { describe, expect, it } from 'vitest'
-import { filterPullRequests, groupPullRequests, MERGED_WINDOW_MS, prRowStatus } from '../../src/shared/pull-request-groups'
+import { applyHidden, filterPullRequests, groupPullRequests, groupPullRequestsByRepo, hiddenComesBack, MERGED_WINDOW_MS, prRowStatus, toggleCollapsed } from '../../src/shared/pull-request-groups'
 import { mergeBlockers, rollupChecks, type PrSummary } from '../../src/shared/pull-requests'
 
 const NOW = Date.parse('2026-09-27T12:00:00Z')
@@ -26,6 +26,8 @@ function pr(over: Partial<PrSummary> = {}, number = 1): PrSummary {
     deletions: 1,
     changedFiles: 1,
     unresolvedConversations: 0,
+    mergeConflicts: false,
+    conflictedFiles: [],
     checks: rollupChecks([{ state: 'success' }]),
     reviewers: [],
     approvals: { given: 1, required: 1 },
@@ -105,5 +107,79 @@ describe('filterPullRequests', () => {
     expect(filterPullRequests(list, 'ssg-doc').map((p) => p.ref.number)).toEqual([40])
     expect(filterPullRequests(list, '#40').map((p) => p.ref.number)).toEqual([40])
     expect(filterPullRequests(list, '  ')).toHaveLength(2)
+  })
+})
+
+describe('merge conflicts in the list', () => {
+  it('puts your conflicted PR in Needs you, ahead of a failed build', () => {
+    const conflicted = pr({ mergeConflicts: true, checks: rollupChecks([{ state: 'failure' }]) })
+    expect(prRowStatus(conflicted, NOW)).toEqual({ group: 'needs-you', icon: 'conflict', phrase: 'merge conflicts' })
+    expect(mergeBlockers(conflicted).map((b) => b.label)).toEqual(['Conflicts with main', '1 check failed'])
+  })
+
+  it("says so on someone else's PR too, unless your review is what is owed", () => {
+    expect(prRowStatus(pr({ mergeConflicts: true, viewer: { ...reviewer, isRequestedReviewer: false } }), NOW))
+      .toEqual({ group: 'waiting', icon: 'conflict', phrase: 'merge conflicts' })
+    expect(prRowStatus(pr({ mergeConflicts: true, viewer: reviewer }), NOW)?.phrase).toBe('your review')
+  })
+
+  it('treats a conflict the host has not worked out yet as none', () => {
+    expect(prRowStatus(pr({ mergeConflicts: null }), NOW)?.icon).toBe('ready')
+  })
+})
+
+describe('groupPullRequestsByRepo', () => {
+  const at = (owner: string, name: string, number: number, over: Partial<PrSummary> = {}) =>
+    pr({ ...over, ref: { host: 'bitbucket', owner, name, number } }, number)
+  const prs = [
+    at('geoiq', 'retailiq', 88, { approvals: { given: 0, required: 2 } }),
+    at('geoiq', 'ssg-bot-v2', 605, { approvals: { given: 0, required: 2 }, updatedAt: NOW - 3 * HOUR }),
+    at('geoiq', 'ssg-bot-v2', 612, { mergeConflicts: true }),
+    at('geoiq', 'ssg-bot-v2', 618, { viewer: reviewer, updatedAt: NOW - 2 * HOUR }),
+    at('geoiq', 'ssg-bot-v2', 500, { state: 'closed' }),
+  ]
+
+  it('keeps the status order inside each repository and puts the one that needs you first', () => {
+    const sections = groupPullRequestsByRepo(prs, NOW, [], false)
+    expect(sections.map((s) => [s.label, s.count])).toEqual([['geoiq / ssg-bot-v2', 3], ['geoiq / retailiq', 1]])
+    // Needs you (612 newest, then 618), then Waiting on others (605); the closed one is not listed.
+    expect(sections[0].prs.map((r) => r.pr.ref.number)).toEqual([612, 618, 605])
+  })
+
+  it('draws no rows for a collapsed repository but keeps its count', () => {
+    const collapsed = toggleCollapsed([], 'bitbucket:geoiq/ssg-bot-v2')
+    const [bot, retail] = groupPullRequestsByRepo(prs, NOW, collapsed, false)
+    expect([bot.collapsed, bot.count, bot.prs]).toEqual([true, 3, []])
+    expect(retail.collapsed).toBe(false)
+    expect(toggleCollapsed(collapsed, 'bitbucket:geoiq/ssg-bot-v2')).toEqual([])
+  })
+
+  it('shows the matches of a filter even in a collapsed repository', () => {
+    const [bot] = groupPullRequestsByRepo(filterPullRequests(prs, '612'), NOW, ['bitbucket:geoiq/ssg-bot-v2'], true)
+    expect(bot.prs.map((r) => r.pr.ref.number)).toEqual([612])
+  })
+})
+
+describe('hidden pull requests', () => {
+  const hiddenAt = NOW - 2 * HOUR
+
+  it('stays hidden while nothing changed, or while it changed but does not need you', () => {
+    expect(hiddenComesBack(pr({ updatedAt: hiddenAt - 1, viewer: reviewer }), hiddenAt, NOW)).toBe(false)
+    expect(hiddenComesBack(pr({ updatedAt: NOW }), hiddenAt, NOW)).toBe(false)
+  })
+
+  it('comes back once it changed after hiding and needs you', () => {
+    // Someone asked for your review again.
+    expect(hiddenComesBack(pr({ updatedAt: NOW, viewer: reviewer }), hiddenAt, NOW)).toBe(true)
+    // Your build broke.
+    expect(hiddenComesBack(pr({ updatedAt: NOW, checks: rollupChecks([{ state: 'failure' }]) }), hiddenAt, NOW)).toBe(true)
+  })
+
+  it('splits the stored hides of one list read into still hidden and came back', () => {
+    const quiet = pr({ updatedAt: hiddenAt - 1 }, 1)
+    const back = pr({ updatedAt: NOW, viewer: reviewer }, 2)
+    const stored = new Map([['github:o/repo#1', hiddenAt], ['github:o/repo#2', hiddenAt], ['github:o/gone#9', hiddenAt]])
+    // A hide whose PR is not in this read (a host error, merged long ago) is left alone.
+    expect(applyHidden([quiet, back, pr({}, 3)], stored, NOW)).toEqual({ hidden: ['github:o/repo#1'], cameBack: ['github:o/repo#2'] })
   })
 })

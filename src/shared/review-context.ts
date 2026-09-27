@@ -1,6 +1,7 @@
 /**
  * Review context a user hands to a chat from Reviews ("Ask the agent"): open
- * conversations, a failed check or selected diff lines of one pull request.
+ * conversations, a failed check, selected diff lines or the merge conflicts
+ * of one pull request.
  *
  * It travels as ONE composer pill (kind `review`). The pill shows
  * `reviewContextLabel`; the agent receives `expandReviewContext`, a plain
@@ -26,6 +27,8 @@ export type ReviewContextItem =
   }
   | { kind: 'check'; name: string; description: string | null; url: string | null }
   | { kind: 'lines'; path: string; side: 'new' | 'old'; startLine: number; endLine: number; diff: string }
+  /** `files` is empty when the host does not name them (GitHub). */
+  | { kind: 'conflicts'; base: string; head: string; files: string[] }
 
 export interface ReviewContext {
   pr: PrRef
@@ -40,6 +43,7 @@ function baseName(path: string): string {
 
 function where(item: ReviewContextItem, short = false): string {
   if (item.kind === 'check') return item.name
+  if (item.kind === 'conflicts') return item.files.length > 0 ? item.files.map((f) => (short ? baseName(f) : f)).join(', ') : `${item.head} into ${item.base}`
   const path = short ? baseName(item.path ?? '') : item.path
   if (item.kind === 'lines') return item.startLine === item.endLine ? `${path}:${item.startLine}` : `${path}:${item.startLine}-${item.endLine}`
   if (!item.path) return 'the whole pull request'
@@ -52,9 +56,11 @@ function plural(n: number, one: string): string {
 
 /** One compact line for the pill: "3 review conversations · worker.py:88, worker.py:102". */
 export function reviewContextLabel(ctx: ReviewContext): string {
-  const counts = { conversation: 0, check: 0, lines: 0 }
+  const counts = { conversation: 0, check: 0, lines: 0, conflicts: 0 }
   for (const item of ctx.items) counts[item.kind]++
+  const base = ctx.items.find((item) => item.kind === 'conflicts')
   const parts = [
+    base?.kind === 'conflicts' && `Merge conflicts with ${base.base}`,
     counts.conversation && plural(counts.conversation, 'review conversation'),
     counts.check && plural(counts.check, 'failed check'),
     counts.lines && (counts.lines === 1 ? 'diff selection' : `${counts.lines} diff selections`),
@@ -76,6 +82,13 @@ function block(item: ReviewContextItem, index: number): string {
   }
   if (item.kind === 'lines') {
     return `${n} Selected lines ${where(item)} (${item.side} side)\n${item.diff}`
+  }
+  if (item.kind === 'conflicts') {
+    return [
+      `${n} Merge conflicts: ${item.head} conflicts with ${item.base}.`,
+      item.files.length > 0 ? `Conflicted files: ${item.files.join(', ')}` : 'The host does not name the conflicted files; find them with git.',
+      conflictInstruction(item.base, item.head),
+    ].join('\n')
   }
   const side = item.side ? ` (${item.side} side)` : ''
   const lines = [`${n} Review conversation on ${where(item)}${side}${item.outdated ? ', outdated' : ''}`]
@@ -183,6 +196,14 @@ export function conversationItem(c: PrConversation, files: readonly PrChangedFil
     comments: c.comments.map((m) => ({ author: m.author.login, body: m.body })),
     diff: c.line !== null ? diffAround(file, c.side ?? 'new', c.line) : null,
   }
+}
+
+export function conflictInstruction(base: string, head: string): string {
+  return `Merge the base branch (${base}) into this branch (${head}) and resolve the conflicts, then push. Never rebase or force-push.`
+}
+
+export function conflictsItem(pr: { targetBranch: string; sourceBranch: string; conflictedFiles: string[] }): ReviewContextItem {
+  return { kind: 'conflicts', base: pr.targetBranch, head: pr.sourceBranch, files: [...pr.conflictedFiles] }
 }
 
 export function checkItem(c: PrCheck): ReviewContextItem {

@@ -9,7 +9,11 @@
  * no Review offered, the strategy menu lists merge commit first, the merge
  * asks through the confirm dialog naming branch and strategy, Cancel sends
  * nothing, Merge sends a merge commit with the head. #612 (yours, blocked,
- * Bitbucket): Merge is disabled and Checks says why there is no Re-run.
+ * Bitbucket): Merge is disabled and Checks says why there is no Re-run; its
+ * merge conflicts show once in each place; a reviewer is added from the
+ * combobox and another removed from the row menu; By repository groups and
+ * folds the list; #88 is hidden, shown and restored; #612 is declined after
+ * the confirm (Cancel sends nothing).
  * Temp dirs are removed. SB_SHOTS=<dir> also saves the review form, the
  * strategy menu and the merge confirm there, to look at by eye.
  */
@@ -142,7 +146,90 @@ try {
   await reviews().locator('[data-rerun-unavailable]').waitFor({ state: 'visible', timeout: 10_000 })
   check('Bitbucket shows why there is no Re-run', (await reviews().locator('[data-rerun-unavailable]').innerText()).includes("Bitbucket's API cannot re-run")
     && await reviews().getByRole('button', { name: /^Re-run / }).count() === 0)
-  check('only the expected writes were recorded', (await writes()).map((w) => w.action).join(',') === 'reply,resolve,submit-review,merge', (await writes()).map((w) => w.action).join(','))
+
+  // ── #612: conflicts, one mention in each place ──
+  check('the row says merge conflicts', (await reviews().locator('[data-pr-row$="#612"]').innerText()).includes('merge conflicts'))
+  check('the header counts the conflicted files', (await header().locator('[data-pr-conflicts]').innerText()) === 'Conflicts with main in 2 files')
+  await reviews().getByRole('tab', { name: 'Overview' }).click()
+  const callout = reviews().locator('[data-pr-conflict-callout]')
+  await callout.waitFor({ state: 'visible', timeout: 10_000 })
+  const calloutText = await callout.innerText()
+  check('the callout names the files', calloutText.includes('sync/worker.py') && calloutText.includes('sync/config.py'), calloutText)
+  check('the Merge card lists the conflict blocker', await reviews().getByText('Conflicts with main', { exact: true }).isVisible())
+  await reviews().getByRole('tab', { name: /^Files/ }).click()
+  await reviews().locator('[data-file-conflict]').first().waitFor({ state: 'visible', timeout: 10_000 })
+  check('the Files tree marks both conflicted files', await reviews().locator('[data-file-conflict]').count() === 2)
+
+  // ── #612: add a reviewer, remove one ──
+  await reviews().getByRole('tab', { name: 'Overview' }).click()
+  await reviews().getByRole('combobox', { name: 'Add reviewer' }).click()
+  await win.getByRole('option', { name: /barath/ }).click()
+  await reviews().locator('[data-pr-reviewer="barath"]').waitFor({ state: 'visible', timeout: 10_000 })
+  const added = (await writes()).find((w) => w.action === 'add-reviewer')
+  check('Add reviewer sends the Bitbucket account uuid', added?.input?.reviewer === '{00000000-0000-4000-8000-000000000005}', JSON.stringify(added))
+  await reviews().locator('[data-pr-reviewer="pankaj"]').hover()
+  await reviews().getByRole('button', { name: 'Actions for pankaj' }).click()
+  await win.getByRole('menuitem', { name: 'Remove reviewer' }).click()
+  await reviews().locator('[data-pr-reviewer="pankaj"]').waitFor({ state: 'hidden', timeout: 10_000 })
+  check('Remove reviewer takes them off the card', true)
+
+  // ── By repository ──
+  await reviews().getByRole('button', { name: 'By repository', exact: true }).click()
+  const botSection = reviews().locator('[data-pr-repo="bitbucket:geoiq/ssg-bot-v2"]')
+  await botSection.waitFor({ state: 'visible' })
+  check('By repository draws one section per repository', await reviews().locator('[data-pr-repo]').count() === 4)
+  await botSection.getByRole('button', { expanded: true }).click()
+  await botSection.locator('[data-pr-row]').waitFor({ state: 'hidden' })
+  check('a folded repository keeps its count', (await botSection.innerText()).includes('1'))
+  check('the grouping and the fold are saved', await win.evaluate(() => window.api.settings.get('reviews.groupBy')) === 'repository'
+    && (await win.evaluate(() => window.api.settings.get('reviews.collapsedRepos'))).includes('ssg-bot-v2'))
+  await botSection.getByRole('button', { expanded: false }).click()
+  await reviews().getByRole('button', { name: 'By status', exact: true }).click()
+  await reviews().locator('[data-pr-group]').first().waitFor({ state: 'visible' })
+
+  // ── #88: hide, show, restore ──
+  await openPr(88)
+  await header().getByRole('button', { name: 'More actions' }).click()
+  await win.getByRole('menuitem', { name: /^Hide from Reviews/ }).click()
+  const hiddenRow = reviews().locator('[data-pr-hidden-row]')
+  await hiddenRow.waitFor({ state: 'visible', timeout: 10_000 })
+  check('a hidden PR leaves the list and is counted', (await hiddenRow.innerText()).startsWith('1 hidden') && await reviews().locator('[data-pr-row$="#88"]').count() === 0)
+  await hiddenRow.getByRole('button', { name: 'Show' }).click()
+  await reviews().locator('[data-pr-row$="#88"]').waitFor({ state: 'visible' })
+  check('Show lists it again, marked hidden', (await reviews().locator('[data-pr-row$="#88"]').innerText()).includes('hidden'))
+  await header().getByRole('button', { name: 'More actions' }).click()
+  await win.getByRole('menuitem', { name: /^Show in Reviews/ }).click()
+  await hiddenRow.waitFor({ state: 'hidden', timeout: 10_000 })
+  check('Show in Reviews restores it', true)
+  check('hiding sends nothing to the host', !(await writes()).some((w) => /hide/.test(w.action)))
+
+  // ── #161 is not yours: no Close ──
+  await openPr(161)
+  await header().getByRole('button', { name: 'More actions' }).click()
+  check('a PR you may not manage offers no Close', await win.getByRole('menuitem', { name: /Close pull request/ }).count() === 0)
+  await win.keyboard.press('Escape')
+
+  // ── #612: decline, after the confirm ──
+  await openPr(612)
+  await header().locator('[data-merge-button]').waitFor({ state: 'visible', timeout: 20_000 })
+  const declineItem = async () => {
+    await header().getByRole('button', { name: 'More actions' }).click()
+    await win.getByRole('menuitem', { name: /^Decline pull request/ }).click()
+  }
+  await declineItem()
+  const declineDialog = win.getByRole('alertdialog', { name: 'Decline #612?' })
+  await declineDialog.waitFor({ state: 'visible' })
+  await shot('decline-confirm')
+  check('the decline confirm names the PR and says it is for everyone', (await declineDialog.innerText()).includes('"Jittered backoff for the SSG sync worker" is declined on Bitbucket for everyone'))
+  await declineDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await declineDialog.waitFor({ state: 'hidden' })
+  check('Cancel declines nothing', !(await writes()).some((w) => w.action === 'decline'))
+  await declineItem()
+  await declineDialog.getByRole('button', { name: 'Decline', exact: true }).click()
+  await reviews().locator('[data-pr-row$="#612"]').waitFor({ state: 'hidden', timeout: 10_000 })
+  check('a declined PR leaves the list', true)
+
+  check('only the expected writes were recorded', (await writes()).map((w) => w.action).join(',') === 'reply,resolve,submit-review,merge,add-reviewer,remove-reviewer,decline', (await writes()).map((w) => w.action).join(','))
 } catch (err) {
   console.error(err)
   results.push({ ok: false })

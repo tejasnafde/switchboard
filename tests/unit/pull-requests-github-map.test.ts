@@ -22,18 +22,21 @@ const list = fixture('github-list.json')
 describe('mapGhSummary', () => {
   const [review, mine] = list.data.r0.open.nodes
 
-  it('marks a PR you were asked to review, and ignores team requests', () => {
+  it('marks a PR you were asked to review, and lists a team request as a team reviewer', () => {
     const pr = mapGhSummary(repo, review, 'tejasnafde')
     expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: true, hasReviewed: false })
-    expect(pr.reviewers.map((r) => [r.person.login, r.state, r.requested])).toEqual([
-      ['pankaj', 'commented', false],
-      ['tejasnafde', 'pending', true],
+    expect(pr.reviewers.map((r) => [r.id, r.person.displayName, r.state, r.requested])).toEqual([
+      ['pankaj', 'pankaj', 'commented', false],
+      ['tejasnafde', 'Tejas Nafde', 'pending', true],
+      ['team:core', 'Core', 'pending', true],
     ])
+    expect([pr.mergeConflicts, pr.conflictedFiles]).toEqual([false, []])
     expect(pr.approvals).toEqual({ given: 0, required: 1 })
     expect(pr.unresolvedConversations).toBe(2)
     expect(pr.checks).toEqual({ state: 'success', total: 2, passed: 2, failed: 0, pending: 0 })
     expect(pr.ref).toEqual({ ...repo, number: 161 })
     expect(pr.author.displayName).toBe('Backend Dev')
+    expect(pr.authorId).toBe(pr.author.login)
     expect(pr.createdAt).toBe(Date.parse('2026-09-27T09:00:00Z'))
   })
 
@@ -43,6 +46,13 @@ describe('mapGhSummary', () => {
     // A timed-out run is a failure; failure outranks the one still running.
     expect(pr.checks).toEqual({ state: 'failure', total: 3, passed: 1, failed: 1, pending: 1 })
     expect(pr.approvals.required).toBeNull()
+    // The list query carries mergeable, so the row can say it; GitHub never names the files.
+    expect([pr.mergeConflicts, pr.conflictedFiles]).toEqual([true, []])
+  })
+
+  it('reads a mergeable GitHub has not worked out yet as unknown, and a merged PR as not conflicting', () => {
+    expect(mapGhSummary(repo, { ...mine, mergeable: 'UNKNOWN' }, 'tejasnafde').mergeConflicts).toBeNull()
+    expect(mapGhSummary(repo, list.data.r0.merged.nodes[0], 'tejasnafde').mergeConflicts).toBe(false)
   })
 
   it('maps a merged PR with no status rollup', () => {
@@ -64,7 +74,7 @@ describe('mapGhDetail', () => {
 
   it('lists what blocks the merge, conflicts included', () => {
     expect(detail.mergeBlockers.map((b) => b.label)).toEqual([
-      'Merge conflicts',
+      'Conflicts with main',
       '1 check failed',
       '1 unresolved conversation',
       'Changes requested',
@@ -90,6 +100,14 @@ describe('mapGhDetail', () => {
 
   it('lists the merge strategies the repository allows, merge commit first', () => {
     expect(detail.mergeStrategies).toEqual(['merge_commit', 'squash'])
+  })
+
+  it('lets the author manage the PR, and otherwise only write access or more', () => {
+    expect(detail.viewerCanManage).toBe(true)
+    const pr = detailRepo.pullRequest
+    expect(mapGhDetail(repo, pr, 'someone-else', { ...detailRepo, viewerPermission: 'READ' }).viewerCanManage).toBe(false)
+    expect(mapGhDetail(repo, pr, 'someone-else', { ...detailRepo, viewerPermission: 'TRIAGE' }).viewerCanManage).toBe(false)
+    expect(mapGhDetail(repo, pr, 'someone-else', { ...detailRepo, viewerPermission: 'WRITE' }).viewerCanManage).toBe(true)
   })
 })
 

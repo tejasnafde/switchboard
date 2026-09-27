@@ -1,0 +1,98 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "reviews-manage",
+  "summary": "Reviews v3: merge conflicts, reviewers, group by repository, hide and decline. Conflicts ride on PrSummary (mergeConflicts, conflictedFiles): GitHub from mergeable in the list query (it never names the files), Bitbucket from GET pullrequests/{id}/conflicts (read:pullrequest:bitbucket for API tokens, which is what Switchboard uses; pullrequest for OAuth 2.0 and Connect apps; the diffstat's old 'merge conflict' status went with the merge preview Atlassian removed on 2026-09-04), read with the list's enrichment for open PRs you are involved in and cached against the PR's updated_on plus the target branch's commit, so a moved main re-reads it and nothing reads faster than the refresh rule. They show once in the list row (needs you, ahead of a failed build), the header line, an Overview callout naming the files, the Merge card blocker and the Files tree (status 'conflicted', no longer mapped to modified); 'Ask the agent to resolve' sends one review pill with the base, the files and 'merge the base in, never rebase or force-push'. The Reviewers card adds a reviewer from a combobox (recent reviewers of the repository first, then collaborators and teams on GitHub, workspace members on Bitbucket) and removes one from a row's hover menu (GitHub: only a pending request). The ⋯ menu hides a PR locally (backend table pull_request_hidden; it comes back when it changes after the hide and needs you, and the hide is then cleared) and declines it (Bitbucket) or closes it (GitHub) after a confirm naming it. Reviewer changes and decline are three new admin-scoped write channels with validation, a fresh re-read (open, viewerCanManage: author, or write access to the repository) and the usual error mapping. The list toggles By status / By repository, with collapsible repository sections; both are settings.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/ReviewsView.tsx",
+        "src/renderer/components/reviews/PrHeaderActions.tsx",
+        "src/renderer/components/reviews/PrReviewers.tsx",
+        "src/renderer/components/reviews/PrOverview.tsx",
+        "src/renderer/components/reviews/PrFiles.tsx",
+        "src/renderer/components/reviews/PrDetailPane.tsx",
+        "src/renderer/components/reviews/review-states.ts",
+        "src/renderer/components/reviews/review-ui.tsx",
+        "src/renderer/components/settings/SourceControlPanel.tsx",
+        "src/renderer/stores/review-store.ts",
+        "src/preload/index.ts",
+        "e2e/review-writes.e2e.mjs",
+        "e2e/review-to-chat.e2e.mjs",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots",
+        "tests/unit/review-states.test.ts",
+        "tests/unit/visual-regressions-source.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_reviews",
+      "followUpRelease": "mobile-v0.5.0, with the Reviews tab. The phone has no Reviews screen; the three new write channels (add-reviewer, remove-reviewer, decline) are admin-scoped like the other writes, so a paired phone is refused even if it called them (tests/unit/device-auth.test.ts). The new PrSummary and PrListData fields are additive and nothing on the phone reads them yet."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_reviews",
+      "followUpRelease": "Native Android 0.6.0, with the Reviews destination. No Android code calls the new channels and the backend refuses the writes for a phone credential, so nothing unfinished is reachable."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pull-requests.ts",
+        "src/shared/pull-request-groups.ts",
+        "src/shared/pull-request-writes.ts",
+        "src/shared/review-context.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/ipc/pull-requests.ts",
+        "src/main/pull-requests/provider.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/pull-requests/github.ts",
+        "src/main/pull-requests/github-map.ts",
+        "src/main/pull-requests/bitbucket.ts",
+        "src/main/pull-requests/bitbucket-map.ts",
+        "src/main/pull-requests/demo.ts",
+        "tests/fixtures/pull-requests/bitbucket-conflicts.json",
+        "tests/fixtures/pull-requests/github-write-errors.json",
+        "tests/unit/pull-request-groups.test.ts",
+        "tests/unit/pull-request-writes.test.ts",
+        "tests/unit/pull-request-service-writes.test.ts",
+        "tests/unit/pull-requests-github-map.test.ts",
+        "tests/unit/pull-requests-github-writes.test.ts",
+        "tests/unit/pull-requests-bitbucket-map.test.ts",
+        "tests/unit/pull-requests-bitbucket-writes.test.ts",
+        "tests/unit/review-context.test.ts",
+        "tests/unit/device-auth.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/pull-request-hidden.ts",
+        "src/main/db/database.ts",
+        "tests/unit/pull-requests-hidden-ipc.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, update channel or wire-protocol frame change. The new table is CREATE TABLE IF NOT EXISTS on migrate and an older build ignores it. The new channels are additive request/response channels; an older backend answers them with the unknown-channel error, which the control shows as its error line, and its list has no `hidden` field, which the renderer reads as nothing hidden (a desktop and its SSH backend are re-provisioned to the same version on connect anyway). The new settings keys reviews.groupBy and reviews.collapsedRepos default to By status and nothing collapsed."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and npm test passed.",
+      "vitest: conflict mapping on both hosts (GitHub mergeable CONFLICTING/MERGEABLE/UNKNOWN, merged never conflicting; Bitbucket conflicts endpoint named files once each, a failed conflicts read leaving the state unknown without failing the list, files status conflicted, the conflicts re-read when the target branch commit moves and not otherwise), row status and blocker order, group by repository order, collapse and filter rule, the hide and come-back rule and its IPC wiring over the demo data, reviewer id validation, the re-read prechecks (stale, forbidden, invalid), candidate order, request shaping for add/remove reviewer (GitHub reviewers vs team_reviewers on requested_reviewers, Bitbucket GET then PUT with title and the full reviewers list) and decline/close (Bitbucket POST decline, GitHub PATCH state closed), the repository permission read once per repository from the documented /user/workspaces/{workspace}/permissions/repositories (the removed /user/permissions/repositories is never called), error mapping, and the phone refused on the three new write channels.",
+      "e2e/review-writes.e2e.mjs against the demo provider: conflicts in the row, header, callout, Merge card and Files tree; add a reviewer from the combobox and remove one from the row menu; By repository sections, fold and saved settings; hide, show and restore; no Close on a PR you may not manage; decline Cancel sends nothing, Decline removes the row. 37/37 passed. e2e/review-to-chat.e2e.mjs: the conflicts pill lands with the base and files.",
+      "SB_VISUAL_SCOPE=screens: reviews and reviews-files baselines rewritten, reviews-conflict and reviews-by-repo added, in all three themes; the chat, confirm-dialog and host-write-approval baselines changed only in the linked #612 chip's icon (now the conflict glyph). Sub-threshold noise baselines were restored. Two further runs without updating both passed."
+    ],
+    "hardware": [
+      "Every changed baseline was read by eye on this Mac; that moved the callout's button under its text, which the first version squeezed.",
+      "Live read-only gh check against tejasnafde/switchboard: the list query with mergeable and Team reviewers parses, detail reads viewerPermission, and collaborators/teams list without error."
+    ],
+    "notExercised": [
+      "No write was ever sent to a real host. Never exercised live: GitHub POST and DELETE pulls/:n/requested_reviewers, PATCH pulls/:n; Bitbucket PUT pullrequests/:id with reviewers, POST pullrequests/:id/decline.",
+      "Never exercised live on Bitbucket (no account on this machine): the conflicts read in the list, GET workspaces/:ws/members, GET user/workspaces/:ws/permissions/repositories with a q filter. The scope names in the Settings help text (read:workspace:bitbucket for members) follow Atlassian's docs and were not checked against a real token.",
+      "React Native and native Android are staged; nothing was run on a phone."
+    ]
+  }
+}
