@@ -41,7 +41,7 @@ import type { PartialClientConfig } from '@shared/google-oauth'
 import { MobileEndpoint } from './backend/mobile-server'
 import { registerGitHandlers } from './ipc/git'
 import { registerSttHandlers } from './ipc/stt'
-import { registerIdeHandlers, shutdownIde } from './ipc/ide'
+import { registerIdeHandlers, resumeIdeAfterAbortedQuit, shutdownIde } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
@@ -504,7 +504,13 @@ function createWindow(): BrowserWindow {
     setTimeout(() => {
       if (!installRequested) return
       installRequested = false
-      reopenDbAfterAbortedQuit()
+      // Teardown already ran. Let the database and IDE come back, and make the
+      // next quit tear down again (PTYs and agent sessions stay stopped until
+      // the relaunch the message asks for).
+      if (quitCoordinator.rearm()) {
+        reopenDbAfterAbortedQuit()
+        resumeIdeAfterAbortedQuit()
+      }
       log.warn('still running after quitAndInstall - install did not start')
       reportInstallStatus(window, {
         kind: 'error',
@@ -640,7 +646,7 @@ if (smokeDumpDir && (process.argv.includes('--smoke-test') || isQuitSmoke())) {
 }
 if (process.argv.includes('--smoke-test')) {
   app.whenReady().then(() => {
-    console.log('[smoke-test] main module loaded + app ready, quitting')
+    createMainLogger('smoke').info('[smoke-test] main module loaded + app ready, quitting')
     app.quit()
   })
 }

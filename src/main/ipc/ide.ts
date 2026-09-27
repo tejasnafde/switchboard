@@ -92,7 +92,11 @@ let ideShuttingDown = false
 export function shutdownIde(): void {
   ideShuttingDown = true
   for (const stop of ideStops) stop()
-  ideStops.clear()
+}
+
+/** The quit never happened (an update that did not start): allow booting again. */
+export function resumeIdeAfterAbortedQuit(): void {
+  ideShuttingDown = false
 }
 
 export function registerIdeHandlers(host: BackendHost): void {
@@ -205,6 +209,8 @@ export function registerIdeHandlers(host: BackendHost): void {
               return rt
             })
           runtime = await booting
+          // Quit arrived while the binary resolved: its stop saw no runtime yet.
+          if (ideShuttingDown) return { ok: false as const, error: 'shutting-down' }
           if (!runtime) {
             // Prewarm without an installed binary: stay idle silently - the
             // real download happens when the user explicitly opens the pane.
@@ -213,7 +219,7 @@ export function registerIdeHandlers(host: BackendHost): void {
         }
         pushStatus('starting')
         const port = await runtime.manager.ensureStarted()
-        // Quit arrived during the boot: the stop it ran saw no child yet.
+        // Quit arrived while code-server started: its stop saw no child yet.
         if (ideShuttingDown) {
           runtime.manager.stop()
           return { ok: false as const, error: 'shutting-down' }

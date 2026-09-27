@@ -125,4 +125,21 @@ describe('QuitCoordinator', () => {
     expect(requestQuit).toHaveBeenCalledTimes(1)
     expect(coord.handleBeforeQuit()).toBe(false)
   })
+
+  it('rearm lets a later quit tear down again, but not while a teardown runs', async () => {
+    const d = deferred()
+    const teardown = vi.fn(() => d.promise)
+    const coord = new QuitCoordinator(teardown, vi.fn(), (cb) => cb())
+
+    const prepared = coord.prepare()
+    expect(coord.rearm()).toBe(false)
+    expect(coord.isQuitting).toBe(true)
+    d.resolve()
+    await prepared
+
+    expect(coord.rearm()).toBe(true)
+    expect(coord.isQuitting).toBe(false)
+    expect(coord.handleBeforeQuit()).toBe(true)
+    expect(teardown).toHaveBeenCalledTimes(2)
+  })
 })

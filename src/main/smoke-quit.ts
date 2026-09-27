@@ -10,6 +10,9 @@ import type { BrowserWindow } from 'electron'
 import { watchLaunchConfig } from './launch-config/launch-config-store'
 import { watchHead } from './git/head-watcher'
 import type { ShutdownStepReport } from './shutdown-sequence'
+import { createMainLogger } from './logger'
+
+const log = createMainLogger('smoke')
 
 export const SMOKE_QUIT_FLAG = '--smoke-quit'
 const TERMINALS = 2
@@ -21,10 +24,10 @@ export function isQuitSmoke(): boolean {
 
 let sessionOpened = false
 
-/** Printed on stdout for the launcher to parse, only if the session opened. */
+/** Logged (so on stdout) for the launcher to parse, only if the session opened. */
 export function reportQuitSmoke(reports: ShutdownStepReport[]): void {
   if (!sessionOpened) return
-  console.log(`[smoke-quit] shutdown ${JSON.stringify(reports)}`)
+  log.info(`[smoke-quit] shutdown ${JSON.stringify(reports)}`)
 }
 
 export async function runQuitSmoke(window: BrowserWindow, quit: () => void): Promise<void> {
@@ -51,7 +54,7 @@ export async function runQuitSmoke(window: BrowserWindow, quit: () => void): Pro
       }
     })
   `)
-  console.log(`[smoke-quit] ${opened} terminals live, quitting`)
+  log.info(`[smoke-quit] ${opened} terminals live, quitting`)
   sessionOpened = true
   quit()
 }
