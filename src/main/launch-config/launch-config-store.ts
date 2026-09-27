@@ -69,6 +69,12 @@ export function watchLaunchConfig(projectPath: string): void {
   }
 }
 
+/** Quit: close every launch-config watcher. Safe to call more than once. */
+export function closeAllLaunchConfigWatchers(): void {
+  for (const watcher of watchers.values()) watcher.close()
+  watchers.clear()
+}
+
 /**
  * Read a project's launch config. Returns raw YAML string or null.
  * Prefers `launch-config.yaml`, falling back to the legacy

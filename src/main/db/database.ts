@@ -24,6 +24,8 @@ export * from './worktree-links'
 export * from './pull-request-links'
 
 let db: Database.Database | null = null
+/** Set by the quit path: a write after it must fail, not reopen the file. */
+let closedForQuit = false
 
 function getDbPath(): string {
   const dbDir = join(userDataDir(), 'data')
@@ -33,6 +35,7 @@ function getDbPath(): string {
 
 export function getDb(): Database.Database {
   if (db) return db
+  if (closedForQuit) throw new Error('database is closed - the app is quitting')
 
   const dbPath = getDbPath()
   log.info(`opening database: ${dbPath}`)
@@ -619,10 +622,22 @@ function migrate(db: Database.Database): void {
   log.info('database migrated')
 }
 
-export function closeDb(): void {
+/**
+ * `forQuit` makes the close final: a late writer (an adapter still unwinding,
+ * a window event) gets an error instead of a fresh native handle opened while
+ * the process is being torn down.
+ */
+/** The quit did not happen after all (an update that never started): allow reopening. */
+export function reopenDbAfterAbortedQuit(): void {
+  closedForQuit = false
+}
+
+export function closeDb(opts: { forQuit?: boolean } = {}): void {
+  if (opts.forQuit) closedForQuit = true
   if (db) {
-    db.close()
+    const open = db
     db = null
+    open.close()
   }
 }
 

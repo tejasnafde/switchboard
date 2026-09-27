@@ -30,4 +30,24 @@ describe('app quit lifecycle contract', () => {
       secondInstanceHandler.indexOf('mainWindow.isDestroyed()'),
     )
   })
+
+  it('closes every writer and watcher before the database, which closes last and for good', () => {
+    const teardown = main.slice(main.indexOf('runShutdownSequence(['), main.indexOf('{ log: shutdownLog }'))
+    const order = [...teardown.matchAll(/name: '([a-z-]+)'/g)].map((m) => m[1])
+    expect(order[0]).toBe('window-bounds')
+    expect(order.at(-1)).toBe('database')
+    for (const step of ['terminals', 'providers', 'switchboard-mcp', 'ide', 'machines', 'mobile-endpoint', 'file-watchers']) {
+      expect(order).toContain(step)
+    }
+    expect(order.indexOf('terminals')).toBeLessThan(order.indexOf('providers'))
+    expect(teardown).toContain('closeDb({ forQuit: true })')
+    expect(teardown).toContain('disposeSettingsFileSync()')
+    expect(teardown).toContain('closeAllLaunchConfigWatchers()')
+    expect(teardown).toContain('closeAllHeadWatchers()')
+  })
+
+  it('does not write window bounds from the close event once quit has started', () => {
+    const closeHandler = main.slice(main.indexOf("window.on('close'"), main.indexOf("window.on('close'") + 120)
+    expect(closeHandler).toContain('!quitCoordinator.isQuitting')
+  })
 })

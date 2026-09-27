@@ -1,0 +1,78 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "desktop-quit-teardown-order",
+  "summary": "Quit the Desktop app through Chromium's orderly shutdown instead of app.exit(), and run the quit teardown as one ordered, awaited sequence that closes every writer and file watcher before the database closes for good.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/index.ts",
+        "src/main/shutdown-sequence.ts",
+        "src/main/smoke-quit.ts",
+        "src/main/ipc/app-desktop.ts",
+        "src/main/ipc/ide.ts",
+        "src/main/ipc/settings-file.ts",
+        "src/main/launch-config/launch-config-store.ts",
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "tests/unit/shutdown-sequence.test.ts",
+        "tests/unit/app-quit-lifecycle-contract.test.ts",
+        "tests/unit/quit-watcher-close.test.ts",
+        "src/main/quit-coordinator.ts",
+        "tests/unit/quit-coordinator.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native app has no Electron process, app.exit/app.quit, sandbox broker or quit teardown; it shares none of the changed files."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android runs its own Activity lifecycle and does not load the Electron main process or its quit sequence."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No IPC channel, WebSocket frame, provider event or device scope changes. The headless server (src/server) keeps its own shutdown and does not import the changed Desktop teardown; a paired phone sees the same socket close at desktop quit as before."
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "tests/unit/db-close-for-quit.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "scripts/smoke-test.mjs",
+        "scripts/smoke-quit.mjs",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Root cause from CI minidumps: a 150-launch loop of the old smoke mode (app.exit(0) at ready) on windows-latest failed 10 times (3 x 0xC0000005, 7 x 0xFFFF7002). cdb with Electron's symbol server put all three dumps in a thread-pool worker in sandbox::ThreadPool::RegisterWait (via SharedMemIPCServer::Init / FinishSpawnTarget) or BrokerServicesBase::CreateTarget, with the main thread in Browser::ExitWithCode -> common_exit -> ~BrokerServicesBase. The same loop with app.quit() failed 0 of 150.",
+      "The same diagnostic on windows-2022: 11 of 150 old-mode launches failed (2 x 0xC0000005, both in sandbox::ThreadPool::RegisterWait), 0 of 150 with app.quit(). After the fix, 300 of 300 boot launches and 30 of 30 full quit launches passed on each of windows-2022 and windows-latest (runs 36345951591, 36346192003), with no minidump.",
+      "PR CI (Test on ubuntu, macOS, windows-latest, each running the boot smoke and 5 quit-smoke launches) green on run 36346778888 attempts 1 and 2 and on run 36347957675 after the review fixes; release.yml workflow_dispatch dry run 36347159747 exercised the windows-2022 postbuild smoke (5 launches) before packaging.",
+      "tests/unit/shutdown-sequence.test.ts: steps run in order and each is awaited, a throwing or rejecting step is logged and the rest still run, a hung step times out and its late rejection stays handled.",
+      "tests/unit/db-close-for-quit.test.ts: an ordinary close reopens lazily, the quit close refuses to reopen, and closing twice is a no-op.",
+      "tests/unit/app-quit-lifecycle-contract.test.ts: the teardown starts with window bounds, ends with the database, and closes terminals before providers and every watcher before the database; the window close handler does not write once quit has started.",
+      "scripts/smoke-quit.mjs runs a real startup with two live PTYs, a launch-config watcher, a git HEAD watcher, the settings.json watcher and the database, quits like a user, and requires exit 0 plus every teardown step reporting ok; run 5 times in CI on ubuntu, macOS and Windows.",
+      "npm run typecheck, npm test and npm run validate:feature-parity -- --base origin/main.",
+      "tests/unit/quit-coordinator.test.ts: rearm() after an aborted install lets the next quit tear down again, and is refused while a teardown runs.",
+      "tests/unit/install-attempt.test.ts: an install that never took recovers at once, or after a teardown still running at the timeout settles, and never installs late."
+    ],
+    "hardware": [
+      "macOS (this Mac): scripts/smoke-quit.mjs and the boot smoke pass locally."
+    ],
+    "notExercised": [
+      "No Windows machine was used; Windows coverage is GitHub-hosted windows-2022 and windows-latest runners only.",
+      "Quit with a live Claude, Codex or OpenCode session, code-server running, an SSH tunnel or the mobile endpoint listening is not in the quit smoke (it needs credentials or a network peer); those steps run with nothing open there and are covered by the ordering tests.",
+      "The 0xFFFF7002 exit code seen alongside the access violations left no minidump, so it is attributed to the same app.exit path by elimination (it also disappeared under app.quit), not by a stack.",
+      "After a restart-and-install that never quits, the database and IDE come back and the next quit tears down again, but PTYs and agent sessions stay stopped until a relaunch; that path is unit-tested only, since forcing a failed Squirrel install in CI is not possible."
+    ]
+  }
+}

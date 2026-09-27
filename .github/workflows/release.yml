@@ -130,6 +130,16 @@ jobs:
 
       - name: Build renderer + main
         run: npm run build
+        env:
+          SB_SMOKE_CRASH_DIR: ${{ runner.temp }}/smoke-dumps
+
+      - name: Upload smoke-test minidumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-dumps-${{ matrix.os }}
+          path: ${{ runner.temp }}/smoke-dumps
+          if-no-files-found: ignore
 
       - name: Select macOS signing mode
         if: runner.os == 'macOS'

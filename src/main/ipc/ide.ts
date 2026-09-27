@@ -84,6 +84,21 @@ interface IdeRuntime {
 /** Renderer-facing status: manager states plus the one-time download. */
 export type IdePublicStatus = IdeStatus | 'downloading'
 
+/** One stop per registration: a reopened window registers again. */
+const ideStops = new Set<() => void>()
+let ideShuttingDown = false
+
+/** Quit: stop every code-server this process started, and start no more. */
+export function shutdownIde(): void {
+  ideShuttingDown = true
+  for (const stop of ideStops) stop()
+}
+
+/** The quit never happened (an update that did not start): allow booting again. */
+export function resumeIdeAfterAbortedQuit(): void {
+  ideShuttingDown = false
+}
+
 export function registerIdeHandlers(host: BackendHost): void {
   let runtime: IdeRuntime | null = null
   let booting: Promise<IdeRuntime | null> | null = null
@@ -175,6 +190,7 @@ export function registerIdeHandlers(host: BackendHost): void {
     IdeChannels.ENSURE,
     async (folder: string, opts?: { theme?: string; skipDownload?: boolean }) => {
       try {
+        if (ideShuttingDown) return { ok: false as const, error: 'shutting-down' }
         // TCC pre-flight: also on reuse - a new project folder may be denied
         // even while the server is already up for another one.
         await assertCwdReadable(folder)
@@ -193,6 +209,8 @@ export function registerIdeHandlers(host: BackendHost): void {
               return rt
             })
           runtime = await booting
+          // Quit arrived while the binary resolved: its stop saw no runtime yet.
+          if (ideShuttingDown) return { ok: false as const, error: 'shutting-down' }
           if (!runtime) {
             // Prewarm without an installed binary: stay idle silently - the
             // real download happens when the user explicitly opens the pane.
@@ -201,10 +219,20 @@ export function registerIdeHandlers(host: BackendHost): void {
         }
         pushStatus('starting')
         const port = await runtime.manager.ensureStarted()
+        // Quit arrived while code-server started: its stop saw no child yet.
+        if (ideShuttingDown) {
+          runtime.manager.stop()
+          return { ok: false as const, error: 'shutting-down' }
+        }
         rememberIdePort(port)
         pushStatus('ready', port)
         return { ok: true as const, port }
       } catch (err) {
+        // Quit closed the database (or stopped a dependency) mid-boot: not an IDE error.
+        if (ideShuttingDown) {
+          log.info('ide ensure stopped by shutdown', { message: err instanceof Error ? err.message : String(err) })
+          return { ok: false as const, error: 'shutting-down' }
+        }
         const message = err instanceof Error ? err.message : String(err)
         log.error('ide ensure failed', err)
         pushStatus('error')
@@ -220,5 +248,5 @@ export function registerIdeHandlers(host: BackendHost): void {
     return { ok: true }
   })
 
-  app.on('before-quit', () => runtime?.manager.stop())
+  ideStops.add(() => runtime?.manager.stop())
 }

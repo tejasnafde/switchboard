@@ -125,4 +125,63 @@ describe('QuitCoordinator', () => {
     expect(requestQuit).toHaveBeenCalledTimes(1)
     expect(coord.handleBeforeQuit()).toBe(false)
   })
+
+  it('rearm lets a later quit tear down again, but not while a teardown runs', async () => {
+    const d = deferred()
+    const teardown = vi.fn(() => d.promise)
+    const coord = new QuitCoordinator(teardown, vi.fn(), (cb) => cb())
+
+    const prepared = coord.prepare()
+    expect(coord.rearm()).toBe(false)
+    expect(coord.isQuitting).toBe(true)
+    d.resolve()
+    await prepared
+
+    expect(coord.rearm()).toBe(true)
+    expect(coord.isQuitting).toBe(false)
+    expect(coord.handleBeforeQuit()).toBe(true)
+    expect(teardown).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('QuitCoordinator.rearmWhenSettled', () => {
+  it('rearms at once when no teardown is running', async () => {
+    const coord = new QuitCoordinator(async () => {}, vi.fn())
+    await coord.prepare()
+    const onRearmed = vi.fn()
+
+    const recovery = coord.rearmWhenSettled(onRearmed)
+    expect(onRearmed).toHaveBeenCalledTimes(1)
+    await recovery
+    expect(coord.isQuitting).toBe(false)
+  })
+
+  it('waits for an in-flight teardown, then rearms', async () => {
+    const d = deferred()
+    const coord = new QuitCoordinator(() => d.promise, vi.fn())
+    void coord.prepare()
+    const onRearmed = vi.fn()
+
+    const recovery = coord.rearmWhenSettled(onRearmed)
+    await Promise.resolve()
+    expect(onRearmed).not.toHaveBeenCalled()
+    expect(coord.isQuitting).toBe(true)
+
+    d.resolve()
+    await recovery
+    expect(onRearmed).toHaveBeenCalledTimes(1)
+    expect(coord.isQuitting).toBe(false)
+  })
+
+  it('still rearms when the teardown rejected', async () => {
+    const d = deferred()
+    const coord = new QuitCoordinator(() => d.promise, vi.fn())
+    void coord.prepare()
+    const onRearmed = vi.fn()
+
+    const recovery = coord.rearmWhenSettled(onRearmed)
+    d.reject(new Error('db close failed'))
+    await recovery
+    expect(onRearmed).toHaveBeenCalledTimes(1)
+  })
 })
