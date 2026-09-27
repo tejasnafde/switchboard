@@ -6,7 +6,7 @@
  * CLI (see claude-cli-refresh.ts).
  */
 
-import { getProviderInstanceFull } from '../../db/provider-instances'
+import { getProviderInstanceFull, type ProviderInstanceRow } from '../../db/provider-instances'
 import { resolveInstanceEnv } from '../instance-env'
 import { findCodexPath } from '../adapters/codex-adapter'
 import type { ProviderUsage } from '@shared/provider-usage'
@@ -60,8 +60,22 @@ export interface UsageRequestOptions {
   refreshWithTurn?: boolean
 }
 
+/**
+ * The instance a usage probe spawns with. Claude and Codex probes apply the
+ * stored env overlay (an oauth_dir profile can carry one too, for example
+ * ANTHROPIC_BASE_URL); `getProviderInstanceFull` decrypts it only when the
+ * row's key list does not prove it empty, because each decrypt can be a
+ * keychain prompt on an unsigned macOS build and Settings reads every
+ * instance's usage when it opens. Other kinds never decrypt.
+ */
+export function usageInstance(id: string): ProviderInstanceRow | null {
+  const meta = getProviderInstanceFull(id, { withEnv: false })
+  if (!meta) return null
+  return meta.agentType === 'claude-code' || meta.agentType === 'codex' ? getProviderInstanceFull(id) ?? meta : meta
+}
+
 async function probe(id: string, agentType: ProviderUsage['agentType'], opts: UsageRequestOptions): Promise<ProviderUsage> {
-  const instance = getProviderInstanceFull(id)
+  const instance = usageInstance(id)
   if (!instance) return flat(id, agentType, 'unsupported', 'Instance not found.')
 
   const env = resolveInstanceEnv(instance)
@@ -112,7 +126,7 @@ export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions =
   if (existing) return existing
 
   // Resolved up front so a probe that throws can still report the right kind.
-  const agentType = getProviderInstanceFull(id)?.agentType ?? 'claude-code'
+  const agentType = getProviderInstanceFull(id, { withEnv: false })?.agentType ?? 'claude-code'
 
   const task = probe(id, agentType, opts)
     .then((result) => {

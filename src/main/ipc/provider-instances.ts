@@ -69,7 +69,7 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
       // e2e run can watch them land one at a time, as real probes do.
       const delayMs = (Number(process.env.SB_DEMO_USAGE_DELAY_MS) || 0) * (1 + (demoUsageCalls++ % 4))
       if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
-      return demoUsage(id, getProviderInstanceFull(id)?.agentType ?? 'claude-code')
+      return demoUsage(id, getProviderInstanceFull(id, { withEnv: false })?.agentType ?? 'claude-code')
     }
     return fetchInstanceUsage(id, opts)
   })
