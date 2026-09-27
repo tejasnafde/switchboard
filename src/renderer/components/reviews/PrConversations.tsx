@@ -4,17 +4,27 @@
  */
 import { useState } from 'react'
 import type { PrConversation, PrSummary } from '@shared/pull-requests'
+import { conversationItem } from '@shared/review-context'
 import { useReviewStore } from '../../stores/review-store'
 import { cn } from '../../lib/utils'
+import { Button } from '../ui/button'
 import { Loaded, usePrResource } from './PrDetailPane'
 import { ConversationThread } from './PrDiff'
+import { Icon } from './review-ui'
+import { askAgent, filesFor } from './review-to-chat'
+
+/** Hands conversations to the agent with the diff around each line. */
+async function askAboutConversations(pr: PrSummary, conversations: PrConversation[]): Promise<void> {
+  const files = await filesFor(pr.ref)
+  await askAgent({ pr: pr.ref, title: pr.title, url: pr.url, items: conversations.map((c) => conversationItem(c, files)) })
+}
 
 export function PrConversations({ summary, now }: { summary: PrSummary; now: number }) {
   const { value, retry } = usePrResource(summary, 'conversations')
-  return <Loaded value={value} retry={retry}>{(data) => <ConversationList conversations={data} now={now} />}</Loaded>
+  return <Loaded value={value} retry={retry}>{(data) => <ConversationList pr={summary} conversations={data} now={now} />}</Loaded>
 }
 
-function ConversationList({ conversations, now }: { conversations: PrConversation[]; now: number }) {
+function ConversationList({ pr, conversations, now }: { pr: PrSummary; conversations: PrConversation[]; now: number }) {
   const [show, setShow] = useState<'open' | 'resolved'>('open')
   const openFile = useReviewStore((s) => s.openFile)
   const open = conversations.filter((c) => !c.resolved)
@@ -40,13 +50,21 @@ function ConversationList({ conversations, now }: { conversations: PrConversatio
           </button>
         ))}
       </div>
+      {show === 'open' && open.length > 1 && (
+        <div className="mb-[10px] flex items-center gap-[10px] rounded-[10px] border border-dashed border-[var(--border-strong,var(--border))] px-3 py-[8px] text-[12.5px] text-[var(--text-secondary)]">
+          <span className="min-w-0 flex-1">Hand every open conversation to the agent as one attachment.</span>
+          <Button variant="outline" size="sm" onClick={() => void askAboutConversations(pr, open)}>
+            <Icon name="spark" />Send all {open.length} open conversations
+          </Button>
+        </div>
+      )}
       {shown.length === 0 && (
         <div className="text-[12.5px] text-[var(--text-muted)]">{show === 'open' ? 'No open conversations.' : 'No resolved conversations.'}</div>
       )}
       {shown.map((c) => (
         <div key={c.id} className="mb-[10px] overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
-          {c.path && (
-            <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-[9px]">
+          <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-[6px]">
+            {c.path ? (
               <button
                 type="button"
                 onClick={() => openFile(c.path!)}
@@ -54,9 +72,12 @@ function ConversationList({ conversations, now }: { conversations: PrConversatio
               >
                 {c.path}{c.line !== null && `:${c.line}`}
               </button>
-              {c.outdated && <span className="ml-auto text-[12px] text-[var(--text-muted)]">outdated</span>}
-            </div>
-          )}
+            ) : <span className="text-[12px] text-[var(--text-secondary)]">On the pull request</span>}
+            {c.outdated && <span className="text-[12px] text-[var(--text-muted)]">outdated</span>}
+            <Button variant="ghost" size="sm" className="ml-auto" onClick={() => void askAboutConversations(pr, [c])}>
+              <Icon name="spark" />Ask the agent
+            </Button>
+          </div>
           <ConversationThread conversation={c} now={now} markResolved={false} className="rounded-none border-none" />
         </div>
       ))}

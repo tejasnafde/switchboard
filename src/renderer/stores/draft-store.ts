@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { UserMessagePillKind } from '@shared/provider-events'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:draft')
@@ -20,7 +21,7 @@ const PILLS_STORAGE_KEY = 'switchboard.draftPills'
  *     survives JSON.stringify or a restart.
  */
 
-export type DraftPillKind = 'file' | 'terminal' | 'chat-message'
+export type DraftPillKind = UserMessagePillKind
 
 /** A pasted, dropped or picked image waiting to be sent. */
 export interface ImageAttachment {

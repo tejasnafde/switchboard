@@ -20,6 +20,7 @@ import type {
 } from '@shared/provider-events'
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
 import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
+import { pillBodyText } from '@shared/pill-body-text'
 import { transcriptShowsTaskNotification, type SyntheticUserPart } from '@shared/synthetic-message'
 import { splitLegacyCachedItems } from '../lib/thread-history'
 import { applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
@@ -296,7 +297,8 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           // so this collapses onto it instead of rendering a second bubble.
           const id = echoMessageId(event.origin ?? String(event.at))
           if (t.items.some((i) => i.id === id)) return {}
-          const text = visibleUserMessageText(event.text, event.displayBody)
+          const visible = visibleUserMessageText(event.text, event.displayBody)
+          const text = visible !== null && event.displayBody !== undefined ? pillBodyText(visible, event.pillsMeta) : visible
           const images = event.images?.map((image) => image.url)
           // Context-only text is hidden, but images sent with it still show.
           if (text === null && !images?.length) return {}

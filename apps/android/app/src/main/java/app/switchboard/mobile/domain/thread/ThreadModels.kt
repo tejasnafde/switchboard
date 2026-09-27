@@ -70,7 +70,7 @@ private const val MAX_MESSAGE_PILLS = 32
 private const val MAX_MESSAGE_PILL_ID_LENGTH = 128
 private const val MAX_MESSAGE_PILL_LABEL_LENGTH = 120
 private val MESSAGE_PILL_ID = Regex("[A-Za-z0-9_-]+")
-private val MESSAGE_PILL_KINDS = setOf("file", "terminal", "chat-message")
+private val MESSAGE_PILL_KINDS = setOf("file", "terminal", "chat-message", "review")
 
 internal fun decodeMessagePills(value: JsonValue?): Map<String, MessagePill> {
     val entries = (value as? JsonObject)?.values ?: return emptyMap()

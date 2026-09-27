@@ -16,6 +16,7 @@ import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { IdePane } from './components/ide/IdePane'
 import { KanbanView } from './components/kanban/KanbanView'
 import { ReviewsView } from './components/reviews/ReviewsView'
+import { registerReviewChatOpener } from './components/reviews/review-to-chat'
 import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
@@ -1103,6 +1104,21 @@ export function App() {
     },
     [addSession, selectChatSession, openChatBeside, setMessages, clearMessages],
   )
+
+  // Reviews opens a linked chat through the sidebar path, reusing the session
+  // already open under any id of its thread.
+  useEffect(() => {
+    registerReviewChatOpener(async (chat) => {
+      const open = useAgentStore.getState().sessions.find((session) => chat.familyIds.includes(session.id))
+      await handleSessionSelect(
+        { id: open?.id ?? chat.id, source: toAgentProvider(chat.agentType), title: chat.title, startedAt: chat.updatedAt, messageCount: 0, filePath: '', agentType: chat.agentType },
+        open?.projectPath ?? chat.projectPath,
+        open?.machineId ?? 'local',
+      )
+      return useLayoutStore.getState().focusedChatSessionId()
+    })
+    return () => registerReviewChatOpener(null)
+  }, [handleSessionSelect])
 
   const handleOpenLoadedSessionBeside = useCallback(async (sessionId: string) => {
     const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)

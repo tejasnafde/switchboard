@@ -38,8 +38,10 @@ import {
   messageLifecycle,
   prepareRuntimeEventLifecycle,
 } from '../../services/message-lifecycle'
+import { LinkedPrControl } from '../reviews/LinkedPrControl'
 import {
   validateUserMessageImages,
+  type UserMessagePillsMeta,
   type UserTurnSubmissionV1,
 } from '@shared/provider-events'
 import {
@@ -665,7 +667,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         origin?: string
         confirmedRecoveryOrigin?: string
         displayBody?: string
-        pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
+        pillsMeta?: UserMessagePillsMeta
       },
     ): Promise<ChatSendResult> => {
       if (!sessionId) return { accepted: false, error: 'This chat is no longer available.' }
@@ -1054,6 +1056,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           background: 'var(--bg-secondary)',
           fontSize: '12px',
           minHeight: '32px',
+          // The linked-PR control hides itself when the header is too narrow for it.
+          containerType: 'inline-size',
         }}
       >
         {/* Plain identity breadcrumb; only consequential state receives color. */}
@@ -1124,6 +1128,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         )}
 
         <span style={{ flex: 1 }} />
+
+        {activeSession && activeSession.type !== 'terminal' && <LinkedPrControl sessionId={activeSession.id} />}
 
         {otherSessionId && (
           <button

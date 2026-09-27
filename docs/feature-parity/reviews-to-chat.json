@@ -1,0 +1,109 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "reviews-to-chat",
+  "summary": "Reviews step 2: review context goes to a chat, and pull requests link to chats. A chat links to PRs by hand (Overview's Linked chat card: a combobox of the chats in that PR's projects, and Unlink) or automatically, once, when its assistant text or a tool's output names a PR URL (github.com/<owner>/<repo>/pull/N or bitbucket.org/<workspace>/<repo>/pull-requests/N) of the repository its own project points at; a PR of another repository is never linked, by hand or automatically. Links are stored by the backend under the chat's root conversation (resolveRootThreadId), and an unlinked row stays as a tombstone so an automatic link never comes back after the user removed it. The chat header shows one compact control for a linked PR ('#612 build failed · 3 open conversations' with the row status icon), whose popover lists every linked PR with Open in Reviews; PR state comes from the Reviews list on the Reviews cadence (on open and on focus, never faster). 'Ask the agent' on the failed-check callout, on a failed check, on a conversation, on diff lines selected by clicking line numbers (shift-click for a range), and 'Send all N open conversations' add ONE composer pill of the new kind 'review' to the PR's linked chat, or ask which chat when there are none or several (a chat picked when none was linked is linked); the chat opens if it was not. The pill shows one line ('3 review conversations · #612 · worker.py:86, worker.py:111, test_worker.py:14') and expands in the provider text to a plain text block (host, repo, PR number, path:line and side, each reviewer and comment, and the diff around the line), capped at 12 KiB with the items left out named, so Claude, Codex and OpenCode read it alike. Nothing is written to GitHub or Bitbucket.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/LinkedPrControl.tsx",
+        "src/renderer/components/reviews/PrLinkedChats.tsx",
+        "src/renderer/components/reviews/review-to-chat.ts",
+        "src/renderer/components/reviews/PrOverview.tsx",
+        "src/renderer/components/reviews/PrConversations.tsx",
+        "src/renderer/components/reviews/PrChecks.tsx",
+        "src/renderer/components/reviews/PrDiff.tsx",
+        "src/renderer/components/reviews/PrFiles.tsx",
+        "src/renderer/components/reviews/ReviewsView.tsx",
+        "src/renderer/components/reviews/review-ui.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/lexical/PillChipVisual.tsx",
+        "src/renderer/stores/review-store.ts",
+        "src/renderer/stores/draft-store.ts",
+        "src/renderer/services/draft-chat.ts",
+        "src/renderer/App.tsx",
+        "src/preload/index.ts",
+        "src/main/index.ts",
+        "e2e/review-to-chat.e2e.mjs",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/fixtures/demo-workspace.mjs",
+        "e2e/snapshots",
+        "tests/unit/review-pill-round-trip.test.ts",
+        "src/renderer/components/reviews/ask-chat-pick.ts",
+        "src/renderer/styles/global.css",
+        "tests/unit/ask-chat-pick.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_reviews",
+      "followUpRelease": "mobile-v0.5.0, with the Reviews tab. This release only makes a sent message with pills read sensibly: the thread showed the raw [[pill:id]] tokens of every pill kind; it now shows each known pill as [label] and drops an unknown one (apps/mobile/src/lib/thread-history.ts, apps/mobile/src/stores/chat.ts through src/shared/pill-body-text.ts), a JS-only change for the OTA lane. Linking, the linked-PR header and Ask the agent come with the Reviews tab behind mobile_reviews; the backend already lets a paired phone call every pull-requests:* channel, link and unlink included.",
+      "evidence": [
+        "apps/mobile/src/lib/thread-history.ts",
+        "apps/mobile/src/stores/chat.ts",
+        "src/shared/pill-body-text.ts",
+        "tests/unit/review-pill-round-trip.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_reviews",
+      "followUpRelease": "Native Android 0.6.0, with the Reviews destination. This release accepts the 'review' pill kind, so a sent message draws the review pill as a chip like the other kinds (before, the unknown kind was dropped and the chip vanished from the bubble). Linking, the header control and Ask the agent come with the Reviews destination behind native_reviews.",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadModels.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ThreadEventDecoderTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pull-request-links.ts",
+        "src/shared/review-context.ts",
+        "src/shared/pill-body-text.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/types.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/ipc/pull-requests.ts",
+        "src/main/pull-requests/auto-link.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/provider/pill-metadata.ts",
+        "src/server/index.ts",
+        "tests/unit/pull-request-links.test.ts",
+        "tests/unit/review-context.test.ts",
+        "tests/unit/device-auth.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/pull-request-links.ts",
+        "src/main/db/database.ts",
+        "tests/unit/pull-request-links-db.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, update channel or wire-protocol frame change. The new table conversation_pull_requests is created with CREATE TABLE IF NOT EXISTS; an older build ignores it. The new pull-requests:* channels are additive; an older backend answers them with the ordinary unknown-channel error, which the renderer logs, so the header control and the Linked chat card stay empty. The new pill kind 'review' is validated by the backend: a desktop of this version against an older backend would have a turn with a review pill refused, but the SSH remote backend is re-provisioned to the desktop's version on connect, and a phone never sends this kind. An older native Android build drops the unknown kind's chip and shows the rest of the message; the React Native change is JS-only and travels over OTA."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck passed (main + renderer), and apps/mobile tsc.",
+      "npm test passed. New: pull-request-links (URL matcher for both hosts, wrong paths, a number running into letters, no cross-project link, client reference validation, the header phrase, and the auto-linker: deltas joined before matching so /pull/6 + 12 links #612, tool output, reasoning text ignored, notify once), pull-request-links-db (a link written or removed through a rotated provider session id lands on the root conversation and reads back from either id; linked chats carry every id of their thread; an automatic link never revives one the user removed while a manual link does), review-context (label like the mock and capped at the stored label limit, the plain text expansion with host, repo, number, place, side, reviewer, comment and diff, check and line items, the 12 KiB cap naming what was left out, a single oversized item cut short), review-pill-round-trip (draft expansion, submission validation, stored reload with the kind, desktop chip, phone text). The mobile jest suite passed.",
+      "e2e/review-to-chat.e2e.mjs against the built app with the demo adapter (12 checks, all passed): the seeded link shows in the chat header as '#612 build failed · 3 open conversations'; Open in Reviews selects the PR; Ask the agent on the failed check and Send all 3 open conversations each add one review pill to the linked chat; the sent message stores both tokens in its display body, the expansion in its provider text and kind 'review' in its pill metadata, and the bubble draws the chips; Unlink removes the stored link and the header control; selected diff lines with no linked chat open the chooser, which offers no chat of another project, and with the link back the same selection lands as one pill.",
+      "SB_VISUAL_SCOPE=screens e2e/visual-regressions.e2e.mjs with the demo chat linked to #612 (seedDatabase linkPullRequest): chat and confirm-dialog changed only inside the chat header (the linked-PR control and the title it narrows); reviews changed in the failed-check callout (Ask the agent) and below the Checks card (Linked chat). Every other rewritten PNG had no pixel over the threshold and was restored. Two further runs without updating both passed.",
+      "Round 2: the chooser links the picked chat before it delivers and, on a refused or failed link, keeps the dialog open with the reason and delivers nothing (ask-chat-pick); diffAround returns every hunk a selection spans (review-context, fails on the previous code). The chat header gives the title its natural width (.chat-identity flex 0 1 auto, the project capped at 24ch and shrinking faster): the linked-PR control shrinks first, down to icon + number, shows its phrase only in a header of 760 px or more (tooltip and popover otherwise) and hides under 360 px. e2e/review-to-chat checks the compact control and whole title at the default size and the phrase with a whole title in a 1900 px window. Baselines rewritten: chat and confirm-dialog (header), approval and queued-message (their titles were already cut by the old flex basis and now show whole); the rest restored; two screens runs without updating passed."
+    ],
+    "hardware": [
+      "Every changed baseline PNG was opened and checked by eye on this Mac, including the narrow chat, where the control hides itself below a 360 px header."
+    ],
+    "notExercised": [
+      "A live GitHub or Bitbucket PR: links and review context were exercised against the demo provider only. The URL matcher is tested against the public URL forms.",
+      "The Android unit test for the review kind was not run: no Java runtime on this machine. CI runs it.",
+      "A chat on a remote machine: links of a remote chat are stored on that machine's backend and the Reviews list is read from the base backend, so a remote chat's header resolves only PRs the base backend lists.",
+      "Nothing was run on a phone."
+    ]
+  }
+}

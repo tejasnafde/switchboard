@@ -60,7 +60,7 @@ import {
 } from '../../services/desktop-turn-submission'
 import { onUserTurnAccepted } from '../../services/session-events'
 import { registerComposer } from '../../services/composer-registry'
-import type { RuntimeMode } from '@shared/provider-events'
+import type { RuntimeMode, UserMessagePillsMeta } from '@shared/provider-events'
 import { Button } from '../ui/button'
 import { confirm } from '../ui/confirm'
 
@@ -114,7 +114,7 @@ interface ChatInputProps {
       origin?: string
       confirmedRecoveryOrigin?: string
       displayBody?: string
-      pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
+      pillsMeta?: UserMessagePillsMeta
     },
   ) => Promise<ChatSendResult>
   disabled?: boolean
@@ -749,7 +749,7 @@ export function ChatInput({
     // already removed get dropped silently.
     const pick = sendToPickRef.current?.sessionId === submittedSessionId ? sendToPickRef.current : null
     const body = pinSendToTarget(serializeBodyWithPills(trimmed, pillsById), pick)
-    const pillsMeta: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }> = {}
+    const pillsMeta: UserMessagePillsMeta = {}
     for (const p of pills) {
       if (trimmed.includes(`[[pill:${p.id}]]`)) {
         pillsMeta[p.id] = { label: p.label, kind: p.kind }

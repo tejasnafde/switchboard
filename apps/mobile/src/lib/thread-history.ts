@@ -1,4 +1,5 @@
 import { visibleUserMessageText } from '@shared/provider-events'
+import { pillBodyText } from '@shared/pill-body-text'
 import { splitSyntheticUserText } from '@shared/synthetic-message'
 import type { ChatMessage } from '@shared/types'
 import type { FeedItem } from '../stores/chat'
@@ -35,7 +36,8 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
   for (const message of messages) {
     if (message.role === 'user') {
       const urls = (message.images ?? []).map((image) => image.url).filter(Boolean)
-      const text = visibleUserMessageText(message.content, message.displayBody)
+      const visible = visibleUserMessageText(message.content, message.displayBody)
+      const text = visible !== null && message.displayBody !== undefined ? pillBodyText(visible, message.pillsMeta) : visible
       // Context-only text is hidden, but images sent with it still show.
       if (text === null && urls.length === 0) continue
       const item: UserItem = {

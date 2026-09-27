@@ -57,7 +57,7 @@ export class PullRequestService {
     this.now = deps.now ?? Date.now
   }
 
-  private async repoFor(projectPath: string): Promise<RepoRef | null> {
+  async repoFor(projectPath: string): Promise<RepoRef | null> {
     const hit = this.remotes.get(projectPath)
     if (hit && this.now() - hit.at < REMOTES_TTL_MS) return hit.repo
     let repo: RepoRef | null = null
@@ -86,6 +86,11 @@ export class PullRequestService {
       repos.set(key, entry)
     }
     return { repos, unsupportedProjects }
+  }
+
+  /** Projects whose remotes point at `repo`. */
+  async projectPathsFor(repo: RepoRef): Promise<string[]> {
+    return (await this.detect()).repos.get(repoKey(repo))?.projectPaths ?? []
   }
 
   private accountError(host: PrHost): PrError | null {

@@ -11,7 +11,19 @@ import { execFile } from 'node:child_process'
 import type { BackendHost } from '../backend/host'
 import { PullRequestChannels, SourceControlChannels } from '@shared/ipc-channels'
 import type { GithubAccountState, SourceControlStatus, SourceControlTestResult } from '@shared/pull-requests'
-import { getProjects } from '../db/database'
+import { canLinkToProject, isPrRef, type PrLink, type PrLinkChat, type PrLinkResult } from '@shared/pull-request-links'
+import {
+  getConversationByThreadId,
+  getProjects,
+  linkConversationPullRequest,
+  listConversationPullRequests,
+  listLinkableChats,
+  listPullRequestChats,
+  resolveRootThreadId,
+  unlinkConversationPullRequest,
+} from '../db/database'
+import type { RuntimeEventBus } from '../provider/event-bus'
+import { PullRequestAutoLinker } from '../pull-requests/auto-link'
 import { getSafeStorage, userDataDir } from '../runtime'
 import { createMainLogger } from '../logger'
 import { BitbucketClient, BitbucketProvider, testBitbucket } from '../pull-requests/bitbucket'
@@ -77,7 +89,56 @@ async function githubState(): Promise<GithubAccountState> {
   }
 }
 
+let notifyLinks: (conversationId: string) => void = () => {}
+
+/**
+ * Auto-links PRs named in a chat's output (see `pull-requests/auto-link.ts`)
+ * and tells clients when any chat's links change. Re-attach with each new
+ * registry and host, like the push notifier.
+ */
+export function attachPullRequestAutoLink(bus: RuntimeEventBus, host: BackendHost): () => void {
+  notifyLinks = (conversationId) => host.emit(PullRequestChannels.LINKS_CHANGED, { conversationId })
+  const linker = new PullRequestAutoLinker({
+    conversationFor: (threadId) => {
+      const row = getConversationByThreadId(threadId)
+      return row ? { id: row.id, projectPath: row.project_path } : null
+    },
+    repoForProject: (projectPath) => getService().repoFor(projectPath),
+    link: (conversationId, ref) => linkConversationPullRequest(conversationId, ref, 'auto'),
+    notify: (conversationId) => notifyLinks(conversationId),
+  })
+  return bus.subscribe((event) => void linker.onEvent(event))
+}
+
+function registerLinkHandlers(host: BackendHost): void {
+  host.handle(PullRequestChannels.LINKS, (threadId: unknown): PrLink[] =>
+    typeof threadId === 'string' ? listConversationPullRequests(threadId) : [])
+  host.handle(PullRequestChannels.LINKED_CHATS, (ref: unknown): PrLinkChat[] =>
+    isPrRef(ref) ? listPullRequestChats(ref) : [])
+  host.handle(PullRequestChannels.LINKABLE_CHATS, async (ref: unknown): Promise<PrLinkChat[]> =>
+    isPrRef(ref) ? listLinkableChats(await getService().projectPathsFor(ref)) : [])
+
+  // Same rule as the auto-link: only a PR of the repository the chat's project points at.
+  host.handle(PullRequestChannels.LINK, async (threadId: unknown, ref: unknown): Promise<PrLinkResult> => {
+    if (typeof threadId !== 'string' || !isPrRef(ref)) return { ok: false, message: 'Not a chat and a pull request.' }
+    const chat = getConversationByThreadId(threadId)
+    if (!chat) return { ok: false, message: 'That chat no longer exists.' }
+    if (!canLinkToProject(ref, await getService().repoFor(chat.project_path))) {
+      return { ok: false, message: "This pull request is not on the repository of that chat's project." }
+    }
+    if (linkConversationPullRequest(chat.id, ref, 'manual')) notifyLinks(chat.id)
+    return { ok: true }
+  })
+
+  host.handle(PullRequestChannels.UNLINK, (threadId: unknown, ref: unknown): PrLinkResult => {
+    if (typeof threadId !== 'string' || !isPrRef(ref)) return { ok: false, message: 'Not a chat and a pull request.' }
+    if (unlinkConversationPullRequest(threadId, ref)) notifyLinks(resolveRootThreadId(threadId))
+    return { ok: true }
+  })
+}
+
 export function registerPullRequestHandlers(host: BackendHost): void {
+  registerLinkHandlers(host)
   host.handle(PullRequestChannels.LIST, () => getService().list())
   host.handle(PullRequestChannels.DETAIL, (ref: unknown) => getService().detail(ref))
   host.handle(PullRequestChannels.FILES, (ref: unknown) => getService().files(ref))

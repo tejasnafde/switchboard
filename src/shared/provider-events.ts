@@ -355,7 +355,7 @@ export function validateUserMessageImages<T extends { url: string; mimeType?: st
 }
 
 const USER_TURN_HANDOFF_PROVIDERS = new Set(['claude-code', 'codex', 'opencode', 'cursor'])
-const USER_TURN_PILL_KINDS = new Set<UserMessagePillKind>(['file', 'terminal', 'chat-message'])
+const USER_TURN_PILL_KINDS = new Set<UserMessagePillKind>(['file', 'terminal', 'chat-message', 'review'])
 
 /** Validate the complete commit-bearing turn before any submission mutation. */
 export function validateUserTurnSubmission(input: unknown): UserTurnSubmissionV1 {
@@ -503,7 +503,7 @@ export interface RuntimeUserMessageEvent {
   handoffMarker?: { id: string; text: string }
 }
 
-export type UserMessagePillKind = 'file' | 'terminal' | 'chat-message'
+export type UserMessagePillKind = 'file' | 'terminal' | 'chat-message' | 'review'
 export type UserMessagePillsMeta = Record<string, { label: string; kind: UserMessagePillKind }>
 
 export interface RuntimeToolStartedEvent {

@@ -6,6 +6,8 @@
 import { create } from 'zustand'
 import { prKey, type PrChangedFile, type PrCheck, type PrConversation, type PrDetail, type PrError, type PrListData, type PrRef, type PrResult, type PrSummary } from '@shared/pull-requests'
 import { pullRequestChanged, shouldRefreshPullRequests, type PrRefreshReason } from '@shared/pull-request-refresh'
+import type { PrLinkChat } from '@shared/pull-request-links'
+import type { ReviewContext } from '@shared/review-context'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:reviews')
@@ -45,12 +47,19 @@ interface ReviewStore {
   /** A file the Files tab should open on, set when a conversation's path is clicked. */
   focusPath: string | null
   resources: Record<string, Partial<{ [K in TabResource]: Loadable<TabData[K]> }>>
+  /** Chats linked to each PR, by `prKey`. Read from the local database, so cheap to re-read. */
+  linkedChats: Record<string, PrLinkChat[]>
+  /** Review context waiting for the user to pick a chat (none or several linked). */
+  pendingAsk: ReviewContext | null
   setVisible: (visible: boolean) => void
   setFilter: (filter: string) => void
   setTab: (tab: ReviewTab) => void
   openFile: (path: string) => void
   select: (key: string) => void
-  refresh: (reason: PrRefreshReason) => Promise<void>
+  /** `asHeader`: a chat header showing a linked PR reads the list on the same cadence as the open view. */
+  refresh: (reason: PrRefreshReason, opts?: { asHeader?: boolean }) => Promise<void>
+  loadLinkedChats: (ref: PrRef) => Promise<PrLinkChat[]>
+  setPendingAsk: (ctx: ReviewContext | null) => void
   load: <K extends TabResource>(ref: PrRef, resource: K, opts?: { force?: boolean }) => Promise<void>
 }
 
@@ -81,6 +90,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   filter: '',
   focusPath: null,
   resources: {},
+  linkedChats: {},
+  pendingAsk: null,
 
   setVisible: (visible) => set({ visible }),
   setFilter: (filter) => set({ filter }),
@@ -88,9 +99,24 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   openFile: (path) => set({ tab: 'files', focusPath: path }),
   select: (key) => set((s) => (s.selectedKey === key ? s : { selectedKey: key, tab: 'overview', focusPath: null })),
 
-  refresh: async (reason) => {
+  setPendingAsk: (pendingAsk) => set({ pendingAsk }),
+
+  loadLinkedChats: async (ref) => {
+    let chats: PrLinkChat[]
+    try {
+      chats = await window.api.pullRequests.linkedChats(ref)
+    } catch (err) {
+      log.warn('reading linked chats failed', err)
+      chats = []
+    }
+    set((s) => ({ linkedChats: { ...s.linkedChats, [prKey(ref)]: chats } }))
+    return chats
+  },
+
+  refresh: async (reason, opts = {}) => {
     const s = get()
-    if (!shouldRefreshPullRequests({ lastFetchAt: s.lastFetchAt, inFlight: s.loading, visible: s.visible }, reason, Date.now())) return
+    const visible = s.visible || opts.asHeader === true
+    if (!shouldRefreshPullRequests({ lastFetchAt: s.lastFetchAt, inFlight: s.loading, visible }, reason, Date.now())) return
     set({ loading: true, lastFetchAt: Date.now() })
     let result: PrResult<PrListData>
     try {

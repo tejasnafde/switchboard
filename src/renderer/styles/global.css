@@ -1470,7 +1470,8 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1 1 0%;
+  /* Natural width, shrinking last: header controls (the linked-PR chip) give way first. */
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
 }
@@ -1479,12 +1480,13 @@ html, body, #root {
   display: inline-flex;
   gap: 6px;
   min-width: 0;
-  max-width: 32%;
+  /* Natural width when there is room; gives way faster than the title. */
+  max-width: 24ch;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 1;
+  flex-shrink: 3;
 }
 
 .chat-identity-separator {

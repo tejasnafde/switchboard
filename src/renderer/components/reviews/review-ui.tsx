@@ -23,6 +23,8 @@ const PATHS = {
   rerun: <path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" />,
   skip: <><circle cx="12" cy="12" r="9" /><path d="M8 12h8" /></>,
   draft: <><circle cx="12" cy="12" r="9" strokeDasharray="3 3" /></>,
+  spark: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />,
+  chev: <path d="M6 9l6 6 6-6" />,
 } as const
 
 export type IconName = keyof typeof PATHS

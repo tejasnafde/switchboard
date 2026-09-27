@@ -5,11 +5,14 @@
  */
 import { fmtDuration } from '@shared/format'
 import { PR_HOST_LABEL, type MergeBlocker, type PrDetail, type PrReviewer, type PrSummary } from '@shared/pull-requests'
+import { checkItem } from '@shared/review-context'
 import { MarkdownWithCopyControls } from '../chat/MarkdownWithCopyControls'
 import { Button } from '../ui/button'
 import { Loaded, usePrResource } from './PrDetailPane'
 import { shortAgo } from './review-states'
 import { Avatar, CardRow, CHECK_ICON, Icon, openExternal, SideCard, type IconName, type IconTone } from './review-ui'
+import { LinkedChatsCard } from './PrLinkedChats'
+import { askAgent } from './review-to-chat'
 
 const BLOCKER_ICON: Record<MergeBlocker['kind'], { name: IconName; tone: IconTone }> = {
   checks_failed: { name: 'x', tone: 'bad' },
@@ -57,6 +60,9 @@ function OverviewBody({ pr, now }: { pr: PrDetail; now: number }) {
               </div>
             </div>
             {failed[0].url && <Button variant="outline" size="sm" onClick={() => openExternal(failed[0].url!)}>View log</Button>}
+            <Button variant="outline" size="sm" onClick={() => void askAgent({ pr: pr.ref, title: pr.title, url: pr.url, items: failed.map(checkItem) })}>
+              <Icon name="spark" />Ask the agent
+            </Button>
           </div>
         )}
         <section className="mb-[22px]">
@@ -126,6 +132,7 @@ function OverviewBody({ pr, now }: { pr: PrDetail; now: number }) {
             </CardRow>
           ))}
         </SideCard>
+        <LinkedChatsCard pr={pr} />
       </div>
     </div>
   )
