@@ -24,9 +24,11 @@ import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import { existsSync } from 'fs'
 import { Readable, Writable } from 'stream'
 import { promises as fs } from 'fs'
 import { formatOpencodeModelLabel, inferModelTier, type ModelOption } from '@shared/models'
+import { homedir } from 'os'
 import { TurnNotAcceptedError } from '../durable-turn-acceptance'
 import {
   ClientSideConnection,
@@ -48,8 +50,7 @@ import {
   type AvailableCommand,
 } from '@agentclientprotocol/sdk'
 import { createMainLogger as createLogger } from '../../logger'
-import { join } from 'path'
-import { homedir } from 'os'
+import { dirname, join } from 'path'
 import { generateTitle } from '../../../shared/auto-title'
 import { encodeClaudeProjectPath } from '../../projects/session-scanner'
 import type {
@@ -86,6 +87,183 @@ function runtimeModeToAcp(mode: RuntimeMode): string {
   return mode === 'plan' ? 'plan' : 'build'
 }
 
+function opencodePermissionNamePart(name: string): string {
+  return name.replace(/[^A-Za-z0-9_-]/g, '_')
+}
+
+export function buildOpencodeMcpPermissionContent(
+  _mode: RuntimeMode,
+  mcpServerNames: readonly string[],
+  switchboardMcp: boolean,
+): string | null {
+  const permission: Record<string, 'allow' | 'ask'> = {}
+  for (const name of mcpServerNames) {
+    const server = opencodePermissionNamePart(name.trim())
+    if (!server || (switchboardMcp && server === 'switchboard')) continue
+    permission[`${server}_*`] = 'ask'
+  }
+  if (switchboardMcp) permission['switchboard_*'] = 'allow'
+  if (Object.keys(permission).length === 0) return null
+  return JSON.stringify({ permission })
+}
+
+function removeJsonComments(input: string): string {
+  let out = ''
+  let inString = false
+  let quote = ''
+  let escaped = false
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]
+    const next = input[i + 1]
+    if (inString) {
+      out += ch
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === quote) {
+        inString = false
+      }
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      inString = true
+      quote = ch
+      out += ch
+      continue
+    }
+    if (ch === '/' && next === '/') {
+      while (i < input.length && input[i] !== '\n') i++
+      out += '\n'
+      continue
+    }
+    if (ch === '/' && next === '*') {
+      i += 2
+      while (i < input.length && !(input[i] === '*' && input[i + 1] === '/')) i++
+      i++
+      continue
+    }
+    out += ch
+  }
+  return out
+}
+
+function removeTrailingJsonCommas(input: string): string {
+  let out = ''
+  let inString = false
+  let quote = ''
+  let escaped = false
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]
+    if (inString) {
+      out += ch
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === quote) {
+        inString = false
+      }
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      inString = true
+      quote = ch
+      out += ch
+      continue
+    }
+    if (ch === ',') {
+      let j = i + 1
+      while (/\s/.test(input[j] ?? '')) j++
+      if (input[j] === '}' || input[j] === ']') continue
+    }
+    out += ch
+  }
+  return out
+}
+
+function parseOpencodeConfigObject(source: string, label: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(removeTrailingJsonCommas(removeJsonComments(source)))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>
+    log.warn(`opencode config ${label} did not contain an object`)
+  } catch (err) {
+    log.warn(`failed to parse opencode config ${label}: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  return null
+}
+
+function collectMcpNamesFromConfig(config: Record<string, unknown>, out: Set<string>): void {
+  const mcp = config.mcp
+  if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) return
+  for (const [name, value] of Object.entries(mcp as Record<string, unknown>)) {
+    const enabled = value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as { enabled?: unknown }).enabled
+      : undefined
+    if (enabled !== false) out.add(name)
+  }
+}
+
+async function collectConfiguredOpencodeMcpServers(
+  cwd: string,
+  env: Record<string, string | undefined>,
+): Promise<string[]> {
+  const names = new Set<string>()
+  const files: string[] = []
+  const xdgConfig = env.XDG_CONFIG_HOME
+  if (xdgConfig) {
+    files.push(join(xdgConfig, 'opencode', 'opencode.json'), join(xdgConfig, 'opencode', 'opencode.jsonc'))
+  }
+  if (env.HOME) {
+    files.push(join(env.HOME, '.config', 'opencode', 'opencode.json'), join(env.HOME, '.config', 'opencode', 'opencode.jsonc'))
+  }
+  if (env.OPENCODE_CONFIG) files.push(env.OPENCODE_CONFIG)
+
+  for (let dir = cwd; ; dir = dirname(dir)) {
+    files.push(join(dir, 'opencode.json'), join(dir, 'opencode.jsonc'))
+    if (existsSync(join(dir, '.git'))) break
+    const parent = dirname(dir)
+    if (parent === dir) break
+  }
+
+  for (const file of files) {
+    if (!existsSync(file)) continue
+    try {
+      const parsed = parseOpencodeConfigObject(await fs.readFile(file, 'utf8'), file)
+      if (parsed) collectMcpNamesFromConfig(parsed, names)
+    } catch (err) {
+      log.warn(`failed to read opencode config ${file}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  if (env.OPENCODE_CONFIG_CONTENT) {
+    const parsed = parseOpencodeConfigObject(env.OPENCODE_CONFIG_CONTENT, 'OPENCODE_CONFIG_CONTENT')
+    if (parsed) collectMcpNamesFromConfig(parsed, names)
+  }
+
+  return [...names].sort()
+}
+
+function mergeOpencodeInlineConfig(existing: string | undefined, injected: string): string {
+  if (!existing) return injected
+  const base = parseOpencodeConfigObject(existing, 'existing OPENCODE_CONFIG_CONTENT')
+  const extra = parseOpencodeConfigObject(injected, 'Switchboard OPENCODE_CONFIG_CONTENT')
+  if (!base || !extra) return injected
+  const basePermission = base.permission && typeof base.permission === 'object' && !Array.isArray(base.permission)
+    ? base.permission as Record<string, unknown>
+    : {}
+  const extraPermission = extra.permission && typeof extra.permission === 'object' && !Array.isArray(extra.permission)
+    ? extra.permission as Record<string, unknown>
+    : {}
+  return JSON.stringify({
+    ...base,
+    permission: {
+      ...basePermission,
+      ...extraPermission,
+    },
+  })
+}
+
 interface PendingPermission {
   /** Resolves the requestPermission RPC the agent is awaiting. */
   resolve: (outcome: RequestPermissionResponse) => void
@@ -105,6 +283,8 @@ interface ActiveSession {
   sessionId: string | null
   /** The Switchboard MCP server was registered on this session. */
   switchboardMcp: boolean
+  /** Sanitized OpenCode MCP server names, longest first for flattened tool names. */
+  mcpServerNames: string[]
   /** Pending `requestPermission` calls awaiting user decision. */
   pendingPermissions: Map<string, PendingPermission>
   /** Cached skill list, kept fresh by `available_commands_update`. */
@@ -271,7 +451,8 @@ function stringifyOutput(update: SessionUpdate & { sessionUpdate: 'tool_call_upd
   if (update.rawOutput !== undefined && update.rawOutput !== null) {
     try {
       return JSON.stringify(update.rawOutput, null, 2)
-    } catch {
+    } catch (err) {
+      log.debug('failed to stringify OpenCode tool output', { err })
       return String(update.rawOutput)
     }
   }
@@ -328,6 +509,18 @@ function toolNameFromPermission(req: RequestPermissionRequest): string {
   return tc?.title || tc?.kind || 'tool'
 }
 
+function displayToolName(toolName: string, mcpServerNames: readonly string[]): string {
+  for (const server of mcpServerNames) {
+    const prefix = `${server}_`
+    if (toolName.startsWith(prefix) && toolName.length > prefix.length) {
+      return `${server} · ${toolName.slice(prefix.length)}`
+    }
+  }
+  const split = toolName.indexOf('_')
+  if (split <= 0 || split >= toolName.length - 1) return toolName
+  return `${toolName.slice(0, split)} · ${toolName.slice(split + 1)}`
+}
+
 export class OpencodeAcpAdapter implements ProviderAdapter {
   readonly provider = 'opencode' as const
   private sessions = new Map<string, ActiveSession>()
@@ -363,6 +556,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       connection: null,
       sessionId: null,
       switchboardMcp: !!opts.switchboardMcp,
+      mcpServerNames: [],
       pendingPermissions: new Map(),
       skills: [],
       availableModels: [],
@@ -388,7 +582,19 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     for (const [k, v] of Object.entries(opts.resolvedEnv ?? {})) {
       if (v.length > 0) overlay[k] = v
     }
-    const env = buildOpencodeEnv(overlay)
+    let env = buildOpencodeEnv(overlay)
+    const mcpServerNames = await collectConfiguredOpencodeMcpServers(opts.cwd, env)
+    active.mcpServerNames = mcpServerNames
+      .map((name) => opencodePermissionNamePart(name.trim()))
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)
+    const mcpPermissionContent = buildOpencodeMcpPermissionContent(session.runtimeMode, mcpServerNames, active.switchboardMcp)
+    if (mcpPermissionContent) {
+      env = {
+        ...env,
+        OPENCODE_CONFIG_CONTENT: mergeOpencodeInlineConfig(env.OPENCODE_CONFIG_CONTENT, mcpPermissionContent),
+      }
+    }
 
     const child = spawn(binPath, ['acp', '--cwd', opts.cwd], {
       cwd: opts.cwd,
@@ -932,7 +1138,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
             threadId,
             requestId,
             requestType: 'tool',
-            toolName,
+            toolName: displayToolName(toolName, active.mcpServerNames),
             detail,
           })
         })

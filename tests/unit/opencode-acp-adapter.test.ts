@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
   OpencodeAcpAdapter,
+  buildOpencodeMcpPermissionContent,
   mapSessionUpdate,
   mapAvailableCommands,
   pickPermissionOptions,
@@ -19,6 +20,28 @@ afterEach(() => vi.restoreAllMocks())
  */
 
 const tid = 't1'
+
+describe('buildOpencodeMcpPermissionContent', () => {
+  it('asks for configured MCP servers in supervised modes and allows Switchboard tools', () => {
+    const content = buildOpencodeMcpPermissionContent('sandbox', ['github', 'notion.db'], true)
+    expect(JSON.parse(content!)).toEqual({
+      permission: {
+        'github_*': 'ask',
+        'notion_db_*': 'ask',
+        'switchboard_*': 'allow',
+      },
+    })
+  })
+
+  it.each(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'] as const)('injects MCP ask rules in %s mode', (mode) => {
+    const content = buildOpencodeMcpPermissionContent(mode, ['github'], false)
+    expect(JSON.parse(content!).permission).toEqual({ 'github_*': 'ask' })
+  })
+
+  it('returns no inline config when there are no MCP rules to add', () => {
+    expect(buildOpencodeMcpPermissionContent('sandbox', [], false)).toBeNull()
+  })
+})
 
 describe('OpenCode first-turn acceptance', () => {
   it('does not persist a session title when prompt dispatch rejects synchronously', async () => {

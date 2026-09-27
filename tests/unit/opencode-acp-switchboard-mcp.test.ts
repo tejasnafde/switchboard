@@ -10,10 +10,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 
 const newSessionCalls: Array<Record<string, unknown>> = []
+const spawnedEnvs: Array<Record<string, string | undefined>> = []
 let client: { requestPermission(p: RequestPermissionRequest): Promise<unknown> } | null = null
 
 vi.mock('child_process', () => ({
-  spawn: vi.fn(() => {
+  spawn: vi.fn((_bin: unknown, _args: unknown, opts: { env: Record<string, string | undefined> }) => {
+    spawnedEnvs.push(opts.env)
     const child = new EventEmitter() as EventEmitter & Record<string, unknown>
     child.stdin = new PassThrough()
     child.stdout = new PassThrough()
@@ -67,14 +69,20 @@ function permission(title: string): RequestPermissionRequest {
   } as RequestPermissionRequest
 }
 
-async function start(withServer: boolean, onEvent = vi.fn()) {
+async function start(
+  withServer: boolean,
+  onEvent = vi.fn(),
+  runtimeMode: 'plan' | 'sandbox' | 'full-access' = 'sandbox',
+  resolvedEnv: Record<string, string> = {},
+) {
   const { OpencodeAcpAdapter } = await import('../../src/main/provider/adapters/opencode-acp-adapter')
   const adapter = new OpencodeAcpAdapter()
   await adapter.startSession({
     threadId: 't1',
     provider: 'opencode',
     cwd: '/tmp/project',
-    runtimeMode: 'sandbox',
+    runtimeMode,
+    resolvedEnv,
     ...(withServer ? { switchboardMcp: launch } : {}),
   }, onEvent)
   return { adapter, onEvent }
@@ -82,6 +90,7 @@ async function start(withServer: boolean, onEvent = vi.fn()) {
 
 beforeEach(() => {
   newSessionCalls.length = 0
+  spawnedEnvs.length = 0
   client = null
 })
 
@@ -104,6 +113,25 @@ describe('OpenCode registration', () => {
     await start(false)
     expect(newSessionCalls[0].mcpServers).toEqual([])
   })
+
+  it('injects MCP permission rules into the spawned OpenCode environment', async () => {
+    await start(true, vi.fn(), 'accept-edits', {
+      OPENCODE_CONFIG_CONTENT: '{"permission":{"bash":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    })
+    expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!)).toEqual({
+      permission: {
+        bash: 'deny',
+        'github_*': 'ask',
+        'switchboard_*': 'allow',
+      },
+      mcp: {
+        github: {
+          type: 'local',
+          command: ['node', 'server.mjs'],
+        },
+      },
+    })
+  })
 })
 
 describe('OpenCode permission requests', () => {
@@ -118,7 +146,26 @@ describe('OpenCode permission requests', () => {
     const { onEvent } = await start(true)
     void client!.requestPermission(permission('github_create_issue'))
     await new Promise((resolve) => setImmediate(resolve))
-    expect(onEvent.mock.calls.map(([e]) => e.type)).toContain('request.opened')
+    const opened = onEvent.mock.calls.map(([e]) => e).find((e) => e.type === 'request.opened')
+    expect(opened).toMatchObject({
+      type: 'request.opened',
+      requestType: 'tool',
+      toolName: 'github · create_issue',
+    })
+  })
+
+  it('names the matched MCP server when it contains underscores', async () => {
+    const { onEvent } = await start(true, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_CONTENT: '{"mcp":{"my_server":{"type":"local","command":["node","server.mjs"]}}}',
+    })
+    void client!.requestPermission(permission('my_server_create_issue'))
+    await new Promise((resolve) => setImmediate(resolve))
+    const opened = onEvent.mock.calls.map(([e]) => e).find((e) => e.type === 'request.opened')
+    expect(opened).toMatchObject({
+      type: 'request.opened',
+      requestType: 'tool',
+      toolName: 'my_server · create_issue',
+    })
   })
 
   it('does not trust the prefix when our server was not registered', async () => {
@@ -126,5 +173,23 @@ describe('OpenCode permission requests', () => {
     void client!.requestPermission(permission('switchboard_reply_to_conversation'))
     await new Promise((resolve) => setImmediate(resolve))
     expect(onEvent.mock.calls.map(([e]) => e.type)).toContain('request.opened')
+  })
+
+  it('denies an MCP tool in plan mode', async () => {
+    const { onEvent } = await start(true, vi.fn(), 'plan')
+    const answer = await client!.requestPermission(permission('github_create_issue'))
+    expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } })
+    expect(onEvent.mock.calls.map(([e]) => e)).toContainEqual(expect.objectContaining({
+      type: 'tool.denied',
+      toolName: 'github_create_issue',
+      mode: 'plan',
+    }))
+  })
+
+  it('allows an MCP tool in full access', async () => {
+    const { onEvent } = await start(true, vi.fn(), 'full-access')
+    const answer = await client!.requestPermission(permission('github_create_issue'))
+    expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'once' } })
+    expect(onEvent.mock.calls.map(([e]) => e.type)).not.toContain('request.opened')
   })
 })
