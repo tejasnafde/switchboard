@@ -228,6 +228,11 @@ export function registerIdeHandlers(host: BackendHost): void {
         pushStatus('ready', port)
         return { ok: true as const, port }
       } catch (err) {
+        // Quit closed the database (or stopped a dependency) mid-boot: not an IDE error.
+        if (ideShuttingDown) {
+          log.info('ide ensure stopped by shutdown', { message: err instanceof Error ? err.message : String(err) })
+          return { ok: false as const, error: 'shutting-down' }
+        }
         const message = err instanceof Error ? err.message : String(err)
         log.error('ide ensure failed', err)
         pushStatus('error')
