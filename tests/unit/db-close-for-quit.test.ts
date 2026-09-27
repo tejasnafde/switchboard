@@ -9,6 +9,8 @@ const root = mkdtempSync(join(tmpdir(), 'sb-db-quit-'))
 process.env.SWITCHBOARD_DATA_DIR = root
 
 afterAll(() => {
+  // Windows cannot unlink an open database file.
+  closeDb()
   if (previousDataDir === undefined) delete process.env.SWITCHBOARD_DATA_DIR
   else process.env.SWITCHBOARD_DATA_DIR = previousDataDir
   rmSync(root, { recursive: true, force: true })

@@ -124,6 +124,13 @@ jobs:
         env:
           SB_SMOKE_CRASH_DIR: ${{ runner.temp }}/smoke-dumps
 
+      # node-pty 1.1's macOS prebuild ships spawn-helper without the execute
+      # bit, so every PTY fails with "posix_spawnp failed" unless it is rebuilt
+      # (the visual job runs `npm run rebuild`; packaging rebuilds too).
+      - name: Make node-pty's prebuilt spawn-helper executable (macOS)
+        if: runner.os == 'macOS'
+        run: chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper
+
       # A real startup (PTYs, watchers, database) then a user-style quit, five
       # times: the teardown order, and the Windows quit crash, only show there.
       - name: Quit smoke
