@@ -96,6 +96,17 @@ describe('diffPage', () => {
     expect(out).toContain(`2 lines longer than ${PR_DIFF_LINE_CHARS} characters were cut.`)
   })
 
+  it('keeps page 1 under the cap when the first file is close to a page on its own', () => {
+    for (let n = 600; n <= 900; n += 5) {
+      const files = [file('big.ts', n), file('next.ts', 3)]
+      for (let page = 1; ; page++) {
+        const out = diffPage(files, { heading, page })
+        if (!out.ok) break
+        expect(Buffer.byteLength(out.text, 'utf8')).toBeLessThanOrEqual(PR_DIFF_PAGE_BYTES)
+      }
+    }
+  })
+
   it('never cuts a line inside a surrogate pair', () => {
     const out = pageOf([file('emoji.txt', 1, {}, () => `${'a'.repeat(PR_DIFF_LINE_CHARS - 1)}\u{1F600}tail`)]).text
     expect(out).toContain(`${'a'.repeat(PR_DIFF_LINE_CHARS - 1)}… (line cut)`)
