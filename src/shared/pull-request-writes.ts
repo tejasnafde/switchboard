@@ -124,15 +124,14 @@ export function effectiveMergeStrategy(allowed: readonly MergeStrategy[], picked
  * strategy is not allowed. `null` means go.
  */
 /**
- * Case-insensitive, and a short hash matches its full form: Bitbucket reports
- * 12-character hashes where GitHub reports 40. Both sides need 7+ characters.
+ * Exact match, ignoring case. No prefix matching: a short hash could match a
+ * different commit, and Bitbucket's merge call does not send the head, so a
+ * false match could merge the wrong commit. Both values come from our own read
+ * of the same host, so they always have the same length.
  */
 export function sameCommit(a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b) return false
-  const x = a.toLowerCase()
-  const y = b.toLowerCase()
-  if (Math.min(x.length, y.length) < 7) return false
-  return x.length <= y.length ? y.startsWith(x) : x.startsWith(y)
+  return a.toLowerCase() === b.toLowerCase()
 }
 
 export function mergePrecheck(fresh: PrDetail, input: MergeInput): PrError | null {

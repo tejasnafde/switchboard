@@ -185,14 +185,11 @@ describe('sameCommit', () => {
   it('ignores case', () => {
     expect(sameCommit('ABCDEF1234567', 'abcdef1234567')).toBe(true)
   })
-  it('matches a short hash to its full form, either way round', () => {
-    const full = 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0'
-    expect(sameCommit('a1b2c3d4e5f6', full)).toBe(true)
-    expect(sameCommit(full, 'A1B2C3D4E5F6')).toBe(true)
+  it('never matches a short hash to a longer one', () => {
+    expect(sameCommit('a1b2c3d4e5f6', 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0')).toBe(false)
   })
-  it('rejects different commits, too-short hashes and a missing hash', () => {
+  it('rejects different commits and a missing hash', () => {
     expect(sameCommit('a1b2c3d4e5f6', 'a1b2c3d4e5f7')).toBe(false)
-    expect(sameCommit('a1b2c3', 'a1b2c3d4e5f6')).toBe(false)
     expect(sameCommit(null, 'a1b2c3d4e5f6')).toBe(false)
   })
 })
