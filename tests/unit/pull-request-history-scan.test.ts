@@ -4,6 +4,7 @@ import {
   MAX_HISTORY_SCAN_CHARS,
   scanPendingPullRequestHistory,
   scanPullRequestHistoryForConversation,
+  HistoryReadError,
   type PullRequestHistoryScanDeps,
   type PullRequestHistoryScanTarget,
 } from '../../src/main/pull-requests/history-scan'
@@ -206,6 +207,41 @@ describe('the pending scan', () => {
 
     expect(results.map((r) => r.conversationId)).toEqual(ids)
     expect(d.readHistory).toHaveBeenCalledTimes(4)
+  })
+
+  it('leaves a chat unmarked when the repository lookup or a link fails, so a later run retries it', async () => {
+    const d = pendingDeps(['lookup', 'link', 'agent_1'])
+    vi.mocked(d.readHistory).mockImplementation(async (id, visit) => {
+      visit('text', id === 'agent_1' ? 'nothing here' : BOT_605)
+    })
+    vi.mocked(d.repoForProject).mockImplementation(async () => {
+      if (vi.mocked(d.repoForProject).mock.calls.length === 1) throw new Error('git remote failed')
+      return BOT
+    })
+    vi.mocked(d.link).mockImplementation(() => { throw new Error('database is locked') })
+
+    const results = await scanPendingPullRequestHistory(d, { batchSize: 10, concurrency: 1, yieldMs: 0 })
+
+    expect(results.map((r) => r.conversationId)).toEqual(['agent_1'])
+    expect([...d.scanned]).toEqual(['agent_1'])
+    expect(d.readHistory).toHaveBeenCalledTimes(3)
+  })
+
+  it('marks a chat whose history cannot be read', async () => {
+    const d = pendingDeps(['unreadable'])
+    vi.mocked(d.readHistory).mockRejectedValue(new Error('EACCES'))
+
+    await scanPendingPullRequestHistory(d, { yieldMs: 0 })
+
+    expect([...d.scanned]).toEqual(['unreadable'])
+  })
+
+  it('does not mark a chat when a manual scan cannot read it', async () => {
+    const d = pendingDeps(['unreadable'])
+    vi.mocked(d.readHistory).mockRejectedValue(new Error('EACCES'))
+
+    await expect(scanPullRequestHistoryForConversation({ id: 'unreadable', projectPath: '/repo' }, d)).rejects.toBeInstanceOf(HistoryReadError)
+    expect(d.markScanned).not.toHaveBeenCalled()
   })
 
   it('keeps going when a chat can be neither read nor marked', async () => {

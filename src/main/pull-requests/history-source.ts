@@ -77,7 +77,7 @@ function droppedToolParts(event: Record<string, unknown>, source: JsonlSource): 
 
 const MAY_HOLD_DROPPED_TOOL_PART = /"(?:tool_result|function_call|function_call_output|custom_tool_call|custom_tool_call_output)"/
 
-/** Streams one transcript into `visit`. Returns false once `visit` asked to stop. */
+/** Streams one transcript into `visit`. Returns false once `visit` asked to stop; throws on a read failure other than a missing file. */
 export async function readJsonlHistory(filePath: string, source: JsonlSource, visit: HistoryVisitor): Promise<boolean> {
   const parsed: ChatMessage[] = []
   const parser = new JsonlParser((message) => parsed.push(message), source)
@@ -103,9 +103,11 @@ export async function readJsonlHistory(filePath: string, source: JsonlSource, vi
     }
     return true
   } catch (err) {
-    // A missing or unreadable copy is skipped, as the chat loader does; the other sources still count.
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('reading a transcript for the PR scan failed', { filePath, err: String(err) })
-    return true
+    // A copy that vanished since it was listed is skipped; any other failure
+    // may have cut the read short, so the scan must not count as finished.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return true
+    log.warn('reading a transcript for the PR scan failed', { filePath, err: String(err) })
+    throw err
   } finally {
     lines.close()
     stream.destroy()

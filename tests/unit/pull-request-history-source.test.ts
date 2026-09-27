@@ -1,6 +1,6 @@
 /** The transcript reader stops once the scan has enough, and keeps the tool parts the parser drops. */
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -76,5 +76,11 @@ describe('readJsonlHistory', () => {
     const visit = vi.fn(() => true)
     expect(await readJsonlHistory(join(dir, 'missing.jsonl'), 'claude-code', visit)).toBe(true)
     expect(visit).not.toHaveBeenCalled()
+  })
+
+  it('fails, rather than count a partial read as finished, when a transcript cannot be read', async () => {
+    const notAFile = join(dir, 'directory.jsonl')
+    mkdirSync(notAFile)
+    await expect(readJsonlHistory(notAFile, 'claude-code', () => true)).rejects.toMatchObject({ code: 'EISDIR' })
   })
 })

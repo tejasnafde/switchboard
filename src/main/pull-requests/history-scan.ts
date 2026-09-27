@@ -125,13 +125,28 @@ function markQuietly(deps: PullRequestHistoryScanDeps, conversationId: string): 
   }
 }
 
-/** Scans one chat and records it as scanned. Throws only when its history cannot be read. */
+/** The chat's history could not be read; any other scan failure is worth retrying. */
+export class HistoryReadError extends Error {
+  constructor(readonly reason: unknown) {
+    super(`reading the chat's history failed: ${String(reason)}`)
+    this.name = 'HistoryReadError'
+  }
+}
+
+/**
+ * Scans one chat and records it as scanned. Throws `HistoryReadError` when its
+ * history cannot be read, and whatever the repository lookup or a link threw.
+ */
 export async function scanPullRequestHistoryForConversation(
   target: PullRequestHistoryScanTarget,
   deps: PullRequestHistoryScanDeps,
 ): Promise<PullRequestHistoryScanResult> {
   const history = new HistoryText()
-  await deps.readHistory(target.id, (kind, text) => history.add(kind, text))
+  try {
+    await deps.readHistory(target.id, (kind, text) => history.add(kind, text))
+  } catch (err) {
+    throw new HistoryReadError(err)
+  }
   let linked = 0
   if (history.bbprNumbers.length > 0 || MENTIONS_HOST.test(history.text)) {
     const repo = await deps.repoForProject(target.projectPath)
@@ -148,7 +163,8 @@ export async function scanPullRequestHistoryForConversation(
  * Scans every chat not scanned yet, a batch at a time, until none is left.
  * A chat whose history cannot be read is still marked, so one unreadable
  * transcript is not retried on every launch; the manual action scans it
- * again. A chat that could not be marked is skipped for the rest of the run.
+ * again. A chat whose repository lookup or linking failed stays unmarked, so
+ * the next launch retries it. Either way a chat is tried once per run.
  */
 export async function scanPendingPullRequestHistory(
   deps: PullRequestHistoryScanDeps,
@@ -159,7 +175,7 @@ export async function scanPendingPullRequestHistory(
   const yieldMs = options.yieldMs ?? DEFAULT_YIELD_MS
   const results: PullRequestHistoryScanResult[] = []
   const attempted = new Set<string>()
-  // Attempted chats the list still returns (their mark failed); the page is widened past them.
+  // Attempted chats the list still returns (left unmarked); the page is widened past them.
   const stuck = new Set<string>()
   for (;;) {
     const limit = batchSize + stuck.size
@@ -179,7 +195,7 @@ export async function scanPendingPullRequestHistory(
           results.push(await scanPullRequestHistoryForConversation(target, deps))
         } catch (err) {
           log.warn('history pull request scan failed', { conversationId: target.id, err: String(err) })
-          markQuietly(deps, target.id)
+          if (err instanceof HistoryReadError) markQuietly(deps, target.id)
         }
         if (yieldMs > 0) await wait(yieldMs)
       }
