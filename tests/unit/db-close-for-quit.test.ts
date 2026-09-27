@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { closeDb, getDb, getSetting, setSetting } from '../../src/main/db/database'
+import { closeDb, getDb, getSetting, reopenDbAfterAbortedQuit, setSetting } from '../../src/main/db/database'
 
 const previousDataDir = process.env.SWITCHBOARD_DATA_DIR
 const root = mkdtempSync(join(tmpdir(), 'sb-db-quit-'))
@@ -28,5 +28,11 @@ describe('closeDb', () => {
     expect(() => setSetting('quit-test', 'b')).toThrow(/quitting/)
     expect(() => closeDb({ forQuit: true })).not.toThrow()
     expect(() => closeDb()).not.toThrow()
+  })
+
+  it('reopens again once an aborted quit clears the latch', () => {
+    closeDb({ forQuit: true })
+    reopenDbAfterAbortedQuit()
+    expect(getSetting('quit-test')).toBe('a')
   })
 })

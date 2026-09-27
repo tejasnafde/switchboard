@@ -56,7 +56,7 @@ import { closeAllLaunchConfigWatchers } from './launch-config/launch-config-stor
 import { closeAllHeadWatchers } from './git/head-watcher'
 import { ProviderRegistry } from './provider/provider-registry'
 import { disposeUsageProbes } from './provider/usage'
-import { getDb, closeDb, getSetting, setSetting, getProjects } from './db/database'
+import { getDb, closeDb, getSetting, setSetting, getProjects, reopenDbAfterAbortedQuit } from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
 import { getLogDir, getLogFilePath, createMainLogger } from './logger'
 import { warmShellEnv } from './shell-env'
@@ -504,6 +504,7 @@ function createWindow(): BrowserWindow {
     setTimeout(() => {
       if (!installRequested) return
       installRequested = false
+      reopenDbAfterAbortedQuit()
       log.warn('still running after quitAndInstall - install did not start')
       reportInstallStatus(window, {
         kind: 'error',

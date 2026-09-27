@@ -627,6 +627,11 @@ function migrate(db: Database.Database): void {
  * a window event) gets an error instead of a fresh native handle opened while
  * the process is being torn down.
  */
+/** The quit did not happen after all (an update that never started): allow reopening. */
+export function reopenDbAfterAbortedQuit(): void {
+  closedForQuit = false
+}
+
 export function closeDb(opts: { forQuit?: boolean } = {}): void {
   if (opts.forQuit) closedForQuit = true
   if (db) {
