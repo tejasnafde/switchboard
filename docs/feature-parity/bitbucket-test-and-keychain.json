@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "bitbucket-test-and-keychain",
+  "summary": "Settings > Source control > Bitbucket Test no longer calls the removed /user/permissions/repositories endpoint: it checks /user, then reads each Bitbucket repository the projects point at and its pull request list, reports which it can read, and says write scopes are checked on the first write. Opening Settings no longer decrypts the Bitbucket token (its email and save time sit in a plain metadata file, saved together with the token or not at all) and decrypts a provider instance env only for Claude or Codex usage probes whose key list shows an overlay, once per process, so an unsigned macOS build asks for the login password far less.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/pull-requests/bitbucket.ts",
+        "src/main/pull-requests/credentials.ts",
+        "src/main/ipc/pull-requests.ts",
+        "src/main/db/provider-instances.ts",
+        "src/main/provider/usage/index.ts",
+        "src/main/decrypt-caller.ts",
+        "src/renderer/components/settings/SourceControlPanel.tsx",
+        "tests/unit/pull-requests-bitbucket-map.test.ts",
+        "tests/unit/source-control-credentials.test.ts",
+        "tests/unit/provider-instances-db.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native client has no source-control or provider-instance settings: nothing under apps/mobile/src calls source-control:* or provider-instances usage, and source-control:* is admin-scoped so a phone cannot call it."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android client never calls source-control:* (admin-scoped, denied to a phone) or the provider-instances usage channel, and holds no keychain-encrypted secret of the desktop's."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pull-requests.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "tests/unit/source-control-credentials.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, update channel or new IPC channel. SourceControlTestResult drops its optional workspaces field, which no client read, and a token saved by an older release gets its metadata file on the first status read, with one decrypt."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/pull-requests-bitbucket-map.test.ts drives testBitbucket with a fake fetch: /user plus one repository read each, the partial-access message naming the repositories it cannot reach, the cap of 20, the read:user:bitbucket copy on a 403 from /user, and no call to /user/permissions.",
+      "tests/unit/source-control-credentials.test.ts: status never decrypts (nor calls isEncryptionAvailable) in a fresh process, a legacy token file is decrypted once to write its metadata, remove deletes both files.",
+      "tests/unit/provider-instances-db.test.ts: an oauth_dir instance never decrypts for a usage read, an env is decrypted once per process and again after an upsert or delete, and an overlay whose key list is empty is never decrypted.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Test has not been clicked against a real Bitbucket account; the endpoint shapes come from the provider's existing reads.",
+      "The keychain prompt count on an unsigned macOS build has not been observed in the running app; the debug log line at each decrypt is there to count it."
+    ]
+  }
+}
