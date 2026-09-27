@@ -9,7 +9,7 @@
  *   - creates the file if it doesn't exist (no expectedMtime needed)
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeFileSafe, deleteFileSafe } from '../../src/main/files/writing'
@@ -54,6 +54,16 @@ describe('writeFileSafe - basic write', () => {
     const res = await writeFileSafe(abs, 'v2', { expectedMtimeMs: stat.mtimeMs })
     expect(res.ok).toBe(true)
     expect(readFileSync(abs, 'utf8')).toBe('v2')
+  })
+
+  it('does not recreate a file deleted since it was opened', async () => {
+    const abs = join(tmp, 'a.txt')
+    writeFileSync(abs, 'v1')
+    const stat = statSync(abs)
+    rmSync(abs)
+    const res = await writeFileSafe(abs, 'v2', { expectedMtimeMs: stat.mtimeMs })
+    expect(res).toEqual({ ok: false, error: 'File changed on disk since open', conflict: true })
+    expect(existsSync(abs)).toBe(false)
   })
 
   it('returns the new file mtime on success', async () => {

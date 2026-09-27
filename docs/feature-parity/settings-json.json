@@ -2,12 +2,14 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "settings-json",
-  "summary": "Settings step 6: Open settings as JSON. Settings > About writes <userData>/settings.json from the settings DB ({ $schema, settings, projects, keyboard }, only values that differ from the default, from an explicit allow-list in src/shared/settings-file.ts) and a JSON Schema beside it, then opens it in the embedded IDE beside a local chat or in the system editor. The main process watches the folder: a save is parsed, checked with the same rules as the page (each setting's accepted values, SCOPABLE_SETTINGS for project overrides, applyShortcutOverrides' refusal rules for rebinds) and applied through the normal write paths, so the menu rebuilds and the window re-reads the stores it changed; invalid JSON applies nothing and is never rewritten, refused entries are named in a one-line banner and logged, and a removed key resets to its default. A settings write from the page, a phone or the IPC rewrites the file unless its content differs from what Switchboard last wrote or fully applied (a save not yet applied, a parse error, refused entries or a failed write). The hash of that content is kept in a settings row, so a file edited while the app was closed is applied at the next launch, or kept with the banner when it does not parse. The DB stays the source of truth.",
+  "summary": "Settings step 6: Open settings as JSON. Settings > About writes <userData>/settings.json from the settings DB ({ $schema, settings, projects, keyboard }, only values that differ from the default, from an explicit allow-list in src/shared/settings-file.ts) and a JSON Schema beside it, then opens it in the embedded IDE beside a local chat or in the system editor. The main process watches the folder: a save is parsed, checked with the same rules as the page (each setting's accepted values, SCOPABLE_SETTINGS for project overrides, applyShortcutOverrides' refusal rules for rebinds) and applied through the normal write paths, so the menu rebuilds and the window re-reads the stores it changed; invalid JSON applies nothing and is never rewritten, refused entries are named in a one-line banner and logged, and a removed key resets to its default. A settings write from the page, a phone or the IPC rewrites the file unless its content differs from what Switchboard last wrote or fully applied (a save not yet applied, a parse error, refused entries or a failed write). The hash of that content is kept in a settings row, so a file edited while the app was closed is applied at the next launch, or kept with the banner when it does not parse. The DB stays the source of truth. The file is written temp-then-rename through src/main/files/replace-file.ts, which retries a rename Windows refuses while the file is open (EPERM/EACCES/EBUSY, 4 retries over about 500 ms); before each retry it re-checks that the file still holds what the caller checked, so an edit saved meanwhile is kept and reported rather than overwritten. A lock that outlasts the retries fails the write with the file untouched (no in-place fallback, which would truncate the file first); the banner reports it and the file stays out of sync, so the next change or Open writes it again.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
       "evidence": [
         "src/main/settings-file.ts",
+        "src/main/files/writing.ts",
+        "src/main/files/replace-file.ts",
         "src/main/ipc/settings-file.ts",
         "src/main/index.ts",
         "src/preload/index.ts",
@@ -21,7 +23,9 @@
         "src/renderer/stores/theme-store.ts",
         "src/renderer/App.tsx",
         "tests/unit/settings-file-sync.test.ts",
-        "e2e/settings-json.e2e.mjs"
+        "e2e/settings-json.e2e.mjs",
+        "tests/unit/replace-file.test.ts",
+        "tests/unit/replace-file-callers.test.ts"
       ]
     },
     "reactNativeIos": {
@@ -57,13 +61,15 @@
       "npm run typecheck",
       "npm test (vitest: the allow-list equals the Settings page's value rows with the same defaults and choices; the projection leaves defaults, off-list keys, secrets and another build's rebinds out; the plan refuses invalid JSON, unknown keys, bad values, non-object sections, unscopable project keys, reserved, typing, unknown, fixed and clashing shortcuts, resets removed keys, keeps another build's rebinds, accepts a swap, and writes nothing for its own output; the sync ignores its own writes and the writes its apply makes, treats any changed content as an edit whatever the mtime, never rewrites a broken, unapplied, partly refused or partly failed file and reports it, does not recreate a deleted file, adopts its own file at launch, applies a file edited while closed (or keeps and reports a broken one), and debounces a burst of watcher events)",
       "FORCE_PLATFORM=linux|win32|darwin with a one-off vitest setup that overrides process.platform and navigator.platform: tests/unit/settings-file-sync.test.ts and tests/unit/settings-file.test.ts pass on all three (the skipped-entry test uses a typing key, refused on every platform, and also runs per platform with navigator stubbed)",
-      "npm run build:fast && SB_E2E_BACKGROUND=1 node e2e/settings-json.e2e.mjs (17 checks: Open writes the file and schema and hands it to the stubbed system editor, an edit on disk changes the theme and follow-up rows and the banner names a refused shortcut, a UI toggle leaves a file with a refused entry alone and rewrites it once the save is clean (a key the clean save leaves out resets), invalid JSON is reported, not applied and not overwritten by a later UI change)"
+      "npm run build:fast && SB_E2E_BACKGROUND=1 node e2e/settings-json.e2e.mjs (17 checks: Open writes the file and schema and hands it to the stubbed system editor, an edit on disk changes the theme and follow-up rows and the banner names a refused shortcut, a UI toggle leaves a file with a refused entry alone and rewrites it once the save is clean (a key the clean save leaves out resets), invalid JSON is reported, not applied and not overwritten by a later UI change)",
+      "tests/unit/replace-file.test.ts and tests/unit/replace-file-callers.test.ts: a rename that fails with EPERM twice then succeeds lands the content after two logged retries; one that always fails throws the lock error with the target unchanged and no temp file left; a non-lock error is not retried; a failed temp write removes the partial temp file and a locked temp write is not mistaken for a locked rename; a target edited or deleted between retries is left alone (TargetChangedError / save conflict), an unchanged one is still replaced once the lock clears; SettingsFileSync keeps an edit saved during a retry (writeSkipped), and on a lock that outlasts the retries leaves the file as it was, reports writeFailed, and writes it on the next change; writeFileSafe returns its normal error result for that lock"
     ],
     "hardware": [],
     "notExercised": [
       "Opening in the embedded IDE (a local chat open, code-server installed) was not driven end to end; it uses the existing openInViewer path with an absolute path, and the e2e covers the system-editor fallback with shell.openPath stubbed.",
       "Schema completion inside the workbench was not checked by eye; the schema content is unit-tested.",
-      "The remote-backend disabled state was checked by reading the code (window.api.settingsFile.available is false when SWITCHBOARD_BACKEND_URL is set), not in a remote session."
+      "The remote-backend disabled state was checked by reading the code (window.api.settingsFile.available is false when SWITCHBOARD_BACKEND_URL is set), not in a remote session.",
+      "The Windows rename retry was not run on a Windows machine with the file held open in an editor; it is unit-tested with an injected rename, and the Windows CI job runs the settings-file tests that hit the real lock intermittently."
     ]
   }
 }

@@ -19,8 +19,9 @@
  */
 import { watch, type FSWatcher } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { TargetChangedError, replaceFile } from './files/replace-file'
 import {
   IDLE_SETTINGS_FILE_STATUS,
   SETTINGS_FILE_NAME,
@@ -112,8 +113,8 @@ export class SettingsFileSync {
       if (kept) {
         this.deps.log.warn('settings.json left as it is on open: it holds edits that were not fully applied')
       } else {
-        await this.writeFromDb()
-        this.setStatus({ path: this.path, parseError: null, skipped: [], writeSkipped: false })
+        const result = await this.writeFromDb(current)
+        this.setStatus({ path: this.path, parseError: null, skipped: [], writeSkipped: result === 'changed', writeFailed: result === 'failed' })
       }
       this.active = true
       this.startWatching()
@@ -191,7 +192,7 @@ export class SettingsFileSync {
     }
     if (skipped.length > 0) this.deps.log.warn(`settings.json skipped ${describeSkipped(skipped, skipped.length)}`)
     else this.markSynced(current)
-    this.setStatus({ path: this.path, parseError: null, skipped, writeSkipped: false })
+    this.setStatus({ path: this.path, parseError: null, skipped, writeSkipped: false, writeFailed: false })
     return skipped.length === 0
   }
 
@@ -205,8 +206,10 @@ export class SettingsFileSync {
       this.setStatus({ ...this.status, writeSkipped: true })
       return
     }
-    await this.writeFromDb()
-    if (this.status.writeSkipped) this.setStatus({ ...this.status, writeSkipped: false })
+    const result = await this.writeFromDb(current)
+    const writeSkipped = result === 'changed'
+    const writeFailed = result === 'failed'
+    if (this.status.writeSkipped !== writeSkipped || this.status.writeFailed !== writeFailed) this.setStatus({ ...this.status, writeSkipped, writeFailed })
   }
 
   /** Differs, by content, from what Switchboard last wrote or fully applied. mtime is not trusted: it can be coarse or unchanged. */
@@ -226,14 +229,39 @@ export class SettingsFileSync {
     }
   }
 
-  private async writeFromDb(): Promise<void> {
+  /**
+   * Replace the file with the DB's projection. `expected` is what the file
+   * held when the caller checked it (null: absent); a retry waiting on a
+   * Windows lock re-checks it, so an edit saved meanwhile is not overwritten.
+   * 'changed' when that edit left the file as it is; 'failed' when the write
+   * failed (a lock that outlasted the retries), with the file untouched and
+   * not marked synced, so the next change or Open writes it again.
+   */
+  private async writeFromDb(expected: string | null): Promise<'written' | 'changed' | 'failed'> {
     const file = projectSettingsFile(this.deps.readSnapshot(), { projectLabel: this.deps.projectLabel })
     const content = serializeSettingsFile(file)
-    // Temp then rename, so an editor or the watcher never reads half a file.
-    const tmp = `${this.path}.tmp`
-    await writeFile(tmp, content)
-    await rename(tmp, this.path)
+    try {
+      await replaceFile(this.path, content, { log: this.deps.log, stillSafe: () => this.stillHolds(expected) })
+    } catch (err) {
+      if (err instanceof TargetChangedError) {
+        this.deps.log.warn('settings.json changed while its rewrite waited for a lock; left as it is')
+        return 'changed'
+      }
+      this.deps.log.warn('writing settings.json failed', err)
+      return 'failed'
+    }
     this.markSynced(content)
+    return 'written'
+  }
+
+  private async stillHolds(expected: string | null): Promise<boolean> {
+    try {
+      return (await readFile(this.path, 'utf8')) === expected
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return expected === null
+      this.deps.log.warn('re-reading settings.json before a retried write failed', err)
+      return false
+    }
   }
 
   private async readCurrent(): Promise<string | null> {

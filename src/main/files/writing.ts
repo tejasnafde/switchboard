@@ -13,10 +13,12 @@
  *     pattern.
  *
  * Cross-platform: every path operation goes through `node:path` and
- * `node:fs/promises`. Atomic rename works the same on POSIX and NTFS.
+ * `node:fs/promises`. The rename goes through `replaceFile`, which retries
+ * it while Windows has the target locked.
  */
 import { promises as fs } from 'node:fs'
 import { createMainLogger } from '../logger'
+import { TargetChangedError, replaceFile } from './replace-file'
 
 const log = createMainLogger('files:writing')
 
@@ -35,6 +37,7 @@ export interface WriteOptions {
   expectedContent?: string | null
 }
 
+const CONFLICT_SINCE_OPEN = 'File changed on disk since open'
 const CONFLICT_SINCE_DIFF = 'File changed on disk after the diff was captured'
 
 /** Whether the file still holds `expected` (null = absent), ignoring line endings. */
@@ -74,45 +77,60 @@ function applyEol(content: string, eol: '\r\n' | '\n'): string {
   return content.replace(/\r\n|\r|\n/g, '\r\n')
 }
 
+/** Why the write must not go ahead, or null. Asked before the write and again before a retry waiting on a Windows lock. */
+async function conflictReason(absPath: string, opts: WriteOptions, stat: TargetStat): Promise<string | null> {
+  if (opts.expectedMtimeMs !== undefined) {
+    // A file opened for editing and deleted since must not be recreated by the save.
+    if (stat.missing) return CONFLICT_SINCE_OPEN
+    if (stat.exists && stat.mtimeMs > opts.expectedMtimeMs) return CONFLICT_SINCE_OPEN
+  }
+  if (opts.expectedContent !== undefined && !(await holdsContent(absPath, opts.expectedContent))) return CONFLICT_SINCE_DIFF
+  return null
+}
+
+interface TargetStat {
+  exists: boolean
+  /** stat said ENOENT, as opposed to failing for another reason. */
+  missing: boolean
+  mtimeMs: number
+}
+
+async function statTarget(absPath: string): Promise<TargetStat> {
+  try {
+    const stat = await fs.stat(absPath)
+    return { exists: stat.isFile(), missing: false, mtimeMs: stat.mtimeMs }
+  } catch (err) {
+    log.debug('stat failed before write, treating as new file', { absPath, err })
+    return { exists: false, missing: (err as NodeJS.ErrnoException).code === 'ENOENT', mtimeMs: 0 }
+  }
+}
+
 export async function writeFileSafe(
   absPath: string,
   content: string,
   opts: WriteOptions = {},
 ): Promise<WriteResult> {
-  // Existence + mtime check.
-  let exists = false
-  let currentMtimeMs = 0
-  try {
-    const stat = await fs.stat(absPath)
-    exists = stat.isFile()
-    currentMtimeMs = stat.mtimeMs
-  } catch (err) {
-    // ENOENT - file doesn't exist; create-on-write path is fine.
-    log.debug('stat failed before write, treating as new file', { absPath, err })
-  }
+  const before = await statTarget(absPath)
+  const conflict = await conflictReason(absPath, opts, before)
+  if (conflict) return { ok: false, error: conflict, conflict: true }
 
-  if (exists && opts.expectedMtimeMs !== undefined && currentMtimeMs > opts.expectedMtimeMs) {
-    return { ok: false, error: 'File changed on disk since open', conflict: true }
-  }
-
-  if (opts.expectedContent !== undefined && !(await holdsContent(absPath, opts.expectedContent))) {
-    return { ok: false, error: CONFLICT_SINCE_DIFF, conflict: true }
-  }
-
-  const eol = exists ? await detectEol(absPath) : '\n'
+  const eol = before.exists ? await detectEol(absPath) : '\n'
   const finalContent = applyEol(content, eol)
 
+  let lateConflict: string | null = null
+  const stillSafe = async () => {
+    lateConflict = await conflictReason(absPath, opts, await statTarget(absPath))
+    return lateConflict === null
+  }
   const tmp = `${absPath}.sb-tmp-${process.pid}-${Date.now()}`
   try {
-    await fs.writeFile(tmp, finalContent, 'utf8')
-    await fs.rename(tmp, absPath)
+    await replaceFile(absPath, finalContent, { log, tmp, stillSafe })
   } catch (err) {
-    // Best-effort cleanup of the .tmp file on failure
-    try {
-      await fs.unlink(tmp)
-    } catch (unlinkErr) {
-      log.debug('failed to clean up temp file after write failure', { tmp, unlinkErr })
+    if (err instanceof TargetChangedError && lateConflict) {
+      log.warn('write abandoned: file changed while the replace waited for a lock', { absPath, reason: lateConflict })
+      return { ok: false, error: lateConflict, conflict: true }
     }
+    log.warn('write failed', { absPath, code: (err as NodeJS.ErrnoException).code, err })
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 

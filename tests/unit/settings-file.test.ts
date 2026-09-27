@@ -238,6 +238,7 @@ describe('banner and schema', () => {
     expect(settingsFileBanner({ ...IDLE_SETTINGS_FILE_STATUS, parseError: 'not valid JSON', skipped }))
       .toBe('settings.json was not applied: not valid JSON. Fix it and save again.')
     expect(settingsFileBanner({ ...IDLE_SETTINGS_FILE_STATUS, writeSkipped: true })).toMatch(/was not written to settings.json/)
+    expect(settingsFileBanner({ ...IDLE_SETTINGS_FILE_STATUS, writeFailed: true })).toMatch(/could not be written to settings.json/)
   })
 
   it('describes every allow-listed setting and rebindable command', () => {
