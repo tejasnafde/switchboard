@@ -64,7 +64,7 @@ import type {
 import type { ProviderSkill, SessionSummary } from '@shared/types'
 import { decidePermission, denialMessage } from '../policy'
 import { findOpencodePath, buildOpencodeEnv } from './opencode/env'
-import { acpSwitchboardMcpServer, isSwitchboardOpencodeTool, SWITCHBOARD_OPENCODE_TOOLS } from '../../mcp/agent-registration'
+import { acpSwitchboardMcpServer, isSwitchboardOpencodeReadTool, isSwitchboardOpencodeTool, SWITCHBOARD_OPENCODE_TOOLS } from '../../mcp/agent-registration'
 
 const log = createLogger('provider:opencode-acp')
 const LOG_PAYLOAD_LIMIT = 4000
@@ -1282,10 +1282,12 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         const toolName = toolNameFromPermission(params)
         const { allow, reject } = pickPermissionOptions(params.options)
         // OpenCode asks about MCP tools only when the user's config says so.
-        // For ours the server already enforces plan mode and shows the card.
+        // For ours the server already enforces plan mode and shows the card;
+        // in plan mode only our read tools skip the prompt, so a write is denied here too.
         if (
           active.switchboardMcp
           && allow
+          && (active.session.runtimeMode !== 'plan' || isSwitchboardOpencodeReadTool(toolName))
           && canAutoAllowSwitchboardOpencodeTool(
             toolName,
             active.mcpServerNames,

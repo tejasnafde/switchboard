@@ -296,6 +296,14 @@ describe('OpenCode permission requests', () => {
     expect(onEvent.mock.calls.map(([e]) => e.type)).toContain('request.opened')
   })
 
+  it('in plan mode, allows our read tools but denies our write tools', async () => {
+    await start(true, vi.fn(), 'plan')
+    const read = await client!.requestPermission(permission('switchboard_get_pr_status'))
+    expect(read).toEqual({ outcome: { outcome: 'selected', optionId: 'once' } })
+    const write = await client!.requestPermission(permission('switchboard_reply_to_conversation'))
+    expect(write).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } })
+  })
+
   it('denies an MCP tool in plan mode', async () => {
     const { onEvent } = await start(true, vi.fn(), 'plan')
     const answer = await client!.requestPermission(permission('github_create_issue'))

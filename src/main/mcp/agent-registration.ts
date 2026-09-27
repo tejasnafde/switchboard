@@ -71,6 +71,15 @@ export const SWITCHBOARD_OPENCODE_TOOLS: readonly string[] = [
 
 const SWITCHBOARD_OPENCODE_TOOL_SET = new Set(SWITCHBOARD_OPENCODE_TOOLS)
 
+/** Our read-only tools, which plan mode allows. */
+const SWITCHBOARD_OPENCODE_READ_TOOLS = new Set(
+  [PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PEER_LIST_TOOL_NAME].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`),
+)
+
+export function isSwitchboardOpencodeReadTool(toolName: string): boolean {
+  return SWITCHBOARD_OPENCODE_READ_TOOLS.has(toolName)
+}
+
 export function isSwitchboardOpencodeTool(toolName: string): boolean {
   return SWITCHBOARD_OPENCODE_TOOL_SET.has(toolName)
 }
