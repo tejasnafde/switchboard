@@ -10,6 +10,14 @@ import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:reviews')
 
+/**
+ * The newest load per `prKey:resource`. A load writes back only while it is
+ * still the newest, and a refresh that drops a changed PR's tabs forgets its
+ * tokens, so a read started before the change cannot restore stale data.
+ */
+const loadTokens = new Map<string, number>()
+let loadSeq = 0
+
 export type ReviewTab = 'overview' | 'files' | 'conversations' | 'checks'
 
 export type Loadable<T> =
@@ -104,7 +112,10 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     set((st) => {
       // A PR that changed on the host (edits, checks, conversations) loses its cached tabs.
       const resources = { ...st.resources }
-      for (const key of changed) delete resources[key]
+      for (const key of changed) {
+        for (const slot of [...loadTokens.keys()]) if (slot.startsWith(`${key}:`)) loadTokens.delete(slot)
+        delete resources[key]
+      }
       return { loading: false, listError: null, list: result.data, resources }
     })
     // Tabs of a changed PR reload when their view asks again; a manual refresh re-reads the open PR's tabs now.
@@ -120,6 +131,9 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const key = prKey(ref)
     const current = get().resources[key]?.[resource]
     if (current && !opts.force && current.status !== 'error') return
+    const slot = `${key}:${resource}`
+    const token = ++loadSeq
+    loadTokens.set(slot, token)
     if (!current || current.status === 'error') {
       set((s) => ({ resources: { ...s.resources, [key]: { ...s.resources[key], [resource]: { status: 'loading' } } } }))
     }
@@ -133,6 +147,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const next: Loadable<TabData[typeof resource]> = result.ok
       ? { status: 'ok', data: result.data, version: Date.now() }
       : { status: 'error', error: result.error }
+    if (loadTokens.get(slot) !== token) return
+    loadTokens.delete(slot)
     set((s) => ({ resources: { ...s.resources, [key]: { ...s.resources[key], [resource]: next } } }))
   },
 }))

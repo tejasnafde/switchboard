@@ -58,12 +58,39 @@ export interface GitDiffFile {
   patch: string
 }
 
-function unquote(path: string): string {
-  return path.startsWith('"') && path.endsWith('"') ? path.slice(1, -1) : path
+const C_ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
+
+/**
+ * Git C-quotes a path with unusual bytes: `"a/dir/na\303\257ve.py"`, octal
+ * escapes for each UTF-8 byte plus `\"`, `\\` and `\t`-style escapes. An
+ * unquoted path is returned as is, so a literal backslash in it stays.
+ */
+export function unquoteGitPath(path: string): string {
+  if (!(path.length >= 2 && path.startsWith('"') && path.endsWith('"'))) return path
+  const body = path.slice(1, -1)
+  const bytes: number[] = []
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    if (ch !== '\\' || i === body.length - 1) {
+      bytes.push(...new TextEncoder().encode(ch))
+      continue
+    }
+    const octal = /^[0-7]{3}/.exec(body.slice(i + 1))
+    if (octal) {
+      bytes.push(parseInt(octal[0], 8))
+      i += 3
+    } else if (body[i + 1] in C_ESCAPES) {
+      bytes.push(C_ESCAPES[body[i + 1]])
+      i += 1
+    } else {
+      bytes.push(92)
+    }
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes))
 }
 
 function stripPrefix(path: string): string | null {
-  const p = unquote(path.trim())
+  const p = unquoteGitPath(path.trim())
   if (p === '/dev/null') return null
   return p.replace(/^[ab]\//, '')
 }
@@ -74,9 +101,10 @@ export function splitGitDiff(text: string): GitDiffFile[] {
   const chunks = toLf(text).split(/^diff --git /m).slice(1)
   for (const chunk of chunks) {
     const lines = chunk.split('\n')
-    const head = /^"?a\/(.+?)"? "?b\/(.+?)"?$/.exec(lines[0] ?? '')
-    let oldPath: string | null = head?.[1] ?? null
-    let newPath: string | null = head?.[2] ?? null
+    // Either side of the header may be C-quoted on its own.
+    const head = /^("(?:[^"\\]|\\.)*"|a\/.+?) ("(?:[^"\\]|\\.)*"|b\/.+)$/.exec(lines[0] ?? '')
+    let oldPath: string | null = head ? stripPrefix(head[1]) : null
+    let newPath: string | null = head ? stripPrefix(head[2]) : null
     let binary = false
     let bodyStart = lines.length
     for (let i = 1; i < lines.length; i++) {

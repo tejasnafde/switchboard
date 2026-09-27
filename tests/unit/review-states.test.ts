@@ -11,7 +11,7 @@ import {
   rowSubtitle,
   shortAgo,
 } from '../../src/renderer/components/reviews/review-states'
-import { parseHunks, splitGitDiff } from '../../src/shared/unified-diff'
+import { parseHunks, splitGitDiff, unquoteGitPath } from '../../src/shared/unified-diff'
 import type { PrError, PrErrorKind, PrListData, PrSummary, RepoRef } from '../../src/shared/pull-requests'
 
 const gh: RepoRef = { host: 'github', owner: 'o', name: 'switchboard' }
@@ -109,6 +109,31 @@ describe('unified diff', () => {
     expect(parsed).toEqual(parseHunks(patch.replace(/\r\n/g, '\n')))
     expect(parsed.hunks[0].header).toBe('@@ -1,2 +1,2 @@ fn()')
     expect(parsed.hunks[0].lines.map((l) => l.text)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('decodes git C-quoted paths (octal UTF-8 bytes, escapes) in the header and the ---/+++ lines', () => {
+    const q = '"a/dir/na\\303\\257ve.py"'
+    const diff = [
+      `diff --git ${q} "b/dir/na\\303\\257ve.py"`,
+      `--- ${q}`,
+      '+++ "b/dir/na\\303\\257ve.py"',
+      '@@ -1 +1 @@',
+      '-a',
+      '+b',
+      'diff --git "a/tab\\there \\"q\\".md" b/plain.md',
+      'similarity index 100%',
+    ].join('\n')
+    const files = splitGitDiff(diff)
+    expect(files.map((f) => [f.oldPath, f.newPath])).toEqual([
+      ['dir/naïve.py', 'dir/naïve.py'],
+      ['tab\there "q".md', 'plain.md'],
+    ])
+    expect(files[0].patch.startsWith('@@ -1 +1 @@')).toBe(true)
+  })
+
+  it('leaves an unquoted path alone, backslashes included', () => {
+    expect(unquoteGitPath('dir\\file.txt')).toBe('dir\\file.txt')
+    expect(unquoteGitPath('"\\342\\234\\223 done"')).toBe('✓ done')
   })
 
   it('reads quoted paths with spaces and a pure rename', () => {
