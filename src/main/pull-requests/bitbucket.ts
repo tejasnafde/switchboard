@@ -17,14 +17,17 @@ import type {
   PrDetail,
   PrError,
   PrRef,
+  PrReviewerCandidate,
   PrSummary,
   RepoRef,
   SourceControlTestResult,
 } from '@shared/pull-requests'
-import { BITBUCKET_READ_SCOPES, prKey } from '@shared/pull-requests'
+import { BITBUCKET_READ_SCOPES, prKey, repoKey } from '@shared/pull-requests'
 import { createMainLogger } from '../logger'
 import { VersionedCache } from './cache'
 import {
+  conflictedPaths,
+  mapBbCandidates,
   mapBbComments,
   mapBbDetail,
   mapBbFiles,
@@ -35,9 +38,11 @@ import {
   type BbComment,
   type BbDiffstat,
   type BbEnrichment,
+  type BbFileConflict,
   type BbPullRequest,
   type BbStatus,
   type BbViewer,
+  type BbWorkspaceMember,
 } from './bitbucket-map'
 import { PrHostError, type PullRequestProvider, type RepoListResult } from './provider'
 
@@ -49,6 +54,8 @@ const MAX_PAGES = 5
 const MERGED_WINDOW_DAYS = 7
 /** Running checks are re-read after this even when the PR has not changed. */
 const PENDING_CHECKS_MAX_AGE_MS = 4 * 60_000
+/** Repository permission rarely changes; re-read it at most this often. */
+const PERMISSION_TTL_MS = 10 * 60_000
 const BB_REJECTED = 'Bitbucket rejected the email and API token.'
 const BB_MISSING_SCOPE = `The API token is missing a scope this needs (${BITBUCKET_READ_SCOPES.join(', ')}).`
 
@@ -211,6 +218,7 @@ export class BitbucketProvider implements PullRequestProvider {
   readonly host = 'bitbucket' as const
   private viewer: BbViewer | null = null
   private readonly enrichment = new VersionedCache<BbEnrichment>()
+  private readonly permission = new Map<string, { at: number; write: boolean }>()
 
   constructor(
     private readonly client: BitbucketClient,
@@ -225,24 +233,81 @@ export class BitbucketProvider implements PullRequestProvider {
     return this.viewer
   }
 
+  /** The list cannot say whether a PR conflicts, so it reads the conflicts with the checks and comments. */
   private async fetchEnrichment(ref: PrRef, pr: BbPullRequest): Promise<BbEnrichment> {
     const hash = pr.source.commit?.hash
-    const [statuses, comments] = await Promise.all([
+    const [statuses, comments, conflictedFiles] = await Promise.all([
       hash ? this.client.paged<BbStatus>(`${repoPath(ref)}/commit/${hash}/statuses?pagelen=100`, 1) : Promise.resolve([]),
       this.client.paged<BbComment>(`${prPath(ref)}/comments?pagelen=100`),
+      pr.state === 'OPEN' ? this.conflicts(ref) : Promise.resolve([]),
     ])
-    return { checks: mapBbStatuses(statuses), unresolvedConversations: unresolvedCount(mapBbComments(comments)) }
+    return { checks: mapBbStatuses(statuses), unresolvedConversations: unresolvedCount(mapBbComments(comments)), conflictedFiles }
   }
 
-  /** Checks and open conversations for an open PR, re-read only when the PR changed or checks were still running. */
+  /**
+   * `GET /pullrequests/{id}/conflicts` (read:pullrequest, redirecting to the
+   * repository's file-conflicts). The diffstat's old "merge conflict" status
+   * came from the merge preview Atlassian removed on 2026-09-04. `null` when
+   * the read fails for anything but the account or the network, so one
+   * unreadable answer blanks the conflict state instead of the whole list.
+   */
+  private async conflicts(ref: PrRef): Promise<string[] | null> {
+    try {
+      return conflictedPaths(await this.client.paged<BbFileConflict>(`${prPath(ref)}/conflicts?pagelen=100`))
+    } catch (err) {
+      if (!(err instanceof PrHostError) || err.error.kind === 'token_rejected' || err.error.kind === 'offline') throw err
+      log.warn('reading pull request conflicts failed', { number: ref.number, kind: err.error.kind })
+      return null
+    }
+  }
+
+  private diffstat(ref: PrRef): Promise<BbDiffstat[]> {
+    return this.client.paged<BbDiffstat>(`${prPath(ref)}/diffstat?pagelen=500`)
+  }
+
+  /**
+   * Checks, open conversations and conflicts for an open PR, re-read only
+   * when the PR changed, its target branch moved (which is what makes a
+   * conflict appear without the PR changing), or checks were still running.
+   * The list asks at most as often as the refresh rule allows.
+   */
   private async enrich(ref: PrRef, pr: BbPullRequest): Promise<BbEnrichment> {
     const key = prKey(ref)
-    const cached = this.enrichment.get(key, pr.updated_on)
+    const version = `${pr.updated_on}|${pr.destination.commit?.hash ?? ''}`
+    const cached = this.enrichment.get(key, version)
     if (cached) return cached
     const fresh = await this.fetchEnrichment(ref, pr)
     const running = fresh.checks.some((c) => c.state === 'pending')
-    this.enrichment.set(key, pr.updated_on, fresh, running ? { maxAgeMs: PENDING_CHECKS_MAX_AGE_MS } : {})
+    this.enrichment.set(key, version, fresh, running ? { maxAgeMs: PENDING_CHECKS_MAX_AGE_MS } : {})
     return fresh
+  }
+
+  /**
+   * Whether the account can write to the repository, which Bitbucket asks for
+   * to decline or edit someone else's pull request. Read from
+   * `/user/workspaces/{workspace}/permissions/repositories` (API token,
+   * read:repository:bitbucket). `/user/permissions/repositories` was removed
+   * by Atlassian and is never called. A refused or unreadable permission means
+   * "not as far as we can tell": the controls stay hidden, and a write the
+   * host refuses anyway comes back as its 403.
+   */
+  private async canWriteRepo(repo: RepoRef): Promise<boolean> {
+    const key = repoKey(repo)
+    const hit = this.permission.get(key)
+    if (hit && this.now() - hit.at < PERMISSION_TTL_MS) return hit.write
+    const fullName = `${repo.owner}/${repo.name}`.toLowerCase()
+    let write = false
+    try {
+      const q = encodeURIComponent(`repository.full_name="${repo.owner}/${repo.name}"`)
+      const perms = await this.client.paged<{ permission?: string; repository?: { full_name?: string } }>(
+        `/user/workspaces/${encodeURIComponent(repo.owner)}/permissions/repositories?q=${q}`, 1)
+      write = perms.some((p) => p.repository?.full_name?.toLowerCase() === fullName && (p.permission === 'write' || p.permission === 'admin'))
+    } catch (err) {
+      if (!(err instanceof PrHostError)) throw err
+      log.info('reading repository permission failed; treating as no write access', { repo: key, kind: err.error.kind })
+    }
+    this.permission.set(key, { at: this.now(), write })
+    return write
   }
 
   private involved(pr: BbPullRequest, viewer: BbViewer): boolean {
@@ -281,20 +346,22 @@ export class BitbucketProvider implements PullRequestProvider {
   async detail(ref: PrRef): Promise<PrDetail> {
     const viewer = await this.currentUser()
     const pr = await this.client.json<BbPullRequest>(prPath(ref))
-    const [extra, diffstat, activity] = await Promise.all([
+    const [extra, diffstat, activity, canWrite] = await Promise.all([
       this.fetchEnrichment(ref, pr),
-      this.client.paged<BbDiffstat>(`${prPath(ref)}/diffstat?pagelen=500`),
+      this.diffstat(ref),
       this.client.paged<BbActivity>(`${prPath(ref)}/activity?pagelen=50`, 1),
+      this.canWriteRepo(ref),
     ])
-    return mapBbDetail(ref, pr, viewer, extra, diffstat, activity)
+    return mapBbDetail(ref, pr, viewer, extra, diffstat, activity, canWrite)
   }
 
   async files(ref: PrRef): Promise<PrChangedFile[]> {
-    const [diffstat, diff] = await Promise.all([
-      this.client.paged<BbDiffstat>(`${prPath(ref)}/diffstat?pagelen=500`),
+    const [diffstat, diff, conflicted] = await Promise.all([
+      this.diffstat(ref),
       this.client.text(`${prPath(ref)}/diff`),
+      this.conflicts(ref),
     ])
-    return mapBbFiles(diffstat, diff)
+    return mapBbFiles(diffstat, diff, conflicted ?? [])
   }
 
   async conversations(ref: PrRef): Promise<PrConversation[]> {
@@ -364,6 +431,45 @@ export class BitbucketProvider implements PullRequestProvider {
   async rerunCheck(): Promise<void> {
     throw new PrHostError({ kind: 'forbidden', host: 'bitbucket', message: "Bitbucket's API cannot re-run a pipeline." })
   }
+
+  /** Workspace members; a token without the workspace read scope sees none, and the card still offers recent reviewers. */
+  async reviewerCandidates(repo: RepoRef): Promise<PrReviewerCandidate[]> {
+    try {
+      return mapBbCandidates(await this.client.paged<BbWorkspaceMember>(`/workspaces/${encodeURIComponent(repo.owner)}/members?pagelen=100`))
+    } catch (err) {
+      if (!(err instanceof PrHostError) || err.error.kind === 'offline') throw err
+      log.warn('listing workspace members failed', { workspace: repo.owner, kind: err.error.kind })
+      return []
+    }
+  }
+
+  /**
+   * Bitbucket has no add-one-reviewer call: PUT the PR with the whole list.
+   * The list is read just before, so a reviewer someone added in between
+   * survives unless it lands between these two requests.
+   */
+  private async putReviewers(ref: PrRef, edit: (uuids: string[]) => string[]): Promise<void> {
+    const pr = await this.client.json<BbPullRequest>(prPath(ref))
+    const current = (pr.reviewers ?? []).map((u) => u.uuid).filter((u): u is string => !!u)
+    await this.client.send('PUT', prPath(ref), bbReviewersBody(pr.title, edit(current)))
+  }
+
+  async addReviewer(ref: PrRef, reviewer: string): Promise<void> {
+    await this.putReviewers(ref, (uuids) => (uuids.includes(reviewer) ? uuids : [...uuids, reviewer]))
+  }
+
+  async removeReviewer(ref: PrRef, reviewer: string): Promise<void> {
+    await this.putReviewers(ref, (uuids) => uuids.filter((u) => u !== reviewer))
+  }
+
+  async decline(ref: PrRef): Promise<void> {
+    await this.client.send('POST', `${prPath(ref)}/decline`)
+  }
+}
+
+/** Bitbucket's PUT needs the title; fields left out (the description) are not touched. */
+export function bbReviewersBody(title: string, uuids: readonly string[]): { title: string; reviewers: Array<{ uuid: string }> } {
+  return { title, reviewers: uuids.map((uuid) => ({ uuid })) }
 }
 
 /** Repositories checked by one Test, and how many at once. */

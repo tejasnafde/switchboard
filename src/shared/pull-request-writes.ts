@@ -1,7 +1,8 @@
 /**
  * The human write actions on a pull request: reply to a conversation,
  * resolve or unresolve it, comment on a line or on the whole PR, submit a
- * review, merge, and re-run a failed check.
+ * review, merge, re-run a failed check, add or remove a reviewer, and
+ * decline (Bitbucket) or close (GitHub) it.
  *
  * The client sends these inputs; the backend runs them through the
  * `validate*` functions here before anything reaches a host, whatever the
@@ -9,7 +10,7 @@
  * and default, who may approve, when a review can be submitted, the merge
  * pre-check) are pure and live here too.
  */
-import type { MergeStrategy, PrConversation, PrChangedFile, PrDetail, PrError, PrHost, PrViewer } from './pull-requests'
+import type { MergeStrategy, PrConversation, PrChangedFile, PrDetail, PrError, PrHost, PrReviewer, PrReviewerCandidate, PrSummary, PrViewer } from './pull-requests'
 
 /** GitHub caps a comment at 65,536 characters; stay under it so a host never cuts one. */
 export const PR_TEXT_MAX_CHARS = 60_000
@@ -63,6 +64,11 @@ export interface MergeInput {
 
 export interface RerunInput {
   checkId: string
+}
+
+export interface ReviewerInput {
+  /** `PrReviewer.id` / `PrReviewerCandidate.id`. */
+  reviewer: string
 }
 
 /** The reads a write changed, which the client re-reads after it succeeds. */
@@ -268,6 +274,96 @@ export function validateRerun(host: PrHost, input: unknown): Valid<RerunInput> {
     return invalid(host, 'Not a check of this pull request.')
   }
   return { ok: true, value: { checkId: input.checkId } }
+}
+
+/** GitHub logins and `team:<slug>`; Bitbucket account uuids (`{8-4-4-4-12}`). */
+export function isReviewerId(host: PrHost, value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  if (host === 'github') return /^(?:team:[A-Za-z0-9._-]{1,100}|[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))$/.test(value)
+  return /^\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}$/i.test(value)
+}
+
+export function validateReviewer(host: PrHost, input: unknown): Valid<ReviewerInput> {
+  if (!isRecord(input) || !isReviewerId(host, input.reviewer)) return invalid(host, 'Not a reviewer on this host.')
+  if (host === 'bitbucket' && input.reviewer.startsWith('team:')) return invalid(host, 'Bitbucket has no team reviewers.')
+  return { ok: true, value: { reviewer: input.reviewer } }
+}
+
+// ─── Reviewers and decline ────────────────────────────────────────
+
+/**
+ * GitHub removes only an outstanding request: a review already submitted
+ * stays on the PR. Bitbucket drops anyone from its reviewers list.
+ */
+export function canRemoveReviewer(host: PrHost, reviewer: PrReviewer): boolean {
+  if (!reviewer.id || !reviewer.requested) return false
+  return host === 'bitbucket' || reviewer.state === 'pending'
+}
+
+/** The backend's re-read before a reviewer change or a decline. `null` means go. */
+export function managePrecheck(fresh: PrDetail, what: string): PrError | null {
+  const host = fresh.ref.host
+  if (fresh.state !== 'open') return { kind: 'stale', host, message: `This pull request is ${fresh.state} now.` }
+  if (!fresh.viewerCanManage) return { kind: 'forbidden', host, message: `Only the author or someone with write access to the repository can ${what}.` }
+  return null
+}
+
+export function addReviewerPrecheck(fresh: PrDetail, input: ReviewerInput): PrError | null {
+  const refused = managePrecheck(fresh, 'change the reviewers')
+  if (refused) return refused
+  const host = fresh.ref.host
+  if (fresh.reviewers.some((r) => r.id === input.reviewer && r.requested)) return { kind: 'stale', host, message: 'They are a reviewer already.' }
+  // Bitbucket ids are uuids, so the login is no use there; GitHub logins match case-insensitively.
+  const isAuthor = input.reviewer === fresh.authorId
+    || (host === 'github' && fresh.author.login.toLowerCase() === input.reviewer.toLowerCase())
+  if (isAuthor) return { kind: 'invalid', host, message: 'The author cannot review their own pull request.' }
+  return null
+}
+
+export function removeReviewerPrecheck(fresh: PrDetail, input: ReviewerInput): PrError | null {
+  const refused = managePrecheck(fresh, 'change the reviewers')
+  if (refused) return refused
+  const reviewer = fresh.reviewers.find((r) => r.id === input.reviewer)
+  if (!reviewer || !reviewer.requested) return { kind: 'stale', host: fresh.ref.host, message: 'They are not a reviewer any more.' }
+  if (!canRemoveReviewer(fresh.ref.host, reviewer)) return { kind: 'invalid', host: fresh.ref.host, message: 'GitHub keeps a submitted review; only a pending request can be removed.' }
+  return null
+}
+
+/**
+ * The Add reviewer list: people who reviewed listed PRs of this repository,
+ * most reviews first, then the members the token can see (people before
+ * teams, by name). One entry per id; the first place it appears wins.
+ */
+export function orderReviewerCandidates(recent: readonly PrReviewerCandidate[], members: readonly PrReviewerCandidate[]): PrReviewerCandidate[] {
+  const byName = (a: PrReviewerCandidate, b: PrReviewerCandidate) => a.person.displayName.localeCompare(b.person.displayName)
+  const ranked = [...recent].sort((a, b) => b.reviewed - a.reviewed || byName(a, b))
+  const rest = [...members].sort((a, b) => (a.kind === b.kind ? byName(a, b) : a.kind === 'user' ? -1 : 1))
+  const seen = new Set<string>()
+  return [...ranked, ...rest].filter((c) => {
+    if (seen.has(c.id)) return false
+    seen.add(c.id)
+    return true
+  })
+}
+
+/** Candidates minus the author and anyone already asked. */
+export function candidatesFor(candidates: readonly PrReviewerCandidate[], pr: Pick<PrSummary, 'author' | 'authorId' | 'reviewers'>): PrReviewerCandidate[] {
+  const taken = new Set(pr.reviewers.filter((r) => r.requested && r.id).map((r) => r.id))
+  return candidates.filter((c) => !taken.has(c.id) && c.id !== pr.authorId && c.person.login !== pr.author.login)
+}
+
+/** Counts reviews in the listed PRs of one repository, per reviewer. */
+export function recentReviewers(prs: readonly Pick<PrSummary, 'reviewers'>[]): PrReviewerCandidate[] {
+  const out = new Map<string, PrReviewerCandidate>()
+  for (const pr of prs) {
+    for (const r of pr.reviewers) {
+      if (!r.id || r.state === 'pending') continue
+      const hit = out.get(r.id) ?? { id: r.id, person: r.person, kind: r.id.startsWith('team:') ? 'team' as const : 'user' as const, reviewed: 0 }
+      hit.reviewed++
+      out.set(r.id, hit)
+    }
+  }
+  return [...out.values()]
 }
 
 // ─── Checks against the fresh PR ──────────────────────────────────

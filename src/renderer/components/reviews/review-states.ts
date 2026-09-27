@@ -74,6 +74,24 @@ export function mergeConfirmCopy(pr: Pick<PrSummary, 'ref' | 'sourceBranch' | 't
   }
 }
 
+/** "Conflicts with main in 2 files"; GitHub does not name the files, so there it stops at the branch. */
+export function conflictPhrase(pr: Pick<PrSummary, 'targetBranch' | 'conflictedFiles'>): string {
+  const n = pr.conflictedFiles.length
+  return n > 0 ? `Conflicts with ${pr.targetBranch} in ${n} ${n === 1 ? 'file' : 'files'}` : `Conflicts with ${pr.targetBranch}`
+}
+
+/** The decline / close confirm names the PR and says it changes it for everyone. */
+export function declineConfirmCopy(pr: Pick<PrSummary, 'ref' | 'title'>): { title: string; body: string; confirmLabel: string; destructive: true } {
+  const host = PR_HOST_LABEL[pr.ref.host]
+  const verb = HOST_CAPABILITIES[pr.ref.host].declineLabel
+  return {
+    title: `${verb} #${pr.ref.number}?`,
+    body: `"${pr.title}" is ${verb === 'Close' ? 'closed' : 'declined'} on ${host} for everyone: the author, the reviewers and anyone watching it. Nothing is merged. This cannot be undone from Switchboard.`,
+    confirmLabel: verb,
+    destructive: true,
+  }
+}
+
 /** The whole list is one state: loading, an error, nothing to read, or rows (maybe with notices). */
 export type ReviewListState =
   | { kind: 'loading' }

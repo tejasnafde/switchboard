@@ -12,8 +12,12 @@
  * - Merged this week: merged in the last 7 days.
  *
  * Closed-without-merge and older merged PRs are not listed.
+ *
+ * The list shows those groups (by status, the default) or one collapsible
+ * section per repository with the rows in the same status order. A PR the
+ * user hid is left out until `hiddenComesBack` says otherwise.
  */
-import { mergeBlockers, type PrSummary } from './pull-requests'
+import { mergeBlockers, prKey, repoKey, type PrSummary } from './pull-requests'
 
 export type PrGroupId = 'needs-you' | 'waiting' | 'ready' | 'merged'
 
@@ -29,7 +33,7 @@ export const PR_GROUP_LABEL: Record<PrGroupId, string> = {
 export const MERGED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
 /** Row icon. The renderer maps each to one glyph and one tone. */
-export type PrRowIcon = 'failed' | 'review' | 'conversation' | 'running' | 'waiting' | 'ready' | 'merged' | 'draft'
+export type PrRowIcon = 'conflict' | 'failed' | 'review' | 'conversation' | 'running' | 'waiting' | 'ready' | 'merged' | 'draft'
 
 export interface PrRowStatus {
   group: PrGroupId
@@ -58,11 +62,14 @@ export function prRowStatus(pr: PrSummary, now: number): PrRowStatus | null {
 
   if (!pr.viewer.isAuthor) {
     if (pr.viewer.isRequestedReviewer) return { group: 'needs-you', icon: 'review', phrase: 'your review' }
+    if (pr.mergeConflicts) return { group: 'waiting', icon: 'conflict', phrase: 'merge conflicts' }
     if (pr.checks.state === 'pending') return { group: 'waiting', icon: 'running', phrase: 'checks running' }
     return { group: 'waiting', icon: 'waiting', phrase: pr.viewer.hasReviewed ? 'you reviewed' : approvalsPhrase(pr) }
   }
 
   if (pr.draft) return { group: 'waiting', icon: 'draft', phrase: 'draft' }
+  // Nothing else merges until the conflicts go, so they outrank a failed build.
+  if (pr.mergeConflicts) return { group: 'needs-you', icon: 'conflict', phrase: 'merge conflicts' }
   if (pr.checks.state === 'failure') return { group: 'needs-you', icon: 'failed', phrase: 'build failed' }
   const open = pr.unresolvedConversations ?? 0
   if (open > 0) return { group: 'needs-you', icon: 'conversation', phrase: plural(open, 'open conversation') }
@@ -103,6 +110,57 @@ export function groupPullRequests(prs: readonly PrSummary[], now: number): PrGro
   return out
 }
 
+export type PrGroupBy = 'status' | 'repository'
+
+export interface PrRepoSection {
+  /** `repoKey`, which the collapsed setting stores. */
+  key: string
+  label: string
+  /** Listed rows in the repository, status order. */
+  count: number
+  collapsed: boolean
+  /** Rows to draw: none while collapsed, unless a filter is typed (matches always show). */
+  prs: PrGroup['prs']
+}
+
+/**
+ * By repository: one section per repository with its rows in the status
+ * order (needs you first, then as `groupPullRequests`). Sections keep the
+ * order of their first row, so the repository that needs you most comes
+ * first.
+ */
+export function groupPullRequestsByRepo(prs: readonly PrSummary[], now: number, collapsed: readonly string[], filtering: boolean): PrRepoSection[] {
+  const sections = new Map<string, PrGroup['prs']>()
+  for (const group of groupPullRequests(prs, now)) {
+    for (const row of group.prs) {
+      const key = repoKey(row.pr.ref)
+      const list = sections.get(key) ?? []
+      list.push(row)
+      sections.set(key, list)
+    }
+  }
+  return [...sections].map(([key, rows]) => {
+    const isCollapsed = collapsed.includes(key)
+    const { owner, name } = rows[0].pr.ref
+    return { key, label: `${owner} / ${name}`, count: rows.length, collapsed: isCollapsed, prs: isCollapsed && !filtering ? [] : rows }
+  })
+}
+
+export function toggleCollapsed(collapsed: readonly string[], key: string): string[] {
+  return collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]
+}
+
+/**
+ * A hidden PR comes back on its own once it changed after it was hidden AND
+ * it needs you now (its row is in Needs you: your review was asked for, your
+ * build failed, a conversation or conflict is on you). Anything else keeps it
+ * hidden; the user can always Show it. Coming back clears the hide, so it
+ * does not vanish again when it stops needing you.
+ */
+export function hiddenComesBack(pr: PrSummary, hiddenAt: number, now: number): boolean {
+  return pr.updatedAt > hiddenAt && prRowStatus(pr, now)?.group === 'needs-you'
+}
+
 /** Case-insensitive filter over title, repo, number and author. */
 export function filterPullRequests<T extends PrSummary>(prs: readonly T[], query: string): T[] {
   const q = query.trim().toLowerCase().replace(/^#/, '')
@@ -110,4 +168,18 @@ export function filterPullRequests<T extends PrSummary>(prs: readonly T[], query
   return prs.filter((pr) =>
     [pr.title, pr.ref.name, pr.ref.owner, String(pr.ref.number), pr.author.login, pr.author.displayName, pr.sourceBranch]
       .some((field) => field.toLowerCase().includes(q)))
+}
+
+/** Splits the stored hides for one list read: the keys still hidden, and the ones whose PR came back (to clear). */
+export function applyHidden(prs: readonly PrSummary[], hiddenAt: ReadonlyMap<string, number>, now: number): { hidden: string[]; cameBack: string[] } {
+  const hidden: string[] = []
+  const cameBack: string[] = []
+  for (const pr of prs) {
+    const key = prKey(pr.ref)
+    const at = hiddenAt.get(key)
+    if (at === undefined) continue
+    if (hiddenComesBack(pr, at, now)) cameBack.push(key)
+    else hidden.push(key)
+  }
+  return { hidden, cameBack }
 }

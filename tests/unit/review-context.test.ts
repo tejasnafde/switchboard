@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { conversationItem, diffAround, expandReviewContext, REVIEW_LABEL_MAX_CHARS, reviewContextLabel, type ReviewContext } from '../../src/shared/review-context'
+import { conflictsItem, conversationItem, diffAround, expandReviewContext, REVIEW_LABEL_MAX_CHARS, reviewContextLabel, type ReviewContext } from '../../src/shared/review-context'
 import type { PrChangedFile, PrConversation } from '../../src/shared/pull-requests'
 import { parseHunks } from '../../src/shared/unified-diff'
 
@@ -117,5 +117,26 @@ describe('review context', () => {
     expect(new TextEncoder().encode(text).length).toBeLessThanOrEqual(12 * 1024)
     expect(text).toContain('(cut short)')
     expect(text).toContain('longer than 12 KiB')
+  })
+})
+
+describe('merge conflicts context', () => {
+  const pr = { targetBranch: 'main', sourceBranch: 'feat/sync-backoff', conflictedFiles: ['sync/worker.py', 'sync/config.py'] }
+
+  it('labels the pill with the base branch and the files', () => {
+    expect(reviewContextLabel(ctx([conflictsItem(pr)]))).toBe('Merge conflicts with main · #612 · worker.py, config.py')
+  })
+
+  it('tells the agent to merge the base in and never rebase or force-push', () => {
+    const text = expandReviewContext(ctx([conflictsItem(pr)]))
+    expect(text).toContain('[1] Merge conflicts: feat/sync-backoff conflicts with main.')
+    expect(text).toContain('Conflicted files: sync/worker.py, sync/config.py')
+    expect(text).toContain('Merge the base branch (main) into this branch (feat/sync-backoff) and resolve the conflicts, then push. Never rebase or force-push.')
+  })
+
+  it('says the host did not name the files (GitHub)', () => {
+    const item = conflictsItem({ ...pr, conflictedFiles: [] })
+    expect(expandReviewContext(ctx([item]))).toContain('The host does not name the conflicted files; find them with git.')
+    expect(reviewContextLabel(ctx([item]))).toBe('Merge conflicts with main · #612 · feat/sync-backoff into main')
   })
 })

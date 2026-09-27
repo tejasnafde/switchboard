@@ -124,6 +124,44 @@ describe('GitHub write requests', () => {
   })
 })
 
+describe('GitHub reviewer and close requests', () => {
+  const pulls = 'repos/tejasnafde/switchboard/pulls/161'
+
+  it('requests and removes a person in reviewers and a team in team_reviewers', async () => {
+    const { provider, calls } = fakeGh()
+    await provider.addReviewer(ref, 'pankaj')
+    await provider.addReviewer(ref, 'team:core')
+    await provider.removeReviewer(ref, 'pankaj')
+    expect(calls).toEqual([
+      { args: ['api', '--method', 'POST', `${pulls}/requested_reviewers`, '--input', '-'], body: { reviewers: ['pankaj'] } },
+      { args: ['api', '--method', 'POST', `${pulls}/requested_reviewers`, '--input', '-'], body: { team_reviewers: ['core'] } },
+      { args: ['api', '--method', 'DELETE', `${pulls}/requested_reviewers`, '--input', '-'], body: { reviewers: ['pankaj'] } },
+    ])
+  })
+
+  it('closes with a PATCH to state closed', async () => {
+    const { provider, calls } = fakeGh()
+    await provider.decline(ref)
+    expect(calls).toEqual([{ args: ['api', '--method', 'PATCH', pulls, '--input', '-'], body: { state: 'closed' } }])
+  })
+
+  it('offers collaborators and teams, and none of a list the token may not read', async () => {
+    const { provider, calls } = fakeGh([
+      ok(JSON.stringify([{ login: 'pankaj', avatar_url: null }])),
+      { stdout: '{"message":"Not Found"}', stderr: 'gh: Not Found (HTTP 404)\n', code: 1 },
+    ])
+    const candidates = await provider.reviewerCandidates({ host: 'github', owner: 'tejasnafde', name: 'switchboard' })
+    expect(calls.map((c) => c.args[1])).toEqual(['repos/tejasnafde/switchboard/collaborators?per_page=100', 'repos/tejasnafde/switchboard/teams?per_page=100'])
+    expect(candidates).toEqual([{ id: 'pankaj', person: { login: 'pankaj', displayName: 'pankaj', avatarUrl: null }, kind: 'user', reviewed: 0 }])
+  })
+
+  it('still says so when gh is signed out', async () => {
+    const out = { stdout: '', stderr: 'gh: Bad credentials (HTTP 401)\n', code: 1 }
+    const { provider } = fakeGh([out, out])
+    await expect(provider.reviewerCandidates({ host: 'github', owner: 'o', name: 'r' })).rejects.toMatchObject({ error: { kind: 'token_rejected' } })
+  })
+})
+
 describe('actionsRunId', () => {
   it('reads the run id from an Actions job link and nothing else', () => {
     expect(actionsRunId('https://github.com/tejasnafde/switchboard/actions/runs/36317659179/job/108615304998')).toBe('36317659179')

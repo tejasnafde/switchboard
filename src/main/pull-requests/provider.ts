@@ -14,6 +14,7 @@ import type {
   PrError,
   PrHost,
   PrRef,
+  PrReviewerCandidate,
   PrSummary,
   RepoRef,
 } from '@shared/pull-requests'
@@ -43,6 +44,13 @@ export interface PullRequestProvider {
   merge(ref: PrRef, strategy: MergeStrategy, headSha: string): Promise<void>
   /** `check.rerunId` is set; the service checked it is a failed check of this PR. */
   rerunCheck(ref: PrRef, check: PrCheck): Promise<void>
+  /** Who the token can see in the repository (collaborators and teams, workspace members). The service puts recent reviewers first. */
+  reviewerCandidates(repo: RepoRef): Promise<PrReviewerCandidate[]>
+  /** `reviewer` is a `PrReviewer.id` the service validated. */
+  addReviewer(ref: PrRef, reviewer: string): Promise<void>
+  removeReviewer(ref: PrRef, reviewer: string): Promise<void>
+  /** Bitbucket decline, GitHub close. */
+  decline(ref: PrRef): Promise<void>
 }
 
 /** A host failure already classified for the UI. Providers throw it; the service turns it into a result. */

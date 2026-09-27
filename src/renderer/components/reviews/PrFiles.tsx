@@ -1,7 +1,8 @@
 /**
  * Files tab: the changed files as a one-level tree (with each file's open
- * conversations and line counts), and the selected file's diff with its
- * inline threads.
+ * conversations and line counts, or "conflict" where the host says it
+ * conflicts with the target), and the selected file's diff with its inline
+ * threads.
  */
 import { useState } from 'react'
 import type { PrChangedFile, PrConversation, PrSummary } from '@shared/pull-requests'
@@ -62,12 +63,16 @@ function FilesBody({ pr, files, conversations, now }: { pr: PrSummary; files: Pr
                       active ? 'bg-[var(--bg-active)]' : 'bg-transparent hover:bg-[var(--bg-hover)]',
                     )}
                   >
-                    <Icon name="file" tone="dim" />
+                    {f.status === 'conflicted' ? <Icon name="conflict" tone="warn" /> : <Icon name="file" tone="dim" />}
                     <span className={cn('min-w-0 truncate', f.status === 'deleted' && 'line-through')}>{fileName(f.path)}</span>
                     <span className="ml-auto flex shrink-0 items-center gap-[6px] text-[11.5px] text-[var(--text-muted)] tabular-nums">
                       {open > 0 && <><Icon name="msg" tone="warn" size={12} />{open}</>}
-                      {f.additions > 0 && <span className="text-[var(--success)]">+{f.additions}</span>}
-                      {f.deletions > 0 && <span className="text-[var(--error)]">−{f.deletions}</span>}
+                      {f.status === 'conflicted'
+                        ? <span data-file-conflict className="text-[var(--warning)]">conflict</span>
+                        : <>
+                          {f.additions > 0 && <span className="text-[var(--success)]">+{f.additions}</span>}
+                          {f.deletions > 0 && <span className="text-[var(--error)]">−{f.deletions}</span>}
+                        </>}
                     </span>
                   </button>
                 )

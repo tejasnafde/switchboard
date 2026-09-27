@@ -1,0 +1,70 @@
+/**
+ * Hide from Reviews, through the IPC handlers over the demo pull requests:
+ * the list marks what is hidden, clears a hide whose PR came back
+ * (`hiddenComesBack`), and the hide channels refuse anything but a PR ref.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { hidden, unhideKeys, hide } = vi.hoisted(() => {
+  process.env.SB_DEMO_ADAPTER = '1'
+  return { hidden: new Map<string, number>(), unhideKeys: vi.fn(), hide: vi.fn() }
+})
+
+vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/shell-env', () => ({ childProcessEnv: () => process.env }))
+vi.mock('../../src/main/runtime', () => ({ userDataDir: () => '/nonexistent', getSafeStorage: () => null }))
+vi.mock('../../src/main/db/database', () => ({
+  getProjects: () => [],
+  listHiddenPullRequests: () => hidden,
+  unhidePullRequestKeys: unhideKeys,
+  hidePullRequest: hide,
+  unhidePullRequest: vi.fn(),
+}))
+
+import { registerPullRequestHandlers } from '../../src/main/ipc/pull-requests'
+import { PullRequestChannels } from '../../src/shared/ipc-channels'
+import type { PrListData, PrResult } from '../../src/shared/pull-requests'
+
+function handlers() {
+  const map = new Map<string, (...args: unknown[]) => unknown>()
+  registerPullRequestHandlers({ handle: (channel, fn) => { map.set(channel, fn as never) }, on: vi.fn(), emit: vi.fn() })
+  return map
+}
+
+const BOT = 'bitbucket:geoiq/ssg-bot-v2#612'
+const RETAIL = 'bitbucket:geoiq/retailiq#88'
+
+beforeEach(() => {
+  hidden.clear()
+  unhideKeys.mockClear()
+  hide.mockClear()
+})
+
+describe('pull-requests:list with hidden PRs', () => {
+  it('marks a quiet hidden PR and clears one that changed and needs you', async () => {
+    const longAgo = Date.now() - 30 * 24 * 3_600_000
+    hidden.set(BOT, longAgo) // updated since, and its conflicts are on you
+    hidden.set(RETAIL, longAgo) // updated since, but only waiting on others
+    const result = await handlers().get(PullRequestChannels.LIST)!() as PrResult<PrListData>
+    expect(result.ok && result.data.hidden).toEqual([RETAIL])
+    expect(unhideKeys).toHaveBeenCalledWith([BOT])
+  })
+
+  it('keeps a PR hidden that has not changed since', async () => {
+    hidden.set(BOT, Date.now() + 60_000)
+    const result = await handlers().get(PullRequestChannels.LIST)!() as PrResult<PrListData>
+    expect(result.ok && result.data.hidden).toEqual([BOT])
+    expect(unhideKeys).not.toHaveBeenCalled()
+  })
+})
+
+describe('pull-requests:hide', () => {
+  it('stores a pull request and refuses anything else', async () => {
+    const h = handlers().get(PullRequestChannels.HIDE)!
+    const ref = { host: 'github', owner: 'tejasnafde', name: 'switchboard', number: 161 }
+    expect(h(ref)).toEqual({ ok: true })
+    expect(hide).toHaveBeenCalledWith(ref)
+    expect(h({ host: 'gitlab', owner: 'x', name: 'y', number: 1 })).toMatchObject({ ok: false })
+    expect(hide).toHaveBeenCalledTimes(1)
+  })
+})

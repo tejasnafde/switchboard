@@ -22,6 +22,7 @@ import {
   type PrPerson,
   type PrRef,
   type PrReviewer,
+  type PrReviewerCandidate,
   type PrSummary,
   type RepoRef,
 } from '@shared/pull-requests'
@@ -38,6 +39,19 @@ const ME = person('tejas', 'Tejas')
 const PANKAJ = person('pankaj')
 const AKSHAYA = person('akshaya')
 const BACKEND = person('backend')
+const BARATH = person('barath')
+/** The workspace members / collaborators the demo token can see. */
+const CANDIDATES = [PANKAJ, AKSHAYA, BACKEND, BARATH]
+
+/** Bitbucket reviewer ids are account uuids (the write validation refuses anything else); GitHub's are logins. */
+const BB_UUID: Record<string, string> = {
+  tejas: '{00000000-0000-4000-8000-000000000001}',
+  pankaj: '{00000000-0000-4000-8000-000000000002}',
+  akshaya: '{00000000-0000-4000-8000-000000000003}',
+  backend: '{00000000-0000-4000-8000-000000000004}',
+  barath: '{00000000-0000-4000-8000-000000000005}',
+}
+const reviewerId = (host: RepoRef['host'], p: PrPerson): string => (host === 'bitbucket' ? BB_UUID[p.login] : p.login)
 
 const REPOS: Record<string, RepoRef> = {
   bot: { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2' },
@@ -60,8 +74,9 @@ interface Scripted {
   conversations: PrConversation[]
 }
 
-function file(path: string, additions: number, deletions: number, patch = ''): PrChangedFile {
-  return { path, oldPath: null, status: deletions === 0 && !patch ? 'added' : 'modified', additions, deletions, binary: false, truncated: false, hunks: parseHunks(patch).hunks }
+function file(path: string, additions: number, deletions: number, patch = '', conflicted = false): PrChangedFile {
+  const status = conflicted ? 'conflicted' : deletions === 0 && !patch ? 'added' : 'modified'
+  return { path, oldPath: null, status, additions, deletions, binary: false, truncated: false, hunks: parseHunks(patch).hunks }
 }
 
 const WORKER_PATCH = [
@@ -100,14 +115,19 @@ function scripted(now: number): Scripted[] {
     deletions: null,
     changedFiles: null,
     unresolvedConversations: 0,
+    mergeConflicts: false,
+    conflictedFiles: [],
     checks: rollupChecks([]),
     reviewers: [],
     approvals: { given: 0, required: null },
     viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false },
     projectPaths: [],
     ...over,
+    authorId: reviewerId(ref.host, over.author ?? ME) ?? null,
   })
-  const reviewer = (p: PrPerson, state: PrReviewer['state'], requested = true): PrReviewer => ({ person: p, state, requested })
+  const reviewer = (host: RepoRef['host'], p: PrPerson, state: PrReviewer['state'], requested = true): PrReviewer => ({ id: reviewerId(host, p), person: p, state, requested })
+  const bb = (p: PrPerson, state: PrReviewer['state'], requested = true) => reviewer('bitbucket', p, state, requested)
+  const gh = (p: PrPerson, state: PrReviewer['state'], requested = true) => reviewer('github', p, state, requested)
 
   const botChecks = [check('lint', 'success', 62_000), check('unit', 'success', 220_000), check('integration', 'failure', null), check('build image', 'success', 131_000)]
   // Bitbucket comment ids are numbers; the write validation refuses anything else.
@@ -136,8 +156,10 @@ function scripted(now: number): Scripted[] {
     deletions: 16,
     changedFiles: 7,
     unresolvedConversations: 3,
+    mergeConflicts: true,
+    conflictedFiles: ['sync/worker.py', 'sync/config.py'],
     checks: rollupChecks(botChecks),
-    reviewers: [reviewer(AKSHAYA, 'approved'), reviewer(PANKAJ, 'changes_requested'), reviewer(BACKEND, 'commented', false)],
+    reviewers: [bb(AKSHAYA, 'approved'), bb(PANKAJ, 'changes_requested'), bb(BACKEND, 'commented', false)],
     approvals: { given: 1, required: 2 },
   })
 
@@ -167,7 +189,7 @@ function scripted(now: number): Scripted[] {
     changedFiles: 9,
     unresolvedConversations: 2,
     checks: rollupChecks(sbChecks),
-    reviewers: [reviewer(ME, 'pending'), reviewer(PANKAJ, 'commented')],
+    reviewers: [gh(ME, 'pending'), gh(PANKAJ, 'commented')],
     approvals: { given: 0, required: 1 },
     viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false },
   })
@@ -176,23 +198,23 @@ function scripted(now: number): Scripted[] {
   const retail = base({ ...REPOS.retail, number: 88 }, {
     title: 'PowerBI recon export', sourceBranch: 'feat/powerbi-recon', updatedAt: now - 2 * HOUR,
     additions: 96, deletions: 12, changedFiles: 4, checks: rollupChecks(retailChecks),
-    reviewers: [reviewer(AKSHAYA, 'pending')], approvals: { given: 0, required: null },
+    reviewers: [bb(AKSHAYA, 'pending')], approvals: { given: 0, required: null },
   })
   const doctorChecks = [check('lint', 'success', 51_000), check('unit', 'success', 97_000)]
   const doctor = base({ ...REPOS.doctor, number: 40 }, {
     title: 'Doctor alert dedupe', sourceBranch: 'fix/alert-dedupe', updatedAt: now - 5 * HOUR,
     additions: 38, deletions: 9, changedFiles: 3, checks: rollupChecks(doctorChecks),
-    reviewers: [reviewer(PANKAJ, 'pending'), reviewer(BACKEND, 'pending')], approvals: { given: 0, required: 2 },
+    reviewers: [bb(PANKAJ, 'pending'), bb(BACKEND, 'pending')], approvals: { given: 0, required: 2 },
   })
   const readyChecks = [check('Test (ubuntu-latest)', 'success', 211_000), check('Test (windows-latest)', 'success', 294_000)]
   const ready = base({ ...REPOS.switchboard, number: 159 }, {
     title: 'Retry settings.json on Windows', sourceBranch: 'fix/settings-file-windows-rename', updatedAt: now - 6 * HOUR,
     additions: 475, deletions: 44, changedFiles: 10, checks: rollupChecks(readyChecks),
-    reviewers: [reviewer(AKSHAYA, 'approved')], approvals: { given: 1, required: 1 },
+    reviewers: [gh(AKSHAYA, 'approved')], approvals: { given: 1, required: 1 },
   })
   const merged = (number: number, title: string, ago: number): PrSummary => base({ ...REPOS.switchboard, number }, {
     title, state: 'merged', mergedAt: now - ago, updatedAt: now - ago, checks: rollupChecks(readyChecks),
-    reviewers: [reviewer(AKSHAYA, 'approved')], approvals: { given: 1, required: 1 },
+    reviewers: [gh(AKSHAYA, 'approved')], approvals: { given: 1, required: 1 },
   })
 
   const plain = (summary: PrSummary, checkList: PrCheck[]): Scripted => ({ summary, description: '', activity: [], checkList, files: [], conversations: [] })
@@ -208,9 +230,9 @@ function scripted(now: number): Scripted[] {
       ],
       checkList: botChecks,
       files: [
-        file('sync/worker.py', 42, 9, WORKER_PATCH),
+        file('sync/worker.py', 42, 9, WORKER_PATCH, true),
         file('sync/backoff.py', 31, 0, '@@ -0,0 +1,3 @@\n+def next_delay(attempt: int, base: float, cap: float) -> float:\n+    """Exponential backoff, capped."""\n+    return min(cap, base * 2 ** attempt)'),
-        file('sync/config.py', 4, 1, '@@ -10,3 +10,6 @@\n RETRY = True\n-RETRY_SECONDS = 30\n+RETRY_BASE = 1.0\n+RETRY_CAP = 300.0\n+RETRY_JITTER = 0.2'),
+        file('sync/config.py', 4, 1, '@@ -10,3 +10,6 @@\n RETRY = True\n-RETRY_SECONDS = 30\n+RETRY_BASE = 1.0\n+RETRY_CAP = 300.0\n+RETRY_JITTER = 0.2', true),
         file('tests/test_worker.py', 28, 0),
         file('tests/test_backoff.py', 40, 0),
         file('README.md', 5, 0),
@@ -265,11 +287,16 @@ interface Overlay {
   merged: Set<number>
   review: Map<number, PrReviewer['state']>
   rerun: Set<string>
+  /** Reviewer ids added, and removed, per PR number. */
+  added: Map<number, string[]>
+  removed: Map<number, string[]>
+  declined: Set<number>
 }
 
 class DemoProvider implements PullRequestProvider {
   private readonly overlay: Overlay = {
     replies: new Map(), resolved: new Map(), threads: new Map(), activity: new Map(), merged: new Set(), review: new Map(), rerun: new Set(),
+    added: new Map(), removed: new Map(), declined: new Set(),
   }
   private seq = 0
 
@@ -285,13 +312,16 @@ class DemoProvider implements PullRequestProvider {
     }))
     const checkList = s.checkList.map((c) => (o.rerun.has(`${n}:${c.id}`) ? { ...c, state: 'pending' as const, durationMs: null } : c))
     const verdict = o.review.get(n)
-    const reviewers = verdict
-      ? [...s.summary.reviewers.filter((r) => r.person.login !== ME.login), { person: ME, state: verdict, requested: true }]
-      : s.summary.reviewers
+    const host = s.summary.ref.host
+    const reviewers = (verdict
+      ? [...s.summary.reviewers.filter((r) => r.person.login !== ME.login), { id: reviewerId(host, ME), person: ME, state: verdict, requested: true }]
+      : s.summary.reviewers)
+      .filter((r) => !(o.removed.get(n) ?? []).includes(r.id ?? ''))
+      .concat((o.added.get(n) ?? []).map((id) => ({ id, person: CANDIDATES.find((p) => reviewerId(host, p) === id) ?? person(id), state: 'pending' as const, requested: true })))
     const merged = o.merged.has(n)
     const summary: PrSummary = {
       ...s.summary,
-      state: merged ? 'merged' : s.summary.state,
+      state: merged ? 'merged' : o.declined.has(n) ? 'closed' : s.summary.state,
       mergedAt: merged ? this.now() : s.summary.mergedAt,
       unresolvedConversations: s.conversations.length > 0 || o.threads.has(n) ? conversations.filter((c) => !c.resolved).length : s.summary.unresolvedConversations,
       checks: rollupChecks(checkList),
@@ -327,6 +357,7 @@ class DemoProvider implements PullRequestProvider {
       mergeStrategies: MERGE_STRATEGIES[this.host],
       activity: s.activity,
       checkList: s.checkList,
+      viewerCanManage: s.summary.viewer.isAuthor,
     }
   }
 
@@ -399,6 +430,27 @@ class DemoProvider implements PullRequestProvider {
   async rerunCheck(ref: PrRef, check: PrCheck): Promise<void> {
     this.record('rerun-check', ref, { checkId: check.id, rerunId: check.rerunId })
     this.overlay.rerun.add(`${ref.number}:${check.id}`)
+  }
+
+  async reviewerCandidates(): Promise<PrReviewerCandidate[]> {
+    return CANDIDATES.map((p) => ({ id: reviewerId(this.host, p), person: p, kind: 'user', reviewed: 0 }))
+  }
+
+  async addReviewer(ref: PrRef, reviewer: string): Promise<void> {
+    this.record('add-reviewer', ref, { reviewer })
+    this.overlay.added.set(ref.number, [...(this.overlay.added.get(ref.number) ?? []), reviewer])
+    this.overlay.removed.set(ref.number, (this.overlay.removed.get(ref.number) ?? []).filter((id) => id !== reviewer))
+  }
+
+  async removeReviewer(ref: PrRef, reviewer: string): Promise<void> {
+    this.record('remove-reviewer', ref, { reviewer })
+    this.overlay.removed.set(ref.number, [...(this.overlay.removed.get(ref.number) ?? []), reviewer])
+    this.overlay.added.set(ref.number, (this.overlay.added.get(ref.number) ?? []).filter((id) => id !== reviewer))
+  }
+
+  async decline(ref: PrRef): Promise<void> {
+    this.record('decline', ref, {})
+    this.overlay.declined.add(ref.number)
   }
 }
 

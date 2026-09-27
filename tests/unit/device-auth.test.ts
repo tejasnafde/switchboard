@@ -52,6 +52,9 @@ describe('isChannelAllowed', () => {
       'pull-requests:submit-review',
       'pull-requests:merge',
       'pull-requests:rerun-check',
+      'pull-requests:add-reviewer',
+      'pull-requests:remove-reviewer',
+      'pull-requests:decline',
     ])
     for (const channel of writes) {
       expect(isChannelAllowed(PHONE_SCOPES, channel), channel).toBe(false)
@@ -59,6 +62,9 @@ describe('isChannelAllowed', () => {
     }
     expect(isChannelAllowed(PHONE_SCOPES, PullRequestChannels.DETAIL)).toBe(true)
     expect(isChannelAllowed(PHONE_SCOPES, PullRequestChannels.LINK)).toBe(true)
+    // Hiding is local to the backend's database and reaches no host.
+    expect(isChannelAllowed(PHONE_SCOPES, PullRequestChannels.HIDE)).toBe(true)
+    expect(isChannelAllowed(PHONE_SCOPES, PullRequestChannels.REVIEWER_CANDIDATES)).toBe(true)
   })
 
   it('keeps chat-only file mutations away from the command-bearing launch config', () => {
