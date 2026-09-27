@@ -86,6 +86,24 @@ describe('DemoAdapter (tour recorder script)', () => {
     expect(events.some((e) => e.type === 'tool.started' && e.toolName === 'Bash')).toBe(true)
   }, 20_000)
 
+  it('a review reply opens a pull request write card and posts nothing on approval', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Reply to the review conversations.', 'sandbox')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no card yet')
+    }, { timeout: 5_000, interval: 50 })
+    const card = events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
+    expect(card.hostWrite).toMatchObject({ action: 'reply', prLabel: 'ssg-bot-v2 #612', location: 'sync/worker.py:86', suggestResolve: true })
+    expect(card.detail).toContain('Reply on ssg-bot-v2 #612')
+    await adapter.respondToRequest('t1', card.requestId, 'approve')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+    }, { timeout: 5_000, interval: 50 })
+    expect(events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: card.requestId, decision: 'approve' })
+  }, 20_000)
+
   it('interrupting a turn blocked on an approval closes the approval without completing', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []

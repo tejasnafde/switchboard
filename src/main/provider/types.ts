@@ -76,6 +76,13 @@ export interface SessionStartOpts {
    * cold (e.g. after an app restart).
    */
   candidateOauthDirs?: string[]
+  /**
+   * How the agent spawns the Switchboard MCP server (registry-populated).
+   * Registered under the name `switchboard` next to the user's own servers.
+   * The server enforces its own approvals, so an adapter must not prompt for
+   * these tools a second time.
+   */
+  switchboardMcp?: import('../mcp/switchboard-mcp-server').SwitchboardMcpLaunch
 }
 
 export interface ProviderSession {
@@ -207,15 +214,11 @@ export interface ProviderAdapter {
   listModels?(threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>>
 
   /**
-   * Give the adapter the seam it needs to expose the cross-session peer tools
-   * (`list_agent_sessions` / `send_agent_message`) to its own model. Called
-   * once by the registry, which is the host.
-   *
-   * Optional, and only Claude implements it: the tools ride the Claude SDK's
-   * in-process MCP server. Codex and OpenCode sessions stay valid TARGETS -
-   * they receive peer messages as ordinary turns - and simply cannot send.
+   * The mode the session runs its CURRENT turn in. The Switchboard MCP server
+   * enforces plan mode itself, and a queued message's mode applies only when
+   * that message starts, which only the adapter knows.
    */
-  setPeerToolHost?(host: import('./peer-tools').PeerToolHost): void
+  runtimeModeOf?(threadId: string): RuntimeMode | undefined
 }
 
 // Re-export Effect for internal adapter use (avoids extra imports elsewhere)

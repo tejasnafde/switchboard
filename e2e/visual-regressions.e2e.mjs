@@ -630,6 +630,28 @@ async function captureThemeScreens(win, theme) {
   if (sideways > 0) screenFailures.push(`chat-narrow-${theme.toLowerCase()}: the message list scrolls ${sideways}px sideways`)
   await win.locator('.markdown-content ol').last().evaluate((ol) => ol.scrollIntoView({ block: 'start' }))
   await snapScreen(win, 'chat-narrow', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
+
+  // An agent's pull request write held on its Switchboard card (the demo
+  // adapter opens one on demo PR #612; nothing is posted). Checked at the
+  // narrow width first, where the quote, the reply box and three buttons
+  // compete for the row, then at the default width.
+  await editor.click()
+  await win.keyboard.type('Reply to the review conversations.')
+  await win.keyboard.press('Enter')
+  const hostWriteCard = win.locator('[data-host-write-card][data-status="pending"]').first()
+  await hostWriteCard.waitFor({ state: 'visible', timeout: 20_000 })
+  await hostWriteCard.scrollIntoViewIfNeeded()
+  const cardOverflow = await hostWriteCard.evaluate((el) => el.scrollWidth - el.clientWidth)
+  if (cardOverflow > 0) screenFailures.push(`host-write-narrow-${theme.toLowerCase()}: the card overflows ${cardOverflow}px`)
+  const listOverflow = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
+  if (listOverflow > 0) screenFailures.push(`host-write-narrow-${theme.toLowerCase()}: the message list scrolls ${listOverflow}px sideways`)
+  // The card is taller than this window, so show its end, where the buttons wrap.
+  await hostWriteCard.locator('[data-host-write-actions]').evaluate((el) => el.scrollIntoView({ block: 'end' }))
+  await snapScreen(win, 'host-write-narrow', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
+  await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }), SCREEN_SIZE)
+  await settle(win)
+  await hostWriteCard.scrollIntoViewIfNeeded()
+  await snapScreen(win, 'host-write-approval', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
 }
 
 async function runThemeScreens() {

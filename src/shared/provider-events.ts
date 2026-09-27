@@ -10,6 +10,7 @@
  * stay in `src/main/provider/types.ts`; only the wire events are shared.
  */
 
+import type { HostWriteCard } from './agent-host-writes'
 import type { OverageScope } from './claude-rate-limit'
 import type { PeerMessageInitiator } from './peer-messaging'
 import { stripHandoffPreamble } from './handoff'
@@ -541,6 +542,8 @@ export interface RuntimeRequestOpenedEvent {
   requestType: 'command' | 'file' | 'tool'
   toolName: string
   detail: string
+  /** A pull request write an agent asked for through the Switchboard MCP server. `detail` still describes it for clients that do not render the card. */
+  hostWrite?: HostWriteCard
 }
 
 export interface RuntimeRequestClosedEvent {

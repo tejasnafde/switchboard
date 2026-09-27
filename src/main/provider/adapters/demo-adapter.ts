@@ -10,6 +10,9 @@
  * The scripts are keyed on runtime mode and on the user text so each tour
  * scene can steer the reply without a side channel:
  *   - plan mode          -> two reads, then a denied Write (denial pill)
+ *   - text says "reply to the review" -> a Switchboard MCP pull request write
+ *                           card (reply on demo PR #612, the mock's quote),
+ *                           held until answered; nothing is ever posted
  *   - text says "run"    -> asks approval for `npm test` and holds the turn
  *                           open until it is answered (ApprovalCard, and the
  *                           running composer for the visual regression suite)
@@ -28,7 +31,8 @@
  * same disk + SQLite merge a real Claude chat does.
  */
 import type { TurnDelivery } from '@shared/turn-delivery'
-import type { AgentType } from '@shared/types'
+import { AGENT_REPLY_MAX_CHARS, hostWriteDetail, type HostWriteCard } from '@shared/agent-host-writes'
+import { agentLabel, toAgentProvider, type AgentType } from '@shared/types'
 import { buildWindow, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
 import { randomUUID } from 'crypto'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
@@ -308,6 +312,33 @@ export class DemoAdapter implements ProviderAdapter {
       emit({ type: 'tool.denied', threadId, toolName: 'Write', reason: denialMessage('plan', 'Write'), mode: 'plan' })
       await this.pause(turn, 600)
       await this.say(threadId, turn, 'Plan mode blocks writes. Switch to Sandbox or Accept Edits and I will apply the change.')
+    } else if (/reply to the review/i.test(message)) {
+      await this.say(threadId, turn, 'All three are fixed. I will reply on each conversation and resolve it.')
+      if (turn.cancelled) return
+      const card: HostWriteCard = {
+        action: 'reply',
+        agentLabel: agentLabel(toAgentProvider(this.provider)),
+        host: 'bitbucket',
+        prLabel: 'ssg-bot-v2 #612',
+        url: null,
+        location: 'sync/worker.py:86',
+        quote: { author: 'pankaj', body: 'Cap the jitter too. With 20 % on top of a 300 s cap, two workers can still meet at the ceiling.' },
+        replyText: 'Done in a1b2c3d: the jitter is applied before the cap in next_delay, so the ceiling stays 300 s. test_cap_includes_jitter covers it.',
+        suggestResolve: true,
+        maxChars: AGENT_REPLY_MAX_CHARS,
+      }
+      const requestId = `demo_req_${++this.seq}`
+      const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
+        session.approvals.set(requestId, resolve)
+        emit({
+          type: 'request.opened', threadId, requestId, requestType: 'tool',
+          toolName: 'mcp__switchboard__reply_to_conversation', detail: hostWriteDetail(card), hostWrite: card,
+        })
+      })
+      session.approvals.delete(requestId)
+      session.onEvent({ type: 'request.closed', threadId, requestId, decision: decision === 'cancelled' ? 'deny' : decision })
+      if (decision === 'cancelled') return
+      await this.say(threadId, turn, decision === 'approve' ? 'Replied on worker.py:86.' : 'Left that conversation for you.')
     } else if (/\brun\b/i.test(message)) {
       await this.say(threadId, turn, 'Running the auth tests to confirm the fix.')
       // Interrupted before the approval opened: registering it now would

@@ -20,6 +20,7 @@
 @source '../components/ui';
 @source '../components/chat/UnifiedProviderPicker.tsx';
 @source '../components/chat/BranchPicker.tsx';
+@source '../components/chat/HostWriteApprovalCard.tsx';
 @source '../components/CommandPalette.tsx';
 @source '../components/SessionPickerModal.tsx';
 @source '../components/SearchModal.tsx';

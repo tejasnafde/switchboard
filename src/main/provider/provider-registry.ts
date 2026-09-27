@@ -35,7 +35,7 @@ import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
 import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
-import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
+import { currentBackendRequestContext, hashClientScope, remoteDeviceHasScope } from '../backend/request-context'
 import {
   AtomicUserTurnSubmission,
   DurableTurnAcceptance,
@@ -62,6 +62,12 @@ import {
   type PeerMessageInput,
 } from '@shared/peer-messaging'
 import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
+import { AgentApprovalBroker } from '../mcp/agent-approvals'
+import { AgentWriteBudget } from '../mcp/agent-write-budget'
+import { agentPullRequestAccess, buildPrTools } from '../mcp/pr-tools'
+import { buildPeerMcpTools } from '../mcp/peer-mcp-tools'
+import { switchboardMcpServer, type SwitchboardMcpLaunch, type SwitchboardMcpServer } from '../mcp/switchboard-mcp-server'
+import { parseHostWriteResponse } from '@shared/agent-host-writes'
 import { defaultClaudeDir, prepareClaudeProfileSwitch } from './claude-session-migrate'
 import { prepareCodexProfileSwitch } from './codex-session-migrate'
 import { remoteBlockedProviderLabel, remoteProviderLoginPrompt, remoteProviderConfigDir, checkRemoteProviderAuth } from './remote-gate'
@@ -85,7 +91,7 @@ import {
   type UserTurnResolutionV1,
   type RuntimeFileEditedEvent,
 } from '@shared/provider-events'
-import { isAgentProvider, toAgentProvider } from '@shared/types'
+import { agentLabel, isAgentProvider, toAgentProvider } from '@shared/types'
 import { peekCatalog, probeCatalog } from './catalog-probe'
 import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-requests'
 import { turnPreviewLine } from '@shared/turn-preview'
@@ -216,7 +222,11 @@ export class ProviderRegistry implements PeerToolHost {
     adapters?: Map<ProviderKind, ProviderAdapter>,
     _turnAcceptance?: DurableTurnAcceptance,
     atomicTurnSubmission?: Pick<AtomicUserTurnSubmission, 'submit'> & Partial<Pick<AtomicUserTurnSubmission, 'resolve'>>,
+    // Tests that inject adapters get no MCP server unless they pass one, so
+    // they neither listen on a port nor write the bridge into the data dir.
+    switchboardMcp: SwitchboardMcpServer | null = adapters ? null : switchboardMcpServer(),
   ) {
+    this.switchboardMcp = switchboardMcp
     activeRegistry = this
     this.host = host
     this.opencodeAcp = new OpencodeAcpAdapter()
@@ -237,9 +247,6 @@ export class ProviderRegistry implements PeerToolHost {
     })
     this.bus = new RuntimeEventBus()
     this.rendererUnsub = this.bus.subscribe((event) => this.forwardToRenderer(event))
-    // Lets an adapter expose the peer tools to its model. Only the Claude
-    // adapter implements it; the others stay valid targets that cannot send.
-    for (const adapter of this.adapters.values()) adapter.setPeerToolHost?.(this)
     // Invalid mirror edits are fs-watch findings with no tool result to ride
     // on - surface them in chat as error events through this registry's bus.
     notebookManager.setPublisher((event) => this.publish(event))
@@ -273,6 +280,22 @@ export class ProviderRegistry implements PeerToolHost {
    * and there is nobody to run away from.
    */
   private readonly peerAgentGuard = new PeerAgentSendGuard()
+
+  /**
+   * Approval cards the Switchboard MCP server opens for its own tools. Their
+   * answers arrive on RESPOND_TO_REQUEST like any other and are routed here
+   * by request id instead of to the adapter.
+   */
+  private readonly agentApprovals = new AgentApprovalBroker({
+    publish: (event) => this.publish(event),
+    sameChat: (a, b) => a === b || resolveRootThreadId(a) === resolveRootThreadId(b),
+  })
+
+  /** Serves this backend's MCP tools to every agent; one per process, shared across registries. */
+  private readonly switchboardMcp: SwitchboardMcpServer | null
+
+  /** Pull request writes per chat, shared by every client of this backend. */
+  private readonly agentWriteBudget = new AgentWriteBudget()
 
   /**
    * Hop depth of each thread's current turn - how many consecutive
@@ -712,6 +735,38 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  /**
+   * Give a starting session its Switchboard MCP server: a token bound to this
+   * thread, and the tools built against this registry. A failure leaves the
+   * agent without the tools rather than failing the session.
+   */
+  private async openSwitchboardMcp(threadId: string, provider: ProviderKind): Promise<SwitchboardMcpLaunch | null> {
+    if (!this.switchboardMcp) return null
+    const chatId = (): string => resolveRootThreadId(threadId)
+    // The adapter's own record, which applies a queued message's mode only when it starts.
+    const runtimeMode = (): RuntimeMode =>
+      this.sessionAdapters.get(threadId)?.runtimeModeOf?.(threadId) ?? this.sessionDescriptors.get(threadId)?.runtimeMode ?? 'sandbox'
+    const publish = (event: RuntimeEvent): void => this.publish(event)
+    try {
+      return await this.switchboardMcp.open(threadId, () => [
+        ...buildPrTools({
+          threadId,
+          chatId: chatId(),
+          agentLabel: agentLabel(toAgentProvider(provider)),
+          runtimeMode,
+          publish,
+          approvals: this.agentApprovals,
+          budget: this.agentWriteBudget,
+          pullRequests: agentPullRequestAccess(),
+        }),
+        ...buildPeerMcpTools({ threadId, runtimeMode, publish, approvals: this.agentApprovals, peers: this }),
+      ])
+    } catch (err) {
+      log.warn(`Switchboard MCP server unavailable for ${threadId}; starting without its tools`, err)
+      return null
+    }
+  }
+
   private publish(event: RuntimeEvent): void {
     if (event.type === 'turn.queued' || event.type === 'turn.dequeued') {
       const observed = this.queuedTurns.observe(event, this.sessionAdapters.get(event.threadId)?.provider)
@@ -1138,6 +1193,8 @@ export class ProviderRegistry implements PeerToolHost {
       this.outstandingTurns.delete(threadId)
       this.queuedTurns.clear(threadId)
       this.turnDepth.delete(threadId)
+      this.agentApprovals.closeThread(threadId)
+      this.switchboardMcp?.close(threadId)
       this.pendingRequests.delete(threadId)
       this.checkpoints.clear(threadId)
       this.driftWatcher.onSessionStopped(threadId)
@@ -1453,6 +1510,8 @@ export class ProviderRegistry implements PeerToolHost {
       const executionEpoch = ++this.nextSessionEpoch
       allocatedEpoch = executionEpoch
       this.sessionEpochs.set(opts.threadId, executionEpoch)
+      const switchboardMcp = await this.openSwitchboardMcp(opts.threadId, opts.provider)
+      if (switchboardMcp) enrichedOpts.switchboardMcp = switchboardMcp
       const session = await adapter.startSession(enrichedOpts, (event) => {
         if (this.sessionEpochs.get(opts.threadId) !== executionEpoch) return
         if (event.type === 'session') latestSessionId = event.sessionId
@@ -1496,6 +1555,9 @@ export class ProviderRegistry implements PeerToolHost {
       } catch (err) {
         if (allocatedEpoch !== null && this.sessionEpochs.get(initialOpts.threadId) === allocatedEpoch) {
           this.sessionEpochs.delete(initialOpts.threadId)
+        }
+        if (!this.sessionAdapters.has(initialOpts.threadId)) {
+          this.switchboardMcp?.close(initialOpts.threadId)
         }
         rejectStart(err)
         throw err
@@ -1846,7 +1908,14 @@ export class ProviderRegistry implements PeerToolHost {
       if (adapter.answerQuestion) await adapter.answerQuestion(threadId, requestId, answers)
     })
 
-    this.host.handle(ProviderChannels.RESPOND_TO_REQUEST, async (threadId: string, requestId: string, decision: ApprovalDecision) => {
+    this.host.handle(ProviderChannels.RESPOND_TO_REQUEST, async (threadId: string, requestId: string, decision: ApprovalDecision, response?: unknown) => {
+      if (AgentApprovalBroker.owns(requestId)) {
+        // Posting to a pull request is admin-scoped for a device, like the
+        // Reviews write channels, so a phone can deny these cards but not approve them.
+        const answer = this.agentApprovals.respond(threadId, requestId, decision, parseHostWriteResponse(response), remoteDeviceHasScope('admin'))
+        if (!answer.ok) throw new Error(answer.message)
+        return
+      }
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return
       await adapter.respondToRequest(threadId, requestId, decision)
@@ -1921,6 +1990,8 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   async stopAll(): Promise<void> {
+    this.agentApprovals.closeAll()
+    for (const threadId of this.sessionAdapters.keys()) this.switchboardMcp?.close(threadId)
     for (const [threadId, adapter] of this.sessionAdapters) {
       await adapter.stopSession(threadId).catch((err) => {
         log.warn(`stopSession failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)

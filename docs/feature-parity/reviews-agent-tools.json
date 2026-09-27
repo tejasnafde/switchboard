@@ -1,0 +1,113 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "reviews-agent-tools",
+  "summary": "Reviews step 4: one Switchboard MCP server per backend gives Claude, Codex and OpenCode the same tools, with Switchboard's own approval card as the single gate. Reads without a card: get_pr_status, list_pr_conversations. Writes, one card each: reply_to_conversation (editable reply, Post only / Post and resolve), resolve_conversation, rerun_check. Never approve, request changes or merge. Only pull requests linked to the calling chat. Each agent spawns a small stdio bridge (written to userData/mcp) that dials the backend's loopback listener with a per-chat token minted at session start and revoked at session stop, read from a 0600 file so it never appears on a command line. The server enforces plan mode (denies without a card), shows the card in every other mode including full access (posting as the user is not a local edit), a 10 writes / 10 minutes budget per chat, an 8,000 character reply cap, and returns every refusal as isError tool output. Posted text ends with a 'via Switchboard' line. The cross-session tools (list_agent_sessions, send_agent_message) moved from Claude's in-process SDK server onto the same server, so Codex and OpenCode can send too, with the same guards and the same plan / full-access / card gate. For our server only, the adapters do not prompt a second time: Claude's canUseTool allows mcp__switchboard__*, Codex's elicitation confirm for serverName switchboard is accepted, OpenCode's permission for switchboard_* is allowed.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "src/main/mcp/stdio-bridge.ts",
+        "src/main/mcp/mcp-session.ts",
+        "src/main/mcp/mcp-tokens.ts",
+        "src/main/mcp/agent-approvals.ts",
+        "src/main/mcp/agent-write-budget.ts",
+        "src/main/mcp/pr-tools.ts",
+        "src/main/mcp/peer-mcp-tools.ts",
+        "src/main/mcp/agent-registration.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/types.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/ipc/pull-requests.ts",
+        "src/preload/index.ts",
+        "src/renderer/components/chat/HostWriteApprovalCard.tsx",
+        "src/renderer/components/chat/host-write-card.ts",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "src/renderer/services/pending-request-recovery.ts",
+        "src/renderer/styles/tailwind.css",
+        "tests/unit/host-write-card.test.ts",
+        "tests/unit/claude-adapter-switchboard-mcp.test.ts",
+        "tests/unit/codex-adapter.test.ts",
+        "tests/unit/opencode-acp-switchboard-mcp.test.ts",
+        "tests/unit/switchboard-mcp-integration.test.ts",
+        "src/main/provider/adapters/demo-adapter.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots/host-write-approval-dark-darwin.png",
+        "e2e/snapshots/host-write-narrow-dark-darwin.png",
+        "tests/unit/demo-adapter.test.ts",
+        "tests/unit/visual-regressions-source.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/__tests__/feed-items.test.tsx",
+        "tests/unit/mobile-chat-store.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadEventDecoder.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/agent-host-writes.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/push-policy.ts",
+        "src/shared/types.ts",
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "src/main/mcp/pr-tools.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/server/index.ts",
+        "tests/unit/agent-host-writes.test.ts",
+        "tests/unit/mcp-session.test.ts",
+        "tests/unit/agent-approvals.test.ts",
+        "tests/unit/mcp-pr-tools.test.ts",
+        "tests/unit/mcp-peer-tools.test.ts",
+        "tests/unit/mcp-agent-registration.test.ts",
+        "tests/unit/switchboard-mcp-integration.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No database table, column or migration. Tokens, open cards and the write budget are in memory and end with the process or the session. Two kinds of file are written under userData/mcp (the headless server: SWITCHBOARD_DATA_DIR or ~/.switchboard/mcp): the stdio bridge script switchboard-mcp.cjs, rewritten whenever its content differs, and one 0600 token file per live session under tokens/, deleted at session stop and cleared at the first session start of every process, so a crashed run leaves nothing that still works. PR links are read from the existing conversation_pull_requests table through resolveRootThreadId."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link or update channel change, and no native module, so the mobile OTA lane (fingerprint runtimeVersion) carries the phone change. Wire compatibility is additive: request.opened gains an optional hostWrite field that older desktops and phones ignore (they render the plain-text detail as an ordinary approval, which says to answer at the desktop), and provider:respond-to-request gains an optional 4th argument that an older backend ignores. The backend refuses a phone's approval of a host write whatever the phone's version; this release's RN build shows such a card with Deny only, and reopens a card whose answer was refused only if the backend still lists it as open. The Electron binary is reused as the bridge's Node through ELECTRON_RUN_AS_NODE, which the build does not disable with fuses."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck passed (main + renderer).",
+      "npm test passed (see the PR for counts). New: agent-host-writes (marker line, text cap, plan / full-access gate, response parsing, phone push text), mcp-session (version negotiation, tools/list annotations, dispatch, unknown tool and method errors, isError on a throwing tool, cancelled call gets no response, close aborts calls, progress notifications while a call with a progress token waits) and McpTokens (mint, replace, revoke, forged tokens), agent-approvals (card round trip with edited text, a device without admin scope cannot approve a host write but can deny, rotated chat id, expiry, agent cancel, session stop) and AgentWriteBudget, mcp-pr-tools (tool list and annotations, no approve or merge tool, linked-PR picking, plan denies without a card, full access still carded, edited text posted with the marker, Post only vs Post and resolve, deny posts nothing, budget and size refusals as isError, stale conversation, partial reply-then-resolve failure, nothing posted when the agent cancels after the approval, budget charged only when a write reaches its card, Bitbucket re-run refusal), mcp-peer-tools (plan deny with pill, full access sends, sandbox and accept-edits card first, deny sends nothing), mcp-agent-registration (Codex TOML overrides with escaping, tool timeout past the card lifetime, ACP entry, name predicates), host-write-card (buttons, primary, response), and each adapter's registration and no-second-prompt rule (claude-adapter-switchboard-mcp with a mocked SDK, codex-adapter, opencode-acp-switchboard-mcp), each also checking that a server merely named switchboard is not trusted when ours was not registered.",
+      "switchboard-mcp-integration spawns the real stdio bridge with node against an in-process backend: MCP handshake and a tool call through it, a forged token dropped, a closed chat cutting the live bridge off; then through ProviderRegistry: session start hands the adapter the launch, a reply tool call opens a card on the chat's event stream that GET_PENDING_REQUESTS also returns, a phone-scoped RESPOND_TO_REQUEST is refused, the desktop's edited text is posted with the marker, the adapter's respondToRequest is never called, and STOP_SESSION closes an open card as denied and revokes the token.",
+      "switchboard-mcp-integration also checks that the launch carries only a token FILE path (0600, deleted on close), never the token. npm test --prefix apps/mobile passed, with new ApprovalItem tests: an ordinary approval offers Approve and Deny, a pull request write offers Deny only and says to approve at the desktop.",
+      "Live, read-only, no account folder touched: codex app-server 0.144.1 with a scratch CODEX_HOME and our -c overrides reported the switchboard server ready and listed its tool through mcpServerStatus/list; opencode acp 1.17.18 with scratch XDG dirs and HOME connected the bridge on session/new. Both re-run after the token moved into a file. No turn was run and no host was written to (drivers in the report). OpenCode's bundle was read to confirm it calls MCP tools with resetTimeoutOnProgress, which the server's progress keepalive relies on.",
+      "Round 2 (CodeRabbit): every approved write re-checks, right before it runs, that the agent is still waiting, the chat is not in plan mode and the PR is still linked (mcp-pr-tools: unlinked before approval, plan mode switched on, re-run after unlink). The phone reports a refused answer as a notice that leaves the thread status alone, and reopens the card only if no request.closed arrived while it re-checked (mobile-chat-store). demo-adapter covers the scripted host-write card.",
+      "SB_VISUAL_SCOPE=screens e2e/visual-regressions.e2e.mjs: new host-write-approval (default width) and host-write-narrow (the 800px window, where the chat is 172px) baselines in Dark, Light and Translucent, from the demo adapter's 'reply to the review' script (nothing is posted). The run fails if the card or the message list overflows sideways; the first run caught a 203px overflow of the footer, fixed by letting the note and buttons wrap. Other rewritten PNGs were restored. Two runs without updating both passed."
+    ],
+    "hardware": [
+      "Every new host-write baseline PNG was opened and checked by eye on this Mac in all three themes."
+    ],
+    "notExercised": [
+      "Claude was not run live: its only route needs a signed-in profile, which this job may not use. Its registration and canUseTool rule are tested against a mocked SDK; the SDK's stdio mcpServers shape is type-checked.",
+      "No tool call reached a model on any agent, so the models' use of the tool descriptions, Codex's elicitation for our server in a real turn, and OpenCode's MCP call timeout while a card is open were not observed. OpenCode's MCP call timeout is not configurable over ACP; the server's progress notifications keep it alive (read from its bundle, not observed in a turn), and if it gives up anyway its cancel closes the card, so nothing posts late.",
+      "Phones were not run on a device: RN renders a pull request write card with Deny only (jest-rendered, not seen on a phone); native Android renders it through the existing request.opened approval row from the plain-text detail, keeps it pending if the backend refuses the approval, and was read, not built or run.",
+      "No real GitHub or Bitbucket write: the write paths ran against fakes only."
+    ]
+  }
+}

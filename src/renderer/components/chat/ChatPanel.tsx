@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { useAgentStore, adoptStartedRuntimeMode, runtimeModeToSend, type RuntimeMode } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
 import { useTerminalStore } from '../../stores/terminal-store'
@@ -469,10 +470,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
 
   // ── Approval handler ──────────────────────────────────────────
   // Rejections propagate to the card so it can re-enable its buttons.
-  const handleApproval = useCallback(async (requestId: string, decision: 'approve' | 'deny', note?: string) => {
+  const handleApproval = useCallback(async (requestId: string, decision: 'approve' | 'deny', note?: string, response?: HostWriteResponse) => {
     if (!sessionId) return
     try {
-      await window.api.provider?.respondToRequest(sessionId, requestId, decision)
+      await window.api.provider?.respondToRequest(sessionId, requestId, decision, response)
     } catch (err) {
       log.warn('respondToRequest failed', { requestId, decision, err })
       appendMessage(sessionId, {

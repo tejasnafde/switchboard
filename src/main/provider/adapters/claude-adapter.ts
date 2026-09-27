@@ -432,8 +432,7 @@ import {
 import type { MigrateResult } from '../claude-session-migrate'
 import { shapeQuestionAnswers } from './question-answers'
 import { TurnWatchdog, StderrTail, countToolBrackets } from '../turn-watchdog'
-import { buildPeerToolServer } from './claude-peer-tools'
-import { PEER_LIST_TOOL, PEER_TOOL_SERVER_NAME, type PeerToolHost } from '../peer-tools'
+import { SWITCHBOARD_MCP_SERVER_NAME, type SwitchboardMcpLaunch } from '../../mcp/switchboard-mcp-server'
 
 /**
  * Silence this long inside a turn is reported to the UI. Generous because
@@ -640,6 +639,8 @@ interface ActiveSession {
   instanceEnv: Record<string, string>
   /** Per-instance CLAUDE_CONFIG_DIR (set when auth_mode='oauth_dir'). */
   instanceOauthDir: string | null
+  /** How the SDK spawns the Switchboard MCP server; null when the backend could not open one. */
+  switchboardMcp: SwitchboardMcpLaunch | null
   /** Every known CLAUDE_CONFIG_DIR, for locating a transcript to resume. */
   candidateOauthDirs: string[]
   /** Reports turns that go silent with no terminal event (see TURN_STALL_MS). */
@@ -667,15 +668,8 @@ export class ClaudeAdapter implements ProviderAdapter {
   readonly provider = 'claude' as const
   private sessions = new Map<string, ActiveSession>()
 
-  /**
-   * Backend seam for the cross-session peer tools. Null until the registry
-   * hands it over, and then every session gets the tools - they are per
-   * thread only in that each binds to its own sending thread id.
-   */
-  private peerHost: PeerToolHost | null = null
-
-  setPeerToolHost(host: PeerToolHost): void {
-    this.peerHost = host
+  runtimeModeOf(threadId: string): RuntimeMode | undefined {
+    return this.sessions.get(threadId)?.session.runtimeMode
   }
 
   async isAvailable(): Promise<boolean> {
@@ -750,6 +744,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       lastKnownModel: null,
       instanceEnv: opts.resolvedEnv ?? {},
       instanceOauthDir: opts.resolvedOauthDir ?? null,
+      switchboardMcp: opts.switchboardMcp ?? null,
       candidateOauthDirs: opts.candidateOauthDirs ?? [defaultClaudeDir()],
       watchdog,
       stderrTail,
@@ -936,16 +931,12 @@ export class ClaudeAdapter implements ProviderAdapter {
         log.warn(`AskUserQuestion: parseQuestions returned 0 - falling through to regular approval`)
       }
 
-      // ── Special: list_agent_sessions ─────────────────────────
-      // Reads nothing but the titles and folders of chats the user already has
-      // open in front of them, and the model needs an id before it can send
-      // anything at all. Prompting for it would put an approval in front of a
-      // read the user cannot be harmed by, which trains them to click through
-      // the one that follows. `send_agent_message` is NOT listed here: it
-      // falls through to decidePermission, so it prompts in sandbox and
-      // accept-edits, is denied in plan, and only runs unattended in
-      // full-access - the same gate every other side effect gets.
-      if (toolName === PEER_LIST_TOOL) {
+      // ── Special: the Switchboard MCP server's own tools ──────
+      // The server is the gate for these: it denies in plan mode and opens
+      // its own approval card for every write (the peer send, and each pull
+      // request write even in full access). Prompting here as well would ask
+      // the user twice for one action.
+      if (active.switchboardMcp && toolName.startsWith(`mcp__${SWITCHBOARD_MCP_SERVER_NAME}__`)) {
         return { behavior: 'allow', updatedInput: toolInput } as PermissionResult
       }
 
@@ -1101,19 +1092,14 @@ export class ClaudeAdapter implements ProviderAdapter {
     // only adds this one rule.
     const systemPrompt = [notebookPrompt, AGENT_DIGEST_PROMPT_RULE].filter(Boolean).join('\n\n')
 
-    // Cross-session messaging, as two in-process MCP tools. Built per query
-    // because the server binds to this thread id, which is what makes
-    // `send_agent_message` unable to spoof a different sender.
-    const peerTools = this.peerHost
-      ? buildPeerToolServer(sdk, this.peerHost, threadId)
-      : null
-
     await this.dropUnavailableModel(threadId, active)
     const queryOptions: SDKOptions = {
       cwd: active.session.cwd,
       ...(active.session.model ? { model: active.session.model } : {}),
       ...(systemPrompt ? { systemPrompt } : {}),
-      ...(peerTools ? { mcpServers: { [PEER_TOOL_SERVER_NAME]: peerTools } } : {}),
+      // Added to the user's own MCP servers, which the CLI still loads. The
+      // token in its env is what binds the server's tools to this thread.
+      ...(active.switchboardMcp ? { mcpServers: { [SWITCHBOARD_MCP_SERVER_NAME]: { type: 'stdio' as const, ...active.switchboardMcp } } } : {}),
       permissionMode,
       // Always enable the dangerously-skip-permissions CLI flag so the user
       // can toggle to Full Access mid-session. Our `canUseTool` is the

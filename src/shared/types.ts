@@ -272,6 +272,8 @@ export interface ChatMessage {
     toolName: string
     detail: string
     status: 'pending' | 'accepted' | 'rejected'
+    /** A pull request write the Switchboard MCP server holds for the user. */
+    hostWrite?: import('./agent-host-writes').HostWriteCard
   }
   /** Plan proposal from agent exiting plan mode */
   plan?: PlanAttachment

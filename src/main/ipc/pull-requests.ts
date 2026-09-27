@@ -33,6 +33,7 @@ import { GitHubProvider } from '../pull-requests/github'
 import { PrHostError } from '../pull-requests/provider'
 import { PullRequestService } from '../pull-requests/service'
 import { createDemoPullRequestService } from '../pull-requests/demo'
+import { setAgentPullRequestAccess } from '../mcp/pr-tools'
 
 const log = createMainLogger('ipc:pull-requests')
 const DEMO = process.env.SB_DEMO_ADAPTER === '1'
@@ -140,6 +141,16 @@ function registerLinkHandlers(host: BackendHost): void {
 
 export function registerPullRequestHandlers(host: BackendHost): void {
   registerLinkHandlers(host)
+  // The agent tools of the Switchboard MCP server read and write through the
+  // same service, so the host re-reads and validation apply to them too.
+  setAgentPullRequestAccess({
+    linkedPrs: (chatId) => listConversationPullRequests(chatId).map((link) => link.ref),
+    detail: (ref) => getService().detail(ref),
+    conversations: (ref) => getService().conversations(ref),
+    reply: (ref, input) => getService().reply(ref, input),
+    setResolved: (ref, input, resolved) => getService().setResolved(ref, input, resolved),
+    rerunCheck: (ref, input) => getService().rerunCheck(ref, input),
+  })
   host.handle(PullRequestChannels.LIST, () => getService().list())
   host.handle(PullRequestChannels.DETAIL, (ref: unknown) => getService().detail(ref))
   host.handle(PullRequestChannels.FILES, (ref: unknown) => getService().files(ref))
