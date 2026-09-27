@@ -164,8 +164,10 @@ function fileBytesOrNull(path: string): Buffer | null {
   try {
     return statSync(path).isFile() ? readFileSync(path) : null
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('could not snapshot a Bitbucket file before saving', { path, message: err instanceof Error ? err.message : String(err) })
-    return null
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    // Unknown prior contents: abort the save, or a rollback would delete a file it could not restore.
+    log.warn('could not snapshot a Bitbucket file before saving', { path, message: err instanceof Error ? err.message : String(err) })
+    throw new CredentialStoreError('Saving the Bitbucket account failed; the previous one is unchanged.')
   }
 }
 

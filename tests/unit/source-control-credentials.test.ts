@@ -4,7 +4,7 @@
  * with no keychain.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -143,6 +143,19 @@ describe('settings.json', () => {
       mkdirSync(join(root, `${BITBUCKET_METADATA_FILE}.tmp`))
       expect(() => store.save(next)).toThrow(CredentialStoreError)
       expectUnchanged(root, store, blob, meta)
+    })
+
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('refuses to save, and deletes nothing, when an existing file cannot be read', () => {
+      const { root, store } = savedStore()
+      const file = join(root, BITBUCKET_CREDENTIAL_FILE)
+      chmodSync(file, 0o000)
+      try {
+        expect(() => store.save(next)).toThrow(CredentialStoreError)
+        expect(existsSync(file)).toBe(true)
+      } finally {
+        chmodSync(file, 0o600)
+      }
+      expect(store.read()).toEqual(creds)
     })
 
     it('when the metadata rename fails after the token was already replaced', () => {
