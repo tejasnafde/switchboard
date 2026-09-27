@@ -66,6 +66,30 @@ describe('send_agent_message', () => {
     }
   })
 
+  it('sends nothing when the chat switched to plan mode while the card was open', async () => {
+    let mode: RuntimeMode = 'sandbox'
+    const events: RuntimeEvent[] = []
+    const delivered: PeerMessageInput[] = []
+    const peers: PeerToolHost = {
+      listPeerSessions: vi.fn(() => []),
+      deliverPeerMessage: vi.fn(async (input: PeerMessageInput) => { delivered.push(input); return { id: 'pm_0123456789abcdef' } }),
+    }
+    const approvals = new AgentApprovalBroker({
+      publish: (e) => {
+        events.push(e)
+        if (e.type === 'request.opened') {
+          mode = 'plan'
+          queueMicrotask(() => approvals.respond('t1', e.requestId, 'approve', {}, false))
+        }
+      },
+    })
+    const [, send] = buildPeerMcpTools({ threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), approvals, peers })
+    const result = await send.call(args, { signal: new AbortController().signal })
+    expect(result.isError).toBe(true)
+    expect(delivered).toEqual([])
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool.denied', mode: 'plan' }))
+  })
+
   it('sends nothing when the user denies', async () => {
     const { send, delivered, signal } = setup('sandbox', 'deny')
     const result = await send.call(args, { signal })

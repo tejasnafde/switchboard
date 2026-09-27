@@ -87,6 +87,13 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
           })
           if (outcome.decision === 'deny') return toolText(PEER_DENIED[outcome.reason], true)
           if (signal.aborted) return toolText(PEER_DENIED.cancelled, true)
+          // The card can stay open for minutes: a switch to plan mode meanwhile still wins.
+          const now = ctx.runtimeMode()
+          if (decidePermission(now, PEER_SEND_TOOL) === 'deny') {
+            const reason = denialMessage(now, PEER_SEND_TOOL)
+            ctx.publish({ type: 'tool.denied', threadId: ctx.threadId, toolName: PEER_SEND_TOOL, reason, mode: now })
+            return toolText(reason, true)
+          }
         }
         return handlers.sendMessage(input)
       },
