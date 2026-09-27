@@ -47,7 +47,12 @@ export function pendingRequestToChatMessage(event: PendingBlockingEvent, timesta
         role: 'assistant',
         content: '',
         timestamp,
-        approval: { toolName: event.toolName, detail: event.detail, status: 'pending' },
+        approval: {
+          toolName: event.toolName,
+          detail: event.detail,
+          status: 'pending',
+          ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
+        },
       }
     case 'question.asked':
       return {

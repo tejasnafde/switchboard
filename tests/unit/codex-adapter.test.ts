@@ -1080,6 +1080,81 @@ describe('CodexAdapter', () => {
     })
   })
 
+  describe('the Switchboard MCP server', () => {
+    const launch = {
+      command: '/Applications/Switchboard.app/Contents/MacOS/Switchboard',
+      args: ['/Users/me/Library/Application Support/switchboard/mcp/switchboard-mcp.cjs'],
+      env: { ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_MCP_PORT: '51234', SWITCHBOARD_MCP_TOKEN: 'tok' },
+    }
+    const confirm = (id: number, serverName: string) => JSON.stringify({
+      jsonrpc: '2.0',
+      id,
+      method: 'mcpServer/elicitation/request',
+      params: {
+        threadId: 'codex-thread-1',
+        turnId: 'turn-1',
+        serverName,
+        mode: 'form',
+        message: `Allow the ${serverName} MCP server to run tool "reply_to_conversation"?`,
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: null,
+      },
+    }) + '\n'
+
+    it('registers the server on this chat\'s app-server with config overrides', async () => {
+      const { spawn } = await import('child_process')
+      const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', switchboardMcp: launch }, vi.fn())
+
+      const args = vi.mocked(spawn).mock.calls.at(-1)?.[1] as string[]
+      expect(args[0]).toBe('app-server')
+      expect(args).toContain(`mcp_servers.switchboard.command="${launch.command}"`)
+      expect(args).toContain(`mcp_servers.switchboard.args=["${launch.args[0]}"]`)
+      expect(args).toContain('mcp_servers.switchboard.env={ELECTRON_RUN_AS_NODE="1",SWITCHBOARD_MCP_PORT="51234",SWITCHBOARD_MCP_TOKEN="tok"}')
+    })
+
+    it('spawns plain app-server when no server was opened', async () => {
+      const { spawn } = await import('child_process')
+      const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, vi.fn())
+      expect(vi.mocked(spawn).mock.calls.at(-1)?.[1]).toEqual(['app-server'])
+    })
+
+    it('accepts the confirm for its own server without a second card', async () => {
+      const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+      const onEvent = vi.fn()
+      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox', switchboardMcp: launch }, onEvent)
+
+      lastChild?.stdout.write(confirm(905, 'switchboard'))
+      await new Promise((resolve) => setImmediate(resolve))
+
+      expect(onEvent.mock.calls.map(([event]) => event.type)).not.toContain('request.opened')
+      expect(writes.map((line) => JSON.parse(line))).toContainEqual({ jsonrpc: '2.0', id: 905, result: { action: 'accept', content: {}, _meta: null } })
+    })
+
+    it('still asks for another server\'s tool', async () => {
+      const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+      const onEvent = vi.fn()
+      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox', switchboardMcp: launch }, onEvent)
+
+      lastChild?.stdout.write(confirm(906, 'github'))
+      await new Promise((resolve) => setImmediate(resolve))
+
+      expect(onEvent.mock.calls.map(([event]) => event.type)).toContain('request.opened')
+    })
+
+    it('does not trust a server calling itself switchboard when ours was not registered', async () => {
+      const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+      const onEvent = vi.fn()
+      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox' }, onEvent)
+
+      lastChild?.stdout.write(confirm(907, 'switchboard'))
+      await new Promise((resolve) => setImmediate(resolve))
+
+      expect(onEvent.mock.calls.map(([event]) => event.type)).toContain('request.opened')
+    })
+  })
+
   it('declines empty MCP form elicitations when the approval is denied', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

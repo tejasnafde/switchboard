@@ -4,6 +4,7 @@
  * Pure and shared so the rule is one implementation and can be tested without a
  * device or a network. The backend decides - the phone is asleep and cannot.
  */
+import { hostWriteTitle } from './agent-host-writes'
 import { fmtDuration } from './format'
 import type { RuntimeEvent } from './provider-events'
 
@@ -59,6 +60,14 @@ export function pushForEvent(event: RuntimeEvent, ctx: PushContext = {}): PushMe
 
   switch (event.type) {
     case 'request.opened':
+      // The phone cannot approve a pull request write, so say where it can be.
+      if (event.hostWrite) {
+        return {
+          title,
+          body: clampBody(`Approve at the desktop: ${hostWriteTitle(event.hostWrite)} on ${event.hostWrite.prLabel}`),
+          data: { threadId, kind: 'approval' },
+        }
+      }
       return {
         title,
         body: clampBody(`Needs approval: ${event.toolName}${event.detail ? ` - ${event.detail}` : ''}`),

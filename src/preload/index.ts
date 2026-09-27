@@ -42,6 +42,7 @@ import type {
   UserTurnSubmissionV1,
 } from '@shared/provider-events'
 import type { DeviceSessionView, PairingCode } from '@shared/device-auth'
+import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { PartialClientConfig } from '@shared/google-oauth'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import type { GoogleClientStatus } from '../main/google/client-config'
@@ -742,8 +743,9 @@ const api = {
     deliverPeerMessage: (input: PeerMessageInput) =>
       transport.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, input) as Promise<{ id: string }>,
 
-    respondToRequest: (threadId: string, requestId: string, decision: ApprovalDecision) =>
-      transport.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision),
+    /** `response` carries a pull request write card's edited reply and its Post / Post and resolve choice. */
+    respondToRequest: (threadId: string, requestId: string, decision: ApprovalDecision, response?: HostWriteResponse) =>
+      transport.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision, response),
 
     stopSession: (threadId: string) =>
       transport.invoke(ProviderChannels.STOP_SESSION, threadId),

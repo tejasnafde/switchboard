@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types'
 import { MessageBubble } from './MessageBubble'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -17,7 +18,7 @@ interface MessageListProps {
   agentType?: AgentType
   // Promise-returning so the cards downstream can re-enable themselves when
   // the underlying IPC rejects.
-  onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string) => void | Promise<void>
+  onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string, response?: HostWriteResponse) => void | Promise<void>
   onAnswerQuestion?: (requestId: string, answers: string[][]) => void | Promise<void>
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
   onFileDiffResolve?: (

@@ -117,7 +117,8 @@ interface ChatState {
   /** `id` ties the bubble to its queued message so a failed send can undo it. */
   addUserMessage: (key: string, text: string, images?: string[], id?: string) => void
   markQuestionAnswered: (key: string, requestId: string, answers: string[][]) => void
-  markApprovalResolved: (key: string, requestId: string, decision: 'approve' | 'deny') => void
+  /** `pending` reopens a card the backend refused to settle. */
+  markApprovalResolved: (key: string, requestId: string, decision: 'approve' | 'deny' | 'pending') => void
   /** `keepIds` survives the replace. History cannot know about a message still
    *  in the outbox, so seeding over one would take the user's bubble down and
    *  let its echo put a second one back. */

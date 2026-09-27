@@ -38,6 +38,7 @@ import { withTimeout } from '@shared/promise-timeout'
 import { conversationSessionHints, resolveResumeSegment } from '../../db/database'
 import { scanCodexSessionCopies } from '../../projects/session-scanner'
 import { codexCandidateDirs } from '../codex-session-dirs'
+import { codexSwitchboardMcpArgs, isSwitchboardCodexElicitation } from '../../mcp/agent-registration'
 
 /**
  * Map our runtime modes to Codex app-server approval policies.
@@ -221,6 +222,8 @@ interface ActiveSession {
   assistantMessageText: Map<string, string>
   toolOutputText: Map<string, ToolOutputAccumulator>
   threadId: string | null
+  /** The Switchboard MCP server was registered on this app-server. */
+  switchboardMcp: boolean
   /** Cached `skills/list` response. Populated on first listSkills() call. */
   skills: ProviderSkill[] | null
   /** Live `model/list`, keyed on the resolved CLI's identity. Never empty. */
@@ -663,6 +666,7 @@ export class CodexAdapter implements ProviderAdapter {
       assistantMessageText: new Map(),
       toolOutputText: new Map(),
       threadId: resumeThreadId,
+      switchboardMcp: !!opts.switchboardMcp,
       skills: null,
       models: opts.knownModels?.length ? { models: opts.knownModels, identity: codexExecutable.current()?.identity ?? null } : null,
       turnStartedAt: null,
@@ -681,8 +685,11 @@ export class CodexAdapter implements ProviderAdapter {
     applyEnvOverlay(codexEnv, opts.resolvedEnv)
     applyCodexHome(codexEnv, opts.resolvedOauthDir)
 
-    // Spawn codex app-server
-    const child = spawn(executable.path, ['app-server'], {
+    // Spawn codex app-server. One per chat, so the Switchboard MCP server's
+    // per-chat token can ride config overrides; the user's own servers in
+    // config.toml load as before.
+    const appServerArgs = ['app-server', ...(opts.switchboardMcp ? codexSwitchboardMcpArgs(opts.switchboardMcp) : [])]
+    const child = spawn(executable.path, appServerArgs, {
       cwd: opts.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: codexEnv,
@@ -1495,6 +1502,17 @@ export class CodexAdapter implements ProviderAdapter {
           jsonrpc: '2.0',
           id: request.id,
           result: { action: 'cancel', content: null, _meta: null },
+        })
+        return
+      }
+
+      // Our own server opens its own card (and enforces plan mode), so its
+      // yes/no confirm is answered here rather than asked twice.
+      if (elicitation.kind === 'confirm' && active.switchboardMcp && isSwitchboardCodexElicitation(request.params)) {
+        this.writeMessage(active, {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: { action: 'accept', content: {}, _meta: null },
         })
         return
       }

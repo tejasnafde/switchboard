@@ -4,6 +4,8 @@ import { agentShortLabel, type ChatMessage } from '@shared/types'
 import { fmtDuration } from '@shared/format'
 import { ToolCallBlock } from './ToolCallBlock'
 import { ApprovalCard } from './ApprovalCard'
+import { HostWriteApprovalCard } from './HostWriteApprovalCard'
+import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { PlanCard } from './PlanCard'
 import { QuestionCard } from './QuestionCard'
 import { FileDiffCard, type FileDiffResolveStatus } from './FileDiffCard'
@@ -53,7 +55,7 @@ interface MessageBubbleProps {
   knownSkillNames?: Set<string>
   // These return promises so the cards can re-enable themselves (and show an
   // inline error) when the underlying IPC rejects.
-  onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string) => void | Promise<void>
+  onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string, response?: HostWriteResponse) => void | Promise<void>
   onAnswerQuestion?: (requestId: string, answers: string[][]) => void | Promise<void>
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
   /** Resolve a file-diff card: write the chosen content back + persist status. */
@@ -527,8 +529,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         ))}
 
         {/* Approval request */}
-        {message.approval && onApproval && (
-          <ApprovalCard message={message} onDecide={onApproval} />
+        {message.approval && onApproval && (message.approval.hostWrite
+          ? <HostWriteApprovalCard message={message} onDecide={onApproval} />
+          : <ApprovalCard message={message} onDecide={onApproval} />
         )}
 
         {/* Plan proposal from agent exiting plan mode */}

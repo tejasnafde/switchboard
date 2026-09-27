@@ -599,7 +599,22 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const decideApproval = useCallback(
     (requestId: string, decision: 'approve' | 'deny') => {
-      getClient(connectionId)?.respondToRequest(threadId, requestId, decision).catch(reportError)
+      const client = getClient(connectionId)
+      client?.respondToRequest(threadId, requestId, decision).catch(async (err: unknown) => {
+        reportError(err)
+        // A refused answer can leave the card open on the backend (a phone
+        // cannot approve a pull request write an agent asked for). Reopen it
+        // here only if it still is: it may have been answered elsewhere.
+        if (client.supportsCapability('pending_requests_v1') !== true) return
+        try {
+          const pending = await client.getPendingRequests(threadId)
+          if (pending.some((e) => e.type === 'request.opened' && e.requestId === requestId)) {
+            useChatStore.getState().markApprovalResolved(key, requestId, 'pending')
+          }
+        } catch (recheckErr) {
+          reportError(recheckErr)
+        }
+      })
       useChatStore.getState().markApprovalResolved(key, requestId, decision)
     },
     [connectionId, threadId, key, reportError],

@@ -187,6 +187,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
           toolName: event.toolName,
           detail: event.detail,
           status: 'pending',
+          ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
         },
         timestamp: Date.now(),
       })
