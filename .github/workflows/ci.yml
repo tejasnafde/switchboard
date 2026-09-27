@@ -117,8 +117,27 @@ jobs:
       # seconds this step took on ubuntu, and ~95 of 108 on the windows
       # runner that sets the wall clock. `build:ci` keeps the `postbuild`
       # smoke test, which `build:fast` alone would skip.
+      # The postbuild boot smoke launches 5 times on Windows (see
+      # scripts/smoke-test.mjs); a crash leaves a minidump for the upload below.
       - name: Build
         run: npm run build:ci
+        env:
+          SB_SMOKE_CRASH_DIR: ${{ runner.temp }}/smoke-dumps
+
+      # A real startup (PTYs, watchers, database) then a user-style quit, five
+      # times: the teardown order, and the Windows quit crash, only show there.
+      - name: Quit smoke
+        run: node scripts/smoke-quit.mjs
+        env:
+          SB_SMOKE_CRASH_DIR: ${{ runner.temp }}/smoke-dumps
+
+      - name: Upload smoke-test minidumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-dumps-${{ matrix.os }}
+          path: ${{ runner.temp }}/smoke-dumps
+          if-no-files-found: ignore
 
   # Screenshot regression tests: eight screens in Dark, Light and Translucent
   # against e2e/snapshots/*-darwin.png (see e2e/visual-regressions.e2e.mjs).

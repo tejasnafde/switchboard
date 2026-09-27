@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const electronPath = require('electron')
 const runs = Number(process.env.RUNS ?? 50)
-const mode = process.env.SB_SMOKE_EXIT ?? 'exit'
+const mode = process.env.SB_SMOKE_EXIT ?? 'default'
 const dumpRoot = resolve(process.env.DUMP_DIR ?? 'crash-dumps', mode)
 mkdirSync(dumpRoot, { recursive: true })
 const env = { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', SB_SMOKE_CRASH_DIR: dumpRoot }

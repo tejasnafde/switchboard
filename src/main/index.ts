@@ -28,7 +28,7 @@ import { attachPushNotifier } from './push/registry'
 import { registerAppHandlers, type AppHandlerDependencies } from './ipc/app'
 import { isMenuCaptureActive, setMenuCapture, unlessCapturing } from './menu-capture'
 import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
-import { registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
+import { disposeSettingsFileSync, registerSettingsFileHandlers, settingsFileSync } from './ipc/settings-file'
 import { isSettingsFileKey } from '@shared/settings-file'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
@@ -41,7 +41,7 @@ import type { PartialClientConfig } from '@shared/google-oauth'
 import { MobileEndpoint } from './backend/mobile-server'
 import { registerGitHandlers } from './ipc/git'
 import { registerSttHandlers } from './ipc/stt'
-import { registerIdeHandlers } from './ipc/ide'
+import { registerIdeHandlers, shutdownIde } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
@@ -49,6 +49,11 @@ import { attachPullRequestAutoLink, registerPullRequestHandlers } from './ipc/pu
 import { tryResolveProviderInstance } from './db/provider-instances'
 import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
 import { QuitCoordinator } from './quit-coordinator'
+import { runShutdownSequence } from './shutdown-sequence'
+import { isQuitSmoke, reportQuitSmoke, runQuitSmoke } from './smoke-quit'
+import { stopSwitchboardMcpServer } from './mcp/switchboard-mcp-server'
+import { closeAllLaunchConfigWatchers } from './launch-config/launch-config-store'
+import { closeAllHeadWatchers } from './git/head-watcher'
 import { ProviderRegistry } from './provider/provider-registry'
 import { disposeUsageProbes } from './provider/usage'
 import { getDb, closeDb, getSetting, setSetting, getProjects } from './db/database'
@@ -82,16 +87,34 @@ let mobileEndpoint: MobileEndpoint | null = null
 /** True once the user has asked for restart-and-install; repeats are dropped. */
 let installRequested = false
 
-// PTYs first, and awaited - see shutdownTerminals for why the old
-// synchronous kill still crashed on quit.
+// One ordered, awaited teardown (see shutdown-sequence.ts). PTYs first - see
+// shutdownTerminals for why the old synchronous kill still crashed on quit.
+// Every writer stops before the database closes, and the file watchers close
+// here rather than being left for process exit to tear down.
+const shutdownLog = createMainLogger('app:shutdown')
 const quitCoordinator = new QuitCoordinator(
   async () => {
-    await shutdownTerminals()
-    providerRegistry?.stopAll()
-    disposeUsageProbes()
-    void stopAllMachineConnections()
-    mobileEndpoint?.close()
-    closeDb()
+    const reports = await runShutdownSequence([
+      { name: 'window-bounds', run: () => { if (mainWindow) saveWindowBounds(mainWindow) } },
+      { name: 'terminals', run: shutdownTerminals },
+      { name: 'providers', run: () => providerRegistry?.stopAll(), timeoutMs: 5_000 },
+      { name: 'push', run: () => { detachPush?.(); detachPush = null; detachAutoLink?.(); detachAutoLink = null } },
+      { name: 'switchboard-mcp', run: stopSwitchboardMcpServer },
+      { name: 'ide', run: shutdownIde },
+      { name: 'usage-probes', run: disposeUsageProbes },
+      { name: 'machines', run: stopAllMachineConnections },
+      { name: 'mobile-endpoint', run: () => mobileEndpoint?.close() },
+      {
+        name: 'file-watchers',
+        run: () => {
+          disposeSettingsFileSync()
+          closeAllLaunchConfigWatchers()
+          closeAllHeadWatchers()
+        },
+      },
+      { name: 'database', run: () => closeDb({ forQuit: true }) },
+    ], { log: shutdownLog })
+    if (isQuitSmoke()) reportQuitSmoke(reports)
   },
   () => app.quit(),
 )
@@ -336,6 +359,15 @@ function loadWindowBounds(): SavedBounds | null {
   }
 }
 
+function saveWindowBounds(window: BrowserWindow): void {
+  if (window.isDestroyed()) return
+  try {
+    setSetting('windowBounds', JSON.stringify({ ...window.getNormalBounds(), maximized: window.isMaximized() }))
+  } catch (err) {
+    log.warn('failed to persist window bounds', err)
+  }
+}
+
 // E2E runs set SB_E2E_BACKGROUND=1 so their windows never take focus from the
 // person at the machine: an accessory app gets no Dock icon and is not
 // activated, and showInactive() draws the window without making it key.
@@ -439,12 +471,10 @@ function createWindow(): BrowserWindow {
 
   // Restore maximized state and remember bounds for next launch.
   if (saved?.maximized) window.maximize()
+  // A quit saves them in its first teardown step instead, while the database
+  // is still open; by the time windows close it has been closed for good.
   window.on('close', () => {
-    try {
-      setSetting('windowBounds', JSON.stringify({ ...window.getNormalBounds(), maximized: window.isMaximized() }))
-    } catch (err) {
-      log.warn('failed to persist window bounds', err)
-    }
+    if (!quitCoordinator.isQuitting) saveWindowBounds(window)
   })
 
   // Renderer requests actual window close (after checking no panes to close)
@@ -592,17 +622,25 @@ function registerTourProtocol(): void {
 // with `--smoke-test` to catch import-time failures (e.g. ERR_REQUIRE_ESM
 // from an ESM-only dep that got externalized as CJS) before we cut a tag.
 // Registered before the real whenReady handler so it fires first and
-// terminates the process before any window/DB initialization runs.
+// quits before any window/DB initialization runs.
+//
+// app.quit(), never app.exit(): exit() calls the C runtime's exit() straight
+// away, whose atexit destructors free Chromium's sandbox broker while a
+// thread-pool worker is still spawning the startup child processes. On
+// Windows that was an intermittent 0xC0000005 in
+// sandbox::ThreadPool::RegisterWait (10 of 150 launches on windows-latest;
+// quit() 0 of 150). quit() runs the orderly shutdown that drains those tasks.
+// SB_SMOKE_CRASH_DIR keeps a local minidump of any crash in either smoke mode
+// for CI to upload.
+const smokeDumpDir = process.env.SB_SMOKE_CRASH_DIR
+if (smokeDumpDir && (process.argv.includes('--smoke-test') || isQuitSmoke())) {
+  app.setPath('crashDumps', smokeDumpDir)
+  crashReporter.start({ uploadToServer: false })
+}
 if (process.argv.includes('--smoke-test')) {
-  const dumpDir = process.env.SB_SMOKE_CRASH_DIR
-  if (dumpDir) {
-    app.setPath('crashDumps', dumpDir)
-    crashReporter.start({ uploadToServer: false })
-  }
   app.whenReady().then(() => {
-    console.log('[smoke-test] main module loaded + app ready, exiting 0')
-    if (process.env.SB_SMOKE_EXIT === 'quit') app.quit()
-    else app.exit(0)
+    console.log('[smoke-test] main module loaded + app ready, quitting')
+    app.quit()
   })
 }
 
@@ -781,6 +819,14 @@ app.whenReady().then(() => {
   // All handlers are recorded on the endpoint now; start listening if a token
   // is already saved. Later Settings saves re-apply() live over IPC.
   mobileEndpoint.apply()
+
+  if (isQuitSmoke()) {
+    // On failure no teardown report is printed, which the launcher counts as a failed run.
+    runQuitSmoke(mainWindow, () => app.quit()).catch((err) => {
+      crashLog.error('[smoke-quit] could not open the session to quit from', err)
+      app.quit()
+    })
+  }
 
   app.on('activate', () => {
     if (quitCoordinator.isQuitting) return

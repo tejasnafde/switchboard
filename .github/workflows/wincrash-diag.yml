@@ -26,16 +26,16 @@ jobs:
           retry_wait_seconds: 15
           command: npm ci
       - run: npm run build:fast
-      - name: Loop app.exit
+      - name: Loop boot smoke (fixed, app.quit)
         run: node scripts/smoke-loop-diag.mjs
         env:
-          RUNS: '150'
-          SB_SMOKE_EXIT: exit
-      - name: Loop app.quit
-        run: node scripts/smoke-loop-diag.mjs
+          RUNS: '300'
+          SB_SMOKE_EXIT: fixed
+      - name: Quit smoke x30
+        run: node scripts/smoke-quit.mjs
         env:
-          RUNS: '150'
-          SB_SMOKE_EXIT: quit
+          SB_SMOKE_QUIT_RUNS: '30'
+          SB_SMOKE_CRASH_DIR: ${{ github.workspace }}/crash-dumps/quit-smoke
       - name: Analyze dumps
         if: always()
         shell: pwsh

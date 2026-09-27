@@ -84,6 +84,17 @@ interface IdeRuntime {
 /** Renderer-facing status: manager states plus the one-time download. */
 export type IdePublicStatus = IdeStatus | 'downloading'
 
+/** One stop per registration: a reopened window registers again. */
+const ideStops = new Set<() => void>()
+let ideShuttingDown = false
+
+/** Quit: stop every code-server this process started, and start no more. */
+export function shutdownIde(): void {
+  ideShuttingDown = true
+  for (const stop of ideStops) stop()
+  ideStops.clear()
+}
+
 export function registerIdeHandlers(host: BackendHost): void {
   let runtime: IdeRuntime | null = null
   let booting: Promise<IdeRuntime | null> | null = null
@@ -175,6 +186,7 @@ export function registerIdeHandlers(host: BackendHost): void {
     IdeChannels.ENSURE,
     async (folder: string, opts?: { theme?: string; skipDownload?: boolean }) => {
       try {
+        if (ideShuttingDown) return { ok: false as const, error: 'shutting-down' }
         // TCC pre-flight: also on reuse - a new project folder may be denied
         // even while the server is already up for another one.
         await assertCwdReadable(folder)
@@ -201,6 +213,11 @@ export function registerIdeHandlers(host: BackendHost): void {
         }
         pushStatus('starting')
         const port = await runtime.manager.ensureStarted()
+        // Quit arrived during the boot: the stop it ran saw no child yet.
+        if (ideShuttingDown) {
+          runtime.manager.stop()
+          return { ok: false as const, error: 'shutting-down' }
+        }
         rememberIdePort(port)
         pushStatus('ready', port)
         return { ok: true as const, port }
@@ -220,5 +237,5 @@ export function registerIdeHandlers(host: BackendHost): void {
     return { ok: true }
   })
 
-  app.on('before-quit', () => runtime?.manager.stop())
+  ideStops.add(() => runtime?.manager.stop())
 }
