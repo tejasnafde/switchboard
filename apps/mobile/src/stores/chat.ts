@@ -31,7 +31,7 @@ export type FeedItem =
   | { kind: 'text'; id: string; text: string; stream: 'assistant' | 'reasoning' | 'plan'; done: boolean; durationMs?: number }
   | { kind: 'tool'; id: string; toolName: string; input: unknown; output?: string; state: 'running' | 'done' }
   | { kind: 'denial'; id: string; toolName: string; reason: string }
-  | { kind: 'approval'; id: string; requestId: string; toolName: string; detail: string; requestType: string; state: 'pending' | 'approve' | 'deny'; desktopOnly?: boolean }
+  | { kind: 'approval'; id: string; requestId: string; toolName: string; detail: string; requestType: string; state: 'pending' | 'approve' | 'deny'; desktopOnly?: boolean; closed?: true }
   | { kind: 'question'; id: string; requestId: string; questions: Question[]; answers?: string[][] }
   | { kind: 'plan'; id: string; planId: string; markdown: string }
   | { kind: 'fileEdit'; id: string; relPath: string; changeKind: 'add' | 'modify' | 'delete'; oldContent: string; newContent: string }
@@ -117,8 +117,11 @@ interface ChatState {
   /** `id` ties the bubble to its queued message so a failed send can undo it. */
   addUserMessage: (key: string, text: string, images?: string[], id?: string) => void
   markQuestionAnswered: (key: string, requestId: string, answers: string[][]) => void
-  /** `pending` reopens a card the backend refused to settle. */
-  markApprovalResolved: (key: string, requestId: string, decision: 'approve' | 'deny' | 'pending') => void
+  markApprovalResolved: (key: string, requestId: string, decision: 'approve' | 'deny') => void
+  /** Put back a card whose answer the backend refused, unless its request.closed has arrived since. */
+  reopenApproval: (key: string, requestId: string) => void
+  /** A line in the feed that changes nothing else, not even the thread's status. */
+  addNotice: (key: string, text: string) => void
   /** `keepIds` survives the replace. History cannot know about a message still
    *  in the outbox, so seeding over one would take the user's bubble down and
    *  let its echo put a second one back. */
@@ -367,7 +370,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             items: replaceItem(
               t.items,
               (i) => i.kind === 'approval' && i.requestId === event.requestId,
-              (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: event.decision }),
+              (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: event.decision, closed: true }),
             ),
           }
         case 'question.asked':
@@ -543,6 +546,24 @@ export const useChatStore = create<ChatState>()(
           (i) => i.kind === 'approval' && i.requestId === requestId,
           (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: decision }),
         ),
+      })),
+    })),
+
+  reopenApproval: (key, requestId) =>
+    set((s) => ({
+      threads: patchThread(s.threads, key, (t) => ({
+        items: replaceItem(
+          t.items,
+          (i) => i.kind === 'approval' && i.requestId === requestId && !i.closed,
+          (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: 'pending' }),
+        ),
+      })),
+    })),
+
+  addNotice: (key, text) =>
+    set((s) => ({
+      threads: patchThread(s.threads, key, (t) => ({
+        items: [...t.items, { kind: 'notice', id: `n-${Date.now()}-${t.items.length}`, text }],
       })),
     })),
 

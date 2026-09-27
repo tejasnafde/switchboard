@@ -66,7 +66,7 @@ function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; answer?: (card: Ext
       queueMicrotask(() => approvals.respond('t1', e.requestId, outcome.decision, outcome.decision === 'approve' ? outcome.response : {}, true))
     },
   })
-  const mode: RuntimeMode = opts.mode ?? 'sandbox'
+  let mode: RuntimeMode = opts.mode ?? 'sandbox'
   const tools = buildPrTools({
     threadId: 't1',
     chatId: 'root-1',
@@ -79,7 +79,7 @@ function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; answer?: (card: Ext
   })
   const tool = (name: string): McpTool => tools.find((t) => t.name === name)!
   const call = (name: string, args: Record<string, unknown>) => tool(name).call(args, { signal: new AbortController().signal })
-  return { tools, call, events, access, calls }
+  return { tools, call, events, access, calls, setMode: (m: RuntimeMode) => { mode = m } }
 }
 
 const approve = (response = {}) => () => ({ decision: 'approve' as const, response })
@@ -265,6 +265,36 @@ describe('a call the agent cancels after the approval', () => {
     const reply = tools.find((t) => t.name === 'reply_to_conversation')!
     await reply.call({ conversationId: 'PRRT_1', text: 'Done.' }, { signal: controller.signal })
     expect(calls).toEqual([])
+  })
+})
+
+describe('what changed while the card was open', () => {
+  it('posts nothing when the user unlinked the PR before approving', async () => {
+    let access: AgentPullRequestAccess | null = null
+    const ctx = setup({ answer: () => { vi.mocked(access!.linkedPrs).mockReturnValue([]); return { decision: 'approve' as const, response: {} } } })
+    access = ctx.access
+    const result = await ctx.call('reply_to_conversation', { conversationId: 'PRRT_1', text: 'Done.' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('unlinked')
+    expect(ctx.calls).toEqual([])
+  })
+
+  it('posts nothing when the chat switched to plan mode before the approval', async () => {
+    let switchToPlan: () => void = () => {}
+    const ctx = setup({ answer: () => { switchToPlan(); return { decision: 'approve' as const, response: {} } } })
+    switchToPlan = () => ctx.setMode('plan')
+    const result = await ctx.call('resolve_conversation', { conversationId: 'PRRT_1' })
+    expect(result.isError).toBe(true)
+    expect(ctx.events).toContainEqual(expect.objectContaining({ type: 'tool.denied', mode: 'plan' }))
+    expect(ctx.calls).toEqual([])
+  })
+
+  it('re-runs nothing when the PR was unlinked', async () => {
+    let access: AgentPullRequestAccess | null = null
+    const ctx = setup({ answer: () => { vi.mocked(access!.linkedPrs).mockReturnValue([OTHER]); return { decision: 'approve' as const, response: {} } } })
+    access = ctx.access
+    expect((await ctx.call('rerun_check', { checkId: 'chk1' })).isError).toBe(true)
+    expect(ctx.calls).toEqual([])
   })
 })
 

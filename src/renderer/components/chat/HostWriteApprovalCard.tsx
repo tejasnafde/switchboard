@@ -68,14 +68,14 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
       </div>
 
       <div className="px-3 py-2 text-[12px] text-[var(--text-secondary)]">
-        <div className="font-[family-name:var(--font-mono)]">
+        <div className="font-[family-name:var(--font-mono)] [overflow-wrap:anywhere]">
           {card.url
             ? <button type="button" onClick={() => openExternal(card.url!)} className="cursor-pointer border-none bg-transparent p-0 text-left text-[var(--text-secondary)] hover:underline">{hostWriteContext(card)}</button>
             : hostWriteContext(card)}
         </div>
         {card.checkName && <div className="mt-1 text-[var(--text-primary)]">{card.checkName}</div>}
         {card.quote && (
-          <div data-host-write-quote className="mt-1.5 whitespace-pre-wrap border-l-2 border-[var(--border)] pl-2.5 text-[var(--text-primary)]">
+          <div data-host-write-quote className="mt-1.5 whitespace-pre-wrap [overflow-wrap:anywhere] border-l-2 border-[var(--border)] pl-2.5 text-[var(--text-primary)]">
             <b>{card.quote.author}:</b> {card.quote.body}
           </div>
         )}
@@ -98,7 +98,7 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
             rows={3}
             className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-[12.5px] leading-[1.5] text-[var(--text-primary)] outline-none focus-visible:border-[var(--accent)]"
           />
-          <div className="mt-1 flex text-[11px] text-[var(--text-muted)]">
+          <div className="mt-1 flex flex-wrap gap-x-2 text-[11px] text-[var(--text-muted)]">
             <span>Posted as you, ending with "via Switchboard".</span>
             {pending && problem && <span role="alert" className="ml-auto text-[var(--error)]">{problem}</span>}
           </div>
@@ -106,8 +106,9 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
       )}
 
       {pending && (
-        <div className="flex items-center gap-2 border-t border-[var(--border)] px-3 py-2">
-          <span className="mr-auto text-[11px] text-[var(--text-muted)]">{card.agentLabel} asked for this; Switchboard holds it until you choose.</span>
+        <div data-host-write-actions className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] px-3 py-2">
+          {/* Shares the row when there is room, takes its own line in a narrow chat. */}
+          <span className="mr-auto min-w-0 flex-[1_1_14rem] text-[11px] text-[var(--text-muted)]">{card.agentLabel} asked for this; Switchboard holds it until you choose.</span>
           {buttons.map((b) => (
             <Button
               key={b.id}

@@ -287,3 +287,35 @@ describe('messages the backend holds', () => {
     expect(prunePersistedThreads(useChatStore.getState().threads)[KEY]).not.toHaveProperty('heldTurns')
   })
 })
+
+describe('an approval the backend refused', () => {
+  const opened: RuntimeEvent = { type: 'request.opened', threadId: THREAD, requestId: 'sbmcp_1', requestType: 'tool', toolName: 'mcp__switchboard__reply_to_conversation', detail: 'Reply' }
+  const approval = () => items().find((i) => i.kind === 'approval') as Extract<FeedItem, { kind: 'approval' }>
+
+  it('reopens a card that is still open', () => {
+    ingest(opened)
+    flushQueue()
+    useChatStore.getState().markApprovalResolved(KEY, 'sbmcp_1', 'approve')
+    useChatStore.getState().reopenApproval(KEY, 'sbmcp_1')
+    expect(approval().state).toBe('pending')
+  })
+
+  it('does not reopen a card whose close arrived while the phone re-checked', () => {
+    ingest(opened)
+    flushQueue()
+    useChatStore.getState().markApprovalResolved(KEY, 'sbmcp_1', 'approve')
+    ingest({ type: 'request.closed', threadId: THREAD, requestId: 'sbmcp_1', decision: 'deny' })
+    flushQueue()
+    useChatStore.getState().reopenApproval(KEY, 'sbmcp_1')
+    expect(approval().state).toBe('deny')
+  })
+
+  it('reports the failure as a notice that leaves the thread status alone', () => {
+    ingest({ type: 'status', threadId: THREAD, status: 'running' } as RuntimeEvent)
+    flushQueue()
+    useChatStore.getState().addNotice(KEY, 'Could not answer the approval: needs the desktop')
+    const thread = useChatStore.getState().threads[KEY]
+    expect(thread.status).toBe('running')
+    expect(thread.items.at(-1)).toMatchObject({ kind: 'notice', text: 'Could not answer the approval: needs the desktop' })
+  })
+})

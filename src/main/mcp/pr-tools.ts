@@ -186,6 +186,22 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     return toolText('The user declined. Nothing was posted. Ask them what they want instead of retrying.', true)
   }
 
+  /**
+   * Checked last, right before the write: while the card was open the agent
+   * may have stopped waiting (it would never hear the write happened and could
+   * ask again), and the user may have unlinked the PR or switched to plan mode.
+   */
+  const afterApproval = (ref: PrRef, toolName: string, signal: AbortSignal): McpToolResult | null => {
+    if (signal.aborted) return declined({ decision: 'deny', reason: 'cancelled' })
+    const plan = refusePlan(toolName)
+    if (plan) return plan
+    const key = prKey(normalizePrRef(ref))
+    if (!ctx.pullRequests?.linkedPrs(ctx.chatId).some((r) => prKey(normalizePrRef(r)) === key)) {
+      return toolText(`${prLabel(ref)} was unlinked from this chat while the card was open. Nothing was posted.`, true)
+    }
+    return null
+  }
+
   const card = (ref: PrRef, action: HostWriteCard['action'], rest: Partial<HostWriteCard>): HostWriteCard => ({
     action,
     agentLabel: ctx.agentLabel,
@@ -312,9 +328,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       }), signal)
       if ('content' in outcome) return outcome
       if (outcome.decision === 'deny') return declined(outcome)
-      // Approved, but the agent stopped waiting (turn stopped, call timed out):
-      // it would never hear the write happened and could ask again.
-      if (signal.aborted) return declined({ decision: 'deny', reason: 'cancelled' })
+      const changed = afterApproval(p.ref, PR_REPLY_TOOL, signal)
+      if (changed) return changed
 
       const final = outcome.response.text === undefined ? draft : checkReplyText(outcome.response.text)
       if (!final.ok) return toolText(`The edited reply was refused: ${final.message} Nothing was posted.`, true)
@@ -362,9 +377,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       }), signal)
       if ('content' in outcome) return outcome
       if (outcome.decision === 'deny') return declined(outcome)
-      // Approved, but the agent stopped waiting (turn stopped, call timed out):
-      // it would never hear the write happened and could ask again.
-      if (signal.aborted) return declined({ decision: 'deny', reason: 'cancelled' })
+      const changed = afterApproval(p.ref, PR_RESOLVE_TOOL, signal)
+      if (changed) return changed
       const done = await p.access.setResolved(p.ref, { conversationId: conversation.id }, true)
       if (!done.ok) return toolText(`Resolving failed: ${done.error.message}`, true)
       return toolText(`Resolved the conversation${location(conversation) ? ` at ${location(conversation)}` : ''} on ${prLabel(p.ref)}.`)
@@ -402,9 +416,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const outcome = await ask(PR_RERUN_TOOL, card(p.ref, 'rerun', { url: check.url, checkName: check.name }), signal)
       if ('content' in outcome) return outcome
       if (outcome.decision === 'deny') return declined(outcome)
-      // Approved, but the agent stopped waiting (turn stopped, call timed out):
-      // it would never hear the write happened and could ask again.
-      if (signal.aborted) return declined({ decision: 'deny', reason: 'cancelled' })
+      const changed = afterApproval(p.ref, PR_RERUN_TOOL, signal)
+      if (changed) return changed
       const done = await p.access.rerunCheck(p.ref, { checkId: check.id })
       if (!done.ok) return toolText(`Re-running failed: ${done.error.message}`, true)
       return toolText(`Re-running ${check.name} on ${prLabel(p.ref)}. Check back with ${PR_STATUS_TOOL} later.`)

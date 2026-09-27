@@ -485,7 +485,7 @@ Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file
 `npm run test:e2e:visual` (after `npm run build:fast`) has two phases. The
 **screens** phase captures the key screens (chat after a finished turn, a long
 list reply in a narrow chat, the running composer, sidebar, kanban, Settings, Settings' Accounts page, command palette, provider picker,
-approval card) in Dark, Light and Translucent against the tour's seeded
+approval card, and an agent's pull request write card at the default and the narrow width, from the demo adapter's "reply to the review" script; the run fails if that card overflows sideways) in Dark, Light and Translucent against the tour's seeded
 workspace (`e2e/fixtures/demo-workspace.mjs`) with `SB_DEMO_ADAPTER=1`, and
 compares them with `e2e/snapshots/<screen>-<theme>-darwin.png`. The CI job
 `Visual regressions (macOS)` runs it on every PR; on failure the actual and
