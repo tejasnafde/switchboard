@@ -9,10 +9,11 @@ import { EventEmitter } from 'node:events'
 import { promises as fs } from 'node:fs'
 import { PassThrough } from 'node:stream'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 
-const osMock = vi.hoisted(() => ({ homedir: '/tmp/sb-e2e-ocperm-missing-home' }))
+const osMock = vi.hoisted(() => ({ homedir: '' }))
 const newSessionCalls: Array<Record<string, unknown>> = []
 const spawnedEnvs: Array<Record<string, string | undefined>> = []
 const scratchDirs: string[] = []
@@ -102,7 +103,7 @@ async function start(
 beforeEach(() => {
   newSessionCalls.length = 0
   spawnedEnvs.length = 0
-  osMock.homedir = '/tmp/sb-e2e-ocperm-missing-home'
+  osMock.homedir = join(tmpdir(), 'sb-e2e-ocperm-missing-home')
   client = null
 })
 
@@ -183,7 +184,7 @@ describe('OpenCode registration', () => {
   })
 
   it('uses homedir as the global OpenCode config fallback when HOME is absent', async () => {
-    const dir = await fs.mkdtemp('/tmp/sb-e2e-ocperm.')
+    const dir = await fs.mkdtemp(join(tmpdir(), 'sb-e2e-ocperm.'))
     scratchDirs.push(dir)
     osMock.homedir = dir
     await fs.mkdir(join(dir, '.config', 'opencode'), { recursive: true })
@@ -200,7 +201,7 @@ describe('OpenCode registration', () => {
   })
 
   it('does not emit a generated ask over a file-backed tool deny', async () => {
-    const dir = await fs.mkdtemp('/tmp/sb-e2e-ocperm.')
+    const dir = await fs.mkdtemp(join(tmpdir(), 'sb-e2e-ocperm.'))
     scratchDirs.push(dir)
     await fs.writeFile(
       join(dir, 'opencode.json'),
@@ -213,7 +214,7 @@ describe('OpenCode registration', () => {
   })
 
   it('does not emit generated rules over a file-backed scalar deny', async () => {
-    const dir = await fs.mkdtemp('/tmp/sb-e2e-ocperm.')
+    const dir = await fs.mkdtemp(join(tmpdir(), 'sb-e2e-ocperm.'))
     scratchDirs.push(dir)
     await fs.writeFile(
       join(dir, 'opencode.jsonc'),
@@ -235,7 +236,7 @@ describe('OpenCode registration', () => {
   })
 
   it('does not emit generated rules when a user config file cannot be parsed', async () => {
-    const dir = await fs.mkdtemp('/tmp/sb-e2e-ocperm.')
+    const dir = await fs.mkdtemp(join(tmpdir(), 'sb-e2e-ocperm.'))
     scratchDirs.push(dir)
     await fs.writeFile(join(dir, 'opencode.json'), '{"mcp":')
 
