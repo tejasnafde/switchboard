@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ChatMessage } from '../../src/shared/types'
 import type { RepoRef, PrRef } from '../../src/shared/pull-requests'
 import {
   MAX_HISTORY_SCAN_CHARS,
@@ -8,6 +7,7 @@ import {
   type PullRequestHistoryScanDeps,
   type PullRequestHistoryScanTarget,
 } from '../../src/main/pull-requests/history-scan'
+import type { HistoryPartKind } from '../../src/main/pull-requests/history-source'
 import { historyScanSummary } from '../../src/shared/pull-request-links'
 
 vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
@@ -15,51 +15,91 @@ vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.f
 const BOT: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2' }
 const SB: RepoRef = { host: 'github', owner: 'tejasnafde', name: 'switchboard' }
 const TARGET: PullRequestHistoryScanTarget = { id: 'agent_1', projectPath: '/repo' }
+const BOT_605 = 'https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/605'
 
-function msg(overrides: Partial<ChatMessage>): ChatMessage {
-  return { id: overrides.id ?? 'm1', role: overrides.role ?? 'assistant', content: overrides.content ?? '', timestamp: overrides.timestamp ?? 1, ...overrides }
-}
+type Part = [HistoryPartKind, string]
+type TestDeps = PullRequestHistoryScanDeps & { linked: PrRef[]; visited: Part[] }
 
-function deps(messages: ChatMessage[], repo: RepoRef | null = BOT): PullRequestHistoryScanDeps {
+function deps(parts: Part[], repo: RepoRef | null = BOT): TestDeps {
   const linked: PrRef[] = []
-  const notified: string[] = []
+  const visited: Part[] = []
   return {
     listUnscanned: vi.fn(() => [TARGET]),
-    loadHistory: vi.fn(async () => ({ messages })),
+    readHistory: vi.fn(async (_id, visit) => {
+      for (const part of parts) {
+        visited.push(part)
+        if (!visit(...part)) return
+      }
+    }),
     repoForProject: vi.fn(async () => repo),
     link: vi.fn((_id, ref) => {
       linked.push(ref)
       return true
     }),
-    notify: vi.fn((id) => notified.push(id)),
+    notify: vi.fn(),
     markScanned: vi.fn(),
     linked,
-    notified,
-  } as PullRequestHistoryScanDeps & { linked: PrRef[]; notified: string[] }
+    visited,
+  }
+}
+
+function pendingDeps(ids: string[], overrides: Partial<PullRequestHistoryScanDeps> = {}): PullRequestHistoryScanDeps & { scanned: Set<string> } {
+  const scanned = new Set<string>()
+  return {
+    scanned,
+    listUnscanned: vi.fn((limit) => ids.filter((id) => !scanned.has(id)).slice(0, limit).map((id) => ({ id, projectPath: '/repo' }))),
+    readHistory: vi.fn(async () => {}),
+    repoForProject: vi.fn(async () => BOT),
+    link: vi.fn(() => true),
+    notify: vi.fn(),
+    markScanned: vi.fn((id) => { scanned.add(id) }),
+    ...overrides,
+  }
 }
 
 describe('pull request history scan', () => {
   it('links a bbpr-style Bitbucket URL from stored tool output', async () => {
-    const d = deps([
-      msg({
-        content: '',
-        toolCalls: [{ id: 'tool_1', name: 'bbpr', input: 'bbpr show 605', output: 'PR: https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/605' }],
-      }),
-    ]) as PullRequestHistoryScanDeps & { linked: PrRef[]; notified: string[] }
+    const d = deps([['toolInput', '{"command":"bbpr show"}'], ['toolOutput', `PR: ${BOT_605}`]])
 
     const result = await scanPullRequestHistoryForConversation(TARGET, d)
 
-    expect(d.link).toHaveBeenCalledWith('agent_1', { ...BOT, number: 605 })
     expect(d.linked).toEqual([{ ...BOT, number: 605 }])
-    expect(d.notified).toEqual(['agent_1'])
+    expect(d.notify).toHaveBeenCalledWith('agent_1')
+    expect(d.markScanned).toHaveBeenCalledWith('agent_1')
     expect(result).toMatchObject({ linked: 1, capped: false })
+  })
+
+  it('links a PR URL in a tool input', async () => {
+    const d = deps([['toolInput', JSON.stringify({ command: `cd /repo &&\nbbpr ${BOT_605} diff` }, null, 2)]])
+
+    await scanPullRequestHistoryForConversation(TARGET, d)
+
+    expect(d.linked).toEqual([{ ...BOT, number: 605 }])
+  })
+
+  it('links a bare bbpr number in a tool input to the Bitbucket project', async () => {
+    const d = deps([['toolInput', JSON.stringify({ command: 'cd /repo && bbpr 605 diff', description: 'Show the diff' })]])
+
+    await scanPullRequestHistoryForConversation(TARGET, d)
+
+    expect(d.linked).toEqual([{ ...BOT, number: 605 }])
+  })
+
+  it('ignores a bare bbpr number in chat text, and on a GitHub project', async () => {
+    const text = deps([['text', 'bbpr 605 diff'], ['toolOutput', 'bbpr 606']])
+    await scanPullRequestHistoryForConversation(TARGET, text)
+    expect(text.link).not.toHaveBeenCalled()
+
+    const github = deps([['toolInput', '{"command":"bbpr 605"}']], SB)
+    await scanPullRequestHistoryForConversation(TARGET, github)
+    expect(github.link).not.toHaveBeenCalled()
   })
 
   it('scans user text and ignores a pull request from another repository', async () => {
     const d = deps([
-      msg({ role: 'user', content: 'please review https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/605' }),
-      msg({ role: 'assistant', content: 'tracked in https://github.com/tejasnafde/switchboard/pull/612' }),
-    ], SB) as PullRequestHistoryScanDeps & { linked: PrRef[] }
+      ['text', `please review ${BOT_605}`],
+      ['text', 'tracked in https://github.com/tejasnafde/switchboard/pull/612'],
+    ], SB)
 
     await scanPullRequestHistoryForConversation(TARGET, d)
 
@@ -67,9 +107,7 @@ describe('pull request history scan', () => {
   })
 
   it('does not revive an unlinked tombstone', async () => {
-    const d = deps([
-      msg({ content: 'Closed https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/605 earlier.' }),
-    ]) as PullRequestHistoryScanDeps
+    const d = deps([['text', `Closed ${BOT_605} earlier.`], ['toolInput', '{"command":"bbpr 605"}']])
     vi.mocked(d.link).mockReturnValue(false)
 
     const result = await scanPullRequestHistoryForConversation(TARGET, d)
@@ -79,69 +117,111 @@ describe('pull request history scan', () => {
     expect(result.linked).toBe(0)
   })
 
-  it('marks a conversation scanned so the pending scan only loads it once', async () => {
-    const scanned = new Set<string>()
-    const loadHistory = vi.fn(async () => ({ messages: [msg({ content: 'https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/605' })] }))
-    const d: PullRequestHistoryScanDeps = {
-      listUnscanned: vi.fn(() => scanned.has(TARGET.id) ? [] : [TARGET]),
-      loadHistory,
-      repoForProject: vi.fn(async () => BOT),
-      link: vi.fn(() => true),
-      notify: vi.fn(),
-      markScanned: vi.fn((id) => { scanned.add(id) }),
-    }
+  it('marks a conversation scanned so the pending scan only reads it once', async () => {
+    const d = pendingDeps([TARGET.id])
 
     await scanPendingPullRequestHistory(d, { batchSize: 10, concurrency: 1, yieldMs: 0 })
     await scanPendingPullRequestHistory(d, { batchSize: 10, concurrency: 1, yieldMs: 0 })
 
-    expect(loadHistory).toHaveBeenCalledOnce()
+    expect(d.readHistory).toHaveBeenCalledOnce()
     expect(d.markScanned).toHaveBeenCalledOnce()
   })
+})
 
-  it('caps the scanned text per chat', async () => {
-    const d = deps([
-      msg({ content: 'a'.repeat(MAX_HISTORY_SCAN_CHARS + 10_000) }),
-      msg({ content: 'https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/605' }),
-    ]) as PullRequestHistoryScanDeps
+describe('the character cap', () => {
+  it('stops reading at the cap and says the chat was only partly read', async () => {
+    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS + 10_000)], ['text', BOT_605]])
 
     const result = await scanPullRequestHistoryForConversation(TARGET, d)
 
+    expect(d.visited).toHaveLength(1)
     expect(d.link).not.toHaveBeenCalled()
     expect(result.capped).toBe(true)
     expect(result.scannedChars).toBe(MAX_HISTORY_SCAN_CHARS)
   })
 
+  it('reports a partial read when text follows a part that fills the cap exactly', async () => {
+    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS)], ['text', 'more']])
+
+    const result = await scanPullRequestHistoryForConversation(TARGET, d)
+
+    expect(result.capped).toBe(true)
+  })
+
+  it('does not report a partial read when a chat fills the cap exactly and ends', async () => {
+    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS)], ['text', '  ']])
+
+    expect((await scanPullRequestHistoryForConversation(TARGET, d)).capped).toBe(false)
+  })
+
+  it('never links a PR number the cap cut short', async () => {
+    const url = 'https://github.com/tejasnafde/switchboard/pull/612'
+    const cutAfter6 = url.length - 2
+    const d = deps([['text', `${'a'.repeat(MAX_HISTORY_SCAN_CHARS - cutAfter6 - 1)} ${url}`]], SB)
+
+    await scanPullRequestHistoryForConversation(TARGET, d)
+
+    expect(d.link).not.toHaveBeenCalled()
+  })
+
+  it('never takes a bbpr number the cap cut short', async () => {
+    const command = 'bbpr 605'
+    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS - command.length + 2)], ['toolInput', command]])
+
+    await scanPullRequestHistoryForConversation(TARGET, d)
+
+    expect(d.link).not.toHaveBeenCalled()
+  })
+
+  it('counts text repeated by another source once', async () => {
+    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS / 2 + 1)], ['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS / 2 + 1)], ['text', BOT_605]])
+
+    const result = await scanPullRequestHistoryForConversation(TARGET, d)
+
+    expect(result.capped).toBe(false)
+    expect(d.linked).toEqual([{ ...BOT, number: 605 }])
+  })
+})
+
+describe('the pending scan', () => {
   it('works through every batch until no chat is left', async () => {
-    const all = Array.from({ length: 5 }, (_, i) => ({ id: `agent_${i}`, projectPath: '/repo' }))
-    const scanned = new Set<string>()
-    const d: PullRequestHistoryScanDeps = {
-      listUnscanned: vi.fn((limit) => all.filter((t) => !scanned.has(t.id)).slice(0, limit)),
-      loadHistory: vi.fn(async () => ({ messages: [] })),
-      repoForProject: vi.fn(async () => BOT),
-      link: vi.fn(() => true),
-      notify: vi.fn(),
-      markScanned: vi.fn((id) => { scanned.add(id) }),
-    }
+    const ids = Array.from({ length: 5 }, (_, i) => `agent_${i}`)
+    const d = pendingDeps(ids)
 
     const results = await scanPendingPullRequestHistory(d, { batchSize: 2, concurrency: 2, yieldMs: 0 })
 
-    expect(results.map((r) => r.conversationId).sort()).toEqual(all.map((t) => t.id))
+    expect(results.map((r) => r.conversationId).sort()).toEqual(ids)
     expect(d.repoForProject).not.toHaveBeenCalled()
   })
 
-  it('stops instead of looping on a chat that cannot be marked', async () => {
-    const d: PullRequestHistoryScanDeps = {
-      listUnscanned: vi.fn(() => [TARGET]),
-      loadHistory: vi.fn(async () => { throw new Error('unreadable') }),
-      repoForProject: vi.fn(async () => BOT),
-      link: vi.fn(() => true),
-      notify: vi.fn(),
-      markScanned: vi.fn(),
-    }
+  it('pages past a chat that could not be marked', async () => {
+    const ids = ['stuck', 'agent_1', 'agent_2', 'agent_3']
+    const d = pendingDeps(ids)
+    vi.mocked(d.markScanned).mockImplementation((id) => {
+      if (id === 'stuck') throw new Error('disk full')
+      d.scanned.add(id)
+    })
 
-    await expect(scanPendingPullRequestHistory(d, { yieldMs: 0 })).resolves.toEqual([])
-    expect(d.loadHistory).toHaveBeenCalledOnce()
-    expect(d.markScanned).toHaveBeenCalledWith(TARGET.id)
+    const results = await scanPendingPullRequestHistory(d, { batchSize: 1, concurrency: 1, yieldMs: 0 })
+
+    expect(results.map((r) => r.conversationId)).toEqual(ids)
+    expect(d.readHistory).toHaveBeenCalledTimes(4)
+  })
+
+  it('keeps going when a chat can be neither read nor marked', async () => {
+    const d = pendingDeps(['bad', 'agent_1', 'agent_2'])
+    vi.mocked(d.readHistory).mockImplementation(async (id) => {
+      if (id === 'bad') throw new Error('unreadable')
+    })
+    vi.mocked(d.markScanned).mockImplementation((id) => {
+      if (id === 'bad') throw new Error('disk full')
+      d.scanned.add(id)
+    })
+
+    const results = await scanPendingPullRequestHistory(d, { batchSize: 2, concurrency: 2, yieldMs: 0 })
+
+    expect(results.map((r) => r.conversationId).sort()).toEqual(['agent_1', 'agent_2'])
+    expect(d.markScanned).toHaveBeenCalledWith('bad')
   })
 })
 

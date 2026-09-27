@@ -33,7 +33,7 @@ import {
   scanPullRequestHistoryForConversation,
   type PullRequestHistoryScanDeps,
 } from '../pull-requests/history-scan'
-import { loadConversationHistory } from '../conversations/history'
+import { readConversationHistory } from '../pull-requests/history-source'
 import { getSafeStorage, userDataDir } from '../runtime'
 import { createMainLogger } from '../logger'
 import { BitbucketClient, BitbucketProvider, testBitbucket } from '../pull-requests/bitbucket'
@@ -167,11 +167,11 @@ function registerLinkHandlers(host: BackendHost): void {
 function historyScanDeps(): PullRequestHistoryScanDeps {
   return {
     listUnscanned: listUnscannedPullRequestHistoryScanTargets,
-    loadHistory: loadConversationHistory,
+    readHistory: readConversationHistory,
     repoForProject: (projectPath) => getService().repoFor(projectPath),
     link: (conversationId, ref) => linkConversationPullRequest(conversationId, ref, 'auto'),
     notify: (conversationId) => notifyLinks(conversationId),
-    markScanned: markPullRequestHistoryScanned,
+    markScanned: (conversationId) => markPullRequestHistoryScanned(conversationId),
   }
 }
 
