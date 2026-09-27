@@ -21,7 +21,7 @@ import { watch, type FSWatcher } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { replaceFile } from './files/replace-file'
+import { TargetChangedError, replaceFile } from './files/replace-file'
 import {
   IDLE_SETTINGS_FILE_STATUS,
   SETTINGS_FILE_NAME,
@@ -113,8 +113,8 @@ export class SettingsFileSync {
       if (kept) {
         this.deps.log.warn('settings.json left as it is on open: it holds edits that were not fully applied')
       } else {
-        await this.writeFromDb()
-        this.setStatus({ path: this.path, parseError: null, skipped: [], writeSkipped: false })
+        const written = await this.writeFromDb(current)
+        this.setStatus({ path: this.path, parseError: null, skipped: [], writeSkipped: !written })
       }
       this.active = true
       this.startWatching()
@@ -206,8 +206,8 @@ export class SettingsFileSync {
       this.setStatus({ ...this.status, writeSkipped: true })
       return
     }
-    await this.writeFromDb()
-    if (this.status.writeSkipped) this.setStatus({ ...this.status, writeSkipped: false })
+    const writeSkipped = !(await this.writeFromDb(current))
+    if (this.status.writeSkipped !== writeSkipped) this.setStatus({ ...this.status, writeSkipped })
   }
 
   /** Differs, by content, from what Switchboard last wrote or fully applied. mtime is not trusted: it can be coarse or unchanged. */
@@ -227,12 +227,34 @@ export class SettingsFileSync {
     }
   }
 
-  private async writeFromDb(): Promise<void> {
+  /**
+   * Replace the file with the DB's projection. `expected` is what the file
+   * held when the caller checked it (null: absent); a retry waiting on a
+   * Windows lock re-checks it, so an edit saved meanwhile is not overwritten.
+   * False when that edit left the file as it is.
+   */
+  private async writeFromDb(expected: string | null): Promise<boolean> {
     const file = projectSettingsFile(this.deps.readSnapshot(), { projectLabel: this.deps.projectLabel })
     const content = serializeSettingsFile(file)
-    // Temp then rename, so an editor never reads half a file; retried while Windows has it locked.
-    await replaceFile(this.path, content, { log: this.deps.log })
+    try {
+      await replaceFile(this.path, content, { log: this.deps.log, stillSafe: () => this.stillHolds(expected) })
+    } catch (err) {
+      if (!(err instanceof TargetChangedError)) throw err
+      this.deps.log.warn('settings.json changed while its rewrite waited for a lock; left as it is')
+      return false
+    }
     this.markSynced(content)
+    return true
+  }
+
+  private async stillHolds(expected: string | null): Promise<boolean> {
+    try {
+      return (await readFile(this.path, 'utf8')) === expected
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return expected === null
+      this.deps.log.warn('re-reading settings.json before a retried write failed', err)
+      return false
+    }
   }
 
   private async readCurrent(): Promise<string | null> {

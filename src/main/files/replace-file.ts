@@ -10,6 +10,11 @@
  * atomic, but a locked file still accepts a write where it refuses a rename,
  * and losing the save is worse than a brief partial read.
  *
+ * The caller checks the target before calling, but a retry happens later,
+ * and an editor may have saved in between. `stillSafe` is asked again before
+ * each retried rename and before the fallback; when it answers false the
+ * target is left alone and `TargetChangedError` is thrown.
+ *
  * Electron-free, with fs and the clock injectable, for the tests.
  */
 import { rename, unlink, writeFile } from 'node:fs/promises'
@@ -30,6 +35,15 @@ export interface ReplaceFileOptions {
   tmp?: string
   ops?: ReplaceFileOps
   sleep?: (ms: number) => Promise<void>
+  /** Whether the target may still be replaced; asked before each retry and before the fallback. */
+  stillSafe?: () => Promise<boolean>
+}
+
+export class TargetChangedError extends Error {
+  constructor(readonly target: string) {
+    super(`${target} changed while its replacement waited for a lock`)
+    this.name = 'TargetChangedError'
+  }
 }
 
 /** Waits before each retry of the rename: 5 tries over 500 ms. */
@@ -48,8 +62,16 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 const isLocked = (err: unknown): boolean => LOCKED_CODES.has((err as NodeJS.ErrnoException)?.code ?? '')
 
 export async function replaceFile(target: string, content: string, opts: ReplaceFileOptions): Promise<void> {
-  const { log, tmp = `${target}.tmp`, ops = defaultOps, sleep = wait } = opts
-  await ops.writeFile(tmp, content)
+  const { log, tmp = `${target}.tmp`, ops = defaultOps, sleep = wait, stillSafe } = opts
+  const ensureSafe = async () => {
+    if (stillSafe && !(await stillSafe())) throw new TargetChangedError(target)
+  }
+  try {
+    await ops.writeFile(tmp, content)
+  } catch (err) {
+    await removeTmp(tmp, ops, log)
+    throw err
+  }
   try {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -60,11 +82,13 @@ export async function replaceFile(target: string, content: string, opts: Replace
         const delay = RENAME_RETRY_DELAYS_MS[attempt]
         log.warn(`rename over ${target} failed (${(err as NodeJS.ErrnoException).code}), retry ${attempt + 1} of ${RENAME_RETRY_DELAYS_MS.length} in ${delay}ms`)
         await sleep(delay)
+        await ensureSafe()
       }
     }
   } catch (err) {
     await removeTmp(tmp, ops, log)
     if (!isLocked(err)) throw err
+    await ensureSafe()
     log.warn(`rename over ${target} still failing (${(err as NodeJS.ErrnoException).code}); writing it in place`)
     await ops.writeFile(target, content)
   }
@@ -74,6 +98,8 @@ async function removeTmp(tmp: string, ops: ReplaceFileOps, log: ReplaceFileLog):
   try {
     await ops.unlink(tmp)
   } catch (err) {
+    // A tmp write that failed before creating the file leaves nothing to remove.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
     log.warn(`could not remove ${tmp}`, err)
   }
 }

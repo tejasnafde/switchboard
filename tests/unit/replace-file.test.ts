@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { rename, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { RENAME_RETRY_DELAYS_MS, replaceFile, type ReplaceFileOps } from '../../src/main/files/replace-file'
+import { RENAME_RETRY_DELAYS_MS, TargetChangedError, replaceFile, type ReplaceFileOps } from '../../src/main/files/replace-file'
 
 const locked = (code = 'EPERM') => Object.assign(new Error(`${code}: operation not permitted, rename`), { code })
 
@@ -58,5 +58,57 @@ describe('replaceFile', () => {
     expect(ops.rename).toHaveBeenCalledTimes(1)
     expect(sleep).not.toHaveBeenCalled()
     expect(readdirSync(dir)).toEqual([])
+  })
+
+  it('removes a partly written temp file when its write fails', async () => {
+    const { dir, target, ops, sleep, log } = setup(0)
+    ops.writeFile = async (path, content) => {
+      await writeFile(path, content.slice(0, 1), 'utf8')
+      throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+    }
+    await expect(replaceFile(target, 'new', { log, ops, sleep })).rejects.toMatchObject({ code: 'ENOSPC' })
+    expect(ops.rename).not.toHaveBeenCalled()
+    expect(readdirSync(dir)).toEqual([])
+  })
+
+  it('does not treat a locked temp write as a locked rename', async () => {
+    const { dir, target, ops, sleep, log } = setup(0)
+    writeFileSync(target, 'old')
+    ops.writeFile = async () => { throw locked() }
+    await expect(replaceFile(target, 'new', { log, ops, sleep })).rejects.toMatchObject({ code: 'EPERM' })
+    expect(readFileSync(target, 'utf8')).toBe('old')
+    expect(readdirSync(dir)).toEqual(['settings.json'])
+  })
+
+  it('keeps retrying while the target is unchanged', async () => {
+    const { target, ops, sleep, log } = setup(2)
+    writeFileSync(target, 'old')
+    const stillSafe = vi.fn(async () => readFileSync(target, 'utf8') === 'old')
+    await replaceFile(target, 'new', { log, ops, sleep, stillSafe })
+    expect(readFileSync(target, 'utf8')).toBe('new')
+    expect(stillSafe).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves a target edited between retries alone', async () => {
+    const { dir, target, ops, sleep, log } = setup(Infinity)
+    writeFileSync(target, 'old')
+    sleep.mockImplementationOnce(async () => { writeFileSync(target, 'edited') })
+    const stillSafe = async () => readFileSync(target, 'utf8') === 'old'
+    await expect(replaceFile(target, 'new', { log, ops, sleep, stillSafe })).rejects.toBeInstanceOf(TargetChangedError)
+    expect(ops.rename).toHaveBeenCalledTimes(1)
+    expect(readFileSync(target, 'utf8')).toBe('edited')
+    expect(readdirSync(dir)).toEqual(['settings.json'])
+  })
+
+  it('leaves a target edited before the in-place fallback alone', async () => {
+    const { dir, target, ops, sleep, log } = setup(Infinity)
+    writeFileSync(target, 'old')
+    const stillSafe = vi.fn(async () => stillSafe.mock.calls.length <= RENAME_RETRY_DELAYS_MS.length)
+    await expect(replaceFile(target, 'new', { log, ops, sleep, stillSafe })).rejects.toBeInstanceOf(TargetChangedError)
+    expect(ops.rename).toHaveBeenCalledTimes(RENAME_RETRY_DELAYS_MS.length + 1)
+    expect(stillSafe).toHaveBeenCalledTimes(RENAME_RETRY_DELAYS_MS.length + 1)
+    expect(readFileSync(target, 'utf8')).toBe('old')
+    expect(log.warn).not.toHaveBeenCalledWith(expect.stringContaining('writing it in place'))
+    expect(readdirSync(dir)).toEqual(['settings.json'])
   })
 })
