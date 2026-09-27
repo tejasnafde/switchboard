@@ -16,6 +16,8 @@ export interface ConfirmOptions {
   confirmLabel?: string
   cancelLabel?: string
   destructive?: boolean
+  /** Only the confirm button: a message to acknowledge, not a question. */
+  notice?: boolean
 }
 
 interface PendingConfirm extends ConfirmOptions {
@@ -130,9 +132,11 @@ export function ConfirmHost() {
           <AlertDialogTitle>{request.title}</AlertDialogTitle>
           {request.body && <AlertDialogDescription>{request.body}</AlertDialogDescription>}
           <div className="mt-5 flex justify-end gap-2">
-            <AlertDialogCancel asChild>
-              <Button variant="outline">{request.cancelLabel ?? 'Cancel'}</Button>
-            </AlertDialogCancel>
+            {!request.notice && (
+              <AlertDialogCancel asChild>
+                <Button variant="outline">{request.cancelLabel ?? 'Cancel'}</Button>
+              </AlertDialogCancel>
+            )}
             <AlertDialogAction asChild>
               <Button variant={request.destructive ? 'destructive' : 'default'} onClick={() => settle(request, true)}>
                 {request.confirmLabel ?? 'OK'}

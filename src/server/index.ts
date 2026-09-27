@@ -23,7 +23,7 @@ import { registerSttHandlers } from '../main/ipc/stt'
 import { registerKanbanHandlers } from '../main/ipc/kanban'
 import { registerWorktreeManagerHandlers } from '../main/ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from '../main/ipc/provider-instances'
-import { attachPullRequestAutoLink, registerPullRequestHandlers } from '../main/ipc/pull-requests'
+import { attachPullRequestAutoLink, registerPullRequestHandlers, startPullRequestHistoryScan } from '../main/ipc/pull-requests'
 import { registerTerminalHandlers } from '../main/ipc/terminal'
 import { ProviderRegistry } from '../main/provider/provider-registry'
 import { disposeUsageProbes } from '../main/provider/usage'
@@ -158,6 +158,7 @@ registerWorktreeManagerHandlers(host)
 // Notify paired phones about approvals, questions, finished turns and errors.
 attachPushNotifier(registry.bus)
 attachPullRequestAutoLink(registry.bus, host)
+startPullRequestHistoryScan()
 registry.registerIpcHandlers()
 
 // The workbench bridge, when the ssh bootstrap minted a token for us (see

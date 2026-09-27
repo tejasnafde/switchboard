@@ -286,6 +286,7 @@ export const PullRequestChannels = {
   LINKABLE_CHATS: 'pull-requests:linkable-chats',
   LINK: 'pull-requests:link',
   UNLINK: 'pull-requests:unlink',
+  HISTORY_SCAN: 'pull-requests:history-scan',
   /** Event: `{ conversationId }`, the root id whose links changed. */
   LINKS_CHANGED: 'pull-requests:links-changed',
   /** `(ref)` -> `PrResult<PrReviewerCandidate[]>`: who the Reviewers card offers to add. */

@@ -16,6 +16,7 @@ const threadSessions = new Map<string, string>() // claude_session_id -> thread_
 const conversations = new Map<string, { title: string; agent_type: string; project_path: string; updated_at: number; archived: number }>()
 interface LinkRow { conversation_id: string; host: string; owner: string; repo: string; number: number; source: string; linked_at: number; unlinked_at: number | null }
 const links = new Map<string, LinkRow>()
+const historyScans = new Map<string, number>() // conversation_id -> scanned_at
 const key = (id: string, host: string, owner: string, repo: string, number: number) => `${id}|${host}|${owner}|${repo}|${number}`
 
 vi.mock('better-sqlite3', () => {
@@ -51,6 +52,10 @@ vi.mock('better-sqlite3', () => {
             Object.assign(row, { unlinked_at: null, source: 'manual', linked_at: at })
             return { changes: 1 }
           }
+          if (sql.includes('INSERT INTO conversation_pr_history_scans')) {
+            historyScans.set(args[0] as string, args[1] as number)
+            return { changes: 1 }
+          }
           if (sql.includes('UPDATE conversation_pull_requests SET unlinked_at = ?')) {
             const [at, id, host, owner, repo, number] = args as [number, string, string, string, string, number]
             const row = links.get(key(id, host, owner, repo, number))
@@ -65,6 +70,14 @@ vi.mock('better-sqlite3', () => {
             return [...threadSessions.entries()]
               .filter(([, threadId]) => threadId === args[0])
               .map(([claudeSessionId]) => ({ claude_session_id: claudeSessionId, recorded_at: 1 }))
+          }
+          if (sql.includes('LEFT JOIN conversation_pr_history_scans')) {
+            return [...conversations.entries()]
+              .filter(([id, c]) => !historyScans.has(id) && c.agent_type !== 'terminal')
+              .filter(([id]) => ![...threadSessions.entries()].some(([sessionId, threadId]) => sessionId === id && threadId !== id))
+              .sort(([, a], [, b]) => b.updated_at - a.updated_at)
+              .slice(0, args[0] as number)
+              .map(([id, c]) => ({ id, projectPath: c.project_path }))
           }
           if (sql.includes('FROM conversation_pull_requests WHERE conversation_id = ?')) {
             return [...links.values()]
@@ -93,6 +106,8 @@ const {
   unlinkConversationPullRequest,
   listConversationPullRequests,
   listPullRequestChats,
+  listUnscannedPullRequestHistoryScanTargets,
+  markPullRequestHistoryScanned,
 } = await import('../../src/main/db/database')
 
 const PR = { host: 'github' as const, owner: 'TejasNafde', name: 'Switchboard', number: 612 }
@@ -101,6 +116,7 @@ beforeEach(() => {
   threadSessions.clear()
   conversations.clear()
   links.clear()
+  historyScans.clear()
 })
 
 describe('PR links survive provider session rotation', () => {
@@ -146,5 +162,18 @@ describe('link once', () => {
     expect(listConversationPullRequests('agent_1')).toEqual([
       { ref: { host: 'github', owner: 'tejasnafde', name: 'switchboard', number: 612 }, source: 'manual', linkedAt: 40 },
     ])
+  })
+})
+
+describe('history scan bookkeeping', () => {
+  it('marks the root chat through a rotated id, so the chat is not listed again', () => {
+    threadSessions.set('uuid-abc', 'agent_1')
+    conversations.set('agent_1', { title: 'Review', agent_type: 'claude-code', project_path: '/p', updated_at: 5, archived: 0 })
+    conversations.set('uuid-abc', { title: 'Review', agent_type: 'claude-code', project_path: '/p', updated_at: 6, archived: 0 })
+    conversations.set('term_1', { title: 'Shell', agent_type: 'terminal', project_path: '/p', updated_at: 7, archived: 0 })
+    expect(listUnscannedPullRequestHistoryScanTargets(10)).toEqual([{ id: 'agent_1', projectPath: '/p' }])
+    markPullRequestHistoryScanned('uuid-abc', 10)
+    expect([...historyScans.keys()]).toEqual(['agent_1'])
+    expect(listUnscannedPullRequestHistoryScanTargets(10)).toEqual([])
   })
 })
