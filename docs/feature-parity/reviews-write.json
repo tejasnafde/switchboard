@@ -1,0 +1,91 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "reviews-write",
+  "summary": "Reviews step 3: the human write actions on a pull request. Reply to a review conversation, resolve and unresolve it (the only optimistic write), comment on selected diff lines (new or old side) now or held for a review, comment on the whole PR, submit a review (Comment / Approve / Request changes with the held comments; GitHub creates one pending review and submits it, Bitbucket posts the comments and then approves or requests changes), merge (merge commit by default, never squash or rebase by default; the split menu lists only strategies the repository allows, merge commit first; a confirm names the target branch and strategy; the backend re-reads the PR and refuses a moved head, a new blocker or a closed PR), and re-run a failed GitHub Actions check (rerun-failed-jobs). Bitbucket's REST API has no re-run of a failed pipeline, so HOST_CAPABILITIES hides Re-run there with the reason. The author is never offered Approve and the backend refuses it too. Every write goes through one channel per action (PullRequestWriteChannels), re-validates ids, line numbers, the strategy enum and a 60,000 character text cap on the backend, returns typed errors (forbidden, conflict, stale, invalid, rate_limited) and tells the client which reads to refresh. All write channels are admin-scoped, so a paired phone cannot call them. No agent tools yet.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/PrHeaderActions.tsx",
+        "src/renderer/components/reviews/PrReviewForm.tsx",
+        "src/renderer/components/reviews/PrWriteControls.tsx",
+        "src/renderer/components/reviews/review-writes.tsx",
+        "src/renderer/components/reviews/PrDiff.tsx",
+        "src/renderer/components/reviews/PrFiles.tsx",
+        "src/renderer/components/reviews/PrConversations.tsx",
+        "src/renderer/components/reviews/PrOverview.tsx",
+        "src/renderer/components/reviews/PrChecks.tsx",
+        "src/renderer/components/reviews/PrDetailPane.tsx",
+        "src/renderer/components/reviews/review-states.ts",
+        "src/renderer/stores/review-store.ts",
+        "src/preload/index.ts",
+        "e2e/review-writes.e2e.mjs",
+        "e2e/snapshots",
+        "tests/unit/review-store-writes.test.ts",
+        "tests/unit/review-states.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_reviews",
+      "followUpRelease": "mobile-v0.5.0, with the Reviews tab. The phone has no Reviews screen yet, and every write channel is admin-scoped so a paired phone is refused even if it called one (tests/unit/device-auth.test.ts). A later release can open reply and resolve to phones by removing those two channels from the denied set."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_reviews",
+      "followUpRelease": "Native Android 0.6.0, with the Reviews destination. No Android code calls the write channels and the backend refuses them for a phone credential, so nothing unfinished is reachable."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pull-request-writes.ts",
+        "src/shared/pull-requests.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/device-auth.ts",
+        "src/main/ipc/pull-requests.ts",
+        "src/main/pull-requests/provider.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/pull-requests/github.ts",
+        "src/main/pull-requests/github-map.ts",
+        "src/main/pull-requests/bitbucket.ts",
+        "src/main/pull-requests/bitbucket-map.ts",
+        "src/main/pull-requests/demo.ts",
+        "tests/fixtures/pull-requests/github-write-errors.json",
+        "tests/fixtures/pull-requests/github-detail.json",
+        "tests/unit/pull-request-writes.test.ts",
+        "tests/unit/pull-request-service-writes.test.ts",
+        "tests/unit/pull-requests-github-writes.test.ts",
+        "tests/unit/pull-requests-bitbucket-writes.test.ts",
+        "tests/unit/pull-requests-github-map.test.ts",
+        "tests/unit/device-auth.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing new is stored. Held review comments and a picked merge strategy live in the renderer's memory for the run of the app; everything else is on GitHub or Bitbucket. No schema change, no migration, no settings key."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, update channel or wire-protocol frame change. The write channels are additive request/response channels; an older backend answers them with the ordinary unknown-channel error, which the control shows as its error line. The SSH remote backend is re-provisioned to the desktop's version on connect. PrDetail gains mergeStrategies and PrCheck gains rerunId, both filled by the backend of the same version; no phone reads them yet."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and npm test passed.",
+      "vitest: request shaping per host against a fake gh and a fake fetch (GraphQL reply/resolve/unresolve mutations, REST bodies on stdin, the pending review then its events call and the cleanup DELETE when submit fails, merge with merge_method and sha, rerun-failed-jobs; Bitbucket comment/inline/resolve/approve/request-changes/merge URLs and bodies, partial review failure reporting postedComments), GitHub and Bitbucket error mapping to forbidden/conflict/stale/invalid/rate_limited, merge pre-check and strategy order/default rules, author-cannot-approve, input validation, and the device-scope denial of every write channel.",
+      "e2e/review-writes.e2e.mjs against the demo provider (records writes on globalThis.__sbDemoPrWrites, sends nothing): reply, resolve, a held line comment, an approving review with it, the merge strategy menu, the merge confirm (Cancel sends nothing, Merge sends a merge commit on the confirmed head), a blocked merge disabled in place, and Bitbucket's no-re-run reason. 19/19 passed.",
+      "SB_VISUAL_SCOPE=screens visual regressions: reviews and reviews-files baselines in all three themes rewritten for the header split button, the thread reply row and the PR comment box; two further runs without updating both passed."
+    ],
+    "hardware": [
+      "The rewritten baselines and the e2e screenshots (review form, strategy menu, merge confirm, line comment box) were checked by eye on this Mac. That found the review form and menus drawn under the diff's sticky file header, fixed with z-[1200] as in the other popovers.",
+      "Live read-only check with gh against tejasnafde/switchboard #167: mergeStrategies read as merge commit, squash, rebase and check rerunIds as Actions run ids."
+    ],
+    "notExercised": [
+      "No write was ever sent to a real host. Never exercised live on GitHub: addPullRequestReviewThreadReply, resolveReviewThread, unresolveReviewThread, POST issues/:n/comments, POST pulls/:n/comments, POST pulls/:n/reviews (with and without comments), POST pulls/:n/reviews/:id/events, DELETE pulls/:n/reviews/:id, PUT pulls/:n/merge, POST actions/runs/:id/rerun-failed-jobs.",
+      "Never exercised live on Bitbucket (no Bitbucket account on this machine): POST pullrequests/:id/comments (general, inline, reply), POST and DELETE comments/:id/resolve, POST approve, POST request-changes, POST merge.",
+      "The GitHub error mapping is tested against recorded-shape fixtures, not real refusals.",
+      "React Native and native Android are staged; nothing was run on a phone."
+    ]
+  }
+}

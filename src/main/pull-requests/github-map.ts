@@ -2,12 +2,14 @@
  * GitHub GraphQL / REST JSON -> neutral pull request types. Pure; the
  * queries that produce this JSON live beside the types in `github.ts`.
  */
+import { orderMergeStrategies } from '@shared/pull-request-writes'
 import {
   mergeBlockers,
   rollupChecks,
   stripHtmlComments,
   type ChangedFileStatus,
   type CheckState,
+  type MergeStrategy,
   type PrActivity,
   type PrChangedFile,
   type PrCheck,
@@ -21,7 +23,10 @@ import {
   type ReviewState,
 } from '@shared/pull-requests'
 import { parseHunks } from '@shared/unified-diff'
+import { createMainLogger } from '../logger'
 import { parseTime } from './provider'
+
+const log = createMainLogger('pull-requests:github-map')
 
 export interface GhActor {
   login: string
@@ -91,6 +96,13 @@ export interface GhPullRequestDetail extends GhPullRequest {
   timelineItems?: { nodes: GhTimelineItem[] }
 }
 
+/** Repository merge settings, read beside the pull request. */
+export interface GhRepoMergeSettings {
+  mergeCommitAllowed?: boolean | null
+  squashMergeAllowed?: boolean | null
+  rebaseMergeAllowed?: boolean | null
+}
+
 export interface GhReviewThread {
   id: string
   isResolved: boolean
@@ -128,6 +140,12 @@ const REVIEW_STATE: Record<string, ReviewState> = {
 
 const FAILED_CONCLUSIONS = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'STARTUP_FAILURE', 'ACTION_REQUIRED'])
 
+/** A GitHub Actions job links to `/<owner>/<repo>/actions/runs/<run id>/job/<job id>`; other apps' checks do not re-run from here. */
+export function actionsRunId(detailsUrl: string | null | undefined): string | null {
+  const m = /^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/(\d+)(?:[/?#]|$)/.exec(detailsUrl ?? '')
+  return m ? m[1] : null
+}
+
 export function mapGhCheck(ctx: GhCheckContext, index: number): PrCheck {
   if (ctx.__typename === 'CheckRun') {
     let state: CheckState
@@ -145,11 +163,12 @@ export function mapGhCheck(ctx: GhCheckContext, index: number): PrCheck {
       description: null,
       url: ctx.detailsUrl,
       durationMs: started !== null && completed !== null && state !== 'pending' ? completed - started : null,
+      rerunId: actionsRunId(ctx.detailsUrl),
     }
   }
   const state: CheckState =
     ctx.state === 'SUCCESS' ? 'success' : ctx.state === 'FAILURE' || ctx.state === 'ERROR' ? 'failure' : 'pending'
-  return { id: `status:${index}:${ctx.context}`, name: ctx.context, state, description: ctx.description, url: ctx.targetUrl, durationMs: null }
+  return { id: `status:${index}:${ctx.context}`, name: ctx.context, state, description: ctx.description, url: ctx.targetUrl, durationMs: null, rerunId: null }
 }
 
 export function mapGhChecks(pr: Pick<GhPullRequest, 'commits'>): PrCheck[] {
@@ -266,13 +285,22 @@ export function mapGhActivity(items: readonly GhTimelineItem[]): PrActivity[] {
   return out
 }
 
-export function mapGhDetail(repo: RepoRef, pr: GhPullRequestDetail, viewerLogin: string): PrDetail {
+export function mapGhMergeStrategies(settings: GhRepoMergeSettings): MergeStrategy[] {
+  const allowed: MergeStrategy[] = []
+  if (settings.mergeCommitAllowed) allowed.push('merge_commit')
+  if (settings.squashMergeAllowed) allowed.push('squash')
+  if (settings.rebaseMergeAllowed) allowed.push('rebase')
+  return orderMergeStrategies(allowed)
+}
+
+export function mapGhDetail(repo: RepoRef, pr: GhPullRequestDetail, viewerLogin: string, settings: GhRepoMergeSettings): PrDetail {
   const summary = mapGhSummary(repo, pr, viewerLogin)
   return {
     ...summary,
     description: stripHtmlComments(pr.body ?? ''),
     headSha: pr.headRefOid ?? null,
     mergeBlockers: mergeBlockers(summary, { conflicts: pr.mergeable === 'CONFLICTING' }),
+    mergeStrategies: mapGhMergeStrategies(settings),
     activity: mapGhActivity(pr.timelineItems?.nodes ?? []),
     checkList: mapGhChecks(pr),
   }
@@ -344,4 +372,63 @@ export function classifyGhError(err: { code?: string | number | null; stderr?: s
   }
   const firstLine = (err.stderr ?? err.message ?? '').split('\n').find((l) => l.trim()) ?? 'gh failed'
   return { kind: 'unknown', host: 'github', message: firstLine.trim().slice(0, 200) }
+}
+
+interface GhErrorBody {
+  message?: string
+  errors?: Array<{ type?: string; message?: string } | string>
+}
+
+function ghErrorMessage(stdout: string | undefined): { message: string | null; graphqlType: string | null } {
+  if (!stdout?.trim()) return { message: null, graphqlType: null }
+  try {
+    const body = JSON.parse(stdout) as GhErrorBody
+    const first = body.errors?.[0]
+    const graphqlType = typeof first === 'object' && first?.type ? first.type : null
+    const detail = typeof first === 'string' ? first : first?.message
+    // REST puts the reason in `message` and the specifics in `errors`; GraphQL has only `errors`.
+    const message = body.message && detail && body.message !== detail ? `${body.message}: ${detail}` : body.message ?? detail ?? null
+    return { message: message ? message.slice(0, 300) : null, graphqlType }
+  } catch (err) {
+    // Not JSON: gh printed only to stderr, which the caller reads instead.
+    log.debug('gh write error body is not JSON', { bytes: stdout.length, err: String(err) })
+    return { message: null, graphqlType: null }
+  }
+}
+
+const GRAPHQL_KIND: Record<string, PrError['kind']> = {
+  FORBIDDEN: 'forbidden',
+  NOT_FOUND: 'stale',
+  UNPROCESSABLE: 'invalid',
+  RATE_LIMITED: 'rate_limited',
+}
+
+/**
+ * A refused write -> the typed error. gh prints `... (HTTP 409)` on stderr
+ * and the host's JSON answer on stdout; GraphQL mutations answer with a
+ * typed `errors[]`.
+ */
+export function classifyGhWriteError(res: { code?: string | number | null; stdout?: string; stderr?: string }): PrError {
+  if (res.code === 'ENOENT') return classifyGhError(res)
+  const stderr = res.stderr ?? ''
+  const status = Number(/HTTP (\d{3})/.exec(stderr)?.[1] ?? 0)
+  const { message, graphqlType } = ghErrorMessage(res.stdout)
+  const said = message ?? stderr.split('\n').find((l) => l.trim())?.replace(/^gh:\s*/, '').replace(/\s*\(HTTP \d{3}\)\s*$/, '').trim() ?? ''
+  const err = (kind: PrError['kind'], fallback: string): PrError => ({ kind, host: 'github', message: said || fallback })
+  if (status === 429 || /rate limit/i.test(`${stderr}\n${message ?? ''}`) || graphqlType === 'RATE_LIMITED') {
+    return { kind: 'rate_limited', host: 'github', message: 'GitHub rate limit reached.' }
+  }
+  if (graphqlType && GRAPHQL_KIND[graphqlType]) return err(GRAPHQL_KIND[graphqlType], 'GitHub refused the change.')
+  switch (status) {
+    case 401: return { kind: 'token_rejected', host: 'github', message: 'gh is signed out or its token was rejected.' }
+    case 403: return err('forbidden', 'GitHub does not let this account do that.')
+    case 404: return err('not_found', 'GitHub could not find it, or this account cannot see it.')
+    case 405: return err('conflict', 'GitHub says the pull request cannot be merged.')
+    case 409: return err('stale', 'The pull request changed on GitHub. Refresh and try again.')
+    case 422:
+      if (/pending review/i.test(said)) return err('conflict', 'You already have a pending review on GitHub.')
+      if (/your own pull request/i.test(said)) return err('forbidden', 'You cannot approve your own pull request.')
+      return err('invalid', 'GitHub refused the input.')
+  }
+  return classifyGhError(res)
 }

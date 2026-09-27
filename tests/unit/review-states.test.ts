@@ -7,9 +7,12 @@ import {
   agoPhrase,
   describePrError,
   groupFilesByDir,
+  mergeConfirmCopy,
+  rerunUnavailable,
   reviewListState,
   rowSubtitle,
   shortAgo,
+  writeErrorText,
 } from '../../src/renderer/components/reviews/review-states'
 import { parseHunks, splitGitDiff, unquoteGitPath } from '../../src/shared/unified-diff'
 import type { PrError, PrErrorKind, PrListData, PrSummary, RepoRef } from '../../src/shared/pull-requests'
@@ -21,7 +24,10 @@ const data = (over: Partial<PrListData>): PrListData => ({ prs: [], sources: [],
 
 describe('describePrError', () => {
   it('gives every error kind one line and one fix', () => {
-    const kinds: PrErrorKind[] = ['no_account', 'unsupported_repo', 'token_rejected', 'rate_limited', 'offline', 'needs_desktop', 'gh_missing', 'not_found', 'unknown']
+    const kinds: PrErrorKind[] = [
+      'no_account', 'unsupported_repo', 'token_rejected', 'rate_limited', 'offline', 'needs_desktop', 'gh_missing', 'not_found',
+      'forbidden', 'conflict', 'stale', 'invalid', 'unknown',
+    ]
     for (const kind of kinds) {
       const n = describePrError(err(kind))
       expect(n.line.length).toBeGreaterThan(0)
@@ -37,6 +43,27 @@ describe('describePrError', () => {
     expect(describePrError(err('offline', 'github')).line).toBe('Could not reach github.com.')
     expect(describePrError(err('rate_limited', 'github')).action).toBe('retry')
     expect(describePrError(err('needs_desktop')).action).toBeNull()
+  })
+})
+
+describe('write copy', () => {
+  it('shows the host reason for a refused write and the fix for account or network trouble', () => {
+    expect(writeErrorText(err('stale', 'github', 'New commits were pushed since you looked.'))).toBe('New commits were pushed since you looked.')
+    expect(writeErrorText(err('forbidden', 'bitbucket', 'You cannot approve your own pull request'))).toBe('You cannot approve your own pull request')
+    expect(writeErrorText(err('offline', 'github'))).toBe('Could not reach github.com. Check the connection, then retry.')
+  })
+
+  it('names the target branch and the strategy in the merge confirm', () => {
+    const copy = mergeConfirmCopy({ ref: { ...gh, number: 159 }, title: 'Retry settings.json', sourceBranch: 'fix/win', targetBranch: 'main' }, 'merge_commit')
+    expect(copy.title).toBe('Merge #159 into main?')
+    expect(copy.body).toContain('merges fix/win into main on GitHub. Strategy: merge commit.')
+    expect(copy.confirmLabel).toBe('Merge')
+  })
+
+  it('says why a failed check has no Re-run', () => {
+    expect(rerunUnavailable({ ref: { ...gh, number: 1 } }, { rerunId: '42' })).toBeNull()
+    expect(rerunUnavailable({ ref: { ...gh, number: 1 } }, { rerunId: null })).toContain('Only GitHub Actions runs')
+    expect(rerunUnavailable({ ref: { ...bb, number: 1 } }, { rerunId: '42' })).toContain("Bitbucket's API cannot re-run")
   })
 })
 

@@ -4,7 +4,8 @@
  * that PR changed. When to refresh is decided by `shared/pull-request-refresh`.
  */
 import { create } from 'zustand'
-import { prKey, type PrChangedFile, type PrCheck, type PrConversation, type PrDetail, type PrError, type PrListData, type PrRef, type PrResult, type PrSummary } from '@shared/pull-requests'
+import type { InlineCommentInput, PrResource } from '@shared/pull-request-writes'
+import { prKey, repoKey, type MergeStrategy, type PrChangedFile, type PrCheck, type PrConversation, type PrDetail, type PrError, type PrListData, type PrRef, type PrResult, type PrSummary } from '@shared/pull-requests'
 import { pullRequestChanged, shouldRefreshPullRequests, type PrRefreshReason } from '@shared/pull-request-refresh'
 import type { PrLinkChat } from '@shared/pull-request-links'
 import type { ReviewContext } from '@shared/review-context'
@@ -33,7 +34,14 @@ export type TabData = {
   conversations: PrConversation[]
   checks: PrCheck[]
 }
-export type TabResource = keyof TabData
+export type TabResource = keyof TabData & PrResource
+
+/** A line comment held for the review, in this window only until it is submitted. */
+export interface PendingComment extends InlineCommentInput {
+  id: string
+}
+
+let pendingSeq = 0
 
 interface ReviewStore {
   list: PrListData | null
@@ -51,16 +59,29 @@ interface ReviewStore {
   linkedChats: Record<string, PrLinkChat[]>
   /** Review context waiting for the user to pick a chat (none or several linked). */
   pendingAsk: ReviewContext | null
+  /** Line comments held for the review, by `prKey`. */
+  pendingComments: Record<string, PendingComment[]>
+  /** A merge strategy the user picked from the menu, by `repoKey`, for this run of the app. Unset means the default (a merge commit). */
+  mergeStrategy: Record<string, MergeStrategy>
   setVisible: (visible: boolean) => void
   setFilter: (filter: string) => void
   setTab: (tab: ReviewTab) => void
   openFile: (path: string) => void
   select: (key: string) => void
   /** `asHeader`: a chat header showing a linked PR reads the list on the same cadence as the open view. */
-  refresh: (reason: PrRefreshReason, opts?: { asHeader?: boolean }) => Promise<void>
+  refresh: (reason: PrRefreshReason, opts?: { asHeader?: boolean; keep?: string }) => Promise<void>
   loadLinkedChats: (ref: PrRef) => Promise<PrLinkChat[]>
   setPendingAsk: (ctx: ReviewContext | null) => void
   load: <K extends TabResource>(ref: PrRef, resource: K, opts?: { force?: boolean }) => Promise<void>
+  addPendingComment: (ref: PrRef, comment: InlineCommentInput) => void
+  removePendingComment: (ref: PrRef, id: string) => void
+  /** Drops the first `count` pending comments (all by default): the ones a review posted. */
+  dropPendingComments: (ref: PrRef, count?: number) => void
+  setMergeStrategy: (ref: PrRef, strategy: MergeStrategy) => void
+  /** Optimistic resolve: flips the thread in the loaded conversations now. */
+  setConversationResolved: (ref: PrRef, id: string, resolved: boolean) => void
+  /** After a write succeeded: re-read the list and the PR's reads the write changed, keeping what is shown until they arrive. */
+  afterWrite: (ref: PrRef, refresh: PrResource[]) => Promise<void>
 }
 
 const FETCHERS: { [K in TabResource]: (ref: PrRef) => Promise<PrResult<TabData[K]>> } = {
@@ -92,6 +113,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   resources: {},
   linkedChats: {},
   pendingAsk: null,
+  pendingComments: {},
+  mergeStrategy: {},
 
   setVisible: (visible) => set({ visible }),
   setFilter: (filter) => set({ filter }),
@@ -136,9 +159,11 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       if (before && pullRequestChanged(before, pr)) changed.add(prKey(pr.ref))
     }
     set((st) => {
-      // A PR that changed on the host (edits, checks, conversations) loses its cached tabs.
+      // A PR that changed on the host (edits, checks, conversations) loses its cached tabs,
+      // except the one a write just changed, whose reads the writer re-reads in place.
       const resources = { ...st.resources }
       for (const key of changed) {
+        if (key === opts.keep) continue
         for (const slot of [...loadTokens.keys()]) if (slot.startsWith(`${key}:`)) loadTokens.delete(slot)
         delete resources[key]
       }
@@ -146,7 +171,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     })
     // Tabs of a changed PR reload when their view asks again; a manual refresh re-reads the open PR's tabs now.
     const selected = findSummary(result.data, get().selectedKey)
-    if (selected && reason === 'manual') {
+    if (selected && reason === 'manual' && prKey(selected.ref) !== opts.keep) {
       for (const resource of Object.keys(get().resources[prKey(selected.ref)] ?? {}) as TabResource[]) {
         void get().load(selected.ref, resource, { force: true })
       }
@@ -176,5 +201,40 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     if (loadTokens.get(slot) !== token) return
     loadTokens.delete(slot)
     set((s) => ({ resources: { ...s.resources, [key]: { ...s.resources[key], [resource]: next } } }))
+  },
+
+  addPendingComment: (ref, comment) => {
+    const key = prKey(ref)
+    const item: PendingComment = { ...comment, id: `pending-${++pendingSeq}` }
+    set((s) => ({ pendingComments: { ...s.pendingComments, [key]: [...(s.pendingComments[key] ?? []), item] } }))
+  },
+
+  removePendingComment: (ref, id) => {
+    const key = prKey(ref)
+    set((s) => ({ pendingComments: { ...s.pendingComments, [key]: (s.pendingComments[key] ?? []).filter((c) => c.id !== id) } }))
+  },
+
+  dropPendingComments: (ref, count) => {
+    const key = prKey(ref)
+    set((s) => ({ pendingComments: { ...s.pendingComments, [key]: count === undefined ? [] : (s.pendingComments[key] ?? []).slice(count) } }))
+  },
+
+  setMergeStrategy: (ref, strategy) => set((s) => ({ mergeStrategy: { ...s.mergeStrategy, [repoKey(ref)]: strategy } })),
+
+  setConversationResolved: (ref, id, resolved) => {
+    const key = prKey(ref)
+    set((s) => {
+      const current = s.resources[key]?.conversations
+      if (current?.status !== 'ok') return s
+      const data = current.data.map((c) => (c.id === id ? { ...c, resolved } : c))
+      return { resources: { ...s.resources, [key]: { ...s.resources[key], conversations: { ...current, data } } } }
+    })
+  },
+
+  afterWrite: async (ref, refresh) => {
+    const key = prKey(ref)
+    await get().refresh('manual', { keep: key })
+    const loaded = get().resources[key] ?? {}
+    await Promise.all(refresh.filter((r) => loaded[r] !== undefined).map((r) => get().load(ref, r, { force: true })))
   },
 }))

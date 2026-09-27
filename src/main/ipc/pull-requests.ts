@@ -1,15 +1,16 @@
 /**
- * Reviews IPC: pull request reads and the source control accounts behind
- * them. Registered on every host (Electron IPC, the phone's WS/TCP, the
+ * Reviews IPC: pull request reads, the human writes, and the source control
+ * accounts behind them. Registered on every host (Electron IPC, the phone's WS/TCP, the
  * headless server), so the backend that owns the projects answers. The
- * credential channels are admin-scoped by prefix in `shared/device-auth.ts`.
+ * credential channels are admin-scoped by prefix in `shared/device-auth.ts`,
+ * the write channels one by one.
  *
  * The service is module-level so its caches survive a window being closed
  * and reopened (which re-registers the handlers).
  */
 import { execFile } from 'node:child_process'
 import type { BackendHost } from '../backend/host'
-import { PullRequestChannels, SourceControlChannels } from '@shared/ipc-channels'
+import { PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
 import type { GithubAccountState, SourceControlStatus, SourceControlTestResult } from '@shared/pull-requests'
 import { canLinkToProject, isPrRef, type PrLink, type PrLinkChat, type PrLinkResult } from '@shared/pull-request-links'
 import {
@@ -144,6 +145,15 @@ export function registerPullRequestHandlers(host: BackendHost): void {
   host.handle(PullRequestChannels.FILES, (ref: unknown) => getService().files(ref))
   host.handle(PullRequestChannels.CONVERSATIONS, (ref: unknown) => getService().conversations(ref))
   host.handle(PullRequestChannels.CHECKS, (ref: unknown) => getService().checks(ref))
+
+  host.handle(PullRequestWriteChannels.REPLY, (ref: unknown, input: unknown) => getService().reply(ref, input))
+  host.handle(PullRequestWriteChannels.RESOLVE, (ref: unknown, input: unknown) => getService().setResolved(ref, input, true))
+  host.handle(PullRequestWriteChannels.UNRESOLVE, (ref: unknown, input: unknown) => getService().setResolved(ref, input, false))
+  host.handle(PullRequestWriteChannels.COMMENT, (ref: unknown, input: unknown) => getService().comment(ref, input))
+  host.handle(PullRequestWriteChannels.INLINE_COMMENT, (ref: unknown, input: unknown) => getService().inlineComment(ref, input))
+  host.handle(PullRequestWriteChannels.SUBMIT_REVIEW, (ref: unknown, input: unknown) => getService().submitReview(ref, input))
+  host.handle(PullRequestWriteChannels.MERGE, (ref: unknown, input: unknown) => getService().merge(ref, input))
+  host.handle(PullRequestWriteChannels.RERUN_CHECK, (ref: unknown, input: unknown) => getService().rerunCheck(ref, input))
 
   host.handle(SourceControlChannels.STATUS, async (): Promise<SourceControlStatus> => ({
     bitbucket: DEMO ? { state: 'configured', email: 'tejas@example.com' } : credentials.status(),

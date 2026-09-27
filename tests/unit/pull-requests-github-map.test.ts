@@ -55,7 +55,8 @@ describe('mapGhSummary', () => {
 })
 
 describe('mapGhDetail', () => {
-  const detail = mapGhDetail(repo, fixture('github-detail.json').data.repository.pullRequest, 'tejasnafde')
+  const detailRepo = fixture('github-detail.json').data.repository
+  const detail = mapGhDetail(repo, detailRepo.pullRequest, 'tejasnafde', detailRepo)
 
   it('strips HTML comments from the description', () => {
     expect(detail.description).toBe('Resumes from the last seq.\n\nTested on geoiq-ssg-dev-in.')
@@ -82,9 +83,13 @@ describe('mapGhDetail', () => {
 
   it('keeps the check list with durations', () => {
     expect(detail.checkList).toEqual([
-      { id: 'run:0:Test (macos-14)', name: 'Test (macos-14)', state: 'failure', description: null, url: 'https://github.com/x/y/actions/runs/3', durationMs: 120_000 },
+      { id: 'run:0:Test (macos-14)', name: 'Test (macos-14)', state: 'failure', description: null, url: 'https://github.com/x/y/actions/runs/3', durationMs: 120_000, rerunId: '3' },
     ])
     expect(detail.headSha).toBe('aa11bb22cc33')
+  })
+
+  it('lists the merge strategies the repository allows, merge commit first', () => {
+    expect(detail.mergeStrategies).toEqual(['merge_commit', 'squash'])
   })
 })
 

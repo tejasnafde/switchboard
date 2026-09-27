@@ -4,7 +4,7 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
-import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels, SettingsFileChannels, PullRequestChannels, SourceControlChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels, SettingsFileChannels, PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent, WorktreeInfo } from '@shared/kanban'
@@ -23,6 +23,7 @@ import type {
   SourceControlTestResult,
 } from '@shared/pull-requests'
 import type { PrLink, PrLinkChat, PrLinkResult } from '@shared/pull-request-links'
+import type { CommentInput, InlineCommentInput, MergeInput, PrWriteDone, ReplyInput, RerunInput, ResolveInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
@@ -525,7 +526,7 @@ const api = {
       ),
   },
 
-  // ─── Reviews (read-only pull requests) ─────
+  // ─── Reviews (pull requests: reads, and the human writes) ─────
   pullRequests: {
     list: (): Promise<PrResult<PrListData>> => transport.invoke(PullRequestChannels.LIST),
     detail: (ref: PrRef): Promise<PrResult<PrDetail>> => transport.invoke(PullRequestChannels.DETAIL, ref),
@@ -540,6 +541,16 @@ const api = {
     unlink: (threadId: string, ref: PrRef): Promise<PrLinkResult> => transport.invoke(PullRequestChannels.UNLINK, threadId, ref),
     onLinksChanged: (callback: (change: { conversationId: string }) => void) =>
       transport.on(PullRequestChannels.LINKS_CHANGED, (change) => callback(change as { conversationId: string })),
+    reply: (ref: PrRef, input: ReplyInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.REPLY, ref, input),
+    resolve: (ref: PrRef, input: ResolveInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.RESOLVE, ref, input),
+    unresolve: (ref: PrRef, input: ResolveInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.UNRESOLVE, ref, input),
+    comment: (ref: PrRef, input: CommentInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.COMMENT, ref, input),
+    inlineComment: (ref: PrRef, input: InlineCommentInput): Promise<PrResult<PrWriteDone>> =>
+      transport.invoke(PullRequestWriteChannels.INLINE_COMMENT, ref, input),
+    submitReview: (ref: PrRef, input: SubmitReviewInput): Promise<PrResult<PrWriteDone>> =>
+      transport.invoke(PullRequestWriteChannels.SUBMIT_REVIEW, ref, input),
+    merge: (ref: PrRef, input: MergeInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.MERGE, ref, input),
+    rerunCheck: (ref: PrRef, input: RerunInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.RERUN_CHECK, ref, input),
   },
 
   sourceControl: {

@@ -1,8 +1,10 @@
 /**
- * Read-only unified diff for one changed file, with each review
- * conversation drawn under the line it is anchored to. Conversations whose
- * line is not in the shown hunks (outdated, or outside the context) are
- * listed after the diff so none disappears.
+ * Unified diff for one changed file, with each review conversation (and its
+ * reply box and Resolve) drawn under the line it is anchored to, and the
+ * line comments held for your review. Lines picked by their numbers offer
+ * Comment and Ask the agent. Conversations whose line is not in the shown
+ * hunks (outdated, or outside the context) are listed after the diff so
+ * none disappears.
  */
 import { useState, type MouseEvent } from 'react'
 import type { DiffLine, PrChangedFile, PrConversation, PrSummary } from '@shared/pull-requests'
@@ -13,13 +15,17 @@ import { shortAgo } from './review-states'
 import { Avatar, Icon } from './review-ui'
 import { askAgent } from './review-to-chat'
 import { MarkdownWithCopyControls } from '../chat/MarkdownWithCopyControls'
+import { usePendingComments } from './PrReviewForm'
+import { LineCommentBox, PendingCommentCard, ThreadFooter } from './PrWriteControls'
+import type { PendingComment } from '../../stores/review-store'
 
 function anchoredTo(line: DiffLine, c: PrConversation): boolean {
   if (c.line === null) return false
   return c.side === 'old' ? line.oldLine === c.line && line.kind !== 'add' : line.newLine === c.line && line.kind !== 'del'
 }
 
-export function ConversationThread({ conversation, now, className, markResolved = true }: { conversation: PrConversation; now: number; className?: string; markResolved?: boolean }) {
+/** `pr` adds the reply box and Resolve under the comments. */
+export function ConversationThread({ conversation, now, className, markResolved = true, pr }: { conversation: PrConversation; now: number; className?: string; markResolved?: boolean; pr?: PrSummary }) {
   return (
     <div data-pr-thread={conversation.id} className={cn('overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] font-[family-name:var(--font-sans)] text-[13px] leading-[1.5] whitespace-normal', className)}>
       {conversation.comments.map((c) => (
@@ -33,6 +39,7 @@ export function ConversationThread({ conversation, now, className, markResolved 
         </div>
       ))}
       {markResolved && conversation.resolved && <div className="border-t border-[var(--border)] px-3 py-[6px] text-[12px] text-[var(--text-muted)]">Resolved</div>}
+      {pr && <ThreadFooter pr={pr} conversation={conversation} />}
     </div>
   )
 }
@@ -64,9 +71,16 @@ function LineNumber({ n, shown, onPick }: { n: number | null; shown: number | nu
   )
 }
 
+function pendingAt(line: DiffLine, c: PendingComment): boolean {
+  return lineOn(line, c.side) === c.line
+}
+
 export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: PrChangedFile; conversations: PrConversation[]; now: number }) {
   const [sel, setSel] = useState<LineSelection | null>(null)
+  const [composing, setComposing] = useState(false)
+  const pending = usePendingComments(pr).filter((c) => c.path === file.path)
   const pick = (side: 'new' | 'old', n: number, e: MouseEvent) => {
+    setComposing(false)
     setSel((prev) => {
       if (e.shiftKey && prev && prev.side === side) return { ...prev, start: Math.min(prev.anchor, n), end: Math.max(prev.anchor, n) }
       if (prev && prev.side === side && prev.start === n && prev.end === n) return null
@@ -85,12 +99,19 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
     void askAgent({ pr: pr.ref, title: pr.title, url: pr.url, items: [{ kind: 'lines', path: file.path, side: sel.side, startLine: sel.start, endLine: sel.end, diff }] })
     setSel(null)
   }
+  const closeComment = () => {
+    setComposing(false)
+    setSel(null)
+  }
   const placed = new Set<string>()
+  const placedPending = new Set<string>()
   const rows = file.hunks.flatMap((hunk, h) => [
     <div key={`h${h}`} className="bg-[var(--bg-tertiary)] px-[14px] py-[2px] text-[var(--text-muted)]">{hunk.header}</div>,
     ...hunk.lines.flatMap((line, i) => {
       const here = conversations.filter((c) => !placed.has(c.id) && anchoredTo(line, c))
       for (const c of here) placed.add(c.id)
+      const heldHere = pending.filter((c) => !placedPending.has(c.id) && pendingAt(line, c))
+      for (const c of heldHere) placedPending.add(c.id)
       const isSel = selected(line)
       const lastSel = isSel && sel !== null && lineOn(line, sel.side) === sel.end
       return [
@@ -112,14 +133,24 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
           </span>
           <span className="pr-[14px]">{line.text}</span>
         </div>,
-        ...(lastSel ? [
+        ...(lastSel && !composing ? [
           <div key={`h${h}l${i}sel`} className="relative h-0">
             <div className="absolute top-[2px] left-[114px] z-[3] flex gap-1 rounded-[8px] border border-[var(--border-strong,var(--border))] bg-[var(--bg-surface)] p-1 font-[family-name:var(--font-sans)] shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
+              <Button variant="outline" size="sm" onClick={() => setComposing(true)}><Icon name="msg" />Comment</Button>
               <Button variant="outline" size="sm" onClick={ask}><Icon name="spark" />Ask the agent</Button>
             </div>
           </div>,
         ] : []),
-        ...here.map((c) => <ConversationThread key={c.id} conversation={c} now={now} className="mt-2 mr-4 mb-3 ml-[114px]" />),
+        ...(lastSel && composing && sel ? [
+          <LineCommentBox
+            key={`h${h}l${i}comment`}
+            pr={pr}
+            target={{ path: file.path, side: sel.side, line: sel.end, ...(sel.start < sel.end ? { startLine: sel.start } : {}) }}
+            onClose={closeComment}
+          />,
+        ] : []),
+        ...here.map((c) => <ConversationThread key={c.id} conversation={c} now={now} pr={pr} className="mt-2 mr-4 mb-3 ml-[114px]" />),
+        ...heldHere.map((c) => <PendingCommentCard key={c.id} pr={pr} comment={c} />),
       ]
     }),
   ])
@@ -140,7 +171,7 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
       {unplaced.length > 0 && (
         <div className="px-4 pt-3 pb-4">
           <div className="mb-2 text-[12px] text-[var(--text-muted)]">Conversations not on a shown line</div>
-          {unplaced.map((c) => <ConversationThread key={c.id} conversation={c} now={now} className="mb-3" />)}
+          {unplaced.map((c) => <ConversationThread key={c.id} conversation={c} now={now} pr={pr} className="mb-3" />)}
         </div>
       )}
     </div>

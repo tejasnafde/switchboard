@@ -1,8 +1,12 @@
 /**
- * The one interface every pull request host implements. Read-only in this
- * release: no method writes to the host.
+ * The one interface every pull request host implements: the reads, and the
+ * human write actions. Writes get inputs the service already validated and
+ * checked against a fresh read (`shared/pull-request-writes.ts`); a
+ * provider only shapes the host request and classifies its answer.
  */
+import type { InlineCommentInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import type {
+  MergeStrategy,
   PrChangedFile,
   PrCheck,
   PrConversation,
@@ -28,6 +32,17 @@ export interface PullRequestProvider {
   files(ref: PrRef): Promise<PrChangedFile[]>
   conversations(ref: PrRef): Promise<PrConversation[]>
   checks(ref: PrRef): Promise<PrCheck[]>
+
+  reply(ref: PrRef, conversationId: string, body: string): Promise<void>
+  setResolved(ref: PrRef, conversationId: string, resolved: boolean): Promise<void>
+  /** A comment on the whole pull request. */
+  comment(ref: PrRef, body: string): Promise<void>
+  /** One line comment, posted now rather than held for a review. */
+  inlineComment(ref: PrRef, comment: InlineCommentInput): Promise<void>
+  submitReview(ref: PrRef, review: SubmitReviewInput): Promise<void>
+  merge(ref: PrRef, strategy: MergeStrategy, headSha: string): Promise<void>
+  /** `check.rerunId` is set; the service checked it is a failed check of this PR. */
+  rerunCheck(ref: PrRef, check: PrCheck): Promise<void>
 }
 
 /** A host failure already classified for the UI. Providers throw it; the service turns it into a result. */

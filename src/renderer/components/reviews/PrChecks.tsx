@@ -1,13 +1,16 @@
 /**
- * Checks tab: every check on the head commit, failures first. Details open
- * on the host in the system browser.
+ * Checks tab: every check on the head commit, failures first, with Re-run on
+ * a failed check that can re-run from here and the reason when none can.
+ * Details open on the host in the system browser.
  */
 import { fmtDuration } from '@shared/format'
 import { HOST_CAPABILITIES, type CheckState, type PrCheck, type PrSummary } from '@shared/pull-requests'
 import { checkItem } from '@shared/review-context'
 import { Button } from '../ui/button'
 import { Loaded, usePrResource } from './PrDetailPane'
+import { rerunUnavailable } from './review-states'
 import { CHECK_ICON, Icon, openExternal } from './review-ui'
+import { RerunButton } from './PrWriteControls'
 import { askAgent } from './review-to-chat'
 
 const ORDER: Record<CheckState, number> = { failure: 0, pending: 1, success: 2, neutral: 3, skipped: 4 }
@@ -21,8 +24,10 @@ export function PrChecks({ summary }: { summary: PrSummary }) {
 function CheckList({ pr, checks, exactDurations }: { pr: PrSummary; checks: PrCheck[]; exactDurations: boolean }) {
   if (checks.length === 0) return <div className="p-[22px] text-[12.5px] text-[var(--text-muted)]">No checks reported for the head commit.</div>
   const sorted = [...checks].sort((a, b) => ORDER[a.state] - ORDER[b.state])
+  const noRerun = sorted.filter((c) => c.state === 'failure').map((c) => rerunUnavailable(pr, c)).find((reason) => reason !== null)
   return (
     <div className="max-w-[900px] px-[22px] py-[18px]">
+      {noRerun && <div data-rerun-unavailable className="mb-[10px] text-[12.5px] text-[var(--text-secondary)]">{noRerun}</div>}
       <div className="overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg-surface)]">
         {sorted.map((c) => (
           <div key={c.id} className="flex items-center gap-[10px] px-3 py-2 text-[12.5px] [&+&]:border-t [&+&]:border-[var(--border)]">
@@ -37,6 +42,7 @@ function CheckList({ pr, checks, exactDurations }: { pr: PrSummary; checks: PrCh
             >
               {c.durationMs !== null ? `${exactDurations ? '' : 'about '}${fmtDuration(c.durationMs)}` : c.state === 'pending' ? 'running' : ''}
             </span>
+            <RerunButton pr={pr} check={c} />
             {c.state === 'failure' && (
               <Button variant="ghost" size="sm" onClick={() => void askAgent({ pr: pr.ref, title: pr.title, url: pr.url, items: [checkItem(c)] })}>
                 <Icon name="spark" />Ask the agent
