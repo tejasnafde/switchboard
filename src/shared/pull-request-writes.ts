@@ -123,12 +123,24 @@ export function effectiveMergeStrategy(allowed: readonly MergeStrategy[], picked
  * the user confirmed (a new head, closed, a blocker appeared) or the
  * strategy is not allowed. `null` means go.
  */
+/**
+ * Case-insensitive, and a short hash matches its full form: Bitbucket reports
+ * 12-character hashes where GitHub reports 40. Both sides need 7+ characters.
+ */
+export function sameCommit(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false
+  const x = a.toLowerCase()
+  const y = b.toLowerCase()
+  if (Math.min(x.length, y.length) < 7) return false
+  return x.length <= y.length ? y.startsWith(x) : x.startsWith(y)
+}
+
 export function mergePrecheck(fresh: PrDetail, input: MergeInput): PrError | null {
   const host = fresh.ref.host
   if (fresh.state !== 'open') {
     return { kind: 'stale', host, message: `This pull request is ${fresh.state} now.` }
   }
-  if (fresh.headSha !== input.expectedHeadSha) {
+  if (!sameCommit(fresh.headSha, input.expectedHeadSha)) {
     return { kind: 'stale', host, message: 'New commits were pushed since you looked. Review them, then merge again.' }
   }
   if (fresh.mergeBlockers.length > 0) {
@@ -249,7 +261,7 @@ export function validateMerge(host: PrHost, input: unknown): Valid<MergeInput> {
   if (typeof input.expectedHeadSha !== 'string' || !/^[0-9a-f]{7,64}$/i.test(input.expectedHeadSha)) {
     return invalid(host, 'The head commit you confirmed is missing.')
   }
-  return { ok: true, value: { strategy: input.strategy, expectedHeadSha: input.expectedHeadSha } }
+  return { ok: true, value: { strategy: input.strategy, expectedHeadSha: input.expectedHeadSha.toLowerCase() } }
 }
 
 export function validateRerun(host: PrHost, input: unknown): Valid<RerunInput> {

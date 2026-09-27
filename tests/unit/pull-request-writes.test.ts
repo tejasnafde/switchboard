@@ -10,6 +10,7 @@ import {
   effectiveMergeStrategy,
   lineInDiff,
   mergePrecheck,
+  sameCommit,
   orderMergeStrategies,
   PR_REVIEW_MAX_COMMENTS,
   PR_TEXT_MAX_CHARS,
@@ -177,5 +178,21 @@ describe('lineInDiff', () => {
     expect(lineInDiff(files, { path: 'a.py', side: 'old', line: 13 })).toBe(false)
     expect(lineInDiff(files, { path: 'b.py', side: 'new', line: 11 })).toBe(false)
     expect(lineInDiff(files, { path: 'a.py', side: 'new', line: 12, startLine: 2 })).toBe(false)
+  })
+})
+
+describe('sameCommit', () => {
+  it('ignores case', () => {
+    expect(sameCommit('ABCDEF1234567', 'abcdef1234567')).toBe(true)
+  })
+  it('matches a short hash to its full form, either way round', () => {
+    const full = 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0'
+    expect(sameCommit('a1b2c3d4e5f6', full)).toBe(true)
+    expect(sameCommit(full, 'A1B2C3D4E5F6')).toBe(true)
+  })
+  it('rejects different commits, too-short hashes and a missing hash', () => {
+    expect(sameCommit('a1b2c3d4e5f6', 'a1b2c3d4e5f7')).toBe(false)
+    expect(sameCommit('a1b2c3', 'a1b2c3d4e5f6')).toBe(false)
+    expect(sameCommit(null, 'a1b2c3d4e5f6')).toBe(false)
   })
 })
