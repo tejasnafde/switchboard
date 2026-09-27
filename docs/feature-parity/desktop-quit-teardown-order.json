@@ -62,7 +62,8 @@
       "tests/unit/app-quit-lifecycle-contract.test.ts: the teardown starts with window bounds, ends with the database, and closes terminals before providers and every watcher before the database; the window close handler does not write once quit has started.",
       "scripts/smoke-quit.mjs runs a real startup with two live PTYs, a launch-config watcher, a git HEAD watcher, the settings.json watcher and the database, quits like a user, and requires exit 0 plus every teardown step reporting ok; run 5 times in CI on ubuntu, macOS and Windows.",
       "npm run typecheck, npm test and npm run validate:feature-parity -- --base origin/main.",
-      "tests/unit/quit-coordinator.test.ts: rearm() after an aborted install lets the next quit tear down again, and is refused while a teardown runs."
+      "tests/unit/quit-coordinator.test.ts: rearm() after an aborted install lets the next quit tear down again, and is refused while a teardown runs.",
+      "tests/unit/install-attempt.test.ts: an install that never took recovers at once, or after a teardown still running at the timeout settles, and never installs late."
     ],
     "hardware": [
       "macOS (this Mac): scripts/smoke-quit.mjs and the boot smoke pass locally."

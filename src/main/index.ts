@@ -49,6 +49,7 @@ import { attachPullRequestAutoLink, registerPullRequestHandlers } from './ipc/pu
 import { tryResolveProviderInstance } from './db/provider-instances'
 import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
 import { QuitCoordinator } from './quit-coordinator'
+import { InstallAttempt } from './install-attempt'
 import { runShutdownSequence } from './shutdown-sequence'
 import { isQuitSmoke, reportQuitSmoke, runQuitSmoke } from './smoke-quit'
 import { stopSwitchboardMcpServer } from './mcp/switchboard-mcp-server'
@@ -84,8 +85,6 @@ let providerRegistry: ProviderRegistry | null = null
 let worktreeCreationRuntime: WorktreeCreationRuntime | null = null
 /** Mobile pairing WS endpoint (null when no token is configured). */
 let mobileEndpoint: MobileEndpoint | null = null
-/** True once the user has asked for restart-and-install; repeats are dropped. */
-let installRequested = false
 
 // One ordered, awaited teardown (see shutdown-sequence.ts). PTYs first - see
 // shutdownTerminals for why the old synchronous kill still crashed on quit.
@@ -118,6 +117,7 @@ const quitCoordinator = new QuitCoordinator(
   },
   () => app.quit(),
 )
+const installAttempt = new InstallAttempt(quitCoordinator)
 
 // ⌘R / ⌘⇧R go through a confirm dialog instead of the raw reload roles -
 // a stray reload kills terminal panes and in-flight agent turns.
@@ -491,32 +491,26 @@ function createWindow(): BrowserWindow {
   // Quit + relaunch into a downloaded update. Repeat clicks are dropped.
   ipcMain.removeAllListeners('app:quit-and-install')
   ipcMain.on('app:quit-and-install', () => {
-    if (installRequested) return
-    installRequested = true
-    reportInstallStatus(window, { kind: 'installing' })
-    // prepare(), not a bare teardown: it marks quit as already-drained, so
-    // the before-quit hook below won't preventDefault the quit Squirrel
-    // fires to run the install.
-    void quitCoordinator.prepare().then(() => quitAndInstall())
-    // quitAndInstall replaces the process; if we are still here the install
-    // never took (purged staging file, spawn failure). Un-latch so a retry
-    // isn't silently dropped - teardown is idempotent.
-    setTimeout(() => {
-      if (!installRequested) return
-      installRequested = false
-      // Teardown already ran. Let the database and IDE come back, and make the
-      // next quit tear down again (PTYs and agent sessions stay stopped until
-      // the relaunch the message asks for).
-      if (quitCoordinator.rearm()) {
+    const started = installAttempt.start({
+      install: quitAndInstall,
+      // quitAndInstall replaces the process; if we are still here the install
+      // never took (purged staging file, spawn failure).
+      onAborted: () => {
+        log.warn('still running after quitAndInstall - install did not start')
+        reportInstallStatus(window, {
+          kind: 'error',
+          message: 'The update could not start. Quit and reopen the app, then check for updates again.',
+        })
+      },
+      // Let the database and IDE come back; the next quit tears down again.
+      // PTYs and agent sessions stay stopped until the relaunch the message
+      // asks for.
+      onRecovered: () => {
         reopenDbAfterAbortedQuit()
         resumeIdeAfterAbortedQuit()
-      }
-      log.warn('still running after quitAndInstall - install did not start')
-      reportInstallStatus(window, {
-        kind: 'error',
-        message: 'The update could not start. Quit and reopen the app, then check for updates again.',
-      })
-    }, 15_000)
+      },
+    })
+    if (started) reportInstallStatus(window, { kind: 'installing' })
   })
 
   // Expose log paths for Settings/About

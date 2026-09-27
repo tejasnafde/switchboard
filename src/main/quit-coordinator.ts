@@ -63,4 +63,16 @@ export class QuitCoordinator {
     this.quitRequestScheduled = false
     return true
   }
+
+  /**
+   * rearm() now if no teardown is running, otherwise once it settles; then
+   * onRearmed. A drain never rejects, so the wait always ends.
+   */
+  async rearmWhenSettled(onRearmed: () => void): Promise<void> {
+    if (!this.rearm()) {
+      await this.drain
+      if (!this.rearm()) return
+    }
+    onRearmed()
+  }
 }
