@@ -123,6 +123,7 @@ function scripted(now: number): Scripted[] {
     viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false },
     projectPaths: [],
     ...over,
+    authorId: reviewerId(ref.host, over.author ?? ME) ?? null,
   })
   const reviewer = (host: RepoRef['host'], p: PrPerson, state: PrReviewer['state'], requested = true): PrReviewer => ({ id: reviewerId(host, p), person: p, state, requested })
   const bb = (p: PrPerson, state: PrReviewer['state'], requested = true) => reviewer('bitbucket', p, state, requested)

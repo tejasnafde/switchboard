@@ -163,6 +163,7 @@ export function mapBbSummary(repo: RepoRef, pr: BbPullRequest, viewer: BbViewer,
     title: pr.title,
     url: pr.links.html.href,
     author: mapBbUser(pr.author),
+    authorId: pr.author?.uuid ?? null,
     state: STATE[pr.state],
     draft: !!pr.draft,
     sourceBranch: pr.source.branch.name,
@@ -323,7 +324,7 @@ export function mapBbDetail(
   extra: Omit<BbEnrichment, 'conflictedFiles'>,
   diffstat: readonly BbDiffstat[],
   activity: readonly BbActivity[],
-  repoAdmin = false,
+  canWriteRepo = false,
 ): PrDetail {
   const summary = mapBbSummary(repo, pr, viewer, { ...extra, conflictedFiles: conflictedPaths(diffstat) })
   const withStats: PrSummary = {
@@ -340,7 +341,7 @@ export function mapBbDetail(
     mergeStrategies: mapBbMergeStrategies(pr),
     activity: mapBbActivity(activity),
     checkList: extra.checks,
-    viewerCanManage: withStats.viewer.isAuthor || repoAdmin,
+    viewerCanManage: withStats.viewer.isAuthor || canWriteRepo,
   }
 }
 

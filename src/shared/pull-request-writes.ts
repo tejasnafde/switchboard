@@ -304,7 +304,7 @@ export function canRemoveReviewer(host: PrHost, reviewer: PrReviewer): boolean {
 export function managePrecheck(fresh: PrDetail, what: string): PrError | null {
   const host = fresh.ref.host
   if (fresh.state !== 'open') return { kind: 'stale', host, message: `This pull request is ${fresh.state} now.` }
-  if (!fresh.viewerCanManage) return { kind: 'forbidden', host, message: `Only the author or someone with ${host === 'github' ? 'write access' : 'admin on the repository'} can ${what}.` }
+  if (!fresh.viewerCanManage) return { kind: 'forbidden', host, message: `Only the author or someone with write access to the repository can ${what}.` }
   return null
 }
 
@@ -313,7 +313,10 @@ export function addReviewerPrecheck(fresh: PrDetail, input: ReviewerInput): PrEr
   if (refused) return refused
   const host = fresh.ref.host
   if (fresh.reviewers.some((r) => r.id === input.reviewer && r.requested)) return { kind: 'stale', host, message: 'They are a reviewer already.' }
-  if (fresh.author.login === input.reviewer) return { kind: 'invalid', host, message: 'The author cannot review their own pull request.' }
+  // Bitbucket ids are uuids, so the login is no use there; GitHub logins match case-insensitively.
+  const isAuthor = input.reviewer === fresh.authorId
+    || (host === 'github' && fresh.author.login.toLowerCase() === input.reviewer.toLowerCase())
+  if (isAuthor) return { kind: 'invalid', host, message: 'The author cannot review their own pull request.' }
   return null
 }
 
@@ -344,9 +347,9 @@ export function orderReviewerCandidates(recent: readonly PrReviewerCandidate[], 
 }
 
 /** Candidates minus the author and anyone already asked. */
-export function candidatesFor(candidates: readonly PrReviewerCandidate[], pr: Pick<PrSummary, 'author' | 'reviewers'>): PrReviewerCandidate[] {
+export function candidatesFor(candidates: readonly PrReviewerCandidate[], pr: Pick<PrSummary, 'author' | 'authorId' | 'reviewers'>): PrReviewerCandidate[] {
   const taken = new Set(pr.reviewers.filter((r) => r.requested && r.id).map((r) => r.id))
-  return candidates.filter((c) => !taken.has(c.id) && c.person.login !== pr.author.login)
+  return candidates.filter((c) => !taken.has(c.id) && c.id !== pr.authorId && c.person.login !== pr.author.login)
 }
 
 /** Counts reviews in the listed PRs of one repository, per reviewer. */

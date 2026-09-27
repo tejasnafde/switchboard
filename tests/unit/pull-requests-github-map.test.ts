@@ -36,6 +36,7 @@ describe('mapGhSummary', () => {
     expect(pr.checks).toEqual({ state: 'success', total: 2, passed: 2, failed: 0, pending: 0 })
     expect(pr.ref).toEqual({ ...repo, number: 161 })
     expect(pr.author.displayName).toBe('Backend Dev')
+    expect(pr.authorId).toBe(pr.author.login)
     expect(pr.createdAt).toBe(Date.parse('2026-09-27T09:00:00Z'))
   })
 

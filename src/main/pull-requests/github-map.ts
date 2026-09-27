@@ -216,6 +216,7 @@ export function mapGhSummary(repo: RepoRef, pr: GhPullRequest, viewerLogin: stri
     title: pr.title,
     url: pr.url,
     author: mapGhActor(pr.author),
+    authorId: pr.author?.login ?? null,
     state: STATE[pr.state],
     draft: pr.isDraft,
     sourceBranch: pr.headRefName,

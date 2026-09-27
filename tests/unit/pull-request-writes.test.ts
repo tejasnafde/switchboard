@@ -37,7 +37,7 @@ import { parseHunks } from '../../src/shared/unified-diff'
 
 function detail(over: Partial<PrDetail> = {}): PrDetail {
   return {
-    ref: { host: 'github', owner: 'o', name: 'r', number: 7 }, title: 't', url: '', author: { login: 'me', displayName: 'me', avatarUrl: null },
+    ref: { host: 'github', owner: 'o', name: 'r', number: 7 }, title: 't', url: '', author: { login: 'me', displayName: 'me', avatarUrl: null }, authorId: 'me',
     state: 'open', draft: false, sourceBranch: 'f', targetBranch: 'main', createdAt: 0, updatedAt: 0, mergedAt: null,
     additions: null, deletions: null, changedFiles: null, unresolvedConversations: 0, mergeConflicts: false, conflictedFiles: [], checks: rollupChecks([]),
     reviewers: [], approvals: { given: 1, required: 1 }, viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false },
@@ -241,6 +241,13 @@ describe('reviewer and decline pre-checks', () => {
     expect(addReviewerPrecheck(pr, { reviewer: 'pankaj' })).toMatchObject({ kind: 'stale' })
     expect(addReviewerPrecheck(pr, { reviewer: 'me' })).toMatchObject({ kind: 'invalid' })
     expect(addReviewerPrecheck(pr, { reviewer: 'akshaya' })).toBeNull()
+    expect(addReviewerPrecheck({ ...pr, authorId: 'Me' }, { reviewer: 'ME' })).toMatchObject({ kind: 'invalid' })
+  })
+
+  it('refuses the Bitbucket author by account uuid, which is what the write sends', () => {
+    const bb = detail({ ref: { host: 'bitbucket', owner: 'o', name: 'r', number: 7 }, author: person('tejas'), authorId: UUID })
+    expect(addReviewerPrecheck(bb, { reviewer: UUID })).toMatchObject({ kind: 'invalid', message: 'The author cannot review their own pull request.' })
+    expect(addReviewerPrecheck(bb, { reviewer: '{00000000-0000-4000-8000-00000000000b}' })).toBeNull()
   })
 
   it('removes only a reviewer still on the PR, and on GitHub only a pending request', () => {
@@ -266,7 +273,9 @@ describe('reviewer candidates', () => {
   })
 
   it('leaves out the author and anyone already asked', () => {
-    const pr = { author: person('me'), reviewers: [rv('pankaj', 'pending'), rv('backend', 'commented', false)] }
+    const pr = { author: person('me'), authorId: 'me', reviewers: [rv('pankaj', 'pending'), rv('backend', 'commented', false)] }
     expect(candidatesFor([cand('me'), cand('pankaj'), cand('backend'), cand('barath')], pr).map((c) => c.id)).toEqual(['backend', 'barath'])
+    // Bitbucket: the candidate id is the uuid, not the nickname.
+    expect(candidatesFor([cand(UUID, { person: person('Tejas Nafde') })], { author: person('tejas'), authorId: UUID, reviewers: [] })).toEqual([])
   })
 })

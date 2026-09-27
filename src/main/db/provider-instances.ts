@@ -18,6 +18,7 @@
 import { getSafeStorage } from '../runtime'
 import { seal, unseal } from '../crypto/secret-box'
 import { getDb } from './database'
+import { decryptCaller } from '../decrypt-caller'
 import { createMainLogger as createLogger } from '../logger'
 import { parseErrorKind } from './parse-error'
 import { isAbsolute } from 'path'
@@ -151,6 +152,18 @@ function hasMagic(blob: Buffer, magic: Buffer): boolean {
 }
 
 /**
+ * safeStorage decrypts, keyed by the ciphertext, for the process lifetime. On
+ * an unsigned macOS build each decrypt can be a keychain password prompt, and
+ * Settings reads every instance each time it opens. Cleared on every upsert
+ * and delete, so a removed credential does not linger in memory.
+ */
+const decryptedEnvCache = new Map<string, Record<string, string>>()
+
+export function clearDecryptedEnvCache(): void {
+  decryptedEnvCache.clear()
+}
+
+/**
  * Decrypt an env blob, or null when it CANNOT BE OPENED at all - no
  * keychain, wrong host, missing `SWITCHBOARD_SECRET`, corrupt ciphertext.
  *
@@ -164,13 +177,19 @@ function hasMagic(blob: Buffer, magic: Buffer): boolean {
 function decryptEnvOrNull(blob: Buffer | null): Record<string, string> | null {
   if (!blob || blob.length === 0) return {}
   if (hasMagic(blob, ENC_MAGIC)) {
+    const key = blob.toString('base64')
+    const hit = decryptedEnvCache.get(key)
+    if (hit) return { ...hit }
     const safeStorage = getSafeStorage()
     if (!safeStorage?.isEncryptionAvailable()) {
       log.warn('safeStorage-encrypted env blob found but safeStorage is unavailable (wrong host?)')
       return null
     }
     try {
-      return parseEnvOrNull(safeStorage.decryptString(blob.subarray(ENC_MAGIC.length)))
+      log.debug('decrypting a provider instance env', { caller: decryptCaller() })
+      const env = parseEnvOrNull(safeStorage.decryptString(blob.subarray(ENC_MAGIC.length)))
+      if (env) decryptedEnvCache.set(key, env)
+      return env ? { ...env } : null
     } catch (err) {
       log.warn(`failed to decrypt env: ${err instanceof Error ? err.message : String(err)}`)
       return null
@@ -227,7 +246,19 @@ export function encryptEnv(env: Record<string, string>): Buffer {
   return Buffer.from(json, 'utf-8')
 }
 
-function rowToFull(r: DbRow): ProviderInstanceRow {
+/** The env_keys column proves the overlay is empty, so there is nothing to decrypt. */
+function envKnownEmpty(r: DbRow): boolean {
+  if (!r.env_keys) return false
+  try {
+    const parsed = JSON.parse(r.env_keys)
+    return Array.isArray(parsed) && parsed.length === 0
+  } catch {
+    log.warn(`malformed env_keys for instance ${r.id}`)
+    return false
+  }
+}
+
+function rowToFull(r: DbRow, withEnv = true): ProviderInstanceRow {
   let configJson: unknown = null
   if (r.config_json) {
     try {
@@ -242,7 +273,7 @@ function rowToFull(r: DbRow): ProviderInstanceRow {
     displayName: r.display_name,
     accentColor: r.accent_color,
     authMode: r.auth_mode === 'oauth_dir' ? 'oauth_dir' : 'env',
-    env: decryptEnv(r.env_encrypted),
+    env: withEnv && !envKnownEmpty(r) ? decryptEnv(r.env_encrypted) : {},
     oauthDir: expandTilde(r.oauth_dir),
     configJson,
     enabled: r.enabled === 1,
@@ -469,12 +500,13 @@ export function listProviderInstances(): ProviderInstanceWire[] {
 }
 
 /** Internal - returns the full decrypted row. Used by the registry at
- *  session-start. NEVER expose this over IPC. */
-export function getProviderInstanceFull(id: string): ProviderInstanceRow | null {
+ *  session-start. NEVER expose this over IPC. `withEnv: false` leaves `env`
+ *  empty and never touches the keychain, for callers that need only the rest. */
+export function getProviderInstanceFull(id: string, opts: { withEnv?: boolean } = {}): ProviderInstanceRow | null {
   const row = getDb().prepare(
     'SELECT * FROM provider_instances WHERE id = ?'
   ).get(id) as DbRow | undefined
-  return row ? rowToFull(row) : null
+  return row ? rowToFull(row, opts.withEnv ?? true) : null
 }
 
 export interface ProviderInstanceUpsertInput {
@@ -669,6 +701,7 @@ export function upsertProviderInstance(input: ProviderInstanceUpsertInput): Prov
               enabled = ?, updated_at = ?
         WHERE id = ?`
     ).run(newName, newAccent, newAuth, newEnv, newEnvKeys, newOauthDir, newConfig, newEnabled, now, existing.id)
+    clearDecryptedEnvCache()
     return rowToWire(db.prepare('SELECT * FROM provider_instances WHERE id = ?').get(existing.id) as DbRow)
   }
 
@@ -694,6 +727,7 @@ export function upsertProviderInstance(input: ProviderInstanceUpsertInput): Prov
     input.enabled === false ? 0 : 1,
     now, now,
   )
+  clearDecryptedEnvCache()
   return rowToWire(db.prepare('SELECT * FROM provider_instances WHERE id = ?').get(id) as DbRow)
 }
 
@@ -713,6 +747,7 @@ export function deleteProviderInstance(id: string): boolean {
     return false
   }
   const result = getDb().prepare('DELETE FROM provider_instances WHERE id = ?').run(id)
+  clearDecryptedEnvCache()
   return result.changes > 0
 }
 

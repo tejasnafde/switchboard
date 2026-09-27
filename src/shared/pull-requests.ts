@@ -100,6 +100,8 @@ export interface PrSummary {
   title: string
   url: string
   author: PrPerson
+  /** The author as a reviewer id (`PrReviewer.id`): the GitHub login, the Bitbucket account uuid. `null` when the host gave none. */
+  authorId: string | null
   state: PrState
   draft: boolean
   sourceBranch: string
@@ -159,7 +161,7 @@ export interface PrDetail extends PrSummary {
   mergeStrategies: MergeStrategy[]
   activity: PrActivity[]
   checkList: PrCheck[]
-  /** The host lets you change the reviewers and decline or close it: the author, or write access (GitHub) / repository admin (Bitbucket). */
+  /** The host lets you change the reviewers and decline or close it: the author, or write access to the repository (GitHub `viewerPermission`, Bitbucket `/user/workspaces/{ws}/permissions/repositories`). */
   viewerCanManage: boolean
 }
 
@@ -323,9 +325,20 @@ export interface BitbucketCredentialInput {
 export interface SourceControlTestResult {
   ok: boolean
   message: string
-  /** Workspaces the account can see, with how many repositories in each. */
-  workspaces?: Array<{ name: string; repositories: number }>
 }
+
+/**
+ * The Atlassian API token scopes the Bitbucket provider needs: `/user`, the
+ * repository and its commit statuses, the pull request reads, and the human
+ * writes (comments, resolve, approve, request changes, merge, reviewers,
+ * decline). read:repository also covers the repository permission read that
+ * decides who may decline or edit a PR. It calls no Pipelines endpoint, so it
+ * needs no pipeline scope. read:workspace is optional: without it Add
+ * reviewer offers recent reviewers only, not workspace members.
+ */
+export const BITBUCKET_READ_SCOPES = ['read:user:bitbucket', 'read:repository:bitbucket', 'read:pullrequest:bitbucket'] as const
+export const BITBUCKET_TOKEN_SCOPES = [...BITBUCKET_READ_SCOPES, 'write:pullrequest:bitbucket'] as const
+export const BITBUCKET_OPTIONAL_SCOPES = ['read:workspace:bitbucket'] as const
 
 // ─── Pure helpers ─────────────────────────────────────────────────
 
