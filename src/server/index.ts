@@ -23,6 +23,7 @@ import { registerSttHandlers } from '../main/ipc/stt'
 import { registerKanbanHandlers } from '../main/ipc/kanban'
 import { registerWorktreeManagerHandlers } from '../main/ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from '../main/ipc/provider-instances'
+import { registerPullRequestHandlers } from '../main/ipc/pull-requests'
 import { registerTerminalHandlers } from '../main/ipc/terminal'
 import { ProviderRegistry } from '../main/provider/provider-registry'
 import { disposeUsageProbes } from '../main/provider/usage'
@@ -141,6 +142,7 @@ registerFilesHandlers(host)
 registerGitHandlers(host)
 registerSttHandlers(host)
 registerProviderInstanceHandlers(host)
+registerPullRequestHandlers(host)
 registerTerminalHandlers(host)
 host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 

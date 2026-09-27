@@ -350,6 +350,15 @@ Traps:
 - Claude resumes natively only when the anchor has compatible lineage in the source conversation's committed credential profile. Codex and OpenCode use a durable exactly-once transcript handoff and never write fake resumable artifacts into provider discovery trees.
 - Fork conversation, rich messages, settings, handoff state, lineage, managed worktree projection, and operation result commit atomically. `project_path` remains the parent project; `worktree_path` is execution CWD. `thread_sessions` remains provider-session rotation lineage, separate from user-created fork lineage.
 
+### Reviews (read-only pull requests, third top-level view)
+
+- `layout-store.appView: 'reviews'`; `ReviewsView` mounts only while shown, so nothing polls a host from a hidden view. Refresh cadence is `shared/pull-request-refresh.ts` (focus, at most once a minute; interval every 5 min; manual always).
+- Contract in `shared/pull-requests.ts` (neutral types, `mergeBlockers`, `HOST_CAPABILITIES`); grouping rule in `shared/pull-request-groups.ts`; remote URL parsing in `shared/pull-request-remote.ts`.
+- Backend in `main/pull-requests/`: one `PullRequestProvider` interface, `github.ts` (gh CLI, never asks gh for its token) and `bitbucket.ts` (REST 2.0, Basic auth, refuses a `next` link off api.bitbucket.org), pure `*-map.ts` mappers tested against `tests/fixtures/pull-requests/`. `service.ts` only reads repositories one of the projects points at. Handlers in `main/ipc/pull-requests.ts` register on every host.
+- **Read-only in this step**: no provider method writes. Write actions (comment, approve, merge, resolve, re-run) and agent tools are later steps.
+- Bitbucket credentials: `credentials.ts`, safeStorage-encrypted file `userData/source-control/bitbucket.bin`, never the settings table (so never settings.json or `settings:get`). No safeStorage (headless server) means `needs_desktop`, never plaintext. `source-control:*` is admin-scoped in `device-auth.ts`; `pull-requests:*` is open to a phone.
+- `SB_DEMO_ADAPTER=1` swaps in `demo.ts` (the mock's data) for the visual harness screens `reviews` and `reviews-files`.
+
 ### Kanban board (⌘⇧K top-level view)
 
 - Top-level view (not a right-pane mode) swapping the chat area for a workspace-scoped board; sidebar stays mounted. `layout-store.appView: 'chats' | 'kanban'`.

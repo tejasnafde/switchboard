@@ -45,6 +45,7 @@ import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
+import { registerPullRequestHandlers } from './ipc/pull-requests'
 import { tryResolveProviderInstance } from './db/provider-instances'
 import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
 import { QuitCoordinator } from './quit-coordinator'
@@ -732,6 +733,7 @@ app.whenReady().then(() => {
   })
   registerWorktreeManagerHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
+  registerPullRequestHandlers(backendHost)
   // Local-only resolver: hand preload an instance's oauth_dir BASENAME (a path
   // segment, not a secret) so it can forward it to a remote at session start.
   // basename() runs on the desktop's OS, so a Windows path's backslashes are

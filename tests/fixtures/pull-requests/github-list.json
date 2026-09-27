@@ -1,0 +1,95 @@
+{
+  "data": {
+    "viewer": { "login": "tejasnafde" },
+    "r0": {
+      "open": {
+        "nodes": [
+          {
+            "number": 161,
+            "title": "Kanban card cost cap",
+            "url": "https://github.com/tejasnafde/switchboard/pull/161",
+            "state": "OPEN",
+            "isDraft": false,
+            "createdAt": "2026-09-27T09:00:00Z",
+            "updatedAt": "2026-09-27T09:30:00Z",
+            "mergedAt": null,
+            "headRefName": "feat/card-cost-cap",
+            "baseRefName": "main",
+            "headRefOid": "0f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6",
+            "additions": 212,
+            "deletions": 34,
+            "changedFiles": 9,
+            "author": { "login": "backend-dev", "name": "Backend Dev", "avatarUrl": "https://avatars.example/1" },
+            "baseRef": { "branchProtectionRule": { "requiredApprovingReviewCount": 1 } },
+            "reviewRequests": { "nodes": [
+              { "requestedReviewer": { "__typename": "User", "login": "tejasnafde", "name": "Tejas Nafde", "avatarUrl": null } },
+              { "requestedReviewer": { "__typename": "Team", "slug": "core" } }
+            ] },
+            "latestReviews": { "nodes": [
+              { "state": "COMMENTED", "submittedAt": "2026-09-27T09:10:00Z", "author": { "login": "pankaj", "avatarUrl": null } }
+            ] },
+            "reviewThreads": { "totalCount": 3, "nodes": [ { "isResolved": false }, { "isResolved": false }, { "isResolved": true } ] },
+            "commits": { "nodes": [ { "commit": { "statusCheckRollup": { "state": "SUCCESS", "contexts": { "nodes": [
+              { "__typename": "CheckRun", "name": "Test (ubuntu-latest)", "status": "COMPLETED", "conclusion": "SUCCESS", "startedAt": "2026-09-27T09:01:00Z", "completedAt": "2026-09-27T09:04:26Z", "detailsUrl": "https://github.com/tejasnafde/switchboard/actions/runs/1/job/2" },
+              { "__typename": "StatusContext", "context": "CodeRabbit", "state": "SUCCESS", "targetUrl": null, "description": "Review completed", "createdAt": "2026-09-27T09:05:00Z" }
+            ] } } } } ] }
+          },
+          {
+            "number": 162,
+            "title": "Resume the IAP event stream",
+            "url": "https://github.com/tejasnafde/switchboard/pull/162",
+            "state": "OPEN",
+            "isDraft": false,
+            "createdAt": "2026-09-27T07:00:00Z",
+            "updatedAt": "2026-09-27T08:00:00Z",
+            "mergedAt": null,
+            "headRefName": "fix/iap-resume",
+            "baseRefName": "main",
+            "additions": 40,
+            "deletions": 2,
+            "changedFiles": 3,
+            "author": { "login": "TejasNafde", "name": "Tejas Nafde", "avatarUrl": null },
+            "baseRef": { "branchProtectionRule": null },
+            "reviewRequests": { "nodes": [] },
+            "latestReviews": { "nodes": [] },
+            "reviewThreads": { "totalCount": 0, "nodes": [] },
+            "commits": { "nodes": [ { "commit": { "statusCheckRollup": { "state": "FAILURE", "contexts": { "nodes": [
+              { "__typename": "CheckRun", "name": "Test (macos-14)", "status": "COMPLETED", "conclusion": "TIMED_OUT", "startedAt": "2026-09-27T07:01:00Z", "completedAt": "2026-09-27T07:21:00Z", "detailsUrl": null },
+              { "__typename": "CheckRun", "name": "Visual regressions (macOS)", "status": "IN_PROGRESS", "conclusion": null, "startedAt": "2026-09-27T07:01:00Z", "completedAt": null, "detailsUrl": null },
+              { "__typename": "CheckRun", "name": "Lint docs", "status": "COMPLETED", "conclusion": "SKIPPED", "startedAt": null, "completedAt": null, "detailsUrl": null }
+            ] } } } } ] }
+          }
+        ]
+      },
+      "merged": {
+        "nodes": [
+          {
+            "number": 159,
+            "title": "Retry the settings.json rename while Windows has the file locked",
+            "url": "https://github.com/tejasnafde/switchboard/pull/159",
+            "state": "MERGED",
+            "isDraft": false,
+            "createdAt": "2026-09-27T00:20:33Z",
+            "updatedAt": "2026-09-27T01:02:26Z",
+            "mergedAt": "2026-09-27T01:02:26Z",
+            "headRefName": "fix/settings-file-windows-rename",
+            "baseRefName": "main",
+            "additions": 475,
+            "deletions": 44,
+            "changedFiles": 10,
+            "author": { "login": "tejasnafde", "name": "Tejas Nafde", "avatarUrl": null },
+            "baseRef": { "branchProtectionRule": { "requiredApprovingReviewCount": 0 } },
+            "reviewRequests": { "nodes": [] },
+            "latestReviews": { "nodes": [ { "state": "APPROVED", "submittedAt": "2026-09-27T00:50:00Z", "author": { "login": "akshaya", "avatarUrl": null } } ] },
+            "reviewThreads": { "totalCount": 1, "nodes": [ { "isResolved": true } ] },
+            "commits": { "nodes": [ { "commit": { "statusCheckRollup": null } } ] }
+          }
+        ]
+      }
+    },
+    "r1": null
+  },
+  "errors": [
+    { "type": "NOT_FOUND", "path": ["r1"], "message": "Could not resolve to a Repository with the name 'tejasnafde/gone'." }
+  ]
+}

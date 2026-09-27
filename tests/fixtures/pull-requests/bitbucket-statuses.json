@@ -1,0 +1,9 @@
+{
+  "pagelen": 100,
+  "values": [
+    { "key": "lint", "name": "lint", "state": "SUCCESSFUL", "url": "https://bitbucket.org/geoiq/ssg-bot-v2/pipelines/results/2291/steps/1", "created_on": "2026-09-27T10:00:00+00:00", "updated_on": "2026-09-27T10:01:02+00:00" },
+    { "key": "integration", "name": "integration", "state": "FAILED", "description": "test_sync_resume timed out after 120 s", "url": "https://bitbucket.org/geoiq/ssg-bot-v2/pipelines/results/2291/steps/3", "created_on": "2026-09-27T10:00:00+00:00", "updated_on": "2026-09-27T10:04:00+00:00" },
+    { "key": "build-image", "name": null, "state": "INPROGRESS", "created_on": "2026-09-27T10:00:00+00:00", "updated_on": "2026-09-27T10:00:00+00:00" },
+    { "key": "deploy", "name": "deploy", "state": "STOPPED", "created_on": "2026-09-27T10:00:00+00:00", "updated_on": "2026-09-27T10:00:00+00:00" }
+  ]
+}

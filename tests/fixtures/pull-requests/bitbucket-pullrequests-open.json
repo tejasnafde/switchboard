@@ -1,0 +1,54 @@
+{
+  "pagelen": 50,
+  "values": [
+    {
+      "id": 612,
+      "title": "Jittered backoff for the SSG sync worker",
+      "description": "Replaces the fixed 30 s retry.",
+      "state": "OPEN",
+      "draft": false,
+      "author": { "display_name": "Tejas Nafde", "nickname": "tejas", "uuid": "{me-uuid}", "account_id": "557058:me", "links": { "avatar": { "href": "https://avatar.example/me" } } },
+      "source": { "branch": { "name": "feat/sync-backoff" }, "commit": { "hash": "a1b2c3d4e5f6" } },
+      "destination": { "branch": { "name": "main" } },
+      "comment_count": 4,
+      "created_on": "2026-09-27T08:00:00.000000+00:00",
+      "updated_on": "2026-09-27T10:20:00.000000+00:00",
+      "links": { "html": { "href": "https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/612" } },
+      "participants": [
+        { "user": { "display_name": "akshaya", "nickname": "akshaya", "uuid": "{a}" }, "role": "REVIEWER", "approved": true, "state": "approved", "participated_on": "2026-09-27T09:00:00+00:00" },
+        { "user": { "display_name": "pankaj", "nickname": "pankaj", "uuid": "{p}" }, "role": "REVIEWER", "approved": false, "state": "changes_requested", "participated_on": "2026-09-27T09:10:00+00:00" },
+        { "user": { "display_name": "backend", "nickname": "backend", "uuid": "{b}" }, "role": "PARTICIPANT", "approved": false, "state": null, "participated_on": "2026-09-27T10:00:00+00:00" }
+      ],
+      "reviewers": [
+        { "display_name": "akshaya", "uuid": "{a}" },
+        { "display_name": "pankaj", "uuid": "{p}" }
+      ]
+    },
+    {
+      "id": 88,
+      "title": "PowerBI recon export",
+      "state": "OPEN",
+      "author": { "display_name": "akshaya", "nickname": "akshaya", "uuid": "{a}" },
+      "source": { "branch": { "name": "feat/powerbi" }, "commit": { "hash": "ffee00" } },
+      "destination": { "branch": { "name": "main" } },
+      "created_on": "2026-09-26T08:00:00+00:00",
+      "updated_on": "2026-09-27T07:00:00+00:00",
+      "links": { "html": { "href": "https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/88" } },
+      "participants": [],
+      "reviewers": [ { "display_name": "Tejas Nafde", "uuid": "{me-uuid}", "account_id": "557058:me" } ]
+    },
+    {
+      "id": 70,
+      "title": "Someone else's refactor",
+      "state": "OPEN",
+      "author": { "display_name": "other", "uuid": "{o}" },
+      "source": { "branch": { "name": "refactor" }, "commit": { "hash": "0000aa" } },
+      "destination": { "branch": { "name": "main" } },
+      "created_on": "2026-09-20T08:00:00+00:00",
+      "updated_on": "2026-09-21T07:00:00+00:00",
+      "links": { "html": { "href": "https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/70" } },
+      "participants": [],
+      "reviewers": []
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "pagelen": 50,
+  "values": [
+    {
+      "id": 600,
+      "title": "Retry the sync lease",
+      "state": "MERGED",
+      "author": { "display_name": "Tejas Nafde", "uuid": "{me-uuid}" },
+      "source": { "branch": { "name": "fix/lease" }, "commit": { "hash": "bbbb" } },
+      "destination": { "branch": { "name": "main" } },
+      "created_on": "2026-09-24T08:00:00+00:00",
+      "updated_on": "2026-09-25T12:00:00+00:00",
+      "links": { "html": { "href": "https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/600" } },
+      "participants": [ { "user": { "display_name": "akshaya", "uuid": "{a}" }, "role": "REVIEWER", "approved": true, "state": "approved" } ]
+    }
+  ]
+}

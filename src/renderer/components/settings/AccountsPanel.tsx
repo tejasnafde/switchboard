@@ -33,6 +33,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { cn } from '../../lib/utils'
 import { createRendererLogger } from '../../logger'
 import { SETTING_ROW, type SettingRowDef } from './settings-rows'
+import { SourceControlPanel } from './SourceControlPanel'
 import {
   accountsSummary,
   barTone,
@@ -187,6 +188,10 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
 
       <Anchor def={SETTING_ROW.addAccount}>
         <AddAccountButton onPick={setAdding} />
+      </Anchor>
+
+      <Anchor def={SETTING_ROW.sourceControl}>
+        <div className="mt-[22px]"><SourceControlPanel /></div>
       </Anchor>
 
       {editing && (

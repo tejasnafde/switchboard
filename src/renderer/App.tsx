@@ -15,6 +15,7 @@ import { TerminalSessionPane } from './components/terminal/TerminalSessionPane'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { IdePane } from './components/ide/IdePane'
 import { KanbanView } from './components/kanban/KanbanView'
+import { ReviewsView } from './components/reviews/ReviewsView'
 import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
@@ -1550,6 +1551,10 @@ export function App() {
         >
           <KanbanView />
         </div>
+
+        {/* Reviews: pull requests from the projects' remotes. Mounted only while
+            shown, so nothing polls a host from a hidden view. */}
+        {appView === 'reviews' && <ReviewsView onOpenSettings={() => setSettingsPage('accounts')} />}
       </div>
 
       <StatusBar />
