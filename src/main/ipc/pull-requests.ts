@@ -12,19 +12,28 @@ import { execFile } from 'node:child_process'
 import type { BackendHost } from '../backend/host'
 import { PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
 import type { GithubAccountState, SourceControlStatus, SourceControlTestResult } from '@shared/pull-requests'
-import { canLinkToProject, isPrRef, type PrLink, type PrLinkChat, type PrLinkResult } from '@shared/pull-request-links'
+import { canLinkToProject, isPrRef, type PrHistoryScanResult, type PrLink, type PrLinkChat, type PrLinkResult } from '@shared/pull-request-links'
 import {
   getConversationByThreadId,
   getProjects,
   linkConversationPullRequest,
+  listUnscannedPullRequestHistoryScanTargets,
   listConversationPullRequests,
   listLinkableChats,
   listPullRequestChats,
+  markPullRequestHistoryScanned,
   resolveRootThreadId,
   unlinkConversationPullRequest,
 } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
 import { PullRequestAutoLinker } from '../pull-requests/auto-link'
+import {
+  MAX_HISTORY_SCAN_CHARS,
+  scanPendingPullRequestHistory,
+  scanPullRequestHistoryForConversation,
+  type PullRequestHistoryScanDeps,
+} from '../pull-requests/history-scan'
+import { loadConversationHistory } from '../conversations/history'
 import { getSafeStorage, userDataDir } from '../runtime'
 import { createMainLogger } from '../logger'
 import { BitbucketClient, BitbucketProvider, testBitbucket } from '../pull-requests/bitbucket'
@@ -37,6 +46,7 @@ import { setAgentPullRequestAccess } from '../mcp/pr-tools'
 
 const log = createMainLogger('ipc:pull-requests')
 const DEMO = process.env.SB_DEMO_ADAPTER === '1'
+const HISTORY_SCAN_START_DELAY_MS = 2_000
 
 function readRemotes(projectPath: string): Promise<string> {
   return new Promise((resolve) => {
@@ -92,6 +102,7 @@ async function githubState(): Promise<GithubAccountState> {
 }
 
 let notifyLinks: (conversationId: string) => void = () => {}
+let backgroundHistoryScanStarted = false
 
 /**
  * Auto-links PRs named in a chat's output (see `pull-requests/auto-link.ts`)
@@ -137,6 +148,53 @@ function registerLinkHandlers(host: BackendHost): void {
     if (unlinkConversationPullRequest(threadId, ref)) notifyLinks(resolveRootThreadId(threadId))
     return { ok: true }
   })
+
+  // Re-scans one chat on request, scanned before or not; same rules as the background scan.
+  host.handle(PullRequestChannels.HISTORY_SCAN, async (threadId: unknown): Promise<PrHistoryScanResult> => {
+    if (typeof threadId !== 'string') return { ok: false, message: 'Not a chat.' }
+    const chat = getConversationByThreadId(threadId)
+    if (!chat) return { ok: false, message: 'This chat has no Switchboard record to link to.' }
+    try {
+      const { linked, capped } = await scanPullRequestHistoryForConversation({ id: chat.id, projectPath: chat.project_path }, historyScanDeps())
+      return { ok: true, linked, capped, capChars: MAX_HISTORY_SCAN_CHARS }
+    } catch (err) {
+      log.warn('scanning a chat for pull requests failed', { threadId, err: String(err) })
+      return { ok: false, message: 'Could not read this chat; see the log.' }
+    }
+  })
+}
+
+function historyScanDeps(): PullRequestHistoryScanDeps {
+  return {
+    listUnscanned: listUnscannedPullRequestHistoryScanTargets,
+    loadHistory: loadConversationHistory,
+    repoForProject: (projectPath) => getService().repoFor(projectPath),
+    link: (conversationId, ref) => linkConversationPullRequest(conversationId, ref, 'auto'),
+    notify: (conversationId) => notifyLinks(conversationId),
+    markScanned: markPullRequestHistoryScanned,
+  }
+}
+
+/**
+ * Scans the stored history of every chat not scanned yet, once, shortly after
+ * launch. Call after `attachPullRequestAutoLink`, so new links reach clients.
+ */
+export function startPullRequestHistoryScan(): void {
+  // The demo adapter's fixture stays as seeded, for the visual harness.
+  if (backgroundHistoryScanStarted || DEMO) return
+  backgroundHistoryScanStarted = true
+  setTimeout(() => {
+    void scanPendingPullRequestHistory(historyScanDeps()).then((results) => {
+      if (results.length === 0) return
+      log.info('pull request history scan finished', {
+        chats: results.length,
+        linked: results.reduce((sum, result) => sum + result.linked, 0),
+        capped: results.filter((result) => result.capped).length,
+      })
+    }).catch((err) => {
+      log.warn('pull request history scan failed', err)
+    })
+  }, HISTORY_SCAN_START_DELAY_MS)
 }
 
 export function registerPullRequestHandlers(host: BackendHost): void {

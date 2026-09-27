@@ -22,7 +22,7 @@ import type {
   SourceControlStatus,
   SourceControlTestResult,
 } from '@shared/pull-requests'
-import type { PrLink, PrLinkChat, PrLinkResult } from '@shared/pull-request-links'
+import type { PrHistoryScanResult, PrLink, PrLinkChat, PrLinkResult } from '@shared/pull-request-links'
 import type { CommentInput, InlineCommentInput, MergeInput, PrWriteDone, ReplyInput, RerunInput, ResolveInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import type {
   TerminalCreateOptions,
@@ -540,6 +540,7 @@ const api = {
     linkableChats: (ref: PrRef): Promise<PrLinkChat[]> => transport.invoke(PullRequestChannels.LINKABLE_CHATS, ref),
     link: (threadId: string, ref: PrRef): Promise<PrLinkResult> => transport.invoke(PullRequestChannels.LINK, threadId, ref),
     unlink: (threadId: string, ref: PrRef): Promise<PrLinkResult> => transport.invoke(PullRequestChannels.UNLINK, threadId, ref),
+    scanHistory: (threadId: string): Promise<PrHistoryScanResult> => transport.invoke(PullRequestChannels.HISTORY_SCAN, threadId),
     onLinksChanged: (callback: (change: { conversationId: string }) => void) =>
       transport.on(PullRequestChannels.LINKS_CHANGED, (change) => callback(change as { conversationId: string })),
     reply: (ref: PrRef, input: ReplyInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.REPLY, ref, input),

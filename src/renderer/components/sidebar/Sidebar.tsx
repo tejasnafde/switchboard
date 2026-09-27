@@ -61,6 +61,7 @@ import {
 
 import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/types'
 import { confirm } from '../ui/confirm'
+import { historyScanSummary, type PrHistoryScanResult } from '@shared/pull-request-links'
 
 interface SidebarProps {
   onSessionSelect?: (session: SessionSummary, projectPath: string, machineId?: string) => void
@@ -456,6 +457,17 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       suggestedFilename: suggestedExportFilename(session.title ?? 'conversation'),
       content,
     })
+  }, [])
+
+  const handleFindLinkedPrs = useCallback(async (session: SessionSummary) => {
+    let result: PrHistoryScanResult
+    try {
+      result = await window.api.pullRequests.scanHistory(session.id)
+    } catch (err) {
+      log.warn(`scanning ${session.id} for pull requests failed`, err)
+      result = { ok: false, message: 'Could not scan this chat; see the log.' }
+    }
+    await confirm({ ...historyScanSummary(result), notice: true })
   }, [])
 
   const handleMerge = useCallback(async (
@@ -1216,6 +1228,13 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
               label: 'Export as Markdown',
               onClick: () => {
                 void handleExport(contextMenu.session, contextMenu.projectPath)
+                setContextMenu(null)
+              },
+            },
+            {
+              label: 'Find linked PRs in this chat',
+              onClick: () => {
+                void handleFindLinkedPrs(contextMenu.session)
                 setContextMenu(null)
               },
             },
