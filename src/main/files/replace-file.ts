@@ -13,7 +13,9 @@
  * The caller checks the target before calling, but a retry happens later,
  * and an editor may have saved in between. `stillSafe` is asked again before
  * each retried rename and before the fallback; when it answers false the
- * target is left alone and `TargetChangedError` is thrown.
+ * target is left alone and `TargetChangedError` is thrown. One stat and one
+ * rename apart, a gap remains that only a lock could close: neither POSIX
+ * nor NTFS has an atomic compare-and-rename, and editors ignore advisory locks.
  *
  * Electron-free, with fs and the clock injectable, for the tests.
  */

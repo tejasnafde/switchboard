@@ -78,20 +78,30 @@ function applyEol(content: string, eol: '\r\n' | '\n'): string {
 }
 
 /** Why the write must not go ahead, or null. Asked before the write and again before a retry waiting on a Windows lock. */
-async function conflictReason(absPath: string, opts: WriteOptions, stat: { exists: boolean; mtimeMs: number }): Promise<string | null> {
-  if (stat.exists && opts.expectedMtimeMs !== undefined && stat.mtimeMs > opts.expectedMtimeMs) return CONFLICT_SINCE_OPEN
+async function conflictReason(absPath: string, opts: WriteOptions, stat: TargetStat): Promise<string | null> {
+  if (opts.expectedMtimeMs !== undefined) {
+    // A file opened for editing and deleted since must not be recreated by the save.
+    if (stat.missing) return CONFLICT_SINCE_OPEN
+    if (stat.exists && stat.mtimeMs > opts.expectedMtimeMs) return CONFLICT_SINCE_OPEN
+  }
   if (opts.expectedContent !== undefined && !(await holdsContent(absPath, opts.expectedContent))) return CONFLICT_SINCE_DIFF
   return null
 }
 
-async function statTarget(absPath: string): Promise<{ exists: boolean; mtimeMs: number }> {
+interface TargetStat {
+  exists: boolean
+  /** stat said ENOENT, as opposed to failing for another reason. */
+  missing: boolean
+  mtimeMs: number
+}
+
+async function statTarget(absPath: string): Promise<TargetStat> {
   try {
     const stat = await fs.stat(absPath)
-    return { exists: stat.isFile(), mtimeMs: stat.mtimeMs }
+    return { exists: stat.isFile(), missing: false, mtimeMs: stat.mtimeMs }
   } catch (err) {
-    // ENOENT - file doesn't exist; create-on-write path is fine.
     log.debug('stat failed before write, treating as new file', { absPath, err })
-    return { exists: false, mtimeMs: 0 }
+    return { exists: false, missing: (err as NodeJS.ErrnoException).code === 'ENOENT', mtimeMs: 0 }
   }
 }
 
@@ -116,7 +126,11 @@ export async function writeFileSafe(
   try {
     await replaceFile(absPath, finalContent, { log, tmp, stillSafe })
   } catch (err) {
-    if (err instanceof TargetChangedError && lateConflict) return { ok: false, error: lateConflict, conflict: true }
+    if (err instanceof TargetChangedError && lateConflict) {
+      log.warn('write abandoned: file changed while the replace waited for a lock', { absPath, reason: lateConflict })
+      return { ok: false, error: lateConflict, conflict: true }
+    }
+    log.warn('write failed', { absPath, code: (err as NodeJS.ErrnoException).code, err })
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 

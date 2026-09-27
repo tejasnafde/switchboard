@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -79,6 +79,23 @@ describe('a replacement waiting on a Windows lock', () => {
     expect(result).toEqual({ ok: false, error: 'File changed on disk after the diff was captured', conflict: true })
     expect(readFileSync(file, 'utf8')).toBe('edited\n')
     expect(readdirSync(dir)).toEqual(['a.ts'])
+  })
+
+  it('writeFileSafe: a file deleted meanwhile is a conflict, not recreated', async () => {
+    const file = join(dir, 'a.ts')
+    writeFileSync(file, 'old\n')
+    const { mtimeMs } = statSync(file)
+    let deleted = false
+    hook.onRename = () => {
+      if (!deleted) {
+        deleted = true
+        unlinkSync(file)
+      }
+      throw eperm()
+    }
+    const result = await writeFileSafe(file, 'new\n', { expectedMtimeMs: mtimeMs })
+    expect(result).toEqual({ ok: false, error: 'File changed on disk since open', conflict: true })
+    expect(readdirSync(dir)).toEqual([])
   })
 
   it('writeFileSafe: an unchanged file is still written once the lock clears', async () => {
