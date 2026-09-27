@@ -13,10 +13,12 @@
  *     pattern.
  *
  * Cross-platform: every path operation goes through `node:path` and
- * `node:fs/promises`. Atomic rename works the same on POSIX and NTFS.
+ * `node:fs/promises`. The rename goes through `replaceFile`, which retries
+ * it while Windows has the target locked.
  */
 import { promises as fs } from 'node:fs'
 import { createMainLogger } from '../logger'
+import { replaceFile } from './replace-file'
 
 const log = createMainLogger('files:writing')
 
@@ -104,8 +106,7 @@ export async function writeFileSafe(
 
   const tmp = `${absPath}.sb-tmp-${process.pid}-${Date.now()}`
   try {
-    await fs.writeFile(tmp, finalContent, 'utf8')
-    await fs.rename(tmp, absPath)
+    await replaceFile(absPath, finalContent, { log, tmp })
   } catch (err) {
     // Best-effort cleanup of the .tmp file on failure
     try {

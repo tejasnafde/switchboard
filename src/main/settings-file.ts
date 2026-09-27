@@ -19,8 +19,9 @@
  */
 import { watch, type FSWatcher } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { replaceFile } from './files/replace-file'
 import {
   IDLE_SETTINGS_FILE_STATUS,
   SETTINGS_FILE_NAME,
@@ -229,10 +230,8 @@ export class SettingsFileSync {
   private async writeFromDb(): Promise<void> {
     const file = projectSettingsFile(this.deps.readSnapshot(), { projectLabel: this.deps.projectLabel })
     const content = serializeSettingsFile(file)
-    // Temp then rename, so an editor or the watcher never reads half a file.
-    const tmp = `${this.path}.tmp`
-    await writeFile(tmp, content)
-    await rename(tmp, this.path)
+    // Temp then rename, so an editor never reads half a file; retried while Windows has it locked.
+    await replaceFile(this.path, content, { log: this.deps.log })
     this.markSynced(content)
   }
 
