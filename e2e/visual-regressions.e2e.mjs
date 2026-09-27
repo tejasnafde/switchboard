@@ -588,6 +588,14 @@ async function captureThemeScreens(win, theme) {
   const reviews = win.locator('[data-reviews-view]')
   await reviews.getByText('Replaces the fixed 30 s retry', { exact: false }).waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'reviews', theme, win, [sidebar])
+  // #612 conflicts with main: the Overview callout naming the files.
+  await snapScreen(win, 'reviews-conflict', theme, reviews.locator('[data-pr-conflict-callout]'))
+  // The list by repository, then back to the default so the next theme starts the same.
+  await reviews.getByRole('button', { name: 'By repository', exact: true }).click()
+  await reviews.locator('[data-pr-repo]').first().waitFor({ state: 'visible' })
+  await snapScreen(win, 'reviews-by-repo', theme, reviews.locator('aside'))
+  await reviews.getByRole('button', { name: 'By status', exact: true }).click()
+  await reviews.locator('[data-pr-group]').first().waitFor({ state: 'visible' })
   await reviews.getByRole('tab', { name: /^Files/ }).click()
   await reviews.locator('[data-pr-thread]').first().waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'reviews-files', theme, win, [sidebar])

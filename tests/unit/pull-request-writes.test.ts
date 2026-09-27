@@ -6,6 +6,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  addReviewerPrecheck,
+  candidatesFor,
+  canRemoveReviewer,
+  managePrecheck,
+  orderReviewerCandidates,
+  recentReviewers,
+  removeReviewerPrecheck,
+  validateReviewer,
   defaultMergeStrategy,
   effectiveMergeStrategy,
   lineInDiff,
@@ -24,17 +32,17 @@ import {
   validateResolve,
   validateSubmitReview,
 } from '../../src/shared/pull-request-writes'
-import { rollupChecks, type PrChangedFile, type PrDetail } from '../../src/shared/pull-requests'
+import { rollupChecks, type PrChangedFile, type PrDetail, type PrReviewer, type PrReviewerCandidate } from '../../src/shared/pull-requests'
 import { parseHunks } from '../../src/shared/unified-diff'
 
 function detail(over: Partial<PrDetail> = {}): PrDetail {
   return {
     ref: { host: 'github', owner: 'o', name: 'r', number: 7 }, title: 't', url: '', author: { login: 'me', displayName: 'me', avatarUrl: null },
     state: 'open', draft: false, sourceBranch: 'f', targetBranch: 'main', createdAt: 0, updatedAt: 0, mergedAt: null,
-    additions: null, deletions: null, changedFiles: null, unresolvedConversations: 0, checks: rollupChecks([]),
+    additions: null, deletions: null, changedFiles: null, unresolvedConversations: 0, mergeConflicts: false, conflictedFiles: [], checks: rollupChecks([]),
     reviewers: [], approvals: { given: 1, required: 1 }, viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false },
     projectPaths: [], description: '', headSha: 'abc1234', mergeBlockers: [], mergeStrategies: ['merge_commit', 'squash'],
-    activity: [], checkList: [], ...over,
+    activity: [], checkList: [], viewerCanManage: true, ...over,
   }
 }
 
@@ -191,5 +199,74 @@ describe('sameCommit', () => {
   it('rejects different commits and a missing hash', () => {
     expect(sameCommit('a1b2c3d4e5f6', 'a1b2c3d4e5f7')).toBe(false)
     expect(sameCommit(null, 'a1b2c3d4e5f6')).toBe(false)
+  })
+})
+
+// ─── Reviewers and decline ────────────────────────────────────────
+
+const UUID = '{3f2a8b10-1c2d-4e5f-8a9b-0c1d2e3f4a5b}'
+const person = (login: string) => ({ login, displayName: login, avatarUrl: null })
+const rv = (id: string, state: PrReviewer['state'], requested = true): PrReviewer => ({ id, person: person(id), state, requested })
+const cand = (id: string, over: Partial<PrReviewerCandidate> = {}): PrReviewerCandidate => ({ id, person: person(id), kind: 'user', reviewed: 0, ...over })
+
+describe('reviewer validation', () => {
+  it('takes GitHub logins and team slugs, and Bitbucket account uuids only', () => {
+    expect(validateReviewer('github', { reviewer: 'pankaj-k' })).toEqual({ ok: true, value: { reviewer: 'pankaj-k' } })
+    expect(validateReviewer('github', { reviewer: 'team:core-devs' }).ok).toBe(true)
+    expect(validateReviewer('bitbucket', { reviewer: UUID }).ok).toBe(true)
+    for (const [host, reviewer] of [
+      ['github', '-starts-with-dash'],
+      ['github', 'has space'],
+      ['github', '../../orgs'],
+      ['github', ''],
+      ['bitbucket', 'pankaj'],
+      ['bitbucket', 'team:core'],
+      ['bitbucket', '{not-a-uuid}'],
+    ] as const) {
+      expect(validateReviewer(host, { reviewer }), `${host} ${reviewer}`).toMatchObject({ ok: false, error: { kind: 'invalid' } })
+    }
+    expect(validateReviewer('github', null)).toMatchObject({ ok: false, error: { kind: 'invalid' } })
+  })
+})
+
+describe('reviewer and decline pre-checks', () => {
+  it('refuses a closed PR as stale and a viewer the host does not allow as forbidden', () => {
+    expect(managePrecheck(detail({ state: 'closed' }), 'close it')).toMatchObject({ kind: 'stale' })
+    expect(managePrecheck(detail({ viewerCanManage: false }), 'close it')).toMatchObject({ kind: 'forbidden', message: expect.stringContaining('write access') })
+    expect(managePrecheck(detail(), 'close it')).toBeNull()
+  })
+
+  it('does not add someone twice, or the author', () => {
+    const pr = detail({ reviewers: [rv('pankaj', 'pending')] })
+    expect(addReviewerPrecheck(pr, { reviewer: 'pankaj' })).toMatchObject({ kind: 'stale' })
+    expect(addReviewerPrecheck(pr, { reviewer: 'me' })).toMatchObject({ kind: 'invalid' })
+    expect(addReviewerPrecheck(pr, { reviewer: 'akshaya' })).toBeNull()
+  })
+
+  it('removes only a reviewer still on the PR, and on GitHub only a pending request', () => {
+    const pr = detail({ reviewers: [rv('pankaj', 'pending'), rv('akshaya', 'approved'), rv('backend', 'commented', false)] })
+    expect(removeReviewerPrecheck(pr, { reviewer: 'pankaj' })).toBeNull()
+    expect(removeReviewerPrecheck(pr, { reviewer: 'akshaya' })).toMatchObject({ kind: 'invalid' })
+    expect(removeReviewerPrecheck(pr, { reviewer: 'backend' })).toMatchObject({ kind: 'stale' })
+    expect(removeReviewerPrecheck(pr, { reviewer: 'nobody' })).toMatchObject({ kind: 'stale' })
+    expect(canRemoveReviewer('bitbucket', rv(UUID, 'approved'))).toBe(true)
+    expect(canRemoveReviewer('bitbucket', { ...rv(UUID, 'pending'), id: null })).toBe(false)
+  })
+})
+
+describe('reviewer candidates', () => {
+  it('puts recent reviewers first, most reviews first, then members, people before teams', () => {
+    const recent = recentReviewers([
+      { reviewers: [rv('backend', 'approved'), rv('pankaj', 'commented'), rv('akshaya', 'pending')] },
+      { reviewers: [rv('backend', 'changes_requested')] },
+    ])
+    expect(recent.map((c) => [c.id, c.reviewed])).toEqual([['backend', 2], ['pankaj', 1]])
+    const members = [cand('team:core', { kind: 'team' }), cand('zed'), cand('backend'), cand('barath')]
+    expect(orderReviewerCandidates(recent, members).map((c) => c.id)).toEqual(['backend', 'pankaj', 'barath', 'zed', 'team:core'])
+  })
+
+  it('leaves out the author and anyone already asked', () => {
+    const pr = { author: person('me'), reviewers: [rv('pankaj', 'pending'), rv('backend', 'commented', false)] }
+    expect(candidatesFor([cand('me'), cand('pankaj'), cand('backend'), cand('barath')], pr).map((c) => c.id)).toEqual(['backend', 'barath'])
   })
 })

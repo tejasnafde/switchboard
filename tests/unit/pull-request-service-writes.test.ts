@@ -19,9 +19,9 @@ function detail(ref: PrRef, over: Partial<PrDetail> = {}): PrDetail {
   return {
     ref, title: 'Cost cap', url: '', author: { login: 'backend', displayName: 'backend', avatarUrl: null }, state: 'open', draft: false,
     sourceBranch: 'feat/cap', targetBranch: 'main', createdAt: 0, updatedAt: 0, mergedAt: null, additions: null, deletions: null,
-    changedFiles: null, unresolvedConversations: 0, checks: rollupChecks([]), reviewers: [], approvals: { given: 1, required: 1 },
+    changedFiles: null, unresolvedConversations: 0, mergeConflicts: false, conflictedFiles: [], checks: rollupChecks([]), reviewers: [], approvals: { given: 1, required: 1 },
     viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false }, projectPaths: [], description: '', headSha: 'abc1234',
-    mergeBlockers: [], mergeStrategies: ['merge_commit', 'squash'], activity: [], checkList: [], ...over,
+    mergeBlockers: [], mergeStrategies: ['merge_commit', 'squash'], activity: [], checkList: [], viewerCanManage: false, ...over,
   }
 }
 
@@ -30,7 +30,10 @@ const failed: PrCheck = { id: 'run:0:unit', name: 'unit', state: 'failure', desc
 
 function fakeProvider(host: 'github' | 'bitbucket', over: Partial<PrDetail> = {}, checks: PrCheck[] = [failed]) {
   const ref = host === 'github' ? GH : BB
-  const writes = { reply: vi.fn(), setResolved: vi.fn(), comment: vi.fn(), inlineComment: vi.fn(), submitReview: vi.fn(), merge: vi.fn(), rerunCheck: vi.fn() }
+  const writes = {
+    reply: vi.fn(), setResolved: vi.fn(), comment: vi.fn(), inlineComment: vi.fn(), submitReview: vi.fn(), merge: vi.fn(), rerunCheck: vi.fn(),
+    addReviewer: vi.fn(), removeReviewer: vi.fn(), decline: vi.fn(),
+  }
   const provider: PullRequestProvider = {
     host,
     list: vi.fn(async () => []),
@@ -41,6 +44,7 @@ function fakeProvider(host: 'github' | 'bitbucket', over: Partial<PrDetail> = {}
     }]),
     conversations: vi.fn(async () => [thread, { ...thread, id: '812' }]),
     checks: vi.fn(async () => checks),
+    reviewerCandidates: vi.fn(async () => []),
     ...writes,
   }
   return { provider, writes }
@@ -155,5 +159,61 @@ describe('writes: checked against a fresh read', () => {
     const { provider, writes } = fakeProvider('github')
     writes.comment.mockRejectedValue(new PrHostError({ kind: 'rate_limited', host: 'github', message: 'GitHub rate limit reached.' }))
     expect(await service(provider).comment(GH, { body: 'hi' })).toEqual({ ok: false, error: { kind: 'rate_limited', host: 'github', message: 'GitHub rate limit reached.' } })
+  })
+})
+
+describe('reviewer and decline writes', () => {
+  const UUID = '{00000000-0000-4000-8000-00000000000b}'
+  const pending = { id: 'pankaj', person: { login: 'pankaj', displayName: 'pankaj', avatarUrl: null }, state: 'pending' as const, requested: true }
+
+  it('adds and removes a reviewer after re-reading the PR, and refreshes the detail', async () => {
+    const { provider, writes } = fakeProvider('github', { viewerCanManage: true, reviewers: [pending] })
+    const s = service(provider)
+    expect(await s.addReviewer(GH, { reviewer: 'akshaya' })).toEqual({ ok: true, data: { refresh: ['detail'] } })
+    expect(writes.addReviewer).toHaveBeenCalledWith(GH, 'akshaya')
+    expect(await s.removeReviewer(GH, { reviewer: 'pankaj' })).toMatchObject({ ok: true })
+    expect(writes.removeReviewer).toHaveBeenCalledWith(GH, 'pankaj')
+    expect(provider.detail).toHaveBeenCalledTimes(2)
+  })
+
+  it('refuses before the host: bad ids, a viewer the host does not allow, a closed PR', async () => {
+    const bb = fakeProvider('bitbucket', { viewerCanManage: true })
+    const s = service(fakeProvider('github').provider, bb.provider)
+    expect(await s.addReviewer(BB, { reviewer: 'pankaj' })).toMatchObject({ ok: false, error: { kind: 'invalid' } })
+    expect(await s.addReviewer(BB, { reviewer: UUID })).toMatchObject({ ok: true })
+
+    const denied = fakeProvider('github')
+    expect(await service(denied.provider).addReviewer(GH, { reviewer: 'akshaya' })).toMatchObject({ ok: false, error: { kind: 'forbidden' } })
+    expect(await service(denied.provider).decline(GH)).toMatchObject({ ok: false, error: { kind: 'forbidden' } })
+    const closed = fakeProvider('github', { viewerCanManage: true, state: 'closed' })
+    expect(await service(closed.provider).decline(GH)).toMatchObject({ ok: false, error: { kind: 'stale' } })
+    for (const w of [denied.writes, closed.writes]) {
+      expect(w.addReviewer).not.toHaveBeenCalled()
+      expect(w.decline).not.toHaveBeenCalled()
+    }
+  })
+
+  it('declines an open PR the viewer may manage', async () => {
+    const { provider, writes } = fakeProvider('bitbucket', { viewerCanManage: true })
+    expect(await service(fakeProvider('github').provider, provider).decline(BB)).toEqual({ ok: true, data: { refresh: ['detail'] } })
+    expect(writes.decline).toHaveBeenCalledWith(BB)
+  })
+
+  it('passes a host refusal through as the typed error', async () => {
+    const { provider, writes } = fakeProvider('github', { viewerCanManage: true })
+    writes.addReviewer.mockRejectedValueOnce(new PrHostError({ kind: 'invalid', host: 'github', message: 'Reviews may only be requested from collaborators.' }))
+    expect(await service(provider).addReviewer(GH, { reviewer: 'stranger' })).toMatchObject({ ok: false, error: { kind: 'invalid', message: 'Reviews may only be requested from collaborators.' } })
+  })
+
+  it('lists recent reviewers of the repository before its members', async () => {
+    const { provider } = fakeProvider('github')
+    const reviewed = { ...pending, state: 'approved' as const }
+    vi.mocked(provider.list).mockResolvedValueOnce([{ repo: GH, prs: [{ ...detail(GH), reviewers: [reviewed] }], error: null }])
+    vi.mocked(provider.reviewerCandidates).mockResolvedValueOnce([
+      { id: 'barath', person: { login: 'barath', displayName: 'barath', avatarUrl: null }, kind: 'user', reviewed: 0 },
+      { id: 'pankaj', person: { login: 'pankaj', displayName: 'pankaj', avatarUrl: null }, kind: 'user', reviewed: 0 },
+    ])
+    const result = await service(provider).reviewerCandidates(GH)
+    expect(result.ok && result.data.map((c) => [c.id, c.reviewed])).toEqual([['pankaj', 1], ['barath', 0]])
   })
 })

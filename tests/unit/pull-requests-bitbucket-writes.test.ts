@@ -143,6 +143,48 @@ describe('bitbucketWriteError', () => {
   })
 })
 
+describe('Bitbucket reviewer and decline requests', () => {
+  const A = '{00000000-0000-4000-8000-00000000000a}'
+  const B = '{00000000-0000-4000-8000-00000000000b}'
+  const current = { status: 200, body: { id: 612, title: 'Jittered backoff', description: 'keep <!-- me -->', reviewers: [{ uuid: A }] } }
+
+  it('adds a reviewer by PUT with the title and the whole list, never the description', async () => {
+    const { provider, sent } = fakeFetch([current, { status: 200, body: {} }])
+    await provider.addReviewer(ref, B)
+    expect(sent.map((s) => [s.method, s.url])).toEqual([['GET', PR], ['PUT', PR]])
+    expect(sent[1].body).toEqual({ title: 'Jittered backoff', reviewers: [{ uuid: A }, { uuid: B }] })
+  })
+
+  it('removes one by PUT with the others, and does not add one twice', async () => {
+    const { provider, sent } = fakeFetch([current, { status: 200, body: {} }, current, { status: 200, body: {} }])
+    await provider.removeReviewer(ref, A)
+    await provider.addReviewer(ref, A)
+    expect(sent[1].body).toEqual({ title: 'Jittered backoff', reviewers: [] })
+    expect(sent[3].body).toEqual({ title: 'Jittered backoff', reviewers: [{ uuid: A }] })
+  })
+
+  it('declines with POST decline', async () => {
+    const { provider, sent } = fakeFetch()
+    await provider.decline(ref)
+    expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([['POST', `${PR}/decline`, undefined]])
+  })
+
+  it('maps a refused reviewer change to the typed error with Bitbucket\'s reason', async () => {
+    const { provider } = fakeFetch([current, { status: 400, body: { error: { message: 'Bad request', detail: 'reviewers: pankaj is the author of the pull request' } } }])
+    await expect(provider.addReviewer(ref, B)).rejects.toMatchObject({ error: { kind: 'invalid', message: 'Bad request: reviewers: pankaj is the author of the pull request' } })
+  })
+
+  it('offers workspace members by uuid, and none without the workspace scope', async () => {
+    const members = { status: 200, body: { values: [{ user: { display_name: 'barath', nickname: 'barath', uuid: B } }, { user: { display_name: 'no id' } }] } }
+    const { provider, sent } = fakeFetch([members])
+    const repo = { host: 'bitbucket' as const, owner: 'geoiq', name: 'ssg-bot-v2' }
+    expect(await provider.reviewerCandidates(repo)).toEqual([{ id: B, person: { login: 'barath', displayName: 'barath', avatarUrl: null }, kind: 'user', reviewed: 0 }])
+    expect(sent[0].url).toBe(`${BITBUCKET_API}/workspaces/geoiq/members?pagelen=100`)
+    const denied = fakeFetch([{ status: 403, body: {} }])
+    expect(await denied.provider.reviewerCandidates(repo)).toEqual([])
+  })
+})
+
 describe('mapBbMergeStrategies', () => {
   it('maps the destination branch strategies, merge commit first', () => {
     expect(mapBbMergeStrategies({ destination: { branch: { name: 'main', merge_strategies: ['squash', 'rebase_fast_forward', 'merge_commit', 'something_new'] } } }))

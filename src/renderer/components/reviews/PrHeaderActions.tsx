@@ -1,7 +1,9 @@
 /**
  * The header's split button: Merge on your own pull request, Review on one
  * you review. Both keep their place and size in every state: blocked,
- * loading and sending disable them instead of removing them.
+ * loading and sending disable them instead of removing them. Beside it, the
+ * ⋯ menu: Hide from Reviews (local) and Decline / Close (on the host, for
+ * everyone, only where the host allows it).
  *
  * Merge uses a merge commit unless the user picks another strategy from the
  * menu, which lists only what the repository allows, merge commit first.
@@ -17,7 +19,7 @@ import {
   reviewEventsFor,
   type ReviewEvent,
 } from '@shared/pull-request-writes'
-import { repoKey, type MergeStrategy, type PrDetail, type PrSummary } from '@shared/pull-requests'
+import { HOST_CAPABILITIES, PR_HOST_LABEL, prKey, repoKey, type MergeStrategy, type PrDetail, type PrSummary } from '@shared/pull-requests'
 import { useReviewStore } from '../../stores/review-store'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
@@ -25,7 +27,7 @@ import { confirm } from '../ui/confirm'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { usePrResource } from './PrDetailPane'
 import { ReviewFormPopover } from './PrReviewForm'
-import { mergeConfirmCopy } from './review-states'
+import { declineConfirmCopy, mergeConfirmCopy } from './review-states'
 import { Icon } from './review-ui'
 import { useWriteAction, WriteError } from './review-writes'
 
@@ -178,10 +180,82 @@ function ReviewSplitButton({ pr, detail }: { pr: PrSummary; detail: PrDetail | n
   )
 }
 
-/** Nothing for a merged or closed PR; Merge for the author; Review for everyone else. */
+function ActionItem({ onSelect, title, detail, danger }: { onSelect: () => void; title: string; detail: string; danger?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onSelect}
+      className="block w-full cursor-pointer rounded-[6px] border-none bg-transparent px-2 py-[6px] text-left hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)] focus-visible:outline-none"
+    >
+      <span className={cn('block text-[12.5px]', danger ? 'text-[var(--error)]' : 'text-[var(--text-primary)]')}>{title}</span>
+      <span className="block text-[11.5px] text-[var(--text-muted)]">{detail}</span>
+    </button>
+  )
+}
+
+function focusFirst(e: Event) {
+  e.preventDefault()
+  ;(e.currentTarget as HTMLElement).querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+}
+
+function PrMoreMenu({ pr, detail }: { pr: PrSummary; detail: PrDetail | null }) {
+  const [open, setOpen] = useState(false)
+  const [hideError, setHideError] = useState<string | null>(null)
+  const hidden = useReviewStore((s) => s.list?.hidden?.includes(prKey(pr.ref)) ?? false)
+  const write = useWriteAction(pr.ref)
+  const verb = HOST_CAPABILITIES[pr.ref.host].declineLabel
+  const canDecline = pr.state === 'open' && !!detail?.viewerCanManage
+
+  const toggleHidden = async () => {
+    setOpen(false)
+    setHideError(await useReviewStore.getState().setHidden(pr.ref, !hidden))
+  }
+
+  const decline = async () => {
+    setOpen(false)
+    if (!(await confirm(declineConfirmCopy(pr)))) return
+    await write.run('decline', () => window.api.pullRequests.decline(pr.ref))
+  }
+
+  return (
+    <div className="flex flex-col items-end">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="sm" className="px-[6px]" aria-label="More actions" aria-haspopup="menu" disabled={write.pending}>
+            <Icon name="more" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className={cn(MENU, 'w-[280px]')} onOpenAutoFocus={focusFirst}>
+          <div role="menu" aria-label="More actions" onKeyDown={menuKeys}>
+            {hidden
+              ? <ActionItem onSelect={() => void toggleHidden()} title="Show in Reviews" detail="Lists it again with the others." />
+              : <ActionItem onSelect={() => void toggleHidden()} title="Hide from Reviews" detail="Only in Switchboard. It comes back when it changes and needs you." />}
+            {canDecline && (
+              <ActionItem
+                danger
+                onSelect={() => void decline()}
+                title={`${verb} pull request…`}
+                detail={`On ${PR_HOST_LABEL[pr.ref.host]}, for everyone. Asks to confirm.`}
+              />
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+      {hideError && <div role="alert" className="mt-1 max-w-[260px] text-right text-[12px] text-[var(--error)]">{hideError}</div>}
+      <WriteError error={write.error} className="mt-1 max-w-[260px] text-right" />
+    </div>
+  )
+}
+
+/** Merge for the author and Review for everyone else on an open PR, then the ⋯ menu. */
 export function PrHeaderActions({ pr }: { pr: PrSummary }) {
   const { value } = usePrResource(pr, 'detail')
   const detail = value?.status === 'ok' ? value.data : null
-  if (pr.state !== 'open') return null
-  return pr.viewer.isAuthor ? <MergeSplitButton pr={pr} detail={detail} /> : <ReviewSplitButton pr={pr} detail={detail} />
+  return (
+    <>
+      {pr.state === 'open' && (pr.viewer.isAuthor ? <MergeSplitButton pr={pr} detail={detail} /> : <ReviewSplitButton pr={pr} detail={detail} />)}
+      <PrMoreMenu pr={pr} detail={detail} />
+    </>
+  )
 }

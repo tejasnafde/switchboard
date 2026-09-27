@@ -1,12 +1,13 @@
 /**
- * Overview tab: a failed-checks callout, the description, the activity feed
- * with a comment box, and on the right the merge blockers (and the strategy
- * the header's Merge uses), reviewers and checks with Re-run on a failure.
+ * Overview tab: the merge conflicts and failed-checks callouts, the
+ * description, the activity feed with a comment box, and on the right the
+ * merge blockers (and the strategy the header's Merge uses), reviewers and
+ * checks with Re-run on a failure.
  */
 import { fmtDuration } from '@shared/format'
 import { effectiveMergeStrategy, MERGE_STRATEGY_LABEL } from '@shared/pull-request-writes'
-import { PR_HOST_LABEL, repoKey, type MergeBlocker, type PrDetail, type PrReviewer, type PrSummary } from '@shared/pull-requests'
-import { checkItem } from '@shared/review-context'
+import { PR_HOST_LABEL, repoKey, type MergeBlocker, type PrDetail, type PrSummary } from '@shared/pull-requests'
+import { checkItem, conflictsItem } from '@shared/review-context'
 import { MarkdownWithCopyControls } from '../chat/MarkdownWithCopyControls'
 import { Button } from '../ui/button'
 import { useReviewStore } from '../../stores/review-store'
@@ -15,6 +16,7 @@ import { PrCommentBox, RerunButton } from './PrWriteControls'
 import { shortAgo } from './review-states'
 import { Avatar, CardRow, CHECK_ICON, Icon, openExternal, SideCard, type IconName, type IconTone } from './review-ui'
 import { LinkedChatsCard } from './PrLinkedChats'
+import { ReviewersCard } from './PrReviewers'
 import { askAgent } from './review-to-chat'
 
 const BLOCKER_ICON: Record<MergeBlocker['kind'], { name: IconName; tone: IconTone }> = {
@@ -23,16 +25,8 @@ const BLOCKER_ICON: Record<MergeBlocker['kind'], { name: IconName; tone: IconTon
   unresolved_conversations: { name: 'msg', tone: 'warn' },
   changes_requested: { name: 'msg', tone: 'warn' },
   approvals_missing: { name: 'clock', tone: 'dim' },
-  conflicts: { name: 'x', tone: 'bad' },
+  conflicts: { name: 'conflict', tone: 'warn' },
   draft: { name: 'draft', tone: 'dim' },
-}
-
-const REVIEW_LABEL: Record<PrReviewer['state'], { text: string; color?: string }> = {
-  approved: { text: 'Approved', color: 'var(--success)' },
-  changes_requested: { text: 'Changes requested', color: 'var(--warning)' },
-  commented: { text: 'Commented' },
-  dismissed: { text: 'Dismissed' },
-  pending: { text: 'Review requested' },
 }
 
 export function PrOverview({ summary, now }: { summary: PrSummary; now: number }) {
@@ -48,12 +42,10 @@ function OverviewBody({ pr, now }: { pr: PrDetail; now: number }) {
   const failed = pr.checkList.filter((c) => c.state === 'failure')
   const picked = useReviewStore((s) => s.mergeStrategy[repoKey(pr.ref)])
   const strategy = effectiveMergeStrategy(pr.mergeStrategies, picked)
-  const approvals = pr.approvals.required !== null && pr.approvals.required > 0
-    ? `${pr.approvals.given} of ${pr.approvals.required}`
-    : `${pr.approvals.given} approved`
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-6 px-[22px] py-5">
       <div className="min-w-0">
+        {pr.state === 'open' && pr.mergeConflicts && <ConflictCallout pr={pr} />}
         {failed.length > 0 && (
           <div className="mb-[22px] flex gap-[10px] rounded-[8px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-[10px]">
             <Icon name="x" tone="bad" className="mt-[2px]" />
@@ -117,15 +109,7 @@ function OverviewBody({ pr, now }: { pr: PrDetail; now: number }) {
             </div>
           </SideCard>
         )}
-        <SideCard title="Reviewers" right={pr.reviewers.length > 0 ? approvals : undefined}>
-          {pr.reviewers.length === 0 && <CardRow><span className="text-[var(--text-muted)]">No reviewers yet.</span></CardRow>}
-          {pr.reviewers.map((r) => (
-            <CardRow key={r.person.login}>
-              <Avatar person={r.person} />{r.person.displayName}
-              <span className="ml-auto text-[12px]" style={{ color: REVIEW_LABEL[r.state].color ?? 'var(--text-secondary)' }}>{REVIEW_LABEL[r.state].text}</span>
-            </CardRow>
-          ))}
-        </SideCard>
+        <ReviewersCard pr={pr} />
         <SideCard title="Checks" right={pr.checks.total > 0 ? `${pr.checks.passed} of ${pr.checks.total}` : undefined}>
           {pr.checkList.length === 0 && <CardRow><span className="text-[var(--text-muted)]">No checks reported.</span></CardRow>}
           {pr.checkList.map((c) => (
@@ -140,6 +124,32 @@ function OverviewBody({ pr, now }: { pr: PrDetail; now: number }) {
           ))}
         </SideCard>
         <LinkedChatsCard pr={pr} />
+      </div>
+    </div>
+  )
+}
+
+function Path({ path }: { path: string }) {
+  return <code className="rounded-[4px] bg-[var(--bg-tertiary)] px-1 font-[family-name:var(--font-mono)] text-[11.5px] text-[var(--text-primary)]">{path}</code>
+}
+
+/** Names the conflicted files when the host does (Bitbucket), and hands the merge to the agent as one review pill. */
+function ConflictCallout({ pr }: { pr: PrDetail }) {
+  const files = pr.conflictedFiles
+  return (
+    <div data-pr-conflict-callout className="mb-[22px] flex gap-[10px] rounded-[8px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-[10px]">
+      <Icon name="conflict" tone="warn" className="mt-[2px]" />
+      <div className="min-w-0 flex-1">
+        <div className="font-[500]">This branch has conflicts with {pr.targetBranch}</div>
+        <div className="text-[12.5px] leading-[1.6] text-[var(--text-secondary)]">
+          {files.length > 0
+            ? <>{files.map((f, i) => <span key={f}>{i > 0 && (i === files.length - 1 ? ' and ' : ', ')}<Path path={f} /></span>)} {files.length === 1 ? 'conflicts' : 'conflict'}. </>
+            : `${PR_HOST_LABEL[pr.ref.host]} does not say which files. `}
+          Merge {pr.targetBranch} into the branch and resolve them, then push.
+        </div>
+        <Button variant="outline" size="sm" className="mt-2" onClick={() => void askAgent({ pr: pr.ref, title: pr.title, url: pr.url, items: [conflictsItem(pr)] })}>
+          <Icon name="spark" />Ask the agent to resolve
+        </Button>
       </div>
     </div>
   )

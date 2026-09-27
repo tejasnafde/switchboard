@@ -9,15 +9,21 @@
  * blockers before a merge), so a stale screen cannot post to the wrong place.
  */
 import {
+  addReviewerPrecheck,
   findConversation,
   lineInDiff,
+  managePrecheck,
   mergePrecheck,
+  orderReviewerCandidates,
+  recentReviewers,
+  removeReviewerPrecheck,
   validateComment,
   validateInlineComment,
   validateMerge,
   validateReply,
   validateRerun,
   validateResolve,
+  validateReviewer,
   validateSubmitReview,
   type PrResource,
   type PrWriteDone,
@@ -35,6 +41,7 @@ import {
   type PrListData,
   type PrRef,
   type PrResult,
+  type PrReviewerCandidate,
   type PrSource,
   type PrSummary,
   type RepoRef,
@@ -153,7 +160,7 @@ export class PullRequestService {
           for (const e of entries) sources.push({ repo: e.repo, projectPaths: e.projectPaths, error })
         }
       }
-      return { ok: true, data: { prs, sources, unsupportedProjects, fetchedAt: this.now() } }
+      return { ok: true, data: { prs, sources, unsupportedProjects, fetchedAt: this.now(), hidden: [] } }
     } catch (err) {
       log.error('listing pull requests failed', err)
       return { ok: false, error: toPrError(err, null) }
@@ -208,6 +215,15 @@ export class PullRequestService {
 
   checks(ref: unknown): Promise<PrResult<PrCheck[]>> {
     return this.read(ref, 'checks', (p, r) => p.checks(r))
+  }
+
+  /** People who reviewed this repository's listed PRs first, then who the token can see there. */
+  reviewerCandidates(ref: unknown): Promise<PrResult<PrReviewerCandidate[]>> {
+    return this.read(ref, 'reviewer candidates', async (p, r) => {
+      const repo = { host: r.host, owner: r.owner, name: r.name }
+      const [listed, members] = await Promise.all([p.list([repo]), p.reviewerCandidates(repo)])
+      return orderReviewerCandidates(recentReviewers(listed.flatMap((l) => l.prs)), members)
+    })
   }
 
   // ─── Writes ────────────────────────────────────────────────────
@@ -310,6 +326,32 @@ export class PullRequestService {
       if (check.state !== 'failure') throw new PrHostError({ kind: 'stale', host: r.host, message: `${check.name} is not failed any more.` })
       if (!check.rerunId) throw new PrHostError({ kind: 'invalid', host: r.host, message: `${check.name} is not a GitHub Actions run; re-run it where it ran.` })
       await p.rerunCheck(r, check)
+    })
+  }
+
+  addReviewer(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
+    return this.write(ref, 'add reviewer', ['detail'], async (p, r) => {
+      const change = PullRequestService.unwrap(validateReviewer(r.host, input))
+      const refused = addReviewerPrecheck(await p.detail(r), change)
+      if (refused) throw new PrHostError(refused)
+      await p.addReviewer(r, change.reviewer)
+    })
+  }
+
+  removeReviewer(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
+    return this.write(ref, 'remove reviewer', ['detail'], async (p, r) => {
+      const change = PullRequestService.unwrap(validateReviewer(r.host, input))
+      const refused = removeReviewerPrecheck(await p.detail(r), change)
+      if (refused) throw new PrHostError(refused)
+      await p.removeReviewer(r, change.reviewer)
+    })
+  }
+
+  decline(ref: unknown): Promise<PrResult<PrWriteDone>> {
+    return this.write(ref, 'decline', ['detail'], async (p, r) => {
+      const refused = managePrecheck(await p.detail(r), r.host === 'github' ? 'close it' : 'decline it')
+      if (refused) throw new PrHostError(refused)
+      await p.decline(r)
     })
   }
 }

@@ -5,8 +5,9 @@
  */
 import { create } from 'zustand'
 import type { InlineCommentInput, PrResource } from '@shared/pull-request-writes'
-import { prKey, repoKey, type MergeStrategy, type PrChangedFile, type PrCheck, type PrConversation, type PrDetail, type PrError, type PrListData, type PrRef, type PrResult, type PrSummary } from '@shared/pull-requests'
+import { prKey, repoKey, type MergeStrategy, type PrChangedFile, type PrCheck, type PrConversation, type PrDetail, type PrError, type PrListData, type PrRef, type PrResult, type PrReviewerCandidate, type PrSummary } from '@shared/pull-requests'
 import { pullRequestChanged, shouldRefreshPullRequests, type PrRefreshReason } from '@shared/pull-request-refresh'
+import { toggleCollapsed, type PrGroupBy } from '@shared/pull-request-groups'
 import type { PrLinkChat } from '@shared/pull-request-links'
 import type { ReviewContext } from '@shared/review-context'
 import { createRendererLogger } from '../logger'
@@ -43,6 +44,13 @@ export interface PendingComment extends InlineCommentInput {
 
 let pendingSeq = 0
 
+const GROUP_BY_KEY = 'reviews.groupBy'
+const COLLAPSED_REPOS_KEY = 'reviews.collapsedRepos'
+
+function persist(key: string, value: string): void {
+  window.api.settings.set(key, value).catch((err: unknown) => log.warn('saving a Reviews setting failed', { key, err }))
+}
+
 interface ReviewStore {
   list: PrListData | null
   listError: PrError | null
@@ -63,6 +71,20 @@ interface ReviewStore {
   pendingComments: Record<string, PendingComment[]>
   /** A merge strategy the user picked from the menu, by `repoKey`, for this run of the app. Unset means the default (a merge commit). */
   mergeStrategy: Record<string, MergeStrategy>
+  /** Settings `reviews.groupBy` and `reviews.collapsedRepos` (`repoKey`s). */
+  groupBy: PrGroupBy
+  collapsedRepos: string[]
+  /** The "N hidden · Show" row was opened, for this visit. */
+  showHidden: boolean
+  /** Who Add reviewer offers, by `repoKey`, read once per run of the app. */
+  candidates: Record<string, Loadable<PrReviewerCandidate[]>>
+  hydrateSettings: () => Promise<void>
+  setGroupBy: (groupBy: PrGroupBy) => void
+  toggleRepo: (key: string) => void
+  setShowHidden: (show: boolean) => void
+  /** Hides or shows the PR in Reviews (local), then re-reads the list. Returns the reason when it failed. */
+  setHidden: (ref: PrRef, hidden: boolean) => Promise<string | null>
+  loadCandidates: (ref: PrRef) => Promise<void>
   setVisible: (visible: boolean) => void
   setFilter: (filter: string) => void
   setTab: (tab: ReviewTab) => void
@@ -115,6 +137,73 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   pendingAsk: null,
   pendingComments: {},
   mergeStrategy: {},
+  groupBy: 'status',
+  collapsedRepos: [],
+  showHidden: false,
+  candidates: {},
+
+  hydrateSettings: async () => {
+    try {
+      const [groupBy, collapsed] = await Promise.all([window.api.settings.get(GROUP_BY_KEY), window.api.settings.get(COLLAPSED_REPOS_KEY)])
+      const list: unknown = collapsed ? JSON.parse(collapsed) : []
+      set({
+        groupBy: groupBy === 'repository' ? 'repository' : 'status',
+        collapsedRepos: Array.isArray(list) ? list.filter((k): k is string => typeof k === 'string') : [],
+      })
+    } catch (err) {
+      log.warn('reading Reviews settings failed', err)
+    }
+  },
+
+  setGroupBy: (groupBy) => {
+    set({ groupBy })
+    persist(GROUP_BY_KEY, groupBy)
+  },
+
+  toggleRepo: (key) => {
+    const collapsedRepos = toggleCollapsed(get().collapsedRepos, key)
+    set({ collapsedRepos })
+    persist(COLLAPSED_REPOS_KEY, JSON.stringify(collapsedRepos))
+  },
+
+  setShowHidden: (showHidden) => set({ showHidden }),
+
+  setHidden: async (ref, hidden) => {
+    let result: { ok: boolean; message?: string }
+    try {
+      result = hidden ? await window.api.pullRequests.hide(ref) : await window.api.pullRequests.unhide(ref)
+    } catch (err) {
+      log.warn('hiding a pull request failed', err)
+      result = { ok: false, message: 'Could not save that; see the log.' }
+    }
+    if (!result.ok) return result.message ?? 'Could not save that.'
+    // Mark it at once; the list read after confirms it.
+    set((s) => {
+      if (!s.list) return s
+      const key = prKey(ref)
+      // An older backend sends no `hidden`.
+      const others = (s.list.hidden ?? []).filter((k) => k !== key)
+      return { list: { ...s.list, hidden: hidden ? [...others, key] : others } }
+    })
+    await get().refresh('manual')
+    return null
+  },
+
+  loadCandidates: async (ref) => {
+    const key = repoKey(ref)
+    const current = get().candidates[key]
+    if (current && current.status !== 'error') return
+    set((s) => ({ candidates: { ...s.candidates, [key]: { status: 'loading' } } }))
+    let result: PrResult<PrReviewerCandidate[]>
+    try {
+      result = await window.api.pullRequests.reviewerCandidates(ref)
+    } catch (err) {
+      log.warn('reading reviewer candidates failed', err)
+      result = { ok: false, error: toError(err) }
+    }
+    const next: Loadable<PrReviewerCandidate[]> = result.ok ? { status: 'ok', data: result.data, version: Date.now() } : { status: 'error', error: result.error }
+    set((s) => ({ candidates: { ...s.candidates, [key]: next } }))
+  },
 
   setVisible: (visible) => set({ visible }),
   setFilter: (filter) => set({ filter }),

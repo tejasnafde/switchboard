@@ -18,6 +18,7 @@ import {
   type PrError,
   type PrPerson,
   type PrReviewer,
+  type PrReviewerCandidate,
   type PrSummary,
   type RepoRef,
   type ReviewState,
@@ -72,10 +73,12 @@ export interface GhPullRequest {
   changedFiles?: number | null
   author: GhActor | null
   baseRef?: { branchProtectionRule: { requiredApprovingReviewCount: number | null } | null } | null
-  reviewRequests?: { nodes: Array<{ requestedReviewer: ({ __typename: string } & Partial<GhActor>) | null }> }
+  reviewRequests?: { nodes: Array<{ requestedReviewer: ({ __typename: string; slug?: string } & Partial<GhActor>) | null }> }
   latestReviews?: { nodes: Array<{ state: string; author: GhActor | null; submittedAt: string | null }> }
   reviewThreads?: { totalCount: number; nodes: Array<{ isResolved: boolean }> }
   commits?: { nodes: Array<{ commit: { statusCheckRollup: { state: string; contexts: { nodes: GhCheckContext[] } } | null } }> }
+  /** GitHub works it out in the background after a push: `UNKNOWN` until it has. */
+  mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
 }
 
 export interface GhTimelineItem {
@@ -92,7 +95,6 @@ export interface GhTimelineItem {
 
 export interface GhPullRequestDetail extends GhPullRequest {
   body: string
-  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
   timelineItems?: { nodes: GhTimelineItem[] }
 }
 
@@ -101,6 +103,7 @@ export interface GhRepoMergeSettings {
   mergeCommitAllowed?: boolean | null
   squashMergeAllowed?: boolean | null
   rebaseMergeAllowed?: boolean | null
+  viewerPermission?: 'ADMIN' | 'MAINTAIN' | 'WRITE' | 'TRIAGE' | 'READ' | null
 }
 
 export interface GhReviewThread {
@@ -181,6 +184,7 @@ function mapReviewers(pr: GhPullRequest): PrReviewer[] {
   for (const review of pr.latestReviews?.nodes ?? []) {
     if (!review.author) continue
     byLogin.set(review.author.login, {
+      id: review.author.login,
       person: mapGhActor(review.author),
       state: REVIEW_STATE[review.state] ?? 'commented',
       requested: false,
@@ -189,8 +193,13 @@ function mapReviewers(pr: GhPullRequest): PrReviewer[] {
   // A request outstanding after a review means it was asked for again, so the review is owed anew.
   for (const request of pr.reviewRequests?.nodes ?? []) {
     const r = request.requestedReviewer
+    if (r?.__typename === 'Team' && r.slug) {
+      const id = `team:${r.slug}`
+      byLogin.set(id, { id, person: { login: r.slug, displayName: r.name || r.slug, avatarUrl: null }, state: 'pending', requested: true })
+      continue
+    }
     if (!r || r.__typename !== 'User' || !r.login) continue
-    byLogin.set(r.login, { person: mapGhActor(r as GhActor), state: 'pending', requested: true })
+    byLogin.set(r.login, { id: r.login, person: mapGhActor(r as GhActor), state: 'pending', requested: true })
   }
   return [...byLogin.values()]
 }
@@ -218,6 +227,9 @@ export function mapGhSummary(repo: RepoRef, pr: GhPullRequest, viewerLogin: stri
     deletions: pr.deletions ?? null,
     changedFiles: pr.changedFiles ?? null,
     unresolvedConversations: threads ? threads.filter((t) => !t.isResolved).length : null,
+    mergeConflicts: pr.state !== 'OPEN' ? false : pr.mergeable === 'CONFLICTING' ? true : pr.mergeable === 'MERGEABLE' ? false : null,
+    // GitHub's API says that a PR conflicts, never where.
+    conflictedFiles: [],
     checks: rollupChecks(mapGhChecks(pr)),
     reviewers,
     approvals: {
@@ -226,7 +238,7 @@ export function mapGhSummary(repo: RepoRef, pr: GhPullRequest, viewerLogin: stri
     },
     viewer: {
       isAuthor: !!pr.author && isViewer(pr.author.login),
-      isRequestedReviewer: reviewers.some((r) => r.requested && isViewer(r.person.login)),
+      isRequestedReviewer: reviewers.some((r) => r.requested && r.id !== null && isViewer(r.id)),
       hasReviewed: (pr.latestReviews?.nodes ?? []).some((r) => r.author && isViewer(r.author.login) && r.state !== 'PENDING'),
     },
     projectPaths: [],
@@ -299,10 +311,12 @@ export function mapGhDetail(repo: RepoRef, pr: GhPullRequestDetail, viewerLogin:
     ...summary,
     description: stripHtmlComments(pr.body ?? ''),
     headSha: pr.headRefOid ?? null,
-    mergeBlockers: mergeBlockers(summary, { conflicts: pr.mergeable === 'CONFLICTING' }),
+    mergeBlockers: mergeBlockers(summary),
     mergeStrategies: mapGhMergeStrategies(settings),
     activity: mapGhActivity(pr.timelineItems?.nodes ?? []),
     checkList: mapGhChecks(pr),
+    // Closing and requesting reviewers both need write access, or authorship.
+    viewerCanManage: summary.viewer.isAuthor || ['ADMIN', 'MAINTAIN', 'WRITE'].includes(settings.viewerPermission ?? ''),
   }
 }
 
@@ -322,6 +336,23 @@ export function mapGhThreads(threads: readonly GhReviewThread[]): PrConversation
       url: c.url,
     })),
   }))
+}
+
+export interface GhCollaborator {
+  login: string
+  avatar_url?: string | null
+}
+
+export interface GhTeam {
+  slug: string
+  name?: string | null
+}
+
+export function mapGhCandidates(collaborators: readonly GhCollaborator[], teams: readonly GhTeam[]): PrReviewerCandidate[] {
+  return [
+    ...collaborators.map((c): PrReviewerCandidate => ({ id: c.login, person: { login: c.login, displayName: c.login, avatarUrl: c.avatar_url ?? null }, kind: 'user', reviewed: 0 })),
+    ...teams.map((t): PrReviewerCandidate => ({ id: `team:${t.slug}`, person: { login: t.slug, displayName: t.name || t.slug, avatarUrl: null }, kind: 'team', reviewed: 0 })),
+  ]
 }
 
 const FILE_STATUS: Record<string, ChangedFileStatus> = {

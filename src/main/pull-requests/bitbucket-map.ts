@@ -19,6 +19,7 @@ import {
   type PrDetail,
   type PrPerson,
   type PrReviewer,
+  type PrReviewerCandidate,
   type PrSummary,
   type RepoRef,
   type ReviewState,
@@ -50,7 +51,7 @@ export interface BbPullRequest {
   draft?: boolean
   author?: BbUser
   source: { branch: { name: string }; commit?: { hash: string } | null }
-  destination: { branch: { name: string; merge_strategies?: string[]; default_merge_strategy?: string } }
+  destination: { branch: { name: string; merge_strategies?: string[]; default_merge_strategy?: string }; commit?: { hash: string } | null }
   comment_count?: number
   created_on: string
   updated_on: string
@@ -104,6 +105,20 @@ export interface BbViewer {
 export interface BbEnrichment {
   checks: PrCheck[]
   unresolvedConversations: number | null
+  conflictedFiles: string[]
+}
+
+/** Bitbucket marks a file "merge conflict" in the diffstat; that is the only place it says so. */
+export function conflictedPaths(diffstat: readonly BbDiffstat[]): string[] {
+  return diffstat.filter((d) => d.status === 'merge conflict').map((d) => d.new?.path ?? d.old?.path ?? '').filter(Boolean)
+}
+
+export interface BbWorkspaceMember {
+  user?: BbUser
+}
+
+export function mapBbCandidates(members: readonly BbWorkspaceMember[]): PrReviewerCandidate[] {
+  return members.flatMap((m): PrReviewerCandidate[] => (m.user?.uuid ? [{ id: m.user.uuid, person: mapBbUser(m.user), kind: 'user', reviewed: 0 }] : []))
 }
 
 export function mapBbUser(user: BbUser | null | undefined): PrPerson {
@@ -126,12 +141,12 @@ function mapReviewers(pr: BbPullRequest): PrReviewer[] {
   const out = new Map<string, PrReviewer>()
   for (const p of pr.participants ?? []) {
     const key = p.user.uuid ?? p.user.account_id ?? p.user.display_name ?? String(out.size)
-    out.set(key, { person: mapBbUser(p.user), state: participantState(p), requested: p.role === 'REVIEWER' })
+    out.set(key, { id: p.user.uuid ?? null, person: mapBbUser(p.user), state: participantState(p), requested: p.role === 'REVIEWER' })
   }
   // `reviewers` lists requested reviewers who have not participated yet.
   for (const u of pr.reviewers ?? []) {
     const key = u.uuid ?? u.account_id ?? u.display_name ?? String(out.size)
-    if (!out.has(key)) out.set(key, { person: mapBbUser(u), state: 'pending', requested: true })
+    if (!out.has(key)) out.set(key, { id: u.uuid ?? null, person: mapBbUser(u), state: 'pending', requested: true })
   }
   return [...out.values()]
 }
@@ -160,6 +175,9 @@ export function mapBbSummary(repo: RepoRef, pr: BbPullRequest, viewer: BbViewer,
     deletions: null,
     changedFiles: null,
     unresolvedConversations: extra?.unresolvedConversations ?? null,
+    // Only an open PR is enriched; merged and declined ones cannot conflict any more.
+    mergeConflicts: pr.state !== 'OPEN' ? false : extra ? extra.conflictedFiles.length > 0 : null,
+    conflictedFiles: extra?.conflictedFiles ?? [],
     checks: rollupChecks(extra?.checks ?? []),
     reviewers,
     approvals: { given: reviewers.filter((r) => r.state === 'approved').length, required: null },
@@ -302,11 +320,12 @@ export function mapBbDetail(
   repo: RepoRef,
   pr: BbPullRequest,
   viewer: BbViewer,
-  extra: BbEnrichment,
+  extra: Omit<BbEnrichment, 'conflictedFiles'>,
   diffstat: readonly BbDiffstat[],
   activity: readonly BbActivity[],
+  repoAdmin = false,
 ): PrDetail {
-  const summary = mapBbSummary(repo, pr, viewer, extra)
+  const summary = mapBbSummary(repo, pr, viewer, { ...extra, conflictedFiles: conflictedPaths(diffstat) })
   const withStats: PrSummary = {
     ...summary,
     additions: diffstat.reduce((n, d) => n + d.lines_added, 0),
@@ -317,10 +336,11 @@ export function mapBbDetail(
     ...withStats,
     description: stripHtmlComments(pr.description ?? ''),
     headSha: pr.source.commit?.hash ?? null,
-    mergeBlockers: mergeBlockers(withStats, { conflicts: diffstat.some((d) => d.status === 'merge conflict') }),
+    mergeBlockers: mergeBlockers(withStats),
     mergeStrategies: mapBbMergeStrategies(pr),
     activity: mapBbActivity(activity),
     checkList: extra.checks,
+    viewerCanManage: withStats.viewer.isAuthor || repoAdmin,
   }
 }
 
@@ -329,7 +349,7 @@ const FILE_STATUS: Record<BbDiffstat['status'], ChangedFileStatus> = {
   removed: 'deleted',
   modified: 'modified',
   renamed: 'renamed',
-  'merge conflict': 'modified',
+  'merge conflict': 'conflicted',
   'local deleted': 'deleted',
   'remote deleted': 'deleted',
 }

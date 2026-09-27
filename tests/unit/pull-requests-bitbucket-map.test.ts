@@ -11,6 +11,7 @@ import { join } from 'node:path'
 vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
 
 import {
+  conflictedPaths,
   mapBbActivity,
   mapBbComments,
   mapBbDetail,
@@ -62,17 +63,18 @@ describe('mapBbComments', () => {
 })
 
 describe('mapBbSummary', () => {
-  const extra = { checks: mapBbStatuses(statuses), unresolvedConversations: 2 }
+  const extra = { checks: mapBbStatuses(statuses), unresolvedConversations: 2, conflictedFiles: [] }
 
   it('reads reviewers, approvals and your part in it', () => {
     const pr = mapBbSummary(repo, open[0], viewer, extra)
     expect(pr.ref).toEqual({ ...repo, number: 612 })
     expect(pr.viewer).toEqual({ isAuthor: true, isRequestedReviewer: false, hasReviewed: false })
-    expect(pr.reviewers.map((r) => [r.person.login, r.state, r.requested])).toEqual([
-      ['akshaya', 'approved', true],
-      ['pankaj', 'changes_requested', true],
-      ['backend', 'commented', false],
+    expect(pr.reviewers.map((r) => [r.id, r.person.login, r.state, r.requested])).toEqual([
+      ['{a}', 'akshaya', 'approved', true],
+      ['{p}', 'pankaj', 'changes_requested', true],
+      ['{b}', 'backend', 'commented', false],
     ])
+    expect([pr.mergeConflicts, pr.conflictedFiles]).toEqual([false, []])
     expect(pr.approvals).toEqual({ given: 1, required: null })
     expect(pr.checks).toEqual({ state: 'failure', total: 4, passed: 2, failed: 1, pending: 1 })
     expect(pr.unresolvedConversations).toBe(2)
@@ -83,13 +85,21 @@ describe('mapBbSummary', () => {
   it('marks a requested reviewer who has not participated', () => {
     const pr = mapBbSummary(repo, open[1], viewer, null)
     expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: true, hasReviewed: false })
-    expect(pr.reviewers).toEqual([{ person: expect.objectContaining({ displayName: 'Tejas Nafde' }), state: 'pending', requested: true }])
+    expect(pr.reviewers).toEqual([{ id: '{me-uuid}', person: expect.objectContaining({ displayName: 'Tejas Nafde' }), state: 'pending', requested: true }])
     expect(pr.unresolvedConversations).toBeNull()
+    // Not enriched yet, so whether it conflicts is not known.
+    expect(pr.mergeConflicts).toBeNull()
     expect(pr.checks.state).toBe('none')
+  })
+
+  it('carries the conflicted files an enrichment found', () => {
+    const pr = mapBbSummary(repo, open[0], viewer, { ...extra, conflictedFiles: ['sync/worker.py'] })
+    expect([pr.mergeConflicts, pr.conflictedFiles]).toEqual([true, ['sync/worker.py']])
   })
 
   it('uses the last update as the merge time of a merged PR', () => {
     const pr = mapBbSummary(repo, fixture('bitbucket-pullrequests-merged.json').values[0], viewer, null)
+    expect(pr.mergeConflicts).toBe(false)
     expect(pr.state).toBe('merged')
     expect(pr.mergedAt).toBe(Date.parse('2026-09-25T12:00:00+00:00'))
   })
@@ -146,6 +156,28 @@ describe('mapBbActivity and mapBbDetail', () => {
     expect(detail.headSha).toBe('a1b2c3d4e5f6')
     expect(detail.description).toBe('Replaces the fixed 30 s retry.')
     expect(detail.mergeBlockers.map((b) => b.kind)).toEqual(['checks_failed', 'unresolved_conversations', 'changes_requested'])
+    expect(detail.mergeConflicts).toBe(false)
+    expect(detail.viewerCanManage).toBe(true)
+  })
+
+  it('reads conflicts from the diffstat and names the files', () => {
+    const conflict = fixture('bitbucket-diffstat-conflict.json').values
+    expect(conflictedPaths(conflict)).toEqual(['sync/worker.py', 'sync/config.py'])
+    const detail = mapBbDetail(repo, open[1], viewer, { checks: [], unresolvedConversations: 0 }, conflict, [])
+    expect([detail.mergeConflicts, detail.conflictedFiles]).toEqual([true, ['sync/worker.py', 'sync/config.py']])
+    expect(detail.mergeBlockers.map((b) => b.label)).toEqual(['Conflicts with main'])
+    // #88 is someone else's: only a repository admin may decline or edit it.
+    expect(detail.viewerCanManage).toBe(false)
+    expect(mapBbDetail(repo, open[1], viewer, { checks: [], unresolvedConversations: 0 }, conflict, [], true).viewerCanManage).toBe(true)
+  })
+
+  it('marks a conflicted file as conflicted, not modified', () => {
+    const files = mapBbFiles(fixture('bitbucket-diffstat-conflict.json').values, '')
+    expect(files.map((f) => [f.path, f.status])).toEqual([
+      ['sync/worker.py', 'conflicted'],
+      ['sync/backoff.py', 'added'],
+      ['sync/config.py', 'conflicted'],
+    ])
   })
 })
 
@@ -186,6 +218,8 @@ function providerRoutes(): Record<string, Route> {
     [`${base}/pullrequests/88/comments`]: { body: { values: [] } },
     [`${base}/commit/a1b2c3d4e5f6/statuses`]: { body: fixture('bitbucket-statuses.json') },
     [`${base}/commit/ffee00/statuses`]: { body: { values: [] } },
+    [`${base}/pullrequests/612/diffstat`]: { body: fixture('bitbucket-diffstat-conflict.json') },
+    [`${base}/pullrequests/88/diffstat`]: { body: fixture('bitbucket-diffstat.json') },
   }
 }
 
@@ -233,6 +267,23 @@ describe('BitbucketProvider', () => {
     const bot = result.prs[0]
     expect(bot.unresolvedConversations).toBe(2)
     expect(bot.checks.failed).toBe(1)
+    expect([bot.mergeConflicts, bot.conflictedFiles]).toEqual([true, ['sync/worker.py', 'sync/config.py']])
+    expect([result.prs[1].mergeConflicts, result.prs[2].mergeConflicts]).toEqual([false, false])
+  })
+
+  it('re-reads the diffstat when the target branch moves, which is how a conflict appears on an unchanged PR', async () => {
+    const routes = providerRoutes()
+    const { impl, calls } = fakeFetch(routes)
+    const provider = new BitbucketProvider(new BitbucketClient(creds, impl), () => Date.parse('2026-09-27T12:00:00Z'))
+    const diffstatCalls = () => calls.filter((c) => c.url.includes('/612/diffstat')).length
+    await provider.list([repo])
+    await provider.list([repo])
+    expect(diffstatCalls()).toBe(1)
+    const moved = fixture('bitbucket-pullrequests-open.json')
+    moved.values[0].destination.commit.hash = 'feedfacecafe'
+    routes[`${base}/pullrequests#OPEN`] = { body: moved }
+    await provider.list([repo])
+    expect(diffstatCalls()).toBe(2)
   })
 
   it('re-reads enrichment only when the PR changed or its checks were running', async () => {
@@ -247,6 +298,20 @@ describe('BitbucketProvider', () => {
     now += 60_000
     await provider.list([repo])
     expect(enrichCalls()).toBe(first)
+  })
+
+  it('lets a repository admin manage a PR that is not theirs, reading the permission once', async () => {
+    const routes = providerRoutes()
+    routes[`${base}/pullrequests/88`] = { body: open[1] }
+    routes[`${base}/pullrequests/88/activity`] = { body: { values: [] } }
+    routes['/user/permissions/repositories'] = { body: { values: [{ permission: 'admin' }] } }
+    const { impl, calls } = fakeFetch(routes)
+    const provider = new BitbucketProvider(new BitbucketClient(creds, impl), () => Date.parse('2026-09-27T12:00:00Z'))
+    const ref = { ...repo, number: 88 }
+    expect((await provider.detail(ref)).viewerCanManage).toBe(true)
+    await provider.detail(ref)
+    expect(calls.filter((c) => c.url.includes('/user/permissions/repositories')).length).toBe(1)
+    expect(decodeURIComponent(calls.find((c) => c.url.includes('/user/permissions'))!.url)).toContain('repository.full_name="geoiq/ssg-bot-v2"')
   })
 
   it('names the whole list failing when the token is rejected', async () => {

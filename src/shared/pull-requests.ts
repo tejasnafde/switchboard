@@ -7,8 +7,8 @@
  * `HOST_CAPABILITIES` says which features a host has at all, so the UI can
  * tell "zero" from "unknown".
  *
- * The human write actions (reply, resolve, comment, review, merge, re-run)
- * take the inputs in `pull-request-writes.ts`.
+ * The human write actions (reply, resolve, comment, review, merge, re-run,
+ * reviewers, decline) take the inputs in `pull-request-writes.ts`.
  */
 
 export type PrHost = 'github' | 'bitbucket'
@@ -49,10 +49,21 @@ export type PrState = 'open' | 'merged' | 'closed'
 export type ReviewState = 'approved' | 'changes_requested' | 'commented' | 'dismissed' | 'pending'
 
 export interface PrReviewer {
+  /** What the reviewer writes send: a GitHub login or `team:<slug>`, a Bitbucket account uuid. `null` when the host gave none (a deleted account). */
+  id: string | null
   person: PrPerson
   state: ReviewState
   /** Asked to review. A reviewer who only commented unasked is `false`. */
   requested: boolean
+}
+
+/** Someone the Reviewers card offers to add. */
+export interface PrReviewerCandidate {
+  id: string
+  person: PrPerson
+  kind: 'user' | 'team'
+  /** Listed pull requests of this repository they reviewed; 0 for a member who has not. */
+  reviewed: number
 }
 
 export type CheckState = 'success' | 'failure' | 'pending' | 'skipped' | 'neutral'
@@ -101,6 +112,10 @@ export interface PrSummary {
   changedFiles: number | null
   /** Open review conversations, `null` when the host did not say. */
   unresolvedConversations: number | null
+  /** Conflicts with the target branch; `null` while the host has not worked it out. Always `false` once merged or closed. */
+  mergeConflicts: boolean | null
+  /** The conflicted paths when the host names them (Bitbucket's diffstat). GitHub never does, so this is empty there. */
+  conflictedFiles: string[]
   checks: ChecksRollup
   reviewers: PrReviewer[]
   approvals: { given: number; required: number | null }
@@ -144,6 +159,8 @@ export interface PrDetail extends PrSummary {
   mergeStrategies: MergeStrategy[]
   activity: PrActivity[]
   checkList: PrCheck[]
+  /** The host lets you change the reviewers and decline or close it: the author, or write access (GitHub) / repository admin (Bitbucket). */
+  viewerCanManage: boolean
 }
 
 /** Neutral names; each host maps its own. GitHub has the first three. */
@@ -185,7 +202,7 @@ export interface DiffHunk {
   lines: DiffLine[]
 }
 
-export type ChangedFileStatus = 'added' | 'modified' | 'deleted' | 'renamed'
+export type ChangedFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'conflicted'
 
 export interface PrChangedFile {
   path: string
@@ -207,6 +224,10 @@ export interface HostCapabilities {
   /** Failed checks can be re-run from Switchboard. When `false`, `rerunUnavailable` says why. */
   rerunChecks: boolean
   rerunUnavailable: string | null
+  /** Offers teams as reviewers (GitHub organisation teams). */
+  teamReviewers: boolean
+  /** What declining is called on the host: Bitbucket declines, GitHub closes. */
+  declineLabel: 'Decline' | 'Close'
 }
 
 /**
@@ -215,7 +236,7 @@ export interface HostCapabilities {
  */
 export const HOST_CAPABILITIES: Record<PrHost, HostCapabilities> = {
   // Only GitHub Actions runs re-run; a check from another app has `rerunId: null`.
-  github: { requiredApprovals: true, exactCheckDurations: true, rerunChecks: true, rerunUnavailable: null },
+  github: { requiredApprovals: true, exactCheckDurations: true, rerunChecks: true, rerunUnavailable: null, teamReviewers: true, declineLabel: 'Close' },
   // Bitbucket branch restrictions need repository admin to read. Its REST API
   // can start a new pipeline but has no re-run of a failed one.
   bitbucket: {
@@ -223,6 +244,8 @@ export const HOST_CAPABILITIES: Record<PrHost, HostCapabilities> = {
     exactCheckDurations: false,
     rerunChecks: false,
     rerunUnavailable: "Bitbucket's API cannot re-run a pipeline. Re-run it on bitbucket.org from the check's Details.",
+    teamReviewers: false,
+    declineLabel: 'Decline',
   },
 }
 
@@ -270,6 +293,8 @@ export interface PrListData {
   /** Projects with no GitHub or Bitbucket remote. */
   unsupportedProjects: string[]
   fetchedAt: number
+  /** `prKey`s the user hid from Reviews (local only, `pull-request-groups.ts` says when one comes back). */
+  hidden: string[]
 }
 
 // ─── Source control accounts ──────────────────────────────────────
@@ -323,11 +348,11 @@ function plural(n: number, one: string, many = `${one}s`): string {
 }
 
 /** Why a pull request cannot merge yet, in the order the Merge card lists them. */
-export function mergeBlockers(pr: PrSummary, opts: { conflicts?: boolean } = {}): MergeBlocker[] {
+export function mergeBlockers(pr: PrSummary): MergeBlocker[] {
   const out: MergeBlocker[] = []
   if (pr.state !== 'open') return out
   if (pr.draft) out.push({ kind: 'draft', label: 'Draft' })
-  if (opts.conflicts) out.push({ kind: 'conflicts', label: 'Merge conflicts' })
+  if (pr.mergeConflicts) out.push({ kind: 'conflicts', label: `Conflicts with ${pr.targetBranch}` })
   if (pr.checks.state === 'failure') {
     out.push({ kind: 'checks_failed', label: pr.checks.failed === 1 ? '1 check failed' : `${pr.checks.failed} checks failed` })
   } else if (pr.checks.state === 'pending') {

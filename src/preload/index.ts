@@ -19,11 +19,12 @@ import type {
   PrListData,
   PrRef,
   PrResult,
+  PrReviewerCandidate,
   SourceControlStatus,
   SourceControlTestResult,
 } from '@shared/pull-requests'
 import type { PrLink, PrLinkChat, PrLinkResult } from '@shared/pull-request-links'
-import type { CommentInput, InlineCommentInput, MergeInput, PrWriteDone, ReplyInput, RerunInput, ResolveInput, SubmitReviewInput } from '@shared/pull-request-writes'
+import type { CommentInput, InlineCommentInput, MergeInput, PrWriteDone, ReplyInput, RerunInput, ResolveInput, ReviewerInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
@@ -552,6 +553,13 @@ const api = {
       transport.invoke(PullRequestWriteChannels.SUBMIT_REVIEW, ref, input),
     merge: (ref: PrRef, input: MergeInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.MERGE, ref, input),
     rerunCheck: (ref: PrRef, input: RerunInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.RERUN_CHECK, ref, input),
+    reviewerCandidates: (ref: PrRef): Promise<PrResult<PrReviewerCandidate[]>> => transport.invoke(PullRequestChannels.REVIEWER_CANDIDATES, ref),
+    addReviewer: (ref: PrRef, input: ReviewerInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.ADD_REVIEWER, ref, input),
+    removeReviewer: (ref: PrRef, input: ReviewerInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.REMOVE_REVIEWER, ref, input),
+    decline: (ref: PrRef): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.DECLINE, ref),
+    /** Local only: hides the PR from Reviews on this backend until it needs you again. */
+    hide: (ref: PrRef): Promise<{ ok: boolean; message?: string }> => transport.invoke(PullRequestChannels.HIDE, ref),
+    unhide: (ref: PrRef): Promise<{ ok: boolean; message?: string }> => transport.invoke(PullRequestChannels.UNHIDE, ref),
   },
 
   sourceControl: {

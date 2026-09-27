@@ -17,14 +17,17 @@ import type {
   PrDetail,
   PrError,
   PrRef,
+  PrReviewerCandidate,
   PrSummary,
   RepoRef,
   SourceControlTestResult,
 } from '@shared/pull-requests'
-import { prKey } from '@shared/pull-requests'
+import { prKey, repoKey } from '@shared/pull-requests'
 import { createMainLogger } from '../logger'
 import { VersionedCache } from './cache'
 import {
+  conflictedPaths,
+  mapBbCandidates,
   mapBbComments,
   mapBbDetail,
   mapBbFiles,
@@ -38,6 +41,7 @@ import {
   type BbPullRequest,
   type BbStatus,
   type BbViewer,
+  type BbWorkspaceMember,
 } from './bitbucket-map'
 import { PrHostError, type PullRequestProvider, type RepoListResult } from './provider'
 
@@ -49,6 +53,8 @@ const MAX_PAGES = 5
 const MERGED_WINDOW_DAYS = 7
 /** Running checks are re-read after this even when the PR has not changed. */
 const PENDING_CHECKS_MAX_AGE_MS = 4 * 60_000
+/** Repository admin rarely changes; re-read it at most this often. */
+const ADMIN_TTL_MS = 10 * 60_000
 
 export type FetchLike = (url: string, init: { method?: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{
   ok: boolean
@@ -209,6 +215,7 @@ export class BitbucketProvider implements PullRequestProvider {
   readonly host = 'bitbucket' as const
   private viewer: BbViewer | null = null
   private readonly enrichment = new VersionedCache<BbEnrichment>()
+  private readonly admin = new Map<string, { at: number; admin: boolean }>()
 
   constructor(
     private readonly client: BitbucketClient,
@@ -223,24 +230,54 @@ export class BitbucketProvider implements PullRequestProvider {
     return this.viewer
   }
 
-  private async fetchEnrichment(ref: PrRef, pr: BbPullRequest): Promise<BbEnrichment> {
+  /** The list cannot say whether a PR conflicts, so the list reads the diffstat too; the detail reads its own. */
+  private async fetchEnrichment(ref: PrRef, pr: BbPullRequest, withConflicts: boolean): Promise<BbEnrichment> {
     const hash = pr.source.commit?.hash
-    const [statuses, comments] = await Promise.all([
+    const [statuses, comments, diffstat] = await Promise.all([
       hash ? this.client.paged<BbStatus>(`${repoPath(ref)}/commit/${hash}/statuses?pagelen=100`, 1) : Promise.resolve([]),
       this.client.paged<BbComment>(`${prPath(ref)}/comments?pagelen=100`),
+      withConflicts ? this.diffstat(ref) : Promise.resolve([]),
     ])
-    return { checks: mapBbStatuses(statuses), unresolvedConversations: unresolvedCount(mapBbComments(comments)) }
+    return { checks: mapBbStatuses(statuses), unresolvedConversations: unresolvedCount(mapBbComments(comments)), conflictedFiles: conflictedPaths(diffstat) }
   }
 
-  /** Checks and open conversations for an open PR, re-read only when the PR changed or checks were still running. */
+  private diffstat(ref: PrRef): Promise<BbDiffstat[]> {
+    return this.client.paged<BbDiffstat>(`${prPath(ref)}/diffstat?pagelen=500`)
+  }
+
+  /**
+   * Checks, open conversations and conflicts for an open PR, re-read only
+   * when the PR changed, its target branch moved (which is what makes a
+   * conflict appear without the PR changing), or checks were still running.
+   * The list asks at most as often as the refresh rule allows.
+   */
   private async enrich(ref: PrRef, pr: BbPullRequest): Promise<BbEnrichment> {
     const key = prKey(ref)
-    const cached = this.enrichment.get(key, pr.updated_on)
+    const version = `${pr.updated_on}|${pr.destination.commit?.hash ?? ''}`
+    const cached = this.enrichment.get(key, version)
     if (cached) return cached
-    const fresh = await this.fetchEnrichment(ref, pr)
+    const fresh = await this.fetchEnrichment(ref, pr, true)
     const running = fresh.checks.some((c) => c.state === 'pending')
-    this.enrichment.set(key, pr.updated_on, fresh, running ? { maxAgeMs: PENDING_CHECKS_MAX_AGE_MS } : {})
+    this.enrichment.set(key, version, fresh, running ? { maxAgeMs: PENDING_CHECKS_MAX_AGE_MS } : {})
     return fresh
+  }
+
+  /** Whether the account is admin on the repository, which Bitbucket asks for to decline or edit someone else's PR. */
+  private async isRepoAdmin(repo: RepoRef): Promise<boolean> {
+    const key = repoKey(repo)
+    const hit = this.admin.get(key)
+    if (hit && this.now() - hit.at < ADMIN_TTL_MS) return hit.admin
+    let admin = false
+    try {
+      const q = encodeURIComponent(`repository.full_name="${repo.owner}/${repo.name}"`)
+      const perms = await this.client.paged<{ permission?: string }>(`/user/permissions/repositories?q=${q}`, 1)
+      admin = perms.some((p) => p.permission === 'admin')
+    } catch (err) {
+      if (!(err instanceof PrHostError)) throw err
+      log.info('reading repository permission failed; treating as not admin', { repo: key, kind: err.error.kind })
+    }
+    this.admin.set(key, { at: this.now(), admin })
+    return admin
   }
 
   private involved(pr: BbPullRequest, viewer: BbViewer): boolean {
@@ -279,17 +316,18 @@ export class BitbucketProvider implements PullRequestProvider {
   async detail(ref: PrRef): Promise<PrDetail> {
     const viewer = await this.currentUser()
     const pr = await this.client.json<BbPullRequest>(prPath(ref))
-    const [extra, diffstat, activity] = await Promise.all([
-      this.fetchEnrichment(ref, pr),
-      this.client.paged<BbDiffstat>(`${prPath(ref)}/diffstat?pagelen=500`),
+    const [extra, diffstat, activity, admin] = await Promise.all([
+      this.fetchEnrichment(ref, pr, false),
+      this.diffstat(ref),
       this.client.paged<BbActivity>(`${prPath(ref)}/activity?pagelen=50`, 1),
+      this.isRepoAdmin(ref),
     ])
-    return mapBbDetail(ref, pr, viewer, extra, diffstat, activity)
+    return mapBbDetail(ref, pr, viewer, extra, diffstat, activity, admin)
   }
 
   async files(ref: PrRef): Promise<PrChangedFile[]> {
     const [diffstat, diff] = await Promise.all([
-      this.client.paged<BbDiffstat>(`${prPath(ref)}/diffstat?pagelen=500`),
+      this.diffstat(ref),
       this.client.text(`${prPath(ref)}/diff`),
     ])
     return mapBbFiles(diffstat, diff)
@@ -362,6 +400,45 @@ export class BitbucketProvider implements PullRequestProvider {
   async rerunCheck(): Promise<void> {
     throw new PrHostError({ kind: 'forbidden', host: 'bitbucket', message: "Bitbucket's API cannot re-run a pipeline." })
   }
+
+  /** Workspace members; a token without the workspace read scope sees none, and the card still offers recent reviewers. */
+  async reviewerCandidates(repo: RepoRef): Promise<PrReviewerCandidate[]> {
+    try {
+      return mapBbCandidates(await this.client.paged<BbWorkspaceMember>(`/workspaces/${encodeURIComponent(repo.owner)}/members?pagelen=100`))
+    } catch (err) {
+      if (!(err instanceof PrHostError) || err.error.kind === 'offline') throw err
+      log.warn('listing workspace members failed', { workspace: repo.owner, kind: err.error.kind })
+      return []
+    }
+  }
+
+  /**
+   * Bitbucket has no add-one-reviewer call: PUT the PR with the whole list.
+   * The list is read just before, so a reviewer someone added in between
+   * survives unless it lands between these two requests.
+   */
+  private async putReviewers(ref: PrRef, edit: (uuids: string[]) => string[]): Promise<void> {
+    const pr = await this.client.json<BbPullRequest>(prPath(ref))
+    const current = (pr.reviewers ?? []).map((u) => u.uuid).filter((u): u is string => !!u)
+    await this.client.send('PUT', prPath(ref), bbReviewersBody(pr.title, edit(current)))
+  }
+
+  async addReviewer(ref: PrRef, reviewer: string): Promise<void> {
+    await this.putReviewers(ref, (uuids) => (uuids.includes(reviewer) ? uuids : [...uuids, reviewer]))
+  }
+
+  async removeReviewer(ref: PrRef, reviewer: string): Promise<void> {
+    await this.putReviewers(ref, (uuids) => uuids.filter((u) => u !== reviewer))
+  }
+
+  async decline(ref: PrRef): Promise<void> {
+    await this.client.send('POST', `${prPath(ref)}/decline`)
+  }
+}
+
+/** Bitbucket's PUT needs the title; fields left out (the description) are not touched. */
+export function bbReviewersBody(title: string, uuids: readonly string[]): { title: string; reviewers: Array<{ uuid: string }> } {
+  return { title, reviewers: uuids.map((uuid) => ({ uuid })) }
 }
 
 /** Settings > Source control > Test: one read, reporting what the account can see. */

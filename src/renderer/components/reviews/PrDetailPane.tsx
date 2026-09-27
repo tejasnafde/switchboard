@@ -13,7 +13,7 @@ import { PrConversations } from './PrConversations'
 import { PrFiles } from './PrFiles'
 import { PrHeaderActions } from './PrHeaderActions'
 import { PrOverview } from './PrOverview'
-import { agoPhrase, describePrError } from './review-states'
+import { agoPhrase, conflictPhrase, describePrError } from './review-states'
 import { Icon, NoticeView, openExternal } from './review-ui'
 
 const TABS: Array<{ id: ReviewTab; label: string }> = [
@@ -96,6 +96,7 @@ export function PrDetailPane({ summary, now }: { summary: PrSummary; now: number
           {pr.state === 'merged' && pr.mergedAt !== null && <><Dot />merged {agoPhrase(pr.mergedAt, now)}</>}
           {pr.draft && <><Dot />draft</>}
           {pr.viewer.isRequestedReviewer && <><Dot />you were asked to review</>}
+          {pr.mergeConflicts && <><Dot /><span data-pr-conflicts className="text-[var(--warning)]">{conflictPhrase(pr)}</span></>}
           {pr.additions !== null && pr.deletions !== null && (
             <><Dot /><span className="tabular-nums">+{pr.additions} −{pr.deletions}</span>{pr.changedFiles !== null && ` in ${pr.changedFiles} ${pr.changedFiles === 1 ? 'file' : 'files'}`}</>
           )}

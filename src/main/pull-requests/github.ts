@@ -9,23 +9,26 @@
  */
 import { execFile } from 'node:child_process'
 import type { InlineCommentInput, ReviewEvent, SubmitReviewInput } from '@shared/pull-request-writes'
-import type { MergeStrategy, PrChangedFile, PrCheck, PrConversation, PrDetail, PrRef, RepoRef } from '@shared/pull-requests'
+import type { MergeStrategy, PrChangedFile, PrCheck, PrConversation, PrDetail, PrRef, PrReviewerCandidate, RepoRef } from '@shared/pull-requests'
 import { repoKey } from '@shared/pull-requests'
 import { childProcessEnv } from '../shell-env'
 import { createMainLogger } from '../logger'
 import {
   classifyGhError,
   classifyGhWriteError,
+  mapGhCandidates,
   mapGhChecks,
   mapGhDetail,
   mapGhFiles,
   mapGhSummary,
   mapGhThreads,
+  type GhCollaborator,
   type GhPullFile,
   type GhPullRequest,
   type GhPullRequestDetail,
   type GhRepoMergeSettings,
   type GhReviewThread,
+  type GhTeam,
 } from './github-map'
 import { PrHostError, type PullRequestProvider, type RepoListResult } from './provider'
 
@@ -84,11 +87,11 @@ const HEAD_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
 }`
 
 const PR_FIELDS = `
-  number title url state isDraft createdAt updatedAt mergedAt
+  number title url state isDraft createdAt updatedAt mergedAt mergeable
   headRefName baseRefName headRefOid additions deletions changedFiles
   author { login avatarUrl ... on User { name } }
   baseRef { branchProtectionRule { requiredApprovingReviewCount } }
-  reviewRequests(first: 20) { nodes { requestedReviewer { __typename ... on User { login name avatarUrl } } } }
+  reviewRequests(first: 20) { nodes { requestedReviewer { __typename ... on User { login name avatarUrl } ... on Team { slug name } } } }
   latestReviews(first: 20) { nodes { state submittedAt author { login avatarUrl ... on User { name } } } }
   reviewThreads(first: 100) { totalCount nodes { isResolved } }
   commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 50) { nodes {
@@ -109,9 +112,9 @@ export function buildListQuery(repos: readonly RepoRef[]): string {
 
 const DETAIL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   viewer { login }
-  repository(owner: $owner, name: $name) { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed pullRequest(number: $number) {
+  repository(owner: $owner, name: $name) { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission pullRequest(number: $number) {
     ${PR_FIELDS}
-    body mergeable
+    body
     timelineItems(last: 30, itemTypes: [PULL_REQUEST_REVIEW, ISSUE_COMMENT, MERGED_EVENT, PULL_REQUEST_COMMIT]) { nodes {
       __typename
       ... on PullRequestReview { state submittedAt author { login avatarUrl } comments { totalCount } }
@@ -244,10 +247,29 @@ export class GitHubProvider implements PullRequestProvider {
     return mapGhFiles(all)
   }
 
+  /** A list read the token may not be allowed (collaborators need push access, teams an organisation repo): refused means none. */
+  private async optionalList<T>(path: string): Promise<T[]> {
+    const res = await this.run(['api', `${path}?per_page=100`])
+    if (res.code === 0) return parseJson<T[]>(res.stdout) ?? []
+    const error = classifyGhError(res)
+    if (error.kind === 'token_rejected' || error.kind === 'gh_missing' || error.kind === 'offline') throw new PrHostError(error)
+    log.info('GitHub did not list reviewer candidates', { path, kind: error.kind })
+    return []
+  }
+
+  async reviewerCandidates(repo: RepoRef): Promise<PrReviewerCandidate[]> {
+    const base = `repos/${repo.owner}/${repo.name}`
+    const [collaborators, teams] = await Promise.all([
+      this.optionalList<GhCollaborator>(`${base}/collaborators`),
+      this.optionalList<GhTeam>(`${base}/teams`),
+    ])
+    return mapGhCandidates(collaborators, teams)
+  }
+
   // ─── Writes ────────────────────────────────────────────────────
 
   /** One REST write with a JSON body. Returns the parsed answer (may be `null` for 204). */
-  private async rest<T = unknown>(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: object): Promise<T | null> {
+  private async rest<T = unknown>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: object): Promise<T | null> {
     const args = ['api', '--method', method, path]
     if (body) args.push('--input', '-')
     const res = await this.run(args, body ? { input: JSON.stringify(body) } : {})
@@ -331,4 +353,21 @@ export class GitHubProvider implements PullRequestProvider {
     }
     await this.rest('POST', `${this.repoPath(ref)}/actions/runs/${check.rerunId}/rerun-failed-jobs`)
   }
+
+  async addReviewer(ref: PrRef, reviewer: string): Promise<void> {
+    await this.rest('POST', `${this.repoPath(ref)}/pulls/${ref.number}/requested_reviewers`, ghReviewerBody(reviewer))
+  }
+
+  async removeReviewer(ref: PrRef, reviewer: string): Promise<void> {
+    await this.rest('DELETE', `${this.repoPath(ref)}/pulls/${ref.number}/requested_reviewers`, ghReviewerBody(reviewer))
+  }
+
+  async decline(ref: PrRef): Promise<void> {
+    await this.rest('PATCH', `${this.repoPath(ref)}/pulls/${ref.number}`, { state: 'closed' })
+  }
+}
+
+/** `team:<slug>` goes in `team_reviewers`, a login in `reviewers`. */
+export function ghReviewerBody(reviewer: string): { reviewers: string[] } | { team_reviewers: string[] } {
+  return reviewer.startsWith('team:') ? { team_reviewers: [reviewer.slice('team:'.length)] } : { reviewers: [reviewer] }
 }

@@ -11,16 +11,21 @@
 import { execFile } from 'node:child_process'
 import type { BackendHost } from '../backend/host'
 import { PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
-import type { GithubAccountState, SourceControlStatus, SourceControlTestResult } from '@shared/pull-requests'
+import type { GithubAccountState, PrListData, PrResult, SourceControlStatus, SourceControlTestResult } from '@shared/pull-requests'
+import { applyHidden } from '@shared/pull-request-groups'
 import { canLinkToProject, isPrRef, type PrLink, type PrLinkChat, type PrLinkResult } from '@shared/pull-request-links'
 import {
   getConversationByThreadId,
   getProjects,
+  hidePullRequest,
   linkConversationPullRequest,
+  listHiddenPullRequests,
   listConversationPullRequests,
   listLinkableChats,
   listPullRequestChats,
   resolveRootThreadId,
+  unhidePullRequest,
+  unhidePullRequestKeys,
   unlinkConversationPullRequest,
 } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
@@ -139,8 +144,41 @@ function registerLinkHandlers(host: BackendHost): void {
   })
 }
 
+/** Marks the PRs the user hid, and clears the hides whose PR came back (`hiddenComesBack`). */
+function withHidden(result: PrResult<PrListData>): PrResult<PrListData> {
+  if (!result.ok) return result
+  try {
+    const { hidden, cameBack } = applyHidden(result.data.prs, listHiddenPullRequests(), result.data.fetchedAt)
+    if (cameBack.length > 0) {
+      unhidePullRequestKeys(cameBack)
+      log.info('hidden pull requests came back', { count: cameBack.length })
+    }
+    return { ok: true, data: { ...result.data, hidden } }
+  } catch (err) {
+    log.warn('reading hidden pull requests failed', err)
+    return result
+  }
+}
+
+function registerHideHandlers(host: BackendHost): void {
+  const toggle = (hide: boolean) => (ref: unknown): { ok: boolean; message?: string } => {
+    if (!isPrRef(ref)) return { ok: false, message: 'Not a pull request.' }
+    try {
+      if (hide) hidePullRequest(ref)
+      else unhidePullRequest(ref)
+      return { ok: true }
+    } catch (err) {
+      log.warn('saving a hidden pull request failed', err)
+      return { ok: false, message: 'Could not save that; see the log.' }
+    }
+  }
+  host.handle(PullRequestChannels.HIDE, toggle(true))
+  host.handle(PullRequestChannels.UNHIDE, toggle(false))
+}
+
 export function registerPullRequestHandlers(host: BackendHost): void {
   registerLinkHandlers(host)
+  registerHideHandlers(host)
   // The agent tools of the Switchboard MCP server read and write through the
   // same service, so the host re-reads and validation apply to them too.
   setAgentPullRequestAccess({
@@ -151,11 +189,12 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     setResolved: (ref, input, resolved) => getService().setResolved(ref, input, resolved),
     rerunCheck: (ref, input) => getService().rerunCheck(ref, input),
   })
-  host.handle(PullRequestChannels.LIST, () => getService().list())
+  host.handle(PullRequestChannels.LIST, async () => withHidden(await getService().list()))
   host.handle(PullRequestChannels.DETAIL, (ref: unknown) => getService().detail(ref))
   host.handle(PullRequestChannels.FILES, (ref: unknown) => getService().files(ref))
   host.handle(PullRequestChannels.CONVERSATIONS, (ref: unknown) => getService().conversations(ref))
   host.handle(PullRequestChannels.CHECKS, (ref: unknown) => getService().checks(ref))
+  host.handle(PullRequestChannels.REVIEWER_CANDIDATES, (ref: unknown) => getService().reviewerCandidates(ref))
 
   host.handle(PullRequestWriteChannels.REPLY, (ref: unknown, input: unknown) => getService().reply(ref, input))
   host.handle(PullRequestWriteChannels.RESOLVE, (ref: unknown, input: unknown) => getService().setResolved(ref, input, true))
@@ -165,6 +204,9 @@ export function registerPullRequestHandlers(host: BackendHost): void {
   host.handle(PullRequestWriteChannels.SUBMIT_REVIEW, (ref: unknown, input: unknown) => getService().submitReview(ref, input))
   host.handle(PullRequestWriteChannels.MERGE, (ref: unknown, input: unknown) => getService().merge(ref, input))
   host.handle(PullRequestWriteChannels.RERUN_CHECK, (ref: unknown, input: unknown) => getService().rerunCheck(ref, input))
+  host.handle(PullRequestWriteChannels.ADD_REVIEWER, (ref: unknown, input: unknown) => getService().addReviewer(ref, input))
+  host.handle(PullRequestWriteChannels.REMOVE_REVIEWER, (ref: unknown, input: unknown) => getService().removeReviewer(ref, input))
+  host.handle(PullRequestWriteChannels.DECLINE, (ref: unknown) => getService().decline(ref))
 
   host.handle(SourceControlChannels.STATUS, async (): Promise<SourceControlStatus> => ({
     bitbucket: DEMO ? { state: 'configured', email: 'tejas@example.com' } : credentials.status(),

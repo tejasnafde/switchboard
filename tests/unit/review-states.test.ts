@@ -5,6 +5,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   agoPhrase,
+  conflictPhrase,
+  declineConfirmCopy,
   describePrError,
   groupFilesByDir,
   mergeConfirmCopy,
@@ -20,7 +22,7 @@ import type { PrError, PrErrorKind, PrListData, PrSummary, RepoRef } from '../..
 const gh: RepoRef = { host: 'github', owner: 'o', name: 'switchboard' }
 const bb: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'bot' }
 const err = (kind: PrErrorKind, host: PrError['host'] = 'bitbucket', message = 'x'): PrError => ({ kind, host, message })
-const data = (over: Partial<PrListData>): PrListData => ({ prs: [], sources: [], unsupportedProjects: [], fetchedAt: 0, ...over })
+const data = (over: Partial<PrListData>): PrListData => ({ prs: [], sources: [], unsupportedProjects: [], fetchedAt: 0, hidden: [], ...over })
 
 describe('describePrError', () => {
   it('gives every error kind one line and one fix', () => {
@@ -58,6 +60,21 @@ describe('write copy', () => {
     expect(copy.title).toBe('Merge #159 into main?')
     expect(copy.body).toContain('merges fix/win into main on GitHub. Strategy: merge commit.')
     expect(copy.confirmLabel).toBe('Merge')
+  })
+
+  it('names the PR and that it changes it for everyone in the decline confirm, with the host verb', () => {
+    const bbCopy = declineConfirmCopy({ ref: { ...bb, number: 612 }, title: 'Jittered backoff' })
+    expect(bbCopy).toMatchObject({ title: 'Decline #612?', confirmLabel: 'Decline', destructive: true })
+    expect(bbCopy.body).toContain('"Jittered backoff" is declined on Bitbucket for everyone')
+    const ghCopy = declineConfirmCopy({ ref: { ...gh, number: 161 }, title: 'Cost cap' })
+    expect([ghCopy.title, ghCopy.confirmLabel]).toEqual(['Close #161?', 'Close'])
+    expect(ghCopy.body).toContain('is closed on GitHub for everyone')
+  })
+
+  it('counts the conflicted files when the host names them', () => {
+    expect(conflictPhrase({ targetBranch: 'main', conflictedFiles: ['a.py', 'b.py'] })).toBe('Conflicts with main in 2 files')
+    expect(conflictPhrase({ targetBranch: 'main', conflictedFiles: ['a.py'] })).toBe('Conflicts with main in 1 file')
+    expect(conflictPhrase({ targetBranch: 'develop', conflictedFiles: [] })).toBe('Conflicts with develop')
   })
 
   it('says why a failed check has no Re-run', () => {

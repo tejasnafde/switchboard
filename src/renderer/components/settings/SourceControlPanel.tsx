@@ -149,7 +149,9 @@ function BitbucketCard({ status, onChanged }: { status: SourceControlStatus | nu
           <div>
             <input id="bb-token" type="password" autoComplete="off" className={INPUT} value={token} onChange={(e) => setToken(e.target.value)} />
             <div className="mt-1 text-[12px] text-[var(--text-muted)]">
-              An Atlassian API token with the scopes to read pull requests and pipelines. Stored encrypted on this computer.
+              An Atlassian API token with these scopes: read:pullrequest:bitbucket and read:pipeline:bitbucket to read,
+              write:pullrequest:bitbucket to reply, review, merge, change reviewers and decline, and read:workspace:bitbucket
+              to suggest workspace members as reviewers. Stored encrypted on this computer.
             </div>
           </div>
           <span />

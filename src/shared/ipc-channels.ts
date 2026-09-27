@@ -288,6 +288,11 @@ export const PullRequestChannels = {
   UNLINK: 'pull-requests:unlink',
   /** Event: `{ conversationId }`, the root id whose links changed. */
   LINKS_CHANGED: 'pull-requests:links-changed',
+  /** `(ref)` -> `PrResult<PrReviewerCandidate[]>`: who the Reviewers card offers to add. */
+  REVIEWER_CANDIDATES: 'pull-requests:reviewer-candidates',
+  /** `(ref)` -> `{ ok }`. Local only (the backend's database), nothing reaches the host, so a phone may call them. */
+  HIDE: 'pull-requests:hide',
+  UNHIDE: 'pull-requests:unhide',
 } as const
 
 /**
@@ -304,6 +309,10 @@ export const PullRequestWriteChannels = {
   SUBMIT_REVIEW: 'pull-requests:submit-review',
   MERGE: 'pull-requests:merge',
   RERUN_CHECK: 'pull-requests:rerun-check',
+  ADD_REVIEWER: 'pull-requests:add-reviewer',
+  REMOVE_REVIEWER: 'pull-requests:remove-reviewer',
+  /** `(ref)`: Bitbucket decline, GitHub close. */
+  DECLINE: 'pull-requests:decline',
 } as const
 
 /**

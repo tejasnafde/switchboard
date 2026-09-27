@@ -88,6 +88,22 @@
       "stderr": "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com\n",
       "kind": "offline",
       "message": "Could not reach github.com."
+    },
+    {
+      "name": "requesting a reviewer who is not a collaborator",
+      "code": 1,
+      "stdout": "{\"message\":\"Reviews may only be requested from collaborators. One or more of the users or teams you specified is not a collaborator of the tejasnafde/switchboard repository.\",\"documentation_url\":\"https://docs.github.com/rest/pulls/review-requests#request-reviewers-for-a-pull-request\",\"status\":\"422\"}",
+      "stderr": "gh: Reviews may only be requested from collaborators. One or more of the users or teams you specified is not a collaborator of the tejasnafde/switchboard repository. (HTTP 422)\n",
+      "kind": "invalid",
+      "message": "Reviews may only be requested from collaborators. One or more of the users or teams you specified is not a collaborator of the tejasnafde/switchboard repository."
+    },
+    {
+      "name": "closing without write access",
+      "code": 1,
+      "stdout": "{\"message\":\"Must have admin rights to Repository.\",\"documentation_url\":\"https://docs.github.com/rest/pulls/pulls#update-a-pull-request\",\"status\":\"403\"}",
+      "stderr": "gh: Must have admin rights to Repository. (HTTP 403)\n",
+      "kind": "forbidden",
+      "message": "Must have admin rights to Repository."
     }
   ]
 }
