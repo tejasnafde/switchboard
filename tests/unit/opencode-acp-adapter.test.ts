@@ -1,3 +1,4 @@
+import { SWITCHBOARD_OPENCODE_TOOLS } from '../../src/main/mcp/agent-registration'
 import { promises as fs } from 'node:fs'
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
@@ -28,9 +29,21 @@ describe('buildOpencodeMcpPermissionContent', () => {
       permission: {
         'github_*': 'ask',
         'notion_db_*': 'ask',
-        'switchboard_*': 'allow',
+        ...Object.fromEntries(SWITCHBOARD_OPENCODE_TOOLS.map((t) => [t, 'allow'])),
       },
     })
+  })
+
+  it('never allows a switchboard_ prefix: a user server named switchboard_x still asks', () => {
+    const permission = JSON.parse(buildOpencodeMcpPermissionContent('sandbox', ['switchboard_x'], true)!).permission
+    expect(permission['switchboard_*']).toBeUndefined()
+    expect(permission['switchboard_x_*']).toBe('ask')
+    expect(Object.keys(permission).filter((k) => permission[k] === 'allow').every((k) => SWITCHBOARD_OPENCODE_TOOLS.includes(k))).toBe(true)
+  })
+
+  it('allows none of our tools when the user has a server named switchboard', () => {
+    const permission = JSON.parse(buildOpencodeMcpPermissionContent('sandbox', ['switchboard', 'github'], true)!).permission
+    expect(permission).toEqual({ 'switchboard_*': 'ask', 'github_*': 'ask' })
   })
 
   it.each(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'] as const)('injects MCP ask rules in %s mode', (mode) => {

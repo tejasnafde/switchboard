@@ -1,3 +1,4 @@
+import { SWITCHBOARD_OPENCODE_TOOLS } from '../../src/main/mcp/agent-registration'
 /**
  * OpenCode and the Switchboard MCP server: the server rides `session/new`'s
  * `mcpServers`, and a permission request for one of its tools (only sent when
@@ -137,9 +138,9 @@ describe('OpenCode registration', () => {
     })
     expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!)).toEqual({
       permission: {
+        ...Object.fromEntries(SWITCHBOARD_OPENCODE_TOOLS.map((t) => [t, 'allow'])),
         bash: 'deny',
         'github_*': 'ask',
-        'switchboard_*': 'allow',
       },
       mcp: {
         github: {
@@ -175,10 +176,12 @@ describe('OpenCode registration', () => {
     await start(true, vi.fn(), 'sandbox', {
       OPENCODE_CONFIG_CONTENT: '{"permission":{"github_*":"deny","switchboard_*":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
     })
-    expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toEqual({
-      'github_*': 'deny',
-      'switchboard_*': 'deny',
-    })
+    const permission = JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission
+    expect(permission['github_*']).toBe('deny')
+    expect(permission['switchboard_*']).toBe('deny')
+    // OpenCode uses the last matching rule: the user's deny must come after our exact allows.
+    const keys = Object.keys(permission)
+    expect(keys.indexOf('switchboard_*')).toBeGreaterThan(Math.max(...SWITCHBOARD_OPENCODE_TOOLS.map((t) => keys.indexOf(t))))
   })
 
   it('uses homedir as the global OpenCode config fallback when HOME is absent', async () => {
