@@ -84,13 +84,14 @@ async function start(
   onEvent = vi.fn(),
   runtimeMode: 'plan' | 'sandbox' | 'full-access' = 'sandbox',
   resolvedEnv: Record<string, string> = {},
+  cwd = '/tmp/project',
 ) {
   const { OpencodeAcpAdapter } = await import('../../src/main/provider/adapters/opencode-acp-adapter')
   const adapter = new OpencodeAcpAdapter()
   await adapter.startSession({
     threadId: 't1',
     provider: 'opencode',
-    cwd: '/tmp/project',
+    cwd,
     runtimeMode,
     resolvedEnv,
     ...(withServer ? { switchboardMcp: launch } : {}),
@@ -101,6 +102,7 @@ async function start(
 beforeEach(() => {
   newSessionCalls.length = 0
   spawnedEnvs.length = 0
+  osMock.homedir = '/tmp/sb-e2e-ocperm-missing-home'
   client = null
 })
 
@@ -156,18 +158,15 @@ describe('OpenCode registration', () => {
       OPENCODE_CONFIG_CONTENT: '{"permission":"deny","mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
     })
     const permission = JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission
-    expect(Object.keys(permission)).toEqual(['*'])
-    expect(permission['*']).toBe('deny')
+    expect(permission).toBe('deny')
   })
 
-  it('keeps explicit user rules after generated wildcard rules', async () => {
+  it('does not emit a generated ask over an inline tool deny', async () => {
     await start(false, vi.fn(), 'sandbox', {
       OPENCODE_CONFIG_CONTENT: '{"permission":{"github_delete":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
     })
     const permission = JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission
-    expect(Object.keys(permission)).toEqual(['github_*', 'github_delete'])
     expect(permission).toEqual({
-      'github_*': 'ask',
       github_delete: 'deny',
     })
   })
@@ -177,11 +176,10 @@ describe('OpenCode registration', () => {
       OPENCODE_CONFIG_CONTENT: '{"permission":{"github_*":"deny","switchboard_*":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
     })
     const permission = JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission
-    expect(permission['github_*']).toBe('deny')
-    expect(permission['switchboard_*']).toBe('deny')
-    // OpenCode uses the last matching rule: the user's deny must come after our exact allows.
-    const keys = Object.keys(permission)
-    expect(keys.indexOf('switchboard_*')).toBeGreaterThan(Math.max(...SWITCHBOARD_OPENCODE_TOOLS.map((t) => keys.indexOf(t))))
+    expect(permission).toEqual({
+      'github_*': 'deny',
+      'switchboard_*': 'deny',
+    })
   })
 
   it('uses homedir as the global OpenCode config fallback when HOME is absent', async () => {
@@ -199,6 +197,51 @@ describe('OpenCode registration', () => {
     expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toEqual({
       'github_*': 'ask',
     })
+  })
+
+  it('does not emit a generated ask over a file-backed tool deny', async () => {
+    const dir = await fs.mkdtemp('/tmp/sb-e2e-ocperm.')
+    scratchDirs.push(dir)
+    await fs.writeFile(
+      join(dir, 'opencode.json'),
+      '{"permission":{"github_delete":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    )
+
+    await start(false, vi.fn(), 'sandbox', {}, dir)
+
+    expect(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT).toBeUndefined()
+  })
+
+  it('does not emit generated rules over a file-backed scalar deny', async () => {
+    const dir = await fs.mkdtemp('/tmp/sb-e2e-ocperm.')
+    scratchDirs.push(dir)
+    await fs.writeFile(
+      join(dir, 'opencode.jsonc'),
+      '{"permission":"deny","mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    )
+
+    await start(true, vi.fn(), 'sandbox', {}, dir)
+
+    expect(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT).toBeUndefined()
+  })
+
+  it('does not emit generated allows when a user switchboard_* ask could match them', async () => {
+    await start(true, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_CONTENT: '{"permission":{"switchboard_*":"ask"}}',
+    })
+    const permission = JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission
+    expect(permission).toEqual({ 'switchboard_*': 'ask' })
+    for (const tool of SWITCHBOARD_OPENCODE_TOOLS) expect(permission[tool]).toBeUndefined()
+  })
+
+  it('does not emit generated rules when a user config file cannot be parsed', async () => {
+    const dir = await fs.mkdtemp('/tmp/sb-e2e-ocperm.')
+    scratchDirs.push(dir)
+    await fs.writeFile(join(dir, 'opencode.json'), '{"mcp":')
+
+    await start(true, vi.fn(), 'sandbox', {}, dir)
+
+    expect(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT).toBeUndefined()
   })
 })
 
@@ -238,6 +281,15 @@ describe('OpenCode permission requests', () => {
 
   it('does not trust the prefix when our server was not registered', async () => {
     const { onEvent } = await start(false)
+    void client!.requestPermission(permission('switchboard_reply_to_conversation'))
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(onEvent.mock.calls.map(([e]) => e.type)).toContain('request.opened')
+  })
+
+  it('asks when a user server name can produce the same OpenCode tool name as one of ours', async () => {
+    const { onEvent } = await start(true, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_CONTENT: '{"mcp":{"switchboard_reply":{"type":"local","command":["node","server.mjs"]}}}',
+    })
     void client!.requestPermission(permission('switchboard_reply_to_conversation'))
     await new Promise((resolve) => setImmediate(resolve))
     expect(onEvent.mock.calls.map(([e]) => e.type)).toContain('request.opened')

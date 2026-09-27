@@ -87,26 +87,120 @@ function runtimeModeToAcp(mode: RuntimeMode): string {
   return mode === 'plan' ? 'plan' : 'build'
 }
 
-function userHasSwitchboardServer(mcpServerNames: readonly string[]): boolean {
-  return mcpServerNames.some((name) => opencodePermissionNamePart(name.trim()) === 'switchboard')
-}
-
 function opencodePermissionNamePart(name: string): string {
   return name.replace(/[^A-Za-z0-9_-]/g, '_')
+}
+
+type OpencodePermissionValue = 'allow' | 'ask' | 'deny'
+
+export interface OpencodeUserPermissionRule {
+  key: string
+  value: OpencodePermissionValue
+}
+
+interface OpencodeUserPermissionContext {
+  permissionRules?: readonly OpencodeUserPermissionRule[]
+  userMcpServerNames?: readonly string[]
+  canTrustUserConfig?: boolean
+}
+
+export function opencodePermissionGlobMatchesTool(pattern: string, toolName: string): boolean {
+  const memo = new Map<string, boolean>()
+  const matches = (pi: number, ti: number): boolean => {
+    const key = `${pi}:${ti}`
+    const cached = memo.get(key)
+    if (cached !== undefined) return cached
+
+    let result: boolean
+    if (pi === pattern.length) {
+      result = ti === toolName.length
+    } else if (pattern[pi] === '*') {
+      result = matches(pi + 1, ti) || (ti < toolName.length && matches(pi, ti + 1))
+    } else if (ti < toolName.length && (pattern[pi] === '?' || pattern[pi] === toolName[ti])) {
+      result = matches(pi + 1, ti + 1)
+    } else {
+      result = false
+    }
+
+    memo.set(key, result)
+    return result
+  }
+  return matches(0, 0)
+}
+
+export function opencodePermissionGlobCouldMatchServerTools(pattern: string, serverName: string): boolean {
+  const prefix = `${serverName}_`
+  const memo = new Map<string, boolean>()
+  const matchesPrefix = (pi: number, si: number): boolean => {
+    const key = `${pi}:${si}`
+    const cached = memo.get(key)
+    if (cached !== undefined) return cached
+
+    let result: boolean
+    if (si === prefix.length) {
+      result = true
+    } else if (pi === pattern.length) {
+      result = false
+    } else if (pattern[pi] === '*') {
+      result = matchesPrefix(pi + 1, si) || matchesPrefix(pi, si + 1)
+    } else if (pattern[pi] === '?' || pattern[pi] === prefix[si]) {
+      result = matchesPrefix(pi + 1, si + 1)
+    } else {
+      result = false
+    }
+
+    memo.set(key, result)
+    return result
+  }
+  return matchesPrefix(0, 0)
+}
+
+function normalizedOpencodeServerNames(mcpServerNames: readonly string[]): string[] {
+  return mcpServerNames.map((name) => opencodePermissionNamePart(name.trim())).filter(Boolean)
+}
+
+export function canAutoAllowSwitchboardOpencodeTool(
+  toolName: string,
+  userMcpServerNames: readonly string[],
+  permissionRules: readonly OpencodeUserPermissionRule[],
+  canTrustUserConfig = true,
+): boolean {
+  if (!canTrustUserConfig || !isSwitchboardOpencodeTool(toolName)) return false
+  const servers = normalizedOpencodeServerNames(userMcpServerNames)
+  if (servers.includes('switchboard')) return false
+  if (servers.some((server) => toolName.startsWith(`${server}_`))) return false
+  return !permissionRules.some((rule) => {
+    return (rule.value === 'ask' || rule.value === 'deny') && opencodePermissionGlobMatchesTool(rule.key, toolName)
+  })
+}
+
+function shouldAskForOpencodeMcpServer(
+  serverName: string,
+  permissionRules: readonly OpencodeUserPermissionRule[],
+): boolean {
+  return !permissionRules.some((rule) => {
+    return rule.value === 'deny' && opencodePermissionGlobCouldMatchServerTools(rule.key, serverName)
+  })
 }
 
 export function buildOpencodeMcpPermissionContent(
   _mode: RuntimeMode,
   mcpServerNames: readonly string[],
   switchboardMcp: boolean,
+  userPolicy: OpencodeUserPermissionContext = {},
 ): string | null {
+  if (userPolicy.canTrustUserConfig === false) return null
   const permission: Record<string, 'allow' | 'ask'> = {}
-  const servers = mcpServerNames.map((name) => opencodePermissionNamePart(name.trim())).filter(Boolean)
-  for (const server of servers) permission[`${server}_*`] = 'ask'
-  // Allow only our exact tool names, and none when the user has a server of
-  // the same name: their tools would carry the same names.
-  if (switchboardMcp && !servers.includes('switchboard')) {
-    for (const tool of SWITCHBOARD_OPENCODE_TOOLS) permission[tool] = 'allow'
+  const permissionRules = userPolicy.permissionRules ?? []
+  const servers = normalizedOpencodeServerNames(mcpServerNames)
+  for (const server of servers) {
+    if (shouldAskForOpencodeMcpServer(server, permissionRules)) permission[`${server}_*`] = 'ask'
+  }
+  if (switchboardMcp) {
+    const userMcpServerNames = userPolicy.userMcpServerNames ?? servers
+    for (const tool of SWITCHBOARD_OPENCODE_TOOLS) {
+      if (canAutoAllowSwitchboardOpencodeTool(tool, userMcpServerNames, permissionRules)) permission[tool] = 'allow'
+    }
   }
   if (Object.keys(permission).length === 0) return null
   return JSON.stringify({ permission })
@@ -209,15 +303,39 @@ function collectMcpNamesFromConfig(config: Record<string, unknown>, out: Set<str
   }
 }
 
+function isOpencodePermissionValue(value: unknown): value is OpencodePermissionValue {
+  return value === 'allow' || value === 'ask' || value === 'deny'
+}
+
+function collectPermissionRulesFromConfig(config: Record<string, unknown>, out: OpencodeUserPermissionRule[]): void {
+  const permission = config.permission
+  if (isOpencodePermissionValue(permission)) {
+    out.push({ key: '*', value: permission })
+    return
+  }
+  if (!permission || typeof permission !== 'object' || Array.isArray(permission)) return
+  for (const [key, value] of Object.entries(permission as Record<string, unknown>)) {
+    if (key && isOpencodePermissionValue(value)) out.push({ key, value })
+  }
+}
+
 function opencodeGlobalConfigHome(env: Record<string, string | undefined>): string | null {
   return env.HOME || homedir() || null
 }
 
-async function collectConfiguredOpencodeMcpServers(
+interface CollectedOpencodeUserConfig {
+  mcpServerNames: string[]
+  permissionRules: OpencodeUserPermissionRule[]
+  canTrustUserConfig: boolean
+}
+
+async function collectConfiguredOpencodeUserConfig(
   cwd: string,
   env: Record<string, string | undefined>,
-): Promise<string[]> {
+): Promise<CollectedOpencodeUserConfig> {
   const names = new Set<string>()
+  const permissionRules: OpencodeUserPermissionRule[] = []
+  let canTrustUserConfig = true
   const files: string[] = []
   const xdgConfig = env.XDG_CONFIG_HOME
   if (xdgConfig) {
@@ -240,30 +358,35 @@ async function collectConfiguredOpencodeMcpServers(
     if (!existsSync(file)) continue
     try {
       const parsed = parseOpencodeConfigObject(await fs.readFile(file, 'utf8'), file)
-      if (parsed) collectMcpNamesFromConfig(parsed, names)
+      if (parsed) {
+        collectMcpNamesFromConfig(parsed, names)
+        collectPermissionRulesFromConfig(parsed, permissionRules)
+      } else {
+        canTrustUserConfig = false
+      }
     } catch (err) {
       log.warn(`failed to read opencode config ${file}: ${err instanceof Error ? err.message : String(err)}`)
+      canTrustUserConfig = false
     }
   }
 
   if (env.OPENCODE_CONFIG_CONTENT) {
     const parsed = parseOpencodeConfigObject(env.OPENCODE_CONFIG_CONTENT, 'OPENCODE_CONFIG_CONTENT')
-    if (parsed) collectMcpNamesFromConfig(parsed, names)
+    if (parsed) {
+      collectMcpNamesFromConfig(parsed, names)
+      collectPermissionRulesFromConfig(parsed, permissionRules)
+    } else {
+      canTrustUserConfig = false
+    }
   }
 
-  return [...names].sort()
+  return { mcpServerNames: [...names].sort(), permissionRules, canTrustUserConfig }
 }
-
-type OpencodePermissionValue = 'allow' | 'ask' | 'deny'
 
 const OPENCODE_PERMISSION_STRENGTH: Record<OpencodePermissionValue, number> = {
   allow: 0,
   ask: 1,
   deny: 2,
-}
-
-function isOpencodePermissionValue(value: unknown): value is OpencodePermissionValue {
-  return value === 'allow' || value === 'ask' || value === 'deny'
 }
 
 function permissionIsAtLeastAsProtective(value: unknown, baseline: OpencodePermissionValue): boolean {
@@ -332,6 +455,10 @@ interface ActiveSession {
   switchboardMcp: boolean
   /** Sanitized OpenCode MCP server names, longest first for flattened tool names. */
   mcpServerNames: string[]
+  /** User permission rules Switchboard could see in OpenCode config sources. */
+  opencodePermissionRules: OpencodeUserPermissionRule[]
+  /** False when a visible OpenCode config source failed to parse or read. */
+  canTrustOpencodeUserConfig: boolean
   /** Pending `requestPermission` calls awaiting user decision. */
   pendingPermissions: Map<string, PendingPermission>
   /** Cached skill list, kept fresh by `available_commands_update`. */
@@ -604,6 +731,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       sessionId: null,
       switchboardMcp: !!opts.switchboardMcp,
       mcpServerNames: [],
+      opencodePermissionRules: [],
+      canTrustOpencodeUserConfig: true,
       pendingPermissions: new Map(),
       skills: [],
       availableModels: [],
@@ -630,12 +759,23 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       if (v.length > 0) overlay[k] = v
     }
     let env = buildOpencodeEnv(overlay)
-    const mcpServerNames = await collectConfiguredOpencodeMcpServers(opts.cwd, env)
-    active.mcpServerNames = mcpServerNames
+    const userConfig = await collectConfiguredOpencodeUserConfig(opts.cwd, env)
+    active.mcpServerNames = userConfig.mcpServerNames
       .map((name) => opencodePermissionNamePart(name.trim()))
       .filter(Boolean)
       .sort((a, b) => b.length - a.length)
-    const mcpPermissionContent = buildOpencodeMcpPermissionContent(session.runtimeMode, mcpServerNames, active.switchboardMcp)
+    active.opencodePermissionRules = userConfig.permissionRules
+    active.canTrustOpencodeUserConfig = userConfig.canTrustUserConfig
+    const mcpPermissionContent = buildOpencodeMcpPermissionContent(
+      session.runtimeMode,
+      userConfig.mcpServerNames,
+      active.switchboardMcp,
+      {
+        permissionRules: userConfig.permissionRules,
+        userMcpServerNames: userConfig.mcpServerNames,
+        canTrustUserConfig: userConfig.canTrustUserConfig,
+      },
+    )
     if (mcpPermissionContent) {
       env = {
         ...env,
@@ -1143,7 +1283,16 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         const { allow, reject } = pickPermissionOptions(params.options)
         // OpenCode asks about MCP tools only when the user's config says so.
         // For ours the server already enforces plan mode and shows the card.
-        if (active.switchboardMcp && allow && isSwitchboardOpencodeTool(toolName) && !userHasSwitchboardServer(active.mcpServerNames)) {
+        if (
+          active.switchboardMcp
+          && allow
+          && canAutoAllowSwitchboardOpencodeTool(
+            toolName,
+            active.mcpServerNames,
+            active.opencodePermissionRules,
+            active.canTrustOpencodeUserConfig,
+          )
+        ) {
           return { outcome: { outcome: 'selected', optionId: allow } }
         }
         const policy = decidePermission(active.session.runtimeMode, toolName)
