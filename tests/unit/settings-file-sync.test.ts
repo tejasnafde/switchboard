@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync, existsSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -72,6 +73,7 @@ function restart() {
 
 const file = () => join(dir, 'settings.json')
 const readJson = () => JSON.parse(readFileSync(file(), 'utf8'))
+const hash = (content: string) => createHash('sha256').update(content).digest('hex')
 /** Write as an editor would, with an mtime later than anything before it. */
 function userWrite(content: string) {
   writeFileSync(file(), content)
@@ -194,6 +196,60 @@ describe('SettingsFileSync', () => {
     expect(statuses.at(-1)?.skipped).toEqual([{ entry: '1 of 2 writes', reason: 'could not be saved; the log has the error' }])
     await sync.writeIfUnedited()
     expect(readFileSync(file(), 'utf8')).toBe(edit)
+  })
+
+  it('keeps a real failed DB write out of sync until a clean apply succeeds', async () => {
+    make()
+    const failedKeys = new Set(['chat.followUpDefault'])
+    const setSetting = (key: string, value: string) => {
+      if (failedKeys.has(key)) throw new Error(`failed to save ${key}`)
+      store.db.settings[key] = value
+    }
+    store.applyOps = (ops) => {
+      const changed: string[] = []
+      for (const op of ops) {
+        try {
+          if (op.kind === 'set') setSetting(op.key, op.value)
+          else if (op.kind === 'remove') delete store.db.settings[op.key]
+          else continue
+          changed.push(op.key)
+        } catch (err) {
+          log.warn(`applying ${op.kind} from settings.json failed`, err)
+        }
+      }
+      return changed
+    }
+    sync.dispose()
+    sync = new SettingsFileSync({
+      dir, readSnapshot: store.readSnapshot, projectLabel: (k) => k, projectKey: (p) => p,
+      applyOps: (ops) => store.applyOps(ops), onStatus: (status) => statuses.push(status), syncedHash, log, debounceMs: 5,
+    })
+    await sync.open()
+    const openedHash = savedHash
+
+    const edit = JSON.stringify({ settings: { theme: 'light', 'chat.followUpDefault': 'queue' } })
+    userWrite(edit)
+    expect(await sync.applyFile()).toBe(false)
+    expect(store.db.settings).toEqual({ theme: 'light' })
+    expect(statuses.at(-1)?.skipped).toEqual([{ entry: '1 of 2 writes', reason: 'could not be saved; the log has the error' }])
+    expect(savedHash).toBe(openedHash)
+    expect(savedHash).not.toBe(hash(edit))
+
+    store.db.settings.notificationsEnabled = 'false'
+    sync.onDbChanged()
+    await sync.flush()
+    expect(readFileSync(file(), 'utf8')).toBe(edit)
+    expect(statuses.at(-1)?.writeSkipped).toBe(true)
+
+    failedKeys.clear()
+    expect(await sync.applyFile()).toBe(true)
+    expect(store.db.settings).toEqual({ theme: 'light', 'chat.followUpDefault': 'queue' })
+    expect(savedHash).toBe(hash(edit))
+
+    store.db.settings['chat.showFileDiffs'] = 'true'
+    sync.onDbChanged()
+    await sync.flush()
+    expect(readJson().settings).toEqual({ theme: 'light', 'chat.followUpDefault': 'queue', 'chat.showFileDiffs': true })
   })
 
   it('rewrites the file when a setting changes elsewhere', async () => {
