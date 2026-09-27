@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dia
 import { Button } from '../ui/button'
 import { CardRow, SideCard } from './review-ui'
 import { deliverReviewContext, openReviewChat } from './review-to-chat'
-import { linkThenDeliver } from './ask-chat-pick'
+import { linkThenDeliver, pickNeedsLink } from './ask-chat-pick'
 
 const log = createRendererLogger('reviews:links')
 
@@ -133,7 +133,7 @@ function AskChatBody() {
     if (!chat) return
     setError(null)
     const failed = await linkThenDeliver(
-      linked.length === 0,
+      pickNeedsLink(linked, chat.id),
       () => window.api.pullRequests.link(chat.id, pending.pr),
       async () => {
         useReviewStore.getState().setPendingAsk(null)
@@ -151,7 +151,7 @@ function AskChatBody() {
       <DialogTitle className="m-0 text-[14px] font-[600]">Which chat should get this?</DialogTitle>
       <DialogDescription className="m-0 text-[12.5px] text-[var(--text-secondary)]">
         {reviewContextLabel(pending)}
-        {linked.length === 0 && '. The chat you pick is linked to this pull request.'}
+        {'. A chat you pick that is not linked yet gets linked to this pull request.'}
       </DialogDescription>
       <Combobox
         value=""

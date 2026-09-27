@@ -29,3 +29,8 @@ export async function linkThenDeliver(
   await deliver()
   return null
 }
+
+/** The picked chat needs a link when it is not already linked, even if another chat is. */
+export function pickNeedsLink(linked: ReadonlyArray<{ id: string }>, pickedId: string): boolean {
+  return !linked.some((c) => c.id === pickedId)
+}

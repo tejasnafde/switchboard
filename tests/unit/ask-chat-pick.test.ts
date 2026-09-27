@@ -3,7 +3,7 @@
  * delivers review context, and delivers nothing when the link fails.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { linkThenDeliver } from '../../src/renderer/components/reviews/ask-chat-pick'
+import { linkThenDeliver, pickNeedsLink } from '../../src/renderer/components/reviews/ask-chat-pick'
 
 describe('linkThenDeliver', () => {
   it('links, then delivers', async () => {
@@ -33,5 +33,15 @@ describe('linkThenDeliver', () => {
     expect(await linkThenDeliver(false, link, deliver)).toBeNull()
     expect(link).not.toHaveBeenCalled()
     expect(deliver).toHaveBeenCalledOnce()
+  })
+})
+
+describe('pickNeedsLink', () => {
+  it('links a picked chat that is not linked, even when another chat is', () => {
+    expect(pickNeedsLink([{ id: 'a' }], 'b')).toBe(true)
+    expect(pickNeedsLink([], 'b')).toBe(true)
+  })
+  it('does not link a chat that is already linked', () => {
+    expect(pickNeedsLink([{ id: 'a' }, { id: 'b' }], 'b')).toBe(false)
   })
 })
