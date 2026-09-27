@@ -204,7 +204,7 @@ export function registerPullRequestHandlers(host: BackendHost): void {
       return { ok: false, message: state.message }
     }
     if (hostName !== 'bitbucket') return { ok: false, message: 'Unknown host.' }
-    if (DEMO) return { ok: true, message: 'Works for 3 repositories in geoiq.', workspaces: [{ name: 'geoiq', repositories: 3 }] }
+    if (DEMO) return { ok: true, message: 'Signed in as Tejas. Can read all 3 of your project repositories and their pull requests. This test does not check write:pullrequest:bitbucket; replies, approvals and merges are checked when you first make one.' }
     if (credentials.status().state === 'needs_desktop') return { ok: false, message: 'Bitbucket needs the desktop app in this release.' }
     let creds
     try {
@@ -214,6 +214,7 @@ export function registerPullRequestHandlers(host: BackendHost): void {
       throw err
     }
     if (!creds) return { ok: false, message: 'Enter an email and API token first.' }
-    return testBitbucket(new BitbucketClient(creds))
+    const repos = [...(await getService().detect()).repos.values()].map((e) => e.repo).filter((r) => r.host === 'bitbucket')
+    return testBitbucket(new BitbucketClient(creds), repos)
   })
 }

@@ -298,9 +298,16 @@ export interface BitbucketCredentialInput {
 export interface SourceControlTestResult {
   ok: boolean
   message: string
-  /** Workspaces the account can see, with how many repositories in each. */
-  workspaces?: Array<{ name: string; repositories: number }>
 }
+
+/**
+ * The Atlassian API token scopes the Bitbucket provider needs: `/user`, the
+ * repository and its commit statuses, the pull request reads, and the human
+ * writes (comments, resolve, approve, request changes, merge). It calls no
+ * Pipelines endpoint, so it needs no pipeline scope.
+ */
+export const BITBUCKET_READ_SCOPES = ['read:user:bitbucket', 'read:repository:bitbucket', 'read:pullrequest:bitbucket'] as const
+export const BITBUCKET_TOKEN_SCOPES = [...BITBUCKET_READ_SCOPES, 'write:pullrequest:bitbucket'] as const
 
 // ─── Pure helpers ─────────────────────────────────────────────────
 
