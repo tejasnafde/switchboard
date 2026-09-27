@@ -10,6 +10,7 @@ import type { DraftPillKind } from '../../../stores/draft-store'
 export function tintForKind(kind: DraftPillKind): string {
   if (kind === 'file') return 'var(--accent, #58a6ff)'
   if (kind === 'terminal') return '#d29922'
+  if (kind === 'review') return '#3fb9a0'
   return '#8957e5'
 }
 

@@ -24,6 +24,10 @@ class ThreadEventDecoderTest {
                         "label" to s("Admin panel"),
                         "kind" to s("chat-message"),
                     ),
+                    "review-1" to obj(
+                        "label" to s("3 review conversations · #612 · worker.py:88"),
+                        "kind" to s("review"),
+                    ),
                     "invalid" to obj(
                         "label" to s("Ignored"),
                         "kind" to s("other"),
@@ -44,7 +48,8 @@ class ThreadEventDecoderTest {
         assertEquals("visible", message.displayBody)
         assertEquals("data:image/png;base64,AAA", message.images.single().url)
         assertEquals(MessagePill("Admin panel", "chat-message"), message.pillsMeta["selection-1"])
-        assertEquals(setOf("selection-1"), message.pillsMeta.keys)
+        assertEquals(MessagePill("3 review conversations · #612 · worker.py:88", "review"), message.pillsMeta["review-1"])
+        assertEquals(setOf("selection-1", "review-1"), message.pillsMeta.keys)
     }
     @Test
     fun decodesEveryKnownRuntimeEventWithoutDroppingExtensionFields() {

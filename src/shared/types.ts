@@ -1,5 +1,5 @@
 /** Shared types between main process and renderer */
-import type { ProviderKind, RuntimeMode } from './provider-events'
+import type { ProviderKind, RuntimeMode, UserMessagePillsMeta } from './provider-events'
 
 // ─── Terminal ────────────────────────────────────────────────────────
 
@@ -309,7 +309,7 @@ export interface ChatMessage {
    */
   displayBody?: string
   /** Pill metadata keyed by token id. Persisted as JSON alongside `displayBody`. */
-  pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
+  pillsMeta?: UserMessagePillsMeta
   /**
    * Renderer-only state for a Desktop turn that has not received its
    * canonical backend echo. Pending messages are never persisted through the

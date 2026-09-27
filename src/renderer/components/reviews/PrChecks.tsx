@@ -4,19 +4,21 @@
  */
 import { fmtDuration } from '@shared/format'
 import { HOST_CAPABILITIES, type CheckState, type PrCheck, type PrSummary } from '@shared/pull-requests'
+import { checkItem } from '@shared/review-context'
 import { Button } from '../ui/button'
 import { Loaded, usePrResource } from './PrDetailPane'
 import { CHECK_ICON, Icon, openExternal } from './review-ui'
+import { askAgent } from './review-to-chat'
 
 const ORDER: Record<CheckState, number> = { failure: 0, pending: 1, success: 2, neutral: 3, skipped: 4 }
 
 export function PrChecks({ summary }: { summary: PrSummary }) {
   const { value, retry } = usePrResource(summary, 'checks')
   const exact = HOST_CAPABILITIES[summary.ref.host].exactCheckDurations
-  return <Loaded value={value} retry={retry}>{(data) => <CheckList checks={data} exactDurations={exact} />}</Loaded>
+  return <Loaded value={value} retry={retry}>{(data) => <CheckList pr={summary} checks={data} exactDurations={exact} />}</Loaded>
 }
 
-function CheckList({ checks, exactDurations }: { checks: PrCheck[]; exactDurations: boolean }) {
+function CheckList({ pr, checks, exactDurations }: { pr: PrSummary; checks: PrCheck[]; exactDurations: boolean }) {
   if (checks.length === 0) return <div className="p-[22px] text-[12.5px] text-[var(--text-muted)]">No checks reported for the head commit.</div>
   const sorted = [...checks].sort((a, b) => ORDER[a.state] - ORDER[b.state])
   return (
@@ -35,6 +37,11 @@ function CheckList({ checks, exactDurations }: { checks: PrCheck[]; exactDuratio
             >
               {c.durationMs !== null ? `${exactDurations ? '' : 'about '}${fmtDuration(c.durationMs)}` : c.state === 'pending' ? 'running' : ''}
             </span>
+            {c.state === 'failure' && (
+              <Button variant="ghost" size="sm" onClick={() => void askAgent({ pr: pr.ref, title: pr.title, url: pr.url, items: [checkItem(c)] })}>
+                <Icon name="spark" />Ask the agent
+              </Button>
+            )}
             {c.url && (
               <Button variant="ghost" size="sm" onClick={() => openExternal(c.url!)}><Icon name="ext" />Details</Button>
             )}

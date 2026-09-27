@@ -13,6 +13,7 @@ import { cn } from '../../lib/utils'
 import { PrDetailPane } from './PrDetailPane'
 import { reviewListState, rowSubtitle, type ReviewNotice } from './review-states'
 import { Icon, NoticeView, ROW_ICON } from './review-ui'
+import { AskChatDialog } from './PrLinkedChats'
 
 export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) {
   const list = useReviewStore((s) => s.list)
@@ -131,6 +132,7 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
           <div className="m-auto text-[12.5px] text-[var(--text-muted)]">{state.kind === 'loading' ? '' : 'Pick a pull request.'}</div>
         )}
       </main>
+      <AskChatDialog />
     </div>
   )
 }

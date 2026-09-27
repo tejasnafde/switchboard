@@ -86,7 +86,7 @@ export function makeSideRepo(projectPath) {
   gitCommitAll(projectPath, 'Seed side project')
 }
 
-export function seedDatabase(dbPath, projectPath, sidePath, { now = Date.now(), showFileDiffs = true, expandLocalTree = true } = {}) {
+export function seedDatabase(dbPath, projectPath, sidePath, { now = Date.now(), showFileDiffs = true, expandLocalTree = true, linkPullRequest = false } = {}) {
   const messagePills = JSON.stringify({
     auth_file: { label: 'src/api/auth.ts:1-7', kind: 'file' },
     api_log: { label: 'api · oauth callback', kind: 'terminal' },
@@ -140,5 +140,9 @@ export function seedDatabase(dbPath, projectPath, sidePath, { now = Date.now(), 
     // default behind the "This Mac" row.
     `INSERT OR REPLACE INTO settings (key, value) VALUES ('sidebar.localTreeExpanded', ${sql(String(expandLocalTree))});`,
   ]
+  // The chat header's linked-PR control reads #612 from the demo pull requests.
+  if (linkPullRequest) {
+    statements.push(`INSERT OR REPLACE INTO conversation_pull_requests (conversation_id, host, owner, repo, number, source, linked_at) VALUES ('promo-context', 'bitbucket', 'geoiq', 'ssg-bot-v2', 612, 'manual', ${now - 100000});`)
+  }
   execFileSync('sqlite3', [dbPath, statements.join('\n')])
 }

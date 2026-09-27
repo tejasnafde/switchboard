@@ -1,7 +1,7 @@
-import type { UserMessagePillsMeta } from '@shared/provider-events'
+import type { UserMessagePillKind, UserMessagePillsMeta } from '@shared/provider-events'
 
 const PILL_ID = /^[A-Za-z0-9_-]+$/
-const PILL_KINDS = new Set(['file', 'terminal', 'chat-message'])
+const PILL_KINDS = new Set(['file', 'terminal', 'chat-message', 'review'])
 const MAX_PILLS = 32
 const MAX_PILL_ID_LENGTH = 128
 const MAX_PILL_LABEL_LENGTH = 120
@@ -30,7 +30,7 @@ export function parsePersistedPillsMeta(raw: unknown): UserMessagePillsMeta | un
     if (typeof label !== 'string' || label.trim().length === 0 || label.length > MAX_PILL_LABEL_LENGTH) continue
     if (typeof kind !== 'string' || !PILL_KINDS.has(kind)) continue
 
-    pills[id] = { label, kind: kind as 'file' | 'terminal' | 'chat-message' }
+    pills[id] = { label, kind: kind as UserMessagePillKind }
     accepted += 1
   }
 

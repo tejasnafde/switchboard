@@ -6,6 +6,7 @@
  * its own send path.
  */
 import type { ChatSendResult } from '../components/chat/ChatInput'
+import type { UserMessagePillsMeta } from '@shared/provider-events'
 
 export interface FirstSend {
   message: string
@@ -13,7 +14,7 @@ export interface FirstSend {
   extras?: {
     origin?: string
     displayBody?: string
-    pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
+    pillsMeta?: UserMessagePillsMeta
   }
 }
 

@@ -10,6 +10,7 @@ import { searchMessagesInDatabase, type SearchResult } from './message-search'
 import { ensureConversationForkSchema } from './conversation-fork'
 import { ensureWorktreeCreationSchema } from './worktree-creation'
 import { ensureBookmarksTable } from './bookmarks'
+import { ensurePullRequestLinkSchema } from './pull-request-links'
 
 const log = createLogger('db')
 
@@ -20,6 +21,7 @@ export * from './settings'
 export * from './kanban'
 export * from './bookmarks'
 export * from './worktree-links'
+export * from './pull-request-links'
 
 let db: Database.Database | null = null
 
@@ -612,6 +614,7 @@ function migrate(db: Database.Database): void {
   ensureConversationForkSchema(db)
   recoverUndispatchedTurns(db)
   ensureWorktreeCreationSchema(db)
+  ensurePullRequestLinkSchema(db)
 
   log.info('database migrated')
 }

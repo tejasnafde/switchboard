@@ -19,6 +19,7 @@ export function PrFiles({ summary, now }: { summary: PrSummary; now: number }) {
     <Loaded value={files.value} retry={files.retry}>
       {(data) => (
         <FilesBody
+          pr={summary}
           files={data}
           conversations={conversations.value?.status === 'ok' ? conversations.value.data : []}
           now={now}
@@ -28,7 +29,7 @@ export function PrFiles({ summary, now }: { summary: PrSummary; now: number }) {
   )
 }
 
-function FilesBody({ files, conversations, now }: { files: PrChangedFile[]; conversations: PrConversation[]; now: number }) {
+function FilesBody({ pr, files, conversations, now }: { pr: PrSummary; files: PrChangedFile[]; conversations: PrConversation[]; now: number }) {
   const focusPath = useReviewStore((s) => s.focusPath)
   const [picked, setPicked] = useState<string | null>(null)
   const selectedPath = picked ?? (focusPath && files.some((f) => f.path === focusPath) ? focusPath : files[0]?.path ?? null)
@@ -82,7 +83,7 @@ function FilesBody({ files, conversations, now }: { files: PrChangedFile[]; conv
                 <span className="text-[var(--success)]">+{selected.additions}</span> <span className="text-[var(--error)]">−{selected.deletions}</span>
               </span>
             </div>
-            <PrDiff file={selected} conversations={conversations.filter((c) => c.path === selected.path)} now={now} />
+            <PrDiff key={selected.path} pr={pr} file={selected} conversations={conversations.filter((c) => c.path === selected.path)} now={now} />
           </>
         )}
       </div>

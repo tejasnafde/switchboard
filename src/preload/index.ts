@@ -22,6 +22,7 @@ import type {
   SourceControlStatus,
   SourceControlTestResult,
 } from '@shared/pull-requests'
+import type { PrLink, PrLinkChat, PrLinkResult } from '@shared/pull-request-links'
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
@@ -531,6 +532,14 @@ const api = {
     files: (ref: PrRef): Promise<PrResult<PrChangedFile[]>> => transport.invoke(PullRequestChannels.FILES, ref),
     conversations: (ref: PrRef): Promise<PrResult<PrConversation[]>> => transport.invoke(PullRequestChannels.CONVERSATIONS, ref),
     checks: (ref: PrRef): Promise<PrResult<PrCheck[]>> => transport.invoke(PullRequestChannels.CHECKS, ref),
+    /** PRs linked to a chat; `threadId` first so a remote chat routes to its machine. */
+    links: (threadId: string): Promise<PrLink[]> => transport.invoke(PullRequestChannels.LINKS, threadId),
+    linkedChats: (ref: PrRef): Promise<PrLinkChat[]> => transport.invoke(PullRequestChannels.LINKED_CHATS, ref),
+    linkableChats: (ref: PrRef): Promise<PrLinkChat[]> => transport.invoke(PullRequestChannels.LINKABLE_CHATS, ref),
+    link: (threadId: string, ref: PrRef): Promise<PrLinkResult> => transport.invoke(PullRequestChannels.LINK, threadId, ref),
+    unlink: (threadId: string, ref: PrRef): Promise<PrLinkResult> => transport.invoke(PullRequestChannels.UNLINK, threadId, ref),
+    onLinksChanged: (callback: (change: { conversationId: string }) => void) =>
+      transport.on(PullRequestChannels.LINKS_CHANGED, (change) => callback(change as { conversationId: string })),
   },
 
   sourceControl: {

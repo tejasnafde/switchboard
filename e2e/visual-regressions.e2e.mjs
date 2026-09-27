@@ -472,7 +472,7 @@ async function prepareScreensFixture() {
   makeSideRepo(sidePath)
   await launchSwitchboard({ userData: live.userData, demo: true })
   await closeApp()
-  seedDatabase(join(live.userData, 'data', 'switchboard.db'), projectPath, sidePath, { now: FROZEN_NOW, showFileDiffs: false, expandLocalTree: false })
+  seedDatabase(join(live.userData, 'data', 'switchboard.db'), projectPath, sidePath, { now: FROZEN_NOW, showFileDiffs: false, expandLocalTree: false, linkPullRequest: true })
   const pristine = makeTemp('sb-visual-screens-pristine-')
   for (const [key, path] of Object.entries(live)) cpSync(path, join(pristine, key), { recursive: true })
   return {
@@ -505,6 +505,8 @@ async function captureThemeScreens(win, theme) {
   // The sidebar has baselines of its own, so the full-window screens mask
   // it: a sidebar change then moves only the sidebar baselines.
   const sidebar = win.locator('.sidebar-root')
+  // The seeded link to #612 (linkPullRequest) shows in the chat header once the demo PR list is read.
+  await win.locator('[data-linked-pr]').filter({ hasText: 'build failed' }).first().waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'chat', theme, win, [turnTimes, sidebar])
   await snapScreen(win, 'sidebar', theme, sidebar)
 

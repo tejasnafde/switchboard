@@ -45,7 +45,7 @@ import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerWorktreeManagerHandlers } from './ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from './ipc/provider-instances'
-import { registerPullRequestHandlers } from './ipc/pull-requests'
+import { attachPullRequestAutoLink, registerPullRequestHandlers } from './ipc/pull-requests'
 import { tryResolveProviderInstance } from './db/provider-instances'
 import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
 import { QuitCoordinator } from './quit-coordinator'
@@ -72,6 +72,7 @@ const isDev = !app.isPackaged
 
 /** Unsubscribe for the push notifier, so a reactivated window can re-attach. */
 let detachPush: (() => void) | null = null
+let detachAutoLink: (() => void) | null = null
 
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
@@ -768,6 +769,7 @@ app.whenReady().then(() => {
     // server passes nothing and therefore never suppresses.
     idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
   })
+  detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, backendHost)
   providerRegistry.registerIpcHandlers()
 
   // All handlers are recorded on the endpoint now; start listening if a token
@@ -824,6 +826,8 @@ app.whenReady().then(() => {
     // server passes nothing and therefore never suppresses.
     idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
   })
+      detachAutoLink?.()
+      detachAutoLink = attachPullRequestAutoLink(providerRegistry.bus, reactivatedHost)
       providerRegistry.registerIpcHandlers()
     }
   })

@@ -280,6 +280,14 @@ export const PullRequestChannels = {
   FILES: 'pull-requests:files',
   CONVERSATIONS: 'pull-requests:conversations',
   CHECKS: 'pull-requests:checks',
+  /** Chat ↔ PR links (`shared/pull-request-links.ts`). Open to a paired phone like the reads: a link only points Reviews at a chat. */
+  LINKS: 'pull-requests:links',
+  LINKED_CHATS: 'pull-requests:linked-chats',
+  LINKABLE_CHATS: 'pull-requests:linkable-chats',
+  LINK: 'pull-requests:link',
+  UNLINK: 'pull-requests:unlink',
+  /** Event: `{ conversationId }`, the root id whose links changed. */
+  LINKS_CHANGED: 'pull-requests:links-changed',
 } as const
 
 /**

@@ -1,0 +1,102 @@
+/**
+ * The chat header's linked pull request: one compact control ("#612 build
+ * failed · 3 open conversations") that opens a popover listing every linked
+ * PR with "Open in Reviews". PR state comes from the Reviews list, read on
+ * the Reviews cadence (on open and on focus, never faster).
+ */
+import { useEffect, useState } from 'react'
+import { linkedPrPhrase, type PrLink } from '@shared/pull-request-links'
+import { prRowStatus } from '@shared/pull-request-groups'
+import { prKey, type PrSummary } from '@shared/pull-requests'
+import { createRendererLogger } from '../../logger'
+import { useLayoutStore } from '../../stores/layout-store'
+import { findSummary, useReviewStore } from '../../stores/review-store'
+import { Button } from '../ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { Icon, ROW_ICON } from './review-ui'
+
+const log = createRendererLogger('reviews:chat-header')
+
+function useChatLinks(sessionId: string): PrLink[] {
+  const [links, setLinks] = useState<PrLink[]>([])
+  useEffect(() => {
+    let live = true
+    const load = () => window.api.pullRequests.links(sessionId)
+      .then((next) => { if (live) setLinks(next) })
+      .catch((err) => log.warn('reading linked pull requests failed', err))
+    void load()
+    const stop = window.api.pullRequests.onLinksChanged(() => void load())
+    return () => {
+      live = false
+      stop()
+    }
+  }, [sessionId])
+  return links
+}
+
+function PrStatusIcon({ pr }: { pr: PrSummary | null }) {
+  const status = pr ? prRowStatus(pr, Date.now()) : null
+  const icon = status ? ROW_ICON[status.icon] : { name: 'pr' as const, tone: 'dim' as const, label: 'Pull request' }
+  return <Icon name={icon.name} tone={icon.tone} size={13} />
+}
+
+export function LinkedPrControl({ sessionId }: { sessionId: string }) {
+  const links = useChatLinks(sessionId)
+  const list = useReviewStore((s) => s.list)
+  const hasLinks = links.length > 0
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!hasLinks) return
+    const refresh = useReviewStore.getState().refresh
+    void refresh('open', { asHeader: true })
+    const onFocus = () => void refresh('focus', { asHeader: true })
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [hasLinks])
+
+  if (!hasLinks) return null
+  const rows = links.map((link) => ({ link, pr: findSummary(list, prKey(link.ref)) }))
+  const first = rows[0]
+  const phrase = first.pr ? linkedPrPhrase(first.pr) : ''
+
+  const openInReviews = (key: string) => {
+    setOpen(false)
+    useReviewStore.getState().select(key)
+    useLayoutStore.getState().setAppView('reviews')
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-linked-pr
+          aria-label={`Linked pull request #${first.link.ref.number}${phrase ? `, ${phrase}` : ''}`}
+          className="inline-flex h-[20px] max-w-[36%] min-w-[29px] shrink overflow-hidden @max-[360px]:hidden cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-surface)] px-2 text-[11.5px] text-[var(--text-secondary)] hover:border-[var(--border-focus)]"
+        >
+          <PrStatusIcon pr={first.pr} />
+          <b className="shrink-0 font-[500] text-[var(--text-primary)]">#{first.link.ref.number}</b>
+          {phrase && <span className="min-w-0 truncate">{phrase}</span>}
+          {rows.length > 1 && <span className="text-[var(--text-muted)]">+{rows.length - 1}</span>}
+          <Icon name="chev" size={11} tone="dim" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="sb-floating-surface z-[1200] w-[340px] overflow-hidden rounded-[8px] border border-[var(--border)] p-1 text-[12.5px] text-[var(--text-primary)]">
+        {rows.map(({ link, pr }) => {
+          const key = prKey(link.ref)
+          return (
+            <div key={key} className="flex items-center gap-2 rounded-[6px] px-2 py-[6px]">
+              <PrStatusIcon pr={pr} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate"><b className="font-[500]">#{link.ref.number}</b> {pr?.title ?? `${link.ref.owner}/${link.ref.name}`}</div>
+                {pr && linkedPrPhrase(pr) && <div className="truncate text-[12px] text-[var(--text-secondary)]">{linkedPrPhrase(pr)}</div>}
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => openInReviews(key)}>Open in Reviews</Button>
+            </div>
+          )
+        })}
+      </PopoverContent>
+    </Popover>
+  )
+}
