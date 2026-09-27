@@ -270,7 +270,7 @@ describe('testBitbucket', () => {
     { host: 'bitbucket' as const, owner: 'geoiq', name: 'retailiq' },
     { host: 'bitbucket' as const, owner: 'personal', name: 'notes' },
   ]
-  const WRITES = ' Replies, approvals and merges (write:pullrequest:bitbucket) are only checked on the first one.'
+  const WRITES = ' This test does not check write:pullrequest:bitbucket; replies, approvals and merges are checked when you first make one.'
   const readable = (owner: string, name: string): Record<string, Route> => ({
     [`/repositories/${owner}/${name}`]: { body: {} },
     [`/repositories/${owner}/${name}/pullrequests`]: { body: { size: 0 } },
@@ -324,6 +324,14 @@ describe('testBitbucket', () => {
     const result = await testBitbucket(new BitbucketClient(creds, impl), repos)
     expect(result.ok).toBe(false)
     expect(result.message).toBe('Signed in. Can read 0 of your 3 project repositories and their pull requests; cannot read geoiq/retailiq, geoiq/ssg-bot-v2, personal/notes. The API token may be missing the read:repository:bitbucket scope.')
+  })
+
+  it('says to retry when Bitbucket rate-limits the checks', async () => {
+    const { impl } = fakeFetch({ '/user': { body: {} }, '/repositories/geoiq/ssg-bot-v2': { status: 429, body: {} } })
+    expect(await testBitbucket(new BitbucketClient(creds, impl), repos.slice(0, 1))).toEqual({
+      ok: false,
+      message: 'Signed in. Can read 0 of your 1 project repository and their pull requests; cannot read geoiq/ssg-bot-v2. Bitbucket rate-limited some checks; try again in a minute.',
+    })
   })
 
   it('caps the repositories it checks', async () => {

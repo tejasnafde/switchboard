@@ -405,7 +405,8 @@ export async function testBitbucket(client: BitbucketClient, repos: RepoRef[]): 
         step = 'pullrequests'
         await client.json(`${repoPath(repo)}/pullrequests?pagelen=1&fields=size`)
       } catch (err) {
-        if (!(err instanceof PrHostError)) log.error('Bitbucket repository check failed unexpectedly', err)
+        if (err instanceof PrHostError) log.warn('Bitbucket repository check failed', { repo: `${repo.owner}/${repo.name}`, step, kind: err.error.kind })
+        else log.error('Bitbucket repository check failed unexpectedly', err)
         failures.push({ name: `${repo.owner}/${repo.name}`, step, error: err instanceof PrHostError ? err.error : null })
       }
     }
@@ -419,7 +420,8 @@ export async function testBitbucket(client: BitbucketClient, repos: RepoRef[]): 
   if (missing('repository')) message += ' The API token may be missing the read:repository:bitbucket scope.'
   if (missing('pullrequests')) message += ' The API token may be missing the read:pullrequest:bitbucket scope.'
   if (failures.some((f) => f.error?.kind === 'offline')) message += ' Some checks could not reach bitbucket.org.'
+  if (failures.some((f) => f.error?.kind === 'rate_limited')) message += ' Bitbucket rate-limited some checks; try again in a minute.'
   if (repos.length > checked.length) message += ` Checked the first ${checked.length} of ${repos.length}.`
-  if (works > 0) message += ' Replies, approvals and merges (write:pullrequest:bitbucket) are only checked on the first one.'
+  if (works > 0) message += ' This test does not check write:pullrequest:bitbucket; replies, approvals and merges are checked when you first make one.'
   return { ok: works > 0, message }
 }
