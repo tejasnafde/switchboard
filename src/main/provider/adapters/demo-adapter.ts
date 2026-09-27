@@ -317,7 +317,7 @@ export class DemoAdapter implements ProviderAdapter {
       if (turn.cancelled) return
       const card: HostWriteCard = {
         action: 'reply',
-        agentLabel: 'Codex',
+        agentLabel: 'Claude',
         host: 'bitbucket',
         prLabel: 'ssg-bot-v2 #612',
         url: null,

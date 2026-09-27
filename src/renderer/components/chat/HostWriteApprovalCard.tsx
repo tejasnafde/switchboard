@@ -96,7 +96,7 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
               }
             }}
             rows={3}
-            className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-[12.5px] leading-[1.5] text-[var(--text-primary)] outline-none focus-visible:border-[var(--accent)]"
+            className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 [font-family:inherit] text-[12.5px] leading-[1.5] text-[var(--text-primary)] outline-none focus-visible:border-[var(--accent)]"
           />
           <div className="mt-1 flex flex-wrap gap-x-2 text-[11px] text-[var(--text-muted)]">
             <span>Posted as you, ending with "via Switchboard".</span>
