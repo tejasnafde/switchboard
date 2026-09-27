@@ -61,19 +61,22 @@ export interface UsageRequestOptions {
 }
 
 /**
- * Only an env-mode Claude or Codex instance carries its credential in the
- * encrypted overlay the probe spawns with. Everything else is read without
- * decrypting, because each decrypt can be a keychain prompt on an unsigned
- * macOS build and Settings reads every instance's usage when it opens.
+ * The instance a usage probe spawns with. Claude and Codex probes apply the
+ * stored env overlay (an oauth_dir profile can carry one too, for example
+ * ANTHROPIC_BASE_URL); `getProviderInstanceFull` decrypts it only when the
+ * row's key list does not prove it empty, because each decrypt can be a
+ * keychain prompt on an unsigned macOS build and Settings reads every
+ * instance's usage when it opens. Other kinds never decrypt.
  */
-export function usageNeedsEnv(instance: Pick<ProviderInstanceRow, 'authMode' | 'agentType'>): boolean {
-  return instance.authMode === 'env' && (instance.agentType === 'claude-code' || instance.agentType === 'codex')
+export function usageInstance(id: string): ProviderInstanceRow | null {
+  const meta = getProviderInstanceFull(id, { withEnv: false })
+  if (!meta) return null
+  return meta.agentType === 'claude-code' || meta.agentType === 'codex' ? getProviderInstanceFull(id) ?? meta : meta
 }
 
 async function probe(id: string, agentType: ProviderUsage['agentType'], opts: UsageRequestOptions): Promise<ProviderUsage> {
-  const meta = getProviderInstanceFull(id, { withEnv: false })
-  if (!meta) return flat(id, agentType, 'unsupported', 'Instance not found.')
-  const instance = usageNeedsEnv(meta) ? getProviderInstanceFull(id) ?? meta : meta
+  const instance = usageInstance(id)
+  if (!instance) return flat(id, agentType, 'unsupported', 'Instance not found.')
 
   const env = resolveInstanceEnv(instance)
 

@@ -351,30 +351,48 @@ describe('decrypt budget (each decrypt can be a keychain prompt)', () => {
     (await loadModule()).clearDecryptedEnvCache()
   })
 
-  it('an oauth_dir instance never decrypts for a usage read', async () => {
-    const { upsertProviderInstance, getProviderInstanceFull } = await loadModule()
-    const { usageNeedsEnv } = await import('../../src/main/provider/usage/index')
+  it('an oauth_dir instance with no overlay never decrypts for a usage read', async () => {
+    const { upsertProviderInstance } = await loadModule()
+    const { usageInstance } = await import('../../src/main/provider/usage/index')
     const wire = upsertProviderInstance({
       agentType: 'claude-code',
       displayName: 'Work',
       authMode: 'oauth_dir',
       oauthDir: '/tmp/switchboard-vitest/claude-work',
-      env: { ANTHROPIC_BASE_URL: 'https://example.invalid' },
+      env: {},
     })
     decryptCalls = 0
-    const meta = getProviderInstanceFull(wire.id, { withEnv: false })
-    expect(meta?.authMode).toBe('oauth_dir')
-    expect(meta?.env).toEqual({})
-    expect(usageNeedsEnv(meta!)).toBe(false)
+    const instance = usageInstance(wire.id)
+    expect(instance?.authMode).toBe('oauth_dir')
+    expect(instance?.env).toEqual({})
     expect(decryptCalls).toBe(0)
   })
 
-  it('only an env-mode Claude or Codex instance needs its env for usage', async () => {
-    const { usageNeedsEnv } = await import('../../src/main/provider/usage/index')
-    expect(usageNeedsEnv({ authMode: 'env', agentType: 'claude-code' })).toBe(true)
-    expect(usageNeedsEnv({ authMode: 'env', agentType: 'codex' })).toBe(true)
-    expect(usageNeedsEnv({ authMode: 'env', agentType: 'opencode' })).toBe(false)
-    expect(usageNeedsEnv({ authMode: 'oauth_dir', agentType: 'codex' })).toBe(false)
+  it('an oauth_dir instance with an overlay gets it applied to the usage probe', async () => {
+    const { upsertProviderInstance } = await loadModule()
+    const { usageInstance } = await import('../../src/main/provider/usage/index')
+    const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
+    const wire = upsertProviderInstance({
+      agentType: 'claude-code',
+      displayName: 'Proxy',
+      authMode: 'oauth_dir',
+      oauthDir: '/tmp/switchboard-vitest/claude-proxy',
+      env: { ANTHROPIC_BASE_URL: 'https://example.invalid' },
+    })
+    decryptCalls = 0
+    const instance = usageInstance(wire.id)
+    expect(instance?.env).toEqual({ ANTHROPIC_BASE_URL: 'https://example.invalid' })
+    expect(resolveInstanceEnv(instance!).ANTHROPIC_BASE_URL).toBe('https://example.invalid')
+    expect(decryptCalls).toBe(1)
+  })
+
+  it('an OpenCode instance never decrypts for a usage read', async () => {
+    const { upsertProviderInstance } = await loadModule()
+    const { usageInstance } = await import('../../src/main/provider/usage/index')
+    const wire = upsertProviderInstance({ agentType: 'opencode', displayName: 'Keys', env: { OPENAI_API_KEY: 'sk-x' } })
+    decryptCalls = 0
+    expect(usageInstance(wire.id)?.env).toEqual({})
+    expect(decryptCalls).toBe(0)
   })
 
   it('decrypts an env once per process, and again after an upsert or delete', async () => {

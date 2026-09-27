@@ -4,13 +4,13 @@
  * with no keychain.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
 
-import { BITBUCKET_CREDENTIAL_FILE, BITBUCKET_METADATA_FILE, BitbucketCredentialStore, validateBitbucketInput } from '../../src/main/pull-requests/credentials'
+import { BITBUCKET_CREDENTIAL_FILE, BITBUCKET_METADATA_FILE, BitbucketCredentialStore, CredentialStoreError, validateBitbucketInput } from '../../src/main/pull-requests/credentials'
 import { FILE_SETTINGS } from '../../src/shared/settings-file'
 
 const dirs: string[] = []
@@ -115,5 +115,48 @@ describe('validateBitbucketInput', () => {
 describe('settings.json', () => {
   it('has no source control or Bitbucket key on its allow-list', () => {
     for (const s of FILE_SETTINGS) expect(s.key).not.toMatch(/bitbucket|source-?control|github|token/i)
+  })
+
+  describe('a save that fails part way leaves the previous account in place', () => {
+    const next = { email: 'new@example.com', apiToken: 'ATATT-new' }
+
+    function savedStore() {
+      const root = tempDir()
+      const store = new BitbucketCredentialStore(() => root, () => fakeCrypto)
+      store.save(creds)
+      const blob = readFileSync(join(root, BITBUCKET_CREDENTIAL_FILE))
+      const meta = readFileSync(join(root, BITBUCKET_METADATA_FILE))
+      return { root, store, blob, meta }
+    }
+
+    function expectUnchanged(root: string, store: BitbucketCredentialStore, blob: Buffer, meta: Buffer) {
+      expect(readFileSync(join(root, BITBUCKET_CREDENTIAL_FILE))).toEqual(blob)
+      expect(readFileSync(join(root, BITBUCKET_METADATA_FILE))).toEqual(meta)
+      expect(existsSync(join(root, `${BITBUCKET_CREDENTIAL_FILE}.tmp`))).toBe(false)
+      expect(store.read()).toEqual(creds)
+      expect(store.status()).toEqual({ state: 'configured', email: 'me@example.com' })
+      expect(new BitbucketCredentialStore(() => root, () => fakeCrypto).read()).toEqual(creds)
+    }
+
+    it('when the metadata temp file cannot be written', () => {
+      const { root, store, blob, meta } = savedStore()
+      mkdirSync(join(root, `${BITBUCKET_METADATA_FILE}.tmp`))
+      expect(() => store.save(next)).toThrow(CredentialStoreError)
+      expectUnchanged(root, store, blob, meta)
+    })
+
+    it('when the metadata rename fails after the token was already replaced', () => {
+      const root = tempDir()
+      const store = new BitbucketCredentialStore(() => root, () => fakeCrypto)
+      store.save(creds)
+      const blob = readFileSync(join(root, BITBUCKET_CREDENTIAL_FILE))
+      rmSync(join(root, BITBUCKET_METADATA_FILE))
+      // A non-empty directory where the metadata goes: its rename cannot succeed.
+      mkdirSync(join(root, BITBUCKET_METADATA_FILE, 'x'), { recursive: true })
+      expect(() => store.save(next)).toThrow(CredentialStoreError)
+      expect(readFileSync(join(root, BITBUCKET_CREDENTIAL_FILE))).toEqual(blob)
+      expect(existsSync(join(root, `${BITBUCKET_METADATA_FILE}.tmp`))).toBe(false)
+      expect(store.read()).toEqual(creds)
+    })
   })
 })

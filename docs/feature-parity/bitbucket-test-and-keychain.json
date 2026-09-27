@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "bitbucket-test-and-keychain",
-  "summary": "Settings > Source control > Bitbucket Test no longer calls the removed /user/permissions/repositories endpoint: it checks /user, then reads each Bitbucket repository the projects point at and reports how many work. Opening Settings no longer decrypts the Bitbucket token (its email and save time sit in a plain metadata file) and decrypts a provider instance env only for env-mode Claude or Codex usage probes, once per process, so an unsigned macOS build asks for the login password far less.",
+  "summary": "Settings > Source control > Bitbucket Test no longer calls the removed /user/permissions/repositories endpoint: it checks /user, then reads each Bitbucket repository the projects point at and its pull request list, reports which it can read, and says write scopes are checked on the first write. Opening Settings no longer decrypts the Bitbucket token (its email and save time sit in a plain metadata file, saved together with the token or not at all) and decrypts a provider instance env only for Claude or Codex usage probes whose key list shows an overlay, once per process, so an unsigned macOS build asks for the login password far less.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -36,7 +36,6 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/main/pull-requests/credentials.ts",
         "tests/unit/source-control-credentials.test.ts"
       ]
     },

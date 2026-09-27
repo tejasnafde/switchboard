@@ -371,13 +371,15 @@ const TEST_MAX_REPOS = 20
 const TEST_CONCURRENCY = 4
 
 /**
- * Settings > Source control > Test. `/user` proves the credentials, then one
- * read of each Bitbucket repository the projects point at says whether the
- * token reaches it. (Atlassian removed `/user/permissions/repositories`, the
- * cross-workspace listing this used to call.)
+ * Settings > Source control > Test. `/user` proves the credentials, then each
+ * Bitbucket repository the projects point at gets one repository read and one
+ * pull request list read, which is what Reviews needs. (Atlassian removed
+ * `/user/permissions/repositories`, the cross-workspace listing this used to
+ * call.) Bitbucket has no way to check a write scope without writing, so the
+ * message says writes are checked on the first one.
  */
 export async function testBitbucket(client: BitbucketClient, repos: RepoRef[]): Promise<SourceControlTestResult> {
-  let who = ''
+  let who = 'Signed in. '
   try {
     const user = await client.json<{ display_name?: string }>('/user')
     if (user.display_name) who = `Signed in as ${user.display_name}. `
@@ -391,27 +393,33 @@ export async function testBitbucket(client: BitbucketClient, repos: RepoRef[]): 
     return { ok: false, message: 'The test failed; see the log.' }
   }
   const checked = repos.slice(0, TEST_MAX_REPOS)
-  if (checked.length === 0) return { ok: true, message: `${who}None of your projects points at a Bitbucket repository yet.` }
+  if (checked.length === 0) return { ok: true, message: `${who}None of your projects points at a Bitbucket repository yet, so no repository was checked.` }
 
-  const failures: Array<{ name: string; error: PrError | null }> = []
+  const failures: Array<{ name: string; step: 'repository' | 'pullrequests'; error: PrError | null }> = []
   const queue = [...checked]
   await Promise.all(Array.from({ length: Math.min(TEST_CONCURRENCY, queue.length) }, async () => {
     for (let repo = queue.shift(); repo; repo = queue.shift()) {
+      let step: 'repository' | 'pullrequests' = 'repository'
       try {
         await client.json(`${repoPath(repo)}?fields=full_name`)
+        step = 'pullrequests'
+        await client.json(`${repoPath(repo)}/pullrequests?pagelen=1&fields=size`)
       } catch (err) {
         if (!(err instanceof PrHostError)) log.error('Bitbucket repository check failed unexpectedly', err)
-        failures.push({ name: `${repo.owner}/${repo.name}`, error: err instanceof PrHostError ? err.error : null })
+        failures.push({ name: `${repo.owner}/${repo.name}`, step, error: err instanceof PrHostError ? err.error : null })
       }
     }
   }))
   const works = checked.length - failures.length
   const noun = checked.length === 1 ? 'project repository' : 'project repositories'
   let message = works === checked.length
-    ? `${who}Works for ${checked.length === 1 ? 'your' : `all ${checked.length} of your`} ${noun}.`
-    : `${who}Works for ${works} of your ${checked.length} ${noun}; no access to ${failures.map((f) => f.name).sort().join(', ')}.`
-  if (failures.some((f) => f.error?.message === BB_MISSING_SCOPE)) message += ' The API token may be missing the read:repository:bitbucket scope.'
+    ? `${who}Can read ${checked.length === 1 ? 'your' : `all ${checked.length} of your`} ${noun} and ${checked.length === 1 ? 'its' : 'their'} pull requests.`
+    : `${who}Can read ${works} of your ${checked.length} ${noun} and their pull requests; cannot read ${failures.map((f) => f.name).sort().join(', ')}.`
+  const missing = (step: 'repository' | 'pullrequests') => failures.some((f) => f.step === step && f.error?.message === BB_MISSING_SCOPE)
+  if (missing('repository')) message += ' The API token may be missing the read:repository:bitbucket scope.'
+  if (missing('pullrequests')) message += ' The API token may be missing the read:pullrequest:bitbucket scope.'
   if (failures.some((f) => f.error?.kind === 'offline')) message += ' Some checks could not reach bitbucket.org.'
   if (repos.length > checked.length) message += ` Checked the first ${checked.length} of ${repos.length}.`
+  if (works > 0) message += ' Replies, approvals and merges (write:pullrequest:bitbucket) are only checked on the first one.'
   return { ok: works > 0, message }
 }
