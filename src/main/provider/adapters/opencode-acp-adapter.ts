@@ -323,6 +323,45 @@ function opencodeGlobalConfigHome(env: Record<string, string | undefined>): stri
   return env.HOME || homedir() || null
 }
 
+const OPENCODE_ROOT_CONFIG_FILES = ['config.json', 'opencode.json', 'opencode.jsonc', 'config'] as const
+const OPENCODE_PROJECT_CONFIG_FILES = ['opencode.json', 'opencode.jsonc'] as const
+
+function pushOpencodeConfigFiles(out: string[], dir: string, names: readonly string[]): void {
+  for (const name of names) out.push(join(dir, name))
+}
+
+function opencodeProjectConfigDirs(cwd: string): string[] {
+  const dirs: string[] = []
+  for (let dir = cwd; ; dir = dirname(dir)) {
+    dirs.push(dir)
+    if (existsSync(join(dir, '.git'))) break
+    const parent = dirname(dir)
+    if (parent === dir) break
+  }
+  return dirs
+}
+
+function opencodeConfigFileSources(cwd: string, env: Record<string, string | undefined>): string[] {
+  const files: string[] = []
+  const xdgConfig = env.XDG_CONFIG_HOME
+  if (xdgConfig) pushOpencodeConfigFiles(files, join(xdgConfig, 'opencode'), OPENCODE_ROOT_CONFIG_FILES)
+
+  const configHome = opencodeGlobalConfigHome(env)
+  if (configHome) pushOpencodeConfigFiles(files, join(configHome, '.config', 'opencode'), OPENCODE_ROOT_CONFIG_FILES)
+
+  if (env.OPENCODE_CONFIG) files.push(env.OPENCODE_CONFIG)
+
+  const projectDirs = opencodeProjectConfigDirs(cwd)
+  for (const dir of projectDirs) pushOpencodeConfigFiles(files, dir, OPENCODE_PROJECT_CONFIG_FILES)
+  for (const dir of projectDirs) pushOpencodeConfigFiles(files, join(dir, '.opencode'), OPENCODE_PROJECT_CONFIG_FILES)
+
+  if (env.OPENCODE_CONFIG_DIR) {
+    pushOpencodeConfigFiles(files, env.OPENCODE_CONFIG_DIR, OPENCODE_ROOT_CONFIG_FILES)
+  }
+
+  return [...new Set(files)]
+}
+
 interface CollectedOpencodeUserConfig {
   mcpServerNames: string[]
   permissionRules: OpencodeUserPermissionRule[]
@@ -336,25 +375,8 @@ async function collectConfiguredOpencodeUserConfig(
   const names = new Set<string>()
   const permissionRules: OpencodeUserPermissionRule[] = []
   let canTrustUserConfig = true
-  const files: string[] = []
-  const xdgConfig = env.XDG_CONFIG_HOME
-  if (xdgConfig) {
-    files.push(join(xdgConfig, 'opencode', 'opencode.json'), join(xdgConfig, 'opencode', 'opencode.jsonc'))
-  }
-  const configHome = opencodeGlobalConfigHome(env)
-  if (configHome) {
-    files.push(join(configHome, '.config', 'opencode', 'opencode.json'), join(configHome, '.config', 'opencode', 'opencode.jsonc'))
-  }
-  if (env.OPENCODE_CONFIG) files.push(env.OPENCODE_CONFIG)
 
-  for (let dir = cwd; ; dir = dirname(dir)) {
-    files.push(join(dir, 'opencode.json'), join(dir, 'opencode.jsonc'))
-    if (existsSync(join(dir, '.git'))) break
-    const parent = dirname(dir)
-    if (parent === dir) break
-  }
-
-  for (const file of files) {
+  for (const file of opencodeConfigFileSources(cwd, env)) {
     if (!existsSync(file)) continue
     try {
       const parsed = parseOpencodeConfigObject(await fs.readFile(file, 'utf8'), file)

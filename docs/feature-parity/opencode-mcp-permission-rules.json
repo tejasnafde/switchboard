@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "opencode-mcp-permission-rules",
-  "summary": "OpenCode ACP 1.17.18 does not ask Switchboard for MCP tool permission in build mode unless OpenCode config has a permission rule. Switchboard now reads configured OpenCode MCP server names without writing user config files, injects session-local OPENCODE_CONFIG_CONTENT rules like server_*: ask only when visible user permission rules would not be weakened, and keeps Switchboard's own MCP tools allowed only by exact name when no visible user rule or user server name could cover the same OpenCode tool. The existing ACP requestPermission handler remains the single runtime gate: sandbox, accept-edits and auto open the normal approval card, plan denies, and full access auto-allows without a user prompt. The approval card now labels MCP requests as server and tool instead of one underscored string.",
+  "summary": "OpenCode ACP 1.17.18 does not ask Switchboard for MCP tool permission in build mode unless OpenCode config has a permission rule. Switchboard now reads configured OpenCode MCP server names from the same visible config sources it scans for user permission rules, including global config, OPENCODE_CONFIG, project opencode.json and opencode.jsonc files, project and parent .opencode directories, OPENCODE_CONFIG_DIR, and inherited OPENCODE_CONFIG_CONTENT, without writing user config files. It injects session-local OPENCODE_CONFIG_CONTENT rules like server_*: ask only when visible user permission rules would not be weakened, and keeps Switchboard's own MCP tools allowed only by exact name when no visible user rule or user server name could cover the same OpenCode tool. The existing ACP requestPermission handler remains the single runtime gate: sandbox, accept-edits and auto open the normal approval card, plan denies, and full access auto-allows without a user prompt. The approval card now labels MCP requests as server and tool instead of one underscored string.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -56,7 +56,7 @@
   },
   "verification": {
     "automated": [
-      "npx vitest run tests/unit/opencode-acp-adapter.test.ts tests/unit/opencode-acp-switchboard-mcp.test.ts --maxWorkers=2: passed. Covers generated MCP permission config for every runtime mode, generated rules being skipped when visible user rules would be weakened, exact-name Switchboard tool allows, readable MCP approval labels, plan denial, sandbox prompting, and full access auto-allow.",
+      "npx vitest run tests/unit/opencode-acp-adapter.test.ts tests/unit/opencode-acp-switchboard-mcp.test.ts --maxWorkers=2: passed. Covers generated MCP permission config for every runtime mode, generated rules being skipped when visible user rules would be weakened, exact-name Switchboard tool allows, readable MCP approval labels, plan denial, sandbox prompting, full access auto-allow, .opencode directories, OPENCODE_CONFIG, OPENCODE_CONFIG_DIR, unparseable visible config, and fixture cleanup under the OS temp directory.",
       "Scratch OpenCode config check with HOME and XDG_CONFIG_HOME under /tmp/sb-e2e-ocperm.*: OPENCODE_CONFIG_CONTENT deep-merged permission rules with an existing opencode.json and preserved the configured MCP server."
     ],
     "hardware": [],

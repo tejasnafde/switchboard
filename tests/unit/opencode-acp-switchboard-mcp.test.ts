@@ -18,6 +18,7 @@ const newSessionCalls: Array<Record<string, unknown>> = []
 const spawnedEnvs: Array<Record<string, string | undefined>> = []
 const scratchDirs: string[] = []
 let client: { requestPermission(p: RequestPermissionRequest): Promise<unknown> } | null = null
+const scratchPrefix = 'sb-e2e-ocperm.'
 
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:os')>()
@@ -100,19 +101,37 @@ async function start(
   return { adapter, onEvent }
 }
 
+function scratchTemplate(): string {
+  return join(tmpdir(), scratchPrefix)
+}
+
+function isScratchDir(dir: string): boolean {
+  return dir.startsWith(scratchTemplate())
+}
+
+async function makeScratchDir(): Promise<string> {
+  const dir = await fs.mkdtemp(scratchTemplate())
+  scratchDirs.push(dir)
+  return dir
+}
+
+async function cleanupScratchDirs(): Promise<void> {
+  const dirs = new Set(scratchDirs.splice(0))
+  if (isScratchDir(osMock.homedir)) dirs.add(osMock.homedir)
+  for (const dir of dirs) {
+    if (isScratchDir(dir)) await fs.rm(dir, { recursive: true, force: true })
+  }
+}
+
 beforeEach(() => {
   newSessionCalls.length = 0
   spawnedEnvs.length = 0
-  osMock.homedir = join(tmpdir(), 'sb-e2e-ocperm-missing-home')
+  osMock.homedir = join(tmpdir(), `${scratchPrefix}missing-home`)
   client = null
 })
 
 afterEach(async () => {
-  for (const dir of scratchDirs.splice(0)) {
-    if (dir.startsWith('/tmp/sb-e2e-ocperm.')) {
-      await fs.rm(dir, { recursive: true, force: true })
-    }
-  }
+  await cleanupScratchDirs()
 })
 
 describe('OpenCode registration', () => {
@@ -184,8 +203,7 @@ describe('OpenCode registration', () => {
   })
 
   it('uses homedir as the global OpenCode config fallback when HOME is absent', async () => {
-    const dir = await fs.mkdtemp(join(tmpdir(), 'sb-e2e-ocperm.'))
-    scratchDirs.push(dir)
+    const dir = await makeScratchDir()
     osMock.homedir = dir
     await fs.mkdir(join(dir, '.config', 'opencode'), { recursive: true })
     await fs.writeFile(
@@ -201,8 +219,7 @@ describe('OpenCode registration', () => {
   })
 
   it('does not emit a generated ask over a file-backed tool deny', async () => {
-    const dir = await fs.mkdtemp(join(tmpdir(), 'sb-e2e-ocperm.'))
-    scratchDirs.push(dir)
+    const dir = await makeScratchDir()
     await fs.writeFile(
       join(dir, 'opencode.json'),
       '{"permission":{"github_delete":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
@@ -214,8 +231,7 @@ describe('OpenCode registration', () => {
   })
 
   it('does not emit generated rules over a file-backed scalar deny', async () => {
-    const dir = await fs.mkdtemp(join(tmpdir(), 'sb-e2e-ocperm.'))
-    scratchDirs.push(dir)
+    const dir = await makeScratchDir()
     await fs.writeFile(
       join(dir, 'opencode.jsonc'),
       '{"permission":"deny","mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
@@ -236,13 +252,99 @@ describe('OpenCode registration', () => {
   })
 
   it('does not emit generated rules when a user config file cannot be parsed', async () => {
-    const dir = await fs.mkdtemp(join(tmpdir(), 'sb-e2e-ocperm.'))
-    scratchDirs.push(dir)
+    const dir = await makeScratchDir()
     await fs.writeFile(join(dir, 'opencode.json'), '{"mcp":')
 
     await start(true, vi.fn(), 'sandbox', {}, dir)
 
     expect(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT).toBeUndefined()
+  })
+
+  it('does not emit generated rules when the root config file cannot be parsed as JSON', async () => {
+    const dir = await makeScratchDir()
+    osMock.homedir = dir
+    await fs.mkdir(join(dir, '.config', 'opencode'), { recursive: true })
+    await fs.writeFile(join(dir, '.config', 'opencode', 'config'), 'permission = "deny"')
+
+    await start(true, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    })
+
+    expect(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT).toBe('{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}')
+  })
+
+  it('does not emit a generated ask over a project .opencode tool deny', async () => {
+    const dir = await makeScratchDir()
+    await fs.mkdir(join(dir, '.opencode'), { recursive: true })
+    await fs.writeFile(join(dir, '.opencode', 'opencode.json'), '{"permission":{"github_delete":"deny"}}')
+
+    await start(false, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    }, dir)
+
+    expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toBeUndefined()
+  })
+
+  it('does not emit a generated ask over a parent .opencode tool deny', async () => {
+    const root = await makeScratchDir()
+    const project = join(root, 'child')
+    await fs.mkdir(join(root, '.opencode'), { recursive: true })
+    await fs.mkdir(project, { recursive: true })
+    await fs.writeFile(join(root, '.opencode', 'opencode.jsonc'), '{"permission":{"github_delete":"deny"}}')
+
+    await start(false, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    }, project)
+
+    expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toBeUndefined()
+  })
+
+  it('does not emit a generated ask over an OPENCODE_CONFIG tool deny', async () => {
+    const dir = await makeScratchDir()
+    const config = join(dir, 'custom-opencode.json')
+    await fs.writeFile(config, '{"permission":{"github_delete":"deny"}}')
+
+    await start(false, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG: config,
+      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    }, dir)
+
+    expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toBeUndefined()
+  })
+
+  it('does not emit a generated ask over an OPENCODE_CONFIG_DIR tool deny', async () => {
+    const dir = await makeScratchDir()
+    const configDir = join(dir, 'custom-config-dir')
+    await fs.mkdir(configDir, { recursive: true })
+    await fs.writeFile(join(configDir, 'opencode.json'), '{"permission":{"github_delete":"deny"}}')
+
+    await start(false, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_DIR: configDir,
+      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    }, dir)
+
+    expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toBeUndefined()
+  })
+
+  it('does not emit generated rules when a .opencode config file cannot be parsed', async () => {
+    const dir = await makeScratchDir()
+    await fs.mkdir(join(dir, '.opencode'), { recursive: true })
+    await fs.writeFile(join(dir, '.opencode', 'opencode.json'), '{"permission":')
+
+    await start(true, vi.fn(), 'sandbox', {
+      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    }, dir)
+
+    expect(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT).toBe('{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}')
+  })
+
+  it('cleans fixture dirs under the OS temp dir', async () => {
+    const dir = await makeScratchDir()
+    await fs.writeFile(join(dir, 'marker'), 'x')
+
+    await cleanupScratchDirs()
+
+    await expect(fs.access(dir)).rejects.toThrow()
   })
 })
 
