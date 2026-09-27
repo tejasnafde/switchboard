@@ -68,11 +68,15 @@ const C_ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 1
 export function unquoteGitPath(path: string): string {
   if (!(path.length >= 2 && path.startsWith('"') && path.endsWith('"'))) return path
   const body = path.slice(1, -1)
+  const encoder = new TextEncoder()
   const bytes: number[] = []
   for (let i = 0; i < body.length; i++) {
-    const ch = body[i]
-    if (ch !== '\\' || i === body.length - 1) {
-      bytes.push(...new TextEncoder().encode(ch))
+    if (body[i] !== '\\' || i === body.length - 1) {
+      // Whole code point: with core.quotePath=false an emoji stays literal, and
+      // encoding its UTF-16 halves one by one would give two replacement chars.
+      const cp = body.codePointAt(i) as number
+      bytes.push(...encoder.encode(String.fromCodePoint(cp)))
+      if (cp > 0xffff) i += 1
       continue
     }
     const octal = /^[0-7]{3}/.exec(body.slice(i + 1))

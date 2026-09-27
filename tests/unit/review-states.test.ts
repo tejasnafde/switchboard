@@ -134,6 +134,8 @@ describe('unified diff', () => {
   it('leaves an unquoted path alone, backslashes included', () => {
     expect(unquoteGitPath('dir\\file.txt')).toBe('dir\\file.txt')
     expect(unquoteGitPath('"\\342\\234\\223 done"')).toBe('✓ done')
+    // core.quotePath=false: the emoji stays literal and only the tab is escaped.
+    expect(unquoteGitPath('"a/\u{1F680}\\tfile"')).toBe('a/\u{1F680}\tfile')
   })
 
   it('reads quoted paths with spaces and a pure rename', () => {
