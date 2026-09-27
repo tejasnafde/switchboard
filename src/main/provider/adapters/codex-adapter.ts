@@ -150,6 +150,7 @@ interface PendingApproval {
   requestId: string
   questionIds?: string[]
   mcpFields?: McpElicitationField[]
+  mcpConfirm?: boolean
 }
 
 interface ToolOutputAccumulator {
@@ -256,20 +257,49 @@ function isMissingThreadError(error: unknown): boolean {
   return /thread(?:\s+\S+)?\s+(?:is\s+)?not (?:found|loaded)\b|no rollout found\b/i.test(message)
 }
 
-function parseMcpForm(params: unknown): {
-  fields: McpElicitationField[]
-  questions: Array<{
-    id: string
-    header: string
-    question: string
-    options: Array<{ label: string }>
-    multiSelect: boolean
-  }>
-} | null {
+type ParsedMcpElicitation =
+  | {
+      kind: 'confirm'
+      message: string
+      toolName: string
+      policyToolName: string
+    }
+  | {
+      kind: 'form'
+      fields: McpElicitationField[]
+      questions: Array<{
+        id: string
+        header: string
+        question: string
+        options: Array<{ label: string }>
+        multiSelect: boolean
+      }>
+    }
+
+function mcpElicitationToolName(request: Record<string, unknown>): string {
+  const serverName = typeof request.serverName === 'string' && request.serverName.trim()
+    ? request.serverName.trim()
+    : null
+  const message = typeof request.message === 'string' ? request.message : ''
+  const messageTool = message.match(/\brun tool "([^"]+)"/i)?.[1]?.trim()
+  if (serverName && messageTool) return `${serverName}.${messageTool}`
+  return messageTool || serverName || 'mcp'
+}
+
+function parseMcpElicitation(params: unknown): ParsedMcpElicitation | null {
   const request = asRecord(params)
   const schema = asRecord(request?.requestedSchema)
   const properties = asRecord(schema?.properties)
   if (request?.mode !== 'form' || !properties) return null
+
+  if (Object.keys(properties).length === 0) {
+    return {
+      kind: 'confirm',
+      message: typeof request.message === 'string' ? request.message : 'Allow MCP tool call?',
+      toolName: mcpElicitationToolName(request),
+      policyToolName: 'mcp_tool',
+    }
+  }
 
   const fields: McpElicitationField[] = []
   const questions = Object.entries(properties).flatMap(([id, value]) => {
@@ -299,7 +329,7 @@ function parseMcpForm(params: unknown): {
     }]
   })
 
-  return fields.length > 0 ? { fields, questions } : null
+  return fields.length > 0 ? { kind: 'form', fields, questions } : null
 }
 
 function mcpFormContent(fields: McpElicitationField[], answers: string[][]): Record<string, unknown> {
@@ -1167,6 +1197,25 @@ export class CodexAdapter implements ProviderAdapter {
 
     active.pendingApprovals.delete(requestId)
 
+    if (pending.mcpConfirm) {
+      const approved = decision === 'approve'
+      this.writeMessage(active, {
+        jsonrpc: '2.0',
+        id: pending.jsonRpcId,
+        result: approved
+          ? { action: 'accept', content: {}, _meta: null }
+          : { action: 'decline', content: null, _meta: null },
+      })
+
+      active.onEvent({
+        type: 'request.closed',
+        threadId,
+        requestId,
+        decision,
+      })
+      return
+    }
+
     const codexDecision = decision === 'approve' ? 'accept' : 'decline'
     // Send JSON-RPC response back to codex
     this.writeMessage(active, {
@@ -1430,8 +1479,15 @@ export class CodexAdapter implements ProviderAdapter {
     const method = request.method as string
 
     if (method === 'mcpServer/elicitation/request') {
-      const form = parseMcpForm(request.params)
-      if (!form) {
+      const elicitation = parseMcpElicitation(request.params)
+      if (!elicitation) {
+        const message = 'Unsupported Codex MCP elicitation request. The tool call was cancelled because Switchboard cannot render this request shape.'
+        log.warn(`${message} ${truncateLogPayload(JSON.stringify(request.params ?? {}))}`)
+        active.onEvent({
+          type: 'error',
+          threadId,
+          message,
+        })
         this.writeMessage(active, {
           jsonrpc: '2.0',
           id: request.id,
@@ -1440,17 +1496,63 @@ export class CodexAdapter implements ProviderAdapter {
         return
       }
 
+      if (elicitation.kind === 'confirm') {
+        const currentMode = active.session.runtimeMode
+        const policy = decidePermission(currentMode, elicitation.policyToolName)
+
+        if (policy === 'allow') {
+          this.writeMessage(active, {
+            jsonrpc: '2.0',
+            id: request.id,
+            result: { action: 'accept', content: {}, _meta: null },
+          })
+          return
+        }
+
+        if (policy === 'deny') {
+          active.onEvent({
+            type: 'tool.denied',
+            threadId,
+            toolName: elicitation.toolName,
+            reason: denialMessage(currentMode, elicitation.toolName),
+            mode: currentMode,
+          })
+          this.writeMessage(active, {
+            jsonrpc: '2.0',
+            id: request.id,
+            result: { action: 'decline', content: null, _meta: null },
+          })
+          return
+        }
+
+        const requestId = `mcp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+        active.pendingApprovals.set(requestId, {
+          jsonRpcId: request.id,
+          requestId,
+          mcpConfirm: true,
+        })
+        active.onEvent({
+          type: 'request.opened',
+          threadId,
+          requestId,
+          requestType: 'tool',
+          toolName: elicitation.toolName,
+          detail: elicitation.message,
+        })
+        return
+      }
+
       const requestId = `mcp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       active.pendingApprovals.set(requestId, {
         jsonRpcId: request.id,
         requestId,
-        mcpFields: form.fields,
+        mcpFields: elicitation.fields,
       })
       active.onEvent({
         type: 'question.asked',
         threadId,
         requestId,
-        questions: form.questions,
+        questions: elicitation.questions,
       })
       return
     }
