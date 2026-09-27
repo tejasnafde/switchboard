@@ -1,0 +1,68 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "opencode-mcp-permission-rules",
+  "summary": "OpenCode ACP 1.17.18 does not ask Switchboard for MCP tool permission in build mode unless OpenCode config has a permission rule. Switchboard now reads configured OpenCode MCP server names from the same visible config sources it scans for user permission rules, including global config, OPENCODE_CONFIG, project opencode.json and opencode.jsonc files, project and parent .opencode directories, OPENCODE_CONFIG_DIR, and inherited OPENCODE_CONFIG_CONTENT, without writing user config files. It injects session-local OPENCODE_CONFIG_CONTENT rules like server_*: ask only when visible user permission rules would not be weakened, and keeps Switchboard's own MCP tools allowed only by exact name when no visible user rule or user server name could cover the same OpenCode tool. The existing ACP requestPermission handler remains the single runtime gate: sandbox, accept-edits and auto open the normal approval card, plan denies, and full access auto-allows without a user prompt. The approval card now labels MCP requests as server and tool instead of one underscored string.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/provider/policy.ts",
+        "src/main/mcp/agent-registration.ts",
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "src/renderer/components/chat/ApprovalCard.tsx",
+        "tests/unit/opencode-acp-adapter.test.ts",
+        "tests/unit/opencode-acp-switchboard-mcp.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/__tests__/feed-items.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadEventDecoder.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ThreadEventDecoderTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/provider/policy.ts",
+        "tests/unit/opencode-acp-adapter.test.ts",
+        "tests/unit/opencode-acp-switchboard-mcp.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No database schema, stored conversation data, migration, or persisted setting changed. The injected OpenCode config is an environment variable on the spawned opencode acp child only."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep links, native modules, or release packaging changed. This is a backend adapter fix using the existing request.opened, request.closed and tool.denied runtime events."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/opencode-acp-adapter.test.ts tests/unit/opencode-acp-switchboard-mcp.test.ts --maxWorkers=2: passed. Covers generated MCP permission config for every runtime mode, generated rules being skipped when visible user rules would be weakened, exact-name Switchboard tool allows, readable MCP approval labels, plan denial, sandbox prompting, full access auto-allow, .opencode directories, OPENCODE_CONFIG, OPENCODE_CONFIG_DIR, unparseable visible config, and fixture cleanup under the OS temp directory.",
+      "Scratch OpenCode config check with HOME and XDG_CONFIG_HOME under /tmp/sb-e2e-ocperm.*: OPENCODE_CONFIG_CONTENT deep-merged permission rules with an existing opencode.json and preserved the configured MCP server."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live OpenCode turn was run against a real MCP server after this patch. The mechanism is based on OpenCode 1.17.18 help output, official OpenCode docs for OPENCODE_CONFIG_CONTENT and server_* permission wildcards, the prior /tmp/mcp-spike2 wire report, and unit tests around Switchboard's ACP adapter.",
+      "React Native/iOS and native Android were not run on devices. They already render the same request.opened approval event shape emitted by the backend, and this change adds no new client event fields."
+    ]
+  }
+}

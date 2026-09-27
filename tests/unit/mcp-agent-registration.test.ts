@@ -48,6 +48,9 @@ describe('OpenCode', () => {
   it('names our tools with the server prefix', () => {
     expect(isSwitchboardOpencodeTool('switchboard_reply_to_conversation')).toBe(true)
     expect(isSwitchboardOpencodeTool('switchboardish_tool')).toBe(false)
+    // A user server named switchboard_x shares the prefix but is not ours.
+    expect(isSwitchboardOpencodeTool('switchboard_x_delete_repo')).toBe(false)
+    expect(isSwitchboardOpencodeTool('switchboard_made_up_tool')).toBe(false)
     expect(isSwitchboardOpencodeTool('github_create_issue')).toBe(false)
   })
 })

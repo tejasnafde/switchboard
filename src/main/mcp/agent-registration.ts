@@ -11,6 +11,8 @@
  */
 import { SWITCHBOARD_MCP_SERVER_NAME, type SwitchboardMcpLaunch } from './switchboard-mcp-server'
 import { HOST_WRITE_APPROVAL_TTL_MS } from '@shared/agent-host-writes'
+import { PEER_LIST_TOOL_NAME, PEER_SEND_TOOL_NAME } from '../provider/peer-tools'
+import { PR_CONVERSATIONS_TOOL, PR_RERUN_TOOL, PR_REPLY_TOOL, PR_RESOLVE_TOOL, PR_STATUS_TOOL } from './pr-tools'
 
 /**
  * Codex gives up on an MCP call after 60 seconds by default, which is less
@@ -57,6 +59,27 @@ export function acpSwitchboardMcpServer(launch: SwitchboardMcpLaunch): AcpStdioM
 }
 
 /** OpenCode's name for one of our tools, as a permission request carries it. */
+/**
+ * Our tools exactly as OpenCode names them (`<server>_<tool>`). Exact names, not
+ * a `switchboard_` prefix: a user server named `switchboard_x` has tools that
+ * start with the same prefix and must still ask.
+ */
+export const SWITCHBOARD_OPENCODE_TOOLS: readonly string[] = [
+  PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PR_REPLY_TOOL, PR_RESOLVE_TOOL, PR_RERUN_TOOL,
+  PEER_LIST_TOOL_NAME, PEER_SEND_TOOL_NAME,
+].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`)
+
+const SWITCHBOARD_OPENCODE_TOOL_SET = new Set(SWITCHBOARD_OPENCODE_TOOLS)
+
+/** Our read-only tools, which plan mode allows. */
+const SWITCHBOARD_OPENCODE_READ_TOOLS = new Set(
+  [PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PEER_LIST_TOOL_NAME].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`),
+)
+
+export function isSwitchboardOpencodeReadTool(toolName: string): boolean {
+  return SWITCHBOARD_OPENCODE_READ_TOOLS.has(toolName)
+}
+
 export function isSwitchboardOpencodeTool(toolName: string): boolean {
-  return toolName.startsWith(`${SWITCHBOARD_MCP_SERVER_NAME}_`)
+  return SWITCHBOARD_OPENCODE_TOOL_SET.has(toolName)
 }

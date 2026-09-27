@@ -1,7 +1,11 @@
+import { SWITCHBOARD_OPENCODE_TOOLS } from '../../src/main/mcp/agent-registration'
 import { promises as fs } from 'node:fs'
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
   OpencodeAcpAdapter,
+  buildOpencodeMcpPermissionContent,
+  opencodePermissionGlobCouldMatchServerTools,
+  opencodePermissionGlobMatchesTool,
   mapSessionUpdate,
   mapAvailableCommands,
   pickPermissionOptions,
@@ -19,6 +23,80 @@ afterEach(() => vi.restoreAllMocks())
  */
 
 const tid = 't1'
+
+describe('buildOpencodeMcpPermissionContent', () => {
+  it('asks for configured MCP servers in supervised modes and allows Switchboard tools', () => {
+    const content = buildOpencodeMcpPermissionContent('sandbox', ['github', 'notion.db'], true)
+    expect(JSON.parse(content!)).toEqual({
+      permission: {
+        'github_*': 'ask',
+        'notion_db_*': 'ask',
+        ...Object.fromEntries(SWITCHBOARD_OPENCODE_TOOLS.map((t) => [t, 'allow'])),
+      },
+    })
+  })
+
+  it('never allows a switchboard_ prefix: a user server named switchboard_x still asks', () => {
+    const permission = JSON.parse(buildOpencodeMcpPermissionContent('sandbox', ['switchboard_x'], true)!).permission
+    expect(permission['switchboard_*']).toBeUndefined()
+    expect(permission['switchboard_x_*']).toBe('ask')
+    expect(Object.keys(permission).filter((k) => permission[k] === 'allow').every((k) => SWITCHBOARD_OPENCODE_TOOLS.includes(k))).toBe(true)
+  })
+
+  it('allows none of our tools when the user has a server named switchboard', () => {
+    const permission = JSON.parse(buildOpencodeMcpPermissionContent('sandbox', ['switchboard', 'github'], true)!).permission
+    expect(permission).toEqual({ 'switchboard_*': 'ask', 'github_*': 'ask' })
+  })
+
+  it('skips generated rules that would weaken user permission rules', () => {
+    const content = buildOpencodeMcpPermissionContent('sandbox', ['github'], true, {
+      permissionRules: [
+        { key: 'github_delete', value: 'deny' },
+        { key: 'switchboard_*', value: 'ask' },
+      ],
+      userMcpServerNames: ['github'],
+      canTrustUserConfig: true,
+    })
+    expect(content).toBeNull()
+  })
+
+  it.each(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'] as const)('injects MCP ask rules in %s mode', (mode) => {
+    const content = buildOpencodeMcpPermissionContent(mode, ['github'], false)
+    expect(JSON.parse(content!).permission).toEqual({ 'github_*': 'ask' })
+  })
+
+  it('returns no inline config when there are no MCP rules to add', () => {
+    expect(buildOpencodeMcpPermissionContent('sandbox', [], false)).toBeNull()
+  })
+
+  it('returns no inline config when a user config source could not be parsed', () => {
+    expect(buildOpencodeMcpPermissionContent('sandbox', ['github'], true, {
+      permissionRules: [],
+      userMcpServerNames: ['github'],
+      canTrustUserConfig: false,
+    })).toBeNull()
+  })
+})
+
+describe('OpenCode permission globs', () => {
+  it('matches exact, star, question mark, and prefix patterns against tools', () => {
+    expect(opencodePermissionGlobMatchesTool('github_delete', 'github_delete')).toBe(true)
+    expect(opencodePermissionGlobMatchesTool('github_*', 'github_delete')).toBe(true)
+    expect(opencodePermissionGlobMatchesTool('github_??????', 'github_delete')).toBe(true)
+    expect(opencodePermissionGlobMatchesTool('github_del*', 'github_delete')).toBe(true)
+    expect(opencodePermissionGlobMatchesTool('github_?????', 'github_delete')).toBe(false)
+    expect(opencodePermissionGlobMatchesTool('notion_*', 'github_delete')).toBe(false)
+  })
+
+  it('detects whether a glob could match any tool of a server', () => {
+    expect(opencodePermissionGlobCouldMatchServerTools('*', 'github')).toBe(true)
+    expect(opencodePermissionGlobCouldMatchServerTools('github_*', 'github')).toBe(true)
+    expect(opencodePermissionGlobCouldMatchServerTools('github_delete', 'github')).toBe(true)
+    expect(opencodePermissionGlobCouldMatchServerTools('git?ub_delete', 'github')).toBe(true)
+    expect(opencodePermissionGlobCouldMatchServerTools('github', 'github')).toBe(false)
+    expect(opencodePermissionGlobCouldMatchServerTools('notion_*', 'github')).toBe(false)
+  })
+})
 
 describe('OpenCode first-turn acceptance', () => {
   it('does not persist a session title when prompt dispatch rejects synchronously', async () => {
