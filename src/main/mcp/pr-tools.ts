@@ -805,7 +805,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       }
 
       const draft = { title: input.value.title, description: input.value.description }
-      const outcome = createPullRequestGate(ctx.runtimeMode()) === 'allow' ? autoApproved() : await ask(PR_CREATE_TOOL, {
+      const withoutCard = createPullRequestGate(ctx.runtimeMode()) === 'allow'
+      const outcome = withoutCard ? autoApproved() : await ask(PR_CREATE_TOOL, {
         action: 'create',
         agentLabel: ctx.agentLabel,
         host: repo.host,
@@ -831,6 +832,10 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if (!title.ok) return toolText(`The edited title was refused: ${title.message} Nothing was created.`, true)
       const description = outcome.response.description === undefined ? { ok: true as const, value: draft.description } : checkPrDescription(outcome.response.description)
       if (!description.ok) return toolText(`The edited description was refused: ${description.message} Nothing was created.`, true)
+      // No card was shown, so full access must still hold after the awaits above.
+      if (withoutCard && createPullRequestGate(ctx.runtimeMode()) !== 'allow') {
+        return toolText('The chat left full access before the pull request was opened, so nothing was created. Call again: the user will see an approval card.', true)
+      }
       const created = await access.createPullRequest(repo, {
         title: title.value,
         description: withViaMarker(description.value),

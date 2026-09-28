@@ -273,6 +273,18 @@ describe('create_pull_request: modes and the budget', () => {
     expect((await s.call({ title: 'T2' })).isError).toBe(true)
   })
 
+  it('creates nothing when full access ends while the tool checks the repository', async () => {
+    const s = setup({ mode: 'full-access' })
+    vi.mocked(s.access.repoFor).mockImplementation(async () => {
+      if (vi.mocked(s.access.repoFor).mock.calls.length > 1) s.setMode('sandbox')
+      return APP
+    })
+    const result = await s.call({ title: 'T' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('left full access')
+    expect(s.creates).toEqual([])
+  })
+
   it('every other mode except plan shows the card', async () => {
     for (const mode of ['sandbox', 'accept-edits', 'auto'] as const) {
       const s = setup({ mode, answer: approve() })
