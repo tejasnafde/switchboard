@@ -207,6 +207,13 @@ function scripted(now: number): Scripted[] {
     additions: 38, deletions: 9, changedFiles: 3, checks: rollupChecks(doctorChecks),
     reviewers: [bb(PANKAJ, 'pending'), bb(BACKEND, 'pending')], approvals: { given: 0, required: 2 },
   })
+  const alertsChecks = [check('lint', 'success', 44_000), check('unit', 'success', 88_000)]
+  const alerts = base({ ...REPOS.doctor, number: 42 }, {
+    title: 'Alert digest for quiet hours', author: PANKAJ, sourceBranch: 'feat/alert-digest', updatedAt: now - 3 * HOUR,
+    additions: 64, deletions: 5, changedFiles: 3, checks: rollupChecks(alertsChecks),
+    reviewers: [bb(AKSHAYA, 'pending'), bb(ME, 'commented', false)], approvals: { given: 0, required: 1 },
+    viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true },
+  })
   const readyChecks = [check('Test (ubuntu-latest)', 'success', 211_000), check('Test (windows-latest)', 'success', 294_000)]
   const ready = base({ ...REPOS.switchboard, number: 159 }, {
     title: 'Retry settings.json on Windows', sourceBranch: 'fix/settings-file-windows-rename', updatedAt: now - 6 * HOUR,
@@ -258,6 +265,7 @@ function scripted(now: number): Scripted[] {
     },
     plain(retail, retailChecks),
     plain(doctor, doctorChecks),
+    plain(alerts, alertsChecks),
     plain(ready, readyChecks),
     plain(merged(157, 'Project scopes', 2 * DAY), readyChecks),
     plain(merged(158, 'Open settings as JSON', 1 * DAY), readyChecks),

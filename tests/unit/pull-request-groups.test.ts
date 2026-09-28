@@ -47,15 +47,15 @@ describe('prRowStatus', () => {
     ['your PR with open conversations', { unresolvedConversations: 3 }, 'needs-you', 'conversation', '3 open conversations'],
     ['your PR with one open conversation', { unresolvedConversations: 1 }, 'needs-you', 'conversation', '1 open conversation'],
     ['your PR with changes requested', { reviewers: [{ person, state: 'changes_requested', requested: true }] }, 'needs-you', 'conversation', 'changes requested'],
-    ['your PR with checks running', { checks: rollupChecks([{ state: 'pending' }]) }, 'waiting', 'running', 'checks running'],
-    ['your PR short of approvals', { approvals: { given: 0, required: 2 } }, 'waiting', 'waiting', '0 of 2 approvals'],
-    ['your PR, no rule, no approval yet', { approvals: { given: 0, required: null } }, 'waiting', 'waiting', 'waiting for review'],
-    ['your draft', { draft: true, checks: rollupChecks([{ state: 'failure' }]) }, 'waiting', 'draft', 'draft'],
+    ['your PR with checks running', { checks: rollupChecks([{ state: 'pending' }]) }, 'yours', 'running', 'checks running'],
+    ['your PR short of approvals', { approvals: { given: 0, required: 2 } }, 'yours', 'waiting', '0 of 2 approvals'],
+    ['your PR, no rule, no approval yet', { approvals: { given: 0, required: null } }, 'yours', 'waiting', 'waiting for review'],
+    ['your draft', { draft: true, checks: rollupChecks([{ state: 'failure' }]) }, 'yours', 'draft', 'draft'],
     ['your PR, approved, green', {}, 'ready', 'ready', ''],
     ['your PR, approved, no checks at all', { checks: rollupChecks([]) }, 'ready', 'ready', ''],
-    ['someone else\'s you already reviewed', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: true, hasCommented: false } }, 'waiting', 'waiting', 'you reviewed'],
-    ['someone else\'s, checks running', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: true, hasCommented: false }, checks: rollupChecks([{ state: 'pending' }]) }, 'waiting', 'running', 'checks running'],
-    ['someone else\'s you only commented on', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true } }, 'waiting', 'waiting', 'you commented'],
+    ['someone else\'s you already reviewed', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: true, hasCommented: false } }, 'reviewing', 'waiting', 'you reviewed'],
+    ['someone else\'s, checks running', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: true, hasCommented: false }, checks: rollupChecks([{ state: 'pending' }]) }, 'reviewing', 'running', 'checks running'],
+    ['someone else\'s you only commented on', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true } }, 'reviewing', 'waiting', 'you commented'],
     ['merged yesterday', { state: 'merged', mergedAt: NOW - 24 * HOUR }, 'merged', 'merged', ''],
   ])('%s', (_name, over, group, icon, phrase) => {
     expect(prRowStatus(pr(over), NOW)).toEqual({ group, icon, phrase })
@@ -98,6 +98,26 @@ describe('groupPullRequests', () => {
       ['Merged this week', [14, 10]],
     ])
   })
+
+  it('keeps your own waiting PRs apart from the ones you only review, yours first', () => {
+    const other = { isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: false }
+    const groups = groupPullRequests([
+      pr({ viewer: { ...other, hasCommented: true }, updatedAt: NOW - 10 * 60_000 }, 20),
+      pr({ approvals: { given: 0, required: null }, reviewers: [], updatedAt: NOW - 5 * HOUR }, 21),
+      pr({ viewer: { ...other, hasReviewed: true }, updatedAt: NOW - 2 * HOUR }, 22),
+      pr({ draft: true, updatedAt: NOW - 3 * HOUR }, 23),
+      pr({}, 24),
+      pr({ viewer: reviewer }, 25),
+      pr({ state: 'merged', mergedAt: NOW - HOUR }, 26),
+    ], NOW)
+    expect(groups.map((g) => [g.id, g.label, g.prs.map((p) => [p.pr.ref.number, p.status.phrase])])).toEqual([
+      ['needs-you', 'Needs you', [[25, 'your review']]],
+      ['ready', 'Ready to merge', [[24, '']]],
+      ['yours', 'Your pull requests', [[23, 'draft'], [21, 'waiting for review']]],
+      ['reviewing', 'Reviewing', [[20, 'you commented'], [22, 'you reviewed']]],
+      ['merged', 'Merged this week', [[26, '']]],
+    ])
+  })
 })
 
 describe('filterPullRequests', () => {
@@ -120,7 +140,7 @@ describe('merge conflicts in the list', () => {
 
   it("says so on someone else's PR too, unless your review is what is owed", () => {
     expect(prRowStatus(pr({ mergeConflicts: true, viewer: { ...reviewer, isRequestedReviewer: false } }), NOW))
-      .toEqual({ group: 'waiting', icon: 'conflict', phrase: 'merge conflicts' })
+      .toEqual({ group: 'reviewing', icon: 'conflict', phrase: 'merge conflicts' })
     expect(prRowStatus(pr({ mergeConflicts: true, viewer: reviewer }), NOW)?.phrase).toBe('your review')
   })
 
@@ -143,8 +163,17 @@ describe('groupPullRequestsByRepo', () => {
   it('keeps the status order inside each repository and puts the one that needs you first', () => {
     const sections = groupPullRequestsByRepo(prs, NOW, [], false)
     expect(sections.map((s) => [s.label, s.count])).toEqual([['geoiq / ssg-bot-v2', 3], ['geoiq / retailiq', 1]])
-    // Needs you (612 newest, then 618), then Waiting on others (605); the closed one is not listed.
+    // Needs you (612 newest, then 618), then Your pull requests (605); the closed one is not listed.
     expect(sections[0].prs.map((r) => r.pr.ref.number)).toEqual([612, 618, 605])
+  })
+
+  it('puts a repository with your waiting PR ahead of one you only review', () => {
+    const commented = { isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true }
+    const sections = groupPullRequestsByRepo([
+      at('geoiq', 'ssg-doctor', 41, { viewer: commented, updatedAt: NOW - 60_000 }),
+      at('geoiq', 'retailiq', 88, { approvals: { given: 0, required: null }, updatedAt: NOW - 5 * HOUR }),
+    ], NOW, [], false)
+    expect(sections.map((s) => s.label)).toEqual(['geoiq / retailiq', 'geoiq / ssg-doctor'])
   })
 
   it('draws no rows for a collapsed repository but keeps its count', () => {
@@ -167,6 +196,8 @@ describe('hidden pull requests', () => {
   it('stays hidden while nothing changed, or while it changed but does not need you', () => {
     expect(hiddenComesBack(pr({ updatedAt: hiddenAt - 1, viewer: reviewer }), hiddenAt, NOW)).toBe(false)
     expect(hiddenComesBack(pr({ updatedAt: NOW }), hiddenAt, NOW)).toBe(false)
+    expect(hiddenComesBack(pr({ updatedAt: NOW, approvals: { given: 0, required: 2 } }), hiddenAt, NOW)).toBe(false)
+    expect(hiddenComesBack(pr({ updatedAt: NOW, viewer: { ...reviewer, isRequestedReviewer: false, hasCommented: true } }), hiddenAt, NOW)).toBe(false)
   })
 
   it('comes back once it changed after hiding and needs you', () => {
