@@ -98,7 +98,7 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
   const placed = new Set<string>()
   const placedPending = new Set<string>()
   const rows = file.hunks.flatMap((hunk, h) => [
-    <div key={`h${h}`} className="bg-[var(--bg-tertiary)] px-[14px] py-[2px] text-[var(--text-muted)]">{hunk.header}</div>,
+    <div key={`h${h}`} className="w-max min-w-full bg-[var(--bg-tertiary)] px-[14px] py-[2px] text-[var(--text-muted)]">{hunk.header}</div>,
     ...hunk.lines.flatMap((line, i) => {
       const here = conversations.filter((c) => !placed.has(c.id) && anchoredTo(line, c))
       for (const c of here) placed.add(c.id)
@@ -112,7 +112,8 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
           data-diff-line={line.kind}
           aria-selected={isSel || undefined}
           className={cn(
-            'grid grid-cols-[48px_48px_18px_1fr] whitespace-pre',
+            // As wide as its own text, never narrower than the pane: a scrolled long line keeps its colour.
+            'grid w-max min-w-full grid-cols-[48px_48px_18px_1fr] whitespace-pre',
             line.kind === 'add' && 'bg-[color-mix(in_srgb,var(--success)_14%,transparent)]',
             line.kind === 'del' && 'bg-[color-mix(in_srgb,var(--error)_14%,transparent)]',
             isSel && 'bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] shadow-[inset_3px_0_0_var(--accent)]',

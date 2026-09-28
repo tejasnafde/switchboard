@@ -1,0 +1,43 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "review-diff-long-line-highlight",
+  "summary": "Reviews > Files: a diff line and a hunk header are as wide as their own text and never narrower than the pane, so the added / removed colour and the hunk band stay under the text when a long line is scrolled into view. Before, each row was exactly the pane's width and the colour stopped at the pane edge.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/PrDiff.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native client has no Reviews screen or pull request diff view."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android client has no Reviews screen or pull request diff view."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Renderer-only CSS change: no IPC, API or wire contract changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data or migrations are involved."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships in the normal desktop build: no packaging or update-channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "The visual screens phase (reviews, reviews-files and the rest, 3 themes) passes with no baseline change, so rows of normal width render as before."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The scrolled long-line case itself: the demo diff has no line wider than the pane, so no screenshot captures it. Check a real diff with a long line in Reviews > Files."
+    ]
+  }
+}
