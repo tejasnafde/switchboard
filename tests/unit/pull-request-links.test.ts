@@ -58,7 +58,7 @@ describe('linkedPrPhrase', () => {
     state: 'open', draft: false, sourceBranch: 'f', targetBranch: 'main', createdAt: 0, updatedAt: 0, mergedAt: null,
     additions: null, deletions: null, changedFiles: null, unresolvedConversations: 0, checks: rollupChecks([]),
     reviewers: [], approvals: { given: 0, required: null },
-    viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false }, projectPaths: [], ...over,
+    viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false }, projectPaths: [], ...over,
   })
 
   it('says the build and the open conversations, like the mock', () => {

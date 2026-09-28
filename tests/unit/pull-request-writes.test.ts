@@ -42,7 +42,7 @@ function detail(over: Partial<PrDetail> = {}): PrDetail {
     ref: { host: 'github', owner: 'o', name: 'r', number: 7 }, title: 't', url: '', author: { login: 'me', displayName: 'me', avatarUrl: null }, authorId: 'me',
     state: 'open', draft: false, sourceBranch: 'f', targetBranch: 'main', createdAt: 0, updatedAt: 0, mergedAt: null,
     additions: null, deletions: null, changedFiles: null, unresolvedConversations: 0, mergeConflicts: false, conflictedFiles: [], checks: rollupChecks([]),
-    reviewers: [], approvals: { given: 1, required: 1 }, viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false },
+    reviewers: [], approvals: { given: 1, required: 1 }, viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false },
     projectPaths: [], description: '', headSha: 'abc1234', mergeBlockers: [], mergeStrategies: ['merge_commit', 'squash'],
     activity: [], checkList: [], viewerCanManage: true, ...over,
   }

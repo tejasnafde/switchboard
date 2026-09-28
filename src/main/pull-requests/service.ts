@@ -85,7 +85,8 @@ interface DetectedRepos {
 }
 
 export function involvesViewer(pr: PrSummary): boolean {
-  return pr.viewer.isAuthor || pr.viewer.isRequestedReviewer || pr.viewer.hasReviewed
+  const v = pr.viewer
+  return v.isAuthor || v.isRequestedReviewer || v.hasReviewed || v.hasCommented
 }
 
 export class PullRequestService {
@@ -171,7 +172,7 @@ export class PullRequestService {
           }
         } catch (err) {
           const error = toPrError(err, host)
-          log.warn('listing pull requests failed', { host, kind: error.kind })
+          log.warn('listing pull requests failed', { host, kind: error.kind, message: error.message })
           for (const e of entries) sources.push({ repo: e.repo, projectPaths: e.projectPaths, error })
         }
       }

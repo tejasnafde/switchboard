@@ -9,13 +9,14 @@
  */
 import { execFile } from 'node:child_process'
 import type { InlineCommentInput, ReviewEvent, SubmitReviewInput } from '@shared/pull-request-writes'
-import type { MergeStrategy, PrChangedFile, PrCheck, PrConversation, PrDetail, PrRef, PrReviewerCandidate, RepoRef } from '@shared/pull-requests'
+import type { MergeStrategy, PrChangedFile, PrCheck, PrConversation, PrDetail, PrError, PrRef, PrReviewerCandidate, RepoRef } from '@shared/pull-requests'
 import { repoKey } from '@shared/pull-requests'
 import { childProcessEnv } from '../shell-env'
 import { createMainLogger } from '../logger'
 import {
   classifyGhError,
   classifyGhWriteError,
+  GH_TIMED_OUT,
   isTransientGhFailure,
   mapGhCandidates,
   mapGhChecks,
@@ -48,8 +49,11 @@ export type GhRunner = (args: string[], opts?: { input?: string }) => Promise<Gh
 const GH_TIMEOUT_MS = 30_000
 const OPEN_PER_REPO = 30
 const MERGED_PER_REPO = 15
-/** Repositories per GraphQL request; keeps one request's cost well under the node limit. */
-const REPOS_PER_QUERY = 8
+/**
+ * Repositories per GraphQL request. Eight timed out (HTTP 504) on every
+ * refresh for one user; a batch that still fails is split in half.
+ */
+const REPOS_PER_QUERY = 4
 const MAX_FILE_PAGES = 3
 /** Pause before the one retry of a read GitHub answered with a 5xx. */
 const READ_RETRY_DELAY_MS = 1_000
@@ -57,6 +61,11 @@ const READ_RETRY_DELAY_MS = 1_000
 export const defaultGhRunner: GhRunner = (args, opts = {}) =>
   new Promise((resolve) => {
     const child = execFile('gh', args, { env: childProcessEnv(), timeout: GH_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+      // Killed for the timeout; a body over maxBuffer is killed too, but says so in its code.
+      if (err?.killed && (err as NodeJS.ErrnoException).code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+        resolve({ stdout: String(stdout), stderr: `${String(stderr)}\ngh did not answer within ${GH_TIMEOUT_MS / 1000}s`, code: GH_TIMED_OUT })
+        return
+      }
       const code = err ? ((err as NodeJS.ErrnoException).code ?? (err as { code?: number }).code ?? 1) : 0
       resolve({ stdout: String(stdout), stderr: String(stderr), code })
     })
@@ -104,13 +113,24 @@ const PR_FIELDS = `
   } } } } } }
 `
 
+/**
+ * A merged row needs no mergeable (GitHub computes it on read), threads,
+ * checks or review requests: only what says who took part.
+ */
+const MERGED_PR_FIELDS = `
+  number title url state isDraft createdAt updatedAt mergedAt
+  headRefName baseRefName additions deletions changedFiles
+  author { login avatarUrl ... on User { name } }
+  latestReviews(first: 20) { nodes { state author { login avatarUrl ... on User { name } } } }
+`
+
 export function buildListQuery(repos: readonly RepoRef[]): string {
   const blocks = repos.map((r, i) => `
   r${i}: repository(owner: ${JSON.stringify(r.owner)}, name: ${JSON.stringify(r.name)}) {
     open: pullRequests(states: OPEN, first: ${OPEN_PER_REPO}, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ...Pr } }
-    merged: pullRequests(states: MERGED, first: ${MERGED_PER_REPO}, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ...Pr } }
+    merged: pullRequests(states: MERGED, first: ${MERGED_PER_REPO}, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ...MergedPr } }
   }`).join('')
-  return `query {\n  viewer { login }${blocks}\n}\nfragment Pr on PullRequest {${PR_FIELDS}}`
+  return `query {\n  viewer { login }${blocks}\n}\nfragment Pr on PullRequest {${PR_FIELDS}}\nfragment MergedPr on PullRequest {${MERGED_PR_FIELDS}}`
 }
 
 const DETAIL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
@@ -162,6 +182,29 @@ function parseJson<T>(text: string): T | null {
   }
 }
 
+function graphqlArgs(query: string, vars: Record<string, string | number> = {}): string[] {
+  const args = ['api', 'graphql', '-f', `query=${query}`]
+  for (const [key, value] of Object.entries(vars)) {
+    args.push(typeof value === 'number' ? '-F' : '-f', `${key}=${value}`)
+  }
+  return args
+}
+
+/**
+ * gh's answer to a query: the body, or the classified error and whether it
+ * is worth trying again (a server error, or a body cut short).
+ */
+function graphqlAnswer<T>(res: GhRunResult): { body: GraphqlResponse<T> } | { error: PrError; transient: boolean } {
+  const body = parseJson<GraphqlResponse<T>>(res.stdout)
+  if (res.code !== 0 && !body?.data) {
+    const message = body?.errors?.map((e) => e.message).join('; ')
+    return { error: classifyGhError({ ...res, stderr: `${res.stderr}\n${message ?? ''}` }), transient: isTransientGhFailure(res) }
+  }
+  // Exit 0 with no JSON is a body cut off in transit.
+  if (!body) return { error: { kind: 'unknown', host: 'github', message: 'gh returned no data.' }, transient: res.code === 0 && res.stdout.trim() !== '' }
+  return { body }
+}
+
 export class GitHubProvider implements PullRequestProvider {
   readonly host = 'github' as const
 
@@ -188,18 +231,10 @@ export class GitHubProvider implements PullRequestProvider {
 
   /** Runs a query; a response carrying `data` is returned even when gh exits non-zero, so one missing repo does not sink the rest. */
   private async graphql<T>(query: string, vars: Record<string, string | number> = {}): Promise<GraphqlResponse<T>> {
-    const args = ['api', 'graphql', '-f', `query=${query}`]
-    for (const [key, value] of Object.entries(vars)) {
-      args.push(typeof value === 'number' ? '-F' : '-f', `${key}=${value}`)
-    }
-    const res = await this.read(args)
-    const body = parseJson<GraphqlResponse<T>>(res.stdout)
-    if (res.code !== 0 && !body?.data) {
-      const message = body?.errors?.map((e) => e.message).join('; ')
-      throw new PrHostError(classifyGhError({ ...res, stderr: `${res.stderr}\n${message ?? ''}` }))
-    }
-    if (!body) throw new PrHostError({ kind: 'unknown', host: 'github', message: 'gh returned no data.' })
-    return body
+    const res = await this.read(graphqlArgs(query, vars))
+    const answer = graphqlAnswer<T>(res)
+    if ('error' in answer) throw new PrHostError(answer.error)
+    return answer.body
   }
 
   private async pullRequestQuery<T>(query: string, ref: PrRef): Promise<T> {
@@ -212,25 +247,64 @@ export class GitHubProvider implements PullRequestProvider {
   async list(repos: RepoRef[]): Promise<RepoListResult[]> {
     const out: RepoListResult[] = []
     for (let start = 0; start < repos.length; start += REPOS_PER_QUERY) {
-      const chunk = repos.slice(start, start + REPOS_PER_QUERY)
-      type Row = { open: { nodes: GhPullRequest[] }; merged: { nodes: GhPullRequest[] } } | null
-      const body = await this.graphql<{ viewer: { login: string } } & Record<string, Row>>(buildListQuery(chunk))
-      const viewer = body.data?.viewer?.login ?? ''
-      chunk.forEach((repo, i) => {
-        const row = body.data?.[`r${i}`] as Row | undefined
-        if (!row) {
-          const reason = body.errors?.find((e) => e.path?.[0] === `r${i}`)
-          log.warn('repository missing from GitHub response', { repo: repoKey(repo), reason: reason?.message })
-          // FORBIDDEN is an organisation that refuses the token (SAML SSO, an IP allow list).
-          const kind = reason?.type === 'FORBIDDEN' ? 'forbidden' : 'not_found'
-          out.push({ repo, prs: [], error: { kind, host: 'github', message: reason?.message ?? 'GitHub could not find this repository.' } })
-          return
-        }
-        const prs = [...row.open.nodes, ...row.merged.nodes].map((pr) => mapGhSummary(repo, pr, viewer))
-        out.push({ repo, prs, error: null })
-      })
+      out.push(...await this.listBatch(repos.slice(start, start + REPOS_PER_QUERY)))
     }
     return out
+  }
+
+  /**
+   * One list request. A batch GitHub could not answer in time (a 5xx, a
+   * timeout, a truncated body) is split in half rather than retried whole,
+   * down to one repository, which gets the usual one retry and then its own
+   * error, so the rest of GitHub still lists. Any other failure (signed out,
+   * offline, rate limited) is the whole host's and throws.
+   */
+  private async listBatch(chunk: RepoRef[]): Promise<RepoListResult[]> {
+    if (chunk.length === 0) return []
+    const args = graphqlArgs(buildListQuery(chunk))
+    const res = chunk.length > 1 ? await this.run(args) : await this.read(args)
+    type Row = { open: { nodes: GhPullRequest[] }; merged: { nodes: GhPullRequest[] } } | null
+    const answer = graphqlAnswer<{ viewer: { login: string } } & Record<string, Row>>(res)
+    if ('error' in answer) {
+      if (!answer.transient) throw new PrHostError(answer.error)
+      if (chunk.length === 1) {
+        log.warn('GitHub could not list a repository', { repo: repoKey(chunk[0]), message: answer.error.message })
+        return [{ repo: chunk[0], prs: [], error: answer.error }]
+      }
+      log.warn('GitHub list batch failed, splitting it', { repos: chunk.length, message: answer.error.message })
+      return this.listHalves(chunk)
+    }
+    const body = answer.body
+    const viewer = body.data?.viewer?.login ?? ''
+    const out: RepoListResult[] = []
+    // GitHub can also answer with partial data: a repository whose resolver timed out comes back null.
+    const timedOut: RepoRef[] = []
+    chunk.forEach((repo, i) => {
+      const row = body.data?.[`r${i}`] as Row | undefined
+      if (row) {
+        out.push({ repo, prs: [...row.open.nodes, ...row.merged.nodes].map((pr) => mapGhSummary(repo, pr, viewer)), error: null })
+        return
+      }
+      const reason = body.errors?.find((e) => e.path?.[0] === `r${i}`)
+      log.warn('repository missing from GitHub response', { repo: repoKey(repo), reason: reason?.message })
+      if (reason && isTransientGhFailure({ code: 1, stderr: reason.message })) {
+        if (chunk.length > 1) timedOut.push(repo)
+        else out.push({ repo, prs: [], error: { kind: 'unknown', host: 'github', message: reason.message } })
+        return
+      }
+      // FORBIDDEN is an organisation that refuses the token (SAML SSO, an IP allow list).
+      const kind = reason?.type === 'FORBIDDEN' ? 'forbidden' : 'not_found'
+      out.push({ repo, prs: [], error: { kind, host: 'github', message: reason?.message ?? 'GitHub could not find this repository.' } })
+    })
+    if (timedOut.length === 0) return out
+    log.warn('GitHub timed out on part of a list batch, asking again', { repos: timedOut.length })
+    const all = [...out, ...await this.listHalves(timedOut)]
+    return chunk.flatMap((repo) => all.filter((r) => r.repo === repo))
+  }
+
+  private async listHalves(repos: RepoRef[]): Promise<RepoListResult[]> {
+    const half = Math.ceil(repos.length / 2)
+    return [...await this.listBatch(repos.slice(0, half)), ...await this.listBatch(repos.slice(half))]
   }
 
   async detail(ref: PrRef): Promise<PrDetail> {

@@ -120,7 +120,7 @@ function scripted(now: number): Scripted[] {
     checks: rollupChecks([]),
     reviewers: [],
     approvals: { given: 0, required: null },
-    viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false },
+    viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false },
     projectPaths: [],
     ...over,
     authorId: reviewerId(ref.host, over.author ?? ME) ?? null,
@@ -191,7 +191,7 @@ function scripted(now: number): Scripted[] {
     checks: rollupChecks(sbChecks),
     reviewers: [gh(ME, 'pending'), gh(PANKAJ, 'commented')],
     approvals: { given: 0, required: 1 },
-    viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false },
+    viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false },
   })
 
   const retailChecks = [check('lint', 'success', 48_000), check('export tests', 'pending', null)]
@@ -327,7 +327,9 @@ class DemoProvider implements PullRequestProvider {
       checks: rollupChecks(checkList),
       reviewers,
       approvals: { ...s.summary.approvals, given: reviewers.filter((r) => r.state === 'approved').length },
-      viewer: verdict ? { ...s.summary.viewer, isRequestedReviewer: false, hasReviewed: true } : s.summary.viewer,
+      viewer: verdict
+        ? { ...s.summary.viewer, isRequestedReviewer: false, hasReviewed: verdict !== 'commented', hasCommented: verdict === 'commented' }
+        : s.summary.viewer,
     }
     return { ...s, summary, conversations, checkList, activity: [...s.activity, ...(o.activity.get(n) ?? [])] }
   }

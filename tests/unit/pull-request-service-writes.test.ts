@@ -20,7 +20,7 @@ function detail(ref: PrRef, over: Partial<PrDetail> = {}): PrDetail {
     ref, title: 'Cost cap', url: '', author: { login: 'backend', displayName: 'backend', avatarUrl: null }, state: 'open', draft: false,
     sourceBranch: 'feat/cap', targetBranch: 'main', createdAt: 0, updatedAt: 0, mergedAt: null, additions: null, deletions: null,
     changedFiles: null, unresolvedConversations: 0, mergeConflicts: false, conflictedFiles: [], checks: rollupChecks([]), reviewers: [], approvals: { given: 1, required: 1 },
-    viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false }, projectPaths: [], description: '', headSha: 'abc1234',
+    viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false }, projectPaths: [], description: '', headSha: 'abc1234',
     mergeBlockers: [], mergeStrategies: ['merge_commit', 'squash'], activity: [], checkList: [], viewerCanManage: false, ...over,
   }
 }
@@ -132,7 +132,7 @@ describe('writes: checked against a fresh read', () => {
   })
 
   it('never lets the author approve or request changes, and lets them comment', async () => {
-    const { provider, writes } = fakeProvider('github', { viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false } })
+    const { provider, writes } = fakeProvider('github', { viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false } })
     const s = service(provider)
     expect(await s.submitReview(GH, { event: 'approve', body: '', comments: [] })).toMatchObject({ ok: false, error: { kind: 'forbidden' } })
     expect(await s.submitReview(GH, { event: 'request_changes', body: 'No', comments: [] })).toMatchObject({ ok: false, error: { kind: 'forbidden' } })

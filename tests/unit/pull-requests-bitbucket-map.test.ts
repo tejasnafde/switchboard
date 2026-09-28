@@ -75,7 +75,7 @@ describe('mapBbSummary', () => {
     const pr = mapBbSummary(repo, open[0], viewer, extra)
     expect(pr.ref).toEqual({ ...repo, number: 612 })
     expect(pr.authorId).toBe('{me-uuid}')
-    expect(pr.viewer).toEqual({ isAuthor: true, isRequestedReviewer: false, hasReviewed: false })
+    expect(pr.viewer).toEqual({ isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false })
     expect(pr.reviewers.map((r) => [r.id, r.person.login, r.state, r.requested])).toEqual([
       ['{a}', 'akshaya', 'approved', true],
       ['{p}', 'pankaj', 'changes_requested', true],
@@ -89,9 +89,23 @@ describe('mapBbSummary', () => {
     expect(pr.additions).toBeNull()
   })
 
+  it('keeps a PR you only commented on, as a participant who gave no verdict (shaped like #676)', () => {
+    const pr = mapBbSummary(repo, fixture('bitbucket-pullrequest-commented.json'), viewer, null)
+    expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true })
+    expect(pr.reviewers.map((r) => [r.person.login, r.state, r.requested])).toEqual([['neha', 'pending', true], ['tejas', 'commented', false]])
+  })
+
+  it('does not count a requested reviewer who has not taken part as a commenter', () => {
+    const pr = fixture('bitbucket-pullrequest-commented.json')
+    const asNeha = mapBbSummary(repo, pr, { uuid: '{neha}', accountId: null }, null)
+    expect(asNeha.viewer).toMatchObject({ isRequestedReviewer: true, hasCommented: false })
+    const approved = { ...pr, participants: pr.participants.map((p: { role: string }) => (p.role === 'PARTICIPANT' ? { ...p, approved: true, state: 'approved' } : p)) }
+    expect(mapBbSummary(repo, approved, viewer, null).viewer).toMatchObject({ hasReviewed: true, hasCommented: false })
+  })
+
   it('marks a requested reviewer who has not participated', () => {
     const pr = mapBbSummary(repo, open[1], viewer, null)
-    expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: true, hasReviewed: false })
+    expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false })
     expect(pr.reviewers).toEqual([{ id: '{me-uuid}', person: expect.objectContaining({ displayName: 'Tejas Nafde' }), state: 'pending', requested: true }])
     expect(pr.unresolvedConversations).toBeNull()
     // Not enriched yet, so whether it conflicts is not known.

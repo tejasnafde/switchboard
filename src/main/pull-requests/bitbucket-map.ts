@@ -166,6 +166,8 @@ export function mapBbSummary(repo: RepoRef, pr: BbPullRequest, viewer: BbViewer,
   const viewerParticipant = (pr.participants ?? []).find((p) => sameUser(p.user, viewer))
   const viewerRequested = (pr.reviewers ?? []).some((u) => sameUser(u, viewer)) || viewerParticipant?.role === 'REVIEWER'
   const viewerReviewed = !!viewerParticipant && (viewerParticipant.approved || !!viewerParticipant.state)
+  // Bitbucket adds a commenter as a PARTICIPANT; a requested reviewer is listed before taking part, so needs `participated_on`.
+  const viewerCommented = !!viewerParticipant && !viewerReviewed && (viewerParticipant.role === 'PARTICIPANT' || !!viewerParticipant.participated_on)
   return {
     ref: { ...repo, number: pr.id },
     title: pr.title,
@@ -194,6 +196,7 @@ export function mapBbSummary(repo: RepoRef, pr: BbPullRequest, viewer: BbViewer,
       isAuthor: sameUser(pr.author, viewer),
       isRequestedReviewer: viewerRequested && !viewerReviewed,
       hasReviewed: viewerReviewed,
+      hasCommented: viewerCommented,
     },
     projectPaths: [],
   }

@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
 
-import { PullRequestService, type PullRequestServiceDeps } from '../../src/main/pull-requests/service'
+import { involvesViewer, PullRequestService, type PullRequestServiceDeps } from '../../src/main/pull-requests/service'
 import { PrHostError, type PullRequestProvider } from '../../src/main/pull-requests/provider'
 import { rollupChecks, type PrSummary, type RepoRef } from '../../src/shared/pull-requests'
 
@@ -17,7 +17,7 @@ function summary(repo: RepoRef, number: number, viewer: Partial<PrSummary['viewe
     state: 'open', draft: false, sourceBranch: 'f', targetBranch: 'main', createdAt: 0, updatedAt: 0, mergedAt: null,
     additions: null, deletions: null, changedFiles: null, unresolvedConversations: 0, checks: rollupChecks([]),
     reviewers: [], approvals: { given: 0, required: null },
-    viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: false, ...viewer }, projectPaths: [],
+    viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: false, ...viewer }, projectPaths: [],
   }
 }
 
@@ -114,6 +114,27 @@ describe('PullRequestService.list', () => {
     now = 5 * 60_000
     await service.list()
     expect(readRemotes).toHaveBeenCalledTimes(8)
+  })
+})
+
+describe('involvesViewer', () => {
+  const repo: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'retail-api' }
+
+  it.each([
+    ['yours', { isAuthor: true }, true],
+    ['asked to review', { isRequestedReviewer: true }, true],
+    ['reviewed', { hasReviewed: true }, true],
+    ['only commented', { hasCommented: true }, true],
+    ['not yours at all', {}, false],
+  ])('%s -> %s', (_name, viewer, kept) => {
+    expect(involvesViewer(summary(repo, 676, viewer))).toBe(kept)
+  })
+
+  it('lists a PR you only commented on', async () => {
+    const bb = provider('bitbucket', { list: vi.fn(async (repos: RepoRef[]) => repos.map((r) => ({ repo: r, prs: [summary(r, 676, { hasCommented: true })], error: null }))) })
+    const result = await new PullRequestService(deps({ bitbucket: () => bb })).list()
+    if (!result.ok) throw new Error('expected ok')
+    expect(result.data.prs.filter((p) => p.ref.host === 'bitbucket').map((p) => p.ref.number)).toEqual([676])
   })
 })
 

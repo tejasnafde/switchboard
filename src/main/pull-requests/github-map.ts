@@ -74,7 +74,7 @@ export interface GhPullRequest {
   author: GhActor | null
   baseRef?: { branchProtectionRule: { requiredApprovingReviewCount: number | null } | null } | null
   reviewRequests?: { nodes: Array<{ requestedReviewer: ({ __typename: string; slug?: string } & Partial<GhActor>) | null }> }
-  latestReviews?: { nodes: Array<{ state: string; author: GhActor | null; submittedAt: string | null }> }
+  latestReviews?: { nodes: Array<{ state: string; author: GhActor | null; submittedAt?: string | null }> }
   reviewThreads?: { totalCount: number; nodes: Array<{ isResolved: boolean }> }
   commits?: { nodes: Array<{ commit: { statusCheckRollup: { state: string; contexts: { nodes: GhCheckContext[] } } | null } }> }
   /** GitHub works it out in the background after a push: `UNKNOWN` until it has. */
@@ -214,6 +214,7 @@ export function mapGhSummary(repo: RepoRef, pr: GhPullRequest, viewerLogin: stri
   const viewer = viewerLogin.toLowerCase()
   const isViewer = (login: string) => login.toLowerCase() === viewer
   const threads = pr.reviewThreads?.nodes
+  const viewerReviews = (pr.latestReviews?.nodes ?? []).filter((r) => r.author && isViewer(r.author.login))
   return {
     ref: { ...repo, number: pr.number },
     title: pr.title,
@@ -243,7 +244,9 @@ export function mapGhSummary(repo: RepoRef, pr: GhPullRequest, viewerLogin: stri
     viewer: {
       isAuthor: !!pr.author && isViewer(pr.author.login),
       isRequestedReviewer: reviewers.some((r) => r.requested && r.id !== null && isViewer(r.id)),
-      hasReviewed: (pr.latestReviews?.nodes ?? []).some((r) => r.author && isViewer(r.author.login) && r.state !== 'PENDING'),
+      hasReviewed: viewerReviews.some((r) => r.state !== 'PENDING' && r.state !== 'COMMENTED'),
+      // Inline comments always come in a review; a comment on the conversation tab does not, and the list cannot see it cheaply.
+      hasCommented: viewerReviews.some((r) => r.state === 'COMMENTED'),
     },
     projectPaths: [],
   }
@@ -419,16 +422,24 @@ export function classifyGhError(err: { code?: string | number | null; stderr?: s
   return { kind: 'unknown', host: 'github', message: firstLine.trim().slice(0, 200) }
 }
 
+/** The code `defaultGhRunner` gives a gh it killed for taking too long. */
+export const GH_TIMED_OUT = 'GH_TIMEOUT'
+
 /**
- * A server-side failure worth one more try: gh's `HTTP 500/502/503/504`, or
- * GitHub's GraphQL "Something went wrong while executing your query", which
- * is how it reports a timed-out resolver. Only stderr is read: stdout can
- * hold PR text that mentions anything. Reads only; a write is never re-sent.
+ * A server-side failure worth one more try: gh's `HTTP 500/502/503/504`,
+ * GitHub's GraphQL "Something went wrong while executing your query" (how it
+ * reports a timed-out resolver), a body cut short (gh's Go JSON decoder says
+ * "unexpected end of JSON input" or "unexpected EOF"), or a gh that did not
+ * answer in time. Only stderr is read: stdout can hold PR text that mentions
+ * anything. Reads only; a write is never re-sent.
  */
 export function isTransientGhFailure(res: { code?: string | number | null; stderr?: string }): boolean {
+  if (res.code === GH_TIMED_OUT) return true
   if (res.code === 0 || res.code === 'ENOENT') return false
   const text = res.stderr ?? ''
-  return /HTTP 50[0234]\b/.test(text) || /something went wrong while executing your query/i.test(text)
+  return /HTTP 50[0234]\b/.test(text)
+    || /something went wrong while executing your query/i.test(text)
+    || /unexpected end of JSON input|unexpected EOF/i.test(text)
 }
 
 interface GhErrorBody {
