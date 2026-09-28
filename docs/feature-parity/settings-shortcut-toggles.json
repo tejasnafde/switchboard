@@ -1,0 +1,45 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "settings-shortcut-toggles",
+  "summary": "The Settings shortcut (Cmd+, by default, rebindable as app.settings) toggles: it opens Settings on General when Settings is closed, and closes it when it is open, returning to where the user was. Escape and the close button work as before. The command's label is now 'Open or close settings'.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/App.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native client has no Settings page opened by a keyboard shortcut."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android client has no Settings page opened by a keyboard shortcut."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/shortcuts.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes; a user's rebinding of app.settings keeps working."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships in the normal desktop build."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and the unit suite pass; the shortcut registry tests cover the renamed label."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Pressing Cmd+, twice in the running app was not exercised by a test."
+    ]
+  }
+}
