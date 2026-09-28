@@ -7,8 +7,7 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/App.tsx",
-        "src/shared/shortcuts.ts"
+        "src/renderer/App.tsx"
       ]
     },
     "reactNativeIos": {
@@ -20,8 +19,10 @@
       "reason": "The native Android client has no Settings page opened by a keyboard shortcut."
     },
     "sharedBackendApi": {
-      "status": "not_applicable",
-      "reason": "Renderer-only: the app:open-settings event from the native menu is unchanged; only the renderer's reaction to it changes."
+      "status": "implemented",
+      "evidence": [
+        "src/shared/shortcuts.ts"
+      ]
     },
     "storageDataMigration": {
       "status": "not_applicable",
