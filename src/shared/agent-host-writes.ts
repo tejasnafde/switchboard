@@ -1,8 +1,8 @@
 /**
  * Pull request writes an AGENT asks for through the Switchboard MCP server
- * (reply to a review conversation, resolve one, re-run a failed check, comment
- * on a line, draft a review), and the approval card each one shows before
- * anything reaches a host.
+ * (open a pull request, reply to a review conversation, resolve one, re-run a
+ * failed check, comment on a line, draft a review), and the approval card
+ * each one shows before anything reaches a host.
  *
  * The card rides the ordinary `request.opened` / `request.closed` events with
  * a `hostWrite` payload, so a client that does not know the payload still
@@ -38,7 +38,19 @@ export const AGENT_REVIEW_MAX_COMMENTS = 30
 /** The summary and every comment of a draft review together, in UTF-8 bytes. */
 export const AGENT_REVIEW_MAX_BYTES = 40 * 1024
 
-export type HostWriteAction = 'reply' | 'resolve' | 'rerun' | 'comment' | 'review'
+export type HostWriteAction = 'create' | 'reply' | 'resolve' | 'rerun' | 'comment' | 'review'
+
+/** A pull request the agent asks to open. The title and description are editable in the card. */
+export interface HostWriteCreate {
+  /** "acme/app". */
+  repoLabel: string
+  sourceBranch: string
+  targetBranch: string
+  title: string
+  description: string
+  /** GitHub only. */
+  draft: boolean
+}
 
 /** A diff line shown in the card around the line a comment lands on. */
 export interface HostWriteDiffLine {
@@ -80,7 +92,7 @@ export interface HostWriteCard {
   /** "Codex", "Claude Code", "OpenCode": who asked. */
   agentLabel: string
   host: PrHost
-  /** "ssg-bot-v2 #612". */
+  /** "ssg-bot-v2 #612", or the repository ("acme/app") for a pull request not opened yet. */
   prLabel: string
   url: string | null
   /** "sync/worker.py:88", or null for a conversation on the whole PR. */
@@ -99,6 +111,8 @@ export interface HostWriteCard {
   suggestResolve?: boolean
   /** Re-run only. */
   checkName?: string
+  /** Create only. */
+  create?: HostWriteCreate
   maxChars: number
 }
 
@@ -114,6 +128,10 @@ export interface HostWriteResponse {
   summary?: string
   /** Review: the comments the user kept, by id, with their text as edited. A removed comment is absent. */
   comments?: Array<{ id: string; text: string }>
+  /** Create: the title as the user left it. */
+  title?: string
+  /** Create: the description as the user left it. */
+  description?: string
 }
 
 export type AgentToolGate = 'allow' | 'deny' | 'card'
@@ -154,6 +172,11 @@ export function checkReplyText(value: unknown): ReplyTextCheck {
 export function hostWriteDetail(card: HostWriteCard): string {
   const where = [card.prLabel, card.location].filter(Boolean).join(' · ')
   const lines: string[] = []
+  if (card.action === 'create' && card.create) {
+    const c = card.create
+    lines.push(`Open a${c.draft ? ' draft' : ''} pull request on ${c.repoLabel}: ${c.sourceBranch} -> ${c.targetBranch}`, '', c.title)
+    if (c.description) lines.push('', capDetail(c.description))
+  }
   if (card.action === 'reply') lines.push(`Reply on ${where}${card.suggestResolve ? ', then resolve' : ''}`)
   if (card.action === 'resolve') lines.push(`Resolve the conversation on ${where}`)
   if (card.action === 'rerun') lines.push(`Re-run ${card.checkName ?? 'a failed check'} on ${card.prLabel}`)
@@ -165,7 +188,9 @@ export function hostWriteDetail(card: HostWriteCard): string {
     if (card.review.summary) lines.push('', card.review.summary)
     for (const c of card.review.comments) lines.push('', `${lineLocation(c)}: ${capDetail(c.text)}`)
   }
-  lines.push('', 'Answer this on the desktop: a phone cannot post to a pull request.')
+  lines.push('', card.action === 'create'
+    ? 'Answer this on the desktop: a phone cannot open a pull request.'
+    : 'Answer this on the desktop: a phone cannot post to a pull request.')
   return lines.join('\n')
 }
 
@@ -176,6 +201,7 @@ function capDetail(text: string): string {
 }
 
 export function hostWriteTitle(card: HostWriteCard): string {
+  if (card.action === 'create') return card.create?.draft ? 'Open a draft pull request' : 'Open a pull request'
   if (card.action === 'reply') return card.suggestResolve ? 'Reply and resolve a review conversation' : 'Reply to a review conversation'
   if (card.action === 'resolve') return 'Resolve a review conversation'
   if (card.action === 'comment') return card.lineRange ? `Comment on lines ${card.lineRange.start}-${card.lineRange.end}` : 'Comment on a line'
@@ -199,5 +225,7 @@ export function parseHostWriteResponse(value: unknown): HostWriteResponse {
     ...(r.verdict === 'comment' || r.verdict === 'approve' || r.verdict === 'request_changes' ? { verdict: r.verdict } : {}),
     ...(typeof r.summary === 'string' ? { summary: r.summary } : {}),
     ...(comments ? { comments } : {}),
+    ...(typeof r.title === 'string' ? { title: r.title } : {}),
+    ...(typeof r.description === 'string' ? { description: r.description } : {}),
   }
 }

@@ -56,6 +56,8 @@ interface ReviewStore {
   listError: PrError | null
   loading: boolean
   lastFetchAt: number | null
+  /** The list is missing a PR an agent just opened; the next refresh goes whatever its reason. */
+  stale: boolean
   visible: boolean
   selectedKey: string | null
   tab: ReviewTab
@@ -88,6 +90,8 @@ interface ReviewStore {
   setReposHidden: (repos: RepoRef[], hidden: boolean) => Promise<string | null>
   loadCandidates: (ref: PrRef) => Promise<void>
   setVisible: (visible: boolean) => void
+  /** An agent opened a PR: re-read now when the list is on screen, else on the next open. */
+  markStale: () => void
   setFilter: (filter: string) => void
   setTab: (tab: ReviewTab) => void
   openFile: (path: string) => void
@@ -129,6 +133,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   listError: null,
   loading: false,
   lastFetchAt: null,
+  stale: false,
   visible: false,
   selectedKey: null,
   tab: 'overview',
@@ -234,6 +239,11 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   },
 
   setVisible: (visible) => set({ visible }),
+
+  markStale: () => {
+    set({ stale: true })
+    if (get().visible) void get().refresh('open')
+  },
   setFilter: (filter) => set({ filter }),
   setTab: (tab) => set({ tab }),
   openFile: (path) => set({ tab: 'files', focusPath: path }),
@@ -256,8 +266,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   refresh: async (reason, opts = {}) => {
     const s = get()
     const visible = s.visible || opts.asHeader === true
-    if (!shouldRefreshPullRequests({ lastFetchAt: s.lastFetchAt, inFlight: s.loading, visible }, reason, Date.now())) return
-    set({ loading: true, lastFetchAt: Date.now() })
+    if (!shouldRefreshPullRequests({ lastFetchAt: s.lastFetchAt, inFlight: s.loading, visible, stale: s.stale }, reason, Date.now())) return
+    set({ loading: true, lastFetchAt: Date.now(), stale: false })
     let result: PrResult<PrListData>
     try {
       result = await window.api.pullRequests.list()
@@ -265,6 +275,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       log.warn('listing pull requests failed', err)
       result = { ok: false, error: toError(err) }
     }
+    // A PR an agent opened while this read was in flight may be missing from it.
+    if (get().stale && get().visible) queueMicrotask(() => void get().refresh('open'))
     if (!result.ok) {
       set({ loading: false, listError: result.error })
       return

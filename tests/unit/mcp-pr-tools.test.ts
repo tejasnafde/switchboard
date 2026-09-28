@@ -94,6 +94,7 @@ function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<Pr
     threadId: 't1',
     chatId: 'root-1',
     agentLabel: 'Codex',
+    cwd: () => '/p',
     runtimeMode: () => mode,
     publish: (e) => events.push(e),
     approvals,
@@ -111,12 +112,13 @@ const opened = (events: RuntimeEvent[]) => events.filter((e) => e.type === 'requ
 const text = (r: { content: Array<{ text: string }> }) => r.content[0].text
 
 describe('the tool list', () => {
-  it('has the three reads and five writes, annotated, and nothing that approves or merges', () => {
+  it('has the three reads and six writes, annotated, and nothing that approves or merges', () => {
     const { tools } = setup()
     expect(tools.map((t) => [t.name, t.annotations.readOnlyHint])).toEqual([
       ['get_pr_status', true],
       ['list_pr_conversations', true],
       ['get_pr_diff', true],
+      ['create_pull_request', false],
       ['reply_to_conversation', false],
       ['resolve_conversation', false],
       ['rerun_check', false],

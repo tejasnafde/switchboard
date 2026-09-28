@@ -8,7 +8,7 @@
  *   ssh://git@bitbucket.org/workspace/repo.git
  *   ssh://git@ssh.github.com:443/owner/repo.git
  */
-import type { PrHost, RepoRef } from './pull-requests'
+import { repoKey, type PrHost, type RepoRef } from './pull-requests'
 
 const HOSTS: Record<string, PrHost> = {
   'github.com': 'github',
@@ -55,4 +55,17 @@ export function repoFromRemotes(remoteVerbose: string): RepoRef | null {
     if (ref && !byName.has(m[1])) byName.set(m[1], ref)
   }
   return byName.get('upstream') ?? byName.get('origin') ?? byName.values().next().value ?? null
+}
+
+/** The remotes (by name, `git remote -v` order) whose fetch URL is `repo`. */
+export function remotesForRepo(remoteVerbose: string, repo: RepoRef): string[] {
+  const key = repoKey(repo)
+  const names: string[] = []
+  for (const line of remoteVerbose.split('\n')) {
+    const m = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(line.trim())
+    if (!m || m[3] !== 'fetch' || names.includes(m[1])) continue
+    const ref = parseRemoteUrl(m[2])
+    if (ref && repoKey(ref) === key) names.push(m[1])
+  }
+  return names
 }

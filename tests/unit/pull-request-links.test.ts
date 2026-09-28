@@ -118,6 +118,45 @@ describe('PullRequestAutoLinker', () => {
     expect(notified).toEqual([])
   })
 
+  it('links a PR opened with gh pr create from its shell output', async () => {
+    const { linker, linked } = setup()
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'x', toolName: 'Bash', input: { command: 'gh pr create --fill' } } as RuntimeEvent)
+    expect(linked).toEqual([])
+    await linker.onEvent({ type: 'tool.completed', threadId: 't', toolId: 'x', output: 'Creating pull request for feat/x into main\n\nhttps://github.com/tejasnafde/switchboard/pull/190\n' } as RuntimeEvent)
+    expect(linked).toEqual(['agent_1#190'])
+  })
+
+  it('links a PR URL in a tool input, Claude object or Codex command array', async () => {
+    const { linker, linked, notified } = setup()
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'a', toolName: 'Bash', input: { command: 'gh pr view https://github.com/tejasnafde/switchboard/pull/31 --json state' } } as RuntimeEvent)
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'b', toolName: 'shell', input: { command: ['bash', '-lc', 'gh pr checks https://github.com/tejasnafde/switchboard/pull/32'] } } as RuntimeEvent)
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'c', toolName: 'Bash', input: { command: 'gh pr view https://github.com/someone/else/pull/33' } } as RuntimeEvent)
+    expect(linked).toEqual(['agent_1#31', 'agent_1#32'])
+    expect(notified).toEqual(['agent_1', 'agent_1'])
+  })
+
+  it('links a bare bbpr number in a tool input to a Bitbucket project, never to a GitHub one or from output', async () => {
+    const bb = setup(BOT)
+    await bb.linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'a', toolName: 'Bash', input: { command: 'cd /repo && bbpr 605 diff' } } as RuntimeEvent)
+    await bb.linker.onEvent({ type: 'tool.completed', threadId: 't', toolId: 'a', output: 'bbpr 606' } as RuntimeEvent)
+    expect(bb.linked).toEqual(['agent_1#605'])
+    const gh = setup(SB)
+    await gh.linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'a', toolName: 'Bash', input: { command: 'bbpr 605' } } as RuntimeEvent)
+    expect(gh.linked).toEqual([])
+  })
+
+  it('keeps the tombstone rule: a link the store refuses is not reported', async () => {
+    const notified: string[] = []
+    const linker = new PullRequestAutoLinker({
+      conversationFor: () => ({ id: 'agent_1', projectPath: '/p' }),
+      repoForProject: async () => BOT,
+      link: () => false,
+      notify: (id) => notified.push(id),
+    })
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'a', toolName: 'Bash', input: { command: 'bbpr 605' } } as RuntimeEvent)
+    expect(notified).toEqual([])
+  })
+
   it('does nothing for a thread with no conversation row', async () => {
     const { linker, linked } = setup()
     await linker.onEvent({ type: 'tool.completed', threadId: 'missing', toolId: 'x', output: 'https://github.com/tejasnafde/switchboard/pull/7' } as RuntimeEvent)

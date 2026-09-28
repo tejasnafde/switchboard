@@ -543,8 +543,9 @@ const api = {
     link: (threadId: string, ref: PrRef): Promise<PrLinkResult> => transport.invoke(PullRequestChannels.LINK, threadId, ref),
     unlink: (threadId: string, ref: PrRef): Promise<PrLinkResult> => transport.invoke(PullRequestChannels.UNLINK, threadId, ref),
     scanHistory: (threadId: string): Promise<PrHistoryScanResult> => transport.invoke(PullRequestChannels.HISTORY_SCAN, threadId),
-    onLinksChanged: (callback: (change: { conversationId: string }) => void) =>
-      transport.on(PullRequestChannels.LINKS_CHANGED, (change) => callback(change as { conversationId: string })),
+    /** `created`: an agent just opened the PR, so a Reviews list on screen is out of date. */
+    onLinksChanged: (callback: (change: { conversationId: string; created?: boolean }) => void) =>
+      transport.on(PullRequestChannels.LINKS_CHANGED, (change) => callback(change as { conversationId: string; created?: boolean })),
     reply: (ref: PrRef, input: ReplyInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.REPLY, ref, input),
     resolve: (ref: PrRef, input: ResolveInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.RESOLVE, ref, input),
     unresolve: (ref: PrRef, input: ResolveInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.UNRESOLVE, ref, input),

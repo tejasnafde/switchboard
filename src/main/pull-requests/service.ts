@@ -8,6 +8,7 @@
  * re-reads what it targets first (the thread, the diff line, the head and
  * blockers before a merge), so a stale screen cannot post to the wrong place.
  */
+import { validateCreatePr, type CreatedPr } from '@shared/agent-pr-create'
 import {
   addReviewerPrecheck,
   findConversation,
@@ -209,6 +210,58 @@ export class PullRequestService {
     const provider = this.provider(clean.host)
     if (!provider) return { error: { kind: 'no_account', host: clean.host, message: 'No account for this host.' } }
     return { ref: clean, provider, projectPaths: entry.projectPaths }
+  }
+
+  /** A repository one of the user's projects points at, with its host's provider. */
+  private async resolveRepo(repo: unknown): Promise<{ repo: RepoRef; provider: PullRequestProvider } | { error: PrError }> {
+    const r = repo as Partial<RepoRef> | null
+    if (!r || (r.host !== 'github' && r.host !== 'bitbucket') || typeof r.owner !== 'string' || typeof r.name !== 'string') {
+      return { error: { kind: 'unknown', host: null, message: 'Not a repository.' } }
+    }
+    const clean: RepoRef = { host: r.host, owner: r.owner, name: r.name }
+    if (!(await this.detect()).repos.has(repoKey(clean))) {
+      return { error: { kind: 'unsupported_repo', host: clean.host, message: 'This repository is not one of your projects.' } }
+    }
+    const blocked = this.accountError(clean.host)
+    if (blocked) return { error: blocked }
+    const provider = this.provider(clean.host)
+    if (!provider) return { error: { kind: 'no_account', host: clean.host, message: 'No account for this host.' } }
+    return { repo: clean, provider }
+  }
+
+  private async onRepo<T>(repo: unknown, what: string, fn: (p: PullRequestProvider, repo: RepoRef) => Promise<T>): Promise<PrResult<T>> {
+    const target = await this.resolveRepo(repo)
+    if ('error' in target) return { ok: false, error: target.error }
+    try {
+      return { ok: true, data: await fn(target.provider, target.repo) }
+    } catch (err) {
+      const error = toPrError(err, target.repo.host)
+      log.warn(`${what} failed`, { host: target.repo.host, kind: error.kind })
+      return { ok: false, error }
+    }
+  }
+
+  defaultBranch(repo: unknown): Promise<PrResult<string>> {
+    return this.onRepo(repo, 'reading the default branch', (p, r) => p.defaultBranch(r))
+  }
+
+  openPullRequestFor(repo: unknown, branch: string): Promise<PrResult<CreatedPr | null>> {
+    return this.onRepo(repo, 'looking for an open pull request', (p, r) => p.openPullRequestFor(r, branch))
+  }
+
+  /**
+   * Opens a pull request, unless one is already open for the source branch:
+   * then that one is returned with `existing: true` and nothing is created.
+   */
+  createPullRequest(repo: unknown, input: unknown): Promise<PrResult<CreatedPr & { existing: boolean }>> {
+    return this.onRepo(repo, 'opening a pull request', async (p, r) => {
+      const create = PullRequestService.unwrap(validateCreatePr(r.host, input))
+      const open = await p.openPullRequestFor(r, create.sourceBranch)
+      if (open) return { ...open, existing: true }
+      const created = await p.createPullRequest(r, create)
+      log.info('pull request opened', { host: r.host, number: created.number })
+      return { ...created, existing: false }
+    })
   }
 
   private async read<T>(

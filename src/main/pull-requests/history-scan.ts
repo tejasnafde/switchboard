@@ -6,7 +6,7 @@
  * the background after launch; later messages are the live auto-linker's
  * (`auto-link.ts`).
  */
-import { autoLinkRefs } from '@shared/pull-request-links'
+import { projectPrRefs } from '@shared/pull-request-links'
 import { bbprPullRequestNumbers, toolInputCommand } from '@shared/bbpr-command'
 import type { PrRef, RepoRef } from '@shared/pull-requests'
 import type { HistoryPartKind, HistoryVisitor } from './history-source'
@@ -105,18 +105,6 @@ class HistoryText {
   }
 }
 
-/** PRs of the chat's project that its history names. */
-function historyRefs(history: HistoryText, repo: RepoRef | null): PrRef[] {
-  const refs = autoLinkRefs(history.text, repo)
-  // bbpr resolves a bare number against the current git remote, which is the project's.
-  if (repo?.host === 'bitbucket') {
-    for (const number of history.bbprNumbers) {
-      if (!refs.some((ref) => ref.number === number)) refs.push({ ...repo, number })
-    }
-  }
-  return refs
-}
-
 function markQuietly(deps: PullRequestHistoryScanDeps, conversationId: string): void {
   try {
     deps.markScanned(conversationId)
@@ -150,7 +138,7 @@ export async function scanPullRequestHistoryForConversation(
   let linked = 0
   if (history.bbprNumbers.length > 0 || MENTIONS_HOST.test(history.text)) {
     const repo = await deps.repoForProject(target.projectPath)
-    for (const ref of historyRefs(history, repo)) {
+    for (const ref of projectPrRefs(history.text, history.bbprNumbers, repo)) {
       if (deps.link(target.id, ref)) linked++
     }
   }

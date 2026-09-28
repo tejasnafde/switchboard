@@ -1,12 +1,15 @@
 /**
- * Links a chat to a pull request the first time the chat's assistant text or
- * a tool's output names that PR's URL, provided the PR is on the repository
- * of the chat's own project. Assistant text streams in deltas, so it is
- * scanned whole at the end of the turn; tool output arrives complete.
+ * Links a chat to a pull request the first time the chat's assistant text, a
+ * tool's input or a tool's output names that PR's URL, or a tool's input runs
+ * `bbpr <n>` (a Bitbucket project only), provided the PR is on the repository
+ * of the chat's own project. So a PR opened with `gh pr create` or bbpr in a
+ * shell links itself too. Assistant text streams in deltas, so it is scanned
+ * whole at the end of the turn; a tool's input and output arrive complete.
  */
 import type { RuntimeEvent } from '@shared/provider-events'
 import { applyContentText } from '@shared/content-stream'
-import { canLinkToProject, findPullRequestUrls } from '@shared/pull-request-links'
+import { bbprPullRequestNumbers, toolInputCommand } from '@shared/bbpr-command'
+import { findPullRequestUrls, projectPrRefs } from '@shared/pull-request-links'
 import type { PrRef, RepoRef } from '@shared/pull-requests'
 import { createMainLogger } from '../logger'
 
@@ -14,7 +17,20 @@ const log = createMainLogger('pull-requests:auto-link')
 
 /** Assistant text kept per message until its turn ends. */
 const MAX_BUFFERED_CHARS = 1_000_000
+/** A tool input past this is a file being written, not a command. */
+const MAX_TOOL_INPUT_CHARS = 200_000
 const MENTIONS_HOST = /github\.com\/|bitbucket\.org\//i
+
+/** A tool call's input as the text the matchers read. */
+function toolInputText(input: unknown): string {
+  if (typeof input === 'string') return input
+  try {
+    return JSON.stringify(input) ?? ''
+  } catch (err) {
+    log.debug('tool input is not serialisable', { err: String(err) })
+    return ''
+  }
+}
 
 export interface AutoLinkDeps {
   /** Root conversation id and project of a thread, `null` when it has no row. */
@@ -41,6 +57,12 @@ export class PullRequestAutoLinker {
       }
       return Promise.resolve()
     }
+    if (event.type === 'tool.started') {
+      const input = toolInputText(event.input)
+      if (!input || input.length > MAX_TOOL_INPUT_CHARS) return Promise.resolve()
+      const command = toolInputCommand(input)
+      return this.scan(event.threadId, input, command ? bbprPullRequestNumbers(command) : [])
+    }
     if (event.type === 'tool.completed' && event.output) return this.scan(event.threadId, event.output)
     if (event.type === 'turn.completed' || (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))) {
       const byMessage = this.text.get(event.threadId)
@@ -50,17 +72,15 @@ export class PullRequestAutoLinker {
     return Promise.resolve()
   }
 
-  private async scan(threadId: string, text: string): Promise<void> {
-    if (!MENTIONS_HOST.test(text)) return
-    const refs = findPullRequestUrls(text)
-    if (refs.length === 0) return
+  private async scan(threadId: string, text: string, bbprNumbers: number[] = []): Promise<void> {
+    if (bbprNumbers.length === 0 && (!MENTIONS_HOST.test(text) || findPullRequestUrls(text).length === 0)) return
     try {
       const chat = this.deps.conversationFor(threadId)
       if (!chat) return
       const repo = await this.deps.repoForProject(chat.projectPath)
       let added = false
-      for (const ref of refs) {
-        if (canLinkToProject(ref, repo) && this.deps.link(chat.id, ref)) added = true
+      for (const ref of projectPrRefs(text, bbprNumbers, repo)) {
+        if (this.deps.link(chat.id, ref)) added = true
       }
       if (added) this.deps.notify(chat.id)
     } catch (err) {

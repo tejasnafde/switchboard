@@ -683,6 +683,29 @@ async function captureThemeScreens(win, theme) {
   if (reviewListOverflow > 0) screenFailures.push(`host-review-draft-narrow-${theme.toLowerCase()}: the message list scrolls ${reviewListOverflow}px sideways`)
   await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }), SCREEN_SIZE)
   await settle(win)
+
+  // An agent asked to raise a pull request, held on its create card: the
+  // branches it merges and an editable title and description (a Bitbucket
+  // PR from the demo adapter; nothing is opened). Deny the review first so
+  // the turn ends.
+  await reviewCard.getByRole('button', { name: 'Deny', exact: true }).click()
+  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await editor.click()
+  await win.keyboard.type('Raise a pull request for this.')
+  await win.keyboard.press('Enter')
+  const createCard = win.locator('[data-host-write-card="create"][data-status="pending"]').first()
+  await createCard.waitFor({ state: 'visible', timeout: 20_000 })
+  await createCard.locator('[data-host-write-actions]').evaluate((el) => el.scrollIntoView({ block: 'end' }))
+  await settle(win)
+  await snapScreen(win, 'host-create-pr', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(800, 720))
+  await settle(win)
+  const createOverflow = await createCard.evaluate((el) => el.scrollWidth - el.clientWidth)
+  if (createOverflow > 0) screenFailures.push(`host-create-pr-narrow-${theme.toLowerCase()}: the card overflows ${createOverflow}px`)
+  const createListOverflow = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
+  if (createListOverflow > 0) screenFailures.push(`host-create-pr-narrow-${theme.toLowerCase()}: the message list scrolls ${createListOverflow}px sideways`)
+  await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }), SCREEN_SIZE)
+  await settle(win)
 }
 
 async function runThemeScreens() {

@@ -6,16 +6,19 @@ import { cn } from '../../lib/utils'
 import { openExternal } from '../reviews/review-ui'
 import { createRendererLogger } from '../../logger'
 import {
+  createDraftProblem,
   hostWriteButtons,
   hostWriteContext,
   hostWriteResponse,
+  initialCreateDraft,
   initialReviewDraft,
   replyTextProblem,
   reviewButtonProblem,
+  type CreateDraftState,
   type HostWriteButton,
   type ReviewDraftState,
 } from './host-write-card'
-import { DiffExcerpt, ReviewDraftFields } from './HostWriteReviewParts'
+import { CreatePrFields, DiffExcerpt, ReviewDraftFields } from './HostWriteReviewParts'
 
 const log = createRendererLogger('chat:host-write-card')
 
@@ -26,8 +29,9 @@ interface HostWriteApprovalCardProps {
 
 /**
  * The approval for a pull request write an agent asked for through the
- * Switchboard MCP server: who asked, the reviewer being answered or the diff
- * lines being commented on, the text as an editable draft, and what it posts.
+ * Switchboard MCP server: who asked, the reviewer being answered, the diff
+ * lines being commented on or the branches a new pull request merges, the
+ * text as an editable draft, and what it posts.
  * The text left in the boxes is the text that is posted. A draft review ends
  * in one button per verdict the user may give, none of them preselected.
  */
@@ -35,6 +39,7 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
   const card = message.approval?.hostWrite
   const [text, setText] = useState(card?.replyText ?? '')
   const [draft, setDraft] = useState<ReviewDraftState>(() => initialReviewDraft(card?.review))
+  const [create, setCreate] = useState<CreateDraftState>(() => initialCreateDraft(card))
   // `pending` flips only when request.closed round-trips; this stops a double post before then.
   const submitRef = useRef(false)
   const [submitting, setSubmitting] = useState<HostWriteButton['id'] | null>(null)
@@ -44,7 +49,7 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
   const status = message.approval.status
   const pending = status === 'pending'
   const buttons = hostWriteButtons(card)
-  const problem = replyTextProblem(card, text)
+  const problem = card.action === 'create' ? createDraftProblem(create) : replyTextProblem(card, text)
   const buttonProblem = (b: HostWriteButton): string | null => {
     if (b.decision !== 'approve') return null
     return b.verdict ? reviewButtonProblem(card, b.verdict, draft) : problem
@@ -58,7 +63,7 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
     if (buttonProblem(button)) return
     submitRef.current = true
     setSubmitting(button.id)
-    const response = button.decision === 'approve' ? hostWriteResponse(card, button, text, draft) : undefined
+    const response = button.decision === 'approve' ? hostWriteResponse(card, button, text, draft, create) : undefined
     Promise.resolve(onDecide(reqId, button.decision, undefined, response)).catch((err) => {
       // ChatPanel already put the failure in the chat; let the user try again.
       log.warn('decision failed, re-enabling card', { reqId, button: button.id, err })
@@ -81,7 +86,7 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
         <span className="text-[13px] font-[600] text-[var(--text-primary)]">{hostWriteTitle(card)}</span>
         {!pending && (
           <span className={cn('ml-auto text-[11px] font-[600] uppercase', status === 'accepted' ? 'text-[var(--success)]' : 'text-[var(--error)]')}>
-            {status === 'accepted' ? (card.action === 'review' ? 'Submitted' : 'Approved') : 'Not posted'}
+            {status === 'accepted' ? (card.action === 'review' ? 'Submitted' : 'Approved') : card.action === 'create' ? 'Not opened' : 'Not posted'}
           </span>
         )}
       </div>
@@ -111,6 +116,22 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
               {card.review.commentOnly === 'closed' && ' This pull request is not open, so only Comment is offered.'}
             </span>
             {pending && shownProblem && <span role="alert" className="ml-auto text-[var(--error)]">{shownProblem}</span>}
+          </div>
+        </>
+      )}
+
+      {card.action === 'create' && card.create && (
+        <>
+          <CreatePrFields
+            create={card.create}
+            draft={create}
+            editable={pending && submitting === null}
+            onChange={setCreate}
+            onSubmit={() => primary && choose(primary)}
+          />
+          <div className="flex flex-wrap gap-x-2 px-3 pb-2 text-[11px] text-[var(--text-muted)]">
+            <span>Opened as you, the description ending with "via Switchboard", and linked to this chat.</span>
+            {pending && problem && <span role="alert" className="ml-auto text-[var(--error)]">{problem}</span>}
           </div>
         </>
       )}

@@ -104,6 +104,25 @@ describe('DemoAdapter (tour recorder script)', () => {
     expect(events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: card.requestId, decision: 'approve' })
   }, 20_000)
 
+  it('raising a pull request opens a create card with the branches and an editable draft, and opens nothing', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Raise a pull request for this.', 'sandbox')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no card yet')
+    }, { timeout: 5_000, interval: 50 })
+    const card = events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
+    expect(card.toolName).toBe('mcp__switchboard__create_pull_request')
+    expect(card.hostWrite).toMatchObject({ action: 'create', host: 'bitbucket', create: { sourceBranch: 'feat/sync-jitter', targetBranch: 'main', draft: false } })
+    expect(card.detail).toContain('Open a pull request on geoiq/ssg-bot-v2: feat/sync-jitter -> main')
+    await adapter.respondToRequest('t1', card.requestId, 'deny')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+    }, { timeout: 5_000, interval: 50 })
+    expect(events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: card.requestId, decision: 'deny' })
+  }, 20_000)
+
   it('a draft review opens one review card with every verdict offered and none chosen, and posts nothing', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []

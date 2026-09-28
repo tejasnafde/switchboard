@@ -1,13 +1,14 @@
 /**
  * The pull request tools of the Switchboard MCP server: three reads that run
- * without asking and five writes that each open one Switchboard approval
+ * without asking and six writes that each open one Switchboard approval
  * card. Merging is deliberately absent, and so is a verdict: `draft_review`
  * hands the user a draft, and the user picks Comment, Request changes or
  * Approve in the card.
  *
- * Every tool works only on pull requests linked to the calling chat, and
- * every refusal is tool output with `isError`, never a throw, so the model
- * reads the reason instead of retrying a transport failure.
+ * Every tool works only on pull requests linked to the calling chat, except
+ * `create_pull_request`, which opens one on the repository of the chat's
+ * project and links it. Every refusal is tool output with `isError`, never a
+ * throw, so the model reads the reason instead of retrying a transport failure.
  */
 import {
   AGENT_COMMENT_MAX_LINES,
@@ -21,6 +22,16 @@ import {
   type HostWriteCard,
   type HostWriteReview,
 } from '@shared/agent-host-writes'
+import {
+  checkCreatePrArgs,
+  checkPrDescription,
+  checkPrTitle,
+  draftProblem,
+  isUncertainCreateFailure,
+  PR_DESCRIPTION_MAX_CHARS,
+  repositoryProblem,
+  type CreatedPr,
+} from '@shared/agent-pr-create'
 import {
   checkCommentText,
   checkLineTarget,
@@ -43,11 +54,13 @@ import {
   HOST_CAPABILITIES,
   PR_HOST_LABEL,
   prKey,
+  repoKey,
   type PrChangedFile,
   type PrConversation,
   type PrDetail,
   type PrRef,
   type PrResult,
+  type RepoRef,
 } from '@shared/pull-requests'
 import type { RuntimeEvent, RuntimeMode } from '@shared/provider-events'
 import { createMainLogger } from '../logger'
@@ -66,6 +79,9 @@ export const PR_RERUN_TOOL = 'rerun_check'
 export const PR_DIFF_TOOL = 'get_pr_diff'
 export const PR_COMMENT_TOOL = 'comment_on_line'
 export const PR_REVIEW_TOOL = 'draft_review'
+export const PR_CREATE_TOOL = 'create_pull_request'
+
+export type RemoteBranchCheck = { ok: true; found: boolean; remote: string } | { ok: false; message: string }
 
 /** What the tools need from Reviews. `PullRequestService` satisfies the reads and writes. */
 export interface AgentPullRequestAccess {
@@ -79,6 +95,21 @@ export interface AgentPullRequestAccess {
   rerunCheck(ref: PrRef, input: { checkId: string }): Promise<PrResult<PrWriteDone>>
   inlineComment(ref: PrRef, input: InlineCommentInput): Promise<PrResult<PrWriteDone>>
   submitReview(ref: PrRef, input: SubmitReviewInput): Promise<PrResult<PrWriteDone>>
+
+  /** The chat's project path (root conversation), or null when it has no Switchboard record. */
+  chatProject(chatId: string): string | null
+  /** The repository a project's git remotes point at. */
+  repoFor(projectPath: string): Promise<RepoRef | null>
+  /** The branch checked out in `cwd`, or null. */
+  currentBranch(cwd: string): Promise<string | null>
+  /** Whether `branch` is on the checkout's remote for `repo` (git ls-remote). */
+  remoteHasBranch(cwd: string, repo: RepoRef, branch: string): Promise<RemoteBranchCheck>
+  defaultBranch(repo: RepoRef): Promise<PrResult<string>>
+  openPullRequestFor(repo: RepoRef, branch: string): Promise<PrResult<CreatedPr | null>>
+  /** Returns the open one instead (`existing`) when one appeared for the branch meanwhile. */
+  createPullRequest(repo: RepoRef, input: { title: string; description: string; sourceBranch: string; targetBranch: string; draft: boolean }): Promise<PrResult<CreatedPr & { existing: boolean }>>
+  /** Links a PR of the chat's repository to the chat and tells clients; `created` asks Reviews to refresh. */
+  linkToChat(chatId: string, ref: PrRef, created: boolean): void
 }
 
 let registeredAccess: AgentPullRequestAccess | null = null
@@ -98,6 +129,8 @@ export interface PrToolContext {
   /** The chat's root id, which links and the budget are keyed by. */
   chatId: string
   agentLabel: string
+  /** The session's working directory (a worktree for a worktree chat), or null when unknown. */
+  cwd(): string | null
   runtimeMode(): RuntimeMode
   publish(event: RuntimeEvent): void
   approvals: Pick<AgentApprovalBroker, 'ask'>
@@ -678,5 +711,147 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     },
   }
 
-  return [statusTool, conversationsTool, diffTool, replyTool, resolveTool, rerunTool, commentTool, reviewTool]
+  /** The chat's repository, from its project's remotes, or why there is none. */
+  const chatRepo = async (access: AgentPullRequestAccess): Promise<{ projectPath: string; repo: RepoRef } | McpToolResult> => {
+    const projectPath = access.chatProject(ctx.chatId)
+    if (!projectPath) return toolText('This chat has no Switchboard project record, so there is no repository to open a pull request on.', true)
+    const repo = await access.repoFor(projectPath)
+    if (!repo) return toolText(`The git remotes of ${projectPath} point at neither GitHub nor Bitbucket, so Switchboard cannot open a pull request for it.`, true)
+    return { projectPath, repo }
+  }
+
+  const linkCreated = (access: AgentPullRequestAccess, repo: RepoRef, pr: CreatedPr, created: boolean): PrRef => {
+    const ref: PrRef = { ...repo, number: pr.number }
+    access.linkToChat(ctx.chatId, ref, created)
+    return ref
+  }
+
+  const createTool: McpTool = {
+    name: PR_CREATE_TOOL,
+    description: [
+      'Open a pull request on the repository of this chat\'s project (GitHub or Bitbucket), with the user\'s account in Switchboard.',
+      'Use this whenever the user asks you to raise, open or create a pull request, instead of gh pr create, bbpr or a host API:',
+      'it is the path that is set up with write access, and the pull request is linked to this chat and shows in Reviews.',
+      'Commit and push the branch first (git push -u <remote> <branch>); the source branch must already be on the remote.',
+      'sourceBranch defaults to the branch checked out in this chat, targetBranch to the repository\'s default branch.',
+      'If a pull request is already open for the source branch, nothing is created: that one is linked to this chat and returned.',
+      'The user sees the title and description in a Switchboard approval card, can edit both, and decides whether it is opened.',
+      'It is opened as the user, the description ending with a "via Switchboard" line. "draft" is GitHub only. Refused in plan mode.',
+    ].join('\n'),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'The pull request title: what the change does, in one line.' },
+        description: { type: 'string', description: `What changed and why, how it was tested. Markdown. At most ${PR_DESCRIPTION_MAX_CHARS} characters. No signature; Switchboard adds its marker line.` },
+        sourceBranch: { type: 'string', description: 'The branch to merge from, already pushed. Default: the branch checked out in this chat.' },
+        targetBranch: { type: 'string', description: 'The branch to merge into. Default: the repository\'s default branch.' },
+        draft: { type: 'boolean', description: 'Open it as a draft. GitHub only; refused on Bitbucket.' },
+        repository: { type: 'string', description: 'Optional: "owner/name" or its URL. Must be the repository of this chat\'s project; any other is refused.' },
+      },
+      required: ['title'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Open a pull request', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    async call(args, { signal }) {
+      const access = ctx.pullRequests
+      if (!access) return toolText('Reviews is not available on this backend, so a pull request cannot be opened here.', true)
+      const input = checkCreatePrArgs(args)
+      if (!input.ok) return toolText(`${input.message} Nothing was created.`, true)
+      const gated = refusePlan(PR_CREATE_TOOL)
+      if (gated) return gated
+      const chat = await chatRepo(access)
+      if ('content' in chat) return chat
+      const { repo } = chat
+      const repoLabel = `${repo.owner}/${repo.name}`
+      const refused = repositoryProblem(input.value.repository, repo) ?? draftProblem(repo.host, input.value.draft)
+      if (refused) return toolText(refused, true)
+
+      const cwd = ctx.cwd() ?? chat.projectPath
+      const source = input.value.sourceBranch ?? await access.currentBranch(cwd)
+      if (!source) return toolText(`No branch is checked out in ${cwd} (a detached HEAD?). Pass "sourceBranch". Nothing was created.`, true)
+      let target = input.value.targetBranch
+      if (!target) {
+        const read = await access.defaultBranch(repo)
+        if (!read.ok) return toolText(`Could not read the default branch of ${repoLabel}: ${read.error.message} Pass "targetBranch", or tell the user.`, true)
+        target = read.data
+      }
+      if (source === target) {
+        return toolText(`The source and target branch are both ${source}. Commit to a new branch, push it, and call again with that branch. Nothing was created.`, true)
+      }
+      const pushed = await access.remoteHasBranch(cwd, repo, source)
+      if (!pushed.ok) return toolText(`${pushed.message} Could not check that ${source} is pushed. Nothing was created.`, true)
+      if (!pushed.found) {
+        return toolText(`${source} is not on ${pushed.remote} (${repoLabel}). Push it first (git push -u ${pushed.remote} ${source}), then call again. Nothing was created.`, true)
+      }
+      const open = await access.openPullRequestFor(repo, source)
+      if (!open.ok) return toolText(`Could not check for an open pull request on ${repoLabel}: ${open.error.message} Nothing was created.`, true)
+      if (open.data) {
+        linkCreated(access, repo, open.data, false)
+        return toolText(`A pull request is already open for ${source}: ${repoLabel} #${open.data.number}, ${open.data.url}. It is now linked to this chat; no new one was created.`)
+      }
+
+      const draft = { title: input.value.title, description: input.value.description }
+      const outcome = await ask(PR_CREATE_TOOL, {
+        action: 'create',
+        agentLabel: ctx.agentLabel,
+        host: repo.host,
+        prLabel: repoLabel,
+        url: null,
+        location: null,
+        quote: null,
+        create: { repoLabel, sourceBranch: source, targetBranch: target, ...draft, draft: input.value.draft },
+        maxChars: PR_DESCRIPTION_MAX_CHARS,
+      }, signal)
+      if ('content' in outcome) return outcome
+      if (outcome.decision === 'deny') return declined(outcome)
+      if (signal.aborted) return declined({ decision: 'deny', reason: 'cancelled' })
+      const plan = refusePlan(PR_CREATE_TOOL)
+      if (plan) return plan
+      // The link rule again: the project must still point at the repository the card named.
+      const now = await access.repoFor(chat.projectPath)
+      if (!now || repoKey(now) !== repoKey(repo)) {
+        return toolText(`This chat's project no longer points at ${repoLabel}. Nothing was created.`, true)
+      }
+
+      const title = outcome.response.title === undefined ? { ok: true as const, value: draft.title } : checkPrTitle(outcome.response.title)
+      if (!title.ok) return toolText(`The edited title was refused: ${title.message} Nothing was created.`, true)
+      const description = outcome.response.description === undefined ? { ok: true as const, value: draft.description } : checkPrDescription(outcome.response.description)
+      if (!description.ok) return toolText(`The edited description was refused: ${description.message} Nothing was created.`, true)
+      const created = await access.createPullRequest(repo, {
+        title: title.value,
+        description: withViaMarker(description.value),
+        sourceBranch: source,
+        targetBranch: target,
+        draft: input.value.draft,
+      })
+      if (!created.ok) {
+        if (!isUncertainCreateFailure(created.error)) return toolText(`Opening the pull request failed: ${created.error.message} Nothing was created.`, true)
+        // The request may have gone out: look before telling the agent anything.
+        const after = await access.openPullRequestFor(repo, source)
+        if (after.ok && after.data) {
+          linkCreated(access, repo, after.data, true)
+          return toolText(`Opened ${repoLabel} #${after.data.number}: ${after.data.url} (the host's answer was lost, but the pull request is there). It is linked to this chat and shows in Reviews. Do not open it again.`)
+        }
+        log.warn('agent pull request create result uncertain', { host: repo.host, kind: created.error.kind })
+        return toolText(
+          `The host did not answer clearly: ${created.error.message} The pull request may or may not have been opened. ` +
+          `Do not call ${PR_CREATE_TOOL} again; ask the user to check ${PR_HOST_LABEL[repo.host]} or Reviews.`, true)
+      }
+      const ref = linkCreated(access, repo, created.data, !created.data.existing)
+      if (created.data.existing) {
+        return toolText(`A pull request for ${source} was opened while the card was open: ${repoLabel} #${ref.number}, ${created.data.url}. It is linked to this chat; no new one was created.`)
+      }
+      log.info('agent pull request opened', { host: repo.host, number: ref.number })
+      const edits = [
+        title.value !== draft.title ? `the title to "${title.value}"` : '',
+        description.value !== draft.description ? 'the description' : '',
+      ].filter(Boolean)
+      return toolText(
+        `Opened ${repoLabel} #${ref.number}: ${created.data.url} (${source} -> ${target}). It is linked to this chat and shows in Reviews, ` +
+        `and the pull request tools can act on it now.${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}`,
+      )
+    },
+  }
+
+  return [statusTool, conversationsTool, diffTool, createTool, replyTool, resolveTool, rerunTool, commentTool, reviewTool]
 }

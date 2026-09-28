@@ -16,11 +16,13 @@ export interface PrRefreshState {
   lastFetchAt: number | null
   inFlight: boolean
   visible: boolean
+  /** Something the list does not show yet happened (an agent opened a PR): the next read goes whatever its reason. */
+  stale?: boolean
 }
 
 export function shouldRefreshPullRequests(state: PrRefreshState, reason: PrRefreshReason, now: number): boolean {
   if (state.inFlight || !state.visible) return false
-  if (state.lastFetchAt === null || reason === 'manual') return true
+  if (state.lastFetchAt === null || state.stale === true || reason === 'manual') return true
   const age = now - state.lastFetchAt
   switch (reason) {
     case 'open':

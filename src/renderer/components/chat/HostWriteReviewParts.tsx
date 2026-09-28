@@ -1,8 +1,9 @@
-import type { HostWriteDiffLine, HostWriteReview } from '@shared/agent-host-writes'
+import type { HostWriteCreate, HostWriteDiffLine, HostWriteReview } from '@shared/agent-host-writes'
 import { lineLocation } from '@shared/pull-request-writes'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
-import type { ReviewDraftState } from './host-write-card'
+import type { KeyboardEvent } from 'react'
+import type { CreateDraftState, ReviewDraftState } from './host-write-card'
 
 const TEXTAREA =
   'w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 [font-family:inherit] text-[12.5px] leading-[1.5] text-[var(--text-primary)] outline-none focus-visible:border-[var(--accent)]'
@@ -99,6 +100,53 @@ export function ReviewDraftFields({ review, draft, editable, onChange }: ReviewD
           )
         })}
       </ul>
+    </div>
+  )
+}
+
+interface CreatePrFieldsProps {
+  create: HostWriteCreate
+  draft: CreateDraftState
+  editable: boolean
+  onChange(draft: CreateDraftState): void
+  onSubmit(): void
+}
+
+/** A pull request to open: the branches it merges, then its title and description as editable drafts. */
+export function CreatePrFields({ create, draft, editable, onChange, onSubmit }: CreatePrFieldsProps) {
+  const submitOnModEnter = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      onSubmit()
+    }
+  }
+  return (
+    <div className="px-3 pb-2">
+      <div data-host-write-branches className="mb-2 flex flex-wrap items-center gap-1.5 font-[family-name:var(--font-mono)] text-[11.5px] text-[var(--text-primary)]">
+        <span className="min-w-0 [overflow-wrap:anywhere] rounded-[4px] border border-[var(--border)] px-1.5 py-px">{create.sourceBranch}</span>
+        <span aria-label="into" className="text-[var(--text-muted)]">→</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] rounded-[4px] border border-[var(--border)] px-1.5 py-px">{create.targetBranch}</span>
+        {create.draft && <span className="rounded-[4px] bg-[var(--bg-tertiary)] px-1.5 py-px [font-family:inherit] text-[11px] text-[var(--text-secondary)]">Draft</span>}
+      </div>
+      <div className="mb-1 text-[11px] text-[var(--text-muted)]">{editable ? 'Title, editable' : 'Title'}</div>
+      <input
+        aria-label="Pull request title"
+        value={draft.title}
+        readOnly={!editable}
+        onChange={(e) => onChange({ ...draft, title: e.target.value })}
+        onKeyDown={submitOnModEnter}
+        className={cn(TEXTAREA, 'resize-none')}
+      />
+      <div className="mt-2 mb-1 text-[11px] text-[var(--text-muted)]">{editable ? 'Description, editable' : 'Description'}</div>
+      <textarea
+        aria-label="Pull request description"
+        value={draft.description}
+        readOnly={!editable}
+        onChange={(e) => onChange({ ...draft, description: e.target.value })}
+        onKeyDown={submitOnModEnter}
+        rows={5}
+        className={TEXTAREA}
+      />
     </div>
   )
 }

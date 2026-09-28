@@ -8,6 +8,7 @@
  * which would read a body starting with `@` as a file name.
  */
 import { execFile } from 'node:child_process'
+import type { CreatedPr, CreatePrInput } from '@shared/agent-pr-create'
 import type { InlineCommentInput, ReviewEvent, SubmitReviewInput } from '@shared/pull-request-writes'
 import type { MergeStrategy, PrChangedFile, PrCheck, PrConversation, PrDetail, PrError, PrRef, PrReviewerCandidate, RepoRef } from '@shared/pull-requests'
 import { repoKey } from '@shared/pull-requests'
@@ -456,7 +457,50 @@ export class GitHubProvider implements PullRequestProvider {
   async decline(ref: PrRef): Promise<void> {
     await this.rest('PATCH', `${this.repoPath(ref)}/pulls/${ref.number}`, { state: 'closed' })
   }
+
+  async defaultBranch(repo: RepoRef): Promise<string> {
+    const res = await this.read(['api', `repos/${repo.owner}/${repo.name}`, '--jq', '.default_branch'])
+    if (res.code !== 0) throw new PrHostError(classifyGhError(res))
+    const branch = res.stdout.trim()
+    if (!branch || branch === 'null') throw new PrHostError({ kind: 'unknown', host: 'github', message: 'GitHub did not say which branch is the default.' })
+    return branch
+  }
+
+  /** Same-repository branches only: `head` is `owner:branch`, so a fork's branch of the same name is not matched. */
+  async openPullRequestFor(repo: RepoRef, branch: string): Promise<CreatedPr | null> {
+    const head = encodeURIComponent(`${repo.owner}:${branch}`)
+    const res = await this.read(['api', `repos/${repo.owner}/${repo.name}/pulls?state=open&per_page=5&head=${head}`])
+    if (res.code !== 0) throw new PrHostError(classifyGhError(res))
+    const pr = (parseJson<Array<{ number?: number; html_url?: string }>>(res.stdout) ?? [])[0]
+    return pr && Number.isInteger(pr.number) && pr.html_url ? { number: pr.number as number, url: pr.html_url } : null
+  }
+
+  async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<CreatedPr> {
+    let pr: { number?: number; html_url?: string } | null
+    try {
+      pr = await this.rest('POST', `repos/${repo.owner}/${repo.name}/pulls`, {
+        title: input.title,
+        body: input.description,
+        head: input.sourceBranch,
+        base: input.targetBranch,
+        draft: input.draft,
+      })
+    } catch (err) {
+      // GitHub answers a token that may read but not write with 404 as well as 403.
+      if (err instanceof PrHostError && (err.error.kind === 'forbidden' || err.error.kind === 'not_found')) {
+        throw new PrHostError({ ...err.error, message: `${err.error.message} ${GH_CREATE_SCOPE_HINT}` })
+      }
+      throw err
+    }
+    if (!pr || !Number.isInteger(pr.number) || !pr.html_url) {
+      throw new PrHostError({ kind: 'unknown', host: 'github', message: 'GitHub did not return the new pull request.' })
+    }
+    return { number: pr.number as number, url: pr.html_url }
+  }
 }
+
+const GH_CREATE_SCOPE_HINT =
+  "gh's token must be allowed to open pull requests here: the repo scope for a classic token (gh auth refresh -s repo), Pull requests: write for a fine-grained one."
 
 /** `team:<slug>` goes in `team_reviewers`, a login in `reviewers`. */
 export function ghReviewerBody(reviewer: string): { reviewers: string[] } | { team_reviewers: string[] } {
