@@ -3,6 +3,7 @@ import { AgentApprovalBroker } from '../../src/main/mcp/agent-approvals'
 import { AgentWriteBudget } from '../../src/main/mcp/agent-write-budget'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import type { HostWriteCard } from '../../src/shared/agent-host-writes'
+import { HOST_WRITE_SHOWN_REQUIRED, hostWriteShownDigest } from '../../src/shared/host-write-phone'
 
 const card: HostWriteCard = {
   action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'repo #1', url: null,
@@ -11,7 +12,7 @@ const card: HostWriteCard = {
 
 const DESKTOP = { mayApproveHostWrite: true, label: 'the desktop' }
 const NO_SCOPE = { mayApproveHostWrite: false, label: 'device session d0' }
-const PHONE = { mayApproveHostWrite: true, label: 'device session d1' }
+const PHONE = { mayApproveHostWrite: true, mustProveShown: true, label: 'device session d1' }
 
 const reviewCard: HostWriteCard = {
   ...card, action: 'review', location: null, replyText: undefined,
@@ -55,18 +56,40 @@ describe('AgentApprovalBroker', () => {
   it('lets a phone with the chat scope approve a host write as drafted', async () => {
     const { b, opened } = broker()
     const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: card })
-    expect(b.respond('t1', opened().requestId, 'approve', { resolve: true }, PHONE)).toEqual({ ok: true })
-    await expect(answer).resolves.toEqual({ decision: 'approve', response: { resolve: true } })
+    const shown = hostWriteShownDigest(card)!
+    expect(b.respond('t1', opened().requestId, 'approve', { resolve: true, shown }, PHONE)).toEqual({ ok: true })
+    await expect(answer).resolves.toEqual({ decision: 'approve', response: { resolve: true, shown } })
+  })
+
+  it('refuses a phone approval without the digest of this draft, keeps the card open, and still takes a deny', async () => {
+    const { b, opened } = broker()
+    const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: card })
+    const id = opened().requestId
+    // An app built before the digest showed a shortened card and sends none.
+    expect(b.respond('t1', id, 'approve', { resolve: true }, PHONE)).toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
+    // One that rendered another draft sends a different one.
+    const other = hostWriteShownDigest({ ...card, replyText: 'something else' })!
+    expect(b.respond('t1', id, 'approve', { resolve: true, shown: other }, PHONE)).toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
+    expect(b.respond('t1', id, 'deny', {}, PHONE)).toEqual({ ok: true })
+    await expect(answer).resolves.toEqual({ decision: 'deny', reason: 'user' })
+  })
+
+  it('needs no digest from the desktop', async () => {
+    const { b, opened } = broker()
+    const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: card })
+    expect(b.respond('t1', opened().requestId, 'approve', { resolve: false }, DESKTOP)).toEqual({ ok: true })
+    await expect(answer).resolves.toMatchObject({ decision: 'approve' })
   })
 
   it('refuses a review approved without a verdict, or with one the card did not offer, and keeps it open', async () => {
     const { b, opened } = broker()
     const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: reviewCard })
     const id = opened().requestId
-    expect(b.respond('t1', id, 'approve', {}, PHONE)).toEqual({ ok: false, message: expect.stringContaining('Pick Comment') })
-    expect(b.respond('t1', id, 'approve', { verdict: 'approve' }, PHONE)).toEqual({ ok: false, message: 'Approve is not offered on this review.' })
-    expect(b.respond('t1', id, 'approve', { verdict: 'comment' }, PHONE)).toEqual({ ok: true })
-    await expect(answer).resolves.toEqual({ decision: 'approve', response: { verdict: 'comment' } })
+    const shown = hostWriteShownDigest(reviewCard)!
+    expect(b.respond('t1', id, 'approve', { shown }, PHONE)).toEqual({ ok: false, message: expect.stringContaining('Pick Comment') })
+    expect(b.respond('t1', id, 'approve', { verdict: 'approve', shown }, PHONE)).toEqual({ ok: false, message: 'Approve is not offered on this review.' })
+    expect(b.respond('t1', id, 'approve', { verdict: 'comment', shown }, PHONE)).toEqual({ ok: true })
+    await expect(answer).resolves.toEqual({ decision: 'approve', response: { verdict: 'comment', shown } })
   })
 
   it('lets any device approve an ordinary card', async () => {

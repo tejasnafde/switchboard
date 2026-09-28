@@ -33,11 +33,17 @@ data class HostWriteReview(
 )
 
 /** What an approval sends as the 4th argument of `provider:respond-to-request`. */
-data class HostWriteResponse(val resolve: Boolean? = null, val verdict: String? = null) {
+data class HostWriteResponse(
+    val resolve: Boolean? = null,
+    val verdict: String? = null,
+    /** [HostWriteCards.shownDigest] of the draft this phone showed in full; the backend refuses an approval without it. */
+    val shown: String? = null,
+) {
     fun toJson(): JsonObject = JsonObject(
         linkedMapOf<String, JsonValue>().apply {
             resolve?.let { put("resolve", JsonBoolean(it)) }
             verdict?.let { put("verdict", JsonString(it)) }
+            shown?.let { put("shown", JsonString(it)) }
         },
     )
 }
@@ -186,6 +192,26 @@ object HostWriteCards {
         val chars = sections.sumOf { it.label.length + it.text.length }
         return HostWritePreview(sections, lines > PREVIEW_COLLAPSED_LINES || chars > PREVIEW_COLLAPSED_CHARS)
     }
+
+    /**
+     * A fingerprint of exactly what [preview] shows: FNV-1a 64 over the UTF-16
+     * code units (low byte first) of the action and every section's label and
+     * text, joined by NUL. Ports `hostWriteShownDigest` in
+     * `src/shared/host-write-phone.ts`, which the backend recomputes.
+     */
+    fun shownDigest(card: HostWriteCard): String? {
+        val preview = preview(card) ?: return null
+        val input = (listOf(card.action) + preview.sections.flatMap { listOf(it.label, it.text) }).joinToString("\u0000")
+        var hash = FNV_OFFSET
+        for (unit in input) {
+            hash = (hash xor (unit.code and 0xff).toLong()) * FNV_PRIME
+            hash = (hash xor (unit.code ushr 8).toLong()) * FNV_PRIME
+        }
+        return java.lang.Long.toUnsignedString(hash, 16).padStart(16, '0')
+    }
+
+    private const val FNV_OFFSET = -0x340d631b7bdddcdbL // 0xcbf29ce484222325
+    private const val FNV_PRIME = 0x100000001b3L
 
     private const val PREVIEW_COLLAPSED_LINES = 12
     private const val PREVIEW_COLLAPSED_CHARS = 800

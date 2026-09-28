@@ -15,7 +15,7 @@
 import { randomBytes } from 'node:crypto'
 import type { ApprovalDecision, RuntimeEvent } from '@shared/provider-events'
 import { HOST_WRITE_APPROVAL_TTL_MS, type HostWriteCard, type HostWriteResponse } from '@shared/agent-host-writes'
-import { hostWriteApprovalProblem } from '@shared/host-write-phone'
+import { HOST_WRITE_SHOWN_REQUIRED, hostWriteApprovalProblem, hostWriteShownDigest } from '@shared/host-write-phone'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('mcp:approvals')
@@ -104,15 +104,18 @@ export class AgentApprovalBroker {
   /**
    * The user's answer. `approver.mayApproveHostWrite` is false for a device
    * scope that cannot post to a pull request: it may still deny a host write,
-   * which is harmless, but not approve one. `approver.label` names the client
-   * in the log line an approved host write leaves.
+   * which is harmless, but not approve one. `approver.mustProveShown` is true
+   * for a device that cannot edit (a phone): its approval must carry the
+   * digest of the draft it showed in full (`response.shown`), so an app that
+   * showed a shortened card cannot approve it. `approver.label` names the
+   * client in the log line an approved host write leaves.
    */
   respond(
     threadId: string,
     requestId: string,
     decision: ApprovalDecision,
     response: HostWriteResponse,
-    approver: { mayApproveHostWrite: boolean; label: string },
+    approver: { mayApproveHostWrite: boolean; mustProveShown?: boolean; label: string },
   ): AgentApprovalAnswer {
     const card = this.open.get(requestId)
     if (!card) return { ok: false, message: 'That request is no longer open.' }
@@ -122,6 +125,10 @@ export class AgentApprovalBroker {
       if (!approver.mayApproveHostWrite) {
         log.warn(`refused a host write approval from ${approver.label}, which lacks the scope: ${requestId}`)
         return { ok: false, message: 'This device cannot post to a pull request. Approve it on the desktop.' }
+      }
+      if (approver.mustProveShown && response.shown !== hostWriteShownDigest(card.hostWrite)) {
+        log.warn(`refused a host write approval from ${approver.label}, which did not show the whole draft: ${requestId}`)
+        return { ok: false, message: HOST_WRITE_SHOWN_REQUIRED }
       }
       const problem = hostWriteApprovalProblem(card.hostWrite, response)
       if (problem) return { ok: false, message: problem }

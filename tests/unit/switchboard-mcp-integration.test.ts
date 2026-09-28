@@ -55,6 +55,7 @@ import { setAgentPullRequestAccess, type AgentPullRequestAccess } from '../../sr
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import { withBackendRequestContext } from '../../src/main/backend/request-context'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
+import { HOST_WRITE_SHOWN_REQUIRED, hostWriteShownDigest } from '../../src/shared/host-write-phone'
 import type { BackendHost } from '../../src/main/backend/host'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
@@ -246,10 +247,16 @@ describe('through the provider registry', () => {
     await expect(scopeless).rejects.toThrow('cannot post')
     expect(posted).toEqual([])
 
+    const phone = { clientScope: 'phone', transport: 'remote' as const, deviceScopes: ['chat' as const], deviceSessionId: 'dev_1' }
+    // An app built before the digest showed a shortened card: its approval is refused.
+    await expect(withBackendRequestContext(phone, () =>
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false }))).rejects.toThrow(HOST_WRITE_SHOWN_REQUIRED)
+    expect(posted).toEqual([])
+
     // The phone approves the draft its card showed: replacement text from a
     // device without the admin scope is dropped before the broker sees it.
-    await withBackendRequestContext({ clientScope: 'phone', transport: 'remote', deviceScopes: ['chat'], deviceSessionId: 'dev_1' }, () =>
-      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false, text: 'Replaced on the phone' }))
+    await withBackendRequestContext(phone, () =>
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false, text: 'Replaced on the phone', shown: hostWriteShownDigest(card.hostWrite!) }))
     const result = await reply
     expect((result.result as { isError?: boolean }).isError).toBeUndefined()
     expect(posted).toEqual([{ conversationId: 'T1', body: 'Because.\n\nvia Switchboard' }])

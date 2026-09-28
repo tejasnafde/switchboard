@@ -64,7 +64,23 @@ class HostWriteCardsTest {
     }
 
     @Test
+    fun shownDigestMatchesTheSharedRuleForTheSameCard() {
+        // Pinned against tests/unit/mobile-approval-actions.test.ts, which the backend's rule passes.
+        val fixture = HostWriteCards.decode(
+            obj(
+                "action" to s("reply"), "host" to s("github"), "prLabel" to s("app #612"), "location" to s("a.ts:3"),
+                "quote" to obj("author" to s("rév"), "body" to s("Why? 🙂")),
+                "replyText" to s("Because.\nSee a.ts."),
+            ),
+        )!!
+        assertEquals("3243034f03ba1d8c", HostWriteCards.shownDigest(fixture))
+        assertEquals("91dfd6974e86cfc9", HostWriteCards.shownDigest(HostWriteCards.decode(obj("action" to s("resolve"), "host" to s("github")))!!))
+        assertNull(HostWriteCards.shownDigest(card("action" to s("reply"))!!))
+    }
+
+    @Test
     fun responseEncodesOnlyWhatItCarries() {
+        assertEquals("""{"resolve":true,"shown":"00ff"}""", JsonCodec.encode(HostWriteResponse(resolve = true, shown = "00ff").toJson()))
         assertEquals("""{"verdict":"comment"}""", JsonCodec.encode(HostWriteResponse(verdict = "comment").toJson()))
         assertEquals("""{"resolve":false}""", JsonCodec.encode(HostWriteResponse(resolve = false).toJson()))
     }

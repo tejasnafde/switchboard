@@ -41,6 +41,7 @@ class ThreadInteractionPolicyTest {
 
         val actions = ThreadInteractionPolicy.approvalActions(approval, backendTakesPhoneApproval = true) as ApprovalActions.HostWrite
         assertEquals(listOf("Resolve"), actions.buttons.map { it.label })
+        assertEquals(HostWriteResponse(shown = HostWriteCards.shownDigest(card)), actions.buttons.single().response)
         assertEquals(ApprovalActions.DenyOnly(card), ThreadInteractionPolicy.approvalActions(approval, backendTakesPhoneApproval = false))
         assertEquals(ApprovalActions.Plain, ThreadInteractionPolicy.approvalActions(approval.copy(hostWrite = null), backendTakesPhoneApproval = false))
         assertEquals(

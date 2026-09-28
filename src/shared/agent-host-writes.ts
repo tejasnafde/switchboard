@@ -132,6 +132,8 @@ export interface HostWriteResponse {
   title?: string
   /** Create: the description as the user left it. */
   description?: string
+  /** A phone's `hostWriteShownDigest` of the draft it showed in full. Required on an approval from a device without the admin scope. */
+  shown?: string
 }
 
 export type AgentToolGate = 'allow' | 'deny' | 'card'
@@ -233,5 +235,6 @@ export function parseHostWriteResponse(value: unknown): HostWriteResponse {
     ...(comments ? { comments } : {}),
     ...(typeof r.title === 'string' ? { title: r.title } : {}),
     ...(typeof r.description === 'string' ? { description: r.description } : {}),
+    ...(typeof r.shown === 'string' ? { shown: r.shown } : {}),
   }
 }

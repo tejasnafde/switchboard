@@ -75,8 +75,12 @@ export function approvalChoiceOnly(response: HostWriteResponse): HostWriteRespon
   return {
     ...(response.resolve !== undefined ? { resolve: response.resolve } : {}),
     ...(response.verdict !== undefined ? { verdict: response.verdict } : {}),
+    ...(response.shown !== undefined ? { shown: response.shown } : {}),
   }
 }
+
+/** Why a phone's approval without the digest of the draft it showed is refused. */
+export const HOST_WRITE_SHOWN_REQUIRED = 'Update the Switchboard app to approve this here, or approve it on the desktop.'
 
 /** One labelled block of a phone card: a title, a reply, one review comment. */
 export interface HostWritePreviewSection {
@@ -135,3 +139,29 @@ export function hostWritePreview(card: HostWriteCard): HostWritePreview | null {
   const chars = sections.reduce((n, s) => n + s.label.length + s.text.length, 0)
   return { sections, long: lines > HOST_WRITE_PREVIEW_COLLAPSED_LINES || chars > PREVIEW_COLLAPSED_CHARS }
 }
+
+/**
+ * A fingerprint of exactly what `hostWritePreview` shows, which a phone sends
+ * as `shown` with its approval and the broker recomputes from its own card. An
+ * app that rendered a shortened detail (every build before this one) sends
+ * none and is refused, and a phone that showed another draft sends a different
+ * one. It is not a secret: it proves which draft was rendered, not who
+ * rendered it; the device scope does that. FNV-1a 64 over the UTF-16 code
+ * units (low byte first), so the Android port (`HostWriteCards.shownDigest`)
+ * computes it without a crypto library. Null when the card has no preview.
+ */
+export function hostWriteShownDigest(card: HostWriteCard): string | null {
+  const preview = hostWritePreview(card)
+  if (!preview) return null
+  const input = [card.action, ...preview.sections.flatMap((s) => [s.label, s.text])].join('\u0000')
+  let hash = FNV_OFFSET
+  for (let i = 0; i < input.length; i++) {
+    const unit = input.charCodeAt(i)
+    hash = BigInt.asUintN(64, (hash ^ BigInt(unit & 0xff)) * FNV_PRIME)
+    hash = BigInt.asUintN(64, (hash ^ BigInt(unit >>> 8)) * FNV_PRIME)
+  }
+  return hash.toString(16).padStart(16, '0')
+}
+
+const FNV_OFFSET = BigInt('0xcbf29ce484222325')
+const FNV_PRIME = BigInt('0x100000001b3')

@@ -1916,10 +1916,13 @@ export class ProviderRegistry implements PeerToolHost {
         // phone has) may approve the post it asked for: the card shows the
         // text, and a full-access turn is the larger power. Only an admin
         // device may change that text, so a phone's approval posts the draft
-        // it showed. The Reviews write channels stay admin-scoped in device-auth.
+        // it showed, and must prove it showed all of it (`shown`). The Reviews
+        // write channels stay admin-scoped in device-auth.
         const parsed = parseHostWriteResponse(response)
-        const answer = this.agentApprovals.respond(threadId, requestId, decision, remoteDeviceHasScope('admin') ? parsed : approvalChoiceOnly(parsed), {
+        const mayEdit = remoteDeviceHasScope('admin')
+        const answer = this.agentApprovals.respond(threadId, requestId, decision, mayEdit ? parsed : approvalChoiceOnly(parsed), {
           mayApproveHostWrite: remoteDeviceHasScope('chat'),
+          mustProveShown: !mayEdit,
           label: describeRequestClient(),
         })
         if (!answer.ok) throw new Error(answer.message)

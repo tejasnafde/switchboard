@@ -10,6 +10,7 @@ import { ApprovalItem, ToolItem, TextItem } from '../ThreadFeedItems'
 import type { FeedItem } from '../../stores/chat'
 import { act } from 'react-test-renderer'
 import type { HostWriteCard } from '@shared/agent-host-writes'
+import { hostWriteShownDigest } from '@shared/host-write-phone'
 import { renderComponent, type Node } from '../../test/render'
 
 /** The Pressable around the text `label`. */
@@ -192,7 +193,7 @@ describe('ApprovalItem', () => {
     expect(texts).not.toContain('Approve')
     expect(texts.join(' ')).toContain('Edit on the desktop')
     press(root.root, 'Post and resolve')
-    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { resolve: true })
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { resolve: true, shown: hostWriteShownDigest(reply) })
   })
 
   it('offers a review\'s verdicts, none as the primary button, and sends the one picked', () => {
@@ -201,7 +202,7 @@ describe('ApprovalItem', () => {
     const texts = root.texts()
     expect(texts).toEqual(expect.arrayContaining(['Comment', 'Request changes', 'Approve', 'Deny']))
     press(root.root, 'Request changes')
-    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { verdict: 'request_changes' })
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { verdict: 'request_changes', shown: hostWriteShownDigest(review) })
   })
 
   it('shows a long reply in full, and enables its buttons only once it is opened', () => {

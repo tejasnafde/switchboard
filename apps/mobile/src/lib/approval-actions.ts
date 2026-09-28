@@ -7,7 +7,7 @@
  * the phone cannot show in full (`hostWritePreview` is null): approving it
  * would post text the user never saw.
  */
-import { hostWritePreview, phoneHostWriteButtons, type HostWritePreview, type PhoneHostWriteButton } from '@shared/host-write-phone'
+import { hostWritePreview, hostWriteShownDigest, phoneHostWriteButtons, type HostWritePreview, type PhoneHostWriteButton } from '@shared/host-write-phone'
 import type { FeedItem } from '../stores/chat'
 
 export type ApprovalActions =
@@ -20,10 +20,13 @@ export function approvalActions(
   backendTakesPhoneApproval: boolean,
 ): ApprovalActions {
   if (item.hostWrite) {
-    const preview = backendTakesPhoneApproval ? hostWritePreview(item.hostWrite) : null
-    return preview
-      ? { kind: 'host-write', buttons: phoneHostWriteButtons(item.hostWrite), preview }
-      : { kind: 'deny-only' }
+    const card = item.hostWrite
+    const preview = backendTakesPhoneApproval ? hostWritePreview(card) : null
+    const shown = preview && hostWriteShownDigest(card)
+    if (!preview || !shown) return { kind: 'deny-only' }
+    // Every approval says which draft it showed in full; the backend refuses one that does not.
+    const buttons = phoneHostWriteButtons(card).map((b) => ({ ...b, response: { ...b.response, shown } }))
+    return { kind: 'host-write', buttons, preview }
   }
   // Cached before the card rode along on the item.
   if (item.desktopOnly) return { kind: 'deny-only' }

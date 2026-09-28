@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { approvalActions } from '../../apps/mobile/src/lib/approval-actions'
-import { approvalChoiceOnly, HOST_WRITE_PHONE_APPROVAL_CAPABILITY, hostWritePreview } from '../../src/shared/host-write-phone'
+import { approvalChoiceOnly, HOST_WRITE_PHONE_APPROVAL_CAPABILITY, hostWritePreview, hostWriteShownDigest } from '../../src/shared/host-write-phone'
 import { BACKEND_CAPABILITIES } from '../../src/shared/ws-protocol'
 import type { HostWriteCard } from '../../src/shared/agent-host-writes'
 import type { FeedItem } from '../../apps/mobile/src/stores/chat'
@@ -17,7 +17,9 @@ const item = (over: Partial<Approval> = {}): Approval => ({
 
 describe('approvalActions', () => {
   it('approves a pull request write only on a backend that takes a phone approval', () => {
-    expect(approvalActions(item({ hostWrite: card }), true)).toMatchObject({ kind: 'host-write', buttons: [{ label: 'Post comment', primary: true }] })
+    expect(approvalActions(item({ hostWrite: card }), true)).toMatchObject({
+      kind: 'host-write', buttons: [{ label: 'Post comment', primary: true, response: { shown: hostWriteShownDigest(card) } }],
+    })
     expect(approvalActions(item({ hostWrite: card }), false)).toEqual({ kind: 'deny-only' })
   })
 
@@ -68,11 +70,28 @@ describe('hostWritePreview', () => {
   })
 })
 
+describe('hostWriteShownDigest', () => {
+  // The same card and digest are pinned in the Android HostWriteCardsTest, so the two ports cannot drift.
+  const fixture: HostWriteCard = {
+    action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'app #612', url: null, location: 'a.ts:3',
+    quote: { author: 'rév', body: 'Why? 🙂' }, replyText: 'Because.\nSee a.ts.', maxChars: 8000,
+  }
+
+  it('fingerprints exactly what the preview shows', () => {
+    expect(hostWriteShownDigest(fixture)).toBe('3243034f03ba1d8c')
+    expect(hostWriteShownDigest({ ...fixture, action: 'resolve', quote: null })).toBe('91dfd6974e86cfc9')
+    expect(hostWriteShownDigest({ ...fixture, replyText: 'Because.\nSee b.ts.' })).not.toBe('3243034f03ba1d8c')
+    // Nothing the preview leaves out changes it.
+    expect(hostWriteShownDigest({ ...fixture, agentLabel: 'Claude Code', maxChars: 10 })).toBe('3243034f03ba1d8c')
+    expect(hostWriteShownDigest({ ...fixture, replyText: undefined })).toBeNull()
+  })
+})
+
 describe('approvalChoiceOnly', () => {
   it('keeps the choice and drops replacement content', () => {
     expect(approvalChoiceOnly({
-      text: 't', resolve: true, verdict: 'approve', summary: 's', comments: [{ id: 'c1', text: 'x' }], title: 'T', description: 'D',
-    })).toEqual({ resolve: true, verdict: 'approve' })
+      text: 't', resolve: true, verdict: 'approve', summary: 's', comments: [{ id: 'c1', text: 'x' }], title: 'T', description: 'D', shown: 'abc',
+    })).toEqual({ resolve: true, verdict: 'approve', shown: 'abc' })
     expect(approvalChoiceOnly({ text: 't' })).toEqual({})
   })
 })
