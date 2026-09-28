@@ -17,6 +17,7 @@ import {
   AGENT_REVIEW_MAX_COMMENTS,
   checkReplyText,
   hostWriteDetail,
+  createPullRequestGate,
   hostWriteGate,
   withViaMarker,
   type HostWriteCard,
@@ -242,6 +243,12 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       hostWrite: card,
       signal,
     })
+  }
+
+  /** A write the mode allows without a card: it still counts against the budget. */
+  const autoApproved = (): AgentApprovalOutcome | McpToolResult => {
+    const budget = ctx.budget.take(ctx.chatId)
+    return budget.ok ? { decision: 'approve', response: {} } : toolText(budget.message, true)
   }
 
   const declined = (outcome: Extract<AgentApprovalOutcome, { decision: 'deny' }>): McpToolResult => {
@@ -742,7 +749,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       'Commit and push the branch first (git push -u <remote> <branch>); the source branch must already be on the remote.',
       'sourceBranch defaults to the branch checked out in this chat, targetBranch to the repository\'s default branch.',
       'If a pull request is already open for the source branch, nothing is created: that one is linked to this chat and returned.',
-      'The user sees the title and description in a Switchboard approval card, can edit both, and decides whether it is opened.',
+      'The user sees the title and description in a Switchboard approval card, can edit both, and decides whether it is opened (in full access it opens without a card).',
       'It is opened as the user, the description ending with a "via Switchboard" line. "draft" is GitHub only. Refused in plan mode.',
     ].join('\n'),
     inputSchema: {
@@ -798,7 +805,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       }
 
       const draft = { title: input.value.title, description: input.value.description }
-      const outcome = await ask(PR_CREATE_TOOL, {
+      const withoutCard = createPullRequestGate(ctx.runtimeMode()) === 'allow'
+      const outcome = withoutCard ? autoApproved() : await ask(PR_CREATE_TOOL, {
         action: 'create',
         agentLabel: ctx.agentLabel,
         host: repo.host,
@@ -824,6 +832,10 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if (!title.ok) return toolText(`The edited title was refused: ${title.message} Nothing was created.`, true)
       const description = outcome.response.description === undefined ? { ok: true as const, value: draft.description } : checkPrDescription(outcome.response.description)
       if (!description.ok) return toolText(`The edited description was refused: ${description.message} Nothing was created.`, true)
+      // No card was shown, so full access must still hold after the awaits above.
+      if (withoutCard && createPullRequestGate(ctx.runtimeMode()) !== 'allow') {
+        return toolText('The chat left full access before the pull request was opened, so nothing was created. Call again: the user will see an approval card.', true)
+      }
       const created = await access.createPullRequest(repo, {
         title: title.value,
         description: withViaMarker(description.value),

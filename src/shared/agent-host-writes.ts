@@ -146,6 +146,15 @@ export function hostWriteGate(mode: RuntimeMode): AgentToolGate {
   return mode === 'plan' ? 'deny' : 'card'
 }
 
+/**
+ * Opening a pull request is the exception: the user asked for it, it merges
+ * nothing, and closing it undoes it. So full access opens it without a card,
+ * like any other action full access allows. Plan mode still refuses.
+ */
+export function createPullRequestGate(mode: RuntimeMode): AgentToolGate {
+  return mode === 'full-access' ? 'allow' : hostWriteGate(mode)
+}
+
 /** `text` with exactly one marker line at the end, whatever the agent or the user already typed. */
 export function withViaMarker(text: string): string {
   const lines = text.replace(/\s+$/, '').split('\n')

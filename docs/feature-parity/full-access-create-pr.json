@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "full-access-create-pr",
+  "summary": "In full access, the Switchboard MCP tool create_pull_request opens the pull request without an approval card (createPullRequestGate). Plan mode still refuses it, every other mode still shows the card, and it still counts against the chat's write budget and ends its description with the via-Switchboard marker. Every other host write (reply, resolve, comment, review, re-run) keeps the card in full access.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/mcp/pr-tools.ts",
+        "tests/unit/mcp-pr-create-tool.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No phone code changes: in full access no card is opened, and in other modes phones still see the card and cannot approve a host write."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No phone code changes, as for the React Native client."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/agent-host-writes.ts",
+        "tests/unit/agent-host-writes.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships in the normal desktop build and headless server."
+    }
+  },
+  "verification": {
+    "automated": [
+      "mcp-pr-create-tool.test.ts: full access opens without a card and still counts against the budget; sandbox, accept-edits and auto show the card; plan refuses. agent-host-writes.test.ts: createPullRequestGate per mode."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No real pull request was opened in full access."
+    ]
+  }
+}
