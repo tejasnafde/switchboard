@@ -82,7 +82,7 @@ function request(anchor: ChatMessage, requestId = 'request-1'): ForkConversation
   }
 }
 
-function harness(agentType: 'codex' | 'opencode', runners: Partial<NativeForkRunners> = {}, options: { messageId?: string } = {}) {
+function harness(agentType: 'codex' | 'opencode', runners: Partial<NativeForkRunners> = {}, options: { messageId?: string; listSegments?: () => never } = {}) {
   const db = database(agentType)
   const store = new SqliteConversationForkStore(db)
   const source: ForkSourceExecution = {
@@ -117,7 +117,7 @@ function harness(agentType: 'codex' | 'opencode', runners: Partial<NativeForkRun
     providerArtifacts: new DefaultProviderForkArtifacts({
       resolveInstance: () => ({ id: 'inst', agentType, oauthDir: null, enabled: true }),
       listCompatibleSessionIds: () => [],
-      listSegments: () => [{ provider: 'opencode', provider_session_id: 'ses_source', provider_instance_id: 'inst', created_at: 5 }],
+      listSegments: options.listSegments ?? (() => [{ provider: 'opencode', provider_session_id: 'ses_source', provider_instance_id: 'inst', created_at: 5 }]),
       native,
     }),
   })
@@ -205,6 +205,14 @@ describe('native OpenCode fork', () => {
     })
     expect(h.db.prepare('SELECT provider, provider_session_id FROM conversation_segments').all())
       .toEqual([{ provider: 'opencode', provider_session_id: 'ses_forked' }])
+  })
+
+  it('falls back to the handoff when the session lookup throws', async () => {
+    const h = harness('opencode', {}, { listSegments: () => { throw new Error('database is locked') } })
+    const outcome = await h.coordinator.createOrGet(request(messages[3]))
+
+    expect(outcome).toMatchObject({ kind: 'completed', result: { conversation: { resumeMode: 'transcript-handoff' } } })
+    expect(h.native.forkOpencodeSession).not.toHaveBeenCalled()
   })
 
   it('keeps the handoff for an earlier anchor', async () => {

@@ -213,14 +213,14 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
     if (!instanceId || !this.enabledInstance(instanceId, 'opencode')) {
       return handoff(prepared, 'source-profile-missing', 'The source OpenCode profile is missing or disabled.')
     }
-    const picked = pickOpencodeForkSession({
-      segments: this.deps.listSegments(prepared.source.conversationId),
-      instanceId,
-      firstMessageAt: prepared.prefix[0]?.timestamp,
-      anchor: prepared.anchor,
-    })
-    if (!picked.ok) return handoff(prepared, picked.code, picked.message)
     try {
+      const picked = pickOpencodeForkSession({
+        segments: this.deps.listSegments(prepared.source.conversationId),
+        instanceId,
+        firstMessageAt: prepared.prefix[0]?.timestamp,
+        anchor: prepared.anchor,
+      })
+      if (!picked.ok) return handoff(prepared, picked.code, picked.message)
       const sessionId = await native.forkOpencodeSession(instanceId, { sessionId: picked.sessionId, cwd: targetCwd })
       // No stage: ACP cannot delete a session, so a fork that fails to commit
       // leaves an unused OpenCode session behind.
