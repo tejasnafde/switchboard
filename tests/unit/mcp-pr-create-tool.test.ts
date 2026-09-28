@@ -51,7 +51,7 @@ function setup(opts: Options = {}) {
       creates.push(input)
       return opts.create?.(input) ?? { ok: true as const, data: { number: 42, url: url(42), existing: false } }
     }),
-    linkToChat: vi.fn((chatId: string, ref: PrRef, created: boolean) => { links.push({ chatId, ref, created }) }),
+    linkToChat: vi.fn((chatId: string, ref: PrRef, created: boolean) => { links.push({ chatId, ref, created }); return true }),
   } as unknown as AgentPullRequestAccess
   const approvals = new AgentApprovalBroker({
     publish: (e) => {
@@ -129,6 +129,15 @@ describe('create_pull_request: defaults and the card', () => {
     const s = setup({ answer: approve() })
     await s.call({ title: 'T' })
     expect(s.links).toEqual([{ chatId: 'root-1', ref: { ...APP, number: 42 }, created: true }])
+  })
+
+  it('says the link failed, and still gives the URL, when the link cannot be stored', async () => {
+    const s = setup({ answer: approve() })
+    vi.mocked(s.access.linkToChat).mockReturnValue(false)
+    const result = await s.call({ title: 'T' })
+    expect(text(result)).toContain('Opened acme/app #42: https://github.com/acme/app/pull/42')
+    expect(text(result)).toContain('Linking it to this chat failed')
+    expect(text(result)).not.toContain('shows in Reviews')
   })
 
   it('uses the project path when the session has no cwd, and explicit branches as given', async () => {

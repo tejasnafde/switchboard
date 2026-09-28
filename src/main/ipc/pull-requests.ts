@@ -287,8 +287,11 @@ export function registerPullRequestHandlers(host: BackendHost): void {
       } catch (err) {
         // The PR exists either way; the agent must still hear its URL, not a failure it would retry.
         log.warn('linking an agent-opened pull request failed', { number: ref.number, err: String(err) })
+        if (created) notifyLinks(resolveRootThreadId(chatId), created)
+        return false
       }
       if (added || created) notifyLinks(resolveRootThreadId(chatId), created)
+      return true
     },
   })
   host.handle(PullRequestChannels.LIST, async () => withHidden(await getService().list()))

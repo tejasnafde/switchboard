@@ -109,7 +109,8 @@ export interface AgentPullRequestAccess {
   /** Returns the open one instead (`existing`) when one appeared for the branch meanwhile. */
   createPullRequest(repo: RepoRef, input: { title: string; description: string; sourceBranch: string; targetBranch: string; draft: boolean }): Promise<PrResult<CreatedPr & { existing: boolean }>>
   /** Links a PR of the chat's repository to the chat and tells clients; `created` asks Reviews to refresh. */
-  linkToChat(chatId: string, ref: PrRef, created: boolean): void
+  /** False when the link could not be stored; the PR exists either way. */
+  linkToChat(chatId: string, ref: PrRef, created: boolean): boolean
 }
 
 let registeredAccess: AgentPullRequestAccess | null = null
@@ -720,10 +721,10 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     return { projectPath, repo }
   }
 
-  const linkCreated = (access: AgentPullRequestAccess, repo: RepoRef, pr: CreatedPr, created: boolean): PrRef => {
+  const linkCreated = (access: AgentPullRequestAccess, repo: RepoRef, pr: CreatedPr, created: boolean): { ref: PrRef; linked: string } => {
     const ref: PrRef = { ...repo, number: pr.number }
-    access.linkToChat(ctx.chatId, ref, created)
-    return ref
+    const ok = access.linkToChat(ctx.chatId, ref, created)
+    return { ref, linked: ok ? 'It is linked to this chat and shows in Reviews.' : 'Linking it to this chat failed; the user can link it with Link to chat in Reviews.' }
   }
 
   const createTool: McpTool = {
@@ -731,7 +732,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     description: [
       'Open a pull request on the repository of this chat\'s project (GitHub or Bitbucket), with the user\'s account in Switchboard.',
       'Use this whenever the user asks you to raise, open or create a pull request, instead of gh pr create, bbpr or a host API:',
-      'it is the path that is set up with write access, and the pull request is linked to this chat and shows in Reviews.',
+      'it is the path that is set up with write access, and the pull request is linked to this chat so it shows in Reviews.',
       'Commit and push the branch first (git push -u <remote> <branch>); the source branch must already be on the remote.',
       'sourceBranch defaults to the branch checked out in this chat, targetBranch to the repository\'s default branch.',
       'If a pull request is already open for the source branch, nothing is created: that one is linked to this chat and returned.',
@@ -786,8 +787,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const open = await access.openPullRequestFor(repo, source)
       if (!open.ok) return toolText(`Could not check for an open pull request on ${repoLabel}: ${open.error.message} Nothing was created.`, true)
       if (open.data) {
-        linkCreated(access, repo, open.data, false)
-        return toolText(`A pull request is already open for ${source}: ${repoLabel} #${open.data.number}, ${open.data.url}. It is now linked to this chat; no new one was created.`)
+        const { linked } = linkCreated(access, repo, open.data, false)
+        return toolText(`A pull request is already open for ${source}: ${repoLabel} #${open.data.number}, ${open.data.url}. ${linked} No new one was created.`)
       }
 
       const draft = { title: input.value.title, description: input.value.description }
@@ -829,17 +830,17 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         // The request may have gone out: look before telling the agent anything.
         const after = await access.openPullRequestFor(repo, source)
         if (after.ok && after.data) {
-          linkCreated(access, repo, after.data, true)
-          return toolText(`Opened ${repoLabel} #${after.data.number}: ${after.data.url} (the host's answer was lost, but the pull request is there). It is linked to this chat and shows in Reviews. Do not open it again.`)
+          const { linked } = linkCreated(access, repo, after.data, true)
+          return toolText(`Opened ${repoLabel} #${after.data.number}: ${after.data.url} (the host's answer was lost, but the pull request is there). ${linked} Do not open it again.`)
         }
         log.warn('agent pull request create result uncertain', { host: repo.host, kind: created.error.kind })
         return toolText(
           `The host did not answer clearly: ${created.error.message} The pull request may or may not have been opened. ` +
           `Do not call ${PR_CREATE_TOOL} again; ask the user to check ${PR_HOST_LABEL[repo.host]} or Reviews.`, true)
       }
-      const ref = linkCreated(access, repo, created.data, !created.data.existing)
+      const { ref, linked } = linkCreated(access, repo, created.data, !created.data.existing)
       if (created.data.existing) {
-        return toolText(`A pull request for ${source} was opened while the card was open: ${repoLabel} #${ref.number}, ${created.data.url}. It is linked to this chat; no new one was created.`)
+        return toolText(`A pull request for ${source} was opened while the card was open: ${repoLabel} #${ref.number}, ${created.data.url}. ${linked} No new one was created.`)
       }
       log.info('agent pull request opened', { host: repo.host, number: ref.number })
       const edits = [
@@ -847,8 +848,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         description.value !== draft.description ? 'the description' : '',
       ].filter(Boolean)
       return toolText(
-        `Opened ${repoLabel} #${ref.number}: ${created.data.url} (${source} -> ${target}). It is linked to this chat and shows in Reviews, ` +
-        `and the pull request tools can act on it now.${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}`,
+        `Opened ${repoLabel} #${ref.number}: ${created.data.url} (${source} -> ${target}). ${linked} ` +
+        `The pull request tools can act on it now.${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}`,
       )
     },
   }
