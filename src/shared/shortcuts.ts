@@ -72,7 +72,7 @@ export const SHORTCUTS: readonly ShortcutCommand[] = [
   { id: 'terminal.close-tab', label: 'Close active tab', group: 'Terminal', scope: 'global', bindings: ['Mod+W'] },
   { id: 'terminal.close-window', label: 'Close active window', group: 'Terminal', scope: 'global', bindings: ['Mod+Shift+W'] },
   // Electron app menu accelerators (src/main/index.ts)
-  { id: 'app.settings', label: 'Open settings', group: 'App', scope: 'menu', bindings: ['Mod+,'] },
+  { id: 'app.settings', label: 'Open or close settings', group: 'App', scope: 'menu', bindings: ['Mod+,'] },
   { id: 'app.reload', label: 'Reload window', group: 'App', scope: 'menu', bindings: ['Mod+R'] },
   { id: 'app.force-reload', label: 'Force reload window', group: 'App', scope: 'menu', bindings: ['Mod+Shift+R'] },
   // Chat composer (RichChatTextarea)

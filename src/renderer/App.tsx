@@ -459,8 +459,9 @@ export function App() {
   // Listen for settings shortcut from native menu
   useEffect(() => {
     if (typeof window.api?.onOpenSettings !== 'function') return
+    // The shortcut toggles: Settings covers the whole window, so the same keys take you back.
     const remove = window.api.onOpenSettings(unlessConfirmOpen(() => {
-      setSettingsPage('general')
+      setSettingsPage((open) => (open === null ? 'general' : null))
     }))
     return () => { remove() }
   }, [])
