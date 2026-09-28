@@ -90,6 +90,19 @@ describe('AgentApprovalBroker', () => {
     await expect(first).resolves.toMatchObject({ decision: 'deny' })
   })
 
+  it('refuses a review the host would not take before closing the card, so the user can pick again', async () => {
+    const { b, opened } = broker()
+    const silent: HostWriteCard = { ...card, action: 'review', location: null, replyText: undefined, host: 'github', review: { summary: '', comments: [], verdicts: ['comment', 'request_changes'] } }
+    const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: silent })
+    const id = opened().requestId
+    const shown = hostWriteShownDigest(id, silent)!
+    // GitHub needs a summary to request changes; the card stays open.
+    expect(b.respond('t1', id, 'approve', { verdict: 'request_changes', shown }, PHONE)).toEqual({ ok: false, message: expect.stringContaining('GitHub needs a summary') })
+    expect(b.respond('t1', id, 'approve', { verdict: 'comment', shown }, PHONE)).toEqual({ ok: false, message: expect.stringContaining('Write a summary') })
+    expect(b.respond('t1', id, 'deny', {}, PHONE)).toEqual({ ok: true })
+    await expect(answer).resolves.toMatchObject({ decision: 'deny' })
+  })
+
   it('needs no digest from the desktop', async () => {
     const { b, opened } = broker()
     const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: card })

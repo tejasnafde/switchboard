@@ -6,7 +6,7 @@
  * native Android app ports it (`HostWritePhoneCard.kt`).
  */
 import type { HostWriteCard, HostWriteResponse } from './agent-host-writes'
-import { reviewVerdictProblem } from './agent-pr-review'
+import { reviewFromResponse, reviewVerdictProblem } from './agent-pr-review'
 import { lineLocation, REVIEW_EVENT_LABEL, type ReviewEvent } from './pull-request-writes'
 
 /**
@@ -55,15 +55,19 @@ export function phoneHostWriteButtons(card: HostWriteCard): PhoneHostWriteButton
 
 /**
  * Why the broker refuses this approval before it closes the card, or null. A
- * review needs a verdict the card offered; refusing here, rather than after
- * the card closed, leaves it open so the user can pick again.
+ * review needs a verdict the card offered, and the review it asks for must be
+ * one the host takes (GitHub's request changes needs a summary, no empty
+ * comment, the size limits); refusing here, rather than after the card closed,
+ * leaves it open so the user can pick again.
  */
 export function hostWriteApprovalProblem(card: HostWriteCard, response: HostWriteResponse): string | null {
   if (card.action !== 'review') return null
   const verdict = response.verdict
   if (!verdict) return 'Pick Comment, Request changes or Approve to submit this review.'
-  if (!card.review?.verdicts.includes(verdict)) return `${REVIEW_EVENT_LABEL[verdict]} is not offered on this review.`
-  return null
+  const review = card.review
+  if (!review?.verdicts.includes(verdict)) return `${REVIEW_EVENT_LABEL[verdict]} is not offered on this review.`
+  const checked = reviewFromResponse(card.host, review, response)
+  return checked.ok ? null : checked.message
 }
 
 /**
