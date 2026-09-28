@@ -51,6 +51,10 @@ export const BACKEND_CAPABILITIES = [
    *  `gap`. TcpHost lacked it, so an IAP client that sees no such capability
    *  must re-seed on every reconnect. */
   'event_replay_v1',
+  /** A chat-scoped device (a phone) may approve an agent's pull request write
+   *  card (`HOST_WRITE_PHONE_APPROVAL_CAPABILITY` in shared/host-write-phone).
+   *  Without it the backend refuses, so the phone offers Deny only. */
+  'agent_host_write_phone_approval_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

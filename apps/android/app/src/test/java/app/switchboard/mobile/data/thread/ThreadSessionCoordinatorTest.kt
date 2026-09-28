@@ -25,6 +25,8 @@ import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.SessionMeta
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.HostWriteCards
+import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.QueuedTurnActionResult
 import app.switchboard.mobile.domain.thread.QueuedTurnSummary
 import app.switchboard.mobile.domain.thread.TurnDelivery
@@ -1095,6 +1097,22 @@ class ThreadSessionCoordinatorTest {
         assertTrue(coordinator.perform(plan) is ThreadControlOutcome.Durable)
     }
 
+    @Test
+    fun approvalCarriesAHostWriteResponseAndThePhoneApprovalCapability() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(HostWriteCards.PHONE_APPROVAL_CAPABILITY))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+        assertTrue(coordinator.state.value.pendingActions.backendTakesPhoneApproval)
+
+        coordinator.perform(ThreadSessionControl.Approval("sbmcp_1", ApprovalDecision.Approve, HostWriteResponse(verdict = "comment")))
+        assertEquals(listOf<HostWriteResponse?>(HostWriteResponse(verdict = "comment")), remote.approvalResponses)
+
+        val older = coordinator(FakeThreadSessionRemote(scope))
+        older.start()
+        assertFalse(older.state.value.pendingActions.backendTakesPhoneApproval)
+    }
+
     private fun coordinator(
         remote: FakeThreadSessionRemote,
         cached: ThreadState? = null,
@@ -1359,6 +1377,7 @@ private class FakeThreadSessionRemote(
     val markedReadThreadIds = mutableListOf<String>()
     val markReadCallbacks = mutableListOf<(RemoteResponse<MarkReadResult>) -> Unit>()
     val approvals = mutableListOf<Pair<String, ApprovalDecision>>()
+    val approvalResponses = mutableListOf<HostWriteResponse?>()
     val approvalCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
     val answers = mutableListOf<Pair<String, List<List<String>>>>()
     val runtimeModes = mutableListOf<RuntimeMode>()
@@ -1445,9 +1464,11 @@ private class FakeThreadSessionRemote(
         threadId: String,
         requestId: String,
         decision: ApprovalDecision,
+        response: HostWriteResponse?,
         callback: (RemoteResponse<CommandBody>) -> Unit,
     ) {
         approvals += requestId to decision
+        approvalResponses += response
         approvalCallbacks += callback
     }
 

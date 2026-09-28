@@ -71,6 +71,8 @@ import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 import { outboxPresentation, recoverRejectedDraft } from '../lib/outbox-model'
 import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-fork'
+import type { HostWriteResponse } from '@shared/agent-host-writes'
+import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
 import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
 import { styles } from './thread-screen.styles'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
@@ -598,15 +600,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
   }, [connectionId, threadId, key, reportError])
 
   const decideApproval = useCallback(
-    (requestId: string, decision: 'approve' | 'deny') => {
+    (requestId: string, decision: 'approve' | 'deny', response?: HostWriteResponse) => {
       const client = getClient(connectionId)
-      client?.respondToRequest(threadId, requestId, decision).catch(async (err: unknown) => {
+      client?.respondToRequest(threadId, requestId, decision, response).catch(async (err: unknown) => {
         // A notice, not an error event: that would mark the thread errored and
         // take Stop away while the agent is still waiting on this card.
         useChatStore.getState().addNotice(key, `Could not answer the approval: ${err instanceof Error ? err.message : String(err)}`)
-        // A refused answer can leave the card open on the backend (a phone
-        // cannot approve a pull request write an agent asked for). Reopen it
-        // only if it still is, and not if its close arrived meanwhile.
+        // A refused answer can leave the card open on the backend (an older
+        // backend refuses a phone's approval of a pull request write). Reopen
+        // it only if it still is, and not if its close arrived meanwhile.
         if (client.supportsCapability('pending_requests_v1') !== true) return
         try {
           const pending = await client.getPendingRequests(threadId)
@@ -742,6 +744,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // Held messages only come from a backend that can act on them, but the
   // controls check too, rather than offer buttons whose channel is missing.
   const canControlQueue = getClient(connectionId)?.supportsCapability('turn_queue_controls_v1') === true
+  const phoneApprovesHostWrites = getClient(connectionId)?.supportsCapability(HOST_WRITE_PHONE_APPROVAL_CAPABILITY) === true
 
   // A refused Send now / Cancel belongs on its row: reporting it as a thread
   // error would mark a still-running thread as failed and hide Stop.
@@ -845,7 +848,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
             </View>
           )
         case 'approval':
-          return <ApprovalItem item={item} onDecide={decideApproval} />
+          return <ApprovalItem item={item} backendTakesPhoneApproval={phoneApprovesHostWrites} onDecide={decideApproval} />
         case 'question':
           return <QuestionItem item={item} onSubmit={submitAnswers} />
         case 'plan':
@@ -868,6 +871,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     },
     [
       decideApproval,
+      phoneApprovesHostWrites,
       submitAnswers,
       implementPlan,
       focusComposer,

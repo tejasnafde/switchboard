@@ -220,7 +220,7 @@ describe('through the provider registry', () => {
     rerunCheck: async () => ({ ok: true, data: { refresh: [] } }),
   }
 
-  it('carries a reply from the agent to a card, refuses the phone, and posts the desktop\'s edit', async () => {
+  it('carries a reply from the agent to a card, refuses a device without the chat scope, and posts the phone\'s approval as drafted', async () => {
     setAgentPullRequestAccess(access)
     const host = new FakeHost()
     const adapter = new LaunchRecordingAdapter()
@@ -241,15 +241,17 @@ describe('through the provider registry', () => {
     // The card is recoverable like any other open approval.
     expect(await host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 't1')).toEqual([card])
 
-    const phone = withBackendRequestContext({ clientScope: 'phone', transport: 'remote', deviceScopes: ['chat'] }, () =>
-      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { text: 'from the phone' }))
-    await expect(phone).rejects.toThrow('desktop')
+    const scopeless = withBackendRequestContext({ clientScope: 'watch', transport: 'remote', deviceScopes: [] }, () =>
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { text: 'from the watch' }))
+    await expect(scopeless).rejects.toThrow('cannot post')
     expect(posted).toEqual([])
 
-    await host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { text: 'Because the cap must hold.', resolve: false })
+    // The phone approves as drafted: no text, only the resolve choice.
+    await withBackendRequestContext({ clientScope: 'phone', transport: 'remote', deviceScopes: ['chat'], deviceSessionId: 'dev_1' }, () =>
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false }))
     const result = await reply
     expect((result.result as { isError?: boolean }).isError).toBeUndefined()
-    expect(posted).toEqual([{ conversationId: 'T1', body: 'Because the cap must hold.\n\nvia Switchboard' }])
+    expect(posted).toEqual([{ conversationId: 'T1', body: 'Because.\n\nvia Switchboard' }])
     expect(adapter.respondCalls).toBe(0)
     expect(host.events.at(-1)).toMatchObject({ type: 'request.closed', requestId: card.requestId, decision: 'approve' })
 

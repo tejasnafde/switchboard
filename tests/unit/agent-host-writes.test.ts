@@ -11,6 +11,8 @@ import {
 } from '../../src/shared/agent-host-writes'
 import { pushForEvent } from '../../src/shared/push-policy'
 import type { RuntimeMode } from '../../src/shared/provider-events'
+import { hostWriteApprovalProblem, phoneHostWriteButtons } from '../../src/shared/host-write-phone'
+import type { ReviewEvent } from '../../src/shared/pull-request-writes'
 
 const card: HostWriteCard = {
   action: 'reply',
@@ -78,12 +80,12 @@ describe('parseHostWriteResponse', () => {
 })
 
 describe('hostWriteDetail', () => {
-  it('describes the write in plain text and says where to answer', () => {
+  it('describes the write in plain text, with nothing sending the phone to the desktop', () => {
     const detail = hostWriteDetail(card)
     expect(detail).toContain('Reply on ssg-bot-v2 #612 · sync/worker.py:88, then resolve')
     expect(detail).toContain('pankaj: Cap the jitter too.')
     expect(detail).toContain('Done in a1b2c3d.')
-    expect(detail).toContain('desktop')
+    expect(detail).not.toContain('desktop')
   })
 })
 
@@ -97,7 +99,6 @@ describe('hostWriteDetail for the new comment writes', () => {
     expect(review).toContain('Review ssg-bot-v2 #612 with 1 line comments')
     expect(review).toContain('Two notes.')
     expect(review).toContain(`a.py:3: ${'x'.repeat(300)}…`)
-    expect(review).toContain('desktop')
   })
 })
 
@@ -116,14 +117,56 @@ describe('a comment on a range of lines', () => {
 })
 
 describe('push for a host write card', () => {
-  it('tells the phone to approve at the desktop', () => {
+  it('names the write, without sending the phone to the desktop', () => {
     const push = pushForEvent({ type: 'request.opened', threadId: 't1', requestId: 'sbmcp_1', requestType: 'tool', toolName: 'mcp__switchboard__reply_to_conversation', detail: '', hostWrite: card })
-    expect(push?.body).toBe('Approve at the desktop: Reply and resolve a review conversation on ssg-bot-v2 #612')
+    expect(push?.body).toBe('Needs approval: Reply and resolve a review conversation on ssg-bot-v2 #612')
   })
 
   it('names a draft review', () => {
     const review: HostWriteCard = { ...card, action: 'review', review: { summary: 's', comments: [], verdicts: ['comment'] } }
     const push = pushForEvent({ type: 'request.opened', threadId: 't1', requestId: 'sbmcp_2', requestType: 'tool', toolName: 'mcp__switchboard__draft_review', detail: '', hostWrite: review })
-    expect(push?.body).toBe('Approve at the desktop: Submit a review on ssg-bot-v2 #612')
+    expect(push?.body).toBe('Needs approval: Submit a review on ssg-bot-v2 #612')
+  })
+})
+
+describe('phoneHostWriteButtons', () => {
+  const review = (verdicts: ReviewEvent[], summary = 'Two notes.'): HostWriteCard => ({
+    ...card, action: 'review', location: null, quote: null, replyText: undefined, suggestResolve: undefined,
+    review: { summary, verdicts, comments: [] },
+  })
+
+  it('names the action, with the primary button the agent suggested for a reply', () => {
+    expect(phoneHostWriteButtons(card).map((b) => [b.label, b.primary, b.response])).toEqual([
+      ['Post reply', false, { resolve: false }],
+      ['Post and resolve', true, { resolve: true }],
+    ])
+    expect(phoneHostWriteButtons({ ...card, action: 'comment' }).map((b) => b.label)).toEqual(['Post comment'])
+    expect(phoneHostWriteButtons({ ...card, action: 'resolve' }).map((b) => b.label)).toEqual(['Resolve'])
+    expect(phoneHostWriteButtons({ ...card, action: 'rerun' }).map((b) => b.label)).toEqual(['Re-run'])
+    expect(phoneHostWriteButtons({ ...card, action: 'create', create: { repoLabel: 'a/b', sourceBranch: 'x', targetBranch: 'main', title: 't', description: '', draft: false } })[0])
+      .toMatchObject({ label: 'Open pull request', primary: true, response: {} })
+  })
+
+  it('offers only the verdicts the card lists, none primary, and says why one cannot go as drafted', () => {
+    const buttons = phoneHostWriteButtons(review(['comment', 'approve', 'request_changes'], ''))
+    expect(buttons.map((b) => [b.label, b.primary, b.response.verdict])).toEqual([
+      ['Comment', false, 'comment'],
+      ['Request changes', false, 'request_changes'],
+      ['Approve', false, 'approve'],
+    ])
+    expect(buttons.find((b) => b.id === 'request_changes')?.problem).toBe('Say what should change.')
+    expect(buttons.find((b) => b.id === 'approve')?.problem).toBeNull()
+    expect(phoneHostWriteButtons(review(['comment'])).map((b) => b.label)).toEqual(['Comment'])
+  })
+})
+
+describe('hostWriteApprovalProblem', () => {
+  const review: HostWriteCard = { ...card, action: 'review', review: { summary: 's', comments: [], verdicts: ['comment'] } }
+
+  it('needs a verdict from the card for a review, and nothing else for the other writes', () => {
+    expect(hostWriteApprovalProblem(card, {})).toBeNull()
+    expect(hostWriteApprovalProblem(review, {})).toContain('Pick Comment')
+    expect(hostWriteApprovalProblem(review, { verdict: 'request_changes' })).toBe('Request changes is not offered on this review.')
+    expect(hostWriteApprovalProblem(review, { verdict: 'comment' })).toBeNull()
   })
 })

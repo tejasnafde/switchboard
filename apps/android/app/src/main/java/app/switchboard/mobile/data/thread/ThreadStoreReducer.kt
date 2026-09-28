@@ -304,7 +304,7 @@ object ThreadStoreReducer {
                     withJournal.feed,
                     FeedItem.Approval(
                         "a-${event.requestId}", event.requestId, event.toolName,
-                        event.detail, event.requestType, "pending",
+                        event.detail, event.requestType, "pending", event.hostWrite,
                     ),
                 ),
             )

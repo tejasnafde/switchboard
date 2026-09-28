@@ -26,6 +26,8 @@ import app.switchboard.mobile.domain.remote.ProviderKind
 import app.switchboard.mobile.domain.remote.StartSession
 import app.switchboard.mobile.domain.remote.StartedSession
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.HostWriteCards
+import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.QueuedTurnActionResult
 import app.switchboard.mobile.domain.thread.QueuedTurnSummary
 import app.switchboard.mobile.domain.thread.TurnDelivery
@@ -123,6 +125,8 @@ data class ThreadPendingActions(
     val approvalDecisions: Map<String, ApprovalDecision> = emptyMap(),
     val questionRequestIds: Set<String> = emptySet(),
     val planIds: Set<String> = emptySet(),
+    /** The backend takes this device's approval of an agent's pull request write card. */
+    val backendTakesPhoneApproval: Boolean = false,
 )
 
 sealed interface ComposerSubmitResult {
@@ -141,6 +145,7 @@ sealed interface ThreadSessionControl {
     data class Approval(
         val requestId: String,
         val decision: ApprovalDecision,
+        val response: HostWriteResponse? = null,
     ) : ThreadSessionControl
 
     data class AnswerQuestion(
@@ -229,6 +234,7 @@ interface ThreadSessionRemote {
         threadId: String,
         requestId: String,
         decision: ApprovalDecision,
+        response: HostWriteResponse?,
         callback: (RemoteResponse<CommandBody>) -> Unit,
     )
 
@@ -333,9 +339,10 @@ class SwitchboardThreadSessionRemote(
         threadId: String,
         requestId: String,
         decision: ApprovalDecision,
+        response: HostWriteResponse?,
         callback: (RemoteResponse<CommandBody>) -> Unit,
     ) {
-        client.respondToRequest(threadId, requestId, decision, callback)
+        client.respondToRequest(threadId, requestId, decision, response, callback)
     }
 
     override fun answerQuestion(
@@ -483,7 +490,7 @@ class ThreadSessionCoordinator(
     /** Backend advertises `pending_requests_v1` - see `getPendingRequests`.
      *  False for an older backend, which has no handler for the channel. */
     private val supportsPendingRequests: Boolean = false,
-    /** The backend's capabilities for the follow-up composer (`turn_queue_v1`, `turn_queue_controls_v1`). */
+    /** The backend's capabilities: the follow-up composer (`turn_queue_v1`, `turn_queue_controls_v1`) and phone approval of agent pull request writes. */
     private val capabilities: Set<String> = emptySet(),
     /** The device's "Follow-up while the agent works" choice, read at send time. */
     private val followUpDefault: () -> TurnDelivery = { TurnDelivery.Steer },
@@ -1001,7 +1008,7 @@ class ThreadSessionCoordinator(
             key = "approval:${control.requestId}",
             onPending = { pendingApprovalDecisions[control.requestId] = control.decision },
             onFinished = { pendingApprovalDecisions.remove(control.requestId) },
-        ) { callback -> remote.respondToRequest(threadId, control.requestId, control.decision, callback) }
+        ) { callback -> remote.respondToRequest(threadId, control.requestId, control.decision, control.response, callback) }
 
         is ThreadSessionControl.AnswerQuestion -> requestControl(
             key = "question:${control.requestId}",
@@ -1468,6 +1475,7 @@ class ThreadSessionCoordinator(
                 approvalDecisions = pendingApprovalDecisions.toMap(),
                 questionRequestIds = pendingQuestionRequestIds.toSet(),
                 planIds = pendingPlanOrigins.keys.toSet(),
+                backendTakesPhoneApproval = HostWriteCards.PHONE_APPROVAL_CAPABILITY in capabilities,
             ),
             forkMetadata = forkMetadata,
             followUp = ThreadFollowUpState(

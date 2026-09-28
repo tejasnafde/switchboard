@@ -30,6 +30,7 @@ import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.JsonValue
 import app.switchboard.mobile.protocol.RuntimeEventKind
 import app.switchboard.mobile.protocol.RuntimeEventPayload
+import app.switchboard.mobile.domain.thread.HostWriteResponse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -340,6 +341,16 @@ class SwitchboardRemoteClientTest {
                 "provider:respond-to-request",
                 listOf(JsonString("thread-1"), JsonString("req-1"), JsonString("approve")),
                 { client.respondToRequest("thread-1", "req-1", ApprovalDecision.Approve) {} },
+            ),
+            Triple(
+                "provider:respond-to-request",
+                listOf(
+                    JsonString("thread-1"),
+                    JsonString("sbmcp_1"),
+                    JsonString("approve"),
+                    JsonObject(linkedMapOf("verdict" to JsonString("request_changes"))),
+                ),
+                { client.respondToRequest("thread-1", "sbmcp_1", ApprovalDecision.Approve, HostWriteResponse(verdict = "request_changes")) {} },
             ),
             Triple(
                 "provider:answer-question",

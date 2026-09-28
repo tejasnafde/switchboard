@@ -5,7 +5,8 @@
  * what is posted, with the marker line, and every refusal is isError output.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { AgentApprovalBroker, type AgentApprovalOutcome } from '../../src/main/mcp/agent-approvals'
+import { AgentApprovalBroker, type AgentApprovalAnswer, type AgentApprovalOutcome } from '../../src/main/mcp/agent-approvals'
+import { parseHostWriteResponse } from '../../src/shared/agent-host-writes'
 import { AgentWriteBudget } from '../../src/main/mcp/agent-write-budget'
 import { buildPrTools, pickLinkedPr, type AgentPullRequestAccess } from '../../src/main/mcp/pr-tools'
 import type { McpTool } from '../../src/main/mcp/mcp-session'
@@ -79,6 +80,7 @@ function fakeAccess(linked: PrRef[] = [PR], over: Partial<PrDetail> = {}, diff: 
 
 function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<PrDetail>; files?: PrChangedFile[]; answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => AgentApprovalOutcome | null; budget?: AgentWriteBudget } = {}) {
   const events: RuntimeEvent[] = []
+  const refusals: AgentApprovalAnswer[] = []
   const { access, calls } = fakeAccess(opts.linked, opts.detail, opts.files)
   const approvals = new AgentApprovalBroker({
     publish: (e) => {
@@ -86,7 +88,12 @@ function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<Pr
       if (e.type !== 'request.opened') return
       const outcome = opts.answer?.(e)
       if (!outcome) return
-      queueMicrotask(() => approvals.respond('t1', e.requestId, outcome.decision, outcome.decision === 'approve' ? outcome.response : {}, true))
+      queueMicrotask(() => {
+        const answer = approvals.respond('t1', e.requestId, outcome.decision, outcome.decision === 'approve' ? outcome.response : {}, { mayApproveHostWrite: true, label: 'test' })
+        refusals.push(answer)
+        // A refused answer leaves the card open; the user then denies it.
+        if (!answer.ok) approvals.respond('t1', e.requestId, 'deny', {}, { mayApproveHostWrite: true, label: 'test' })
+      })
     },
   })
   let mode: RuntimeMode = opts.mode ?? 'sandbox'
@@ -103,7 +110,7 @@ function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<Pr
   })
   const tool = (name: string): McpTool => tools.find((t) => t.name === name)!
   const call = (name: string, args: Record<string, unknown>) => tool(name).call(args, { signal: new AbortController().signal })
-  return { tools, call, events, access, calls, setMode: (m: RuntimeMode) => { mode = m } }
+  return { tools, call, events, access, calls, refusals, setMode: (m: RuntimeMode) => { mode = m } }
 }
 
 const approve = (response = {}) => () => ({ decision: 'approve' as const, response })
@@ -584,11 +591,18 @@ describe('draft_review', () => {
     expect(opened(events)).toEqual([])
   })
 
-  it('posts nothing when the card answered without a verdict (a plain approval)', async () => {
-    const { call, calls } = setup({ detail: reviewer, answer: approve({}) })
+  it('refuses an approval without a verdict (a plain approval) and keeps the card open', async () => {
+    const { call, calls, refusals } = setup({ detail: reviewer, answer: approve({}) })
     const result = await call('draft_review', draft)
+    expect(refusals[0]).toEqual({ ok: false, message: expect.stringContaining('Pick Comment') })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('without a verdict')
+    expect(calls).toEqual([])
+  })
+
+  it('refuses an unknown verdict from a phone as no verdict at all', async () => {
+    const { call, calls, refusals } = setup({ detail: reviewer, answer: approve(parseHostWriteResponse({ verdict: 'merge' })) })
+    await call('draft_review', draft)
+    expect(refusals[0].ok).toBe(false)
     expect(calls).toEqual([])
   })
 
@@ -603,11 +617,11 @@ describe('draft_review', () => {
   })
 
   it('offers the author Comment only, and refuses an Approve the card should not have sent', async () => {
-    const { call, events, calls } = setup({ answer: approve({ verdict: 'approve', summary: 'LGTM' }) })
+    const { call, events, calls, refusals } = setup({ answer: approve({ verdict: 'approve', summary: 'LGTM' }) })
     const result = await call('draft_review', draft)
     expect(opened(events)[0].hostWrite!.review).toMatchObject({ verdicts: ['comment'], commentOnly: 'author' })
+    expect(refusals[0]).toEqual({ ok: false, message: 'Approve is not offered on this review.' })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('own pull request')
     expect(calls).toEqual([])
   })
 

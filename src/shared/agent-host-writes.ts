@@ -168,7 +168,7 @@ export function checkReplyText(value: unknown): ReplyTextCheck {
   return { ok: true, text }
 }
 
-/** The approval as plain text, for a client that does not render the card (an older phone). */
+/** The approval as plain text: what a phone shows, and all an older client that does not render the card has. */
 export function hostWriteDetail(card: HostWriteCard): string {
   const where = [card.prLabel, card.location].filter(Boolean).join(' · ')
   const lines: string[] = []
@@ -188,9 +188,6 @@ export function hostWriteDetail(card: HostWriteCard): string {
     if (card.review.summary) lines.push('', card.review.summary)
     for (const c of card.review.comments) lines.push('', `${lineLocation(c)}: ${capDetail(c.text)}`)
   }
-  lines.push('', card.action === 'create'
-    ? 'Answer this on the desktop: a phone cannot open a pull request.'
-    : 'Answer this on the desktop: a phone cannot post to a pull request.')
   return lines.join('\n')
 }
 

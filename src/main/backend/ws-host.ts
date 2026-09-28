@@ -259,7 +259,7 @@ export class WsHost implements BackendHost {
       }
       try {
         const result = await withBackendRequestContext(
-          { clientScope: state!.clientScope, transport: 'remote', deviceScopes: state!.scopes! },
+          { clientScope: state!.clientScope, transport: 'remote', deviceScopes: state!.scopes!, deviceSessionId: state!.sessionId },
           () => handler(...frame.args),
         )
         this.reply(socket, { k: 'res', id: frame.id, ok: true, result })
@@ -270,7 +270,7 @@ export class WsHost implements BackendHost {
       const fns = this.listeners.get(frame.ch)
       if (fns) for (const fn of fns) {
         withBackendRequestContext(
-          { clientScope: state!.clientScope, transport: 'remote', deviceScopes: state!.scopes! },
+          { clientScope: state!.clientScope, transport: 'remote', deviceScopes: state!.scopes!, deviceSessionId: state!.sessionId },
           () => fn(...frame.args),
         )
       }

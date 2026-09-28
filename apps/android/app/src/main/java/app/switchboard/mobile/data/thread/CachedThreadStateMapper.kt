@@ -6,6 +6,7 @@ import app.switchboard.mobile.data.local.CachedThreadEntity
 import app.switchboard.mobile.domain.remote.MessageImage
 import app.switchboard.mobile.domain.thread.DriftSuggestion
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.QuestionOption
 import app.switchboard.mobile.domain.thread.SpendBlock
 import app.switchboard.mobile.domain.thread.TodoEntry
@@ -119,6 +120,7 @@ object CachedThreadStateMapper {
                 detail = value.string("detail").orEmpty(),
                 requestType = value.string("requestType") ?: "tool",
                 state = value.string("state") ?: "pending",
+                hostWrite = HostWriteCards.decode(value.values["hostWrite"]),
             )
 
             "question" -> FeedItem.Question(

@@ -4,6 +4,7 @@ import app.switchboard.mobile.data.local.CachedFeedRowEntity
 import app.switchboard.mobile.data.local.CachedThreadEntity
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.HostWriteCards
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -104,6 +105,21 @@ class CachedThreadStateMapperTest {
         assertEquals(listOf(listOf("A")), (restored.feed[3] as FeedItem.Question).answers)
         assertEquals("# Plan", (restored.feed[4] as FeedItem.Plan).markdown)
         assertEquals("src/Main.kt", (restored.feed[5] as FeedItem.FileEdit).relPath)
+    }
+
+    @Test
+    fun `restores an agent pull request write card on its approval row`() {
+        val raw = """{"kind":"approval","id":"a-sbmcp_1","requestId":"sbmcp_1","toolName":"mcp__switchboard__reply_to_conversation","detail":"Reply","requestType":"tool","state":"pending","hostWrite":{"action":"reply","host":"bitbucket","prLabel":"app #7","location":null,"suggestResolve":true}}"""
+        val restored = CachedThreadStateMapper.from(
+            snapshot(CachedThreadEntity("mac:thread-1", "{}"), listOf(CachedFeedRowEntity("mac:thread-1", "row-0", 0, raw))),
+            "mac",
+            "thread-1",
+        )!!
+
+        val card = (restored.feed.single() as FeedItem.Approval).hostWrite!!
+        assertEquals("reply", card.action)
+        assertEquals("Bitbucket · app #7", HostWriteCards.context(card))
+        assertTrue(card.suggestResolve)
     }
 
     private fun snapshot(

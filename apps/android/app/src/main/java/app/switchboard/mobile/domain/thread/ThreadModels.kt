@@ -105,7 +105,13 @@ sealed interface ThreadEventPayload {
     data class ToolStarted(val toolId: String, val toolName: String, val input: JsonValue) : ThreadEventPayload
     data class ToolCompleted(val toolId: String, val output: String?) : ThreadEventPayload
     data class ToolDenied(val toolName: String, val reason: String, val mode: String) : ThreadEventPayload
-    data class RequestOpened(val requestId: String, val requestType: String, val toolName: String, val detail: String) : ThreadEventPayload
+    data class RequestOpened(
+        val requestId: String,
+        val requestType: String,
+        val toolName: String,
+        val detail: String,
+        val hostWrite: HostWriteCard? = null,
+    ) : ThreadEventPayload
     data class RequestClosed(val requestId: String, val decision: String) : ThreadEventPayload
     data class TurnCompleted(
         val turnId: String?,
@@ -256,6 +262,8 @@ sealed interface FeedItem {
         val detail: String,
         val requestType: String,
         val state: String,
+        /** A pull request write an agent asked for. */
+        val hostWrite: HostWriteCard? = null,
     ) : FeedItem
     data class Retry(override val id: String, val turnId: String, val message: String, val active: Boolean) : FeedItem
     data class Error(override val id: String, val message: String, val turnId: String?) : FeedItem

@@ -120,6 +120,7 @@ fun ThreadUiAction.toSessionControl(): ThreadSessionControl = when (this) {
             ThreadApprovalDecision.APPROVE -> ApprovalDecision.Approve
             ThreadApprovalDecision.DENY -> ApprovalDecision.Deny
         },
+        response,
     )
     is ThreadUiAction.AnswerQuestion -> ThreadSessionControl.AnswerQuestion(requestId, answers)
     is ThreadUiAction.Plan -> ThreadSessionControl.Plan(

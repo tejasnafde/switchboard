@@ -1,6 +1,10 @@
 package app.switchboard.mobile.ui.thread
 
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.HostWriteCards
+import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.protocol.JsonObject
+import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.domain.thread.QuestionOption
 import app.switchboard.mobile.domain.thread.ThreadQuestion
 import org.junit.Assert.assertEquals
@@ -22,6 +26,23 @@ class ThreadInteractionPolicyTest {
         assertEquals(
             ThreadUiAction.Plan("plan-1", ThreadPlanAction.ITERATE),
             ThreadInteractionPolicy.plan(plan, ThreadPlanAction.ITERATE),
+        )
+    }
+
+    @Test
+    fun hostWriteCardIsApprovableOnlyOnABackendThatTakesAPhoneApproval() {
+        val card = HostWriteCards.decode(
+            JsonObject(linkedMapOf("action" to JsonString("resolve"), "host" to JsonString("github"), "prLabel" to JsonString("app #1"))),
+        )!!
+        val approval = FeedItem.Approval("a", "sbmcp_1", "mcp__switchboard__resolve_conversation", "Resolve", "tool", "pending", card)
+
+        val actions = ThreadInteractionPolicy.approvalActions(approval, backendTakesPhoneApproval = true) as ApprovalActions.HostWrite
+        assertEquals(listOf("Resolve"), actions.buttons.map { it.label })
+        assertEquals(ApprovalActions.DenyOnly(card), ThreadInteractionPolicy.approvalActions(approval, backendTakesPhoneApproval = false))
+        assertEquals(ApprovalActions.Plain, ThreadInteractionPolicy.approvalActions(approval.copy(hostWrite = null), backendTakesPhoneApproval = false))
+        assertEquals(
+            ThreadUiAction.Approval("sbmcp_1", ThreadApprovalDecision.APPROVE, HostWriteResponse(verdict = "comment")),
+            ThreadInteractionPolicy.approval(approval, ThreadApprovalDecision.APPROVE, HostWriteResponse(verdict = "comment")),
         )
     }
 

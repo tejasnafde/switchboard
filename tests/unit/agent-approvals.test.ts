@@ -9,6 +9,15 @@ const card: HostWriteCard = {
   location: 'a.ts:1', quote: null, replyText: 'done', maxChars: 8000,
 }
 
+const DESKTOP = { mayApproveHostWrite: true, label: 'the desktop' }
+const NO_SCOPE = { mayApproveHostWrite: false, label: 'device session d0' }
+const PHONE = { mayApproveHostWrite: true, label: 'device session d1' }
+
+const reviewCard: HostWriteCard = {
+  ...card, action: 'review', location: null, replyText: undefined,
+  review: { summary: 'Two notes.', comments: [], verdicts: ['comment'], commentOnly: 'author' },
+}
+
 function broker(ttlMs?: number) {
   const events: RuntimeEvent[] = []
   const b = new AgentApprovalBroker({
@@ -28,7 +37,7 @@ describe('AgentApprovalBroker', () => {
     const answer = b.ask({ threadId: 't1', toolName: 'mcp__switchboard__reply_to_conversation', detail: 'd', hostWrite: card })
     expect(opened()).toMatchObject({ threadId: 't1', requestType: 'tool', hostWrite: card })
     expect(AgentApprovalBroker.owns(opened().requestId)).toBe(true)
-    expect(b.respond('t1', opened().requestId, 'approve', { text: 'edited', resolve: true }, true)).toEqual({ ok: true })
+    expect(b.respond('t1', opened().requestId, 'approve', { text: 'edited', resolve: true }, DESKTOP)).toEqual({ ok: true })
     await expect(answer).resolves.toEqual({ decision: 'approve', response: { text: 'edited', resolve: true } })
     expect(events.at(-1)).toEqual({ type: 'request.closed', threadId: 't1', requestId: opened().requestId, decision: 'approve' })
   })
@@ -36,25 +45,42 @@ describe('AgentApprovalBroker', () => {
   it('refuses a host write approval from a device that cannot write to a host, and keeps the card open', async () => {
     const { b, opened } = broker()
     const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: card })
-    const refused = b.respond('t1', opened().requestId, 'approve', {}, false)
+    const refused = b.respond('t1', opened().requestId, 'approve', {}, NO_SCOPE)
     expect(refused.ok).toBe(false)
     // A deny from the same device is harmless and goes through.
-    expect(b.respond('t1', opened().requestId, 'deny', {}, false)).toEqual({ ok: true })
+    expect(b.respond('t1', opened().requestId, 'deny', {}, NO_SCOPE)).toEqual({ ok: true })
     await expect(answer).resolves.toEqual({ decision: 'deny', reason: 'user' })
+  })
+
+  it('lets a phone with the chat scope approve a host write as drafted', async () => {
+    const { b, opened } = broker()
+    const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: card })
+    expect(b.respond('t1', opened().requestId, 'approve', { resolve: true }, PHONE)).toEqual({ ok: true })
+    await expect(answer).resolves.toEqual({ decision: 'approve', response: { resolve: true } })
+  })
+
+  it('refuses a review approved without a verdict, or with one the card did not offer, and keeps it open', async () => {
+    const { b, opened } = broker()
+    const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: reviewCard })
+    const id = opened().requestId
+    expect(b.respond('t1', id, 'approve', {}, PHONE)).toEqual({ ok: false, message: expect.stringContaining('Pick Comment') })
+    expect(b.respond('t1', id, 'approve', { verdict: 'approve' }, PHONE)).toEqual({ ok: false, message: 'Approve is not offered on this review.' })
+    expect(b.respond('t1', id, 'approve', { verdict: 'comment' }, PHONE)).toEqual({ ok: true })
+    await expect(answer).resolves.toEqual({ decision: 'approve', response: { verdict: 'comment' } })
   })
 
   it('lets any device approve an ordinary card', async () => {
     const { b, opened } = broker()
     const answer = b.ask({ threadId: 't1', toolName: 'mcp__switchboard__send_agent_message', detail: 'd' })
-    expect(b.respond('t1', opened().requestId, 'approve', {}, false)).toEqual({ ok: true })
+    expect(b.respond('t1', opened().requestId, 'approve', {}, NO_SCOPE)).toEqual({ ok: true })
     await expect(answer).resolves.toMatchObject({ decision: 'approve' })
   })
 
   it('accepts the answer under a rotated id of the same chat, not another chat', async () => {
     const { b, opened } = broker()
     const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd' })
-    expect(b.respond('t2', opened().requestId, 'approve', {}, true).ok).toBe(false)
-    expect(b.respond('rotated-t1', opened().requestId, 'approve', {}, true).ok).toBe(true)
+    expect(b.respond('t2', opened().requestId, 'approve', {}, DESKTOP).ok).toBe(false)
+    expect(b.respond('rotated-t1', opened().requestId, 'approve', {}, DESKTOP).ok).toBe(true)
     await answer
   })
 
@@ -74,7 +100,7 @@ describe('AgentApprovalBroker', () => {
     const id = opened().requestId
     controller.abort()
     await expect(answer).resolves.toEqual({ decision: 'deny', reason: 'cancelled' })
-    expect(b.respond('t1', id, 'approve', {}, true).ok).toBe(false)
+    expect(b.respond('t1', id, 'approve', {}, DESKTOP).ok).toBe(false)
   })
 
   it('closes every card of a stopped session and no other', async () => {

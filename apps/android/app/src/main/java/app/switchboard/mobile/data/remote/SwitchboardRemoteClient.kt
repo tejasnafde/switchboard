@@ -33,6 +33,7 @@ import app.switchboard.mobile.domain.remote.WorktreeCreationRecoveryAction
 import app.switchboard.mobile.domain.remote.WorktreeCreationRequest
 import app.switchboard.mobile.domain.remote.WorktreeCreationSnapshot
 import app.switchboard.mobile.domain.push.PushBackendResult
+import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.platform.protocol.RequestSubmission
 import app.switchboard.mobile.platform.protocol.RpcOutcome
@@ -555,14 +556,16 @@ class SwitchboardRemoteClient(
         callback,
     )
 
+    /** `response` answers an agent's pull request write card: the resolve choice, or a review's verdict. */
     fun respondToRequest(
         threadId: String,
         requestId: String,
         decision: ApprovalDecision,
+        response: HostWriteResponse? = null,
         callback: (RemoteResponse<CommandBody>) -> Unit,
     ) = command(
         BackendChannels.RespondToRequest,
-        array(JsonString(threadId), JsonString(requestId), JsonString(decision.wire)),
+        JsonArray(listOfNotNull(JsonString(threadId), JsonString(requestId), JsonString(decision.wire), response?.toJson())),
         callback,
     )
 

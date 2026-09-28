@@ -292,6 +292,14 @@ describe('an approval the backend refused', () => {
   const opened: RuntimeEvent = { type: 'request.opened', threadId: THREAD, requestId: 'sbmcp_1', requestType: 'tool', toolName: 'mcp__switchboard__reply_to_conversation', detail: 'Reply' }
   const approval = () => items().find((i) => i.kind === 'approval') as Extract<FeedItem, { kind: 'approval' }>
 
+  it('keeps an agent pull request write card on the row, so the phone can render its buttons', () => {
+    const hostWrite = { action: 'resolve', agentLabel: 'Codex', host: 'github', prLabel: 'app #1', url: null, location: null, quote: null, maxChars: 8000 } as const
+    ingest({ ...opened, hostWrite })
+    flushQueue()
+    expect(approval()).toMatchObject({ state: 'pending', hostWrite })
+    expect(approval()).not.toHaveProperty('desktopOnly')
+  })
+
   it('reopens a card that is still open', () => {
     ingest(opened)
     flushQueue()

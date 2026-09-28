@@ -300,6 +300,26 @@ export const styles = StyleSheet.create({
   denyButton: {
     backgroundColor: colors.red,
   },
+  /** An approve button that is not the suggested one: a review's verdicts, "Post and resolve". */
+  secondaryButton: {
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
+  buttonRowWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
+  hostWriteTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
   actionLabel: {
     color: '#fff',
     fontSize: 13,

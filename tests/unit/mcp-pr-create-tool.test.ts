@@ -59,7 +59,7 @@ function setup(opts: Options = {}) {
       if (e.type !== 'request.opened') return
       const outcome = opts.answer?.(e)
       if (!outcome) return
-      queueMicrotask(() => approvals.respond('t1', e.requestId, outcome.decision, outcome.decision === 'approve' ? outcome.response : {}, true))
+      queueMicrotask(() => approvals.respond('t1', e.requestId, outcome.decision, outcome.decision === 'approve' ? outcome.response : {}, { mayApproveHostWrite: true, label: 'test' }))
     },
   })
   let mode: RuntimeMode = opts.mode ?? 'sandbox'

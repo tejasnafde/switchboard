@@ -11,6 +11,9 @@ import type { FeedItem } from '../stores/chat'
 import { styles } from './thread-screen.styles'
 import type { HeldTurnActions } from '../lib/held-turns'
 import { fileEditCounts, type FileGroupRow } from '../lib/file-groups'
+import { approvalActions } from '../lib/approval-actions'
+import { hostWriteTitle, type HostWriteResponse } from '@shared/agent-host-writes'
+import { PR_HOST_LABEL } from '@shared/pull-requests'
 
 // ─── Item renderers ────────────────────────────────────────────
 
@@ -118,29 +121,55 @@ export const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedIte
 
 export const ApprovalItem = memo(function ApprovalItem({
   item,
+  backendTakesPhoneApproval,
   onDecide,
 }: {
   item: Extract<FeedItem, { kind: 'approval' }>
-  onDecide: (requestId: string, decision: 'approve' | 'deny') => void
+  backendTakesPhoneApproval: boolean
+  onDecide: (requestId: string, decision: 'approve' | 'deny', response?: HostWriteResponse) => void
 }) {
   const pending = item.state === 'pending'
+  const card = item.hostWrite
+  const actions = useMemo(() => approvalActions(item, backendTakesPhoneApproval), [item, backendTakesPhoneApproval])
   return (
     <View style={[styles.itemBlock, styles.approvalCard, !pending && styles.cardResolved]}>
       <Text style={styles.approvalTitle}>
         {pending ? 'Approval needed' : item.state === 'approve' ? 'Approved' : 'Denied'}
       </Text>
-      <Text style={styles.toolName}>{item.toolName}</Text>
-      <Text style={styles.toolOutput} numberOfLines={6}>
+      {card
+        ? (
+          <>
+            <Text style={styles.hostWriteTitle}>{hostWriteTitle(card)}</Text>
+            <Text style={styles.toolName}>{[PR_HOST_LABEL[card.host], card.prLabel, card.location].filter(Boolean).join(' · ')}</Text>
+          </>
+        )
+        : <Text style={styles.toolName}>{item.toolName}</Text>}
+      <Text style={styles.toolOutput} numberOfLines={card ? 24 : 6}>
         {item.detail}
       </Text>
-      {pending && item.desktopOnly && <Text style={styles.toolOutput}>Approve this on the desktop. You can deny it here.</Text>}
+      {pending && actions.kind === 'deny-only' && <Text style={styles.toolOutput}>Approve this on the desktop. You can deny it here.</Text>}
+      {pending && actions.kind === 'host-write' && <Text style={styles.toolOutput}>Posts as shown. Edit on the desktop.</Text>}
+      {pending && actions.kind === 'host-write' && actions.buttons.map((b) => b.problem && (
+        <Text key={b.id} style={styles.toolOutput}>{b.label}: {b.problem}</Text>
+      ))}
       {pending && (
-        <View style={styles.buttonRow}>
-          {!item.desktopOnly && (
+        <View style={styles.buttonRowWrap}>
+          {actions.kind === 'plain' && (
             <Pressable style={[styles.actionButton, styles.approveButton]} onPress={() => onDecide(item.requestId, 'approve')}>
               <Text style={styles.actionLabel}>Approve</Text>
             </Pressable>
           )}
+          {actions.kind === 'host-write' && actions.buttons.map((b) => (
+            <Pressable
+              key={b.id}
+              disabled={b.problem !== null}
+              accessibilityState={{ disabled: b.problem !== null }}
+              style={[styles.actionButton, b.primary ? styles.approveButton : styles.secondaryButton, b.problem !== null && styles.buttonDisabled]}
+              onPress={() => onDecide(item.requestId, 'approve', b.response)}
+            >
+              <Text style={styles.actionLabel}>{b.label}</Text>
+            </Pressable>
+          ))}
           <Pressable style={[styles.actionButton, styles.denyButton]} onPress={() => onDecide(item.requestId, 'deny')}>
             <Text style={styles.actionLabel}>Deny</Text>
           </Pressable>
