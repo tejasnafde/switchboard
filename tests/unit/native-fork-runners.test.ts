@@ -56,7 +56,7 @@ if (process.env.FAKE_PID_FILE) {
 new acp.AgentSideConnection(() => ({
   initialize: async () => ({
     protocolVersion: 1,
-    agentCapabilities: process.env.FAKE_MODE === 'nofork' ? {} : { sessionCapabilities: { fork: {} } },
+    agentCapabilities: process.env.FAKE_MODE === 'nofork' ? {} : process.env.FAKE_MODE === 'noresume' ? { sessionCapabilities: { fork: {} } } : { sessionCapabilities: { fork: {}, resume: {} } },
   }),
   unstable_forkSession: async (p) => ({ sessionId: 'forked-' + p.sessionId }),
   newSession: async () => ({ sessionId: 'new' }),
@@ -111,6 +111,14 @@ describe('native fork runners', () => {
   itWithPosixToolShims('reports an OpenCode without session/fork as unsupported, without calling it', async () => {
     const dir = scratch()
     const failure = await runners(dir, 'nofork')
+      .forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir })
+      .catch((error: unknown) => error)
+    expect(isUnsupportedMethodError(failure, 'session/fork')).toBe(true)
+  })
+
+  itWithPosixToolShims('reports an OpenCode that can fork but not resume as unsupported', async () => {
+    const dir = scratch()
+    const failure = await runners(dir, 'noresume')
       .forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir })
       .catch((error: unknown) => error)
     expect(isUnsupportedMethodError(failure, 'session/fork')).toBe(true)

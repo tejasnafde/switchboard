@@ -127,6 +127,10 @@ export function createNativeForkRunners(
         if (!init.agentCapabilities?.sessionCapabilities?.fork) {
           throw new NativeForkUnsupportedError('OpenCode does not advertise session/fork')
         }
+        // A fork the adapter cannot resume later would start a fresh session and lose the copied context.
+        if (!init.agentCapabilities?.sessionCapabilities?.resume) {
+          throw new NativeForkUnsupportedError('OpenCode does not advertise session/resume')
+        }
         const forked = await withTimeout(Promise.race([
           connection.unstable_forkSession({ sessionId: params.sessionId, cwd: params.cwd, mcpServers: [] }),
           exited,
