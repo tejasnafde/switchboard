@@ -66,6 +66,15 @@ describe('diffAround', () => {
   })
 })
 
+describe('a conversation on a range of lines', () => {
+  it('names both ends and takes the diff of the whole range', () => {
+    const item = conversationItem({ ...conversation('r', 'sync/worker.py', 88, 'This block.'), startLine: 86 }, [file])
+    expect(item).toMatchObject({ kind: 'conversation', line: 88, startLine: 86 })
+    expect(reviewContextLabel(ctx([item]))).toBe('1 review conversation · #612 · worker.py:86-88')
+    expect(item.kind === 'conversation' && item.diff).toContain('delay = min(base, 300)')
+  })
+})
+
 describe('review context', () => {
   const items = [
     conversationItem(conversation('a', 'sync/worker.py', 86, 'Cap the jitter too.'), [file]),

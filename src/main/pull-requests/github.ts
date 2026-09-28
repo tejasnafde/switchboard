@@ -128,7 +128,7 @@ const DETAIL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
 const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { pullRequest(number: $number) {
     reviewThreads(first: 100) { nodes {
-      id isResolved isOutdated path line originalLine diffSide
+      id isResolved isOutdated path line originalLine diffSide startLine startDiffSide
       comments(first: 50) { nodes { id body url createdAt author { login avatarUrl } } }
     } }
   } }

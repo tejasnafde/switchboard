@@ -19,6 +19,8 @@ export type ReviewContextItem =
     kind: 'conversation'
     path: string | null
     line: number | null
+    /** The first line when the conversation covers several. */
+    startLine?: number
     side: 'new' | 'old' | null
     outdated: boolean
     comments: Array<{ author: string; body: string }>
@@ -47,7 +49,8 @@ function where(item: ReviewContextItem, short = false): string {
   const path = short ? baseName(item.path ?? '') : item.path
   if (item.kind === 'lines') return item.startLine === item.endLine ? `${path}:${item.startLine}` : `${path}:${item.startLine}-${item.endLine}`
   if (!item.path) return 'the whole pull request'
-  return item.line !== null ? `${path}:${item.line}` : path ?? ''
+  if (item.line === null) return path ?? ''
+  return item.startLine !== undefined ? `${path}:${item.startLine}-${item.line}` : `${path}:${item.line}`
 }
 
 function plural(n: number, one: string): string {
@@ -191,10 +194,11 @@ export function conversationItem(c: PrConversation, files: readonly PrChangedFil
     kind: 'conversation',
     path: c.path,
     line: c.line,
+    ...(c.startLine !== undefined ? { startLine: c.startLine } : {}),
     side: c.side,
     outdated: c.outdated,
     comments: c.comments.map((m) => ({ author: m.author.login, body: m.body })),
-    diff: c.line !== null ? diffAround(file, c.side ?? 'new', c.line) : null,
+    diff: c.line !== null ? diffAround(file, c.side ?? 'new', c.startLine ?? c.line, c.line) : null,
   }
 }
 

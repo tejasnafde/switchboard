@@ -373,16 +373,40 @@ export function findConversation(conversations: readonly PrConversation[], id: s
   return conversations.find((c) => c.id === id) ?? null
 }
 
-/** A line comment must land on a line the diff shows on that side, or the host refuses it (GitHub) or anchors it nowhere (Bitbucket). */
-export function lineInDiff(files: readonly PrChangedFile[], c: Pick<InlineCommentInput, 'path' | 'side' | 'line' | 'startLine'>): boolean {
+/** "src/a.ts:12" or "src/a.ts:40-52", with "(old)" when the lines are on the old side. */
+export function lineLocation(c: Pick<InlineCommentInput, 'path' | 'side' | 'line' | 'startLine'>): string {
+  const lines = c.startLine !== undefined && c.startLine < c.line ? `${c.startLine}-${c.line}` : String(c.line)
+  return `${c.path}:${lines}${c.side === 'old' ? ' (old)' : ''}`
+}
+
+/**
+ * Where a line comment lands in the fresh diff: `ok`, `missing` (a line the
+ * diff does not show on that side) or `split` (a range whose ends are in two
+ * hunks, which GitHub refuses). Lines of one side are contiguous inside a
+ * hunk, so both ends in one hunk means every line between them is shown.
+ */
+export type LineTargetFit = 'ok' | 'missing' | 'split'
+
+export function lineTargetFit(files: readonly PrChangedFile[], c: Pick<InlineCommentInput, 'path' | 'side' | 'line' | 'startLine'>): LineTargetFit {
   const file = files.find((f) => f.path === c.path)
-  if (!file) return false
-  const shown = new Set<number>()
+  if (!file) return 'missing'
+  const start = c.startLine ?? c.line
+  let endShown = false
+  let startShown = false
   for (const hunk of file.hunks) {
+    const shown = new Set<number>()
     for (const l of hunk.lines) {
       const n = c.side === 'old' ? (l.kind !== 'add' ? l.oldLine : null) : (l.kind !== 'del' ? l.newLine : null)
       if (n !== null) shown.add(n)
     }
+    if (shown.has(c.line) && shown.has(start)) return 'ok'
+    endShown ||= shown.has(c.line)
+    startShown ||= shown.has(start)
   }
-  return shown.has(c.line) && (c.startLine === undefined || shown.has(c.startLine))
+  return endShown && startShown ? 'split' : 'missing'
+}
+
+/** A line comment must land on a line the diff shows on that side, or the host refuses it (GitHub) or anchors it nowhere (Bitbucket). */
+export function lineInDiff(files: readonly PrChangedFile[], c: Pick<InlineCommentInput, 'path' | 'side' | 'line' | 'startLine'>): boolean {
+  return lineTargetFit(files, c) === 'ok'
 }
