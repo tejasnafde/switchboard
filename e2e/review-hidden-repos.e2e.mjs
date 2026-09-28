@@ -3,8 +3,10 @@
  * (npm run build:fast) with the demo adapter and SB_DEMO_REPO_ERRORS=1, which
  * adds two projects in a Bitbucket workspace that answers 404. The card
  * names both, Cancel keeps them, Hide removes the card and counts them under
- * the list, and Show brings one back at a time. Nothing reaches a host; the
- * hide is the backend's own table in an isolated profile. Temp dirs are removed.
+ * the list, and Show brings one back at a time. With every working repository
+ * hidden the list is one blocking notice, and the hidden line still restores
+ * them. Nothing reaches a host; the hide is the backend's own table in an
+ * isolated profile. Temp dirs are removed.
  */
 import { _electron as electron } from 'playwright'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -83,6 +85,31 @@ try {
   await pop.getByRole('button', { name: 'Show geoiq-staging/geoiq_broker_app_stg' }).click()
   await row.waitFor({ state: 'hidden', timeout: 10_000 })
   check('showing the last one removes the hidden line', (await card.innerText()).includes('Cannot see 2 repositories'))
+
+  // Blocked: every repository that works is hidden, and the one left fails, so the
+  // list is a single blocking notice. The hidden line must still bring them back.
+  await hideButton.click()
+  await dialog.getByRole('button', { name: 'Hide', exact: true }).click()
+  await card.waitFor({ state: 'hidden', timeout: 10_000 })
+  await win.evaluate(() => window.api.pullRequests.hideRepos([
+    { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2' },
+    { host: 'bitbucket', owner: 'geoiq', name: 'retailiq' },
+    { host: 'bitbucket', owner: 'geoiq', name: 'ssg-doctor' },
+    { host: 'github', owner: 'tejasnafde', name: 'switchboard' },
+  ]))
+  await row.getByRole('button', { name: 'Show', exact: true }).click()
+  await pop.getByRole('button', { name: 'Show geoiq-staging/geoiqcore_stg' }).click()
+  await card.waitFor({ state: 'visible', timeout: 10_000 })
+  await reviews().locator('[data-pr-row]').first().waitFor({ state: 'hidden', timeout: 10_000 })
+  await win.keyboard.press('Escape')
+  await shot('hidden-repos-blocked')
+  check('the only notice left blocks the list', await reviews().locator('[data-pr-row]').count() === 0 && await reviews().locator('[data-review-notice]').count() === 1)
+  check('the hidden line stays under a blocking notice', (await row.innerText()).startsWith('5 repositories hidden'), JSON.stringify(await row.innerText().catch(() => null)))
+  await row.getByRole('button', { name: 'Show', exact: true }).click()
+  await pop.getByRole('button', { name: 'Show all', exact: true }).click()
+  await row.waitFor({ state: 'hidden', timeout: 10_000 })
+  await reviews().locator('[data-pr-row]').first().waitFor({ state: 'visible', timeout: 10_000 })
+  check('Show all from the blocked list brings every repository back', (await card.innerText()).includes('Cannot see 2 repositories'))
 } catch (err) {
   console.error(err)
   results.push({ ok: false })

@@ -12,6 +12,7 @@ import {
   groupFilesByDir,
   hiddenReposLabel,
   hideReposConfirmCopy,
+  restorableHiddenRepos,
   mergeConfirmCopy,
   rerunUnavailable,
   reviewListState,
@@ -141,6 +142,46 @@ describe('reviewListState', () => {
 
   it('shows an empty list, not "No projects yet", when every repository is hidden', () => {
     expect(reviewListState(data({ hiddenRepos: [bb] }), null)).toEqual({ kind: 'ready', notices: [] })
+  })
+})
+
+describe('restorableHiddenRepos', () => {
+  const hidden: RepoRef[] = [{ host: 'github', owner: 'o', name: 'hidden' }]
+
+  it('offers hidden repositories beside the rows', () => {
+    const list = data({ sources: [{ repo: gh, projectPaths: [], error: null }], hiddenRepos: hidden })
+    expect(restorableHiddenRepos(reviewListState(list, null), list)).toEqual(hidden)
+  })
+
+  it('still offers them when the rest are blocked by one notice (no account, or a repository it cannot see)', () => {
+    for (const kind of ['no_account', 'not_found'] as const) {
+      const list = data({ sources: [{ repo: bb, projectPaths: [], error: err(kind) }], hiddenRepos: hidden })
+      const state = reviewListState(list, null)
+      expect(state.kind).toBe('blocked')
+      expect(restorableHiddenRepos(state, list)).toEqual(hidden)
+    }
+  })
+
+  it('still offers them when the list read failed, from the list shown before', () => {
+    const list = data({ sources: [{ repo: gh, projectPaths: [], error: null }], hiddenRepos: hidden })
+    const state = reviewListState(list, err('offline', 'github'))
+    expect(state.kind).toBe('blocked')
+    expect(restorableHiddenRepos(state, list)).toEqual(hidden)
+  })
+
+  it('offers nothing while loading, from an older backend, or with nothing hidden', () => {
+    expect(restorableHiddenRepos(reviewListState(null, null), null)).toEqual([])
+    expect(restorableHiddenRepos(reviewListState(null, err('offline')), null)).toEqual([])
+    const old = data({ sources: [{ repo: gh, projectPaths: [], error: null }] })
+    expect(restorableHiddenRepos(reviewListState(old, null), old)).toEqual([])
+  })
+
+  it('leaves the hidden PR line to the ready state: a list blocked by its sources has no PRs', () => {
+    const state = reviewListState(data({ sources: [{ repo: bb, projectPaths: [], error: err('no_account') }] }), null)
+    expect(state.kind).toBe('blocked')
+    // Any PR in the list makes it ready, so a hidden PR is never stuck behind a blocking notice.
+    const withPr = data({ sources: [{ repo: bb, projectPaths: [], error: err('no_account') }], prs: [{ ref: { ...bb, number: 1 } } as PrSummary] })
+    expect(reviewListState(withPr, null).kind).toBe('ready')
   })
 })
 

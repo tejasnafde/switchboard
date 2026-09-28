@@ -11,7 +11,7 @@ import { nextRefreshDelay, PR_REFRESH_INTERVAL_MS } from '@shared/pull-request-r
 import { findSummary, useReviewStore } from '../../stores/review-store'
 import { cn } from '../../lib/utils'
 import { PrDetailPane } from './PrDetailPane'
-import { hiddenReposLabel, hideReposConfirmCopy, reviewListState, rowSubtitle, type ReviewNotice } from './review-states'
+import { hiddenReposLabel, hideReposConfirmCopy, restorableHiddenRepos, reviewListState, rowSubtitle, type ReviewNotice } from './review-states'
 import { Icon, NoticeView, ROW_ICON } from './review-ui'
 import { AskChatDialog } from './PrLinkedChats'
 import { confirm } from '../ui/confirm'
@@ -62,6 +62,7 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
 
   const now = lastFetchAt ?? Date.now()
   const state = reviewListState(list, listError)
+  const hiddenRepos = restorableHiddenRepos(state, list)
   const hidden = useMemo(() => new Set(list?.hidden ?? []), [list])
   const hiddenCount = useMemo(() => (list ? list.prs.filter((pr) => hidden.has(prKey(pr.ref)) && prRowStatus(pr, now)).length : 0), [list, hidden, now])
   const shown = useMemo(() => {
@@ -164,9 +165,9 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
                   </button>
                 </div>
               )}
-              {(list?.hiddenRepos?.length ?? 0) > 0 && <HiddenReposRow repos={list?.hiddenRepos ?? []} onShow={(repos) => setReposHidden(repos, false)} />}
             </>
           )}
+          {hiddenRepos.length > 0 && <HiddenReposRow repos={hiddenRepos} onShow={(repos) => setReposHidden(repos, false)} />}
         </div>
       </aside>
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">

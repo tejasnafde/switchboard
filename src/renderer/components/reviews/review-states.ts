@@ -112,6 +112,17 @@ export function hiddenReposLabel(count: number): string {
   return `${plural(count, 'repository', 'repositories')} hidden`
 }
 
+/**
+ * The repositories the "N repositories hidden · Show" line offers back. Every
+ * state but loading: once the rest fail (one blocking notice, or the list
+ * read itself), this line is the only way back to a hidden repository. The
+ * PR hidden line needs no such rule: a list blocked by its sources has no PRs.
+ */
+export function restorableHiddenRepos(state: ReviewListState, list: PrListData | null): RepoRef[] {
+  if (state.kind === 'loading') return []
+  return list?.hiddenRepos ?? []
+}
+
 /** One line under a write control that failed: the reason, and for account or network trouble, the fix. */
 export function writeErrorText(error: PrError): string {
   const notice = describePrError(error)
