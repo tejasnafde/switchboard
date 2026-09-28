@@ -58,7 +58,7 @@ vi.mock('@agentclientprotocol/sdk', async (importOriginal) => {
   return { ...actual, ClientSideConnection: FakeConnection, ndJsonStream: () => ({}) }
 })
 
-async function start() {
+async function start(instanceId: string | null = 'oc') {
   const { OpencodeAcpAdapter } = await import('../../src/main/provider/adapters/opencode-acp-adapter')
   const onEvent = vi.fn()
   await new OpencodeAcpAdapter().startSession({
@@ -66,7 +66,7 @@ async function start() {
     provider: 'opencode',
     cwd: '/tmp/project',
     runtimeMode: 'sandbox',
-    instanceId: 'oc',
+    instanceId: instanceId ?? undefined,
   }, onEvent)
   return onEvent.mock.calls.map(([event]) => event)
 }
@@ -95,6 +95,11 @@ describe('OpenCode session resume', () => {
   it('never resumes a session recorded under another instance', async () => {
     state.segment = { provider_session_id: 'ses_other', provider_instance_id: 'other' }
     await start()
+    expect(state.calls).toEqual(['new'])
+  })
+
+  it('never resumes an instance-bound session when no instance was resolved', async () => {
+    await start(null)
     expect(state.calls).toEqual(['new'])
   })
 

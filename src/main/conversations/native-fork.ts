@@ -1,4 +1,7 @@
 import { normalizeCodexEvent } from '../agent/jsonl-parser'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('conversations:native-fork')
 
 export type CodexForkTurn =
   | { ok: true; turnId: string }
@@ -17,14 +20,16 @@ function turnIdOf(value: unknown): string | null {
  * and the thread's visible messages up to it are the whole displayed prefix
  * (an earlier thread of the same chat, or a message Codex never saw, means
  * the thread alone would drop context). Message ids come from
- * `normalizeCodexEvent`, the same function the history loader uses.
+ * `normalizeCodexEvent`, the same function the history loader uses. The
+ * prefix is matched by role and text, not id: a fork's stored prefix has
+ * fresh ids while its forked rollout keeps Codex's.
  */
 export function findCodexForkTurn(
   rollout: string,
   anchorMessageId: string,
-  prefixMessageCount: number,
+  prefix: ReadonlyArray<{ role: string; content: string }>,
 ): CodexForkTurn {
-  const messages: Array<{ id: string; role: string; turnId: string | null }> = []
+  const messages: Array<{ id: string; role: string; content: string; turnId: string | null }> = []
   let currentTurn: string | null = null
   for (const line of rollout.split('\n')) {
     if (!line.trim()) continue
@@ -33,6 +38,7 @@ export function findCodexForkTurn(
       event = JSON.parse(line) as Record<string, unknown>
     } catch {
       // A torn last line while Codex is still writing; the rest is intact.
+      log.debug('skipping an unparseable rollout line', { length: line.length })
       continue
     }
     const payload = event.payload as Record<string, unknown> | undefined
@@ -43,7 +49,7 @@ export function findCodexForkTurn(
     const message = normalizeCodexEvent(event)
     if (!message) continue
     const passthrough = payload?.internal_chat_message_metadata_passthrough as Record<string, unknown> | undefined
-    messages.push({ id: message.id, role: message.role, turnId: turnIdOf(passthrough?.turn_id) ?? currentTurn })
+    messages.push({ id: message.id, role: message.role, content: message.content, turnId: turnIdOf(passthrough?.turn_id) ?? currentTurn })
   }
 
   const matches = messages.filter((message) => message.id === anchorMessageId)
@@ -59,7 +65,8 @@ export function findCodexForkTurn(
   if (anchor.role !== 'assistant' || next?.turnId === anchor.turnId) {
     return { ok: false, code: 'native-anchor-mid-turn', message: 'Codex forks whole turns, and the selected message does not end one.' }
   }
-  if (index + 1 !== prefixMessageCount) {
+  if (index + 1 !== prefix.length || prefix.some((expected, at) =>
+    messages[at].role !== expected.role || messages[at].content !== expected.content)) {
     return { ok: false, code: 'native-lineage-incompatible', message: 'The Codex thread does not hold the whole conversation up to the selected message.' }
   }
   return { ok: true, turnId: anchor.turnId }

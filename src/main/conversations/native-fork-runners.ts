@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -17,6 +17,7 @@ import { NativeForkUnsupportedError } from './native-fork'
 const log = createMainLogger('conversations:native-fork')
 
 const RPC_TIMEOUT_MS = 30_000
+const SIGKILL_GRACE_MS = 1500
 const CLIENT_INFO = { name: 'switchboard', title: 'Switchboard', version: '0.1.0' }
 
 export interface NativeForkRunners {
@@ -38,6 +39,25 @@ function instanceOf(instanceId: string): ProviderInstanceRow {
   const instance = getProviderInstanceFull(instanceId)
   if (!instance) throw new Error(`Provider instance ${instanceId} is missing`)
   return instance
+}
+
+/** SIGTERM, then SIGKILL if the child is still alive after a grace period. */
+function terminate(child: ChildProcess): void {
+  try {
+    child.kill('SIGTERM')
+  } catch (error) {
+    log.warn('SIGTERM of the opencode fork child failed', error)
+  }
+  const timer = setTimeout(() => {
+    if (child.exitCode !== null || child.signalCode !== null) return
+    try {
+      child.kill('SIGKILL')
+    } catch (error) {
+      log.warn('SIGKILL of the opencode fork child failed', error)
+    }
+  }, SIGKILL_GRACE_MS)
+  timer.unref?.()
+  child.once('close', () => clearTimeout(timer))
 }
 
 function codexHomeOf(env: Record<string, string>): string {
@@ -85,7 +105,8 @@ export function createNativeForkRunners(
         stdio: ['pipe', 'pipe', 'pipe'],
         env: opencodeEnvOf(instanceId),
       })
-      child.stderr.on('data', (data: Buffer) => log.debug(`opencode fork stderr: ${data.toString().slice(0, 500)}`))
+      // Its size only: OpenCode's stderr can carry anything it was handed.
+      child.stderr.on('data', (data: Buffer) => log.debug('opencode fork stderr', { bytes: data.byteLength }))
       const exited = new Promise<never>((_, reject) => {
         child.once('error', reject)
         child.once('close', (code) => reject(new Error(`opencode acp exited (code ${code ?? 'null'})`)))
@@ -112,7 +133,7 @@ export function createNativeForkRunners(
         ]), RPC_TIMEOUT_MS, 'session/fork')
         return forked.sessionId
       } finally {
-        child.kill('SIGTERM')
+        terminate(child)
       }
     },
   }

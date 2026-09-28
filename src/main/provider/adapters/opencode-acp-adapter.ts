@@ -949,7 +949,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     try {
       const segment = resolveResumeSegment(opts.threadId, 'opencode', opts.instanceId)
       // Instances can keep sessions in different data dirs, so never cross one.
-      if (!segment || (opts.instanceId && segment.provider_instance_id !== opts.instanceId)) return null
+      if (!segment || segment.provider_instance_id !== (opts.instanceId ?? null)) return null
       return segment.provider_session_id
     } catch (err) {
       log.warn('resolveResumeSegment failed - starting a new OpenCode session', { threadId: opts.threadId, err })

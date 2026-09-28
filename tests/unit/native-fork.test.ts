@@ -26,10 +26,19 @@ const rollout = [
   'not json',
 ].join('\n')
 
+const shown = [
+  { role: 'user', content: 'one' },
+  { role: 'assistant', content: 'working' },
+  { role: 'assistant', content: 'first answer' },
+  { role: 'user', content: 'two' },
+  { role: 'assistant', content: 'second answer' },
+]
+const upTo = (count: number) => shown.slice(0, count)
+
 describe('findCodexForkTurn', () => {
   it('forks through the turn an assistant reply ends', () => {
-    expect(findCodexForkTurn(rollout, 'a1', 3)).toEqual({ ok: true, turnId: T1 })
-    expect(findCodexForkTurn(rollout, 'a2', 5)).toEqual({ ok: true, turnId: T2 })
+    expect(findCodexForkTurn(rollout, 'a1', upTo(3))).toEqual({ ok: true, turnId: T1 })
+    expect(findCodexForkTurn(rollout, 'a2', upTo(5))).toEqual({ ok: true, turnId: T2 })
   })
 
   it('prefers the turn id Codex stamps on the item itself', () => {
@@ -41,21 +50,26 @@ describe('findCodexForkTurn', () => {
         internal_chat_message_metadata_passthrough: { turn_id: 'stamped' },
       }),
     ].join('\n')
-    expect(findCodexForkTurn(stamped, 'a', 2)).toEqual({ ok: true, turnId: 'stamped' })
+    expect(findCodexForkTurn(stamped, 'a', [{ role: 'user', content: 'one' }, { role: 'assistant', content: 'x' }])).toEqual({ ok: true, turnId: 'stamped' })
   })
 
   it('refuses a message that does not end its turn', () => {
-    expect(findCodexForkTurn(rollout, 'a1-interim', 2)).toMatchObject({ ok: false, code: 'native-anchor-mid-turn' })
-    expect(findCodexForkTurn(rollout, 'u-two', 4)).toMatchObject({ ok: false, code: 'native-anchor-mid-turn' })
+    expect(findCodexForkTurn(rollout, 'a1-interim', upTo(2))).toMatchObject({ ok: false, code: 'native-anchor-mid-turn' })
+    expect(findCodexForkTurn(rollout, 'u-two', upTo(4))).toMatchObject({ ok: false, code: 'native-anchor-mid-turn' })
   })
 
   it('refuses when the thread does not hold the whole displayed prefix', () => {
-    expect(findCodexForkTurn(rollout, 'a1', 5)).toMatchObject({ ok: false, code: 'native-lineage-incompatible' })
+    expect(findCodexForkTurn(rollout, 'a1', upTo(5))).toMatchObject({ ok: false, code: 'native-lineage-incompatible' })
+  })
+
+  it('refuses when the thread holds different messages before the anchor', () => {
+    const other = [{ role: 'user', content: 'something else' }, ...upTo(3).slice(1)]
+    expect(findCodexForkTurn(rollout, 'a1', other)).toMatchObject({ ok: false, code: 'native-lineage-incompatible' })
   })
 
   it('refuses a missing message or turn id', () => {
-    expect(findCodexForkTurn(rollout, 'nope', 1)).toMatchObject({ ok: false, code: 'native-history-missing' })
-    expect(findCodexForkTurn([user('one'), assistant('a', 'x')].join('\n'), 'a', 2))
+    expect(findCodexForkTurn(rollout, 'nope', upTo(1))).toMatchObject({ ok: false, code: 'native-history-missing' })
+    expect(findCodexForkTurn([user('one'), assistant('a', 'x')].join('\n'), 'a', [{ role: 'user', content: 'one' }, { role: 'assistant', content: 'x' }]))
       .toMatchObject({ ok: false, code: 'native-turn-missing' })
   })
 })

@@ -1,9 +1,12 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createNativeForkRunners } from '../../src/main/conversations/native-fork-runners'
 import { isUnsupportedMethodError } from '../../src/main/conversations/native-fork'
+
+// Executable-script shims cannot be spawned on Windows, as elsewhere in the suite.
+const itWithPosixToolShims = process.platform === 'win32' ? it.skip : it
 
 const dirs: string[] = []
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
@@ -46,6 +49,10 @@ const FAKE_OPENCODE = `
 const { Readable, Writable } = require('stream')
 const acp = require(${JSON.stringify(resolve('node_modules/@agentclientprotocol/sdk/dist/acp.js'))})
 const stream = acp.ndJsonStream(Writable.toWeb(process.stdout), Readable.toWeb(process.stdin))
+if (process.env.FAKE_PID_FILE) {
+  require('fs').writeFileSync(process.env.FAKE_PID_FILE, String(process.pid))
+  process.on('SIGTERM', () => {})
+}
 new acp.AgentSideConnection(() => ({
   initialize: async () => ({
     protocolVersion: 1,
@@ -59,8 +66,8 @@ new acp.AgentSideConnection(() => ({
 }), stream)
 `
 
-function runners(dir: string, mode = '') {
-  const env = { PATH: process.env.PATH ?? '', FAKE_MODE: mode, CODEX_HOME: join(dir, 'codex-home') }
+function runners(dir: string, mode = '', extra: Record<string, string> = {}) {
+  const env = { PATH: process.env.PATH ?? '', FAKE_MODE: mode, CODEX_HOME: join(dir, 'codex-home'), ...extra }
   return createNativeForkRunners(
     { codex: () => executable(dir, 'codex', FAKE_CODEX), opencode: () => executable(dir, 'opencode', FAKE_OPENCODE) },
     () => env,
@@ -69,13 +76,13 @@ function runners(dir: string, mode = '') {
 }
 
 describe('native fork runners', () => {
-  it('forks a Codex thread through a turn over app-server', async () => {
+  itWithPosixToolShims('forks a Codex thread through a turn over app-server', async () => {
     const dir = scratch()
     await expect(runners(dir).forkCodexThread('inst', { threadId: 't1', lastTurnId: 'turn-9', cwd: dir }))
       .resolves.toEqual({ threadId: 'fork-of-t1-through-turn-9', path: '/codex/rollout.jsonl' })
   })
 
-  it('surfaces a Codex without thread/fork as an unsupported method', async () => {
+  itWithPosixToolShims('surfaces a Codex without thread/fork as an unsupported method', async () => {
     const dir = scratch()
     const failure = await runners(dir, 'unknown')
       .forkCodexThread('inst', { threadId: 't1', lastTurnId: 'turn-9', cwd: dir })
@@ -95,17 +102,30 @@ describe('native fork runners', () => {
     await expect(runners(dir).readCodexRollout('inst', '01a0b488-0000-7000-8000-000000000000')).resolves.toBeNull()
   })
 
-  it('forks an OpenCode session over ACP when the agent advertises session/fork', async () => {
+  itWithPosixToolShims('forks an OpenCode session over ACP when the agent advertises session/fork', async () => {
     const dir = scratch()
     await expect(runners(dir).forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir }))
       .resolves.toBe('forked-ses_1')
   })
 
-  it('reports an OpenCode without session/fork as unsupported, without calling it', async () => {
+  itWithPosixToolShims('reports an OpenCode without session/fork as unsupported, without calling it', async () => {
     const dir = scratch()
     const failure = await runners(dir, 'nofork')
       .forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir })
       .catch((error: unknown) => error)
     expect(isUnsupportedMethodError(failure, 'session/fork')).toBe(true)
+  })
+
+  itWithPosixToolShims('kills an OpenCode child that ignores SIGTERM', async () => {
+    const dir = scratch()
+    const pidFile = join(dir, 'pid')
+    await runners(dir, 'nofork', { FAKE_PID_FILE: pidFile })
+      .forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir })
+      .catch((error: unknown) => error)
+    const pid = Number(readFileSync(pidFile, 'utf8'))
+    const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
+    expect(alive()).toBe(true)
+    await new Promise((done) => setTimeout(done, 2500))
+    expect(alive()).toBe(false)
   })
 })

@@ -179,7 +179,7 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
       if (rollout === null) {
         return handoff(prepared, 'native-history-missing', 'The Codex thread is not in the source profile.')
       }
-      const turn = findCodexForkTurn(rollout, messageId, prepared.anchor.canonicalIndex + 1)
+      const turn = findCodexForkTurn(rollout, messageId, prepared.prefix)
       if (!turn.ok) return handoff(prepared, turn.code, turn.message)
       const forked = await native.forkCodexThread(instanceId, { threadId, lastTurnId: turn.turnId, cwd: targetCwd })
       return {
@@ -189,7 +189,7 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
         nativeResume: {
           provider: 'codex',
           sessionId: forked.threadId,
-          copiedMessageCount: prepared.anchor.canonicalIndex + 1,
+          copiedMessageCount: prepared.prefix.length,
         },
         warnings: [],
         ...(forked.path ? { stage: { id: forked.path, kind: 'codex-rollout', path: forked.path } } : {}),
