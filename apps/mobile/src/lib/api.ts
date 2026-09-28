@@ -25,6 +25,7 @@ import type { PendingBlockingEvent } from '@shared/pending-requests'
 import type { QueuedTurnActionResult, QueuedTurnSummary } from '@shared/turn-delivery'
 import type { AgentType, Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
+import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type {
   ForkConversationOutcome,
   ForkConversationRequest,
@@ -396,8 +397,9 @@ export class SwitchboardClient {
     return this.transport.invoke(ProviderChannels.SET_MODEL, threadId, model)
   }
 
-  respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void> {
-    return this.transport.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision)
+  /** `response` answers a pull request write card: the resolve choice, or a review's verdict. */
+  respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision, response?: HostWriteResponse): Promise<void> {
+    return this.transport.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision, ...(response ? [response] : []))
   }
 
   answerQuestion(threadId: string, requestId: string, answers: string[][]): Promise<void> {

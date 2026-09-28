@@ -107,15 +107,14 @@ const card: HostWriteCard = {
 }
 
 describe('the card', () => {
-  it('says what it opens, in plain text for a client that does not render it, and that a phone cannot', () => {
+  it('says what it opens, in plain text for a client that does not render it', () => {
     expect(hostWriteTitle(card)).toBe('Open a pull request')
     expect(hostWriteTitle({ ...card, create: { ...card.create!, draft: true } })).toBe('Open a draft pull request')
     expect(hostWriteDetail(card)).toBe([
-      'Open a pull request on acme/app: feat/x -> main', '', 'Add jitter', '', 'Adds jitter.', '',
-      'Answer this on the desktop: a phone cannot open a pull request.',
+      'Open a pull request on acme/app: feat/x -> main', '', 'Add jitter', '', 'Adds jitter.',
     ].join('\n'))
     const push = pushForEvent({ type: 'request.opened', threadId: 't', requestId: 'sbmcp_1', requestType: 'tool', toolName: 'x', detail: '', hostWrite: card }, { title: 'Chat' })
-    expect(push?.body).toBe('Approve at the desktop: Open a pull request on acme/app')
+    expect(push?.body).toBe('Needs approval: Open a pull request on acme/app')
   })
 
   it('offers Deny and Open pull request, and sends back the title and description as edited', () => {

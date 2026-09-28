@@ -87,6 +87,14 @@ export interface HostWriteReview {
   commentOnly?: 'author' | 'closed'
 }
 
+/** What the write lands on, as data rather than a label, so a phone's approval names it (`hostWriteShownDigest`). */
+export interface HostWriteTarget {
+  /** "acme/app". */
+  repository: string
+  /** Null for a pull request not opened yet. */
+  number: number | null
+}
+
 export interface HostWriteCard {
   action: HostWriteAction
   /** "Codex", "Claude Code", "OpenCode": who asked. */
@@ -94,6 +102,7 @@ export interface HostWriteCard {
   host: PrHost
   /** "ssg-bot-v2 #612", or the repository ("acme/app") for a pull request not opened yet. */
   prLabel: string
+  target: HostWriteTarget
   url: string | null
   /** "sync/worker.py:88", or null for a conversation on the whole PR. */
   location: string | null
@@ -132,6 +141,8 @@ export interface HostWriteResponse {
   title?: string
   /** Create: the description as the user left it. */
   description?: string
+  /** A phone's `hostWriteShownDigest` of the draft it showed in full. Required on an approval from a device without the admin scope. */
+  shown?: string
 }
 
 export type AgentToolGate = 'allow' | 'deny' | 'card'
@@ -177,7 +188,7 @@ export function checkReplyText(value: unknown): ReplyTextCheck {
   return { ok: true, text }
 }
 
-/** The approval as plain text, for a client that does not render the card (an older phone). */
+/** The approval as plain text: what a phone shows, and all an older client that does not render the card has. */
 export function hostWriteDetail(card: HostWriteCard): string {
   const where = [card.prLabel, card.location].filter(Boolean).join(' · ')
   const lines: string[] = []
@@ -197,9 +208,6 @@ export function hostWriteDetail(card: HostWriteCard): string {
     if (card.review.summary) lines.push('', card.review.summary)
     for (const c of card.review.comments) lines.push('', `${lineLocation(c)}: ${capDetail(c.text)}`)
   }
-  lines.push('', card.action === 'create'
-    ? 'Answer this on the desktop: a phone cannot open a pull request.'
-    : 'Answer this on the desktop: a phone cannot post to a pull request.')
   return lines.join('\n')
 }
 
@@ -236,5 +244,6 @@ export function parseHostWriteResponse(value: unknown): HostWriteResponse {
     ...(comments ? { comments } : {}),
     ...(typeof r.title === 'string' ? { title: r.title } : {}),
     ...(typeof r.description === 'string' ? { description: r.description } : {}),
+    ...(typeof r.shown === 'string' ? { shown: r.shown } : {}),
   }
 }

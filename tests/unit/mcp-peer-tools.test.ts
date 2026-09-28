@@ -20,7 +20,7 @@ function setup(mode: RuntimeMode, decision?: 'approve' | 'deny') {
   const approvals = new AgentApprovalBroker({
     publish: (e) => {
       events.push(e)
-      if (e.type === 'request.opened' && decision) queueMicrotask(() => approvals.respond('t1', e.requestId, decision, {}, false))
+      if (e.type === 'request.opened' && decision) queueMicrotask(() => approvals.respond('t1', e.requestId, decision, {}, { mayApproveHostWrite: false, label: 'test' }))
     },
   })
   const [list, send] = buildPeerMcpTools({ threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), approvals, peers })
@@ -79,7 +79,7 @@ describe('send_agent_message', () => {
         events.push(e)
         if (e.type === 'request.opened') {
           mode = 'plan'
-          queueMicrotask(() => approvals.respond('t1', e.requestId, 'approve', {}, false))
+          queueMicrotask(() => approvals.respond('t1', e.requestId, 'approve', {}, { mayApproveHostWrite: false, label: 'test' }))
         }
       },
     })

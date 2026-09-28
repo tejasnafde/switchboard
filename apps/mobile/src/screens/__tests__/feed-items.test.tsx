@@ -8,7 +8,24 @@
 import React from 'react'
 import { ApprovalItem, ToolItem, TextItem } from '../ThreadFeedItems'
 import type { FeedItem } from '../../stores/chat'
-import { renderComponent } from '../../test/render'
+import { act } from 'react-test-renderer'
+import type { HostWriteCard } from '@shared/agent-host-writes'
+import { hostWriteShownDigest } from '@shared/host-write-phone'
+import { renderComponent, type Node } from '../../test/render'
+
+/** The Pressable around the text `label`. */
+function pressable(root: Node, label: string): Node {
+  let node: Node | null = root.find((n) => typeof n.type === 'string' && n.children.length === 1 && n.children[0] === label)
+  while (node && typeof node.props.onPress !== 'function') node = node.parent
+  if (!node) throw new Error(`nothing pressable around "${label}"`)
+  return node
+}
+
+/** Tap the Pressable around the text `label`: a plain tap, not a gesture. */
+function press(root: Node, label: string): void {
+  const target = pressable(root, label)
+  act(() => target.props.onPress())
+}
 
 type Tool = Extract<FeedItem, { kind: 'tool' }>
 type TextRow = Extract<FeedItem, { kind: 'text' }>
@@ -135,16 +152,101 @@ describe('ApprovalItem', () => {
     ...over,
   })
 
+  const reply: HostWriteCard = {
+    action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'app #612', target: { repository: 'acme/app', number: 612 }, url: null,
+    location: 'sync/worker.py:88', quote: null, replyText: 'Done.', suggestResolve: true, maxChars: 8000,
+  }
+  const review: HostWriteCard = {
+    ...reply, action: 'review', location: null, replyText: undefined, suggestResolve: undefined,
+    review: { summary: 'Two notes.', comments: [], verdicts: ['comment', 'approve', 'request_changes'] },
+  }
+
   it('offers Approve and Deny for an ordinary approval', () => {
-    const text = renderComponent(<ApprovalItem item={approval()} onDecide={() => {}} />).texts().join(' ')
+    const text = renderComponent(<ApprovalItem item={approval()} backendTakesPhoneApproval={false} onDecide={() => {}} />).texts().join(' ')
     expect(text).toContain('Approve')
     expect(text).toContain('Deny')
   })
 
-  it('offers only Deny for a pull request write, which the desktop approves', () => {
-    const texts = renderComponent(<ApprovalItem item={approval({ desktopOnly: true })} onDecide={() => {}} />).texts()
+  it('offers only Deny for a pull request write on a backend that refuses a phone approval', () => {
+    const texts = renderComponent(<ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval={false} onDecide={() => {}} />).texts()
+    expect(texts).not.toContain('Approve')
+    expect(texts).not.toContain('Post and resolve')
+    expect(texts).toContain('Deny')
+    expect(texts.join(' ')).toContain('Approve this on the desktop')
+  })
+
+  it('offers only Deny for a card cached with the old desktop-only flag', () => {
+    const texts = renderComponent(<ApprovalItem item={approval({ desktopOnly: true })} backendTakesPhoneApproval onDecide={() => {}} />).texts()
+    expect(texts).not.toContain('Approve')
+    expect(texts).toContain('Deny')
+  })
+
+  it('names the write and its action buttons, and sends the resolve choice', () => {
+    const decide = jest.fn()
+    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval onDecide={decide} />)
+    const texts = root.texts()
+    expect(texts).toContain('Reply and resolve a review conversation')
+    expect(texts).toContain('GitHub · app #612 · sync/worker.py:88')
+    expect(texts).toContain('Post reply')
+    expect(texts).toContain('Post and resolve')
+    expect(texts).toContain('Deny')
+    expect(texts).not.toContain('Approve')
+    expect(texts.join(' ')).toContain('Edit on the desktop')
+    press(root.root, 'Post and resolve')
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { resolve: true, shown: hostWriteShownDigest('sbmcp_1', reply) })
+  })
+
+  it('offers a review\'s verdicts, none as the primary button, and sends the one picked', () => {
+    const decide = jest.fn()
+    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: review })} backendTakesPhoneApproval onDecide={decide} />)
+    const texts = root.texts()
+    expect(texts).toEqual(expect.arrayContaining(['Comment', 'Request changes', 'Approve', 'Deny']))
+    press(root.root, 'Request changes')
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { verdict: 'request_changes', shown: hostWriteShownDigest('sbmcp_1', review) })
+  })
+
+  it('shows a long reply in full, and enables its buttons only once it is opened', () => {
+    const long = Array.from({ length: 40 }, (_, i) => `Line ${i + 1} of the reply.`).join('\n')
+    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: { ...reply, replyText: long } })} backendTakesPhoneApproval onDecide={() => {}} />)
+    expect(root.texts()).toContain(long)
+    expect(pressable(root.root, 'Post and resolve').props.disabled).toBe(true)
+    expect(root.texts()).toContain('Show the full draft to approve it.')
+    press(root.root, 'Show the full draft')
+    expect(pressable(root.root, 'Post and resolve').props.disabled).toBe(false)
+    expect(pressable(root.root, 'Post reply').props.disabled).toBe(false)
+    expect(root.texts()).toContain('Posts as shown. Edit on the desktop.')
+  })
+
+  it('shows every comment of a long review in full, with its place, before a verdict is enabled', () => {
+    const comments = Array.from({ length: 4 }, (_, i) => ({
+      id: `c${i + 1}`, path: `src/f${i}.ts`, side: 'new' as const, line: 10 + i, text: `${'x'.repeat(500)} end of comment ${i + 1}`, excerpt: [],
+    }))
+    const summary = `${'s'.repeat(400)} end of summary`
+    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: { ...review, review: { ...review.review!, summary, comments } } })} backendTakesPhoneApproval onDecide={() => {}} />)
+    const texts = root.texts()
+    expect(texts).toContain(summary)
+    for (const c of comments) {
+      expect(texts).toContain(`${c.path}:${c.line}`)
+      expect(texts).toContain(c.text)
+    }
+    expect(pressable(root.root, 'Approve').props.disabled).toBe(true)
+    press(root.root, 'Show the full draft')
+    expect(pressable(root.root, 'Approve').props.disabled).toBe(false)
+  })
+
+  it('sends the user to the desktop when the card cannot be shown in full', () => {
+    const older = { ...review, review: { summary: 'Two notes.', verdicts: ['approve'] } } as unknown as HostWriteCard
+    const texts = renderComponent(<ApprovalItem item={approval({ hostWrite: older })} backendTakesPhoneApproval onDecide={() => {}} />).texts()
     expect(texts).not.toContain('Approve')
     expect(texts).toContain('Deny')
     expect(texts.join(' ')).toContain('Approve this on the desktop')
+  })
+
+  it('offers only Comment to the author', () => {
+    const own: HostWriteCard = { ...review, review: { ...review.review!, verdicts: ['comment'], commentOnly: 'author' } }
+    const texts = renderComponent(<ApprovalItem item={approval({ hostWrite: own })} backendTakesPhoneApproval onDecide={() => {}} />).texts()
+    expect(texts).toContain('Comment')
+    expect(texts).not.toContain('Approve')
+    expect(texts).not.toContain('Request changes')
   })
 })

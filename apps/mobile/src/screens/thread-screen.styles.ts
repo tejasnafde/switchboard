@@ -300,6 +300,40 @@ export const styles = StyleSheet.create({
   denyButton: {
     backgroundColor: colors.red,
   },
+  /** An approve button that is not the suggested one: a review's verdicts, "Post and resolve". */
+  secondaryButton: {
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
+  buttonRowWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
+  hostWriteTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  hostWriteSection: {
+    gap: 2,
+    marginBottom: 6,
+  },
+  hostWriteText: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  /** A long draft before it is opened; approval waits until it is. */
+  hostWritePreviewCollapsed: {
+    maxHeight: 200,
+    overflow: 'hidden',
+  },
   actionLabel: {
     color: '#fff',
     fontSize: 13,

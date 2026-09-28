@@ -25,13 +25,21 @@ import { transcriptShowsTaskNotification, type SyntheticUserPart } from '@shared
 import { splitLegacyCachedItems } from '../lib/thread-history'
 import { applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
+import type { HostWriteCard } from '@shared/agent-host-writes'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
   | { kind: 'text'; id: string; text: string; stream: 'assistant' | 'reasoning' | 'plan'; done: boolean; durationMs?: number }
   | { kind: 'tool'; id: string; toolName: string; input: unknown; output?: string; state: 'running' | 'done' }
   | { kind: 'denial'; id: string; toolName: string; reason: string }
-  | { kind: 'approval'; id: string; requestId: string; toolName: string; detail: string; requestType: string; state: 'pending' | 'approve' | 'deny'; desktopOnly?: boolean; closed?: true }
+  | {
+    kind: 'approval'; id: string; requestId: string; toolName: string; detail: string; requestType: string; state: 'pending' | 'approve' | 'deny'
+    /** A pull request write an agent asked for. */
+    hostWrite?: HostWriteCard
+    /** Written by releases that kept only this flag for a pull request write; such a card offers Deny only. */
+    desktopOnly?: boolean
+    closed?: true
+  }
   | { kind: 'question'; id: string; requestId: string; questions: Question[]; answers?: string[][] }
   | { kind: 'plan'; id: string; planId: string; markdown: string }
   | { kind: 'fileEdit'; id: string; relPath: string; changeKind: 'add' | 'modify' | 'delete'; oldContent: string; newContent: string }
@@ -370,8 +378,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
                 detail: event.detail,
                 requestType: event.requestType,
                 state: 'pending',
-                // A pull request write an agent asked for: the backend takes its approval from the desktop only.
-                ...(event.hostWrite ? { desktopOnly: true } : {}),
+                ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
               },
             ],
           }

@@ -2,6 +2,11 @@ package app.switchboard.mobile.ui.thread
 
 import app.switchboard.mobile.data.thread.ThreadState
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.HostWriteButton
+import app.switchboard.mobile.domain.thread.HostWriteCard
+import app.switchboard.mobile.domain.thread.HostWriteCards
+import app.switchboard.mobile.domain.thread.HostWritePreview
+import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.SyntheticPart
 import app.switchboard.mobile.domain.thread.SyntheticTone
 import app.switchboard.mobile.domain.thread.SyntheticUserMessage
@@ -769,6 +774,12 @@ object ThreadPresenter {
 
 }
 
+sealed interface ApprovalActions {
+    data object Plain : ApprovalActions
+    data class DenyOnly(val card: HostWriteCard) : ApprovalActions
+    data class HostWrite(val card: HostWriteCard, val buttons: List<HostWriteButton>, val preview: HostWritePreview) : ApprovalActions
+}
+
 enum class ThreadApprovalDecision {
     APPROVE,
     DENY,
@@ -783,6 +794,8 @@ sealed interface ThreadUiAction {
     data class Approval(
         val requestId: String,
         val decision: ThreadApprovalDecision,
+        /** An agent's pull request write card: the resolve choice or the review verdict. */
+        val response: HostWriteResponse? = null,
     ) : ThreadUiAction
 
     data class AnswerQuestion(
@@ -855,11 +868,32 @@ object ThreadInteractionPolicy {
     fun approval(
         item: FeedItem.Approval,
         decision: ThreadApprovalDecision,
+        response: HostWriteResponse? = null,
     ): ThreadUiAction.Approval? = if (item.state == "pending") {
-        ThreadUiAction.Approval(item.requestId, decision)
+        ThreadUiAction.Approval(item.requestId, decision, response)
     } else {
         null
     }
+
+    /**
+     * What the phone offers on an approval card. A pull request write an agent
+     * asked for is approvable only on a backend that takes a phone's approval
+     * ([HostWriteCards.PHONE_APPROVAL_CAPABILITY]); an older one refuses it.
+     */
+    fun approvalActions(item: FeedItem.Approval, backendTakesPhoneApproval: Boolean): ApprovalActions {
+        val card = item.hostWrite ?: return ApprovalActions.Plain
+        // A card the phone cannot show in full would post text the user never saw.
+        val preview = HostWriteCards.preview(card).takeIf { backendTakesPhoneApproval }
+            ?: return ApprovalActions.DenyOnly(card)
+        val shown = HostWriteCards.shownDigest(item.requestId, card) ?: return ApprovalActions.DenyOnly(card)
+        // Every approval says which draft it showed in full; the backend refuses one that does not.
+        val buttons = HostWriteCards.buttons(card).map { it.copy(response = it.response.copy(shown = shown)) }
+        return ApprovalActions.HostWrite(card, buttons, preview)
+    }
+
+    /** A long draft starts collapsed, and nothing is approved until it has been opened. */
+    fun hostWriteApprovable(actions: ApprovalActions.HostWrite, expanded: Boolean): Boolean =
+        !actions.preview.long || expanded
 
     fun answer(
         item: FeedItem.Question,

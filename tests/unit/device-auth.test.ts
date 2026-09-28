@@ -20,7 +20,7 @@ import {
   PAIRING_CODE_TTL_MS,
   type DeviceSession,
 } from '../../src/shared/device-auth'
-import { AppChannels, KanbanChannels, PullRequestChannels, PullRequestWriteChannels, SourceControlChannels, WorktreeManagerChannels } from '../../src/shared/ipc-channels'
+import { AppChannels, KanbanChannels, ProviderChannels, PullRequestChannels, PullRequestWriteChannels, SourceControlChannels, WorktreeManagerChannels } from '../../src/shared/ipc-channels'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '../../src/shared/session-defaults'
 
 describe('isChannelAllowed', () => {
@@ -222,5 +222,15 @@ describe('sessions', () => {
     const view = toView(session)
     expect(view).not.toHaveProperty('tokenHash')
     expect(JSON.stringify(view)).not.toContain('abc')
+  })
+})
+
+describe('agent pull request cards vs the Reviews writes', () => {
+  it('keeps the Reviews write channels admin-only while a phone may answer a card', () => {
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.RESPOND_TO_REQUEST)).toBe(true)
+    for (const channel of Object.values(PullRequestWriteChannels)) {
+      expect(isChannelAllowed(PHONE_SCOPES, channel), channel).toBe(false)
+      expect(isChannelAllowed(FULL_SCOPES, channel), channel).toBe(true)
+    }
   })
 })

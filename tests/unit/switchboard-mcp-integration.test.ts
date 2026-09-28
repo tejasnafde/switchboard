@@ -55,6 +55,7 @@ import { setAgentPullRequestAccess, type AgentPullRequestAccess } from '../../sr
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import { withBackendRequestContext } from '../../src/main/backend/request-context'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
+import { HOST_WRITE_SHOWN_REQUIRED, hostWriteShownDigest } from '../../src/shared/host-write-phone'
 import type { BackendHost } from '../../src/main/backend/host'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
@@ -220,7 +221,7 @@ describe('through the provider registry', () => {
     rerunCheck: async () => ({ ok: true, data: { refresh: [] } }),
   }
 
-  it('carries a reply from the agent to a card, refuses the phone, and posts the desktop\'s edit', async () => {
+  it('carries a reply from the agent to a card, refuses a device without the chat scope, and posts the phone\'s approval as drafted', async () => {
     setAgentPullRequestAccess(access)
     const host = new FakeHost()
     const adapter = new LaunchRecordingAdapter()
@@ -241,21 +242,55 @@ describe('through the provider registry', () => {
     // The card is recoverable like any other open approval.
     expect(await host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 't1')).toEqual([card])
 
-    const phone = withBackendRequestContext({ clientScope: 'phone', transport: 'remote', deviceScopes: ['chat'] }, () =>
-      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { text: 'from the phone' }))
-    await expect(phone).rejects.toThrow('desktop')
+    const scopeless = withBackendRequestContext({ clientScope: 'watch', transport: 'remote', deviceScopes: [] }, () =>
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { text: 'from the watch' }))
+    await expect(scopeless).rejects.toThrow('cannot post')
     expect(posted).toEqual([])
 
-    await host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { text: 'Because the cap must hold.', resolve: false })
+    const phone = { clientScope: 'phone', transport: 'remote' as const, deviceScopes: ['chat' as const], deviceSessionId: 'dev_1' }
+    // An app built before the digest showed a shortened card: its approval is refused.
+    await expect(withBackendRequestContext(phone, () =>
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false }))).rejects.toThrow(HOST_WRITE_SHOWN_REQUIRED)
+    expect(posted).toEqual([])
+
+    // The phone approves the draft its card showed: replacement text from a
+    // device without the admin scope is dropped before the broker sees it.
+    await withBackendRequestContext(phone, () =>
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false, text: 'Replaced on the phone', shown: hostWriteShownDigest(card.requestId, card.hostWrite!) }))
     const result = await reply
     expect((result.result as { isError?: boolean }).isError).toBeUndefined()
-    expect(posted).toEqual([{ conversationId: 'T1', body: 'Because the cap must hold.\n\nvia Switchboard' }])
+    expect(posted).toEqual([{ conversationId: 'T1', body: 'Because.\n\nvia Switchboard' }])
     expect(adapter.respondCalls).toBe(0)
     expect(host.events.at(-1)).toMatchObject({ type: 'request.closed', requestId: card.requestId, decision: 'approve' })
 
     await host.invoke(ProviderChannels.STOP_SESSION, 't1')
     await client.exited
     expect(server.isOpen('t1')).toBe(false)
+    await server.stop()
+    setAgentPullRequestAccess(null)
+  })
+
+  it('posts the desktop\'s edit of the draft', async () => {
+    setAgentPullRequestAccess(access)
+    posted.length = 0
+    const host = new FakeHost()
+    const adapter = new LaunchRecordingAdapter()
+    const server = new SwitchboardMcpServer({ bridgeDir: () => bridgeDir })
+    const registry = new ProviderRegistry(host, new Map([['codex', adapter]]), undefined, undefined, server)
+    registry.registerIpcHandlers()
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't3', provider: 'codex', cwd: '/tmp', runtimeMode: 'full-access' })
+    const client = connect(adapter.launches[0]!)
+    await client.request('initialize', {})
+    const reply = client.request('tools/call', { name: 'reply_to_conversation', arguments: { conversationId: 'T1', text: 'Because.' } })
+    await vi.waitFor(() => expect(host.events.some((e) => e.type === 'request.opened')).toBe(true))
+    const card = host.events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
+
+    await host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't3', card.requestId, 'approve', { resolve: false, text: 'Edited on the desktop.' })
+    await reply
+    expect(posted).toEqual([{ conversationId: 'T1', body: 'Edited on the desktop.\n\nvia Switchboard' }])
+
+    await host.invoke(ProviderChannels.STOP_SESSION, 't3')
+    await client.exited
     await server.stop()
     setAgentPullRequestAccess(null)
   })

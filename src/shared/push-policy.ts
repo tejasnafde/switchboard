@@ -60,11 +60,11 @@ export function pushForEvent(event: RuntimeEvent, ctx: PushContext = {}): PushMe
 
   switch (event.type) {
     case 'request.opened':
-      // The phone cannot approve a pull request write, so say where it can be.
+      // The detail of a pull request write is the whole draft, so name the write instead.
       if (event.hostWrite) {
         return {
           title,
-          body: clampBody(`Approve at the desktop: ${hostWriteTitle(event.hostWrite)} on ${event.hostWrite.prLabel}`),
+          body: clampBody(`Needs approval: ${hostWriteTitle(event.hostWrite)} on ${event.hostWrite.prLabel}`),
           data: { threadId, kind: 'approval' },
         }
       }

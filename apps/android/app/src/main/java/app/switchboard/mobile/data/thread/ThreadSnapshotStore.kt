@@ -214,6 +214,7 @@ object ThreadSnapshotCacheCodec {
             "detail" to JsonString(item.detail),
             "requestType" to JsonString(item.requestType),
             "state" to JsonString(item.state),
+            "hostWrite" to item.hostWrite?.raw,
         )
 
         is FeedItem.Retry -> jsonObject(

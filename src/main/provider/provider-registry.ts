@@ -35,7 +35,7 @@ import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
 import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
-import { currentBackendRequestContext, hashClientScope, remoteDeviceHasScope } from '../backend/request-context'
+import { currentBackendRequestContext, hashClientScope, describeRequestClient, remoteDeviceHasScope } from '../backend/request-context'
 import {
   AtomicUserTurnSubmission,
   DurableTurnAcceptance,
@@ -68,6 +68,7 @@ import { agentPullRequestAccess, buildPrTools } from '../mcp/pr-tools'
 import { buildPeerMcpTools } from '../mcp/peer-mcp-tools'
 import { switchboardMcpServer, type SwitchboardMcpLaunch, type SwitchboardMcpServer } from '../mcp/switchboard-mcp-server'
 import { parseHostWriteResponse } from '@shared/agent-host-writes'
+import { approvalChoiceOnly } from '@shared/host-write-phone'
 import { defaultClaudeDir, prepareClaudeProfileSwitch } from './claude-session-migrate'
 import { prepareCodexProfileSwitch } from './codex-session-migrate'
 import { remoteBlockedProviderLabel, remoteProviderLoginPrompt, remoteProviderConfigDir, checkRemoteProviderAuth } from './remote-gate'
@@ -1967,9 +1968,19 @@ export class ProviderRegistry implements PeerToolHost {
 
     this.host.handle(ProviderChannels.RESPOND_TO_REQUEST, async (threadId: string, requestId: string, decision: ApprovalDecision, response?: unknown) => {
       if (AgentApprovalBroker.owns(requestId)) {
-        // Posting to a pull request is admin-scoped for a device, like the
-        // Reviews write channels, so a phone can deny these cards but not approve them.
-        const answer = this.agentApprovals.respond(threadId, requestId, decision, parseHostWriteResponse(response), remoteDeviceHasScope('admin'))
+        // A device that may send the agent turns (the chat scope, which a
+        // phone has) may approve the post it asked for: the card shows the
+        // text, and a full-access turn is the larger power. Only an admin
+        // device may change that text, so a phone's approval posts the draft
+        // it showed, and must prove it showed all of it (`shown`). The Reviews
+        // write channels stay admin-scoped in device-auth.
+        const parsed = parseHostWriteResponse(response)
+        const mayEdit = remoteDeviceHasScope('admin')
+        const answer = this.agentApprovals.respond(threadId, requestId, decision, mayEdit ? parsed : approvalChoiceOnly(parsed), {
+          mayApproveHostWrite: remoteDeviceHasScope('chat'),
+          mustProveShown: !mayEdit,
+          label: describeRequestClient(),
+        })
         if (!answer.ok) throw new Error(answer.message)
         return
       }

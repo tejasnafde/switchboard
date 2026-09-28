@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -79,6 +80,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -112,6 +114,8 @@ import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.thread.AgentDigest
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.HostWriteCards
+import app.switchboard.mobile.domain.thread.HostWritePreview
 import app.switchboard.mobile.domain.thread.SyntheticTone
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import app.switchboard.mobile.domain.remote.RuntimeMode
@@ -296,6 +300,7 @@ fun ThreadScreen(
                 pendingDecision = pendingApproval?.let {
                     pendingActions.approvalDecisions[it.source.requestId]
                 },
+                backendTakesPhoneApproval = pendingActions.backendTakesPhoneApproval,
                 composer = composer,
                 queuedTurns = queuedTurns,
                 onRetry = onRetry,
@@ -488,6 +493,7 @@ private fun ThreadBottomArea(
     contentStatus: ThreadContentStatus?,
     pendingApproval: ThreadRowPresentation.Approval?,
     pendingDecision: ApprovalDecision?,
+    backendTakesPhoneApproval: Boolean,
     composer: ThreadComposerPresentation?,
     queuedTurns: List<QueuedTurn>,
     onRetry: () -> Unit,
@@ -518,7 +524,7 @@ private fun ThreadBottomArea(
                     .background(MaterialTheme.colorScheme.background)
                     .testTag(ThreadTestTags.APPROVAL_SLOT),
             ) {
-                ApprovalRow(pendingApproval.source, pendingDecision, onAction)
+                ApprovalRow(pendingApproval.source, pendingDecision, backendTakesPhoneApproval, onAction)
             }
         }
         if (composer != null) {
@@ -1300,6 +1306,7 @@ private fun ThreadRow(
         is ThreadRowPresentation.Approval -> ApprovalRow(
             row.source,
             pendingActions.approvalDecisions[row.source.requestId],
+            pendingActions.backendTakesPhoneApproval,
             onAction,
         )
         is ThreadRowPresentation.Retry -> NoticeCard(
@@ -1924,17 +1931,43 @@ private fun toolGlyph(kind: ToolIconKind): String = when (kind) {
 private fun ApprovalRow(
     item: FeedItem.Approval,
     pendingDecision: ApprovalDecision?,
+    backendTakesPhoneApproval: Boolean,
     onAction: (ThreadUiAction) -> Unit,
 ) {
     val pending = item.state == "pending"
+    val actions = remember(item, backendTakesPhoneApproval) {
+        ThreadInteractionPolicy.approvalActions(item, backendTakesPhoneApproval)
+    }
+    var expanded by rememberSaveable(item.requestId) { mutableStateOf(false) }
+    val approvable = actions !is ApprovalActions.HostWrite || ThreadInteractionPolicy.hostWriteApprovable(actions, expanded)
     CardContainer(tint = if (pending) Amber else TextDim) {
         Text(
             if (pending) "Approval needed" else item.state.replaceFirstChar(Char::uppercaseChar),
             fontWeight = FontWeight.SemiBold,
         )
-        Text(item.toolName, color = Accent, fontFamily = GeistMono)
-        Text(item.detail, style = MaterialTheme.typography.bodyMedium)
+        val card = item.hostWrite
+        if (card != null) {
+            Text(HostWriteCards.title(card), fontWeight = FontWeight.SemiBold)
+            Text(HostWriteCards.context(card), color = Accent, fontFamily = GeistMono)
+        } else {
+            Text(item.toolName, color = Accent, fontFamily = GeistMono)
+        }
+        if (actions is ApprovalActions.HostWrite) {
+            HostWritePreviewBlock(actions.preview, expanded) { expanded = !expanded }
+        } else {
+            Text(item.detail, style = MaterialTheme.typography.bodyMedium)
+        }
         if (pending) {
+            when (actions) {
+                is ApprovalActions.DenyOnly -> Text("Approve this on the desktop. You can deny it here.", color = TextDim)
+                is ApprovalActions.HostWrite -> {
+                    Text(if (approvable) "Posts as shown. Edit on the desktop." else "Show the full draft to approve it.", color = TextDim)
+                    actions.buttons.forEach { button ->
+                        button.problem?.let { Text("${button.label}: $it", color = TextDim) }
+                    }
+                }
+                ApprovalActions.Plain -> Unit
+            }
             if (pendingDecision != null) {
                 Row(
                     modifier = Modifier.heightIn(min = 48.dp),
@@ -1947,26 +1980,78 @@ private fun ApprovalRow(
                         color = TextDim,
                     )
                 }
-            } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = {
-                        ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.APPROVE)
-                            ?.let(onAction)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp),
-                ) { Text("Approve") }
+            } else FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                when (actions) {
+                    ApprovalActions.Plain -> Button(
+                        onClick = {
+                            ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.APPROVE)
+                                ?.let(onAction)
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) { Text("Approve") }
+                    is ApprovalActions.HostWrite -> actions.buttons.forEach { button ->
+                        val onClick = {
+                            ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.APPROVE, button.response)
+                                ?.let(onAction)
+                            Unit
+                        }
+                        if (button.primary) {
+                            Button(
+                                onClick = onClick,
+                                enabled = approvable && button.problem == null,
+                                modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.hostWriteButton(button.id)),
+                            ) { Text(button.label) }
+                        } else {
+                            OutlinedButton(
+                                onClick = onClick,
+                                enabled = approvable && button.problem == null,
+                                modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.hostWriteButton(button.id)),
+                            ) { Text(button.label) }
+                        }
+                    }
+                    is ApprovalActions.DenyOnly -> Unit
+                }
                 OutlinedButton(
                     onClick = {
                         ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.DENY)
                             ?.let(onAction)
                     },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp),
+                    modifier = Modifier.heightIn(min = 48.dp),
                 ) { Text("Deny") }
             }
+        }
+    }
+}
+
+/**
+ * Everything a host write card posts, uncapped. A long draft shows its first
+ * lines until opened; opened, it scrolls inside the card so the buttons stay
+ * in reach when the card sits above the composer.
+ */
+@Composable
+private fun HostWritePreviewBlock(preview: HostWritePreview, expanded: Boolean, onToggle: () -> Unit) {
+    val bounds = when {
+        !preview.long -> Modifier
+        expanded -> Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())
+        else -> Modifier.heightIn(max = 160.dp).clipToBounds()
+    }
+    SelectionContainer {
+        Column(
+            modifier = bounds.testTag(ThreadTestTags.HOST_WRITE_PREVIEW),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            preview.sections.forEach { section ->
+                Text(section.label, color = TextDim, fontFamily = GeistMono, style = MaterialTheme.typography.labelSmall)
+                Text(section.text, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+    if (preview.long) {
+        TextButton(onClick = onToggle, modifier = Modifier.testTag(ThreadTestTags.HOST_WRITE_EXPAND)) {
+            Text(if (expanded) "Show less" else "Show the full draft")
         }
     }
 }
