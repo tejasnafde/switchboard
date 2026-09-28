@@ -440,7 +440,7 @@ describe('testBitbucket', () => {
     })
     expect(await testBitbucket(new BitbucketClient(creds, impl), repos.slice(0, 1))).toEqual({
       ok: false,
-      message: 'Signed in.\nYour project repository is not readable.\nCannot read in geoiq: ssg-bot-v2\nThe API token may be missing read:pullrequest:bitbucket.',
+      message: 'Signed in.\nYour project repository is not readable.\nCannot read in geoiq: ssg-bot-v2 (pull requests)\nThe API token may be missing read:pullrequest:bitbucket.',
     })
   })
 

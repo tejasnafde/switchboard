@@ -523,7 +523,8 @@ export async function testBitbucket(client: BitbucketClient, repos: RepoRef[]): 
   else {
     lines.push(works > 0 ? `${works} of ${checked.length} project repositories are readable.` : checked.length === 1 ? 'Your project repository is not readable.' : `None of your ${checked.length} project repositories is readable.`)
     const byOwner = new Map<string, string[]>()
-    for (const f of failures) byOwner.set(f.owner, [...(byOwner.get(f.owner) ?? []), f.repo])
+    // The repository read worked but its pull requests did not: say so, the fix differs.
+    for (const f of failures) byOwner.set(f.owner, [...(byOwner.get(f.owner) ?? []), f.step === 'pullrequests' ? `${f.repo} (pull requests)` : f.repo])
     for (const [owner, names] of [...byOwner].sort(([a], [b]) => a.localeCompare(b))) lines.push(`Cannot read in ${owner}: ${names.sort().join(', ')}`)
   }
   const missing = (step: 'repository' | 'pullrequests') => failures.some((f) => f.step === step && f.error?.message === BB_MISSING_SCOPE)
