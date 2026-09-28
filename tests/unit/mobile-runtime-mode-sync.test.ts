@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useChatStore, flushQueue, resetQueue, threadKey } from '../../apps/mobile/src/stores/chat'
-import { buildTurn } from '../../apps/mobile/src/lib/turn-submit'
+import { buildTurn, enqueueTurn, modeToRestore } from '../../apps/mobile/src/lib/turn-submit'
 import { parseQueuedMessage } from '../../apps/mobile/src/lib/outbox-model'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
@@ -48,6 +48,22 @@ describe('mobile runtime mode sync', () => {
     useChatStore.getState().settlePickedMode(KEY, 'auto')
     expect(thread().runtimeMode).toBe('auto')
     expect(turn().runtimeMode).toBeUndefined()
+  })
+
+  it('a pick is settled only after the durable write succeeds', async () => {
+    useChatStore.getState().pickRuntimeMode(KEY, 'auto')
+    const settle = (mode: string) => useChatStore.getState().settlePickedMode(KEY, mode as 'auto')
+    await expect(enqueueTurn(turn(), async () => { throw new Error('disk full') }, settle)).rejects.toThrow('disk full')
+    expect(thread().pickedMode).toBe('auto')
+    await enqueueTurn(turn(), async () => {}, settle)
+    expect(thread().pickedMode).toBeUndefined()
+  })
+
+  it('opening an existing chat restores no remembered mode; a new chat takes the phone one', () => {
+    expect(modeToRestore(false, 'sandbox', 'plan')).toBeUndefined()
+    expect(modeToRestore(undefined, 'sandbox', 'plan')).toBeUndefined()
+    expect(modeToRestore(true, 'sandbox', 'plan')).toBe('sandbox')
+    expect(modeToRestore(true, undefined, 'plan')).toBe('plan')
   })
 
   it('a mode changed on the desktop shows on the phone and wins over a pick not yet sent, profile too', () => {

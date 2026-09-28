@@ -57,7 +57,7 @@ import { SlashMenu } from '../components/SlashMenu'
 import { allCommands, detectSlash, filterCommands, type SlashCommand } from '../lib/slash'
 import { profilesFor } from '../lib/profiles'
 import { rotateWithinAgent } from '../lib/profile-rotation'
-import { buildTurn } from '../lib/turn-submit'
+import { buildTurn, enqueueTurn, modeToRestore } from '../lib/turn-submit'
 import { resolvedAmbiguousBubbleAction } from '../lib/outbox-model'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 import { historyToItems } from '../lib/thread-history'
@@ -311,13 +311,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
     })()
   }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated, thread.cached])
 
-  // Restore the user's last choices, pushing the mode to the backend too so the
-  // adapter and the chip agree.
+  // Restore the user's last choices. A new chat's mode is pushed to the backend
+  // too, so the adapter and the chip agree.
   const restoredKeyRef = useRef<string | null>(null)
   useEffect(() => {
     if (restoredKeyRef.current === key) return
     const saved = usePrefsStore.getState().threads[key]
-    const mode = saved?.mode ?? (isNew ? usePrefsStore.getState().defaultMode : undefined)
+    const mode = modeToRestore(isNew, saved?.mode, usePrefsStore.getState().defaultMode)
     if (mode === undefined && saved?.model === undefined && !saved?.draft) {
       restoredKeyRef.current = key
       return
@@ -462,6 +462,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
   )
   const itemCount = reversedItems.length
 
+  const settlePick = useCallback((mode: string) => {
+    if (isRuntimeMode(mode)) useChatStore.getState().settlePickedMode(key, mode)
+  }, [key])
+
   const setMode = (mode: RuntimeMode) => {
     useChatStore.getState().pickRuntimeMode(key, mode)
     usePrefsStore.getState().rememberMode(key, mode)
@@ -546,14 +550,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
       titleCandidate,
       whenIdle: toggle.queues && !textOverride,
     })
-    if (thread.pickedMode) useChatStore.getState().settlePickedMode(key, thread.pickedMode)
     setFlipNext(false)
     // Title from the first message, as the desktop does. `isNew` matters: an
     // existing chat whose items were emptied by /clear, or one whose history
     // has not loaded yet, also has no user items - titling those would
     // overwrite a title the user already has.
     useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url), turn.bubbleId)
-    enqueue(turn.queued)
+    enqueueTurn(turn.queued, enqueue, settlePick)
       .then(async () => {
         if (!editingId) return
         await completeRejectedEdit(editingId)
@@ -599,13 +602,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
       text: IMPLEMENT_MESSAGE,
       runtimeMode: 'sandbox',
     })
-    useChatStore.getState().settlePickedMode(key, 'sandbox')
     useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE, undefined, turn.bubbleId)
-    enqueue(turn.queued).catch((err: unknown) => {
+    enqueueTurn(turn.queued, enqueue, settlePick).catch((err: unknown) => {
       useChatStore.getState().removeUserMessage(key, turn.bubbleId)
       reportError(err)
     })
-  }, [connectionId, threadId, key, reportError])
+  }, [connectionId, threadId, key, reportError, settlePick])
 
   const decideApproval = useCallback(
     (requestId: string, decision: 'approve' | 'deny') => {

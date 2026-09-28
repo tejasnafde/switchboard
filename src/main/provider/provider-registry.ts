@@ -144,6 +144,8 @@ export class ProviderRegistry implements PeerToolHost {
   private sessionStatus = new Map<string, ProviderSession['status']>()
   /** The last `session.provider` published per thread, re-sent with a mode change. */
   private sessionIdentity = new Map<string, Extract<RuntimeEvent, { type: 'session.provider' }>>()
+  /** Mode a held message was sent with, by its chat row id: it applies only when that message starts. */
+  private heldTurnModes = new Map<string, { threadId: string; mode: RuntimeMode }>()
   /** Descriptor per live thread, so a late-connecting client can adopt it. */
   private sessionDescriptors = new Map<string, ProviderSession>()
   /**
@@ -787,9 +789,25 @@ export class ProviderRegistry implements PeerToolHost {
     if (identity) this.publish({ ...identity, runtimeMode: mode })
   }
 
-  /** Announce a mode a turn carried, when it differs from the one the session ran in. */
-  private announceTurnRuntimeMode(threadId: string, before: RuntimeMode | undefined, requested: RuntimeMode | undefined): void {
-    if (requested && requested !== before) this.announceRuntimeMode(threadId, requested)
+  /**
+   * After a turn carrying a mode was handed to the adapter: announce the mode
+   * the adapter now runs in, if it changed. A message the adapter held keeps
+   * the running turn's mode, so its mode is remembered and announced when it
+   * starts. An adapter that cannot report its mode announces nothing.
+   */
+  private announceTurnRuntimeMode(
+    adapter: ProviderAdapter,
+    threadId: string,
+    before: RuntimeMode | undefined,
+    requested: RuntimeMode | undefined,
+    queuedId?: string,
+  ): void {
+    const after = adapter.runtimeModeOf?.(threadId)
+    if (!requested || after === undefined) return
+    if (after !== before) this.announceRuntimeMode(threadId, after)
+    else if (queuedId && after !== requested && this.queuedTurns.get(threadId, queuedId)) {
+      this.heldTurnModes.set(queuedId, { threadId, mode: requested })
+    }
   }
 
   private publish(event: RuntimeEvent): void {
@@ -869,6 +887,12 @@ export class ProviderRegistry implements PeerToolHost {
     this.bufferToolCall(event)
     if (event.type === 'turn.completed') this.finishOutstandingTurn(event.threadId)
     this.bus.publish(event)
+    if (event.type === 'turn.dequeued') {
+      // A promoted message joins the running turn, whose mode stands.
+      const held = this.heldTurnModes.get(event.messageId)
+      this.heldTurnModes.delete(event.messageId)
+      if (held && event.reason === 'started') this.announceRuntimeMode(held.threadId, held.mode)
+    }
 
     // A turn just ended - diff the start-of-turn checkpoint against the
     // working tree and stream one file.edited event per changed file. Fire
@@ -1156,7 +1180,7 @@ export class ProviderRegistry implements PeerToolHost {
           } finally {
             if (queuedId) this.queuedTurns.settle(queuedId)
           }
-          this.announceTurnRuntimeMode(threadId, modeBefore, input.runtimeMode)
+          this.announceTurnRuntimeMode(adapter, threadId, modeBefore, input.runtimeMode, queuedId)
         },
       })
     } finally {
@@ -1217,6 +1241,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.sessionCwd.delete(threadId)
       this.sessionStatus.delete(threadId)
       this.sessionIdentity.delete(threadId)
+      for (const [id, held] of this.heldTurnModes) if (held.threadId === threadId) this.heldTurnModes.delete(id)
       this.sessionDescriptors.delete(threadId)
       this.sessionCredentials.delete(threadId)
       this.outstandingTurns.delete(threadId)
@@ -1877,7 +1902,7 @@ export class ProviderRegistry implements PeerToolHost {
           // must remain dispatching so a retry cannot execute the turn twice.
           throw error
         }
-        this.announceTurnRuntimeMode(threadId, modeBefore, runtimeMode ?? undefined)
+        this.announceTurnRuntimeMode(adapter, threadId, modeBefore, runtimeMode ?? undefined)
       }
 
       // Positional callers without an origin predate durable idempotency. Keep

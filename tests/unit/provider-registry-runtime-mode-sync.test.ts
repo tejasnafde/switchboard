@@ -48,6 +48,7 @@ import { ProviderChannels } from '../../src/shared/ipc-channels'
 import type { BackendHost } from '../../src/main/backend/host'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent, RuntimeMode, UserTurnSubmissionV1 } from '../../src/shared/provider-events'
+import type { TurnDelivery } from '../../src/shared/turn-delivery'
 import type { AtomicUserTurnContext } from '../../src/main/provider/durable-turn-acceptance'
 
 class FakeHost implements BackendHost {
@@ -64,15 +65,40 @@ class FakeHost implements BackendHost {
   }
 }
 
-/** Holds a mode the way the real adapters do: set by setRuntimeMode or by a turn that carries one. */
+/**
+ * Holds a mode the way the real adapters do: set by setRuntimeMode or by a
+ * turn that carries one. A `queue` send while a turn runs is held, and its
+ * mode applies only when it starts (turn.dequeued 'started', then the mode).
+ */
 class ModeAdapter implements ProviderAdapter {
   readonly provider = 'claude' as const
   mode: RuntimeMode = 'full-access'
-  async startSession(opts: SessionStartOpts): Promise<ProviderSession> {
+  running = false
+  private held: Array<{ id: string; mode?: RuntimeMode }> = []
+  private onEvent: (e: RuntimeEvent) => void = () => {}
+  async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
+    this.onEvent = onEvent
     return { threadId: opts.threadId, provider: 'claude', status: 'idle', runtimeMode: this.mode, cwd: opts.cwd, createdAt: 0 }
   }
-  async sendTurn(_threadId: string, _message: string, runtimeMode?: RuntimeMode): Promise<void> {
+  async sendTurn(threadId: string, _message: string, runtimeMode?: RuntimeMode, _images?: unknown, delivery?: TurnDelivery, queuedId?: string): Promise<void> {
+    if (delivery === 'queue' && this.running && queuedId) {
+      this.held.push({ id: queuedId, mode: runtimeMode })
+      this.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
+      return
+    }
     if (runtimeMode) this.mode = runtimeMode
+  }
+  async cancelQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
+    this.held = this.held.filter((t) => t.id !== queuedId)
+    this.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'cancelled' })
+    return true
+  }
+  finishTurn(threadId: string): void {
+    this.onEvent({ type: 'turn.completed', threadId })
+    const next = this.held.shift()
+    if (!next) return
+    this.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'started' })
+    if (next.mode) this.mode = next.mode
   }
   runtimeModeOf(): RuntimeMode {
     return this.mode
@@ -105,8 +131,8 @@ async function setup() {
   await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
   const published: RuntimeEvent[] = []
   registry.bus.subscribe((e) => published.push(e))
-  const submit = (origin: string, runtimeMode?: RuntimeMode) => host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
-    version: 1, threadId: 't1', origin, providerText: 'hi', ...(runtimeMode ? { runtimeMode } : {}),
+  const submit = (origin: string, runtimeMode?: RuntimeMode, delivery?: TurnDelivery) => host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+    version: 1, threadId: 't1', origin, providerText: 'hi', ...(runtimeMode ? { runtimeMode } : {}), ...(delivery ? { delivery } : {}),
   })
   const announced = () => published.flatMap((e) => (e.type === 'session.provider' && e.runtimeMode ? [e] : []))
   return { host, adapter, submit, announced }
@@ -138,6 +164,29 @@ describe('runtime mode sync across clients', () => {
     await t.submit('again', 'sandbox')
     expect(t.announced()).toHaveLength(1)
     expect(savedModes).toEqual([['t1', 'sandbox']])
+  })
+
+  it('a queued message announces its mode only when it starts, and a cancelled one never', async () => {
+    const t = await setup()
+    t.adapter.running = true
+    await t.submit('later', 'plan', 'queue')
+    expect(t.adapter.mode).toBe('full-access')
+    expect(t.announced()).toEqual([])
+    expect(savedModes).toEqual([])
+    t.adapter.finishTurn('t1')
+    expect(t.announced().map((e) => e.runtimeMode)).toEqual(['plan'])
+    expect(savedModes).toEqual([['t1', 'plan']])
+
+    await t.submit('dropped', 'auto', 'queue')
+    await t.host.invoke(ProviderChannels.CANCEL_QUEUED_TURN, 't1', 'remote_dropped')
+    t.adapter.finishTurn('t1')
+    expect(t.announced().map((e) => e.runtimeMode)).toEqual(['plan'])
+  })
+
+  it('a queue send that runs at once is announced like any turn', async () => {
+    const t = await setup()
+    await t.submit('idle', 'auto', 'queue')
+    expect(t.announced().map((e) => e.runtimeMode)).toEqual(['auto'])
   })
 
   it('a mode set with no live session is still saved', async () => {
