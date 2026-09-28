@@ -35,13 +35,13 @@ class ThreadInteractionPolicyTest {
     @Test
     fun hostWriteCardIsApprovableOnlyOnABackendThatTakesAPhoneApproval() {
         val card = HostWriteCards.decode(
-            JsonObject(linkedMapOf("action" to JsonString("resolve"), "host" to JsonString("github"), "prLabel" to JsonString("app #1"))),
+            JsonObject(linkedMapOf("action" to JsonString("resolve"), "host" to JsonString("github"), "prLabel" to JsonString("app #1"), "target" to TARGET)),
         )!!
         val approval = FeedItem.Approval("a", "sbmcp_1", "mcp__switchboard__resolve_conversation", "Resolve", "tool", "pending", card)
 
         val actions = ThreadInteractionPolicy.approvalActions(approval, backendTakesPhoneApproval = true) as ApprovalActions.HostWrite
         assertEquals(listOf("Resolve"), actions.buttons.map { it.label })
-        assertEquals(HostWriteResponse(shown = HostWriteCards.shownDigest(card)), actions.buttons.single().response)
+        assertEquals(HostWriteResponse(shown = HostWriteCards.shownDigest("sbmcp_1", card)), actions.buttons.single().response)
         assertEquals(ApprovalActions.DenyOnly(card), ThreadInteractionPolicy.approvalActions(approval, backendTakesPhoneApproval = false))
         assertEquals(ApprovalActions.Plain, ThreadInteractionPolicy.approvalActions(approval.copy(hostWrite = null), backendTakesPhoneApproval = false))
         assertEquals(
@@ -85,7 +85,7 @@ class ThreadInteractionPolicyTest {
     }
 
     private fun hostWriteApproval(vararg fields: Pair<String, JsonValue>): FeedItem.Approval {
-        val card = HostWriteCards.decode(JsonObject(linkedMapOf("host" to JsonString("github"), "prLabel" to JsonString("app #1"), *fields)))!!
+        val card = HostWriteCards.decode(JsonObject(linkedMapOf("host" to JsonString("github"), "prLabel" to JsonString("app #1"), "target" to TARGET, *fields)))!!
         return FeedItem.Approval("a", "sbmcp_1", "mcp__switchboard__x", "capped detail", "tool", "pending", card)
     }
 
@@ -140,4 +140,8 @@ class ThreadInteractionPolicyTest {
             ),
         ),
     )
+
+    private companion object {
+        val TARGET = JsonObject(linkedMapOf("repository" to JsonString("acme/app"), "number" to JsonNumber("1")))
+    }
 }

@@ -22,7 +22,7 @@ export function approvalActions(
   if (item.hostWrite) {
     const card = item.hostWrite
     const preview = backendTakesPhoneApproval ? hostWritePreview(card) : null
-    const shown = preview && hostWriteShownDigest(card)
+    const shown = preview && hostWriteShownDigest(item.requestId, card)
     if (!preview || !shown) return { kind: 'deny-only' }
     // Every approval says which draft it showed in full; the backend refuses one that does not.
     const buttons = phoneHostWriteButtons(card).map((b) => ({ ...b, response: { ...b.response, shown } }))

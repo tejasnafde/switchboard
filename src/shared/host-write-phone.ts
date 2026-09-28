@@ -141,19 +141,28 @@ export function hostWritePreview(card: HostWriteCard): HostWritePreview | null {
 }
 
 /**
- * A fingerprint of exactly what `hostWritePreview` shows, which a phone sends
- * as `shown` with its approval and the broker recomputes from its own card. An
- * app that rendered a shortened detail (every build before this one) sends
- * none and is refused, and a phone that showed another draft sends a different
- * one. It is not a secret: it proves which draft was rendered, not who
- * rendered it; the device scope does that. FNV-1a 64 over the UTF-16 code
- * units (low byte first), so the Android port (`HostWriteCards.shownDigest`)
- * computes it without a crypto library. Null when the card has no preview.
+ * A fingerprint of one card as a phone showed it, which the phone sends as
+ * `shown` with its approval and the broker recomputes from its own card. It
+ * binds the request id, the target (host, repository, PR number; for a create,
+ * the source and target branches), the action and exactly what
+ * `hostWritePreview` shows, so the same text on another PR or another card
+ * does not match. An app that rendered a shortened detail (every build before
+ * this one) sends none and is refused. It is not a secret: it proves which
+ * draft was rendered, not who rendered it; the device scope does that.
+ *
+ * FNV-1a 64 over the UTF-16 code units (low byte first) of those fields
+ * joined by NUL, so the Android port (`HostWriteCards.shownDigest`) computes
+ * it without a crypto library. Null when the card has no preview or no target.
  */
-export function hostWriteShownDigest(card: HostWriteCard): string | null {
+export function hostWriteShownDigest(requestId: string, card: HostWriteCard): string | null {
   const preview = hostWritePreview(card)
-  if (!preview) return null
-  const input = [card.action, ...preview.sections.flatMap((s) => [s.label, s.text])].join('\u0000')
+  const target = card.target
+  if (!preview || !target || typeof target.repository !== 'string' || !(target.number === null || typeof target.number === 'number')) return null
+  const input = [
+    SHOWN_DIGEST_VERSION, requestId, card.host, target.repository, target.number === null ? '' : String(target.number),
+    card.create?.sourceBranch ?? '', card.create?.targetBranch ?? '', card.action,
+    ...preview.sections.flatMap((s) => [s.label, s.text]),
+  ].join('\u0000')
   let hash = FNV_OFFSET
   for (let i = 0; i < input.length; i++) {
     const unit = input.charCodeAt(i)
@@ -163,5 +172,6 @@ export function hostWriteShownDigest(card: HostWriteCard): string | null {
   return hash.toString(16).padStart(16, '0')
 }
 
+const SHOWN_DIGEST_VERSION = 'sb-shown-2'
 const FNV_OFFSET = BigInt('0xcbf29ce484222325')
 const FNV_PRIME = BigInt('0x100000001b3')

@@ -835,7 +835,7 @@ object ThreadInteractionPolicy {
         // A card the phone cannot show in full would post text the user never saw.
         val preview = HostWriteCards.preview(card).takeIf { backendTakesPhoneApproval }
             ?: return ApprovalActions.DenyOnly(card)
-        val shown = HostWriteCards.shownDigest(card) ?: return ApprovalActions.DenyOnly(card)
+        val shown = HostWriteCards.shownDigest(item.requestId, card) ?: return ApprovalActions.DenyOnly(card)
         // Every approval says which draft it showed in full; the backend refuses one that does not.
         val buttons = HostWriteCards.buttons(card).map { it.copy(response = it.response.copy(shown = shown)) }
         return ApprovalActions.HostWrite(card, buttons, preview)

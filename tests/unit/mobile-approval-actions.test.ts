@@ -8,7 +8,7 @@ import type { FeedItem } from '../../apps/mobile/src/stores/chat'
 type Approval = Extract<FeedItem, { kind: 'approval' }>
 
 const card: HostWriteCard = {
-  action: 'comment', agentLabel: 'Codex', host: 'github', prLabel: 'app #1', url: null,
+  action: 'comment', agentLabel: 'Codex', host: 'github', prLabel: 'app #1', target: { repository: 'acme/app', number: 1 }, url: null,
   location: 'a.ts:3', quote: null, replyText: 'Log it.', maxChars: 8000,
 }
 const item = (over: Partial<Approval> = {}): Approval => ({
@@ -18,7 +18,7 @@ const item = (over: Partial<Approval> = {}): Approval => ({
 describe('approvalActions', () => {
   it('approves a pull request write only on a backend that takes a phone approval', () => {
     expect(approvalActions(item({ hostWrite: card }), true)).toMatchObject({
-      kind: 'host-write', buttons: [{ label: 'Post comment', primary: true, response: { shown: hostWriteShownDigest(card) } }],
+      kind: 'host-write', buttons: [{ label: 'Post comment', primary: true, response: { shown: hostWriteShownDigest('sbmcp_1', card) } }],
     })
     expect(approvalActions(item({ hostWrite: card }), false)).toEqual({ kind: 'deny-only' })
   })
@@ -71,19 +71,43 @@ describe('hostWritePreview', () => {
 })
 
 describe('hostWriteShownDigest', () => {
-  // The same card and digest are pinned in the Android HostWriteCardsTest, so the two ports cannot drift.
-  const fixture: HostWriteCard = {
-    action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'app #612', url: null, location: 'a.ts:3',
-    quote: { author: 'rév', body: 'Why? 🙂' }, replyText: 'Because.\nSee a.ts.', maxChars: 8000,
+  // Cross-implementation vectors: the same two cards and digests are pinned in
+  // the Android HostWriteCardsTest, so the TS and Kotlin ports cannot drift.
+  // The values were also computed independently (FNV-1a 64 over UTF-16LE).
+  const reply: HostWriteCard = {
+    action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'app #612', target: { repository: 'acme/app', number: 612 },
+    url: null, location: 'a.ts:3', quote: { author: 'rév', body: 'Why? 🙂' }, replyText: 'Because.\nSee a.ts.', maxChars: 8000,
+  }
+  const create: HostWriteCard = {
+    action: 'create', agentLabel: 'Codex', host: 'bitbucket', prLabel: 'acme/app', target: { repository: 'acme/app', number: null },
+    url: null, location: null, quote: null, maxChars: 8000,
+    create: { repoLabel: 'acme/app', sourceBranch: 'feat/x', targetBranch: 'main', title: 'Add it', description: 'Line one.\nLine two.', draft: false },
   }
 
-  it('fingerprints exactly what the preview shows', () => {
-    expect(hostWriteShownDigest(fixture)).toBe('3243034f03ba1d8c')
-    expect(hostWriteShownDigest({ ...fixture, action: 'resolve', quote: null })).toBe('91dfd6974e86cfc9')
-    expect(hostWriteShownDigest({ ...fixture, replyText: 'Because.\nSee b.ts.' })).not.toBe('3243034f03ba1d8c')
-    // Nothing the preview leaves out changes it.
-    expect(hostWriteShownDigest({ ...fixture, agentLabel: 'Claude Code', maxChars: 10 })).toBe('3243034f03ba1d8c')
-    expect(hostWriteShownDigest({ ...fixture, replyText: undefined })).toBeNull()
+  it('matches the pinned cross-implementation vectors', () => {
+    expect(hostWriteShownDigest('sbmcp_42', reply)).toBe('d3cf5b181c2a5b68')
+    expect(hostWriteShownDigest('sbmcp_43', create)).toBe('fa05a2aef032d27a')
+  })
+
+  it('does not match the same text on another card, pull request, repository, host or branch', () => {
+    const base = hostWriteShownDigest('sbmcp_42', reply)
+    expect(hostWriteShownDigest('sbmcp_99', reply)).not.toBe(base)
+    expect(hostWriteShownDigest('sbmcp_42', { ...reply, target: { repository: 'acme/app', number: 613 } })).not.toBe(base)
+    expect(hostWriteShownDigest('sbmcp_42', { ...reply, target: { repository: 'acme/other', number: 612 } })).not.toBe(base)
+    expect(hostWriteShownDigest('sbmcp_42', { ...reply, host: 'bitbucket' })).not.toBe(base)
+    const created = hostWriteShownDigest('sbmcp_43', create)
+    expect(hostWriteShownDigest('sbmcp_43', { ...create, create: { ...create.create!, targetBranch: 'develop' } })).not.toBe(created)
+  })
+
+  it('changes with what the preview shows and nothing else', () => {
+    const base = hostWriteShownDigest('sbmcp_42', reply)
+    expect(hostWriteShownDigest('sbmcp_42', { ...reply, replyText: 'Because.\nSee b.ts.' })).not.toBe(base)
+    expect(hostWriteShownDigest('sbmcp_42', { ...reply, agentLabel: 'Claude Code', maxChars: 10, prLabel: 'renamed' })).toBe(base)
+  })
+
+  it('is null without a preview or a target', () => {
+    expect(hostWriteShownDigest('sbmcp_42', { ...reply, replyText: undefined })).toBeNull()
+    expect(hostWriteShownDigest('sbmcp_42', { ...reply, target: undefined } as unknown as HostWriteCard)).toBeNull()
   })
 })
 

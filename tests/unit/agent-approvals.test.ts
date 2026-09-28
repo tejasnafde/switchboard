@@ -6,7 +6,7 @@ import type { HostWriteCard } from '../../src/shared/agent-host-writes'
 import { HOST_WRITE_SHOWN_REQUIRED, hostWriteShownDigest } from '../../src/shared/host-write-phone'
 
 const card: HostWriteCard = {
-  action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'repo #1', url: null,
+  action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'repo #1', target: { repository: 'acme/repo', number: 1 }, url: null,
   location: 'a.ts:1', quote: null, replyText: 'done', maxChars: 8000,
 }
 
@@ -56,7 +56,7 @@ describe('AgentApprovalBroker', () => {
   it('lets a phone with the chat scope approve a host write as drafted', async () => {
     const { b, opened } = broker()
     const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: card })
-    const shown = hostWriteShownDigest(card)!
+    const shown = hostWriteShownDigest(opened().requestId, card)!
     expect(b.respond('t1', opened().requestId, 'approve', { resolve: true, shown }, PHONE)).toEqual({ ok: true })
     await expect(answer).resolves.toEqual({ decision: 'approve', response: { resolve: true, shown } })
   })
@@ -68,10 +68,26 @@ describe('AgentApprovalBroker', () => {
     // An app built before the digest showed a shortened card and sends none.
     expect(b.respond('t1', id, 'approve', { resolve: true }, PHONE)).toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
     // One that rendered another draft sends a different one.
-    const other = hostWriteShownDigest({ ...card, replyText: 'something else' })!
+    const other = hostWriteShownDigest(id, { ...card, replyText: 'something else' })!
     expect(b.respond('t1', id, 'approve', { resolve: true, shown: other }, PHONE)).toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
     expect(b.respond('t1', id, 'deny', {}, PHONE)).toEqual({ ok: true })
     await expect(answer).resolves.toEqual({ decision: 'deny', reason: 'user' })
+  })
+
+  it('refuses the digest of the same text on another card or another pull request', async () => {
+    const { b, events } = broker()
+    const first = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: card })
+    const otherPr: HostWriteCard = { ...card, prLabel: 'repo #2', target: { repository: 'acme/repo', number: 2 } }
+    void b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: otherPr })
+    const [a, c] = events.filter((e) => e.type === 'request.opened') as Array<Extract<RuntimeEvent, { type: 'request.opened' }>>
+    // The phone approved card A's draft; the digest must not approve card B, same text or not.
+    expect(b.respond('t1', c.requestId, 'approve', { resolve: true, shown: hostWriteShownDigest(a.requestId, card)! }, PHONE))
+      .toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
+    expect(b.respond('t1', c.requestId, 'approve', { resolve: true, shown: hostWriteShownDigest(c.requestId, card)! }, PHONE))
+      .toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
+    expect(b.respond('t1', c.requestId, 'approve', { resolve: true, shown: hostWriteShownDigest(c.requestId, otherPr)! }, PHONE)).toEqual({ ok: true })
+    expect(b.respond('t1', a.requestId, 'deny', {}, PHONE)).toEqual({ ok: true })
+    await expect(first).resolves.toMatchObject({ decision: 'deny' })
   })
 
   it('needs no digest from the desktop', async () => {
@@ -85,7 +101,7 @@ describe('AgentApprovalBroker', () => {
     const { b, opened } = broker()
     const answer = b.ask({ threadId: 't1', toolName: 'x', detail: 'd', hostWrite: reviewCard })
     const id = opened().requestId
-    const shown = hostWriteShownDigest(reviewCard)!
+    const shown = hostWriteShownDigest(id, reviewCard)!
     expect(b.respond('t1', id, 'approve', { shown }, PHONE)).toEqual({ ok: false, message: expect.stringContaining('Pick Comment') })
     expect(b.respond('t1', id, 'approve', { verdict: 'approve', shown }, PHONE)).toEqual({ ok: false, message: 'Approve is not offered on this review.' })
     expect(b.respond('t1', id, 'approve', { verdict: 'comment', shown }, PHONE)).toEqual({ ok: true })

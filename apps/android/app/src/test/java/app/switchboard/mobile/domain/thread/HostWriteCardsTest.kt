@@ -3,11 +3,13 @@ package app.switchboard.mobile.domain.thread
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonCodec
+import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.JsonValue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -63,19 +65,37 @@ class HostWriteCardsTest {
         assertEquals(listOf("Comment"), HostWriteCards.buttons(own).map { it.label })
     }
 
+    // Cross-implementation vectors, pinned with the same cards in tests/unit/mobile-approval-actions.test.ts.
+    private val replyVector = obj(
+        "action" to s("reply"), "host" to s("github"), "prLabel" to s("app #612"),
+        "target" to obj("repository" to s("acme/app"), "number" to JsonNumber("612")),
+        "location" to s("a.ts:3"), "quote" to obj("author" to s("rév"), "body" to s("Why? 🙂")),
+        "replyText" to s("Because.\nSee a.ts."),
+    )
+    private val createVector = obj(
+        "action" to s("create"), "host" to s("bitbucket"), "prLabel" to s("acme/app"),
+        "target" to obj("repository" to s("acme/app"), "number" to JsonNull),
+        "create" to obj(
+            "repoLabel" to s("acme/app"), "sourceBranch" to s("feat/x"), "targetBranch" to s("main"),
+            "title" to s("Add it"), "description" to s("Line one.\nLine two."), "draft" to JsonBoolean(false),
+        ),
+    )
+
     @Test
-    fun shownDigestMatchesTheSharedRuleForTheSameCard() {
-        // Pinned against tests/unit/mobile-approval-actions.test.ts, which the backend's rule passes.
-        val fixture = HostWriteCards.decode(
-            obj(
-                "action" to s("reply"), "host" to s("github"), "prLabel" to s("app #612"), "location" to s("a.ts:3"),
-                "quote" to obj("author" to s("rév"), "body" to s("Why? 🙂")),
-                "replyText" to s("Because.\nSee a.ts."),
-            ),
-        )!!
-        assertEquals("3243034f03ba1d8c", HostWriteCards.shownDigest(fixture))
-        assertEquals("91dfd6974e86cfc9", HostWriteCards.shownDigest(HostWriteCards.decode(obj("action" to s("resolve"), "host" to s("github")))!!))
-        assertNull(HostWriteCards.shownDigest(card("action" to s("reply"))!!))
+    fun shownDigestMatchesTheSharedVectors() {
+        assertEquals("d3cf5b181c2a5b68", HostWriteCards.shownDigest("sbmcp_42", HostWriteCards.decode(replyVector)!!))
+        assertEquals("fa05a2aef032d27a", HostWriteCards.shownDigest("sbmcp_43", HostWriteCards.decode(createVector)!!))
+    }
+
+    @Test
+    fun shownDigestDoesNotMatchTheSameTextOnAnotherCardOrPullRequest() {
+        val base = HostWriteCards.shownDigest("sbmcp_42", HostWriteCards.decode(replyVector)!!)
+        assertNotEquals(base, HostWriteCards.shownDigest("sbmcp_99", HostWriteCards.decode(replyVector)!!))
+        val otherPr = JsonObject(LinkedHashMap(replyVector.values).apply { put("target", obj("repository" to s("acme/app"), "number" to JsonNumber("613"))) })
+        assertNotEquals(base, HostWriteCards.shownDigest("sbmcp_42", HostWriteCards.decode(otherPr)!!))
+        val noTarget = JsonObject(LinkedHashMap(replyVector.values).apply { remove("target") })
+        assertNull(HostWriteCards.shownDigest("sbmcp_42", HostWriteCards.decode(noTarget)!!))
+        assertNull(HostWriteCards.shownDigest("sbmcp_42", card("action" to s("reply"))!!))
     }
 
     @Test

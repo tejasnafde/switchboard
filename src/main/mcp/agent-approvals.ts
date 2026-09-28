@@ -126,7 +126,7 @@ export class AgentApprovalBroker {
         log.warn(`refused a host write approval from ${approver.label}, which lacks the scope: ${requestId}`)
         return { ok: false, message: 'This device cannot post to a pull request. Approve it on the desktop.' }
       }
-      if (approver.mustProveShown && response.shown !== hostWriteShownDigest(card.hostWrite)) {
+      if (approver.mustProveShown && response.shown !== hostWriteShownDigest(requestId, card.hostWrite)) {
         log.warn(`refused a host write approval from ${approver.label}, which did not show the whole draft: ${requestId}`)
         return { ok: false, message: HOST_WRITE_SHOWN_REQUIRED }
       }

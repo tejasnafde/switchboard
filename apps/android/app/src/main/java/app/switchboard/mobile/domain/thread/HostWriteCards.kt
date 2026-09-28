@@ -2,6 +2,7 @@ package app.switchboard.mobile.domain.thread
 
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
+import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
@@ -194,14 +195,32 @@ object HostWriteCards {
     }
 
     /**
-     * A fingerprint of exactly what [preview] shows: FNV-1a 64 over the UTF-16
-     * code units (low byte first) of the action and every section's label and
-     * text, joined by NUL. Ports `hostWriteShownDigest` in
-     * `src/shared/host-write-phone.ts`, which the backend recomputes.
+     * A fingerprint of one card as this phone showed it: FNV-1a 64 over the
+     * UTF-16 code units (low byte first) of the request id, the target (host,
+     * repository, PR number; for a create, the source and target branches),
+     * the action and every [preview] section's label and text, joined by NUL.
+     * Ports `hostWriteShownDigest` in `src/shared/host-write-phone.ts`, which
+     * the backend recomputes; `HostWriteCardsTest` pins the same vectors as the
+     * vitest suite. Null without a preview or a target.
      */
-    fun shownDigest(card: HostWriteCard): String? {
+    fun shownDigest(requestId: String, card: HostWriteCard): String? {
         val preview = preview(card) ?: return null
-        val input = (listOf(card.action) + preview.sections.flatMap { listOf(it.label, it.text) }).joinToString("\u0000")
+        val raw = card.raw
+        val host = raw.string("host") ?: return null
+        val target = raw.values["target"] as? JsonObject ?: return null
+        val repository = target.string("repository") ?: return null
+        val number = when (val value = target.values["number"]) {
+            is JsonNumber -> value.source.toLongOrNull()?.toString() ?: return null
+            JsonNull -> ""
+            else -> return null
+        }
+        val create = raw.values["create"] as? JsonObject
+        val input = (
+            listOf(
+                SHOWN_DIGEST_VERSION, requestId, host, repository, number,
+                create?.string("sourceBranch").orEmpty(), create?.string("targetBranch").orEmpty(), card.action,
+            ) + preview.sections.flatMap { listOf(it.label, it.text) }
+            ).joinToString("\u0000")
         var hash = FNV_OFFSET
         for (unit in input) {
             hash = (hash xor (unit.code and 0xff).toLong()) * FNV_PRIME
@@ -210,6 +229,7 @@ object HostWriteCards {
         return java.lang.Long.toUnsignedString(hash, 16).padStart(16, '0')
     }
 
+    private const val SHOWN_DIGEST_VERSION = "sb-shown-2"
     private const val FNV_OFFSET = -0x340d631b7bdddcdbL // 0xcbf29ce484222325
     private const val FNV_PRIME = 0x100000001b3L
 

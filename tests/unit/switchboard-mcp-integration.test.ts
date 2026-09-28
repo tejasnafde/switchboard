@@ -256,7 +256,7 @@ describe('through the provider registry', () => {
     // The phone approves the draft its card showed: replacement text from a
     // device without the admin scope is dropped before the broker sees it.
     await withBackendRequestContext(phone, () =>
-      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false, text: 'Replaced on the phone', shown: hostWriteShownDigest(card.hostWrite!) }))
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false, text: 'Replaced on the phone', shown: hostWriteShownDigest(card.requestId, card.hostWrite!) }))
     const result = await reply
     expect((result.result as { isError?: boolean }).isError).toBeUndefined()
     expect(posted).toEqual([{ conversationId: 'T1', body: 'Because.\n\nvia Switchboard' }])

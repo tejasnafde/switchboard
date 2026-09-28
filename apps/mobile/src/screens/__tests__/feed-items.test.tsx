@@ -153,7 +153,7 @@ describe('ApprovalItem', () => {
   })
 
   const reply: HostWriteCard = {
-    action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'app #612', url: null,
+    action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'app #612', target: { repository: 'acme/app', number: 612 }, url: null,
     location: 'sync/worker.py:88', quote: null, replyText: 'Done.', suggestResolve: true, maxChars: 8000,
   }
   const review: HostWriteCard = {
@@ -193,7 +193,7 @@ describe('ApprovalItem', () => {
     expect(texts).not.toContain('Approve')
     expect(texts.join(' ')).toContain('Edit on the desktop')
     press(root.root, 'Post and resolve')
-    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { resolve: true, shown: hostWriteShownDigest(reply) })
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { resolve: true, shown: hostWriteShownDigest('sbmcp_1', reply) })
   })
 
   it('offers a review\'s verdicts, none as the primary button, and sends the one picked', () => {
@@ -202,7 +202,7 @@ describe('ApprovalItem', () => {
     const texts = root.texts()
     expect(texts).toEqual(expect.arrayContaining(['Comment', 'Request changes', 'Approve', 'Deny']))
     press(root.root, 'Request changes')
-    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { verdict: 'request_changes', shown: hostWriteShownDigest(review) })
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { verdict: 'request_changes', shown: hostWriteShownDigest('sbmcp_1', review) })
   })
 
   it('shows a long reply in full, and enables its buttons only once it is opened', () => {

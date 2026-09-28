@@ -87,6 +87,14 @@ export interface HostWriteReview {
   commentOnly?: 'author' | 'closed'
 }
 
+/** What the write lands on, as data rather than a label, so a phone's approval names it (`hostWriteShownDigest`). */
+export interface HostWriteTarget {
+  /** "acme/app". */
+  repository: string
+  /** Null for a pull request not opened yet. */
+  number: number | null
+}
+
 export interface HostWriteCard {
   action: HostWriteAction
   /** "Codex", "Claude Code", "OpenCode": who asked. */
@@ -94,6 +102,7 @@ export interface HostWriteCard {
   host: PrHost
   /** "ssg-bot-v2 #612", or the repository ("acme/app") for a pull request not opened yet. */
   prLabel: string
+  target: HostWriteTarget
   url: string | null
   /** "sync/worker.py:88", or null for a conversation on the whole PR. */
   location: string | null
