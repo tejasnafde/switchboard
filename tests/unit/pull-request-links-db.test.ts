@@ -77,7 +77,7 @@ vi.mock('better-sqlite3', () => {
               .filter(([id]) => ![...threadSessions.entries()].some(([sessionId, threadId]) => sessionId === id && threadId !== id))
               .sort(([, a], [, b]) => b.updated_at - a.updated_at)
               .slice(0, args[0] as number)
-              .map(([id, c]) => ({ id, projectPath: c.project_path }))
+              .map(([id, c]) => ({ id, projectPath: c.project_path, worktreePath: c.worktree_path ?? null }))
           }
           if (sql.includes('FROM conversation_pull_requests WHERE conversation_id = ?')) {
             return [...links.values()]
@@ -171,7 +171,7 @@ describe('history scan bookkeeping', () => {
     conversations.set('agent_1', { title: 'Review', agent_type: 'claude-code', project_path: '/p', updated_at: 5, archived: 0 })
     conversations.set('uuid-abc', { title: 'Review', agent_type: 'claude-code', project_path: '/p', updated_at: 6, archived: 0 })
     conversations.set('term_1', { title: 'Shell', agent_type: 'terminal', project_path: '/p', updated_at: 7, archived: 0 })
-    expect(listUnscannedPullRequestHistoryScanTargets(10)).toEqual([{ id: 'agent_1', projectPath: '/p' }])
+    expect(listUnscannedPullRequestHistoryScanTargets(10)).toEqual([{ id: 'agent_1', projectPath: '/p', worktreePath: null }])
     markPullRequestHistoryScanned('uuid-abc', 10)
     expect([...historyScans.keys()]).toEqual(['agent_1'])
     expect(listUnscannedPullRequestHistoryScanTargets(10)).toEqual([])

@@ -25,7 +25,7 @@ import { pushForEvent } from '../../src/shared/push-policy'
 import { createDraftProblem, hostWriteButtons, hostWriteResponse, initialCreateDraft, initialReviewDraft } from '../../src/renderer/components/chat/host-write-card'
 import { currentBranch, remoteHasBranch, type GitRun } from '../../src/main/pull-requests/branch-check'
 import { SWITCHBOARD_OPENCODE_TOOLS } from '../../src/main/mcp/agent-registration'
-import { bbprTargets } from '../../src/shared/bbpr-command'
+import { bbprTargets, bbprTargetsForInput, toolInputCwd } from '../../src/shared/bbpr-command'
 import { bbprNumbersInRepo } from '../../src/main/pull-requests/bbpr-targets'
 import type { RepoRef } from '../../src/shared/pull-requests'
 
@@ -196,6 +196,22 @@ describe('where a bare bbpr runs', () => {
     expect(bbprTargets('cd rel && bbpr 4', null)).toEqual([{ number: 4, runsIn: 'unknown' }])
     // A cd after the bbpr call does not move it.
     expect(bbprTargets('bbpr 5 && cd /else', '/p')).toEqual([{ number: 5, runsIn: 'cwd' }])
+  })
+
+  it('lets an absolute cd reset a directory it could not follow, and keeps a relative one unknown', () => {
+    expect(bbprTargets('cd ~ && cd /repo && bbpr 6', '/p')).toEqual([{ number: 6, runsIn: 'dir', dir: '/repo' }])
+    expect(bbprTargets('cd ~ && cd rel && bbpr 7', '/p')).toEqual([{ number: 7, runsIn: 'unknown' }])
+  })
+
+  it("reads the working directory a Codex tool input records, only when absolute", () => {
+    expect(toolInputCwd(JSON.stringify({ command: ['bash', '-lc', 'bbpr 605'], cwd: '/other/repo' }))).toBe('/other/repo')
+    expect(toolInputCwd(JSON.stringify({ command: 'bbpr 605', workdir: '/w' }))).toBe('/w')
+    expect(toolInputCwd(JSON.stringify({ command: 'bbpr 605', cwd: 'rel' }))).toBeNull()
+    expect(toolInputCwd('bbpr 605')).toBeNull()
+    // A recorded directory is checked like a cd, never taken for the chat's own.
+    expect(bbprTargetsForInput('bbpr 605', '/p', '/other/repo')).toEqual([{ number: 605, runsIn: 'dir', dir: '/other/repo' }])
+    expect(bbprTargetsForInput('cd sub && bbpr 8', '/p', '/other/repo')).toEqual([{ number: 8, runsIn: 'dir', dir: '/other/repo/sub' }])
+    expect(bbprTargetsForInput('bbpr 9', '/p', null)).toEqual([{ number: 9, runsIn: 'cwd' }])
   })
 
   it('keeps a number only when its directory is the chat repository, asking each directory once', async () => {

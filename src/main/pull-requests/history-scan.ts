@@ -8,7 +8,7 @@
  * (`auto-link.ts`).
  */
 import { projectPrRefs } from '@shared/pull-request-links'
-import { bbprPullRequestNumbers, bbprTargets, toolInputCommand } from '@shared/bbpr-command'
+import { bbprPullRequestNumbers, bbprTargetsForInput, toolInputCommand, toolInputCwd } from '@shared/bbpr-command'
 import type { PrRef, RepoRef } from '@shared/pull-requests'
 import type { HistoryPartKind, HistoryVisitor } from './history-source'
 import { createMainLogger } from '../logger'
@@ -74,7 +74,7 @@ class HistoryText {
   private parts: string[] = []
   private seen = new Set<string>()
   /** Shell commands of tool inputs that run bbpr, resolved against the chat's cwd once the read is done. */
-  readonly bbprCommands: string[] = []
+  readonly bbprCommands: Array<{ command: string; cwd: string | null }> = []
   chars = 0
   capped = false
 
@@ -101,7 +101,7 @@ class HistoryText {
 
   private addBbprCommand(input: string): void {
     const command = toolInputCommand(input)
-    if (command && bbprPullRequestNumbers(command).length > 0) this.bbprCommands.push(command)
+    if (command && bbprPullRequestNumbers(command).length > 0) this.bbprCommands.push({ command, cwd: toolInputCwd(input) })
   }
 
   get text(): string {
@@ -143,7 +143,7 @@ export async function scanPullRequestHistoryForConversation(
   if (history.bbprCommands.length > 0 || MENTIONS_HOST.test(history.text)) {
     const repo = await deps.repoForProject(target.projectPath)
     const cwd = target.worktreePath || target.projectPath
-    const targets = history.bbprCommands.flatMap((command) => bbprTargets(command, cwd))
+    const targets = history.bbprCommands.flatMap((c) => bbprTargetsForInput(c.command, cwd, c.cwd))
     const bbprNumbers = await bbprNumbersInRepo(targets, repo, (dir) => deps.repoForProject(dir))
     for (const ref of projectPrRefs(history.text, bbprNumbers, repo)) {
       if (deps.link(target.id, ref)) linked++

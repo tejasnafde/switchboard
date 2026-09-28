@@ -70,6 +70,31 @@ export function toolInputCommand(input: string): string | null {
   return null
 }
 
+/** The working directory a tool input names for its command (Codex records `cwd`), when absolute. */
+export function toolInputCwd(input: string): string | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(input)
+  } catch {
+    // Not JSON: a bare command names no directory.
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  const { cwd, workdir } = parsed as { cwd?: unknown; workdir?: unknown }
+  const dir = typeof cwd === 'string' ? cwd : typeof workdir === 'string' ? workdir : null
+  return dir !== null && dir.startsWith('/') ? dir : null
+}
+
+/**
+ * `bbprTargets` for a tool input that may record its own directory: a bare
+ * number there runs in THAT directory, so its repository gets checked instead
+ * of being taken for the chat's.
+ */
+export function bbprTargetsForInput(command: string, chatCwd: string | null, recordedCwd: string | null): BbprTarget[] {
+  if (recordedCwd === null) return bbprTargets(command, chatCwd)
+  return bbprTargets(command, recordedCwd).map((t) => (t.runsIn === 'cwd' ? { number: t.number, runsIn: 'dir' as const, dir: recordedCwd } : t))
+}
+
 /**
  * Where a bare `bbpr <n>` runs, which decides whose PR the number is:
  * `cwd` (no `cd` before it, so the tool's own working directory), `dir` (the
@@ -116,7 +141,8 @@ export function bbprTargets(command: string, cwd: string | null): BbprTarget[] {
     if (cd) {
       const arg = cdArgument(cd[1])
       const base: string | null = dir ?? cwd
-      dir = arg === null || dir === undefined || (!arg.startsWith('/') && !base) ? undefined : resolvePosix(base ?? '/', arg)
+      // An absolute cd resets even an unknown directory; a relative one after it stays unknown.
+      dir = arg === null || (!arg.startsWith('/') && (dir === undefined || !base)) ? undefined : resolvePosix(base ?? '/', arg)
       continue
     }
     if (segment === 'popd') {

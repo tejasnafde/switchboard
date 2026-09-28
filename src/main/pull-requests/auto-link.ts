@@ -9,7 +9,7 @@
  */
 import type { RuntimeEvent } from '@shared/provider-events'
 import { applyContentText } from '@shared/content-stream'
-import { bbprTargets, toolInputCommand } from '@shared/bbpr-command'
+import { bbprTargetsForInput, toolInputCommand, toolInputCwd } from '@shared/bbpr-command'
 import { findPullRequestUrls, projectPrRefs } from '@shared/pull-request-links'
 import type { PrRef, RepoRef } from '@shared/pull-requests'
 import { createMainLogger } from '../logger'
@@ -63,7 +63,7 @@ export class PullRequestAutoLinker {
     if (event.type === 'tool.started') {
       const input = toolInputText(event.input)
       if (!input || input.length > MAX_TOOL_INPUT_CHARS) return Promise.resolve()
-      return this.scan(event.threadId, input, toolInputCommand(input))
+      return this.scan(event.threadId, input, toolInputCommand(input), toolInputCwd(input))
     }
     if (event.type === 'tool.completed' && event.output) return this.scan(event.threadId, event.output)
     if (event.type === 'turn.completed' || (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))) {
@@ -75,14 +75,14 @@ export class PullRequestAutoLinker {
   }
 
   /** `command`: the shell command of a tool input, whose bare `bbpr <n>` numbers count when it runs in the chat's repository. */
-  private async scan(threadId: string, text: string, command: string | null = null): Promise<void> {
+  private async scan(threadId: string, text: string, command: string | null = null, commandCwd: string | null = null): Promise<void> {
     const mayHaveBbpr = command !== null && command.includes('bbpr')
     if (!mayHaveBbpr && (!MENTIONS_HOST.test(text) || findPullRequestUrls(text).length === 0)) return
     try {
       const chat = this.deps.conversationFor(threadId)
       if (!chat) return
       const repo = await this.deps.repoForProject(chat.projectPath)
-      const bbprNumbers = mayHaveBbpr ? await bbprNumbersInRepo(bbprTargets(command, chat.cwd), repo, (dir) => this.deps.repoForProject(dir)) : []
+      const bbprNumbers = mayHaveBbpr ? await bbprNumbersInRepo(bbprTargetsForInput(command, chat.cwd, commandCwd), repo, (dir) => this.deps.repoForProject(dir)) : []
       let added = false
       for (const ref of projectPrRefs(text, bbprNumbers, repo)) {
         if (this.deps.link(chat.id, ref)) added = true
