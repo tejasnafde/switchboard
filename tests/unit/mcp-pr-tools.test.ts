@@ -41,6 +41,12 @@ const changedFiles: PrChangedFile[] = [
   { path: 'sync/worker.py', oldPath: null, status: 'modified', additions: 2, deletions: 1, binary: false, truncated: false, hunks: parseHunks(WORKER_DIFF).hunks },
 ]
 
+/** The worker diff plus a second hunk far below it, so a range can cross hunks. */
+const twoHunkFiles: PrChangedFile[] = [{
+  ...changedFiles[0],
+  hunks: parseHunks([WORKER_DIFF, '@@ -120,2 +121,3 @@ class SyncWorker:', '     def stop(self) -> None:', '+        self.closed = True', '         return None'].join('\n')).hunks,
+}]
+
 function detail(): PrDetail {
   return {
     ref: PR, title: 'Sync backoff', url: 'https://github.com/acme/app/pull/612',
@@ -54,14 +60,14 @@ function detail(): PrDetail {
   }
 }
 
-function fakeAccess(linked: PrRef[] = [PR], over: Partial<PrDetail> = {}) {
+function fakeAccess(linked: PrRef[] = [PR], over: Partial<PrDetail> = {}, diff: PrChangedFile[] = changedFiles) {
   const calls: Array<{ op: string; ref: PrRef; input?: unknown; resolved?: boolean }> = []
   const ok = { ok: true as const, data: { refresh: [] } }
   const access: AgentPullRequestAccess = {
     linkedPrs: vi.fn(() => linked),
     detail: vi.fn(async () => ({ ok: true as const, data: { ...detail(), ...over } })),
     conversations: vi.fn(async () => ({ ok: true as const, data: [conversation] })),
-    files: vi.fn(async () => ({ ok: true as const, data: changedFiles })),
+    files: vi.fn(async () => ({ ok: true as const, data: diff })),
     reply: vi.fn(async (ref, input) => { calls.push({ op: 'reply', ref, input }); return ok }),
     setResolved: vi.fn(async (ref, input, resolved) => { calls.push({ op: 'resolve', ref, input, resolved }); return ok }),
     rerunCheck: vi.fn(async (ref, input) => { calls.push({ op: 'rerun', ref, input }); return ok }),
@@ -71,9 +77,9 @@ function fakeAccess(linked: PrRef[] = [PR], over: Partial<PrDetail> = {}) {
   return { access, calls }
 }
 
-function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<PrDetail>; answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => AgentApprovalOutcome | null; budget?: AgentWriteBudget } = {}) {
+function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<PrDetail>; files?: PrChangedFile[]; answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => AgentApprovalOutcome | null; budget?: AgentWriteBudget } = {}) {
   const events: RuntimeEvent[] = []
-  const { access, calls } = fakeAccess(opts.linked, opts.detail)
+  const { access, calls } = fakeAccess(opts.linked, opts.detail, opts.files)
   const approvals = new AgentApprovalBroker({
     publish: (e) => {
       events.push(e)
@@ -171,6 +177,13 @@ describe('reads', () => {
     const { call } = setup()
     const body = JSON.parse(text(await call('list_pr_conversations', {})))
     expect(body).toEqual([{ id: 'PRRT_1', location: 'sync/worker.py:88', resolved: false, outdated: false, comments: [{ author: 'pankaj', body: 'Cap the jitter too.', at: '1970-01-01T00:00:00.000Z' }] }])
+  })
+
+  it('names both ends of a conversation on a range of lines', async () => {
+    const { call, access } = setup()
+    vi.mocked(access.conversations).mockResolvedValue({ ok: true, data: [{ ...conversation, startLine: 84 }] })
+    const body = JSON.parse(text(await call('list_pr_conversations', {})))
+    expect(body[0].location).toBe('sync/worker.py:84-88')
   })
 
   it('reads the links of the chat\'s root conversation', async () => {
@@ -415,6 +428,33 @@ describe('comment_on_line', () => {
     expect(text(result)).toContain('edited your comment')
   })
 
+  it('takes a range: a card that says which lines and marks them all, and the range sent to the host', async () => {
+    const { call, events, calls } = setup({ answer: approve() })
+    const result = await call('comment_on_line', { ...args, startLine: 80, line: 82 })
+    const card = opened(events)[0].hostWrite!
+    expect(card).toMatchObject({ action: 'comment', location: 'sync/worker.py:80-82', lineRange: { start: 80, end: 82 } })
+    expect(card.excerpt!.filter((l) => l.target).map((l) => l.newLine)).toEqual([80, 81, 82])
+    expect(opened(events)[0].detail).toContain('Comment on app #612 · sync/worker.py:80-82')
+    expect(calls).toEqual([{ op: 'comment', ref: PR, input: { path: 'sync/worker.py', side: 'new', line: 82, startLine: 80, body: 'Log the delay.\n\nvia Switchboard' } }])
+    expect(text(result)).toContain('sync/worker.py:80-82')
+  })
+
+  it('refuses a reversed, too long, mixed-side or cross-hunk range, before any card', async () => {
+    const { call, events, calls } = setup({ answer: approve(), files: twoHunkFiles })
+    const reversed = await call('comment_on_line', { ...args, startLine: 82, line: 80 })
+    expect(text(reversed)).toContain('"line" is the LAST line')
+    expect((await call('comment_on_line', { ...args, startLine: 1, line: 201 })).isError).toBe(true)
+    expect((await call('comment_on_line', { ...args, startLine: 80, line: 82, startSide: 'old' })).isError).toBe(true)
+    const split = await call('comment_on_line', { ...args, startLine: 81, line: 122 })
+    expect(split.isError).toBe(true)
+    expect(text(split)).toContain('spans two hunks')
+    expect(opened(events)).toEqual([])
+    expect(calls).toEqual([])
+    // Inside the second hunk is fine.
+    await call('comment_on_line', { ...args, startLine: 121, line: 123 })
+    expect(calls.map((c) => c.input)).toEqual([expect.objectContaining({ line: 123, startLine: 121 })])
+  })
+
   it('takes a deleted line on the old side', async () => {
     const { call, calls } = setup({ answer: approve() })
     await call('comment_on_line', { ...args, line: 81, side: 'old' })
@@ -520,6 +560,26 @@ describe('draft_review', () => {
     }])
     expect(text(result)).toContain('as Request changes, with 1 inline comments')
     expect(text(result)).toContain('removed 1 of your comments')
+  })
+
+  it('carries a range comment into the card row and the submitted review', async () => {
+    const ranged = { ...draft, comments: [{ path: 'sync/worker.py', startLine: 80, line: 82, text: 'This block.' }] }
+    const { call, events, calls } = setup({ detail: reviewer, answer: approve({ verdict: 'comment' }) })
+    await call('draft_review', ranged)
+    const card = opened(events)[0]
+    const row = card.hostWrite!.review!.comments[0]
+    expect(row).toMatchObject({ line: 82, startLine: 80 })
+    expect(row.excerpt.filter((l) => l.target).map((l) => l.newLine)).toEqual([80, 81, 82])
+    expect(card.detail).toContain('sync/worker.py:80-82: This block.')
+    expect(calls[0].input).toMatchObject({ comments: [{ path: 'sync/worker.py', side: 'new', line: 82, startLine: 80, body: 'This block.\n\nvia Switchboard' }] })
+  })
+
+  it('refuses a draft with a range across two hunks, naming it, before any card', async () => {
+    const { call, events } = setup({ detail: reviewer, answer: approve({ verdict: 'comment' }), files: twoHunkFiles })
+    const result = await call('draft_review', { ...draft, comments: [{ path: 'sync/worker.py', startLine: 81, line: 122, text: 'x' }] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('sync/worker.py:81-122 (spans two hunks)')
+    expect(opened(events)).toEqual([])
   })
 
   it('posts nothing when the card answered without a verdict (a plain approval)', async () => {

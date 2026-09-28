@@ -11,7 +11,7 @@
  * text the user edited in the card is the text that gets posted.
  */
 import type { DiffLineKind, PrHost } from './pull-requests'
-import type { ReviewEvent } from './pull-request-writes'
+import { lineLocation, type ReviewEvent } from './pull-request-writes'
 import type { RuntimeMode } from './provider-events'
 
 /** The last line of everything an agent posts, so a reader knows a person did not type it. */
@@ -30,6 +30,9 @@ export const AGENT_WRITE_WINDOW_MS = 10 * 60_000
  */
 export const HOST_WRITE_APPROVAL_TTL_MS = 10 * 60_000
 
+/** The most lines one agent comment may cover. A longer range is a file-level remark, not a line comment. */
+export const AGENT_COMMENT_MAX_LINES = 200
+
 /** A draft review holds at most this many inline comments; the human form allows more. */
 export const AGENT_REVIEW_MAX_COMMENTS = 30
 /** The summary and every comment of a draft review together, in UTF-8 bytes. */
@@ -43,7 +46,7 @@ export interface HostWriteDiffLine {
   text: string
   oldLine: number | null
   newLine: number | null
-  /** The line the comment is on. */
+  /** A line the comment covers. */
   target: boolean
 }
 
@@ -52,7 +55,10 @@ export interface HostWriteReviewComment {
   id: string
   path: string
   side: 'new' | 'old'
+  /** The last line the comment covers. */
   line: number
+  /** The first line when it covers several. */
+  startLine?: number
   text: string
   excerpt: HostWriteDiffLine[]
 }
@@ -85,6 +91,8 @@ export interface HostWriteCard {
   replyText?: string
   /** The diff around the line. Comment only. */
   excerpt?: HostWriteDiffLine[]
+  /** Comment only, when it covers several lines. */
+  lineRange?: { start: number; end: number }
   /** Review only. */
   review?: HostWriteReview
   /** The agent asked to resolve after replying, so "Post and resolve" is the primary button. */
@@ -155,7 +163,7 @@ export function hostWriteDetail(card: HostWriteCard): string {
   if (card.replyText) lines.push('', card.replyText)
   if (card.review) {
     if (card.review.summary) lines.push('', card.review.summary)
-    for (const c of card.review.comments) lines.push('', `${c.path}:${c.line}: ${capDetail(c.text)}`)
+    for (const c of card.review.comments) lines.push('', `${lineLocation(c)}: ${capDetail(c.text)}`)
   }
   lines.push('', 'Answer this on the desktop: a phone cannot post to a pull request.')
   return lines.join('\n')
@@ -170,7 +178,7 @@ function capDetail(text: string): string {
 export function hostWriteTitle(card: HostWriteCard): string {
   if (card.action === 'reply') return card.suggestResolve ? 'Reply and resolve a review conversation' : 'Reply to a review conversation'
   if (card.action === 'resolve') return 'Resolve a review conversation'
-  if (card.action === 'comment') return 'Comment on a line'
+  if (card.action === 'comment') return card.lineRange ? `Comment on lines ${card.lineRange.start}-${card.lineRange.end}` : 'Comment on a line'
   if (card.action === 'review') return 'Submit a review'
   return 'Re-run a failed check'
 }

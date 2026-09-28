@@ -1,14 +1,14 @@
 {
   "data": { "repository": { "pullRequest": { "reviewThreads": { "nodes": [
     {
-      "id": "PRRT_1", "isResolved": false, "isOutdated": false, "path": "src/shared/iap-tunnel.ts", "line": 88, "originalLine": 80, "diffSide": "RIGHT",
+      "id": "PRRT_1", "isResolved": false, "isOutdated": false, "path": "src/shared/iap-tunnel.ts", "line": 88, "originalLine": 80, "diffSide": "RIGHT", "startLine": 84, "startDiffSide": "RIGHT",
       "comments": { "nodes": [
         { "id": "PRRC_1", "body": "A cap of 0 reads as no cap here.", "url": "https://github.com/x/y/pull/162#discussion_r1", "createdAt": "2026-09-27T07:41:00Z", "author": { "login": "backend", "avatarUrl": null } },
         { "id": "PRRC_2", "body": "Fixed.<!-- fingerprint -->", "url": null, "createdAt": "2026-09-27T07:55:00Z", "author": null }
       ] }
     },
     {
-      "id": "PRRT_2", "isResolved": true, "isOutdated": true, "path": "src/main/backend/ws-host.ts", "line": null, "originalLine": 52, "diffSide": "LEFT",
+      "id": "PRRT_2", "isResolved": true, "isOutdated": true, "path": "src/main/backend/ws-host.ts", "line": null, "originalLine": 52, "diffSide": "LEFT", "startLine": null, "startDiffSide": null,
       "comments": { "nodes": [ { "id": "PRRC_3", "body": "Old line.", "url": null, "createdAt": "2026-09-27T07:42:00Z", "author": { "login": "backend", "avatarUrl": null } } ] }
     }
   ] } } } }

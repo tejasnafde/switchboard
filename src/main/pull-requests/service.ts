@@ -11,7 +11,8 @@
 import {
   addReviewerPrecheck,
   findConversation,
-  lineInDiff,
+  lineLocation,
+  lineTargetFit,
   managePrecheck,
   mergePrecheck,
   orderReviewerCandidates,
@@ -25,6 +26,7 @@ import {
   validateResolve,
   validateReviewer,
   validateSubmitReview,
+  type InlineCommentInput,
   type PrResource,
   type PrWriteDone,
 } from '@shared/pull-request-writes'
@@ -49,6 +51,15 @@ import {
 import { repoFromRemotes } from '@shared/pull-request-remote'
 import { createMainLogger } from '../logger'
 import { PrHostError, toPrError, type PullRequestProvider } from './provider'
+
+/** Why the fresh diff no longer takes this line comment, or null. */
+function lineTargetProblem(files: readonly PrChangedFile[], c: InlineCommentInput): string | null {
+  const fit = lineTargetFit(files, c)
+  if (fit === 'ok') return null
+  return fit === 'split'
+    ? `${lineLocation(c)} spans two hunks of the diff; a comment covers lines of one hunk.`
+    : `${lineLocation(c)} is not in the diff any more.`
+}
 
 const log = createMainLogger('pull-requests:service')
 
@@ -298,9 +309,8 @@ export class PullRequestService {
   inlineComment(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
     return this.write(ref, 'inline comment', ['conversations', 'detail'], async (p, r) => {
       const comment = PullRequestService.unwrap(validateInlineComment(r.host, input))
-      if (!lineInDiff(await p.files(r), comment)) {
-        throw new PrHostError({ kind: 'stale', host: r.host, message: `${comment.path}:${comment.line} is not in the diff any more.` })
-      }
+      const problem = lineTargetProblem(await p.files(r), comment)
+      if (problem) throw new PrHostError({ kind: 'stale', host: r.host, message: problem })
       await p.inlineComment(r, comment)
     })
   }
@@ -315,8 +325,8 @@ export class PullRequestService {
         }
         if (detail.state !== 'open') throw new PrHostError({ kind: 'stale', host: r.host, message: `This pull request is ${detail.state} now.` })
       }
-      const gone = review.comments.find((c) => !lineInDiff(files, c))
-      if (gone) throw new PrHostError({ kind: 'stale', host: r.host, message: `${gone.path}:${gone.line} is not in the diff any more. Remove that comment and submit again.` })
+      const problem = review.comments.map((c) => lineTargetProblem(files, c)).find(Boolean)
+      if (problem) throw new PrHostError({ kind: 'stale', host: r.host, message: `${problem} Remove that comment and submit again.` })
       await p.submitReview(r, review)
     })
   }

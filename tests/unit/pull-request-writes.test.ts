@@ -17,6 +17,8 @@ import {
   defaultMergeStrategy,
   effectiveMergeStrategy,
   lineInDiff,
+  lineLocation,
+  lineTargetFit,
   mergePrecheck,
   sameCommit,
   orderMergeStrategies,
@@ -186,6 +188,31 @@ describe('lineInDiff', () => {
     expect(lineInDiff(files, { path: 'a.py', side: 'old', line: 13 })).toBe(false)
     expect(lineInDiff(files, { path: 'b.py', side: 'new', line: 11 })).toBe(false)
     expect(lineInDiff(files, { path: 'a.py', side: 'new', line: 12, startLine: 2 })).toBe(false)
+  })
+})
+
+describe('lineTargetFit', () => {
+  const files: PrChangedFile[] = [{
+    path: 'a.py', oldPath: null, status: 'modified', additions: 3, deletions: 1, binary: false, truncated: false,
+    hunks: parseHunks('@@ -10,3 +10,4 @@\n ctx\n-old\n+new1\n+new2\n ctx2\n@@ -40,2 +41,3 @@\n far\n+added\n far2').hunks,
+  }]
+
+  it('takes a range inside one hunk on either side', () => {
+    expect(lineTargetFit(files, { path: 'a.py', side: 'new', line: 13, startLine: 10 })).toBe('ok')
+    expect(lineTargetFit(files, { path: 'a.py', side: 'old', line: 12, startLine: 10 })).toBe('ok')
+    expect(lineInDiff(files, { path: 'a.py', side: 'new', line: 43, startLine: 41 })).toBe(true)
+  })
+
+  it('calls a range across two hunks split, and a range with an end off the diff missing', () => {
+    expect(lineTargetFit(files, { path: 'a.py', side: 'new', line: 42, startLine: 11 })).toBe('split')
+    expect(lineInDiff(files, { path: 'a.py', side: 'new', line: 42, startLine: 11 })).toBe(false)
+    expect(lineTargetFit(files, { path: 'a.py', side: 'new', line: 30, startLine: 11 })).toBe('missing')
+    expect(lineTargetFit(files, { path: 'b.py', side: 'new', line: 11 })).toBe('missing')
+  })
+
+  it('labels a range with both ends', () => {
+    expect(lineLocation({ path: 'a.py', side: 'new', line: 13, startLine: 10 })).toBe('a.py:10-13')
+    expect(lineLocation({ path: 'a.py', side: 'new', line: 13 })).toBe('a.py:13')
   })
 })
 

@@ -75,7 +75,7 @@ export interface BbComment {
   created_on: string
   deleted?: boolean
   parent?: { id: number }
-  inline?: { path: string; from?: number | null; to?: number | null; outdated?: boolean }
+  inline?: { path: string; from?: number | null; to?: number | null; start_from?: number | null; start_to?: number | null; outdated?: boolean }
   resolution?: { type?: string; created_on?: string } | null
   links?: { html?: { href?: string } }
 }
@@ -245,10 +245,13 @@ export function mapBbComments(comments: readonly BbComment[]): PrConversation[] 
     if (!thread) {
       const { path, from, to, outdated } = root.inline
       const line = to ?? from ?? null
+      // `to`/`from` are the LAST line of a multi-line comment; its first is on the same side.
+      const start = to != null ? root.inline.start_to : root.inline.start_from
       thread = {
         id: String(root.id),
         path,
         line: outdated ? null : line,
+        ...(!outdated && line !== null && start && start < line ? { startLine: start } : {}),
         side: to != null ? 'new' : from != null ? 'old' : null,
         resolved: !!root.resolution,
         outdated: !!outdated,

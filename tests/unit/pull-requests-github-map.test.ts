@@ -124,6 +124,17 @@ describe('mapGhThreads', () => {
 
   it('drops the line of an outdated thread and keeps its side', () => {
     expect(threads[1]).toMatchObject({ line: null, side: 'old', resolved: true, outdated: true })
+    expect(threads[1].startLine).toBeUndefined()
+  })
+
+  it('keeps the first line of a multi-line thread on the same side, and drops one that starts on the other', () => {
+    expect(threads[0]).toMatchObject({ startLine: 84, line: 88 })
+    const raw = fixture('github-threads.json').data.repository.pullRequest.reviewThreads.nodes[0]
+    expect(mapGhThreads([{ ...raw, startDiffSide: 'LEFT' }])[0].startLine).toBeUndefined()
+    expect(mapGhThreads([{ ...raw, startLine: 88 }])[0].startLine).toBeUndefined()
+    // A thread read before the field existed.
+    const { startLine: _s, startDiffSide: _d, ...legacy } = raw
+    expect(mapGhThreads([legacy])[0]).not.toHaveProperty('startLine')
   })
 })
 

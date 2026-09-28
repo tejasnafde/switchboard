@@ -3,6 +3,7 @@ import {
   AGENT_REPLY_MAX_CHARS,
   checkReplyText,
   hostWriteDetail,
+  hostWriteTitle,
   hostWriteGate,
   parseHostWriteResponse,
   withViaMarker,
@@ -97,6 +98,20 @@ describe('hostWriteDetail for the new comment writes', () => {
     expect(review).toContain('Two notes.')
     expect(review).toContain(`a.py:3: ${'x'.repeat(300)}…`)
     expect(review).toContain('desktop')
+  })
+})
+
+describe('a comment on a range of lines', () => {
+  it('says which lines in the title, in the plain text and on each review row', () => {
+    const comment: HostWriteCard = { ...card, action: 'comment', suggestResolve: undefined, quote: null, replyText: 'Log it.', location: 'sync/worker.py:40-52', lineRange: { start: 40, end: 52 } }
+    expect(hostWriteTitle(comment)).toBe('Comment on lines 40-52')
+    expect(hostWriteTitle({ ...comment, lineRange: undefined })).toBe('Comment on a line')
+    expect(hostWriteDetail(comment)).toContain('Comment on ssg-bot-v2 #612 · sync/worker.py:40-52')
+    const review = hostWriteDetail({
+      ...card, action: 'review', location: null, quote: null, replyText: undefined, suggestResolve: undefined,
+      review: { summary: 's', verdicts: ['comment'], comments: [{ id: 'c1', path: 'a.py', side: 'old', line: 52, startLine: 40, text: 'Why?', excerpt: [] }] },
+    })
+    expect(review).toContain('a.py:40-52 (old): Why?')
   })
 })
 

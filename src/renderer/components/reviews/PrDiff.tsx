@@ -17,6 +17,7 @@ import { askAgent } from './review-to-chat'
 import { MarkdownWithCopyControls } from '../chat/MarkdownWithCopyControls'
 import { usePendingComments } from './PrReviewForm'
 import { LineCommentBox, PendingCommentCard, ThreadFooter } from './PrWriteControls'
+import { nextLineSelection, type LineSelection } from './line-selection'
 import type { PendingComment } from '../../stores/review-store'
 
 function anchoredTo(line: DiffLine, c: PrConversation): boolean {
@@ -24,10 +25,13 @@ function anchoredTo(line: DiffLine, c: PrConversation): boolean {
   return c.side === 'old' ? line.oldLine === c.line && line.kind !== 'add' : line.newLine === c.line && line.kind !== 'del'
 }
 
-/** `pr` adds the reply box and Resolve under the comments. */
-export function ConversationThread({ conversation, now, className, markResolved = true, pr }: { conversation: PrConversation; now: number; className?: string; markResolved?: boolean; pr?: PrSummary }) {
+/** `pr` adds the reply box and Resolve under the comments; `showRange` names the lines of a multi-line thread, drawn under its last line. */
+export function ConversationThread({ conversation, now, className, markResolved = true, pr, showRange = false }: { conversation: PrConversation; now: number; className?: string; markResolved?: boolean; pr?: PrSummary; showRange?: boolean }) {
   return (
     <div data-pr-thread={conversation.id} className={cn('overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] font-[family-name:var(--font-sans)] text-[13px] leading-[1.5] whitespace-normal', className)}>
+      {showRange && conversation.startLine !== undefined && (
+        <div className="border-b border-[var(--border)] px-3 py-[4px] text-[12px] text-[var(--text-muted)]">Lines {conversation.startLine}-{conversation.line}</div>
+      )}
       {conversation.comments.map((c) => (
         <div key={c.id} className="grid grid-cols-[22px_1fr] gap-[10px] px-3 py-[10px] [&+&]:border-t [&+&]:border-[var(--border)]">
           <Avatar person={c.author} />
@@ -42,14 +46,6 @@ export function ConversationThread({ conversation, now, className, markResolved 
       {pr && <ThreadFooter pr={pr} conversation={conversation} />}
     </div>
   )
-}
-
-/** Lines picked by clicking the line numbers; shift-click extends on the same side. */
-interface LineSelection {
-  side: 'new' | 'old'
-  anchor: number
-  start: number
-  end: number
 }
 
 function lineOn(line: DiffLine, side: 'new' | 'old'): number | null {
@@ -79,16 +75,12 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
   const [sel, setSel] = useState<LineSelection | null>(null)
   const [composing, setComposing] = useState(false)
   const pending = usePendingComments(pr).filter((c) => c.path === file.path)
-  const pick = (side: 'new' | 'old', n: number, e: MouseEvent) => {
+  const pick = (side: 'new' | 'old', hunk: number, n: number, e: MouseEvent) => {
     setComposing(false)
-    setSel((prev) => {
-      if (e.shiftKey && prev && prev.side === side) return { ...prev, start: Math.min(prev.anchor, n), end: Math.max(prev.anchor, n) }
-      if (prev && prev.side === side && prev.start === n && prev.end === n) return null
-      return { side, anchor: n, start: n, end: n }
-    })
+    setSel((prev) => nextLineSelection(prev, side, hunk, n, e.shiftKey))
   }
-  const selected = (line: DiffLine) => {
-    if (!sel) return false
+  const selected = (line: DiffLine, hunk: number) => {
+    if (!sel || sel.hunk !== hunk) return false
     const n = lineOn(line, sel.side)
     return n !== null && n >= sel.start && n <= sel.end
   }
@@ -112,7 +104,7 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
       for (const c of here) placed.add(c.id)
       const heldHere = pending.filter((c) => !placedPending.has(c.id) && pendingAt(line, c))
       for (const c of heldHere) placedPending.add(c.id)
-      const isSel = selected(line)
+      const isSel = selected(line, h)
       const lastSel = isSel && sel !== null && lineOn(line, sel.side) === sel.end
       return [
         <div
@@ -126,8 +118,8 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
             isSel && 'bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] shadow-[inset_3px_0_0_var(--accent)]',
           )}
         >
-          <LineNumber n={lineOn(line, 'old')} shown={line.oldLine} onPick={(n, e) => pick('old', n, e)} />
-          <LineNumber n={lineOn(line, 'new')} shown={line.newLine} onPick={(n, e) => pick('new', n, e)} />
+          <LineNumber n={lineOn(line, 'old')} shown={line.oldLine} onPick={(n, e) => pick('old', h, n, e)} />
+          <LineNumber n={lineOn(line, 'new')} shown={line.newLine} onPick={(n, e) => pick('new', h, n, e)} />
           <span className={cn('select-none', line.kind === 'context' ? 'text-[var(--text-muted)]' : line.kind === 'add' ? 'text-[var(--success)]' : 'text-[var(--error)]')}>
             {line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : ' '}
           </span>
@@ -149,7 +141,7 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
             onClose={closeComment}
           />,
         ] : []),
-        ...here.map((c) => <ConversationThread key={c.id} conversation={c} now={now} pr={pr} className="mt-2 mr-4 mb-3 ml-[114px]" />),
+        ...here.map((c) => <ConversationThread key={c.id} conversation={c} now={now} pr={pr} showRange className="mt-2 mr-4 mb-3 ml-[114px]" />),
         ...heldHere.map((c) => <PendingCommentCard key={c.id} pr={pr} comment={c} />),
       ]
     }),
