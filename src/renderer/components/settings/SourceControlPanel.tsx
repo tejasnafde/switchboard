@@ -63,7 +63,7 @@ function CardShell({ logo, title, detail, actions, children }: { logo: string; t
 function NoteLine({ note, busy }: { note: Note; busy: string | null }) {
   if (!busy && !note) return null
   return (
-    <div role="status" className={cn('px-[14px] pb-3 text-[12px] break-words', !busy && note && !note.ok ? 'text-[var(--error)]' : 'text-[var(--text-muted)]')}>
+    <div role="status" className={cn('px-[14px] pb-3 text-[12px] break-words whitespace-pre-line', !busy && note && !note.ok ? 'text-[var(--error)]' : 'text-[var(--text-muted)]')}>
       {busy ?? note?.message}
     </div>
   )
