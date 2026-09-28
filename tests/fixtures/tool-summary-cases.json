@@ -454,5 +454,152 @@
       "label": "List files",
       "detail": "…/android/app"
     }
+  },
+  {
+    "id": "switchboard-create-pr",
+    "toolName": "mcp__switchboard__create_pull_request",
+    "input": {
+      "title": "Send the glossary to the eval prompt",
+      "description": "## Why\nThe glossary sends the wrong terms.\n\n## Test\n- ran the eval"
+    },
+    "expected": {
+      "label": "Open pull request",
+      "detail": "Send the glossary to the eval prompt"
+    },
+    "note": "The screenshot case: the generic rule showed the Markdown description raw, as \"Switchboard · Create pull request\" on Android."
+  },
+  {
+    "id": "switchboard-reply",
+    "toolName": "mcp__switchboard__reply_to_conversation",
+    "input": {
+      "pr": "#612",
+      "conversationId": "c1",
+      "text": "## Fixed\nMoved the check."
+    },
+    "expected": {
+      "label": "Reply",
+      "detail": "#612"
+    }
+  },
+  {
+    "id": "switchboard-resolve-bitbucket-url",
+    "toolName": "mcp__switchboard__resolve_conversation",
+    "input": {
+      "pr": "https://bitbucket.org/ws/repo/pull-requests/605",
+      "conversationId": "c1"
+    },
+    "expected": {
+      "label": "Resolve",
+      "detail": "#605"
+    }
+  },
+  {
+    "id": "switchboard-rerun",
+    "toolName": "mcp__switchboard__rerun_check",
+    "input": {
+      "pr": 612,
+      "checkId": "123"
+    },
+    "expected": {
+      "label": "Re-run check",
+      "detail": "#612"
+    }
+  },
+  {
+    "id": "switchboard-comment-opencode",
+    "toolName": "switchboard_comment_on_line",
+    "input": {
+      "pr": 612,
+      "path": "src/main/mcp/pr-tools.ts",
+      "line": 42,
+      "text": "## Nit\nRename this."
+    },
+    "expected": {
+      "label": "Comment on line",
+      "detail": "…/mcp/pr-tools.ts:42"
+    },
+    "note": "OpenCode spells Switchboard tools switchboard_<tool>."
+  },
+  {
+    "id": "switchboard-draft-review-codex",
+    "toolName": "switchboard:draft_review",
+    "input": {
+      "arguments": {
+        "pr": "https://github.com/o/r/pull/612",
+        "summary": "## Summary\nLooks fine.",
+        "comments": [
+          {
+            "path": "a.ts",
+            "line": 1,
+            "text": "x"
+          },
+          {
+            "path": "b.ts",
+            "line": 2,
+            "text": "y"
+          }
+        ]
+      },
+      "server": "switchboard",
+      "tool": "draft_review"
+    },
+    "expected": {
+      "label": "Draft review",
+      "detail": "#612 · 2 comments"
+    },
+    "note": "Codex names an MCP call server:tool and nests its arguments (codex-adapter.ts codexToolInput)."
+  },
+  {
+    "id": "switchboard-pr-status-no-pr",
+    "toolName": "mcp__switchboard__get_pr_status",
+    "input": {},
+    "expected": {
+      "label": "PR status",
+      "detail": ""
+    }
+  },
+  {
+    "id": "switchboard-pr-conversations",
+    "toolName": "mcp__switchboard__list_pr_conversations",
+    "input": {
+      "pr": "612"
+    },
+    "expected": {
+      "label": "PR conversations",
+      "detail": "#612"
+    }
+  },
+  {
+    "id": "switchboard-pr-diff",
+    "toolName": "mcp__switchboard__get_pr_diff",
+    "input": {
+      "pr": 612,
+      "path": "src/main/mcp/pr-tools.ts"
+    },
+    "expected": {
+      "label": "PR diff",
+      "detail": "#612 · …/mcp/pr-tools.ts"
+    }
+  },
+  {
+    "id": "switchboard-send-to-session",
+    "toolName": "mcp__switchboard__send_agent_message",
+    "input": {
+      "sessionId": "agent_1",
+      "message": "## Heads up\nThe build is fixed."
+    },
+    "expected": {
+      "label": "Send to session",
+      "detail": ""
+    }
+  },
+  {
+    "id": "switchboard-list-sessions",
+    "toolName": "mcp__switchboard__list_agent_sessions",
+    "input": {},
+    "expected": {
+      "label": "List sessions",
+      "detail": ""
+    }
   }
 ]
