@@ -114,6 +114,9 @@ export interface GhReviewThread {
   line: number | null
   originalLine: number | null
   diffSide: 'LEFT' | 'RIGHT'
+  /** Set on a multi-line thread. */
+  startLine?: number | null
+  startDiffSide?: 'LEFT' | 'RIGHT' | null
   comments: { nodes: Array<{ id: string; body: string; url: string | null; createdAt: string; author: GhActor | null }> }
 }
 
@@ -321,22 +324,32 @@ export function mapGhDetail(repo: RepoRef, pr: GhPullRequestDetail, viewerLogin:
   }
 }
 
+/** A range that starts on the other side is shown as its last line only: the diff view has no way to draw it. */
+function ghStartLine(t: GhReviewThread): number | undefined {
+  if (t.isOutdated || t.line === null || !t.startLine || t.startLine >= t.line) return undefined
+  return (t.startDiffSide ?? t.diffSide) === t.diffSide ? t.startLine : undefined
+}
+
 export function mapGhThreads(threads: readonly GhReviewThread[]): PrConversation[] {
-  return threads.map((t) => ({
-    id: t.id,
-    path: t.path,
-    line: t.isOutdated ? null : t.line,
-    side: t.diffSide === 'LEFT' ? 'old' : 'new',
-    resolved: t.isResolved,
-    outdated: t.isOutdated,
-    comments: t.comments.nodes.map((c) => ({
-      id: c.id,
-      author: mapGhActor(c.author),
-      body: stripHtmlComments(c.body),
-      createdAt: parseTime(c.createdAt) ?? 0,
-      url: c.url,
-    })),
-  }))
+  return threads.map((t) => {
+    const startLine = ghStartLine(t)
+    return {
+      id: t.id,
+      path: t.path,
+      line: t.isOutdated ? null : t.line,
+      ...(startLine !== undefined ? { startLine } : {}),
+      side: t.diffSide === 'LEFT' ? 'old' : 'new',
+      resolved: t.isResolved,
+      outdated: t.isOutdated,
+      comments: t.comments.nodes.map((c) => ({
+        id: c.id,
+        author: mapGhActor(c.author),
+        body: stripHtmlComments(c.body),
+        createdAt: parseTime(c.createdAt) ?? 0,
+        url: c.url,
+      })),
+    }
+  })
 }
 
 export interface GhCollaborator {
@@ -404,6 +417,18 @@ export function classifyGhError(err: { code?: string | number | null; stderr?: s
   }
   const firstLine = (err.stderr ?? err.message ?? '').split('\n').find((l) => l.trim()) ?? 'gh failed'
   return { kind: 'unknown', host: 'github', message: firstLine.trim().slice(0, 200) }
+}
+
+/**
+ * A server-side failure worth one more try: gh's `HTTP 500/502/503/504`, or
+ * GitHub's GraphQL "Something went wrong while executing your query", which
+ * is how it reports a timed-out resolver. Only stderr is read: stdout can
+ * hold PR text that mentions anything. Reads only; a write is never re-sent.
+ */
+export function isTransientGhFailure(res: { code?: string | number | null; stderr?: string }): boolean {
+  if (res.code === 0 || res.code === 'ENOENT') return false
+  const text = res.stderr ?? ''
+  return /HTTP 50[0234]\b/.test(text) || /something went wrong while executing your query/i.test(text)
 }
 
 interface GhErrorBody {

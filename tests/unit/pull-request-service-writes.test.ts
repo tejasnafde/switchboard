@@ -108,6 +108,15 @@ describe('writes: checked against a fresh read', () => {
     expect(writes.inlineComment).toHaveBeenCalledTimes(1)
   })
 
+  it('takes a range inside the hunk, and names a range that is no longer shown', async () => {
+    const { provider, writes } = fakeProvider('github')
+    const s = service(provider)
+    expect(await s.inlineComment(GH, { path: 'src/a.ts', side: 'new', line: 12, startLine: 10, body: 'x' })).toMatchObject({ ok: true })
+    expect(writes.inlineComment).toHaveBeenCalledWith(GH, expect.objectContaining({ line: 12, startLine: 10 }))
+    expect(await s.inlineComment(GH, { path: 'src/a.ts', side: 'new', line: 12, startLine: 4, body: 'x' }))
+      .toMatchObject({ ok: false, error: { kind: 'stale', message: 'src/a.ts:4-12 is not in the diff any more.' } })
+  })
+
   it('merges only the head the user confirmed, with no blockers', async () => {
     const moved = fakeProvider('github', { headSha: 'fff0000' })
     expect(await service(moved.provider).merge(GH, { strategy: 'merge_commit', expectedHeadSha: 'abc1234' })).toMatchObject({ ok: false, error: { kind: 'stale' } })

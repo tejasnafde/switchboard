@@ -344,7 +344,9 @@ class DemoProvider implements PullRequestProvider {
 
   async list(repos: RepoRef[]): Promise<RepoListResult[]> {
     const all = this.all()
-    return repos.map((repo) => ({ repo, prs: all.filter((s) => s.summary.ref.name === repo.name).map((s) => s.summary), error: null }))
+    return repos.map((repo) => repo.owner === UNSEEN_WORKSPACE
+      ? { repo, prs: [], error: { kind: 'not_found', host: this.host, message: 'Bitbucket could not find it, or this account cannot see it.' } }
+      : { repo, prs: all.filter((s) => s.summary.ref.name === repo.name).map((s) => s.summary), error: null })
   }
 
   async detail(ref: PrRef): Promise<PrDetail> {
@@ -454,13 +456,22 @@ class DemoProvider implements PullRequestProvider {
   }
 }
 
-export function createDemoPullRequestService(): PullRequestService {
+/** Its repositories answer 404, like a workspace the token's account has no access to. */
+const UNSEEN_WORKSPACE = 'geoiq-staging'
+
+/** `hiddenRepos` is the real table, so the e2e hides a repository the way the app does. */
+export function createDemoPullRequestService(hiddenRepos?: () => ReadonlySet<string>): PullRequestService {
   const now = () => Number(process.env.SB_DEMO_NOW) || Date.now()
   const remotes: Record<string, string> = {
     '/demo/ssg-bot-v2': 'git@bitbucket.org:geoiq/ssg-bot-v2.git',
     '/demo/retailiq': 'https://bitbucket.org/geoiq/retailiq.git',
     '/demo/ssg-doctor': 'git@bitbucket.org:geoiq/ssg-doctor.git',
     '/demo/switchboard': 'https://github.com/tejasnafde/switchboard.git',
+  }
+  // The e2e for hiding repositories: a workspace this account cannot see.
+  if (process.env.SB_DEMO_REPO_ERRORS === '1') {
+    remotes['/demo/broker-app-stg'] = `git@bitbucket.org:${UNSEEN_WORKSPACE}/geoiq_broker_app_stg.git`
+    remotes['/demo/core-stg'] = `git@bitbucket.org:${UNSEEN_WORKSPACE}/geoiqcore_stg.git`
   }
   const github = new DemoProvider('github', now)
   const bitbucket = new DemoProvider('bitbucket', now)
@@ -470,6 +481,7 @@ export function createDemoPullRequestService(): PullRequestService {
     github: () => github,
     bitbucket: () => bitbucket,
     bitbucketState: () => ({ state: 'configured', email: 'tejas@example.com' }),
+    hiddenRepos,
     now,
   })
 }

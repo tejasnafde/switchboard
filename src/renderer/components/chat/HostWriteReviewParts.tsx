@@ -1,5 +1,5 @@
 import type { HostWriteDiffLine, HostWriteReview } from '@shared/agent-host-writes'
-import { lineLocation } from '@shared/agent-pr-review'
+import { lineLocation } from '@shared/pull-request-writes'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
 import type { ReviewDraftState } from './host-write-card'
@@ -7,7 +7,7 @@ import type { ReviewDraftState } from './host-write-card'
 const TEXTAREA =
   'w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 [font-family:inherit] text-[12.5px] leading-[1.5] text-[var(--text-primary)] outline-none focus-visible:border-[var(--accent)]'
 
-/** The diff lines around the line a comment lands on, the target marked. Wraps instead of scrolling sideways. */
+/** The diff lines around the lines a comment covers, those marked. Wraps instead of scrolling sideways. */
 export function DiffExcerpt({ lines }: { lines: HostWriteDiffLine[] }) {
   if (lines.length === 0) return null
   return (

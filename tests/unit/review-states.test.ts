@@ -8,7 +8,11 @@ import {
   conflictPhrase,
   declineConfirmCopy,
   describePrError,
+  describeRepoFailures,
   groupFilesByDir,
+  hiddenReposLabel,
+  hideReposConfirmCopy,
+  restorableHiddenRepos,
   mergeConfirmCopy,
   rerunUnavailable,
   reviewListState,
@@ -107,6 +111,107 @@ describe('reviewListState', () => {
       ],
     }), null)
     expect(mixed).toMatchObject({ kind: 'ready', notices: [{ id: 'bitbucket:no_account' }] })
+  })
+
+  it('names the repositories an account cannot see in one card per host and reason, with a hide action', () => {
+    const staging = (name: string): RepoRef => ({ host: 'bitbucket', owner: 'geoiq-staging', name })
+    const state = reviewListState(data({
+      sources: [
+        { repo: bb, projectPaths: [], error: null },
+        { repo: staging('geoiq_broker_app_stg'), projectPaths: [], error: err('not_found') },
+        { repo: staging('geoiqcore_stg'), projectPaths: [], error: err('not_found') },
+        { repo: staging('geoiq_retailiq_admin_fe_in_stg'), projectPaths: [], error: err('not_found') },
+        { repo: { ...bb, name: 'slow' }, projectPaths: [], error: err('rate_limited') },
+      ],
+    }), null)
+    if (state.kind !== 'ready') throw new Error('expected ready')
+    expect(state.notices.map((n) => n.id)).toEqual(['bitbucket:rate_limited', 'bitbucket:not_found'])
+    const card = state.notices[1]
+    expect(card.line).toBe('Cannot see 3 repositories in geoiq-staging: geoiq_broker_app_stg, geoiqcore_stg, geoiq_retailiq_admin_fe_in_stg.')
+    expect(card.fix).toBe("The API token's account needs access to that workspace, or hide these repositories.")
+    expect(card).toMatchObject({ action: 'hide-repos', actionLabel: 'Hide these repositories' })
+    expect(card.repos?.map((r) => r.name)).toEqual(['geoiq_broker_app_stg', 'geoiqcore_stg', 'geoiq_retailiq_admin_fe_in_stg'])
+    // The rate limit is not offered for hiding.
+    expect(state.notices[0].action).toBe('retry')
+  })
+
+  it('blocks on the named card when every repository failed that way', () => {
+    const state = reviewListState(data({ sources: [{ repo: bb, projectPaths: [], error: err('not_found') }] }), null)
+    expect(state).toMatchObject({ kind: 'blocked', notice: { id: 'bitbucket:not_found', line: 'Cannot see 1 repository in geoiq: bot.', actionLabel: 'Hide this repository' } })
+  })
+
+  it('shows an empty list, not "No projects yet", when every repository is hidden', () => {
+    expect(reviewListState(data({ hiddenRepos: [bb] }), null)).toEqual({ kind: 'ready', notices: [] })
+  })
+})
+
+describe('restorableHiddenRepos', () => {
+  const hidden: RepoRef[] = [{ host: 'github', owner: 'o', name: 'hidden' }]
+
+  it('offers hidden repositories beside the rows', () => {
+    const list = data({ sources: [{ repo: gh, projectPaths: [], error: null }], hiddenRepos: hidden })
+    expect(restorableHiddenRepos(reviewListState(list, null), list)).toEqual(hidden)
+  })
+
+  it('still offers them when the rest are blocked by one notice (no account, or a repository it cannot see)', () => {
+    for (const kind of ['no_account', 'not_found'] as const) {
+      const list = data({ sources: [{ repo: bb, projectPaths: [], error: err(kind) }], hiddenRepos: hidden })
+      const state = reviewListState(list, null)
+      expect(state.kind).toBe('blocked')
+      expect(restorableHiddenRepos(state, list)).toEqual(hidden)
+    }
+  })
+
+  it('still offers them when the list read failed, from the list shown before', () => {
+    const list = data({ sources: [{ repo: gh, projectPaths: [], error: null }], hiddenRepos: hidden })
+    const state = reviewListState(list, err('offline', 'github'))
+    expect(state.kind).toBe('blocked')
+    expect(restorableHiddenRepos(state, list)).toEqual(hidden)
+  })
+
+  it('offers nothing while loading, from an older backend, or with nothing hidden', () => {
+    expect(restorableHiddenRepos(reviewListState(null, null), null)).toEqual([])
+    expect(restorableHiddenRepos(reviewListState(null, err('offline')), null)).toEqual([])
+    const old = data({ sources: [{ repo: gh, projectPaths: [], error: null }] })
+    expect(restorableHiddenRepos(reviewListState(old, null), old)).toEqual([])
+  })
+
+  it('leaves the hidden PR line to the ready state: a list blocked by its sources has no PRs', () => {
+    const state = reviewListState(data({ sources: [{ repo: bb, projectPaths: [], error: err('no_account') }] }), null)
+    expect(state.kind).toBe('blocked')
+    // Any PR in the list makes it ready, so a hidden PR is never stuck behind a blocking notice.
+    const withPr = data({ sources: [{ repo: bb, projectPaths: [], error: err('no_account') }], prs: [{ ref: { ...bb, number: 1 } } as PrSummary] })
+    expect(reviewListState(withPr, null).kind).toBe('ready')
+  })
+})
+
+describe('repository failure copy', () => {
+  it('names every owner, caps long lists, and says what to do on GitHub', () => {
+    const names = Array.from({ length: 8 }, (_, i) => `r${i}`)
+    const notice = describeRepoFailures({
+      host: 'github',
+      kind: 'not_found',
+      owners: [{ owner: 'acme', names }, { owner: 'side', names: ['one'] }],
+      repos: [...names.map((name) => ({ host: 'github' as const, owner: 'acme', name })), { host: 'github', owner: 'side', name: 'one' }],
+    })
+    expect(notice.line).toBe('Cannot see 8 repositories in acme: r0, r1, r2, r3, r4, r5 and 2 more; 1 in side: one.')
+    expect(notice.fix).toBe('The gh account needs access to those owners, or hide these repositories.')
+  })
+
+  it('says a refused organisation needs authorizing', () => {
+    const notice = describeRepoFailures({ host: 'github', kind: 'forbidden', owners: [{ owner: 'acme', names: ['app'] }], repos: [{ host: 'github', owner: 'acme', name: 'app' }] })
+    expect(notice.line).toBe('Not allowed to read 1 repository in acme: app.')
+    expect(notice.fix).toContain('authorize it, or hide this repository')
+  })
+
+  it('names the repositories in the confirm and counts them in the hidden line', () => {
+    const copy = hideReposConfirmCopy([bb, { ...bb, name: 'core' }])
+    expect(copy.title).toBe('Hide 2 repositories from Reviews?')
+    expect(copy.body).toContain('geoiq/bot, geoiq/core')
+    expect(copy.body).toContain('Nothing changes on Bitbucket')
+    expect(hideReposConfirmCopy([bb]).title).toBe('Hide this repository from Reviews?')
+    expect(hiddenReposLabel(1)).toBe('1 repository hidden')
+    expect(hiddenReposLabel(3)).toBe('3 repositories hidden')
   })
 })
 

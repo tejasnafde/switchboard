@@ -13,12 +13,15 @@ import type { BackendHost } from '../backend/host'
 import { PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
 import type { GithubAccountState, PrListData, PrResult, SourceControlStatus, SourceControlTestResult } from '@shared/pull-requests'
 import { applyHidden } from '@shared/pull-request-groups'
+import { parseRepoRefs } from '@shared/pull-request-hidden-repos'
 import { canLinkToProject, isPrRef, type PrHistoryScanResult, type PrLink, type PrLinkChat, type PrLinkResult } from '@shared/pull-request-links'
 import {
   getConversationByThreadId,
   getProjects,
   hidePullRequest,
+  hidePullRequestRepos,
   linkConversationPullRequest,
+  listHiddenPullRequestRepos,
   listHiddenPullRequests,
   listUnscannedPullRequestHistoryScanTargets,
   listConversationPullRequests,
@@ -28,6 +31,7 @@ import {
   resolveRootThreadId,
   unhidePullRequest,
   unhidePullRequestKeys,
+  unhidePullRequestRepos,
   unlinkConversationPullRequest,
 } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
@@ -80,13 +84,14 @@ function bitbucketProvider(): BitbucketProvider | null {
 let service: PullRequestService | null = null
 function getService(): PullRequestService {
   service ??= DEMO
-    ? createDemoPullRequestService()
+    ? createDemoPullRequestService(listHiddenPullRequestRepos)
     : new PullRequestService({
       listProjects: () => getProjects().map((p) => p.path),
       readRemotes,
       github: () => github,
       bitbucket: bitbucketProvider,
       bitbucketState: () => credentials.status(),
+      hiddenRepos: listHiddenPullRequestRepos,
     })
   return service
 }
@@ -232,6 +237,22 @@ function registerHideHandlers(host: BackendHost): void {
   }
   host.handle(PullRequestChannels.HIDE, toggle(true))
   host.handle(PullRequestChannels.UNHIDE, toggle(false))
+
+  const toggleRepos = (hide: boolean) => (value: unknown): { ok: boolean; message?: string } => {
+    const repos = parseRepoRefs(value)
+    if (!repos) return { ok: false, message: 'Not a list of repositories.' }
+    try {
+      if (hide) hidePullRequestRepos(repos)
+      else unhidePullRequestRepos(repos)
+      log.info(hide ? 'repositories hidden from Reviews' : 'repositories shown in Reviews again', { count: repos.length })
+      return { ok: true }
+    } catch (err) {
+      log.warn('saving hidden repositories failed', err)
+      return { ok: false, message: 'Could not save that; see the log.' }
+    }
+  }
+  host.handle(PullRequestChannels.HIDE_REPOS, toggleRepos(true))
+  host.handle(PullRequestChannels.UNHIDE_REPOS, toggleRepos(false))
 }
 
 export function registerPullRequestHandlers(host: BackendHost): void {

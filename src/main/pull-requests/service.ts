@@ -11,7 +11,8 @@
 import {
   addReviewerPrecheck,
   findConversation,
-  lineInDiff,
+  lineLocation,
+  lineTargetFit,
   managePrecheck,
   mergePrecheck,
   orderReviewerCandidates,
@@ -25,6 +26,7 @@ import {
   validateResolve,
   validateReviewer,
   validateSubmitReview,
+  type InlineCommentInput,
   type PrResource,
   type PrWriteDone,
 } from '@shared/pull-request-writes'
@@ -50,6 +52,15 @@ import { repoFromRemotes } from '@shared/pull-request-remote'
 import { createMainLogger } from '../logger'
 import { PrHostError, toPrError, type PullRequestProvider } from './provider'
 
+/** Why the fresh diff no longer takes this line comment, or null. */
+function lineTargetProblem(files: readonly PrChangedFile[], c: InlineCommentInput): string | null {
+  const fit = lineTargetFit(files, c)
+  if (fit === 'ok') return null
+  return fit === 'split'
+    ? `${lineLocation(c)} spans two hunks of the diff; a comment covers lines of one hunk.`
+    : `${lineLocation(c)} is not in the diff any more.`
+}
+
 const log = createMainLogger('pull-requests:service')
 
 /** Remotes rarely change; re-read them at most this often. */
@@ -63,6 +74,8 @@ export interface PullRequestServiceDeps {
   /** `null` when no Bitbucket account is usable; `bitbucketState` says why. */
   bitbucket(): PullRequestProvider | null
   bitbucketState(): BitbucketAccountState
+  /** `repoKey`s hidden from Reviews: the list skips them without asking the host. */
+  hiddenRepos?(): ReadonlySet<string>
   now?: () => number
 }
 
@@ -135,10 +148,12 @@ export class PullRequestService {
   async list(): Promise<PrResult<PrListData>> {
     try {
       const { repos, unsupportedProjects } = await this.detect()
+      const hiddenKeys = this.hiddenRepoKeys()
+      const hiddenRepos = [...repos.values()].filter((e) => hiddenKeys.has(repoKey(e.repo))).map((e) => e.repo)
       const sources: PrSource[] = []
       const prs: PrSummary[] = []
       for (const host of ['github', 'bitbucket'] as const) {
-        const entries = [...repos.values()].filter((e) => e.repo.host === host)
+        const entries = [...repos.values()].filter((e) => e.repo.host === host && !hiddenKeys.has(repoKey(e.repo)))
         if (entries.length === 0) continue
         const provider = this.provider(host)
         const blocked = this.accountError(host)
@@ -160,10 +175,20 @@ export class PullRequestService {
           for (const e of entries) sources.push({ repo: e.repo, projectPaths: e.projectPaths, error })
         }
       }
-      return { ok: true, data: { prs, sources, unsupportedProjects, fetchedAt: this.now(), hidden: [] } }
+      return { ok: true, data: { prs, sources, unsupportedProjects, fetchedAt: this.now(), hidden: [], hiddenRepos } }
     } catch (err) {
       log.error('listing pull requests failed', err)
       return { ok: false, error: toPrError(err, null) }
+    }
+  }
+
+  private hiddenRepoKeys(): ReadonlySet<string> {
+    try {
+      return this.deps.hiddenRepos?.() ?? new Set()
+    } catch (err) {
+      // Reading them all is the safe side: a hidden repository shows its error card again.
+      log.warn('reading hidden repositories failed', err)
+      return new Set()
     }
   }
 
@@ -284,9 +309,8 @@ export class PullRequestService {
   inlineComment(ref: unknown, input: unknown): Promise<PrResult<PrWriteDone>> {
     return this.write(ref, 'inline comment', ['conversations', 'detail'], async (p, r) => {
       const comment = PullRequestService.unwrap(validateInlineComment(r.host, input))
-      if (!lineInDiff(await p.files(r), comment)) {
-        throw new PrHostError({ kind: 'stale', host: r.host, message: `${comment.path}:${comment.line} is not in the diff any more.` })
-      }
+      const problem = lineTargetProblem(await p.files(r), comment)
+      if (problem) throw new PrHostError({ kind: 'stale', host: r.host, message: problem })
       await p.inlineComment(r, comment)
     })
   }
@@ -301,8 +325,8 @@ export class PullRequestService {
         }
         if (detail.state !== 'open') throw new PrHostError({ kind: 'stale', host: r.host, message: `This pull request is ${detail.state} now.` })
       }
-      const gone = review.comments.find((c) => !lineInDiff(files, c))
-      if (gone) throw new PrHostError({ kind: 'stale', host: r.host, message: `${gone.path}:${gone.line} is not in the diff any more. Remove that comment and submit again.` })
+      const problem = review.comments.map((c) => lineTargetProblem(files, c)).find(Boolean)
+      if (problem) throw new PrHostError({ kind: 'stale', host: r.host, message: `${problem} Remove that comment and submit again.` })
       await p.submitReview(r, review)
     })
   }

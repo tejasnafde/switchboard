@@ -294,6 +294,9 @@ export const PullRequestChannels = {
   /** `(ref)` -> `{ ok }`. Local only (the backend's database), nothing reaches the host, so a phone may call them. */
   HIDE: 'pull-requests:hide',
   UNHIDE: 'pull-requests:unhide',
+  /** `(repos: RepoRef[])` -> `{ ok }`. Local like HIDE; a hidden repository is not read at all (`shared/pull-request-hidden-repos.ts`). */
+  HIDE_REPOS: 'pull-requests:hide-repos',
+  UNHIDE_REPOS: 'pull-requests:unhide-repos',
 } as const
 
 /**
