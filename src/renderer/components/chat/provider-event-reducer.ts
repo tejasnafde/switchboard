@@ -276,6 +276,8 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
     }
     case 'session.provider': {
       useAgentStore.getState().setInstanceId(tid, event.instanceId ?? undefined)
+      // A mode set from another client (a phone) or carried by its turn.
+      if (event.runtimeMode) useAgentStore.getState().setRuntimeMode(tid, event.runtimeMode)
       break
     }
     case 'spend.blocked': {

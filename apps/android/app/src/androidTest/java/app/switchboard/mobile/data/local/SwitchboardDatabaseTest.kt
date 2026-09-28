@@ -464,6 +464,61 @@ class SwitchboardDatabaseTest {
     }
 
     @Test
+    fun migrationSixToSevenDropsUntriedStoredModesButKeepsTheTurnsAndDrafts() {
+        val name = "runtime-mode-migration-test"
+        migrationHelper.createDatabase(name, 6).apply {
+            execSQL(
+                "INSERT INTO connections (id, label, kind, url, project, zone, instance, port) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>("lan", "Mac", "ws", "ws://mac", "/repo", null, null, null),
+            )
+            execSQL(
+                "INSERT INTO outbox (origin, bubbleId, connectionId, threadId, text, runtimeMode, " +
+                    "createdAtMs, attempts, nextAttemptAtMs, deliveryState, stateReason, receiptLegacy, " +
+                    "receiptDuplicate, receiptRawJson, legacyRawJson, delivery) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>(
+                    "o-1", "remote_o-1", "lan", "thread", "hello", "sandbox",
+                    1L, 0, 0L, "pending", null, null, null, null, null, null,
+                ),
+            )
+            execSQL(
+                "INSERT INTO outbox (origin, bubbleId, connectionId, threadId, text, runtimeMode, " +
+                    "createdAtMs, attempts, nextAttemptAtMs, deliveryState, stateReason, receiptLegacy, " +
+                    "receiptDuplicate, receiptRawJson, legacyRawJson, delivery) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>(
+                    "o-2", "remote_o-2", "lan", "thread", "tried", "sandbox",
+                    2L, 1, 0L, "pending", null, null, null, null, null, null,
+                ),
+            )
+            execSQL(
+                "INSERT INTO thread_preferences (threadKey, mode, model, draft, touchedAt) VALUES (?, ?, ?, ?, ?)",
+                arrayOf<Any?>("lan:thread", "sandbox", null, "draft", 1L),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(name, 7, true, SwitchboardDatabase.MIGRATION_6_7).use { migrated ->
+            migrated.query("SELECT text, runtimeMode FROM outbox WHERE origin = 'o-1'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("hello", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+            }
+            // Tried once already: its mode is part of the origin's fingerprint.
+            migrated.query("SELECT runtimeMode FROM outbox WHERE origin = 'o-2'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("sandbox", cursor.getString(0))
+            }
+            migrated.query("SELECT draft, mode FROM thread_preferences WHERE threadKey = 'lan:thread'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("draft", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+            }
+        }
+    }
+
+    @Test
     fun migrationOneToFivePreservesDurableStateAndTransformsOutboxWithoutLoss() {
         val name = "full-chain-migration-test"
         migrationHelper.createDatabase(name, 1).apply {

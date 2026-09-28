@@ -429,6 +429,25 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `reattach to a live session replaces the cached connecting status`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(
+            remote,
+            cached = ThreadState(feed = listOf(FeedItem.User("cached", "saved", 1)), status = "connecting"),
+            projectPath = "/repo",
+        )
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+        val ready = coordinator.state.value.load as ThreadSessionLoad.Ready
+        assertEquals("connecting", ready.thread.status)
+
+        // The backend's idempotent re-attach publishes session.provider only, never a status event.
+        remote.completeStart(success("start", startedSession()))
+
+        assertEquals("idle", (coordinator.state.value.load as ThreadSessionLoad.Ready).thread.status)
+    }
+
+    @Test
     fun `load failure and mark read failure preserve visible cache`() {
         val remote = FakeThreadSessionRemote(scope)
         val coordinator = coordinator(
@@ -510,6 +529,102 @@ class ThreadSessionCoordinatorTest {
         )
     }
 
+    private fun modeEvent(mode: String) = event(
+        "session.provider",
+        "thread-1",
+        "provider" to JsonString("claude"),
+        "instanceId" to JsonString("work"),
+        "instanceName" to JsonString("Work"),
+        "runtimeMode" to JsonString(mode),
+    )
+
+    private fun fullAccessSession() = LoadedSession(
+        messages = emptyList(),
+        meta = SessionMeta("thread-1", "Title", "/repo", "claude", null, emptyJson(), runtimeMode = "full-access"),
+        total = 0,
+        truncated = false,
+        raw = emptyJson(),
+    )
+
+    @Test
+    fun `a full access chat shows full access and a turn from the phone does not change it`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = FakeEnqueuePort()
+        // A saved copy from before the chat was switched, and no pick on the phone.
+        val coordinator = coordinator(remote, cached = ThreadState(runtimeMode = "sandbox"), enqueue = enqueue)
+        coordinator.start()
+        remote.completeLoad(success("load", fullAccessSession()))
+        assertEquals(RuntimeMode.FullAccess, coordinator.state.value.composer.runtimeMode)
+
+        coordinator.updateDraft("hello")
+        enqueue.results += durable("origin-1", "hello")
+        assertTrue(coordinator.submit() is ComposerSubmitResult.Durable)
+        assertNull(enqueue.drafts.single().runtimeMode)
+        assertTrue(remote.runtimeModes.isEmpty())
+    }
+
+    @Test
+    fun `a mode picked on the phone applies at once and no turn re-sends it`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = FakeEnqueuePort()
+        val coordinator = coordinator(remote, enqueue = enqueue)
+        coordinator.start()
+        remote.completeLoad(success("load", fullAccessSession()))
+
+        coordinator.selectRuntimeMode(RuntimeMode.Auto)
+        assertEquals(listOf(RuntimeMode.Auto), remote.runtimeModes)
+        remote.completeMode(success("mode", CommandBody(null)))
+        assertEquals(RuntimeMode.Auto, coordinator.state.value.composer.runtimeMode)
+        coordinator.updateDraft("one")
+        enqueue.results += durable("origin-1", "one")
+        coordinator.submit()
+        assertNull(enqueue.drafts.last().runtimeMode)
+    }
+
+    @Test
+    fun `an offline pick saved with the draft rides on one turn only`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = FakeEnqueuePort()
+        val coordinator = coordinator(
+            remote,
+            enqueue = enqueue,
+            initialComposer = ComposerDraft(ComposerDraftKey("machine", "thread-1"), "one", runtimeMode = "plan"),
+        )
+        coordinator.start()
+        remote.completeLoad(success("load", fullAccessSession()))
+        assertEquals(RuntimeMode.Plan, coordinator.state.value.composer.runtimeMode)
+
+        enqueue.results += durable("origin-1", "one")
+        coordinator.submit()
+        assertEquals("plan", enqueue.drafts.last().runtimeMode)
+        coordinator.updateDraft("two")
+        enqueue.results += durable("origin-2", "two")
+        coordinator.submit()
+        assertNull(enqueue.drafts.last().runtimeMode)
+    }
+
+    @Test
+    fun `a mode changed on the desktop shows on the phone and wins over a pick not yet sent`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = FakeEnqueuePort()
+        val coordinator = coordinator(
+            remote,
+            enqueue = enqueue,
+            // An offline pick saved with the draft.
+            initialComposer = ComposerDraft(ComposerDraftKey("machine", "thread-1"), "hi", runtimeMode = "plan"),
+        )
+        coordinator.start()
+        remote.completeLoad(success("load", fullAccessSession()))
+        assertEquals(RuntimeMode.Plan, coordinator.state.value.composer.runtimeMode)
+
+        remote.emit(scope, modeEvent("auto"))
+        assertEquals(RuntimeMode.Auto, coordinator.state.value.composer.runtimeMode)
+        assertEquals("auto", coordinator.currentThread()?.runtimeMode)
+        enqueue.results += durable("origin-1", "hi")
+        coordinator.submit()
+        assertNull(enqueue.drafts.single().runtimeMode)
+    }
+
     @Test
     fun `composer clears only after durable enqueue and keeps text on failure`() {
         val remote = FakeThreadSessionRemote(scope)
@@ -527,7 +642,8 @@ class ThreadSessionCoordinatorTest {
         assertEquals("", coordinator.state.value.composer.draft)
         assertNull(coordinator.state.value.composer.error)
         assertEquals("hello", enqueue.drafts.last().text)
-        assertEquals("sandbox", enqueue.drafts.last().runtimeMode)
+        // No mode picked on the phone, so the turn keeps whatever the chat has.
+        assertNull(enqueue.drafts.last().runtimeMode)
         assertEquals("remote_origin-1", coordinator.currentThread()?.feed?.single()?.id)
 
         remote.emit(scope, userMessage("thread-1", "origin-1", "hello"))

@@ -344,6 +344,7 @@ object ThreadStoreReducer {
                 provider = event.provider,
                 instanceId = event.instanceId,
                 instanceName = event.instanceName,
+                runtimeMode = event.runtimeMode ?: withJournal.runtimeMode,
             )
             is ThreadEventPayload.ContextWindow -> withJournal.copy(
                 usedTokens = event.usedTokens,

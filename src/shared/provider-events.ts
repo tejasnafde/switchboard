@@ -626,6 +626,13 @@ export interface RuntimeSessionProviderEvent {
   instanceId: string | null
   /** Display name, so a client can label the chip without its own lookup. */
   instanceName: string | null
+  /**
+   * Set when the thread's runtime mode changed (a client's picker, or a turn
+   * that carried a mode), so every client's picker follows. Rides on this
+   * event rather than a new type because a phone build older than the field
+   * ignores it, where it would render an unknown event type as a raw notice.
+   */
+  runtimeMode?: RuntimeMode
 }
 
 export interface ProviderInstanceSwitchRequest {

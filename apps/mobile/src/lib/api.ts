@@ -11,6 +11,7 @@ import type {
   RuntimeEvent,
   RuntimeMode,
   ProviderKind,
+  ProviderSessionStatus,
   ApprovalDecision,
   ProviderInstanceSwitchRequest,
   ProviderInstanceSwitchResult,
@@ -59,7 +60,7 @@ export interface StartSessionOpts {
 export interface StartedSession {
   threadId: string
   provider: ProviderKind
-  status: string
+  status: ProviderSessionStatus
   cwd: string
   sessionId?: string
 }

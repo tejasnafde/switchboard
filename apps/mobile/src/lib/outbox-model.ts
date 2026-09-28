@@ -17,9 +17,13 @@ export interface QueuedMessage {
   text: string
   /** Data URLs, already downscaled by the composer. */
   images?: Array<{ url: string; mimeType?: string }>
-  /** The mode chosen at send time: a message queued in plan mode must not run
-   *  in full access because the thread changed while it waited. */
+  /** A mode the user picked on this phone, sent with the message. Absent
+   *  otherwise, so the chat keeps the mode it has (set on the desktop, say). */
   runtimeMode?: string
+  /** Marks `runtimeMode` as a pick. Older builds stored the thread's default
+   *  mode on every message; that is dropped unless the message may have been
+   *  sent, since the mode is part of the backend's fingerprint for it. */
+  modePicked?: true
   createdAt: number
   /** Attempts made so far. Drives the backoff. */
   attempts: number
@@ -36,6 +40,11 @@ export interface QueuedMessage {
   titleCandidate?: string
   /** Queued by the user for after the running turn, instead of steering it. */
   whenIdle?: boolean
+}
+
+/** Frozen (persisted just before the first send), tried or unconfirmed: the backend may hold its fingerprint. */
+function mayHaveBeenSent(message: Partial<QueuedMessage>): boolean {
+  return typeof message.providerText === 'string' || (message.attempts ?? 0) > 0 || message.deliveryState === 'ambiguous'
 }
 
 /** Shape check for records restored from an older or current app build. */
@@ -60,7 +69,11 @@ export function parseQueuedMessage(value: unknown): QueuedMessage | null {
           Boolean(image) && typeof (image as { url?: unknown }).url === 'string',
         )
       : undefined,
-    runtimeMode: typeof message.runtimeMode === 'string' ? message.runtimeMode : undefined,
+    runtimeMode: typeof message.runtimeMode === 'string'
+      && (message.modePicked === true || mayHaveBeenSent(message))
+      ? message.runtimeMode
+      : undefined,
+    modePicked: message.modePicked === true ? true : undefined,
     createdAt: typeof message.createdAt === 'number' ? message.createdAt : Date.now(),
     attempts: typeof message.attempts === 'number' ? message.attempts : 0,
     blockedReason: typeof message.blockedReason === 'string' && message.blockedReason

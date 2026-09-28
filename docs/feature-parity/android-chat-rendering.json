@@ -1,0 +1,67 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-chat-rendering",
+  "summary": "Three reports from a native Android chat (screenshots 2026-09-29). (1) Raw <task-notification> blocks as user bubbles: the phone's tool rows read \"Bash\", a label main replaced with \"Terminal\" in e6096f72 (2026-09-23), so the installed APK predates the synthetic-row split (717981be, 2026-09-24). Current main already splits these on the history, cached-snapshot and live paths; this change pins the exact screenshot shapes on all three paths, plus several notices in one message, with an Android test and a vitest case for the shared parser. No parser change was needed. (2) Switchboard MCP tool rows showed \"Switchboard · Create pull request\" and the raw Markdown description. src/shared/tool-summary.ts now gives every Switchboard tool an action label and a one-line detail (the PR title for create, path:line for a line comment, the PR number for the others, the comment count for a draft review, nothing for the session tools), for the Claude (mcp__switchboard__x), OpenCode (switchboard_x) and Codex (switchboard:x, arguments nested) spellings. Desktop and Expo pick it up through summarizeTool, and Android's ThreadPresentation.kt mirrors it, checked against the shared fixture file. (3) \"Reconnecting\" in the header: that is the thread's provider status, not the socket. Re-attaching to a live session (the backend's idempotent START_SESSION) returns the live status and publishes only session.provider, never a status event. Both phone clients ignored the returned status, so an idle chat restored from cache kept 'connecting' (\"Reconnecting\") until its next turn. Android and Expo now apply the returned status. The \"Showing saved messages\" spinner is the history load in flight. It cannot outlive the request, which times out after 30s or fails on a socket drop and then shows Retry, so no change was made there.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ToolCallBlock.tsx",
+        "tests/unit/tool-summary-fixtures.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/TaskNotificationRowsTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ToolSummaryFixturesTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/tool-summary.ts",
+        "src/shared/synthetic-message.ts",
+        "tests/fixtures/tool-summary-cases.json"
+      ],
+      "reason": "The Switchboard tool labels live in the shared summarizer every client uses. No wire or backend change: the clients read the status field START_SESSION has always returned, and summaries are derived at render time."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing new is stored. Summaries and synthetic rows are derived at render time; the Android snapshot cache keeps its existing status field, which now holds the live status instead of a stale 'connecting'."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ],
+      "reason": "Native Android ships in its next APK (versionName and versionCode are not bumped here); the Expo change is JS only and ships over OTA to iOS; desktop in the next desktop release. No package identity, signing or deep link change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/tool-summary-fixtures.test.ts tests/unit/tool-summary.test.ts tests/unit/synthetic-message.test.ts: the 11 new Switchboard fixture cases and the screenshot notice shapes pass.",
+      "cd apps/android && ./gradlew testDebugUnitTest lintDebug (JDK 21): TaskNotificationRowsTest (history, cache round trip, live event, several notices in one message), ToolSummaryFixturesTest over the same fixture file, and the new ThreadSessionCoordinatorTest case, which fails without the fix.",
+      "npm test --prefix apps/mobile and npx tsc --noEmit in apps/mobile.",
+      "npm run typecheck and npm test at the repo root."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No device or emulator was available: nothing was run on a phone, and connectedDebugAndroidTest was not run.",
+      "Expo ThreadScreen has no jest coverage, so applying the reattach status there is covered by typecheck only.",
+      "No live backend: the reattach-status finding comes from reading provider-registry.ts's idempotent START_SESSION path, not from a captured session."
+    ]
+  }
+}

@@ -26,7 +26,7 @@ import androidx.room.migration.Migration
         MigrationCheckpointEntity::class,
         QuarantinedRecordEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class SwitchboardDatabase : RoomDatabase() {
@@ -149,8 +149,22 @@ abstract class SwitchboardDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `outbox` ADD COLUMN `delivery` TEXT")
             }
         }
+        /**
+         * Composer drafts and queued turns stored a runtime mode even when nobody
+         * picked one ("sandbox" by default), and every turn re-sent it, dropping a
+         * chat set to full access on the desktop. A mode now means a pick made on
+         * the phone, so the stored values, which cannot tell the two apart, go.
+         * A turn already tried keeps its mode: the mode is part of the backend's
+         * fingerprint for its origin, and a changed retry is refused as a conflict.
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("UPDATE `outbox` SET `runtimeMode` = NULL WHERE `attempts` = 0 AND `deliveryState` = 'pending'")
+                db.execSQL("UPDATE `thread_preferences` SET `mode` = NULL")
+            }
+        }
         private val EXPLICIT_MIGRATIONS: Array<Migration> =
-            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
         fun open(context: Context): SwitchboardDatabase = Room.databaseBuilder(
             context.applicationContext,

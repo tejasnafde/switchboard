@@ -45,7 +45,8 @@ data class ComposerImageSource(
 data class ComposerDraft(
     val key: ComposerDraftKey,
     val text: String = "",
-    val runtimeMode: String = "sandbox",
+    /** A mode the user picked on this phone and the backend has not confirmed; null otherwise. */
+    val runtimeMode: String? = null,
     val attachments: List<ComposerAttachment> = emptyList(),
     val editingOrigin: String? = null,
 )
