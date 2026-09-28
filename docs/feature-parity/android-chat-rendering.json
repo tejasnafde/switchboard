@@ -7,7 +7,6 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/shared/tool-summary.ts",
         "src/renderer/components/chat/ToolCallBlock.tsx",
         "tests/unit/tool-summary-fixtures.test.ts"
       ]
@@ -31,8 +30,13 @@
       ]
     },
     "sharedBackendApi": {
-      "status": "not_applicable",
-      "reason": "No wire or backend change. The clients now read the status field START_SESSION has always returned; tool summaries are derived at render time from the tool.started name and input already on the wire."
+      "status": "implemented",
+      "evidence": [
+        "src/shared/tool-summary.ts",
+        "src/shared/synthetic-message.ts",
+        "tests/fixtures/tool-summary-cases.json"
+      ],
+      "reason": "The Switchboard tool labels live in the shared summarizer every client uses. No wire or backend change: the clients read the status field START_SESSION has always returned, and summaries are derived at render time."
     },
     "storageDataMigration": {
       "status": "not_applicable",
