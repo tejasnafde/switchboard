@@ -278,7 +278,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     // A PR an agent opened while this read was in flight may be missing from it.
     if (get().stale && get().visible) queueMicrotask(() => void get().refresh('open'))
     if (!result.ok) {
-      set({ loading: false, listError: result.error })
+      // Still missing whatever made it stale; the next refresh goes whatever its reason.
+      set({ loading: false, listError: result.error, stale: s.stale || get().stale })
       return
     }
     const previous = get().list

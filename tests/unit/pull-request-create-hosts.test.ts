@@ -38,17 +38,24 @@ describe('GitHub', () => {
     expect(calls[0].body).toEqual({ title: 'Backoff', body: 'Adds jitter.\n\nvia Switchboard', head: 'feat/x', base: 'main', draft: true })
   })
 
-  it('reads the default branch and the open PR for a same-repository head', async () => {
+  it('reads the default branch, and the open PR whose head is this repository, not a same-owner fork', async () => {
     const { provider, calls } = fakeGh([
       { stdout: 'main\n', stderr: '', code: 0 },
-      { stdout: JSON.stringify([{ number: 7, html_url: 'https://github.com/acme/app/pull/7' }]), stderr: '', code: 0 },
+      { stdout: JSON.stringify([
+        // A fork under the same owner with another name matches head=acme:feat/x too.
+        { number: 8, html_url: 'https://github.com/acme/app/pull/8', head: { repo: { full_name: 'acme/app-fork' } } },
+        { number: 7, html_url: 'https://github.com/acme/app/pull/7', head: { repo: { full_name: 'ACME/app' } } },
+      ]), stderr: '', code: 0 },
+      { stdout: JSON.stringify([{ number: 9, html_url: 'u9', head: { repo: null } }, { number: 10, html_url: 'u10', head: { repo: { full_name: 'acme/app-fork' } } }]), stderr: '', code: 0 },
       { stdout: '[]', stderr: '', code: 0 },
     ])
     expect(await provider.defaultBranch(APP)).toBe('main')
     expect(await provider.openPullRequestFor(APP, 'feat/x')).toEqual({ number: 7, url: 'https://github.com/acme/app/pull/7' })
+    // Only a fork's PR, or one whose head repository was deleted: none of this repository.
+    expect(await provider.openPullRequestFor(APP, 'feat/x')).toBeNull()
     expect(await provider.openPullRequestFor(APP, 'feat/y')).toBeNull()
     expect(calls[0].args).toEqual(['api', 'repos/acme/app', '--jq', '.default_branch'])
-    expect(calls[1].args).toEqual(['api', 'repos/acme/app/pulls?state=open&per_page=5&head=acme%3Afeat%2Fx'])
+    expect(calls[1].args).toEqual(['api', 'repos/acme/app/pulls?state=open&per_page=30&head=acme%3Afeat%2Fx'])
   })
 
   it('says which scope a token without write access needs', async () => {

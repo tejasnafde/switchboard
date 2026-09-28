@@ -114,9 +114,9 @@ export function listLinkableChats(projectPaths: readonly string[], limit = 200):
 }
 
 /** Root chats the one-time history scan has not read yet, newest first. */
-export function listUnscannedPullRequestHistoryScanTargets(limit: number): { id: string; projectPath: string }[] {
+export function listUnscannedPullRequestHistoryScanTargets(limit: number): { id: string; projectPath: string; worktreePath: string | null }[] {
   return getDb().prepare(
-    `SELECT c.id, c.project_path AS projectPath
+    `SELECT c.id, c.project_path AS projectPath, c.worktree_path AS worktreePath
        FROM conversations c
        LEFT JOIN conversation_pr_history_scans s ON s.conversation_id = c.id
       WHERE s.conversation_id IS NULL
@@ -127,7 +127,7 @@ export function listUnscannedPullRequestHistoryScanTargets(limit: number): { id:
         )
       ORDER BY c.updated_at DESC
       LIMIT ?`,
-  ).all(Math.max(1, limit)) as { id: string; projectPath: string }[]
+  ).all(Math.max(1, limit)) as { id: string; projectPath: string; worktreePath: string | null }[]
 }
 
 export function markPullRequestHistoryScanned(threadId: string, now = Date.now()): void {

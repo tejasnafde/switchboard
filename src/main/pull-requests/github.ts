@@ -466,12 +466,18 @@ export class GitHubProvider implements PullRequestProvider {
     return branch
   }
 
-  /** Same-repository branches only: `head` is `owner:branch`, so a fork's branch of the same name is not matched. */
+  /**
+   * Same-repository branches only. `head=owner:branch` names the head's owner,
+   * not its repository, so a fork under the same owner (another name) matches
+   * too; each answer's head repository is checked.
+   */
   async openPullRequestFor(repo: RepoRef, branch: string): Promise<CreatedPr | null> {
     const head = encodeURIComponent(`${repo.owner}:${branch}`)
-    const res = await this.read(['api', `repos/${repo.owner}/${repo.name}/pulls?state=open&per_page=5&head=${head}`])
+    const res = await this.read(['api', `repos/${repo.owner}/${repo.name}/pulls?state=open&per_page=30&head=${head}`])
     if (res.code !== 0) throw new PrHostError(classifyGhError(res))
-    const pr = (parseJson<Array<{ number?: number; html_url?: string }>>(res.stdout) ?? [])[0]
+    const fullName = `${repo.owner}/${repo.name}`.toLowerCase()
+    const pr = (parseJson<Array<{ number?: number; html_url?: string; head?: { repo?: { full_name?: string } | null } }>>(res.stdout) ?? [])
+      .find((candidate) => candidate.head?.repo?.full_name?.toLowerCase() === fullName)
     return pr && Number.isInteger(pr.number) && pr.html_url ? { number: pr.number as number, url: pr.html_url } : null
   }
 

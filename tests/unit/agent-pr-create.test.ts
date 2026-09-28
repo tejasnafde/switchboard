@@ -25,6 +25,8 @@ import { pushForEvent } from '../../src/shared/push-policy'
 import { createDraftProblem, hostWriteButtons, hostWriteResponse, initialCreateDraft, initialReviewDraft } from '../../src/renderer/components/chat/host-write-card'
 import { currentBranch, remoteHasBranch, type GitRun } from '../../src/main/pull-requests/branch-check'
 import { SWITCHBOARD_OPENCODE_TOOLS } from '../../src/main/mcp/agent-registration'
+import { bbprTargets } from '../../src/shared/bbpr-command'
+import { bbprNumbersInRepo } from '../../src/main/pull-requests/bbpr-targets'
 import type { RepoRef } from '../../src/shared/pull-requests'
 
 const APP: RepoRef = { host: 'github', owner: 'acme', name: 'app' }
@@ -177,5 +179,38 @@ describe('registration and Reviews', () => {
     expect(shouldRefreshPullRequests(fresh, 'open', 2_000)).toBe(false)
     expect(shouldRefreshPullRequests({ ...fresh, stale: true }, 'open', 2_000)).toBe(true)
     expect(shouldRefreshPullRequests({ ...fresh, stale: true, visible: false }, 'open', 2_000)).toBe(false)
+  })
+})
+
+describe('where a bare bbpr runs', () => {
+  it('is the cwd with no cd, the resolved directory after cds, and unknown when only a shell could tell', () => {
+    expect(bbprTargets('bbpr 605 diff', '/p')).toEqual([{ number: 605, runsIn: 'cwd' }])
+    expect(bbprTargets('cd /other/repo && bbpr 605', '/p')).toEqual([{ number: 605, runsIn: 'dir', dir: '/other/repo' }])
+    expect(bbprTargets('cd src && cd ../lib/ && bbpr 1; cd "/a b" && bbpr 2', '/p')).toEqual([
+      { number: 1, runsIn: 'dir', dir: '/p/lib' },
+      { number: 2, runsIn: 'dir', dir: '/a b' },
+    ])
+    for (const cd of ['cd ~/x', 'cd $DIR', 'cd -', 'cd', 'cd a b', 'pushd `pwd`', 'cd x && popd']) {
+      expect(bbprTargets(`${cd} && bbpr 3`, '/p')).toEqual([{ number: 3, runsIn: 'unknown' }])
+    }
+    expect(bbprTargets('cd rel && bbpr 4', null)).toEqual([{ number: 4, runsIn: 'unknown' }])
+    // A cd after the bbpr call does not move it.
+    expect(bbprTargets('bbpr 5 && cd /else', '/p')).toEqual([{ number: 5, runsIn: 'cwd' }])
+  })
+
+  it('keeps a number only when its directory is the chat repository, asking each directory once', async () => {
+    const BOT: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2' }
+    const repoForDir = vi.fn(async (dir: string): Promise<RepoRef | null> => (dir === '/p/sub' ? BOT : dir === '/boom' ? Promise.reject(new Error('x')) : { ...BOT, name: 'retailiq' }))
+    const numbers = await bbprNumbersInRepo([
+      { number: 1, runsIn: 'cwd' },
+      { number: 2, runsIn: 'dir', dir: '/p/sub' },
+      { number: 3, runsIn: 'dir', dir: '/other' },
+      { number: 4, runsIn: 'unknown' },
+      { number: 5, runsIn: 'dir', dir: '/boom' },
+      { number: 6, runsIn: 'dir', dir: '/p/sub' },
+    ], BOT, repoForDir)
+    expect(numbers).toEqual([1, 2, 6])
+    expect(repoForDir).toHaveBeenCalledTimes(3)
+    expect(await bbprNumbersInRepo([{ number: 1, runsIn: 'cwd' }], APP, repoForDir)).toEqual([])
   })
 })

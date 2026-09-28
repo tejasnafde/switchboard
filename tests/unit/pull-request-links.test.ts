@@ -74,8 +74,8 @@ describe('PullRequestAutoLinker', () => {
     const linked: string[] = []
     const notified: string[] = []
     const deps: AutoLinkDeps = {
-      conversationFor: (threadId) => (threadId === 'missing' ? null : { id: 'agent_1', projectPath: '/p' }),
-      repoForProject: async () => projectRepo,
+      conversationFor: (threadId) => (threadId === 'missing' ? null : { id: 'agent_1', projectPath: '/p', cwd: '/p' }),
+      repoForProject: async (path) => (path.startsWith('/other') ? { host: 'bitbucket' as const, owner: 'geoiq', name: 'retailiq' } : projectRepo),
       link: (id, ref) => {
         const k = `${id}#${ref.number}`
         if (linked.includes(k)) return false
@@ -145,10 +145,22 @@ describe('PullRequestAutoLinker', () => {
     expect(gh.linked).toEqual([])
   })
 
+  it('never links a bare bbpr number whose command runs in another repository, or behind a cd it cannot resolve', async () => {
+    const { linker, linked } = setup(BOT)
+    const run = (command: string) => linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'a', toolName: 'Bash', input: { command } } as RuntimeEvent)
+    await run('cd /other/repo && bbpr 605 diff')
+    await run('cd $REPO && bbpr 606')
+    await run('cd - && bbpr 607')
+    expect(linked).toEqual([])
+    await run('cd /p/src && bbpr 608 diff')
+    await run('cd ../p && bbpr 609')
+    expect(linked).toEqual(['agent_1#608', 'agent_1#609'])
+  })
+
   it('keeps the tombstone rule: a link the store refuses is not reported', async () => {
     const notified: string[] = []
     const linker = new PullRequestAutoLinker({
-      conversationFor: () => ({ id: 'agent_1', projectPath: '/p' }),
+      conversationFor: () => ({ id: 'agent_1', projectPath: '/p', cwd: '/p' }),
       repoForProject: async () => BOT,
       link: () => false,
       notify: (id) => notified.push(id),

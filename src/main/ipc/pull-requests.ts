@@ -126,7 +126,7 @@ export function attachPullRequestAutoLink(bus: RuntimeEventBus, host: BackendHos
   const linker = new PullRequestAutoLinker({
     conversationFor: (threadId) => {
       const row = getConversationByThreadId(threadId)
-      return row ? { id: row.id, projectPath: row.project_path } : null
+      return row ? { id: row.id, projectPath: row.project_path, cwd: row.worktree_path || row.project_path } : null
     },
     repoForProject: (projectPath) => getService().repoFor(projectPath),
     link: (conversationId, ref) => linkConversationPullRequest(conversationId, ref, 'auto'),
@@ -167,7 +167,7 @@ function registerLinkHandlers(host: BackendHost): void {
     const chat = getConversationByThreadId(threadId)
     if (!chat) return { ok: false, message: 'This chat has no Switchboard record to link to.' }
     try {
-      const { linked, capped } = await scanPullRequestHistoryForConversation({ id: chat.id, projectPath: chat.project_path }, historyScanDeps())
+      const { linked, capped } = await scanPullRequestHistoryForConversation({ id: chat.id, projectPath: chat.project_path, worktreePath: chat.worktree_path }, historyScanDeps())
       return { ok: true, linked, capped, capChars: MAX_HISTORY_SCAN_CHARS }
     } catch (err) {
       log.warn('scanning a chat for pull requests failed', { threadId, err: String(err) })
