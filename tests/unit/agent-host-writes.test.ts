@@ -4,6 +4,7 @@ import {
   checkReplyText,
   hostWriteDetail,
   hostWriteTitle,
+  createPullRequestGate,
   hostWriteGate,
   parseHostWriteResponse,
   withViaMarker,
@@ -59,6 +60,14 @@ describe('hostWriteGate', () => {
     const modes: RuntimeMode[] = ['sandbox', 'accept-edits', 'auto', 'full-access']
     expect(hostWriteGate('plan')).toBe('deny')
     for (const mode of modes) expect(hostWriteGate(mode)).toBe('card')
+  })
+})
+
+describe('createPullRequestGate', () => {
+  it('opens without a card only in full access, and refuses in plan mode', () => {
+    expect(createPullRequestGate('full-access')).toBe('allow')
+    expect(createPullRequestGate('plan')).toBe('deny')
+    for (const mode of ['sandbox', 'accept-edits', 'auto'] as const) expect(createPullRequestGate(mode)).toBe('card')
   })
 })
 
