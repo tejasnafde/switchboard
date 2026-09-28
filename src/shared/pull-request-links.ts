@@ -3,9 +3,11 @@
  * backend under the chat's root conversation (`resolveRootThreadId`), so a
  * provider session rotation keeps them.
  *
- * A link is made by hand (Reviews > Link to chat) or automatically, once,
- * when the chat's assistant text or tool output names a PR URL of the chat's
- * own project repository. A PR of another repository is never linked.
+ * A link is made by hand (Reviews > Link to chat), by an agent that opened
+ * the PR (`create_pull_request`), or automatically, once, when the chat's
+ * assistant text, a tool's input or its output names a PR URL (or a bbpr
+ * command a PR number) of the chat's own project repository. A PR of another
+ * repository is never linked.
  */
 import { prKey, repoKey, type PrHost, type PrRef, type PrSummary, type RepoRef } from './pull-requests'
 
@@ -96,6 +98,20 @@ export function findPullRequestUrls(text: string): PrRef[] {
 export function autoLinkRefs(text: string, projectRepo: RepoRef | null): PrRef[] {
   if (!projectRepo) return []
   return findPullRequestUrls(text).filter((ref) => canLinkToProject(ref, projectRepo))
+}
+
+/**
+ * The PRs a chat of a project on `projectRepo` should link: the URLs in
+ * `text`, plus the numbers a `bbpr <n>` command named, which bbpr resolves
+ * against the current git remote, the project's (Bitbucket only).
+ */
+export function projectPrRefs(text: string, bbprNumbers: readonly number[], projectRepo: RepoRef | null): PrRef[] {
+  const refs = autoLinkRefs(text, projectRepo)
+  if (projectRepo?.host !== 'bitbucket') return refs
+  for (const number of bbprNumbers) {
+    if (!refs.some((ref) => ref.number === number)) refs.push(normalizePrRef({ ...projectRepo, number }))
+  }
+  return refs
 }
 
 /** What a chat header says about a linked PR: "build failed · 3 open conversations". */

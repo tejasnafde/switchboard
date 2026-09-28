@@ -2,15 +2,17 @@
  * Links chats from before PR linking existed: reads a chat's stored history
  * (`history-source.ts`) and applies the auto-link rule to its user text,
  * assistant text, tool inputs and tool output, plus bbpr's bare-number form
- * (`bbpr 605`) in a tool input for a Bitbucket project. Runs once per chat in
+ * (`bbpr 605`) in a tool input for a Bitbucket project, when the command ran
+ * in the chat's repository (`bbpr-targets.ts`). Runs once per chat in
  * the background after launch; later messages are the live auto-linker's
  * (`auto-link.ts`).
  */
-import { autoLinkRefs } from '@shared/pull-request-links'
-import { bbprPullRequestNumbers, toolInputCommand } from '@shared/bbpr-command'
+import { projectPrRefs } from '@shared/pull-request-links'
+import { bbprPullRequestNumbers, bbprTargetsForInput, toolInputCommand, toolInputCwd } from '@shared/bbpr-command'
 import type { PrRef, RepoRef } from '@shared/pull-requests'
 import type { HistoryPartKind, HistoryVisitor } from './history-source'
 import { createMainLogger } from '../logger'
+import { bbprNumbersInRepo } from './bbpr-targets'
 
 const log = createMainLogger('pull-requests:history-scan')
 
@@ -24,13 +26,16 @@ const MENTIONS_HOST = /github\.com\/|bitbucket\.org\//i
 export interface PullRequestHistoryScanTarget {
   id: string
   projectPath: string
+  /** Where the chat's tools ran (its worktree), when not the project: a bare `bbpr <n>` with no `cd` ran here. */
+  worktreePath?: string | null
 }
 
 export interface PullRequestHistoryScanDeps {
   listUnscanned(limit: number): PullRequestHistoryScanTarget[]
   /** Feeds the chat's history to `visit` in order, stopping when it returns false. */
   readHistory(conversationId: string, visit: HistoryVisitor): Promise<void>
-  repoForProject(projectPath: string): Promise<RepoRef | null>
+  /** The repository a directory's git remotes point at: the project's, or a directory a `bbpr` command `cd`s into. */
+  repoForProject(path: string): Promise<RepoRef | null>
   link(conversationId: string, ref: PrRef): boolean
   notify(conversationId: string): void
   markScanned(conversationId: string): void
@@ -68,7 +73,8 @@ function wait(ms: number): Promise<void> {
 class HistoryText {
   private parts: string[] = []
   private seen = new Set<string>()
-  readonly bbprNumbers: number[] = []
+  /** Shell commands of tool inputs that run bbpr, resolved against the chat's cwd once the read is done. */
+  readonly bbprCommands: Array<{ command: string; cwd: string | null }> = []
   chars = 0
   capped = false
 
@@ -82,7 +88,7 @@ class HistoryText {
     this.seen.add(text)
     const remaining = MAX_HISTORY_SCAN_CHARS - this.chars
     const kept = text.length > remaining ? dropLastWord(text.slice(0, remaining)) : text
-    if (kind === 'toolInput') this.addBbprNumbers(text.length > remaining ? kept : text)
+    if (kind === 'toolInput') this.addBbprCommand(text.length > remaining ? kept : text)
     this.parts.push(kept)
     if (text.length > remaining) {
       this.chars = MAX_HISTORY_SCAN_CHARS
@@ -93,28 +99,14 @@ class HistoryText {
     return true
   }
 
-  private addBbprNumbers(input: string): void {
+  private addBbprCommand(input: string): void {
     const command = toolInputCommand(input)
-    for (const number of command ? bbprPullRequestNumbers(command) : []) {
-      if (!this.bbprNumbers.includes(number)) this.bbprNumbers.push(number)
-    }
+    if (command && bbprPullRequestNumbers(command).length > 0) this.bbprCommands.push({ command, cwd: toolInputCwd(input) })
   }
 
   get text(): string {
     return this.parts.join('\n')
   }
-}
-
-/** PRs of the chat's project that its history names. */
-function historyRefs(history: HistoryText, repo: RepoRef | null): PrRef[] {
-  const refs = autoLinkRefs(history.text, repo)
-  // bbpr resolves a bare number against the current git remote, which is the project's.
-  if (repo?.host === 'bitbucket') {
-    for (const number of history.bbprNumbers) {
-      if (!refs.some((ref) => ref.number === number)) refs.push({ ...repo, number })
-    }
-  }
-  return refs
 }
 
 function markQuietly(deps: PullRequestHistoryScanDeps, conversationId: string): void {
@@ -148,9 +140,12 @@ export async function scanPullRequestHistoryForConversation(
     throw new HistoryReadError(err)
   }
   let linked = 0
-  if (history.bbprNumbers.length > 0 || MENTIONS_HOST.test(history.text)) {
+  if (history.bbprCommands.length > 0 || MENTIONS_HOST.test(history.text)) {
     const repo = await deps.repoForProject(target.projectPath)
-    for (const ref of historyRefs(history, repo)) {
+    const cwd = target.worktreePath || target.projectPath
+    const targets = history.bbprCommands.flatMap((c) => bbprTargetsForInput(c.command, cwd, c.cwd))
+    const bbprNumbers = await bbprNumbersInRepo(targets, repo, (dir) => deps.repoForProject(dir))
+    for (const ref of projectPrRefs(history.text, bbprNumbers, repo)) {
       if (deps.link(target.id, ref)) linked++
     }
   }

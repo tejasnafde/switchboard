@@ -17,6 +17,9 @@
  *                           (three line comments on demo PR #161, which the
  *                           user did not write, so every verdict is offered);
  *                           held until answered; nothing is ever posted
+ *   - text says "raise a pull request" -> a Switchboard MCP create card (a
+ *                           Bitbucket pull request from feat/sync-jitter into
+ *                           main); held until answered; nothing is ever opened
  *   - text says "run"    -> asks approval for `npm test` and holds the turn
  *                           open until it is answered (ApprovalCard, and the
  *                           running composer for the visual regression suite)
@@ -36,6 +39,7 @@
  */
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { AGENT_REPLY_MAX_CHARS, hostWriteDetail, type HostWriteCard, type HostWriteDiffLine } from '@shared/agent-host-writes'
+import { PR_DESCRIPTION_MAX_CHARS } from '@shared/agent-pr-create'
 import { agentLabel, toAgentProvider, type AgentType } from '@shared/types'
 import { buildWindow, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
 import { randomUUID } from 'crypto'
@@ -369,6 +373,39 @@ export class DemoAdapter implements ProviderAdapter {
       session.onEvent({ type: 'request.closed', threadId, requestId, decision: decision === 'cancelled' ? 'deny' : decision })
       if (decision === 'cancelled') return
       await this.say(threadId, turn, decision === 'approve' ? 'Replied on worker.py:86.' : 'Left that conversation for you.')
+    } else if (/raise a pull request|open a pull request/i.test(message)) {
+      await this.say(threadId, turn, 'Pushed feat/sync-jitter. I will open the pull request through Switchboard.')
+      if (turn.cancelled) return
+      const card: HostWriteCard = {
+        action: 'create',
+        agentLabel: agentLabel(toAgentProvider(this.provider)),
+        host: 'bitbucket',
+        prLabel: 'geoiq/ssg-bot-v2',
+        url: null,
+        location: null,
+        quote: null,
+        create: {
+          repoLabel: 'geoiq/ssg-bot-v2',
+          sourceBranch: 'feat/sync-jitter',
+          targetBranch: 'main',
+          title: 'Cap the sync backoff jitter at the ceiling',
+          description: 'The jitter is applied before the 300 s cap in next_delay, so two workers can no longer meet above it.\n\n- test_cap_includes_jitter covers the ceiling\n- the retry log line names the delay',
+          draft: false,
+        },
+        maxChars: PR_DESCRIPTION_MAX_CHARS,
+      }
+      const requestId = `demo_req_${++this.seq}`
+      const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
+        session.approvals.set(requestId, resolve)
+        emit({
+          type: 'request.opened', threadId, requestId, requestType: 'tool',
+          toolName: 'mcp__switchboard__create_pull_request', detail: hostWriteDetail(card), hostWrite: card,
+        })
+      })
+      session.approvals.delete(requestId)
+      session.onEvent({ type: 'request.closed', threadId, requestId, decision: decision === 'cancelled' ? 'deny' : decision })
+      if (decision === 'cancelled') return
+      await this.say(threadId, turn, decision === 'approve' ? 'Opened it; it is linked to this chat.' : 'Nothing was opened.')
     } else if (/draft a review/i.test(message)) {
       await this.say(threadId, turn, 'I read the diff. Here is a draft with three line comments; the verdict is yours.')
       if (turn.cancelled) return

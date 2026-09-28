@@ -8,6 +8,7 @@
  * `globalThis.__sbDemoPrWrites` (the e2e reads it from the main process) and
  * applied to an in-memory overlay, so the screens show the result.
  */
+import type { CreatedPr, CreatePrInput } from '@shared/agent-pr-create'
 import type { InlineCommentInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import {
   mergeBlockers,
@@ -455,6 +456,23 @@ class DemoProvider implements PullRequestProvider {
   async decline(ref: PrRef): Promise<void> {
     this.record('decline', ref, {})
     this.overlay.declined.add(ref.number)
+  }
+
+  async defaultBranch(): Promise<string> {
+    return 'main'
+  }
+
+  async openPullRequestFor(repo: RepoRef, branch: string): Promise<CreatedPr | null> {
+    const hit = this.all().find((s) => s.summary.ref.name === repo.name && s.summary.state === 'open' && s.summary.sourceBranch === branch)
+    return hit ? { number: hit.summary.ref.number, url: hit.summary.url } : null
+  }
+
+  /** Recorded only: the scripted list stays as it is for the visual harness. */
+  async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<CreatedPr> {
+    const number = 900 + ++this.seq
+    this.record('create', { ...repo, number }, input)
+    const path = this.host === 'github' ? 'pull' : 'pull-requests'
+    return { number, url: `https://${this.host === 'github' ? 'github.com' : 'bitbucket.org'}/${repo.owner}/${repo.name}/${path}/${number}` }
   }
 }
 

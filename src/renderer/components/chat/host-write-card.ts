@@ -3,12 +3,13 @@
  * what each sends back. Pure, so the rules are tested without React.
  */
 import { checkReplyText, type HostWriteCard, type HostWriteResponse, type HostWriteReview } from '@shared/agent-host-writes'
+import { checkPrDescription, checkPrTitle } from '@shared/agent-pr-create'
 import { checkCommentText, reviewVerdictProblem } from '@shared/agent-pr-review'
 import { REVIEW_EVENT_LABEL, type ReviewEvent } from '@shared/pull-request-writes'
 import { PR_HOST_LABEL } from '@shared/pull-requests'
 
 export interface HostWriteButton {
-  id: 'deny' | 'post' | 'post-resolve' | 'resolve' | 'rerun' | 'comment' | ReviewEvent
+  id: 'deny' | 'create' | 'post' | 'post-resolve' | 'resolve' | 'rerun' | 'comment' | ReviewEvent
   label: string
   primary: boolean
   decision: 'approve' | 'deny'
@@ -21,6 +22,9 @@ const VERDICT_ORDER: readonly ReviewEvent[] = ['comment', 'request_changes', 'ap
 
 export function hostWriteButtons(card: HostWriteCard): HostWriteButton[] {
   const deny: HostWriteButton = { id: 'deny', label: 'Deny', primary: false, decision: 'deny' }
+  if (card.action === 'create') {
+    return [deny, { id: 'create', label: card.create?.draft ? 'Open draft' : 'Open pull request', primary: true, decision: 'approve' }]
+  }
   if (card.action === 'resolve') return [deny, { id: 'resolve', label: 'Resolve', primary: true, decision: 'approve' }]
   if (card.action === 'rerun') return [deny, { id: 'rerun', label: 'Re-run', primary: true, decision: 'approve' }]
   if (card.action === 'comment') return [deny, { id: 'comment', label: 'Post comment', primary: true, decision: 'approve' }]
@@ -52,8 +56,30 @@ export function initialReviewDraft(review: HostWriteReview | undefined): ReviewD
 
 const keptComments = (draft: ReviewDraftState) => draft.comments.filter((c) => !c.removed)
 
-/** What an approval sends back. `text` is the card's textarea as the user left it; `draft` the review as the user left it. */
-export function hostWriteResponse(card: HostWriteCard, button: HostWriteButton, text: string, draft: ReviewDraftState): HostWriteResponse {
+/** A pull request to open, as the user is editing it in the card. */
+export interface CreateDraftState {
+  title: string
+  description: string
+}
+
+export function initialCreateDraft(card: HostWriteCard | undefined): CreateDraftState {
+  return { title: card?.create?.title ?? '', description: card?.create?.description ?? '' }
+}
+
+/** Why the pull request cannot be opened as the user left it, or null. The rules the backend applies again. */
+export function createDraftProblem(draft: CreateDraftState): string | null {
+  const title = checkPrTitle(draft.title)
+  if (!title.ok) return title.message
+  const description = checkPrDescription(draft.description)
+  return description.ok ? null : description.message
+}
+
+/**
+ * What an approval sends back. `text` is the card's textarea as the user left
+ * it; `draft` the review and `create` the pull request as the user left them.
+ */
+export function hostWriteResponse(card: HostWriteCard, button: HostWriteButton, text: string, draft: ReviewDraftState, create?: CreateDraftState): HostWriteResponse {
+  if (card.action === 'create') return create ? { title: create.title, description: create.description } : {}
   if (card.action === 'comment') return { text }
   if (card.action === 'review') {
     if (!button.verdict) return {}
@@ -80,7 +106,7 @@ export function replyTextProblem(card: HostWriteCard, text: string): string | nu
   return check.ok ? null : check.message
 }
 
-/** "Bitbucket · ssg-bot-v2 #612 · sync/worker.py:88". */
+/** "Bitbucket · ssg-bot-v2 #612 · sync/worker.py:88", or "GitHub · acme/app" for a pull request to open. */
 export function hostWriteContext(card: HostWriteCard): string {
   return [PR_HOST_LABEL[card.host], card.prLabel, card.location].filter(Boolean).join(' · ')
 }

@@ -86,6 +86,32 @@ describe('pull request history scan', () => {
     expect(d.linked).toEqual([{ ...BOT, number: 605 }])
   })
 
+  it('links a bare bbpr number only when the command runs in the chat repository', async () => {
+    const other: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'retailiq' }
+    const d = deps([
+      ['toolInput', JSON.stringify({ command: 'cd /other/repo && bbpr 605 diff' })],
+      ['toolInput', JSON.stringify({ command: 'cd ~/elsewhere && bbpr 606' })],
+      ['toolInput', JSON.stringify({ command: 'cd sub && bbpr 607' })],
+      ['toolInput', JSON.stringify({ command: 'bbpr 608' })],
+    ])
+    vi.mocked(d.repoForProject).mockImplementation(async (path) => (path === '/other/repo' ? other : BOT))
+
+    await scanPullRequestHistoryForConversation(TARGET, d)
+
+    // 605 ran in retailiq, 606 behind an unresolvable cd; 607 in /repo/sub, 608 in the chat's cwd.
+    expect(d.linked.map((r) => r.number)).toEqual([607, 608])
+    expect(d.repoForProject).toHaveBeenCalledWith('/repo/sub')
+  })
+
+  it("resolves a relative cd and a bare bbpr against the chat's worktree", async () => {
+    const d = deps([['toolInput', JSON.stringify({ command: 'cd .. && bbpr 605' })], ['toolInput', '{"command":"bbpr 606"}']])
+    vi.mocked(d.repoForProject).mockImplementation(async (path) => (path === '/repo/.switchboard/worktrees' ? null : BOT))
+
+    await scanPullRequestHistoryForConversation({ ...TARGET, worktreePath: '/repo/.switchboard/worktrees/x' }, d)
+
+    expect(d.linked.map((r) => r.number)).toEqual([606])
+  })
+
   it('ignores a bare bbpr number in chat text, and on a GitHub project', async () => {
     const text = deps([['text', 'bbpr 605 diff'], ['toolOutput', 'bbpr 606']])
     await scanPullRequestHistoryForConversation(TARGET, text)

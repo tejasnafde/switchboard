@@ -4,6 +4,7 @@
  * checked against a fresh read (`shared/pull-request-writes.ts`); a
  * provider only shapes the host request and classifies its answer.
  */
+import type { CreatedPr, CreatePrInput } from '@shared/agent-pr-create'
 import type { InlineCommentInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import type {
   MergeStrategy,
@@ -51,6 +52,13 @@ export interface PullRequestProvider {
   removeReviewer(ref: PrRef, reviewer: string): Promise<void>
   /** Bitbucket decline, GitHub close. */
   decline(ref: PrRef): Promise<void>
+
+  /** The branch a new pull request targets by default. */
+  defaultBranch(repo: RepoRef): Promise<string>
+  /** An open pull request whose source is `branch` in this repository, or null. */
+  openPullRequestFor(repo: RepoRef, branch: string): Promise<CreatedPr | null>
+  /** Opens one; the service validated `input` and checked no open one exists. */
+  createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<CreatedPr>
 }
 
 /** A host failure already classified for the UI. Providers throw it; the service turns it into a result. */

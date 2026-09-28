@@ -52,6 +52,7 @@ import { PrHostError } from '../pull-requests/provider'
 import { PullRequestService } from '../pull-requests/service'
 import { createDemoPullRequestService } from '../pull-requests/demo'
 import { setAgentPullRequestAccess } from '../mcp/pr-tools'
+import { currentBranch, remoteHasBranch } from '../pull-requests/branch-check'
 
 const log = createMainLogger('ipc:pull-requests')
 const DEMO = process.env.SB_DEMO_ADAPTER === '1'
@@ -111,7 +112,8 @@ async function githubState(): Promise<GithubAccountState> {
   }
 }
 
-let notifyLinks: (conversationId: string) => void = () => {}
+/** `created`: an agent opened this PR, so a Reviews screen that is showing refreshes its list. */
+let notifyLinks: (conversationId: string, created?: boolean) => void = () => {}
 let backgroundHistoryScanStarted = false
 
 /**
@@ -120,11 +122,11 @@ let backgroundHistoryScanStarted = false
  * registry and host, like the push notifier.
  */
 export function attachPullRequestAutoLink(bus: RuntimeEventBus, host: BackendHost): () => void {
-  notifyLinks = (conversationId) => host.emit(PullRequestChannels.LINKS_CHANGED, { conversationId })
+  notifyLinks = (conversationId, created) => host.emit(PullRequestChannels.LINKS_CHANGED, { conversationId, ...(created ? { created: true } : {}) })
   const linker = new PullRequestAutoLinker({
     conversationFor: (threadId) => {
       const row = getConversationByThreadId(threadId)
-      return row ? { id: row.id, projectPath: row.project_path } : null
+      return row ? { id: row.id, projectPath: row.project_path, cwd: row.worktree_path || row.project_path } : null
     },
     repoForProject: (projectPath) => getService().repoFor(projectPath),
     link: (conversationId, ref) => linkConversationPullRequest(conversationId, ref, 'auto'),
@@ -165,7 +167,7 @@ function registerLinkHandlers(host: BackendHost): void {
     const chat = getConversationByThreadId(threadId)
     if (!chat) return { ok: false, message: 'This chat has no Switchboard record to link to.' }
     try {
-      const { linked, capped } = await scanPullRequestHistoryForConversation({ id: chat.id, projectPath: chat.project_path }, historyScanDeps())
+      const { linked, capped } = await scanPullRequestHistoryForConversation({ id: chat.id, projectPath: chat.project_path, worktreePath: chat.worktree_path }, historyScanDeps())
       return { ok: true, linked, capped, capChars: MAX_HISTORY_SCAN_CHARS }
     } catch (err) {
       log.warn('scanning a chat for pull requests failed', { threadId, err: String(err) })
@@ -270,6 +272,27 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     rerunCheck: (ref, input) => getService().rerunCheck(ref, input),
     inlineComment: (ref, input) => getService().inlineComment(ref, input),
     submitReview: (ref, input) => getService().submitReview(ref, input),
+    chatProject: (chatId) => getConversationByThreadId(chatId)?.project_path ?? null,
+    repoFor: (projectPath) => getService().repoFor(projectPath),
+    currentBranch: (cwd) => currentBranch(cwd),
+    remoteHasBranch: (cwd, repo, branch) => remoteHasBranch(cwd, repo, branch),
+    defaultBranch: (repo) => getService().defaultBranch(repo),
+    openPullRequestFor: (repo, branch) => getService().openPullRequestFor(repo, branch),
+    createPullRequest: (repo, input) => getService().createPullRequest(repo, input),
+    // An explicit ask, like Reviews' "Link to chat": it relinks one the user unlinked before.
+    linkToChat: (chatId, ref, created) => {
+      let added = false
+      try {
+        added = linkConversationPullRequest(chatId, ref, 'manual')
+      } catch (err) {
+        // The PR exists either way; the agent must still hear its URL, not a failure it would retry.
+        log.warn('linking an agent-opened pull request failed', { number: ref.number, err: String(err) })
+        if (created) notifyLinks(resolveRootThreadId(chatId), created)
+        return false
+      }
+      if (added || created) notifyLinks(resolveRootThreadId(chatId), created)
+      return true
+    },
   })
   host.handle(PullRequestChannels.LIST, async () => withHidden(await getService().list()))
   host.handle(PullRequestChannels.DETAIL, (ref: unknown) => getService().detail(ref))

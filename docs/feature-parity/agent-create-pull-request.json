@@ -1,0 +1,93 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "agent-create-pull-request",
+  "summary": "Agents can raise a pull request that lands in Reviews. A user report: an agent told to raise a Bitbucket PR pushed with git, tried bbpr's read-only token, and correctly found that no Switchboard tool could open one. New Switchboard MCP tool create_pull_request, for Claude, Codex and OpenCode alike (OpenCode's allow list names it; Claude and Codex already trust every tool of our server). Inputs: title (required), description, sourceBranch (default: the branch checked out in the session cwd, a worktree for a worktree chat), targetBranch (default: the host's default branch, GitHub default_branch / Bitbucket mainbranch), draft (GitHub only; refused on Bitbucket with the reason), repository (optional; must be the chat's own, any other refused). Only the repository the chat's project_path points at, the linking rule. Before a card, every refusal as isError tool output: plan mode (with a tool.denied pill), bad title / branch names (git check-ref-format plus no leading '-'), source equal to target, a detached HEAD, a branch `git ls-remote --heads` does not find on the checkout's remote for that repository (no fetch, GIT_TERMINAL_PROMPT=0), and an OPEN PR for the source branch, which is linked to the chat and returned instead of opening a second (no card, no budget charge). The card is a request.opened hostWrite card (action 'create') with the repository, source -> target, and an editable title and description; the posted description ends with the via Switchboard marker. Full access still shows the card; it counts against the 10 writes / 10 minutes budget; a phone sees it (plain-text detail, push 'Approve at the desktop: Open a pull request on <repo>') but cannot approve it. After the card: the agent must still be waiting, the mode not plan, and the project must still point at the repository; the edited title and description are checked again. PullRequestService.createPullRequest re-validates (validateCreatePr), re-checks for an open PR (returned as existing) and calls the provider: GitHub POST repos/{o}/{r}/pulls through gh with the JSON on stdin (a 403/404 names the repo scope / Pull requests: write), Bitbucket POST /2.0/repositories/{ws}/{repo}/pullrequests with title, description, source and destination branch. Bitbucket's scope error ({required, granted} detail) now reads 'The Bitbucket API token is missing the write:pullrequest:bitbucket scope' for every write, instead of '[object Object]'. An offline / unknown failure is uncertain: the tool looks for the PR once and links it if it is there, otherwise tells the agent the PR may exist and not to create again. On success the PR is linked to the ROOT conversation (manual link, the same table and rule as pull-requests:link) and pull-requests:links-changed carries created: true, which marks the desktop Reviews list stale so it re-reads at once when shown and on the next open otherwise. The MCP server instructions and the tool description tell agents to use it rather than gh pr create, bbpr or a host API. Reviewers are deferred. Second part: the live auto-link now also scans each tool call's input (tool.started) for PR URLs and for bbpr <n> commands (Bitbucket project only), with the history scan's rules shared as projectPrRefs, so gh pr create output or a bbpr command in a shell links the PR; tombstones and the repository rule are unchanged. Round 2 (CodeRabbit): a bare bbpr <n> is linked only when the command runs in the chat's repository (no cd, or cds that resolve absolute or relative to the chat's worktree/project to a directory whose git remote is the chat's repository; unresolvable cds are skipped), in both the live auto-link and the history scan, which read the chat's worktree_path now. GitHub's head=owner:branch lookup checks each answer's head.repo.full_name, so a same-owner fork's PR is never reused. A failed Reviews list refresh keeps the list stale.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/HostWriteApprovalCard.tsx",
+        "src/renderer/components/chat/HostWriteReviewParts.tsx",
+        "src/renderer/components/chat/host-write-card.ts",
+        "src/renderer/stores/review-store.ts",
+        "src/renderer/App.tsx",
+        "src/preload/index.ts",
+        "src/main/provider/adapters/demo-adapter.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots/host-create-pr-dark-darwin.png",
+        "e2e/snapshots/host-create-pr-light-darwin.png",
+        "e2e/snapshots/host-create-pr-translucent-darwin.png",
+        "tests/unit/agent-pr-create.test.ts",
+        "tests/unit/demo-adapter.test.ts",
+        "tests/unit/visual-regressions-source.test.ts",
+        "tests/unit/review-store-stale-refresh.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No phone code changes. The create card reaches the RN app as request.opened with hostWrite, which it already renders with Deny only from the plain-text detail (hostWriteDetail now describes a create: repository, source -> target, title, description, and says a phone cannot open a pull request), and the push says to approve at the desktop. The backend refuses a phone's approval of any host write. The phone has no Reviews list, so the created flag on links-changed has nothing to refresh there."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No Android code changes. Native Android renders the create card through its existing request.opened approval row from the plain-text detail, and an approval it sends is refused by the backend (admin scope), as for every other host write. Android has no Reviews list yet, so the created flag has nothing to refresh."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/agent-pr-create.ts",
+        "src/shared/agent-host-writes.ts",
+        "src/shared/pull-request-links.ts",
+        "src/shared/pull-request-remote.ts",
+        "src/shared/pull-request-refresh.ts",
+        "src/main/mcp/pr-tools.ts",
+        "src/main/mcp/agent-registration.ts",
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/ipc/pull-requests.ts",
+        "src/main/pull-requests/provider.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/pull-requests/github.ts",
+        "src/main/pull-requests/bitbucket.ts",
+        "src/main/pull-requests/demo.ts",
+        "src/main/pull-requests/branch-check.ts",
+        "src/main/pull-requests/auto-link.ts",
+        "src/main/pull-requests/history-scan.ts",
+        "tests/unit/mcp-pr-create-tool.test.ts",
+        "tests/unit/mcp-pr-tools.test.ts",
+        "tests/unit/pull-request-create-hosts.test.ts",
+        "tests/unit/pull-request-links.test.ts",
+        "src/shared/bbpr-command.ts",
+        "src/main/pull-requests/bbpr-targets.ts",
+        "src/main/db/pull-request-links.ts",
+        "tests/unit/pull-request-history-scan.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, column or migration. The link goes into the existing conversation_pull_requests table through linkConversationPullRequest (source 'manual', keyed by the root conversation, relinking a tombstone as Reviews' Link to chat does). The Reviews stale flag lives in renderer memory only."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, native module or update channel change; the phones get nothing new to install. Wire changes are additive: HostWriteCard gains action 'create' and an optional create field, HostWriteResponse optional title and description, pull-requests:links-changed an optional created flag. An older desktop renderer paired with a newer backend shows the create card with the reply card's buttons and no fields; approving it opens the agent's own draft (the backend ignores the reply fields for a create), and Deny opens nothing. An older backend never offers the tool."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck passed (main + renderer). npm test -- --maxWorkers=2 passed (see the PR for counts).",
+      "mcp-pr-create-tool (fake Reviews service and checkout): description says to use it instead of gh pr create / bbpr and to push first; defaults to the session cwd's branch and the default branch; project path when there is no cwd; explicit branches (refs/heads/ stripped); the card's hostWrite and detail; edited title and description are what is opened, with the marker; an emptied edited title opens nothing; GitHub draft, Bitbucket draft refused before a card; an open PR for the branch is linked (root conversation) without a card or budget charge; unpushed branch refused with the push to run; ls-remote failure refused; another repository in three forms refused, its own accepted; no GitHub/Bitbucket remote refused; source = target and detached HEAD refused; bad title / branch arguments; default-branch read failure; plan mode refused without a card and with a denial pill; full access carded; budget; deny; plan switched on, repository changed or the agent cancelling while the card was open; a definite Bitbucket missing-scope refusal; an open PR appearing while the card was open; an uncertain failure that finds the PR and links it; an uncertain failure that tells the agent not to create again.",
+      "pull-request-create-hosts (fake gh, fake fetch, no real host): GitHub POST pulls with the body on stdin, default_branch and head=owner:branch reads, a 403 naming the repo scope, a 422 kept as invalid, a 502 not retried; Bitbucket POST pullrequests body, the {required, granted} scope error naming write:pullrequest:bitbucket, mainbranch read, the open-PR query escaping quotes and skipping a fork's PR; the service opening one, returning an open one as existing, refusing another repository, bad input and a Bitbucket draft before any host call.",
+      "agent-pr-create: argument checks, branch-name rules, repository parsing and the one-repository rule, draft and uncertain-failure rules, remotesForRepo, the card's title / detail / push text / buttons / response / emptied-title rule, currentBranch and remoteHasBranch against a fake git (exact ref match, no remote for the repository, git's reason on a refused ls-remote), OpenCode's allow list, and the stale refresh rule. pull-request-links: auto-link from gh pr create output, from a PR URL in a Claude and a Codex tool input, from a bbpr command in a Bitbucket project (not a GitHub one, not from output), and the tombstone rule. demo-adapter: the 'raise a pull request' create card, nothing opened.",
+      "SB_VISUAL_SCOPE=screens e2e/visual-regressions.e2e.mjs: new host-create-pr baseline in Dark, Light and Translucent from the demo adapter's 'raise a pull request' script (nothing is opened), plus an 800px-window check that fails if the create card or the message list overflows sideways. Other rewritten PNGs were restored; two runs without updating both passed.",
+      "Round 2: bbprTargets (no cd, absolute / relative / chained / quoted cds, ~, $VAR, cd -, bare cd, popd, unknown cwd, cd after the call) and bbprNumbersInRepo (only the chat repository, one lookup per directory, a failing lookup skipped); auto-link and history scan refuse `cd /other/repo && bbpr 605` and unresolvable cds, and take a cd into the repository and a relative cd against the worktree; GitHub open-PR lookup skips a same-owner fork and a deleted head repository; review-store stays stale after a failed refresh and reads on the next open."
+    ],
+    "hardware": [
+      "The three host-create-pr baselines were opened and checked by eye on this Mac."
+    ],
+    "notExercised": [
+      "No real pull request was opened on GitHub or Bitbucket, and no real git ls-remote ran against a host: every host and git call ran against fakes.",
+      "No model called create_pull_request in a live turn on any agent, so whether each model now prefers it over gh pr create or bbpr when asked to raise a PR was not observed; the MCP instructions and the tool description say to.",
+      "Phones were not run: the RN and Android cards come from the existing plain-text approval path, unchanged."
+    ]
+  }
+}

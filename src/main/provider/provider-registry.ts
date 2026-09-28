@@ -753,6 +753,7 @@ export class ProviderRegistry implements PeerToolHost {
           threadId,
           chatId: chatId(),
           agentLabel: agentLabel(toAgentProvider(provider)),
+          cwd: () => this.sessionDescriptors.get(threadId)?.cwd ?? null,
           runtimeMode,
           publish,
           approvals: this.agentApprovals,

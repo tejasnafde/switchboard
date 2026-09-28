@@ -38,7 +38,7 @@ describe('visual regression harness safety', () => {
     expect(source).toContain("const THEMES = ['Dark', 'Light', 'Translucent']")
     const screens = [...source.matchAll(/snapScreen\(win, '([a-z-]+)'/g)].map((match) => match[1])
     expect(new Set(screens)).toEqual(new Set([
-      'chat', 'sidebar', 'sidebar-needs-you', 'command-palette', 'provider-picker', 'settings', 'settings-accounts', 'kanban', 'reviews', 'reviews-conflict', 'reviews-by-repo', 'reviews-files', 'approval', 'composer-running', 'queued-message', 'chat-narrow', 'host-write-narrow', 'host-write-approval', 'host-review-draft', 'confirm-dialog',
+      'chat', 'sidebar', 'sidebar-needs-you', 'command-palette', 'provider-picker', 'settings', 'settings-accounts', 'kanban', 'reviews', 'reviews-conflict', 'reviews-by-repo', 'reviews-files', 'approval', 'composer-running', 'queued-message', 'chat-narrow', 'host-write-narrow', 'host-write-approval', 'host-review-draft', 'host-create-pr', 'confirm-dialog',
     ]))
     const run = source.slice(source.indexOf('async function runThemeScreens'))
     expect(run).toMatch(/for \(const theme of THEMES\) \{\s*fixture\.restore\(\)/)

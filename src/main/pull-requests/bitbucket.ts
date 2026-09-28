@@ -7,6 +7,7 @@
  * api.bitbucket.org. It is never logged, and a `next` page link on any other
  * origin is refused rather than followed with credentials attached.
  */
+import type { CreatedPr, CreatePrInput } from '@shared/agent-pr-create'
 import type { InlineCommentInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import type {
   BitbucketCredentialInput,
@@ -161,13 +162,19 @@ type WriteMethod = 'POST' | 'PUT' | 'DELETE'
 /** A refused write -> the typed error, with Bitbucket's own reason when it gave one. */
 export async function bitbucketWriteError(res: { status: number; headers: { get(name: string): string | null }; text(): Promise<string> }): Promise<PrError> {
   let said = ''
+  let missingScopes: string[] = []
   try {
-    const body = JSON.parse(await res.text()) as { error?: { message?: string; detail?: string } }
-    said = [body.error?.message, body.error?.detail].filter(Boolean).join(': ').slice(0, 300)
+    const body = JSON.parse(await res.text()) as { error?: { message?: string; detail?: unknown } }
+    const detail = body.error?.detail
+    said = [body.error?.message, typeof detail === 'string' ? detail : ''].filter(Boolean).join(': ').slice(0, 300)
+    missingScopes = missingScopesOf(detail)
   } catch (err) {
     log.debug('Bitbucket error body is not JSON', { status: res.status, err: String(err) })
   }
   const err = (kind: PrError['kind'], fallback: string): PrError => ({ kind, host: 'bitbucket', message: said || fallback })
+  if (res.status === 403 && missingScopes.length > 0) {
+    return { kind: 'forbidden', host: 'bitbucket', message: `The Bitbucket API token is missing the ${missingScopes.join(', ')} scope. Create a token that has it and save it in Settings > Accounts & models > Source control.` }
+  }
   switch (res.status) {
     case 400: return err('invalid', 'Bitbucket refused the input.')
     case 401: return { kind: 'token_rejected', host: 'bitbucket', message: BB_REJECTED }
@@ -185,6 +192,18 @@ export async function bitbucketWriteError(res: { status: number; headers: { get(
     }
   }
   return err('unknown', `Bitbucket answered ${res.status}.`)
+}
+
+/**
+ * A scope error's `detail` is `{ required: [...], granted: [...] }`: the
+ * required scopes the token was not granted.
+ */
+function missingScopesOf(detail: unknown): string[] {
+  if (!detail || typeof detail !== 'object') return []
+  const { required, granted } = detail as { required?: unknown; granted?: unknown }
+  if (!Array.isArray(required)) return []
+  const have = new Set(Array.isArray(granted) ? granted.filter((g): g is string => typeof g === 'string') : [])
+  return required.filter((r): r is string => typeof r === 'string' && /^[a-z:_-]{1,80}$/i.test(r) && !have.has(r))
 }
 
 /** Neutral -> Bitbucket strategy names. */
@@ -465,6 +484,46 @@ export class BitbucketProvider implements PullRequestProvider {
   async decline(ref: PrRef): Promise<void> {
     await this.client.send('POST', `${prPath(ref)}/decline`)
   }
+
+  async defaultBranch(repo: RepoRef): Promise<string> {
+    const body = await this.client.json<{ mainbranch?: { name?: string } | null }>(`${repoPath(repo)}?fields=mainbranch.name`)
+    const name = body.mainbranch?.name
+    if (!name) throw new PrHostError({ kind: 'unknown', host: 'bitbucket', message: 'Bitbucket did not say which branch is the main branch.' })
+    return name
+  }
+
+  async openPullRequestFor(repo: RepoRef, branch: string): Promise<CreatedPr | null> {
+    const q = encodeURIComponent(`source.branch.name="${branch.replace(/"/g, '\\"')}" AND state="OPEN"`)
+    const fields = encodeURIComponent('values.id,values.links.html.href,values.source.repository.full_name')
+    const open = await this.client.paged<BbCreated & { source?: { repository?: { full_name?: string } } }>(
+      `${repoPath(repo)}/pullrequests?q=${q}&pagelen=10&fields=${fields}`, 1)
+    // A fork's PR into this repository can share the branch name.
+    const fullName = `${repo.owner}/${repo.name}`.toLowerCase()
+    const own = open.find((pr) => (pr.source?.repository?.full_name?.toLowerCase() ?? fullName) === fullName)
+    return own ? createdPr(own) : null
+  }
+
+  async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<CreatedPr> {
+    const res = await this.client.send<BbCreated>('POST', `${repoPath(repo)}/pullrequests`, {
+      title: input.title,
+      description: input.description,
+      source: { branch: { name: input.sourceBranch } },
+      destination: { branch: { name: input.targetBranch } },
+    })
+    const pr = res.data ? createdPr(res.data) : null
+    if (!pr) throw new PrHostError({ kind: 'unknown', host: 'bitbucket', message: 'Bitbucket did not return the new pull request.' })
+    return pr
+  }
+}
+
+interface BbCreated {
+  id?: number
+  links?: { html?: { href?: string } }
+}
+
+function createdPr(pr: BbCreated): CreatedPr | null {
+  const url = pr.links?.html?.href
+  return Number.isInteger(pr.id) && url ? { number: pr.id as number, url } : null
 }
 
 /** Bitbucket's PUT needs the title; fields left out (the description) are not touched. */

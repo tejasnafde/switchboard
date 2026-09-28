@@ -3,6 +3,7 @@ import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth } from './stores/l
 import { useAgentStore, setStoreDefaultRuntimeMode, runtimeModeToSend, type RuntimeMode } from './stores/agent-store'
 import { classifyCloseFocus, type ClosestEl } from './close-focus'
 import { useBookmarkStore } from './stores/bookmark-store'
+import { useReviewStore } from './stores/review-store'
 import { useThemeStore } from './stores/theme-store'
 import { useTerminalStore } from './stores/terminal-store'
 import { useMachineStore } from './stores/machine-store'
@@ -274,6 +275,11 @@ export function App() {
 
   // Load bookmarks on mount
   useEffect(() => { void useBookmarkStore.getState().load() }, [])
+
+  // A PR an agent opened shows in Reviews without waiting for the next interval.
+  useEffect(() => window.api.pullRequests.onLinksChanged((change) => {
+    if (change.created) useReviewStore.getState().markStale()
+  }), [])
 
   useEffect(() => {
     loadKeyboardOverrides().catch((err) => log.warn('loading shortcut overrides failed; using the defaults', err))
