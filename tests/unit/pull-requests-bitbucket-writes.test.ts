@@ -69,8 +69,9 @@ describe('Bitbucket write requests', () => {
     const { provider, sent } = fakeFetch()
     await provider.submitReview(ref, { event: 'request_changes', body: 'Two things.', comments: [
       { path: 'a.py', side: 'new', line: 1, body: 'one' },
-      { path: 'b.py', side: 'new', line: 2, body: 'two' },
+      { path: 'b.py', side: 'new', line: 9, startLine: 2, body: 'two' },
     ] })
+    expect(sent[1].body).toEqual({ content: { raw: 'two' }, inline: { path: 'b.py', to: 9, start_to: 2 } })
     expect(sent.map((s) => [s.method, s.url.replace(PR, '')])).toEqual([
       ['POST', '/comments'],
       ['POST', '/comments'],

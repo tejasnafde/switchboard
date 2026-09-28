@@ -73,7 +73,7 @@ function ConversationList({ pr, conversations, now }: { pr: PrSummary; conversat
                   onClick={() => openFile(c.path!)}
                   className="cursor-pointer truncate border-none bg-transparent p-0 font-[family-name:var(--font-mono)] text-[12px] text-[var(--text-primary)] hover:underline"
                 >
-                  {c.path}{c.line !== null && `:${c.line}`}
+                  {c.path}{c.line !== null && `:${c.startLine !== undefined ? `${c.startLine}-` : ''}${c.line}`}
                 </button>
               ) : <span className="text-[12px] text-[var(--text-secondary)]">On the pull request</span>}
               {c.outdated && <span className="text-[12px] text-[var(--text-muted)]">outdated</span>}

@@ -10,6 +10,7 @@
  * reads the reason instead of retrying a transport failure.
  */
 import {
+  AGENT_COMMENT_MAX_LINES,
   AGENT_REPLY_MAX_CHARS,
   AGENT_REVIEW_MAX_BYTES,
   AGENT_REVIEW_MAX_COMMENTS,
@@ -25,13 +26,13 @@ import {
   checkLineTarget,
   checkReviewDraft,
   diffExcerpt,
-  lineLocation,
   reviewFromResponse,
   type DraftLineComment,
 } from '@shared/agent-pr-review'
 import { findPullRequestUrls, normalizePrRef } from '@shared/pull-request-links'
 import {
-  lineInDiff,
+  lineLocation,
+  lineTargetFit,
   REVIEW_EVENT_LABEL,
   reviewEventsFor,
   type InlineCommentInput,
@@ -155,7 +156,8 @@ export function pickLinkedPr(linked: PrRef[], pr: unknown): { ok: true; ref: PrR
 
 function location(c: PrConversation): string | null {
   if (!c.path) return null
-  return c.line !== null ? `${c.path}:${c.line}` : c.path
+  if (c.line === null) return c.path
+  return `${c.path}:${c.startLine !== undefined ? `${c.startLine}-` : ''}${c.line}`
 }
 
 function quoteOf(c: PrConversation): HostWriteCard['quote'] {
@@ -493,18 +495,33 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
 
   const TARGET_PROPS = {
     path: { type: 'string', description: `The file path as ${PR_DIFF_TOOL} shows it.` },
-    line: { type: 'integer', minimum: 1, description: `The line number from ${PR_DIFF_TOOL}: the new line number for side "new", the old one for side "old".` },
-    side: { type: 'string', enum: ['new', 'old'], description: '"new" (default) for an added or unchanged line, "old" for a deleted line.' },
+    line: {
+      type: 'integer',
+      minimum: 1,
+      description: `The line number from ${PR_DIFF_TOOL}: the new line number for side "new", the old one for side "old". The LAST line when the comment covers a range.`,
+    },
+    startLine: {
+      type: 'integer',
+      minimum: 1,
+      description: `Optional: the first line of a range ending at "line", on the same side and in the same hunk of ${PR_DIFF_TOOL}. At most ${AGENT_COMMENT_MAX_LINES} lines. Omit for one line.`,
+    },
+    side: { type: 'string', enum: ['new', 'old'], description: '"new" (default) for added or unchanged lines, "old" for deleted lines. Both ends of a range are on this side.' },
   }
 
+  /** Each target the fresh diff does not take, with why. */
   const notInDiff = (files: PrChangedFile[], targets: DraftLineComment[]): string[] =>
-    targets.filter((t) => !lineInDiff(files, t)).map(lineLocation)
+    targets.flatMap((t) => {
+      const fit = lineTargetFit(files, t)
+      if (fit === 'ok') return []
+      return [fit === 'split' ? `${lineLocation(t)} (spans two hunks)` : lineLocation(t)]
+    })
 
   const commentTool: McpTool = {
     name: PR_COMMENT_TOOL,
     description: [
-      'Start a new inline comment on one line of a pull request linked to this chat.',
+      'Start a new inline comment on one line, or a range of lines, of a pull request linked to this chat.',
       `Read the diff with ${PR_DIFF_TOOL} first: the line must be one the diff shows, on that side.`,
+      `For a range, "line" is the last line and "startLine" the first: one side, one hunk, at most ${AGENT_COMMENT_MAX_LINES} lines.`,
       `For more than one comment, prefer ONE ${PR_REVIEW_TOOL} over several of these, so the user answers one card, not many.`,
       `To answer an existing thread, use ${PR_REPLY_TOOL} instead.`,
       'The user sees the comment in a Switchboard approval card, can edit it, and decides whether it is posted.',
@@ -533,13 +550,19 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const files = await p.access.files(p.ref)
       if (!files.ok) return toolText(files.error.message, true)
       const where = lineLocation(target.value)
-      if (!lineInDiff(files.data, target.value)) {
+      const fit = lineTargetFit(files.data, target.value)
+      if (fit === 'split') {
+        return toolText(`${where} spans two hunks of the diff; a comment covers lines of one hunk. Split it, or pick lines from one hunk of ${PR_DIFF_TOOL}. Nothing was sent.`, true)
+      }
+      if (fit === 'missing') {
         return toolText(`${where} is not a line the diff shows on the ${target.value.side} side. Call ${PR_DIFF_TOOL} and pick a line from it. Nothing was sent.`, true)
       }
+      const { startLine, line } = target.value
       const outcome = await ask(PR_COMMENT_TOOL, card(p.ref, 'comment', {
         location: where,
         replyText: draft.value,
         excerpt: diffExcerpt(files.data, target.value, COMMENT_EXCERPT_RADIUS),
+        ...(startLine !== undefined ? { lineRange: { start: startLine, end: line } } : {}),
       }), signal)
       if ('content' in outcome) return outcome
       if (outcome.decision === 'deny') return declined(outcome)
@@ -561,6 +584,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     description: [
       'Draft a review of a pull request linked to this chat: a summary plus inline comments on lines of the diff.',
       `Read the diff with ${PR_DIFF_TOOL} first; every comment must be on a line it shows, on that side.`,
+      'A comment may cover a range: "line" is its last line and "startLine" its first, on one side and in one hunk.',
       `Prefer ONE draft_review with all your comments over several ${PR_COMMENT_TOOL} calls.`,
       'The user reviews the draft in a Switchboard card, edits or removes any comment and the summary, and picks the verdict',
       'themselves: Comment, Request changes or Approve (Approve and Request changes only on a pull request they did not write).',
@@ -576,7 +600,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         comments: {
           type: 'array',
           maxItems: AGENT_REVIEW_MAX_COMMENTS,
-          description: 'Inline comments, one per line. May be empty.',
+          description: 'Inline comments, each on one line or a range of lines. May be empty.',
           items: {
             type: 'object',
             properties: { ...TARGET_PROPS, text: { type: 'string', description: 'The comment. No signature.' } },
@@ -605,7 +629,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if (!files.ok) return toolText(files.error.message, true)
       const missing = notInDiff(files.data, comments)
       if (missing.length > 0) {
-        return toolText(`Not lines the diff shows: ${missing.join(', ')}. Call ${PR_DIFF_TOOL}, fix their line and side, and send the whole draft again. Nothing was sent.`, true)
+        return toolText(`Not lines the diff shows in one hunk: ${missing.join(', ')}. Call ${PR_DIFF_TOOL}, fix their lines and side, and send the whole draft again. Nothing was sent.`, true)
       }
       // Both hosts refuse a verdict from the author, and on a PR that is not open.
       const commentOnly = detail.data.viewer.isAuthor ? 'author' : detail.data.state !== 'open' ? 'closed' : undefined
@@ -627,7 +651,13 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const submitted = await p.access.submitReview(p.ref, {
         event: verdict,
         body: withViaMarker(final.value.summary),
-        comments: final.value.comments.map((c) => ({ path: c.path, side: c.side, line: c.line, body: withViaMarker(c.text) })),
+        comments: final.value.comments.map((c) => ({
+          path: c.path,
+          side: c.side,
+          line: c.line,
+          ...(c.startLine !== undefined ? { startLine: c.startLine } : {}),
+          body: withViaMarker(c.text),
+        })),
       })
       if (!submitted.ok) {
         const posted = submitted.error.postedComments ?? 0

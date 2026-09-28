@@ -182,6 +182,8 @@ export interface PrConversation {
   path: string | null
   /** Line on the side below; `null` when the host anchored it to the file or it is outdated. */
   line: number | null
+  /** The first line when the conversation covers several (on `side`, ending at `line`); absent for one line. */
+  startLine?: number
   side: 'new' | 'old' | null
   resolved: boolean
   outdated: boolean

@@ -1,0 +1,73 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "pr-comment-line-ranges",
+  "summary": "A pull request line comment can cover a range of lines. Agents: comment_on_line and each comment of draft_review take an optional startLine (line stays required and is the LAST line). The server refuses before any card a reversed range, a range over 200 lines, a startSide that differs from side, and a range whose ends are not in one hunk of the fresh diff (named as spanning two hunks). The card title says 'Comment on lines 40-52', the location reads 'path:40-52', and the excerpt marks every covered line with context either side, leaving the middle of a range over 24 lines out behind one line that says how many; draft review rows and the plain-text detail name the range the same way. Calls without startLine behave as before. Hosts: GitHub gets start_line + start_side with line + side (single comment and the pending review), Bitbucket start_to/to (new side) or start_from/from (old side). The shared lineInDiff check now requires both ends in one hunk, for the human writes too. Reads: GitHub threads (startLine, startDiffSide on the same side) and Bitbucket inline comments (start_to / start_from) map to PrConversation.startLine, shown as 'path:86-88' in Conversations, as a 'Lines 86-88' caption on the thread in the Files tab, and in Ask the agent context with the whole range's diff. Files tab: the existing shift-click range selection now stays inside one hunk (a shift-click in another hunk starts a new selection).",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/PrDiff.tsx",
+        "src/renderer/components/reviews/line-selection.ts",
+        "src/renderer/components/reviews/PrConversations.tsx",
+        "src/renderer/components/chat/HostWriteReviewParts.tsx",
+        "tests/unit/review-line-selection.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No phone code changes. The phone has no Reviews screen (staged as mobile_reviews in reviews-write.json), and it renders an agent's host-write card from the backend's plain-text detail with Deny only; that detail now names the range ('path:40-52') without any client change."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No Android code changes. Android has no Reviews destination (staged as native_reviews in reviews-write.json) and shows an agent's host-write card through the ordinary approval row from the backend's plain-text detail, which now names the range."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/agent-pr-review.ts",
+        "src/shared/agent-host-writes.ts",
+        "src/shared/pull-request-writes.ts",
+        "src/shared/pull-requests.ts",
+        "src/shared/review-context.ts",
+        "src/main/mcp/pr-tools.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/pull-requests/github.ts",
+        "src/main/pull-requests/github-map.ts",
+        "src/main/pull-requests/bitbucket-map.ts",
+        "tests/fixtures/pull-requests/github-threads.json",
+        "tests/fixtures/pull-requests/bitbucket-comments.json",
+        "tests/unit/agent-pr-review.test.ts",
+        "tests/unit/agent-host-writes.test.ts",
+        "tests/unit/pull-request-writes.test.ts",
+        "tests/unit/pull-request-service-writes.test.ts",
+        "tests/unit/mcp-pr-tools.test.ts",
+        "tests/unit/pull-requests-github-map.test.ts",
+        "tests/unit/pull-requests-bitbucket-map.test.ts",
+        "tests/unit/pull-requests-github-writes.test.ts",
+        "tests/unit/pull-requests-bitbucket-writes.test.ts",
+        "tests/unit/review-context.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored. Ranges live on the host; held review comments already carried an optional startLine in renderer memory. No table, column, migration or settings key."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package, signing, deep link or update channel change. Wire changes are additive optional fields (PrConversation.startLine, HostWriteCard.lineRange, HostWriteReviewComment.startLine, the tool's startLine argument): an older desktop ignores them and shows a range as its last line, and an older agent call without startLine is unchanged."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and npm test -- --maxWorkers=2 passed (499 files, 5269 tests).",
+      "New tests: checkLineTarget (range taken, one-line range dropped, reversed, over 200 lines, bad start, startSide / start_side differing from side), diffExcerpt (every covered line marked, long range elided with a count, empty across hunks), reviewFromResponse and checkReviewDraft carry startLine, lineTargetFit (ok on either side, split across hunks, missing), lineLocation, service refuses a range no longer shown with its range in the message, comment_on_line and draft_review (card title / location / excerpt / detail, the range sent to the fake host, reversed / too long / mixed-side / cross-hunk refused before any card), GitHub single comment and pending review with start_line / start_side against a fake gh, Bitbucket review comment with start_to against a fake fetch, GitHub and Bitbucket thread mapping from fixtures (same side kept, other side and outdated dropped, legacy thread without the fields), review-context range label and diff, Files tab selection stays in one hunk."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No real GitHub or Bitbucket write: request shaping ran against fakes only. The field names were checked against GitHub's GraphQL schema (PullRequestReviewThread.startLine / startDiffSide) and Bitbucket's swagger.v3.json (comment.inline start_from / start_to), not against a live post.",
+      "The desktop UI changes (the Files tab caption and hunk-bound selection, the card title) were not looked at in a running app; no visual regression screen covers a range, so no baseline changed.",
+      "No model called the tools with startLine in a live turn."
+    ]
+  }
+}

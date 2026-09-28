@@ -56,6 +56,12 @@ describe('mapBbComments', () => {
     expect(threads[0].comments[0].url).toContain('#comment-1')
   })
 
+  it('reads a multi-line comment\'s first line from the side it anchors on, and none for an outdated one', () => {
+    expect(threads.map((t) => t.startLine)).toEqual([undefined, 80, undefined])
+    const ranged = mapBbComments([{ ...comments[0], inline: { path: 'sync/worker.py', from: null, to: 90, start_from: null, start_to: 86 } }])
+    expect(ranged[0]).toMatchObject({ line: 90, startLine: 86, side: 'new' })
+  })
+
   it('leaves out comments on the whole PR and threads with only deleted comments', () => {
     expect(threads.some((t) => t.path === null)).toBe(false)
     expect(threads.some((t) => t.path === 'sync/config.py')).toBe(false)

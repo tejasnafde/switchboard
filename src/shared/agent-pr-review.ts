@@ -8,6 +8,7 @@
  * card's answer again before anything is posted.
  */
 import {
+  AGENT_COMMENT_MAX_LINES,
   AGENT_REPLY_MAX_CHARS,
   AGENT_REVIEW_MAX_BYTES,
   AGENT_REVIEW_MAX_COMMENTS,
@@ -16,12 +17,15 @@ import {
   type HostWriteReview,
 } from './agent-host-writes'
 import { reviewSubmitProblem, type ReviewEvent } from './pull-request-writes'
-import type { PrChangedFile, PrHost } from './pull-requests'
+import type { DiffLine, PrChangedFile, PrHost } from './pull-requests'
 
 export interface DraftLineComment {
   path: string
   side: 'new' | 'old'
+  /** The last line the comment covers. */
   line: number
+  /** The first line when it covers several; absent for one line. */
+  startLine?: number
   text: string
 }
 
@@ -29,35 +33,57 @@ export type Checked<T> = { ok: true; value: T } | { ok: false; message: string }
 
 /** The longest diff line the card shows; a minified line would push it sideways for nothing. */
 const EXCERPT_LINE_CHARS = 240
+/** Covered lines one excerpt shows before it leaves the middle of a range out. */
+const EXCERPT_MAX_TARGETS = 24
 
-/** "src/a.ts:12", with "(old)" when it is a line of the old side. */
-export function lineLocation(c: Pick<DraftLineComment, 'path' | 'side' | 'line'>): string {
-  return `${c.path}:${c.line}${c.side === 'old' ? ' (old)' : ''}`
-}
-
-/** The target line and up to `radius` diff lines either side of it, inside its hunk. Empty when the line is not in the diff. */
+/**
+ * The lines a comment covers and up to `radius` diff lines either side, inside
+ * their hunk. A range longer than `maxTargets` keeps its first and last lines
+ * around one line saying how many are left out. Empty when the diff does not
+ * show the lines in one hunk.
+ */
 export function diffExcerpt(
   files: readonly PrChangedFile[],
-  target: Pick<DraftLineComment, 'path' | 'side' | 'line'>,
+  target: Pick<DraftLineComment, 'path' | 'side' | 'line' | 'startLine'>,
   radius: number,
+  maxTargets = EXCERPT_MAX_TARGETS,
 ): HostWriteDiffLine[] {
   const file = files.find((f) => f.path === target.path)
   if (!file) return []
+  const start = target.startLine ?? target.line
+  const on = (l: DiffLine) => (target.side === 'old' ? (l.kind !== 'add' ? l.oldLine : null) : (l.kind !== 'del' ? l.newLine : null))
   for (const hunk of file.hunks) {
-    const at = hunk.lines.findIndex((l) =>
-      target.side === 'old' ? l.kind !== 'add' && l.oldLine === target.line : l.kind !== 'del' && l.newLine === target.line,
-    )
-    if (at < 0) continue
-    const targetLine = hunk.lines[at]
-    return hunk.lines.slice(Math.max(0, at - radius), at + radius + 1).map((l) => ({
-      kind: l.kind,
-      text: l.text.length > EXCERPT_LINE_CHARS ? `${l.text.slice(0, EXCERPT_LINE_CHARS)}…` : l.text,
-      oldLine: l.oldLine,
-      newLine: l.newLine,
-      target: l === targetLine,
-    }))
+    const first = hunk.lines.findIndex((l) => on(l) === start)
+    const last = hunk.lines.findIndex((l) => on(l) === target.line)
+    if (first < 0 || last < first) continue
+    const covered = (i: number) => i >= first && i <= last && on(hunk.lines[i]) !== null
+    const shown = (i: number): HostWriteDiffLine => {
+      const l = hunk.lines[i]
+      return {
+        kind: l.kind,
+        text: l.text.length > EXCERPT_LINE_CHARS ? `${l.text.slice(0, EXCERPT_LINE_CHARS)}…` : l.text,
+        oldLine: l.oldLine,
+        newLine: l.newLine,
+        target: covered(i),
+      }
+    }
+    const from = Math.max(0, first - radius)
+    const to = Math.min(hunk.lines.length - 1, last + radius)
+    if (last - first + 1 <= maxTargets) return range(from, to).map(shown)
+    const head = Math.ceil(maxTargets / 2)
+    const tail = maxTargets - head
+    const skipped = last - first + 1 - maxTargets
+    return [
+      ...range(from, first + head - 1).map(shown),
+      { kind: 'context', text: `… ${skipped} more lines …`, oldLine: null, newLine: null, target: false },
+      ...range(last - tail + 1, to).map(shown),
+    ]
   }
   return []
+}
+
+function range(from: number, to: number): number[] {
+  return Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => from + i)
 }
 
 function isLine(value: unknown): value is number {
@@ -74,15 +100,33 @@ export function checkCommentText(value: unknown, what = 'The comment'): Checked<
   return { ok: true, value: text }
 }
 
-/** The target of a line comment as the agent sent it. Whether the diff shows that line is checked against the fresh diff. */
+/**
+ * The target of a line comment as the agent sent it: one line, or `startLine`
+ * to `line` on one side. Whether the diff shows those lines in one hunk is
+ * checked against the fresh diff.
+ */
 export function checkLineTarget(input: Record<string, unknown>): Checked<Omit<DraftLineComment, 'text'>> {
-  const { path, side, line } = input
+  const { path, side, line, startLine } = input
   if (typeof path !== 'string' || !path.trim() || path.startsWith('/') || path.includes('\u0000')) {
     return { ok: false, message: 'Give "path" as the file path the diff shows, relative to the repository root.' }
   }
   if (side !== undefined && side !== 'new' && side !== 'old') return { ok: false, message: '"side" is "new" (added or unchanged lines) or "old" (deleted lines).' }
   if (!isLine(line)) return { ok: false, message: '"line" is a line number from get_pr_diff.' }
-  return { ok: true, value: { path: path.trim(), side: side === 'old' ? 'old' : 'new', line } }
+  const onSide = side === 'old' ? 'old' : 'new'
+  const target: Omit<DraftLineComment, 'text'> = { path: path.trim(), side: onSide, line }
+  for (const key of ['startSide', 'start_side']) {
+    const other = input[key]
+    if (other !== undefined && other !== onSide) {
+      return { ok: false, message: `Both ends of a range are on "side" (${onSide}); a comment cannot start on one side and end on the other. Pick lines of one side.` }
+    }
+  }
+  if (startLine === undefined || startLine === null) return { ok: true, value: target }
+  if (!isLine(startLine)) return { ok: false, message: '"startLine" is the first line number of the range, from get_pr_diff.' }
+  if (startLine > line) return { ok: false, message: `"startLine" (${startLine}) is after "line" (${line}). "line" is the LAST line of the range; swap them.` }
+  if (line - startLine + 1 > AGENT_COMMENT_MAX_LINES) {
+    return { ok: false, message: `Lines ${startLine}-${line} are ${line - startLine + 1} lines; a comment covers at most ${AGENT_COMMENT_MAX_LINES}. Point at the lines that matter.` }
+  }
+  return { ok: true, value: startLine < line ? { ...target, startLine } : target }
 }
 
 const utf8 = new TextEncoder()
@@ -160,7 +204,7 @@ export function reviewFromResponse(
     const text = answers.get(c.id)
     if (text === undefined) continue
     if (text.trim() !== c.text) edited++
-    comments.push({ path: c.path, side: c.side, line: c.line, text: text.trim() })
+    comments.push({ path: c.path, side: c.side, line: c.line, ...(c.startLine !== undefined ? { startLine: c.startLine } : {}), text: text.trim() })
   }
   const problem = reviewVerdictProblem(host, review, verdict, summary, comments)
   if (problem) return { ok: false, message: `${problem} Nothing was posted.` }

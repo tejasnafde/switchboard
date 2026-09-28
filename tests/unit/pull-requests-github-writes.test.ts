@@ -69,16 +69,16 @@ describe('GitHub write requests', () => {
     })
   })
 
-  it('submits a review with pending comments as one pending review, then its event', async () => {
+  it('submits a review with pending comments (a range included) as one pending review, then its event', async () => {
     const { provider, calls } = fakeGh([ok(JSON.stringify({ id: 555, state: 'PENDING' })), ok('{}')])
     await provider.submitReview(ref, {
       event: 'request_changes',
       body: 'Two things.',
-      comments: [{ path: 'src/a.ts', side: 'new', line: 88, body: 'Cap of 0?' }, { path: 'src/b.ts', side: 'new', line: 5, body: 'Negative?' }],
+      comments: [{ path: 'src/a.ts', side: 'new', line: 88, startLine: 80, body: 'Cap of 0?' }, { path: 'src/b.ts', side: 'new', line: 5, body: 'Negative?' }],
     })
     expect(calls[0]).toEqual({
       args: ['api', '--method', 'POST', 'repos/tejasnafde/switchboard/pulls/161/reviews', '--input', '-'],
-      body: { comments: [{ path: 'src/a.ts', line: 88, side: 'RIGHT', body: 'Cap of 0?' }, { path: 'src/b.ts', line: 5, side: 'RIGHT', body: 'Negative?' }] },
+      body: { comments: [{ path: 'src/a.ts', line: 88, side: 'RIGHT', start_line: 80, start_side: 'RIGHT', body: 'Cap of 0?' }, { path: 'src/b.ts', line: 5, side: 'RIGHT', body: 'Negative?' }] },
     })
     expect(calls[1]).toEqual({
       args: ['api', '--method', 'POST', 'repos/tejasnafde/switchboard/pulls/161/reviews/555/events', '--input', '-'],
