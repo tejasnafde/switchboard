@@ -1,0 +1,31 @@
+{
+  "id": 676,
+  "title": "Store footfall snapshots per catchment",
+  "state": "OPEN",
+  "author": { "display_name": "Ravi Kumar", "nickname": "ravi", "uuid": "{ravi}", "account_id": "557058:ravi" },
+  "source": { "branch": { "name": "feat/footfall-snapshots" }, "commit": { "hash": "a1b2c3" } },
+  "destination": { "branch": { "name": "main" }, "commit": { "hash": "d4e5f6" } },
+  "comment_count": 4,
+  "created_on": "2026-09-25T09:00:00+00:00",
+  "updated_on": "2026-09-27T10:30:00+00:00",
+  "links": { "html": { "href": "https://bitbucket.org/geoiq/retail-api/pull-requests/676" } },
+  "participants": [
+    {
+      "user": { "display_name": "Neha Iyer", "nickname": "neha", "uuid": "{neha}", "account_id": "557058:neha" },
+      "role": "REVIEWER",
+      "approved": false,
+      "state": null,
+      "participated_on": null
+    },
+    {
+      "user": { "display_name": "Tejas Nafde", "nickname": "tejas", "uuid": "{me-uuid}", "account_id": "557058:me" },
+      "role": "PARTICIPANT",
+      "approved": false,
+      "state": null,
+      "participated_on": "2026-09-27T10:30:00+00:00"
+    }
+  ],
+  "reviewers": [
+    { "display_name": "Neha Iyer", "nickname": "neha", "uuid": "{neha}", "account_id": "557058:neha" }
+  ]
+}

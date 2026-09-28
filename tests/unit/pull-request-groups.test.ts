@@ -31,13 +31,13 @@ function pr(over: Partial<PrSummary> = {}, number = 1): PrSummary {
     checks: rollupChecks([{ state: 'success' }]),
     reviewers: [],
     approvals: { given: 1, required: 1 },
-    viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false },
+    viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false },
     projectPaths: [],
     ...over,
   }
 }
 
-const reviewer = { isAuthor: false, isRequestedReviewer: true, hasReviewed: false }
+const reviewer = { isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false }
 const person = { login: 'p', displayName: 'p', avatarUrl: null }
 
 describe('prRowStatus', () => {
@@ -53,8 +53,9 @@ describe('prRowStatus', () => {
     ['your draft', { draft: true, checks: rollupChecks([{ state: 'failure' }]) }, 'waiting', 'draft', 'draft'],
     ['your PR, approved, green', {}, 'ready', 'ready', ''],
     ['your PR, approved, no checks at all', { checks: rollupChecks([]) }, 'ready', 'ready', ''],
-    ['someone else\'s you already reviewed', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: true } }, 'waiting', 'waiting', 'you reviewed'],
-    ['someone else\'s, checks running', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: true }, checks: rollupChecks([{ state: 'pending' }]) }, 'waiting', 'running', 'checks running'],
+    ['someone else\'s you already reviewed', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: true, hasCommented: false } }, 'waiting', 'waiting', 'you reviewed'],
+    ['someone else\'s, checks running', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: true, hasCommented: false }, checks: rollupChecks([{ state: 'pending' }]) }, 'waiting', 'running', 'checks running'],
+    ['someone else\'s you only commented on', { viewer: { isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true } }, 'waiting', 'waiting', 'you commented'],
     ['merged yesterday', { state: 'merged', mergedAt: NOW - 24 * HOUR }, 'merged', 'merged', ''],
   ])('%s', (_name, over, group, icon, phrase) => {
     expect(prRowStatus(pr(over), NOW)).toEqual({ group, icon, phrase })

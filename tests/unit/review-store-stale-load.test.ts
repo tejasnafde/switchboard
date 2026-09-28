@@ -9,7 +9,7 @@ const summary = (updatedAt: number): PrSummary => ({
   ref: { host: 'github', owner: 'o', name: 'r', number: 1 }, title: 'PR', url: '', author: { login: 'a', displayName: 'a', avatarUrl: null },
   state: 'open', draft: false, sourceBranch: 'f', targetBranch: 'main', createdAt: 0, updatedAt, mergedAt: null,
   additions: null, deletions: null, changedFiles: null, unresolvedConversations: 0, checks: rollupChecks([]),
-  reviewers: [], approvals: { given: 0, required: null }, viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false }, projectPaths: [],
+  reviewers: [], approvals: { given: 0, required: null }, viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false }, projectPaths: [],
 })
 const list = (updatedAt: number): PrListData => ({ prs: [summary(updatedAt)], sources: [], unsupportedProjects: [], fetchedAt: 0 })
 const detail = (title: string, updatedAt: number): PrDetail => ({ ...summary(updatedAt), title, description: '', headSha: null, mergeBlockers: [], activity: [], checkList: [] })

@@ -12,7 +12,7 @@ const summary = (updatedAt: number): PrSummary => ({
   ref: { host: 'github', owner: 'o', name: 'r', number: 1 }, title: 'PR', url: '', author: { login: 'a', displayName: 'a', avatarUrl: null },
   state: 'open', draft: false, sourceBranch: 'f', targetBranch: 'main', createdAt: 0, updatedAt, mergedAt: null,
   additions: null, deletions: null, changedFiles: null, unresolvedConversations: 1, checks: rollupChecks([]),
-  reviewers: [], approvals: { given: 0, required: null }, viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false }, projectPaths: [],
+  reviewers: [], approvals: { given: 0, required: null }, viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false }, projectPaths: [],
 })
 const list = (updatedAt: number): PrListData => ({ prs: [summary(updatedAt)], sources: [], unsupportedProjects: [], fetchedAt: 0 })
 const thread = (resolved: boolean): PrConversation => ({ id: 'PRRT_1', path: 'a.ts', line: 1, side: 'new', resolved, outdated: false, comments: [] })

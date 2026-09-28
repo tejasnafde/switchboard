@@ -24,7 +24,7 @@ describe('mapGhSummary', () => {
 
   it('marks a PR you were asked to review, and lists a team request as a team reviewer', () => {
     const pr = mapGhSummary(repo, review, 'tejasnafde')
-    expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: true, hasReviewed: false })
+    expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false })
     expect(pr.reviewers.map((r) => [r.id, r.person.displayName, r.state, r.requested])).toEqual([
       ['pankaj', 'pankaj', 'commented', false],
       ['tejasnafde', 'Tejas Nafde', 'pending', true],
@@ -38,6 +38,28 @@ describe('mapGhSummary', () => {
     expect(pr.author.displayName).toBe('Backend Dev')
     expect(pr.authorId).toBe(pr.author.login)
     expect(pr.createdAt).toBe(Date.parse('2026-09-27T09:00:00Z'))
+  })
+
+  it('tells a COMMENTED review apart from a verdict', () => {
+    // pankaj left a COMMENTED review on #161.
+    expect(mapGhSummary(repo, review, 'pankaj').viewer).toEqual({ isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true })
+    const approved = { ...review, latestReviews: { nodes: [{ state: 'APPROVED', author: { login: 'pankaj' } }] } }
+    expect(mapGhSummary(repo, approved, 'pankaj').viewer).toMatchObject({ hasReviewed: true, hasCommented: false })
+  })
+
+  it('maps a merged PR read with the light fragment: no mergeable, threads, checks or requests', () => {
+    const merged = {
+      number: 150, title: 'Light', url: 'https://github.com/tejasnafde/switchboard/pull/150', state: 'MERGED' as const, isDraft: false,
+      createdAt: '2026-09-25T00:00:00Z', updatedAt: '2026-09-26T00:00:00Z', mergedAt: '2026-09-26T00:00:00Z',
+      headRefName: 'fix/light', baseRefName: 'main', additions: 3, deletions: 1, changedFiles: 1,
+      author: { login: 'akshaya', name: 'Akshaya', avatarUrl: null },
+      latestReviews: { nodes: [{ state: 'COMMENTED', author: { login: 'tejasnafde', avatarUrl: null } }] },
+    }
+    const pr = mapGhSummary(repo, merged, 'tejasnafde')
+    expect(pr).toMatchObject({ state: 'merged', mergedAt: Date.parse('2026-09-26T00:00:00Z'), mergeConflicts: false, unresolvedConversations: null, additions: 3 })
+    expect(pr.checks.state).toBe('none')
+    expect(pr.approvals).toEqual({ given: 0, required: null })
+    expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true })
   })
 
   it('matches the viewer case-insensitively and rolls failed and running checks up', () => {
@@ -193,6 +215,10 @@ describe('GitHubProvider', () => {
     const q = buildListQuery([repo])
     expect(q).toContain('r0: repository(owner: "tejasnafde", name: "switchboard")')
     expect(q).toContain('fragment Pr on PullRequest')
+    // Merged rows use the light fragment: nothing GitHub has to compute or page through.
+    const mergedFragment = q.slice(q.indexOf('fragment MergedPr'))
+    expect(q).toContain('merged: pullRequests(states: MERGED, first: 15, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ...MergedPr } }')
+    for (const heavy of ['mergeable', 'reviewThreads', 'statusCheckRollup', 'reviewRequests']) expect(mergedFragment).not.toContain(heavy)
   })
 
   it('throws a classified error when gh fails without data', async () => {

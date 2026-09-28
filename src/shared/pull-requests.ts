@@ -92,7 +92,10 @@ export interface PrViewer {
   isAuthor: boolean
   /** Asked to review and has not submitted a review since. */
   isRequestedReviewer: boolean
+  /** Approved, requested changes, or had such a review dismissed. */
   hasReviewed: boolean
+  /** Took part without a verdict: commented (GitHub: a COMMENTED review; Bitbucket: a participant entry). */
+  hasCommented: boolean
 }
 
 export interface PrSummary {

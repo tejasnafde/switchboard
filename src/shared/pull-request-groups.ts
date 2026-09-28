@@ -52,6 +52,13 @@ function approvalsPhrase(pr: PrSummary): string {
   return given > 0 ? plural(given, 'approval') : 'waiting for review'
 }
 
+/** Someone else's open PR: what you did on it, else how its approvals stand. */
+function viewerPhrase(pr: PrSummary): string {
+  if (pr.viewer.hasReviewed) return 'you reviewed'
+  if (pr.viewer.hasCommented) return 'you commented'
+  return approvalsPhrase(pr)
+}
+
 /** `null` when the PR is not listed at all. */
 export function prRowStatus(pr: PrSummary, now: number): PrRowStatus | null {
   if (pr.state === 'merged') {
@@ -64,7 +71,7 @@ export function prRowStatus(pr: PrSummary, now: number): PrRowStatus | null {
     if (pr.viewer.isRequestedReviewer) return { group: 'needs-you', icon: 'review', phrase: 'your review' }
     if (pr.mergeConflicts) return { group: 'waiting', icon: 'conflict', phrase: 'merge conflicts' }
     if (pr.checks.state === 'pending') return { group: 'waiting', icon: 'running', phrase: 'checks running' }
-    return { group: 'waiting', icon: 'waiting', phrase: pr.viewer.hasReviewed ? 'you reviewed' : approvalsPhrase(pr) }
+    return { group: 'waiting', icon: 'waiting', phrase: viewerPhrase(pr) }
   }
 
   if (pr.draft) return { group: 'waiting', icon: 'draft', phrase: 'draft' }

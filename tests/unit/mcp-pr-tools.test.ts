@@ -54,7 +54,7 @@ function detail(): PrDetail {
     sourceBranch: 'backoff', targetBranch: 'main', createdAt: 0, updatedAt: 0, mergedAt: null,
     additions: 1, deletions: 1, changedFiles: 1, unresolvedConversations: 1,
     checks: { state: 'failure', total: 1, passed: 0, failed: 1, pending: 0 },
-    reviewers: [], approvals: { given: 0, required: 1 }, viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false },
+    reviewers: [], approvals: { given: 0, required: 1 }, viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false },
     projectPaths: ['/p'], description: 'body', headSha: 'abc', mergeBlockers: [{ kind: 'checks_failed', label: 'Checks failed' }],
     mergeStrategies: ['merge_commit'], activity: [], checkList: [failedCheck],
   }
@@ -523,7 +523,7 @@ describe('draft_review', () => {
       { path: 'sync/worker.py', line: 82, text: 'Jitter?' },
     ],
   }
-  const reviewer = { viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false } }
+  const reviewer = { viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false } }
 
   it('opens ONE card with every comment, its place and a diff excerpt, and no verdict chosen', async () => {
     const { call, events } = setup({ detail: reviewer, answer: deny })
@@ -706,7 +706,7 @@ describe('draft_review', () => {
 })
 
 describe('replies on a pull request the user did not write', () => {
-  const others = { viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: true }, author: { login: 'akshaya', displayName: 'Akshaya', avatarUrl: null } }
+  const others = { viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: true, hasCommented: false }, author: { login: 'akshaya', displayName: 'Akshaya', avatarUrl: null } }
 
   it('replies and resolves, since neither the link nor the author rules look at who wrote it', async () => {
     const { call, calls } = setup({ detail: others, answer: approve({ text: 'Agreed, changed.', resolve: true }) })

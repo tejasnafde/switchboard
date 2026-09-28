@@ -1,0 +1,63 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "reviews-list-reliability",
+  "summary": "The Reviews list no longer loses GitHub to one slow request, and keeps pull requests the user only commented on. GitHub: merged rows use a light MergedPr fragment (no mergeable, review threads, checks or review requests; mapGhSummary already reads those as unknown or empty), batches hold 4 repositories instead of 8, and a batch that fails with a 5xx, GraphQL 'Something went wrong', a body cut short (gh's 'unexpected end of JSON input' / 'unexpected EOF', or exit 0 with no JSON) or gh killed by the 30 s timeout is split in half and retried, down to one repository, which gets the existing one retry after 1 s and then its own error on its card while the rest of GitHub lists. Signed-out, offline and rate-limit failures still fail the host. The service log line 'listing pull requests failed' and the split log now carry the error message. Viewer: a new PrViewer.hasCommented flag (GitHub: a COMMENTED review by the viewer in latestReviews, which now no longer counts as hasReviewed; Bitbucket: the viewer as a participant with role PARTICIPANT or a participated_on time and no verdict) is part of involvesViewer, and the row of someone else's open PR says 'you commented' in Waiting on others.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/ReviewsView.tsx",
+        "tests/unit/pull-request-groups.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_reviews",
+      "followUpRelease": "mobile-v0.5.0, with the Reviews tab. The phone has no Reviews screen (apps/mobile has no pull request code), so it lists nothing. The new PrViewer.hasCommented field is additive and the grouping rule that reads it lives in src/shared, so the Reviews tab gets the same row phrase when it ships."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_reviews",
+      "followUpRelease": "Native Android 0.6.0, with the Reviews destination. No Android code reads pull requests; nothing unfinished is reachable."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pull-requests.ts",
+        "src/shared/pull-request-groups.ts",
+        "src/main/pull-requests/github.ts",
+        "src/main/pull-requests/github-map.ts",
+        "src/main/pull-requests/bitbucket-map.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/pull-requests/demo.ts",
+        "tests/unit/pull-requests-github-retry.test.ts",
+        "tests/unit/pull-requests-github-map.test.ts",
+        "tests/unit/pull-requests-bitbucket-map.test.ts",
+        "tests/unit/pull-request-service.test.ts",
+        "tests/fixtures/pull-requests/bitbucket-pullrequest-commented.json"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored: the list is read from the host on every refresh and hasCommented is computed per read. No table, column or setting changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, update channel or wire-protocol frame change. PrViewer.hasCommented is an added field of an existing response; a renderer older than the backend ignores it, and a newer renderer against an older backend reads it as undefined, which the grouping treats as false, so such a PR simply is not listed, as before."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and npm test passed.",
+      "vitest with a fake gh (no network): a 3-repository batch answered with HTTP 504 splits into (a, b) then a, b and c and lists all three, never retrying the whole batch; a batch answered with 'unexpected end of JSON input', and one where gh exits 0 with half a body, split and list; one repository that keeps failing is tried twice on its own and gets an 'unknown' error with gh's message while the others list; five repositories go as 4 + 1; a signed-out gh throws token_rejected after one call without splitting. isTransientGhFailure accepts the truncated-body messages and the runner's timeout code. The list query's merged fragment carries none of mergeable, reviewThreads, statusCheckRollup, reviewRequests; a merged PR with only those fields maps (not conflicting, no checks, no threads, you commented).",
+      "vitest mappers: GitHub COMMENTED review -> hasCommented, APPROVED -> hasReviewed; a Bitbucket PR shaped like geoiqadmin/geoiq_retail_api_prod_v2#676 (someone else's, another reviewer, the viewer a PARTICIPANT with participated_on) -> hasCommented, while the requested reviewer who has not taken part and a participant who approved are not commenters. Service: involvesViewer keeps a commenter's PR and list() returns it. Grouping: someone else's open PR you commented on is Waiting on others, 'you commented'."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live gh or Bitbucket call was made; the real HTTP 504 and the truncated body were not reproduced, only their recorded stderr.",
+      "The desktop row copy was not looked at in a running app; no visual-regression screen changes (the demo data has no commenter-only PR).",
+      "React Native and native Android are staged; nothing was run on a phone."
+    ]
+  }
+}
