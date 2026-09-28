@@ -724,7 +724,13 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
   const linkCreated = (access: AgentPullRequestAccess, repo: RepoRef, pr: CreatedPr, created: boolean): { ref: PrRef; linked: string } => {
     const ref: PrRef = { ...repo, number: pr.number }
     const ok = access.linkToChat(ctx.chatId, ref, created)
-    return { ref, linked: ok ? 'It is linked to this chat and shows in Reviews.' : 'Linking it to this chat failed; the user can link it with Link to chat in Reviews.' }
+    return {
+      ref,
+      // The PR tools act only on linked PRs, so they are offered only when the link held.
+      linked: ok
+        ? 'It is linked to this chat and shows in Reviews, and the pull request tools can act on it now.'
+        : 'Linking it to this chat failed, so the pull request tools cannot act on it yet: ask the user to use Link to chat in Reviews.',
+    }
   }
 
   const createTool: McpTool = {
@@ -848,8 +854,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         description.value !== draft.description ? 'the description' : '',
       ].filter(Boolean)
       return toolText(
-        `Opened ${repoLabel} #${ref.number}: ${created.data.url} (${source} -> ${target}). ${linked} ` +
-        `The pull request tools can act on it now.${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}`,
+        `Opened ${repoLabel} #${ref.number}: ${created.data.url} (${source} -> ${target}). ${linked}` +
+        `${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}`,
       )
     },
   }

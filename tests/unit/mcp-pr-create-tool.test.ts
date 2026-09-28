@@ -138,6 +138,8 @@ describe('create_pull_request: defaults and the card', () => {
     expect(text(result)).toContain('Opened acme/app #42: https://github.com/acme/app/pull/42')
     expect(text(result)).toContain('Linking it to this chat failed')
     expect(text(result)).not.toContain('shows in Reviews')
+    expect(text(result)).toContain('cannot act on it yet')
+    expect(text(result)).not.toContain('can act on it now')
   })
 
   it('uses the project path when the session has no cwd, and explicit branches as given', async () => {
