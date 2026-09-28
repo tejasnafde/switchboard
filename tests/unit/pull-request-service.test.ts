@@ -87,6 +87,23 @@ describe('PullRequestService.list', () => {
     expect(result.data.prs.map((p) => p.ref.host)).toEqual(['bitbucket'])
   })
 
+  it('does not read a hidden repository, and lists it as hidden', async () => {
+    const d = deps({ hiddenRepos: () => new Set(['bitbucket:geoiq/ssg-bot-v2']) })
+    const result = await new PullRequestService(d).list()
+    if (!result.ok) throw new Error('expected ok')
+    expect(d.bitbucket()?.list).not.toHaveBeenCalled()
+    expect(result.data.sources.map((s) => s.repo.name)).toEqual(['switchboard'])
+    expect(result.data.hiddenRepos).toEqual([{ host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2' }])
+    expect(result.data.prs.map((p) => p.ref.host)).toEqual(['github'])
+  })
+
+  it('reads every repository when the hidden list cannot be read', async () => {
+    const result = await new PullRequestService(deps({ hiddenRepos: () => { throw new Error('db locked') } })).list()
+    if (!result.ok) throw new Error('expected ok')
+    expect(result.data.sources).toHaveLength(2)
+    expect(result.data.hiddenRepos).toEqual([])
+  })
+
   it('re-reads remotes at most every 5 minutes', async () => {
     let now = 0
     const readRemotes = vi.fn(async (path: string) => REMOTES[path])

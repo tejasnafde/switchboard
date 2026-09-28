@@ -4,9 +4,10 @@
  * Pure, so the rules are tested without rendering.
  */
 import { MERGE_STRATEGY_LABEL } from '@shared/pull-request-writes'
-import { HOST_CAPABILITIES, PR_HOST_LABEL, type MergeStrategy, type PrCheck, type PrError, type PrListData, type PrSummary } from '@shared/pull-requests'
+import { groupRepoFailures, isHideableRepoError, type RepoFailureGroup } from '@shared/pull-request-hidden-repos'
+import { HOST_CAPABILITIES, PR_HOST_LABEL, type MergeStrategy, type PrCheck, type PrError, type PrListData, type PrSummary, type RepoRef } from '@shared/pull-requests'
 
-export type ReviewFixAction = 'settings' | 'retry' | null
+export type ReviewFixAction = 'settings' | 'retry' | 'hide-repos' | null
 
 export interface ReviewNotice {
   id: string
@@ -14,6 +15,8 @@ export interface ReviewNotice {
   fix: string
   action: ReviewFixAction
   actionLabel?: string
+  /** `hide-repos`: the repositories the card names. */
+  repos?: RepoRef[]
 }
 
 function clock(ms: number): string {
@@ -54,6 +57,59 @@ export function describePrError(error: PrError): ReviewNotice {
     case 'unknown':
       return { id, line: error.message, fix: 'Retry, or check the log for details.', action: 'retry', actionLabel: 'Retry' }
   }
+}
+
+/** Names past this many per owner collapse into "and N more". */
+const NAMES_PER_OWNER = 6
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
+/**
+ * One card for the repositories a host could not read for one reason:
+ * "Cannot see 3 repositories in geoiq-staging: a, b, c", every owner named,
+ * and one line saying what to do, with a button that hides them.
+ */
+export function describeRepoFailures(group: RepoFailureGroup): ReviewNotice {
+  const verb = group.kind === 'forbidden' ? 'Not allowed to read' : 'Cannot see'
+  const owners = group.owners.map((o, i) => {
+    const shown = o.names.slice(0, NAMES_PER_OWNER).join(', ')
+    const more = o.names.length > NAMES_PER_OWNER ? ` and ${o.names.length - NAMES_PER_OWNER} more` : ''
+    const count = i === 0 ? plural(o.names.length, 'repository', 'repositories') : String(o.names.length)
+    return `${count} in ${o.owner}: ${shown}${more}`
+  })
+  const place = group.host === 'bitbucket' ? 'workspace' : 'owner'
+  const that = group.owners.length === 1 ? `that ${place}` : `those ${place}s`
+  const these = group.repos.length === 1 ? 'this repository' : 'these repositories'
+  const account = group.host === 'bitbucket' ? "The API token's account" : 'The gh account'
+  const fix = group.kind === 'forbidden'
+    ? `${PR_HOST_LABEL[group.host]} refused this account for ${that} (SSO or an IP allow list); authorize it, or hide ${these}.`
+    : `${account} needs access to ${that}, or hide ${these}.`
+  return {
+    id: `${group.host}:${group.kind}`,
+    line: `${verb} ${owners.join('; ')}.`,
+    fix,
+    action: 'hide-repos',
+    actionLabel: group.repos.length === 1 ? 'Hide this repository' : 'Hide these repositories',
+    repos: group.repos,
+  }
+}
+
+/** The confirm before hiding repositories names them and says how to bring them back. */
+export function hideReposConfirmCopy(repos: readonly RepoRef[]): { title: string; body: string; confirmLabel: string } {
+  const names = repos.map((r) => `${r.owner}/${r.name}`).join(', ')
+  const hosts = [...new Set(repos.map((r) => PR_HOST_LABEL[r.host]))].join(' or ')
+  return {
+    title: repos.length === 1 ? 'Hide this repository from Reviews?' : `Hide ${repos.length} repositories from Reviews?`,
+    body: `Reviews stops reading ${names}. Nothing changes on ${hosts}. Show ${repos.length === 1 ? 'it' : 'them'} again from the hidden line under the list.`,
+    confirmLabel: 'Hide',
+  }
+}
+
+/** The line under the list: "3 repositories hidden". */
+export function hiddenReposLabel(count: number): string {
+  return `${plural(count, 'repository', 'repositories')} hidden`
 }
 
 /** One line under a write control that failed: the reason, and for account or network trouble, the fix. */
@@ -102,6 +158,8 @@ export function reviewListState(data: PrListData | null, error: PrError | null):
   if (error) return { kind: 'blocked', notice: describePrError(error) }
   if (!data) return { kind: 'loading' }
   if (data.sources.length === 0) {
+    // Every repository is hidden: the list is empty on purpose, and the hidden line brings them back.
+    if ((data.hiddenRepos?.length ?? 0) > 0) return { kind: 'ready', notices: [] }
     return {
       kind: 'blocked',
       notice: data.unsupportedProjects.length === 0
@@ -109,12 +167,17 @@ export function reviewListState(data: PrListData | null, error: PrError | null):
         : { id: 'unsupported', line: 'None of your projects has a GitHub or Bitbucket remote.', fix: 'Add one with git remote add origin <url>, then retry.', action: 'retry', actionLabel: 'Retry' },
     }
   }
-  // One notice per host and reason, however many repositories share it.
+  // One notice per host and reason, however many repositories share it. A
+  // repository the account cannot see is named, so the user can hide it.
   const notices = new Map<string, ReviewNotice>()
   for (const source of data.sources) {
-    if (!source.error) continue
+    if (!source.error || isHideableRepoError(source.error)) continue
     const notice = describePrError(source.error)
     if (!notices.has(notice.id)) notices.set(notice.id, notice)
+  }
+  for (const group of groupRepoFailures(data.sources)) {
+    const notice = describeRepoFailures(group)
+    notices.set(notice.id, notice)
   }
   const failedAll = data.sources.every((s) => s.error)
   if (failedAll && notices.size === 1 && data.prs.length === 0) return { kind: 'blocked', notice: [...notices.values()][0] }

@@ -1,0 +1,74 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "reviews-hidden-repos",
+  "summary": "Reviews host errors. GitHub: a read (list, detail, threads, checks, files, reviewer candidates, the login) that gh fails with HTTP 500/502/503/504, or GraphQL 'Something went wrong while executing your query', on stderr is tried once more after 1 s and logged (isTransientGhFailure, GitHubProvider.read); writes are never re-sent. Repositories the account cannot see (not_found, or forbidden: a GitHub organisation refusing the token via GraphQL FORBIDDEN) get one card per host and kind naming every repository grouped by workspace or owner, with one line saying what to do and 'Hide these repositories' behind a confirm. Hidden repositories are stored in the backend table pull_request_hidden_repos (keyed by repoKey) and the service skips them before asking the host, so they cost no request per refresh; the list returns them as PrListData.hiddenRepos and the list shows 'N repositories hidden · Show', a popover that shows one or all again. Rate limits and offline errors are never offered for hiding.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/ReviewsView.tsx",
+        "src/renderer/components/reviews/review-states.ts",
+        "src/renderer/components/reviews/review-ui.tsx",
+        "src/renderer/stores/review-store.ts",
+        "src/preload/index.ts",
+        "e2e/review-hidden-repos.e2e.mjs",
+        "tests/unit/review-states.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_reviews",
+      "followUpRelease": "mobile-v0.5.0, with the Reviews tab. The phone has no Reviews screen and shows none of these error cards (apps/mobile has no pull request code). The new list field hiddenRepos is additive and the two new channels are local and open to a phone like pull-requests:hide, so the Reviews tab can offer the same card when it ships."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_reviews",
+      "followUpRelease": "Native Android 0.6.0, with the Reviews destination. No Android code reads pull requests or shows these cards; nothing unfinished is reachable."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pull-request-hidden-repos.ts",
+        "src/shared/pull-requests.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/ipc/pull-requests.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/pull-requests/github.ts",
+        "src/main/pull-requests/github-map.ts",
+        "src/main/pull-requests/demo.ts",
+        "tests/unit/pull-request-hidden-repos.test.ts",
+        "tests/unit/pull-requests-github-retry.test.ts",
+        "tests/unit/pull-request-service.test.ts",
+        "tests/unit/pull-requests-hidden-ipc.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/pull-request-hidden.ts",
+        "tests/unit/pull-requests-hidden-ipc.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, update channel or wire-protocol frame change. The new table is CREATE TABLE IF NOT EXISTS in the existing pull_request_hidden schema step and an older build ignores it. pull-requests:hide-repos and unhide-repos are additive request/response channels; an older backend answers them with the unknown-channel error, which the renderer shows as a notice, and its list has no hiddenRepos field, which the renderer reads as nothing hidden."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and npm test passed.",
+      "vitest: isTransientGhFailure on 500/502/503/504 and the GraphQL message, not 501/404/401/rate limit, success, ENOENT or stdout; the list, login and files retried once after the delay (fake timers) and failing as before when the retry fails; no retry for 404 or a signed-out gh; a REST write and a GraphQL mutation never re-sent; GraphQL FORBIDDEN mapped to forbidden. Grouping by host and kind with owners in order and each repository once; the card copy for one and several owners, the cap on long lists, the forbidden fix line, the confirm and hidden line copy; a rate limit kept as its own Retry card; an all-hidden list shown empty rather than 'No projects yet'. The service does not call the provider for a hidden repository and reads all when the hidden list fails. The IPC handlers over the demo provider with SB_DEMO_REPO_ERRORS: the two 404ing repositories listed, then skipped once hidden; hide-repos / unhide-repos validation and a failed save answered with a reason.",
+      "e2e/review-hidden-repos.e2e.mjs (new) against the demo provider: the card names the workspace and both repositories and fits the list column, Cancel keeps it, Hide removes it and counts '2 repositories hidden', a fresh list read skips them, Show brings one back at a time. 11/11 passed. e2e/review-writes.e2e.mjs 37/37 still passes.",
+      "SB_VISUAL_SCOPE=screens passed without updating: no covered screen changed (the demo adds the failing workspace only with SB_DEMO_REPO_ERRORS=1)."
+    ],
+    "hardware": [
+      "The e2e's card, confirm and popover screenshots were read by eye on this Mac (dark theme)."
+    ],
+    "notExercised": [
+      "No live gh or Bitbucket call was made; a real 502 and a real geoiq-staging 404 were not reproduced, only their recorded shapes.",
+      "The SQL of pull_request_hidden_repos is not run under vitest (better-sqlite3 cannot load there); it is exercised by the e2e against the real database.",
+      "React Native and native Android are staged; nothing was run on a phone."
+    ]
+  }
+}

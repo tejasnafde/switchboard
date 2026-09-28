@@ -297,6 +297,8 @@ export interface PrListData {
   fetchedAt: number
   /** `prKey`s the user hid from Reviews (local only, `pull-request-groups.ts` says when one comes back). */
   hidden: string[]
+  /** Repositories of the user's projects hidden from Reviews, which the list did not read. Absent from an older backend. */
+  hiddenRepos?: RepoRef[]
 }
 
 // ─── Source control accounts ──────────────────────────────────────

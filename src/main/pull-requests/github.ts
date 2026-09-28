@@ -16,6 +16,7 @@ import { createMainLogger } from '../logger'
 import {
   classifyGhError,
   classifyGhWriteError,
+  isTransientGhFailure,
   mapGhCandidates,
   mapGhChecks,
   mapGhDetail,
@@ -50,6 +51,8 @@ const MERGED_PER_REPO = 15
 /** Repositories per GraphQL request; keeps one request's cost well under the node limit. */
 const REPOS_PER_QUERY = 8
 const MAX_FILE_PAGES = 3
+/** Pause before the one retry of a read GitHub answered with a 5xx. */
+const READ_RETRY_DELAY_MS = 1_000
 
 export const defaultGhRunner: GhRunner = (args, opts = {}) =>
   new Promise((resolve) => {
@@ -162,11 +165,23 @@ function parseJson<T>(text: string): T | null {
 export class GitHubProvider implements PullRequestProvider {
   readonly host = 'github' as const
 
-  constructor(private readonly run: GhRunner = defaultGhRunner) {}
+  constructor(
+    private readonly run: GhRunner = defaultGhRunner,
+    private readonly retryDelayMs = READ_RETRY_DELAY_MS,
+  ) {}
+
+  /** A read, tried once more after a pause when GitHub answered with a 5xx. Writes go through `run` directly. */
+  private async read(args: string[]): Promise<GhRunResult> {
+    const res = await this.run(args)
+    if (!isTransientGhFailure(res)) return res
+    log.warn('GitHub read failed with a server error, retrying once', { endpoint: args[1], stderr: res.stderr.trim().slice(0, 200) })
+    await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs))
+    return this.run(args)
+  }
 
   /** The signed-in login, or the classified reason there is none. */
   async viewerLogin(): Promise<string> {
-    const res = await this.run(['api', 'user', '--jq', '.login'])
+    const res = await this.read(['api', 'user', '--jq', '.login'])
     if (res.code !== 0) throw new PrHostError(classifyGhError(res))
     return res.stdout.trim()
   }
@@ -177,7 +192,7 @@ export class GitHubProvider implements PullRequestProvider {
     for (const [key, value] of Object.entries(vars)) {
       args.push(typeof value === 'number' ? '-F' : '-f', `${key}=${value}`)
     }
-    const res = await this.run(args)
+    const res = await this.read(args)
     const body = parseJson<GraphqlResponse<T>>(res.stdout)
     if (res.code !== 0 && !body?.data) {
       const message = body?.errors?.map((e) => e.message).join('; ')
@@ -206,7 +221,9 @@ export class GitHubProvider implements PullRequestProvider {
         if (!row) {
           const reason = body.errors?.find((e) => e.path?.[0] === `r${i}`)
           log.warn('repository missing from GitHub response', { repo: repoKey(repo), reason: reason?.message })
-          out.push({ repo, prs: [], error: { kind: 'not_found', host: 'github', message: reason?.message ?? 'GitHub could not find this repository.' } })
+          // FORBIDDEN is an organisation that refuses the token (SAML SSO, an IP allow list).
+          const kind = reason?.type === 'FORBIDDEN' ? 'forbidden' : 'not_found'
+          out.push({ repo, prs: [], error: { kind, host: 'github', message: reason?.message ?? 'GitHub could not find this repository.' } })
           return
         }
         const prs = [...row.open.nodes, ...row.merged.nodes].map((pr) => mapGhSummary(repo, pr, viewer))
@@ -238,7 +255,7 @@ export class GitHubProvider implements PullRequestProvider {
   async files(ref: PrRef): Promise<PrChangedFile[]> {
     const all: GhPullFile[] = []
     for (let page = 1; page <= MAX_FILE_PAGES; page++) {
-      const res = await this.run(['api', `repos/${ref.owner}/${ref.name}/pulls/${ref.number}/files?per_page=100&page=${page}`])
+      const res = await this.read(['api', `repos/${ref.owner}/${ref.name}/pulls/${ref.number}/files?per_page=100&page=${page}`])
       if (res.code !== 0) throw new PrHostError(classifyGhError(res))
       const files = parseJson<GhPullFile[]>(res.stdout) ?? []
       all.push(...files)
@@ -249,7 +266,7 @@ export class GitHubProvider implements PullRequestProvider {
 
   /** A list read the token may not be allowed (collaborators need push access, teams an organisation repo): refused means none. */
   private async optionalList<T>(path: string): Promise<T[]> {
-    const res = await this.run(['api', `${path}?per_page=100`])
+    const res = await this.read(['api', `${path}?per_page=100`])
     if (res.code === 0) return parseJson<T[]>(res.stdout) ?? []
     const error = classifyGhError(res)
     if (error.kind === 'token_rejected' || error.kind === 'gh_missing' || error.kind === 'offline') throw new PrHostError(error)

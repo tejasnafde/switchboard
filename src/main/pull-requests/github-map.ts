@@ -406,6 +406,18 @@ export function classifyGhError(err: { code?: string | number | null; stderr?: s
   return { kind: 'unknown', host: 'github', message: firstLine.trim().slice(0, 200) }
 }
 
+/**
+ * A server-side failure worth one more try: gh's `HTTP 500/502/503/504`, or
+ * GitHub's GraphQL "Something went wrong while executing your query", which
+ * is how it reports a timed-out resolver. Only stderr is read: stdout can
+ * hold PR text that mentions anything. Reads only; a write is never re-sent.
+ */
+export function isTransientGhFailure(res: { code?: string | number | null; stderr?: string }): boolean {
+  if (res.code === 0 || res.code === 'ENOENT') return false
+  const text = res.stderr ?? ''
+  return /HTTP 50[0234]\b/.test(text) || /something went wrong while executing your query/i.test(text)
+}
+
 interface GhErrorBody {
   message?: string
   errors?: Array<{ type?: string; message?: string } | string>

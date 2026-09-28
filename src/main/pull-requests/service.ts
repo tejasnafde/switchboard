@@ -63,6 +63,8 @@ export interface PullRequestServiceDeps {
   /** `null` when no Bitbucket account is usable; `bitbucketState` says why. */
   bitbucket(): PullRequestProvider | null
   bitbucketState(): BitbucketAccountState
+  /** `repoKey`s hidden from Reviews: the list skips them without asking the host. */
+  hiddenRepos?(): ReadonlySet<string>
   now?: () => number
 }
 
@@ -135,10 +137,12 @@ export class PullRequestService {
   async list(): Promise<PrResult<PrListData>> {
     try {
       const { repos, unsupportedProjects } = await this.detect()
+      const hiddenKeys = this.hiddenRepoKeys()
+      const hiddenRepos = [...repos.values()].filter((e) => hiddenKeys.has(repoKey(e.repo))).map((e) => e.repo)
       const sources: PrSource[] = []
       const prs: PrSummary[] = []
       for (const host of ['github', 'bitbucket'] as const) {
-        const entries = [...repos.values()].filter((e) => e.repo.host === host)
+        const entries = [...repos.values()].filter((e) => e.repo.host === host && !hiddenKeys.has(repoKey(e.repo)))
         if (entries.length === 0) continue
         const provider = this.provider(host)
         const blocked = this.accountError(host)
@@ -160,10 +164,20 @@ export class PullRequestService {
           for (const e of entries) sources.push({ repo: e.repo, projectPaths: e.projectPaths, error })
         }
       }
-      return { ok: true, data: { prs, sources, unsupportedProjects, fetchedAt: this.now(), hidden: [] } }
+      return { ok: true, data: { prs, sources, unsupportedProjects, fetchedAt: this.now(), hidden: [], hiddenRepos } }
     } catch (err) {
       log.error('listing pull requests failed', err)
       return { ok: false, error: toPrError(err, null) }
+    }
+  }
+
+  private hiddenRepoKeys(): ReadonlySet<string> {
+    try {
+      return this.deps.hiddenRepos?.() ?? new Set()
+    } catch (err) {
+      // Reading them all is the safe side: a hidden repository shows its error card again.
+      log.warn('reading hidden repositories failed', err)
+      return new Set()
     }
   }
 

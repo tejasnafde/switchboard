@@ -20,6 +20,7 @@ import type {
   PrRef,
   PrResult,
   PrReviewerCandidate,
+  RepoRef,
   SourceControlStatus,
   SourceControlTestResult,
 } from '@shared/pull-requests'
@@ -561,6 +562,9 @@ const api = {
     /** Local only: hides the PR from Reviews on this backend until it needs you again. */
     hide: (ref: PrRef): Promise<{ ok: boolean; message?: string }> => transport.invoke(PullRequestChannels.HIDE, ref),
     unhide: (ref: PrRef): Promise<{ ok: boolean; message?: string }> => transport.invoke(PullRequestChannels.UNHIDE, ref),
+    /** Local only: Reviews stops reading these repositories on this backend until they are shown again. */
+    hideRepos: (repos: RepoRef[]): Promise<{ ok: boolean; message?: string }> => transport.invoke(PullRequestChannels.HIDE_REPOS, repos),
+    unhideRepos: (repos: RepoRef[]): Promise<{ ok: boolean; message?: string }> => transport.invoke(PullRequestChannels.UNHIDE_REPOS, repos),
   },
 
   sourceControl: {
