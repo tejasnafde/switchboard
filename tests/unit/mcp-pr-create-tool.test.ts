@@ -263,10 +263,22 @@ describe('create_pull_request: modes and the budget', () => {
     expect(s.access.remoteHasBranch).not.toHaveBeenCalled()
   })
 
-  it('full access still shows the card', async () => {
-    const s = setup({ mode: 'full-access', answer: approve() })
-    await s.call({ title: 'T' })
-    expect(opened(s.events)).toHaveLength(1)
+  it('full access opens the pull request without a card, and still counts it', async () => {
+    const budget = new AgentWriteBudget(1)
+    const s = setup({ mode: 'full-access', budget })
+    const result = await s.call({ title: 'T', description: 'Body' })
+    expect(opened(s.events)).toHaveLength(0)
+    expect(s.creates).toEqual([expect.objectContaining({ title: 'T', description: 'Body\n\nvia Switchboard' })])
+    expect(text(result)).toContain('Opened acme/app #42')
+    expect((await s.call({ title: 'T2' })).isError).toBe(true)
+  })
+
+  it('every other mode except plan shows the card', async () => {
+    for (const mode of ['sandbox', 'accept-edits', 'auto'] as const) {
+      const s = setup({ mode, answer: approve() })
+      await s.call({ title: 'T' })
+      expect(opened(s.events)).toHaveLength(1)
+    }
   })
 
   it('counts against the write budget', async () => {
