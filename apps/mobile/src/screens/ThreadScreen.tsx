@@ -248,7 +248,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         // Mirrors the desktop resume path: the conversation id doubles as the
         // resumeSessionId so the Claude adapter can --resume the JSONL chain.
         // Failure rejects (no { ok } envelope) and routes to the error feed.
-        await client.startSession({
+        const started = await client.startSession({
           threadId,
           provider,
           // `worktreePath ?? projectPath`, same as the desktop. Without it the
@@ -263,6 +263,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
           model: loadedMeta?.model ?? undefined,
           instanceId: loadedMeta?.providerInstanceId ?? undefined,
         })
+        // A reattach to a live session answers with its status and emits
+        // none, so a cached chat kept 'connecting' until its next turn.
+        useChatStore.getState().ingest(connectionId, { type: 'status', threadId, status: started.status })
       } catch (err) {
         startedKeyRef.current = null
         reportError(err)

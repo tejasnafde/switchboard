@@ -429,6 +429,25 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `reattach to a live session replaces the cached connecting status`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(
+            remote,
+            cached = ThreadState(feed = listOf(FeedItem.User("cached", "saved", 1)), status = "connecting"),
+            projectPath = "/repo",
+        )
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+        val ready = coordinator.state.value.load as ThreadSessionLoad.Ready
+        assertEquals("connecting", ready.thread.status)
+
+        // The backend's idempotent re-attach publishes session.provider only, never a status event.
+        remote.completeStart(success("start", startedSession()))
+
+        assertEquals("idle", (coordinator.state.value.load as ThreadSessionLoad.Ready).thread.status)
+    }
+
+    @Test
     fun `load failure and mark read failure preserve visible cache`() {
         val remote = FakeThreadSessionRemote(scope)
         val coordinator = coordinator(

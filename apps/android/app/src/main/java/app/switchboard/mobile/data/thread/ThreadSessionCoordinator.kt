@@ -1238,6 +1238,18 @@ class ThreadSessionCoordinator(
                             attachedProvider = provider
                             attachedInstanceId = currentThread()?.instanceId
                             controlMessage = null
+                            // A reattach to a live session answers with its status and emits
+                            // none, so an idle chat kept the cached or default "connecting"
+                            // ("Reconnecting") until its next turn.
+                            currentThread()?.let { thread ->
+                                store = store.copy(threads = store.threads + (key to thread.copy(status = outcome.value.status)))
+                                load = when (val current = load) {
+                                    is ThreadSessionLoad.Loading -> ThreadSessionLoad.Loading(currentThread())
+                                    is ThreadSessionLoad.Failed -> current.copy(cached = currentThread())
+                                    is ThreadSessionLoad.Ready -> current.copy(thread = requireNotNull(currentThread()))
+                                }
+                                persistSnapshot()
+                            }
                         }
                         is RemoteOutcome.Failure -> controlMessage = outcome.message
                     }
