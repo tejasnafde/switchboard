@@ -43,7 +43,7 @@ object ComposerDraftEntityMapper {
         return ComposerDraft(
             key = ComposerDraftKey.parse(preference.threadKey),
             text = preference.draft.orEmpty(),
-            runtimeMode = preference.mode ?: "sandbox",
+            runtimeMode = preference.mode,
             attachments = attachments.map { row ->
                 ComposerAttachment(
                     id = row.attachmentId,

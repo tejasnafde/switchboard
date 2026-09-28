@@ -31,7 +31,7 @@ import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ModelOption } from '@shared/models'
 import { formatTokens, contextPercent } from '@shared/format'
-import { echoMessageId } from '@shared/provider-events'
+import { echoMessageId, isRuntimeMode } from '@shared/provider-events'
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
@@ -224,6 +224,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
         provider = providerKindFor(loaded.meta?.agentType)
         setProvider(provider)
         const store = useChatStore.getState()
+        // The chat's real mode, not the store's default: the picker shows it.
+        if (isRuntimeMode(loaded.meta?.runtimeMode)) store.setRuntimeMode(key, loaded.meta.runtimeMode)
         const current = store.threads[key]
         const replaceable = (current?.items.length ?? 0) === 0 || current?.cached === true
         if (replaceable && loaded.messages.length > 0) {
@@ -461,9 +463,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const itemCount = reversedItems.length
 
   const setMode = (mode: RuntimeMode) => {
-    useChatStore.getState().setRuntimeMode(key, mode)
+    useChatStore.getState().pickRuntimeMode(key, mode)
     usePrefsStore.getState().rememberMode(key, mode)
-    getClient(connectionId)?.setRuntimeMode(threadId, mode).catch(reportError)
+    // Offline, the pick waits for the next turn to carry it.
+    getClient(connectionId)?.setRuntimeMode(threadId, mode)
+      .then(() => useChatStore.getState().settlePickedMode(key, mode))
+      .catch(reportError)
   }
 
   // Optimistic like setMode: the chip updates now, a rejection lands in the feed.
@@ -537,10 +542,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
       threadId,
       text,
       images,
-      runtimeMode: thread.runtimeMode,
+      runtimeMode: thread.pickedMode,
       titleCandidate,
       whenIdle: toggle.queues && !textOverride,
     })
+    if (thread.pickedMode) useChatStore.getState().settlePickedMode(key, thread.pickedMode)
     setFlipNext(false)
     // Title from the first message, as the desktop does. `isNew` matters: an
     // existing chat whose items were emptied by /clear, or one whose history
@@ -584,7 +590,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
     // Same flow as the desktop PlanCard: drop to sandbox, then send the
     // implement follow-up.
-    useChatStore.getState().setRuntimeMode(key, 'sandbox')
+    useChatStore.getState().pickRuntimeMode(key, 'sandbox')
     client.setRuntimeMode(threadId, 'sandbox').catch(reportError)
     // Through the outbox like every other send, or it is lost off-socket.
     const turn = buildTurn({
@@ -593,6 +599,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       text: IMPLEMENT_MESSAGE,
       runtimeMode: 'sandbox',
     })
+    useChatStore.getState().settlePickedMode(key, 'sandbox')
     useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE, undefined, turn.bubbleId)
     enqueue(turn.queued).catch((err: unknown) => {
       useChatStore.getState().removeUserMessage(key, turn.bubbleId)

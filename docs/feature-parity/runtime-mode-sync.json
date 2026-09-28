@@ -1,0 +1,78 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "runtime-mode-sync",
+  "summary": "A chat's runtime mode now follows the chat on every client. Before, the native Android composer kept its own per-draft mode that defaulted to sandbox and sent it with every turn, and the Expo store did the same with its 'sandbox' default, so a phone turn in a chat set to full access on the Mac dropped the live session to sandbox. The Mac kept showing full access, then asked for approvals. The backend also never saved or announced a mode set from a phone. Now: (1) the backend saves every mode it applies on the conversation (SET_RUNTIME_MODE, even with no live session, and a turn that carries a different mode), and announces it by re-sending the thread's last session.provider event with a new optional runtimeMode field, which the desktop's mode picker, Expo and Android follow. It uses the existing event because an older phone build renders an unknown event type as a raw notice, and it ignores an extra field. (2) Android and Expo show the chat's mode from the loaded conversation and follow the announcement. A turn carries a mode only for a pick that has not reached the backend yet (an offline pick, or Implement's switch out of plan), and only once. A pick made while connected is applied by set-runtime-mode and never re-sent. (3) Modes stored by older builds are dropped: Android Room migration 6 to 7 clears thread_preferences.mode and the mode of queued turns never tried, and Expo drops a legacy mode on a queued message not yet sent (no modePicked marker, no attempt, no frozen payload, not ambiguous). A turn that may already have reached the backend keeps its mode, because the mode is part of the backend's fingerprint for its origin and a changed retry is refused as a conflict. The profile (provider instance) already followed the chat through session.provider on every client, and phone turns never carried one; a test now pins that on Android and Expo.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "tests/unit/provider-event-reducer.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/lib/turn-submit.ts",
+        "apps/mobile/src/lib/outbox-model.ts",
+        "tests/unit/mobile-runtime-mode-sync.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadEventDecoder.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/provider-registry-runtime-mode-sync.test.ts"
+      ],
+      "reason": "RuntimeSessionProviderEvent gains an optional runtimeMode. SET_RUNTIME_MODE now validates the mode, saves it and announces it. Older clients ignore the field."
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/SwitchboardDatabase.kt",
+        "apps/android/schemas/app.switchboard.mobile.data.local.SwitchboardDatabase/7.json",
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/data/local/SwitchboardDatabaseTest.kt",
+        "apps/mobile/src/lib/outbox-model.ts",
+        "src/main/db/conversations.ts"
+      ],
+      "reason": "Android database version 7 (schema unchanged, data-only migration). Expo needs no storage version bump: the marker is a new optional field. Desktop saves through the existing conversations.runtime_mode column."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ],
+      "reason": "Native Android in its next APK (versionName/versionCode not bumped here). Expo is JS only, over OTA to iOS. The backend change ships with the desktop and the headless server. Mixed versions: an old phone against a new backend still sends its default with each turn, but the backend now announces it, so the Mac shows what the session actually runs in. A new phone against an old backend gets no announcements; it reads the mode on open and delivers a pick once, so it never keeps re-sending one."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/provider-registry-runtime-mode-sync.test.ts: a turn with no mode keeps a full-access chat in full access and announces nothing; a phone's set-runtime-mode is saved and announced with the thread's identity; a turn carrying a different mode announces it once; a mode set with no live session is saved; an invalid mode is refused.",
+      "tests/unit/provider-event-reducer.test.ts: the desktop picker follows a runtimeMode on session.provider and ignores the event without one.",
+      "ThreadSessionCoordinatorTest.kt: a full-access chat shows full access and a phone turn carries no mode; a pick applies through set-runtime-mode and no turn re-sends it; an offline pick rides on one turn only; a desktop change shows on the phone and wins over a pick not yet sent; a profile change from another client is followed (existing test).",
+      "tests/unit/mobile-runtime-mode-sync.test.ts: the same guarantees for the Expo store, turn builder and outbox restore, including the profile.",
+      "npm run typecheck, npm test, npm test --prefix apps/mobile, ./gradlew testDebugUnitTest lintDebug (JDK 21), npm run validate:feature-parity -- --base origin/main."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No device or emulator: the Room 6 to 7 migration test is an androidTest (SwitchboardDatabaseTest) and was not run; the exported 7.json was generated by the build.",
+      "No live backend or real agent: the Claude, Codex and OpenCode adapters' runtimeModeOf was read, not exercised.",
+      "A queued Android turn whose first send reached the backend in the instant before the upgrade (attempts still 0) loses its mode and would be refused as a conflict on retry. The window is a send in flight while the APK installs.",
+      "A chat with no live session announces nothing when its mode changes; the other clients read the saved mode when they next open it."
+    ]
+  }
+}

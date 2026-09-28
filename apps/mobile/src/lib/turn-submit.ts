@@ -17,6 +17,7 @@ export interface BuildTurnInput {
   threadId: string
   text: string
   images?: Array<{ url: string; mimeType?: string }>
+  /** Only a mode the user picked on this phone; omit it to keep the chat's. */
   runtimeMode?: string
   titleCandidate?: string
   whenIdle?: boolean
@@ -40,7 +41,7 @@ export function buildTurn(input: BuildTurnInput): BuiltTurn {
       text: input.text,
       // An empty list is not the same as none on the wire.
       images: input.images && input.images.length > 0 ? input.images : undefined,
-      runtimeMode: input.runtimeMode,
+      ...(input.runtimeMode ? { runtimeMode: input.runtimeMode, modePicked: true as const } : {}),
       titleCandidate: input.titleCandidate,
       ...(input.whenIdle ? { whenIdle: true } : {}),
       createdAt: Date.now(),

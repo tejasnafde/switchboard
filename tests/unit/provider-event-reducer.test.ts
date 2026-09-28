@@ -163,6 +163,14 @@ describe('reduceProviderEvent (desktop)', () => {
     expect(session().instanceId).toBeUndefined()
   })
 
+  it('session.provider moves the mode picker when another client changed the mode', () => {
+    useAgentStore.getState().setRuntimeMode(T, 'full-access')
+    reduce({ type: 'session.provider', provider: 'codex', instanceId: null, instanceName: null })
+    expect(session().runtimeMode).toBe('full-access')
+    reduce({ type: 'session.provider', provider: 'codex', instanceId: null, instanceName: null, runtimeMode: 'auto' })
+    expect(session().runtimeMode).toBe('auto')
+  })
+
   it('spend.blocked records a block only when the model is known', () => {
     const record = vi.fn()
     useSpendBlockStore.setState({ record })

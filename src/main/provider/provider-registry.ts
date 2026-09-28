@@ -33,7 +33,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
-import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
+import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope, remoteDeviceHasScope } from '../backend/request-context'
 import {
@@ -45,7 +45,7 @@ import {
 import { sessionDefaultsFor } from './session-defaults'
 import { QueuedTurnLedger } from './queued-turn-ledger'
 import { queuedTurnComposerText } from '@shared/queued-turns'
-import { echoMessageId } from '@shared/provider-events'
+import { echoMessageId, isRuntimeMode } from '@shared/provider-events'
 import { promoteUnavailableReason, startsOwnProviderTurn, type QueuedTurnActionResult, type QueuedTurnSummary } from '@shared/turn-delivery'
 import {
   errorMessage,
@@ -142,6 +142,8 @@ export class ProviderRegistry implements PeerToolHost {
   private sessionCwd = new Map<string, string>()
   /** Last status published per live thread. Cleared with the session. */
   private sessionStatus = new Map<string, ProviderSession['status']>()
+  /** The last `session.provider` published per thread, re-sent with a mode change. */
+  private sessionIdentity = new Map<string, Extract<RuntimeEvent, { type: 'session.provider' }>>()
   /** Descriptor per live thread, so a late-connecting client can adopt it. */
   private sessionDescriptors = new Map<string, ProviderSession>()
   /**
@@ -768,6 +770,28 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  /**
+   * A mode applied from any client is saved on the conversation (what a phone
+   * reads when it opens the chat) and announced, so the desktop's picker and
+   * every phone's follow it. Only the desktop used to save its own changes, so
+   * a phone's change, or a turn carrying one, left every other client showing
+   * the old mode.
+   */
+  private announceRuntimeMode(threadId: string, mode: RuntimeMode): void {
+    try {
+      setConversationRuntimeMode(threadId, mode)
+    } catch (err) {
+      log.warn(`failed to save runtime mode ${mode} for ${threadId}`, err)
+    }
+    const identity = this.sessionIdentity.get(threadId)
+    if (identity) this.publish({ ...identity, runtimeMode: mode })
+  }
+
+  /** Announce a mode a turn carried, when it differs from the one the session ran in. */
+  private announceTurnRuntimeMode(threadId: string, before: RuntimeMode | undefined, requested: RuntimeMode | undefined): void {
+    if (requested && requested !== before) this.announceRuntimeMode(threadId, requested)
+  }
+
   private publish(event: RuntimeEvent): void {
     if (event.type === 'turn.queued' || event.type === 'turn.dequeued') {
       const observed = this.queuedTurns.observe(event, this.sessionAdapters.get(event.threadId)?.provider)
@@ -815,6 +839,7 @@ export class ProviderRegistry implements PeerToolHost {
     // for a chat the phone started - had no way to ever learn a session was
     // running. `listSessions` and the re-attach descriptor both read this.
     if (event.type === 'status') this.sessionStatus.set(event.threadId, event.status)
+    if (event.type === 'session.provider') this.sessionIdentity.set(event.threadId, event)
     // Open cards a reconnecting or reloaded client can recover - see
     // `getPendingRequests`. `request.opened` / `question.asked` block the
     // turn until answered, so they are always closed explicitly. A
@@ -1119,6 +1144,7 @@ export class ProviderRegistry implements PeerToolHost {
           if (queuedId) {
             this.queuedTurns.expect(queuedId, queuedTurnComposerText(input.providerText, input.displayBody, input.pillsMeta), Date.now())
           }
+          const modeBefore = adapter.runtimeModeOf?.(threadId)
           try {
             await adapter.sendTurn(threadId, input.providerText, input.runtimeMode, input.images, input.delivery, queuedId)
           } catch (error) {
@@ -1130,6 +1156,7 @@ export class ProviderRegistry implements PeerToolHost {
           } finally {
             if (queuedId) this.queuedTurns.settle(queuedId)
           }
+          this.announceTurnRuntimeMode(threadId, modeBefore, input.runtimeMode)
         },
       })
     } finally {
@@ -1189,6 +1216,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.sessionAdapters.delete(threadId)
       this.sessionCwd.delete(threadId)
       this.sessionStatus.delete(threadId)
+      this.sessionIdentity.delete(threadId)
       this.sessionDescriptors.delete(threadId)
       this.sessionCredentials.delete(threadId)
       this.outstandingTurns.delete(threadId)
@@ -1840,6 +1868,7 @@ export class ProviderRegistry implements PeerToolHost {
         const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(threadId), undefined)
         if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
         releasePreparation()
+        const modeBefore = adapter.runtimeModeOf?.(threadId)
         try {
           await adapter.sendTurn(threadId, message, runtimeMode, acceptedImages)
         } catch (error) {
@@ -1848,6 +1877,7 @@ export class ProviderRegistry implements PeerToolHost {
           // must remain dispatching so a retry cannot execute the turn twice.
           throw error
         }
+        this.announceTurnRuntimeMode(threadId, modeBefore, runtimeMode ?? undefined)
       }
 
       // Positional callers without an origin predate durable idempotency. Keep
@@ -1892,9 +1922,10 @@ export class ProviderRegistry implements PeerToolHost {
     })
 
     this.host.handle(ProviderChannels.SET_RUNTIME_MODE, async (threadId: string, mode: RuntimeMode) => {
-      const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) return
-      await adapter.setRuntimeMode(threadId, mode)
+      if (!isRuntimeMode(mode)) throw new Error(`Unknown runtime mode: ${String(mode)}`)
+      // Saved even with no live session, so the chat starts in it next time.
+      await this.sessionAdapters.get(threadId)?.setRuntimeMode(threadId, mode)
+      this.announceRuntimeMode(threadId, mode)
     })
 
     this.host.handle(ProviderChannels.SET_MODEL, async (threadId: string, model: string) => {

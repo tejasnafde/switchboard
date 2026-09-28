@@ -161,6 +161,7 @@ describe('stable retry payload', () => {
     text: 'continue',
     images: [{ url: 'data:image/png;base64,AAAA', mimeType: 'image/png' }],
     runtimeMode: 'sandbox',
+    modePicked: true,
     createdAt: 1,
     attempts: 0,
   }
@@ -243,6 +244,7 @@ describe('deterministic rejection recovery', () => {
     text: 'inspect this',
     images: [image],
     runtimeMode: 'sandbox',
+    modePicked: true,
     createdAt: 1,
     attempts: 0,
   }

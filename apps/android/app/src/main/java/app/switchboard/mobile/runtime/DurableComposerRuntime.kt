@@ -53,7 +53,7 @@ class DurableComposerRuntime(
                 draft = ComposerDraft(
                     key = key,
                     text = turn.text,
-                    runtimeMode = turn.runtimeMode ?: "sandbox",
+                    runtimeMode = turn.runtimeMode,
                     editingOrigin = turn.origin,
                 ),
                 sources = turn.attachments.mapIndexed { index, attachment ->
@@ -84,7 +84,7 @@ class DurableComposerRuntime(
      * `send(textOverride)` in ThreadScreen.tsx: it does not touch the saved
      * draft or its attachments, so the text the user was composing survives.
      */
-    fun submitText(key: ComposerDraftKey, text: String, runtimeMode: String) {
+    fun submitText(key: ComposerDraftKey, text: String, runtimeMode: String?) {
         worker.execute {
             val outgoing = OutgoingTurnDraft(
                 connectionId = key.connectionId,

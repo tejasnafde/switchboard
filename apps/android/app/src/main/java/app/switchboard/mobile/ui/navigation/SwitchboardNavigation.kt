@@ -838,7 +838,8 @@ private fun ThreadRouteHost(
             composer = runtime?.let {
                 ThreadComposerPresentation(
                     draft = localDraft.text,
-                    runtimeMode = localDraft.runtimeMode.toRuntimeMode(),
+                    // An offline pick, else the chat's own mode from the saved copy.
+                    runtimeMode = (localDraft.runtimeMode ?: cached?.runtimeMode).toRuntimeMode(),
                     submitting = false,
                     interrupting = false,
                     modeChanging = false,
@@ -1166,7 +1167,7 @@ private fun RootNavigationRuntime.performOutboxAction(
     }
 }
 
-private fun String.toRuntimeMode(): RuntimeMode =
+private fun String?.toRuntimeMode(): RuntimeMode =
     RuntimeMode.entries.firstOrNull { it.wire == this } ?: RuntimeMode.Sandbox
 
 private fun ConnectionsLoadState.labelFor(connectionId: String): String =
