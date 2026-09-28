@@ -5,7 +5,7 @@
  */
 import { create } from 'zustand'
 import type { InlineCommentInput, PrResource } from '@shared/pull-request-writes'
-import { prKey, repoKey, type MergeStrategy, type PrChangedFile, type PrCheck, type PrConversation, type PrDetail, type PrError, type PrListData, type PrRef, type PrResult, type PrReviewerCandidate, type PrSummary } from '@shared/pull-requests'
+import { prKey, repoKey, type RepoRef, type MergeStrategy, type PrChangedFile, type PrCheck, type PrConversation, type PrDetail, type PrError, type PrListData, type PrRef, type PrResult, type PrReviewerCandidate, type PrSummary } from '@shared/pull-requests'
 import { pullRequestChanged, shouldRefreshPullRequests, type PrRefreshReason } from '@shared/pull-request-refresh'
 import { toggleCollapsed, type PrGroupBy } from '@shared/pull-request-groups'
 import type { PrLinkChat } from '@shared/pull-request-links'
@@ -84,6 +84,8 @@ interface ReviewStore {
   setShowHidden: (show: boolean) => void
   /** Hides or shows the PR in Reviews (local), then re-reads the list. Returns the reason when it failed. */
   setHidden: (ref: PrRef, hidden: boolean) => Promise<string | null>
+  /** Hides repositories from Reviews (not read at all) or shows them again, then re-reads the list. Returns the reason when it failed. */
+  setReposHidden: (repos: RepoRef[], hidden: boolean) => Promise<string | null>
   loadCandidates: (ref: PrRef) => Promise<void>
   setVisible: (visible: boolean) => void
   setFilter: (filter: string) => void
@@ -184,6 +186,32 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       // An older backend sends no `hidden`.
       const others = (s.list.hidden ?? []).filter((k) => k !== key)
       return { list: { ...s.list, hidden: hidden ? [...others, key] : others } }
+    })
+    await get().refresh('manual')
+    return null
+  },
+
+  setReposHidden: async (repos, hidden) => {
+    let result: { ok: boolean; message?: string }
+    try {
+      result = hidden ? await window.api.pullRequests.hideRepos(repos) : await window.api.pullRequests.unhideRepos(repos)
+    } catch (err) {
+      log.warn('hiding repositories failed', err)
+      result = { ok: false, message: 'Could not save that; see the log.' }
+    }
+    if (!result.ok) return result.message ?? 'Could not save that.'
+    // Move them at once; the list read after confirms it (a shown repository reappears with that read).
+    const keys = new Set(repos.map(repoKey))
+    set((s) => {
+      if (!s.list) return s
+      const others = (s.list.hiddenRepos ?? []).filter((r) => !keys.has(repoKey(r)))
+      return {
+        list: {
+          ...s.list,
+          sources: hidden ? s.list.sources.filter((src) => !keys.has(repoKey(src.repo))) : s.list.sources,
+          hiddenRepos: hidden ? [...others, ...repos] : others,
+        },
+      }
     })
     await get().refresh('manual')
     return null

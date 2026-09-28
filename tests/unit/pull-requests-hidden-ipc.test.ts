@@ -5,9 +5,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { hidden, unhideKeys, hide } = vi.hoisted(() => {
+const { hidden, unhideKeys, hide, hiddenRepos, hideRepos, unhideRepos } = vi.hoisted(() => {
   process.env.SB_DEMO_ADAPTER = '1'
-  return { hidden: new Map<string, number>(), unhideKeys: vi.fn(), hide: vi.fn() }
+  process.env.SB_DEMO_REPO_ERRORS = '1'
+  return { hidden: new Map<string, number>(), unhideKeys: vi.fn(), hide: vi.fn(), hiddenRepos: new Set<string>(), hideRepos: vi.fn(), unhideRepos: vi.fn() }
 })
 
 vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
@@ -19,6 +20,9 @@ vi.mock('../../src/main/db/database', () => ({
   unhidePullRequestKeys: unhideKeys,
   hidePullRequest: hide,
   unhidePullRequest: vi.fn(),
+  listHiddenPullRequestRepos: () => hiddenRepos,
+  hidePullRequestRepos: hideRepos,
+  unhidePullRequestRepos: unhideRepos,
 }))
 
 import { registerPullRequestHandlers } from '../../src/main/ipc/pull-requests'
@@ -38,6 +42,9 @@ beforeEach(() => {
   hidden.clear()
   unhideKeys.mockClear()
   hide.mockClear()
+  hiddenRepos.clear()
+  hideRepos.mockReset()
+  unhideRepos.mockReset()
 })
 
 describe('pull-requests:list with hidden PRs', () => {
@@ -66,5 +73,42 @@ describe('pull-requests:hide', () => {
     expect(hide).toHaveBeenCalledWith(ref)
     expect(h({ host: 'gitlab', owner: 'x', name: 'y', number: 1 })).toMatchObject({ ok: false })
     expect(hide).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('hidden repositories', () => {
+  const STAGING = [
+    { host: 'bitbucket', owner: 'geoiq-staging', name: 'geoiq_broker_app_stg' },
+    { host: 'bitbucket', owner: 'geoiq-staging', name: 'geoiqcore_stg' },
+  ]
+
+  it('lists the repositories the account cannot see, then stops reading them once hidden', async () => {
+    const list = handlers().get(PullRequestChannels.LIST)!
+    const before = await list() as PrResult<PrListData>
+    if (!before.ok) throw new Error('expected ok')
+    const failing = before.data.sources.filter((s) => s.error).map((s) => [s.repo.name, s.error?.kind])
+    expect(failing).toEqual([['geoiq_broker_app_stg', 'not_found'], ['geoiqcore_stg', 'not_found']])
+
+    for (const repo of STAGING) hiddenRepos.add(`bitbucket:${repo.owner}/${repo.name}`)
+    const after = await list() as PrResult<PrListData>
+    if (!after.ok) throw new Error('expected ok')
+    expect(after.data.sources.some((s) => s.error)).toBe(false)
+    expect(after.data.hiddenRepos).toEqual(STAGING)
+  })
+
+  it('stores and clears a valid list, and refuses anything else', async () => {
+    const map = handlers()
+    expect(map.get(PullRequestChannels.HIDE_REPOS)!(STAGING)).toEqual({ ok: true })
+    expect(hideRepos).toHaveBeenCalledWith(STAGING)
+    expect(map.get(PullRequestChannels.UNHIDE_REPOS)!([STAGING[0]])).toEqual({ ok: true })
+    expect(unhideRepos).toHaveBeenCalledWith([STAGING[0]])
+    expect(map.get(PullRequestChannels.HIDE_REPOS)!([{ host: 'gitlab', owner: 'a', name: 'b' }])).toMatchObject({ ok: false })
+    expect(map.get(PullRequestChannels.HIDE_REPOS)!([])).toMatchObject({ ok: false })
+    expect(hideRepos).toHaveBeenCalledTimes(1)
+  })
+
+  it('answers a failed save with a reason instead of throwing', () => {
+    hideRepos.mockImplementation(() => { throw new Error('SQLITE_BUSY') })
+    expect(handlers().get(PullRequestChannels.HIDE_REPOS)!(STAGING)).toEqual({ ok: false, message: 'Could not save that; see the log.' })
   })
 })

@@ -108,19 +108,24 @@ export function openExternal(url: string): void {
   window.open(url, '_blank', 'noopener')
 }
 
-export function NoticeView({ notice, onAction, compact = false }: { notice: ReviewNotice; onAction: (action: ReviewNotice['action']) => void; compact?: boolean }) {
+export function NoticeView({ notice, onAction, compact = false }: { notice: ReviewNotice; onAction: (action: ReviewNotice['action'], notice: ReviewNotice) => void; compact?: boolean }) {
   return (
     <div
       role="status"
       data-review-notice={notice.id}
-      className={cn('flex items-start gap-[10px] rounded-[8px] border border-[var(--border)] bg-[var(--bg-surface)] text-[12.5px]', compact ? 'px-[10px] py-2' : 'px-3 py-[10px]')}
+      className={cn(
+        'flex items-start gap-[10px] rounded-[8px] border border-[var(--border)] bg-[var(--bg-surface)] text-[12.5px]',
+        compact ? 'px-[10px] py-2' : 'px-3 py-[10px]',
+        // A card that names repositories is long; its button goes under the text.
+        notice.repos && 'flex-col gap-2',
+      )}
     >
       <div className="min-w-0 flex-1">
-        <div className="font-[500] text-[var(--text-primary)]">{notice.line}</div>
+        <div className="font-[500] break-words text-[var(--text-primary)]">{notice.line}</div>
         <div className="text-[var(--text-secondary)]">{notice.fix}</div>
       </div>
       {notice.action && (
-        <Button variant="outline" size="sm" onClick={() => onAction(notice.action)}>{notice.actionLabel}</Button>
+        <Button variant="outline" size="sm" onClick={() => onAction(notice.action, notice)}>{notice.actionLabel}</Button>
       )}
     </div>
   )

@@ -4,16 +4,18 @@
  * repository, with the detail pane beside. Refreshes on window focus and
  * every 5 minutes while visible, never faster (`shared/pull-request-refresh`).
  */
-import { useEffect, useMemo } from 'react'
-import { prKey, type PrSummary } from '@shared/pull-requests'
+import { useEffect, useMemo, useState } from 'react'
+import { prKey, repoKey, type PrSummary, type RepoRef } from '@shared/pull-requests'
 import { filterPullRequests, groupPullRequests, groupPullRequestsByRepo, prRowStatus, type PrGroup, type PrGroupBy, type PrRowStatus } from '@shared/pull-request-groups'
 import { nextRefreshDelay, PR_REFRESH_INTERVAL_MS } from '@shared/pull-request-refresh'
 import { findSummary, useReviewStore } from '../../stores/review-store'
 import { cn } from '../../lib/utils'
 import { PrDetailPane } from './PrDetailPane'
-import { reviewListState, rowSubtitle, type ReviewNotice } from './review-states'
+import { hiddenReposLabel, hideReposConfirmCopy, restorableHiddenRepos, reviewListState, rowSubtitle, type ReviewNotice } from './review-states'
 import { Icon, NoticeView, ROW_ICON } from './review-ui'
 import { AskChatDialog } from './PrLinkedChats'
+import { confirm } from '../ui/confirm'
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 
 /** A status group (`collapsed: null`, never folds) or a repository section. */
 interface ListSection {
@@ -34,7 +36,7 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
   const groupBy = useReviewStore((s) => s.groupBy)
   const collapsedRepos = useReviewStore((s) => s.collapsedRepos)
   const showHidden = useReviewStore((s) => s.showHidden)
-  const { setVisible, setFilter, select, refresh, setGroupBy, toggleRepo, setShowHidden, hydrateSettings } = useReviewStore.getState()
+  const { setVisible, setFilter, select, refresh, setGroupBy, toggleRepo, setShowHidden, setReposHidden, hydrateSettings } = useReviewStore.getState()
 
   // Mounted only while the view is shown, so mounted means visible.
   useEffect(() => {
@@ -60,6 +62,7 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
 
   const now = lastFetchAt ?? Date.now()
   const state = reviewListState(list, listError)
+  const hiddenRepos = restorableHiddenRepos(state, list)
   const hidden = useMemo(() => new Set(list?.hidden ?? []), [list])
   const hiddenCount = useMemo(() => (list ? list.prs.filter((pr) => hidden.has(prKey(pr.ref)) && prRowStatus(pr, now)).length : 0), [list, hidden, now])
   const shown = useMemo(() => {
@@ -82,9 +85,16 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
     if (!findSummary(list, selectedKey) && firstKey) select(firstKey)
   }, [list, selectedKey, firstKey, select])
 
-  const onNotice = (action: ReviewNotice['action']) => {
+  const hideRepos = async (repos: RepoRef[]) => {
+    if (!(await confirm(hideReposConfirmCopy(repos)))) return
+    const failed = await setReposHidden(repos, true)
+    if (failed) await confirm({ title: 'Could not hide the repositories', body: failed, notice: true })
+  }
+
+  const onNotice = (action: ReviewNotice['action'], notice: ReviewNotice) => {
     if (action === 'settings') onOpenSettings()
     else if (action === 'retry') void refresh('manual')
+    else if (action === 'hide-repos' && notice.repos) void hideRepos(notice.repos)
   }
 
   const selected = findSummary(list, selectedKey)
@@ -149,7 +159,7 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
                   <button
                     type="button"
                     onClick={() => setShowHidden(!showHidden)}
-                    className="cursor-pointer border-none bg-transparent p-0 text-[12px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+                    className={HIDDEN_LINK}
                   >
                     {showHidden ? 'Hide them' : 'Show'}
                   </button>
@@ -157,6 +167,7 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
               )}
             </>
           )}
+          {hiddenRepos.length > 0 && <HiddenReposRow repos={hiddenRepos} onShow={(repos) => setReposHidden(repos, false)} />}
         </div>
       </aside>
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -167,6 +178,49 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
         )}
       </main>
       <AskChatDialog />
+    </div>
+  )
+}
+
+const HIDDEN_LINK = 'cursor-pointer border-none bg-transparent p-0 text-[12px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline'
+
+/** "3 repositories hidden · Show": the list of hidden repositories, each shown again on its own or all at once. */
+function HiddenReposRow({ repos, onShow }: { repos: RepoRef[]; onShow: (repos: RepoRef[]) => Promise<string | null> }) {
+  const [open, setOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const show = async (which: RepoRef[]) => {
+    const failed = await onShow(which)
+    setError(failed)
+    if (!failed && which.length === repos.length) setOpen(false)
+  }
+  return (
+    <div data-pr-hidden-repos className="flex items-center gap-[6px] px-2 pt-2 text-[12px] text-[var(--text-muted)]">
+      <span className="tabular-nums">{hiddenReposLabel(repos.length)}</span>
+      <span aria-hidden="true">·</span>
+      <Popover open={open} onOpenChange={(next) => { setOpen(next); setError(null) }}>
+        <PopoverTrigger asChild>
+          <button type="button" className={HIDDEN_LINK}>Show</button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          aria-label="Hidden repositories"
+          className="sb-floating-surface z-[1200] w-[260px] rounded-[10px] border border-[var(--border-strong,var(--border))] p-2 text-[12.5px] shadow-[0_12px_30px_rgba(0,0,0,0.35)]"
+        >
+          <div className="flex items-center justify-between px-1 pb-1 text-[11.5px] font-[600] text-[var(--text-muted)]">
+            <span>Hidden from Reviews</span>
+            {repos.length > 1 && <button type="button" className={HIDDEN_LINK} onClick={() => void show(repos)}>Show all</button>}
+          </div>
+          <ul className="m-0 max-h-[240px] list-none overflow-auto p-0">
+            {repos.map((repo) => (
+              <li key={repoKey(repo)} className="flex items-center gap-2 rounded-[6px] px-1 py-[3px] hover:bg-[var(--bg-hover)]">
+                <span className="min-w-0 flex-1 truncate text-[var(--text-primary)]" title={`${repo.owner}/${repo.name}`}>{repo.owner}/{repo.name}</span>
+                <button type="button" className={HIDDEN_LINK} aria-label={`Show ${repo.owner}/${repo.name}`} onClick={() => void show([repo])}>Show</button>
+              </li>
+            ))}
+          </ul>
+          {error && <div role="alert" className="px-1 pt-1 text-[12px] text-[var(--error)]">{error}</div>}
+        </PopoverContent>
+      </Popover>
     </div>
   )
 }
