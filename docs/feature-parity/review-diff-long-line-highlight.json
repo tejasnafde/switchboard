@@ -36,6 +36,8 @@
       "The visual screens phase (reviews, reviews-files and the rest, 3 themes) passes with no baseline change, so rows of normal width render as before."
     ],
     "hardware": [],
-    "notExercised": []
+    "notExercised": [
+      "The scrolled long-line case itself: the demo diff has no line wider than the pane, so no screenshot captures it. Check a real diff with a long line in Reviews > Files."
+    ]
   }
 }
