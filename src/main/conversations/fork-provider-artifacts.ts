@@ -2,6 +2,7 @@ import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { assembleClaudeForkAtEvent } from '../agent/jsonl-truncate'
 import type { ProviderInstanceRow } from '../db/provider-instances'
+import { createMainLogger } from '../logger'
 import {
   claudeSessionResumePath,
   defaultClaudeDir,
@@ -13,6 +14,15 @@ import type {
   ProviderForkArtifactPort,
   ProviderForkArtifactStage,
 } from './conversation-fork-coordinator'
+import {
+  findCodexForkTurn,
+  isUnsupportedMethodError,
+  pickOpencodeForkSession,
+  type OpencodeForkSegment,
+} from './native-fork'
+import type { NativeForkRunners } from './native-fork-runners'
+
+const log = createMainLogger('conversations:fork-artifacts')
 
 interface ResolvedForkProviderInstance {
   id: string
@@ -24,6 +34,8 @@ interface ResolvedForkProviderInstance {
 interface ProviderForkArtifactDependencies {
   resolveInstance(id: string): ResolvedForkProviderInstance | ProviderInstanceRow | null
   listCompatibleSessionIds(conversationId: string, providerInstanceId: string): string[]
+  listSegments?(conversationId: string): OpencodeForkSegment[]
+  native?: NativeForkRunners
 }
 
 interface ClaudeForkArtifactStage extends ProviderForkArtifactStage {
@@ -32,6 +44,13 @@ interface ClaudeForkArtifactStage extends ProviderForkArtifactStage {
   path: string
   content: string
   created: boolean
+}
+
+/** A forked Codex rollout, already on disk; undone by deleting it. */
+interface CodexForkArtifactStage extends ProviderForkArtifactStage {
+  id: string
+  kind: 'codex-rollout'
+  path: string
 }
 
 function handoff(
@@ -54,6 +73,11 @@ function claudeStage(stage: ProviderForkArtifactStage): ClaudeForkArtifactStage 
   return stage as ClaudeForkArtifactStage
 }
 
+function codexStage(stage: ProviderForkArtifactStage): CodexForkArtifactStage {
+  if (typeof stage.path !== 'string') throw new Error('Unknown fork provider artifact stage')
+  return stage as CodexForkArtifactStage
+}
+
 export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
   constructor(private readonly deps: ProviderForkArtifactDependencies) {}
 
@@ -63,13 +87,8 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
     targetCwd: string
   }): Promise<PreparedProviderForkArtifact> {
     const { prepared } = input
-    if (prepared.source.agentType !== 'claude-code') {
-      return handoff(
-        prepared,
-        'transcript-handoff',
-        `${prepared.source.agentType === 'codex' ? 'Codex' : 'OpenCode'} starts with a one-time transcript handoff.`,
-      )
-    }
+    if (prepared.source.agentType === 'codex') return this.prepareCodex(prepared, input.targetCwd)
+    if (prepared.source.agentType === 'opencode') return this.prepareOpencode(prepared, input.targetCwd)
     if (prepared.anchor.provider !== 'claude-code') {
       return handoff(
         prepared,
@@ -143,7 +162,99 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
     }
   }
 
+  private async prepareCodex(prepared: PreparedForkSnapshot, targetCwd: string): Promise<PreparedProviderForkArtifact> {
+    const native = this.deps.native
+    const instanceId = prepared.source.providerInstanceId
+    const threadId = prepared.anchor.providerSessionId
+    const messageId = prepared.anchor.providerEventId
+    if (!native) return handoff(prepared, 'transcript-handoff', 'Codex starts with a one-time transcript handoff.')
+    if (prepared.anchor.provider !== 'codex' || !threadId || !messageId) {
+      return handoff(prepared, 'native-lineage-incompatible', 'The selected message has no Codex thread provenance.')
+    }
+    if (!instanceId || !this.enabledInstance(instanceId, 'codex')) {
+      return handoff(prepared, 'source-profile-missing', 'The source Codex profile is missing or disabled.')
+    }
+    try {
+      const rollout = await native.readCodexRollout(instanceId, threadId)
+      if (rollout === null) {
+        return handoff(prepared, 'native-history-missing', 'The Codex thread is not in the source profile.')
+      }
+      const turn = findCodexForkTurn(rollout, messageId, prepared.prefix)
+      if (!turn.ok) return handoff(prepared, turn.code, turn.message)
+      const forked = await native.forkCodexThread(instanceId, { threadId, lastTurnId: turn.turnId, cwd: targetCwd })
+      return {
+        resumeMode: 'native',
+        sessionId: forked.threadId,
+        pendingHandoffFrom: null,
+        nativeResume: {
+          provider: 'codex',
+          sessionId: forked.threadId,
+          copiedMessageCount: prepared.prefix.length,
+        },
+        warnings: [],
+        ...(forked.path ? { stage: { id: forked.path, kind: 'codex-rollout', path: forked.path } } : {}),
+      }
+    } catch (error) {
+      return this.nativeFailure(prepared, 'thread/fork', error)
+    }
+  }
+
+  private async prepareOpencode(prepared: PreparedForkSnapshot, targetCwd: string): Promise<PreparedProviderForkArtifact> {
+    const native = this.deps.native
+    const instanceId = prepared.source.providerInstanceId
+    if (!native || !this.deps.listSegments) {
+      return handoff(prepared, 'transcript-handoff', 'OpenCode starts with a one-time transcript handoff.')
+    }
+    if (targetCwd !== prepared.source.sourceCheckoutPath) {
+      // OpenCode scopes a session to its directory, and forking one into a
+      // new worktree is unverified.
+      return handoff(prepared, 'native-worktree-unsupported', 'OpenCode forks natively only in the same checkout.')
+    }
+    if (!instanceId || !this.enabledInstance(instanceId, 'opencode')) {
+      return handoff(prepared, 'source-profile-missing', 'The source OpenCode profile is missing or disabled.')
+    }
+    try {
+      const picked = pickOpencodeForkSession({
+        segments: this.deps.listSegments(prepared.source.conversationId),
+        instanceId,
+        firstMessageAt: prepared.prefix[0]?.timestamp,
+        anchor: prepared.anchor,
+      })
+      if (!picked.ok) return handoff(prepared, picked.code, picked.message)
+      const sessionId = await native.forkOpencodeSession(instanceId, { sessionId: picked.sessionId, cwd: targetCwd })
+      // No stage: ACP cannot delete a session, so a fork that fails to commit
+      // leaves an unused OpenCode session behind.
+      return {
+        resumeMode: 'native',
+        sessionId,
+        pendingHandoffFrom: null,
+        nativeResume: { provider: 'opencode', sessionId },
+        warnings: [],
+      }
+    } catch (error) {
+      return this.nativeFailure(prepared, 'session/fork', error)
+    }
+  }
+
+  private enabledInstance(instanceId: string, agentType: string): boolean {
+    const instance = this.deps.resolveInstance(instanceId)
+    return !!instance && instance.agentType === agentType && instance.enabled
+  }
+
+  private nativeFailure(prepared: PreparedForkSnapshot, method: string, error: unknown): PreparedProviderForkArtifact {
+    const unsupported = isUnsupportedMethodError(error, method)
+    log.warn(`native ${method} failed, falling back to a transcript handoff`, {
+      conversationId: prepared.source.conversationId,
+      unsupported,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return unsupported
+      ? handoff(prepared, 'native-fork-unsupported', `The installed CLI has no ${method}; the fork starts with a transcript handoff.`)
+      : handoff(prepared, 'native-fork-failed', `Native ${method} failed; the fork starts with a transcript handoff.`)
+  }
+
   async publish(input: ProviderForkArtifactStage): Promise<void> {
+    if (input.kind === 'codex-rollout') return
     const stage = claudeStage(input)
     await mkdir(dirname(stage.path), { recursive: true })
     try {
@@ -157,8 +268,8 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
   }
 
   async compensate(input: ProviderForkArtifactStage): Promise<void> {
-    const stage = claudeStage(input)
-    if (!stage.created) return
+    const stage = input.kind === 'codex-rollout' ? codexStage(input) : claudeStage(input)
+    if (stage.kind === 'claude-jsonl' && !stage.created) return
     try {
       await unlink(stage.path)
     } catch (error) {

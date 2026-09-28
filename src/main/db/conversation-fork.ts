@@ -271,6 +271,31 @@ export class SqliteConversationForkStore {
         input.result.git?.omittedChangeSummary ?? null,
       )
 
+      // A Codex / OpenCode native fork resumes a session of its own id, found
+      // through its typed segment the way a normal restart finds it. Claude's
+      // forked session id is the conversation id, so it needs neither row.
+      const native = input.result.nativeResume
+      if (native && native.provider !== 'claude') {
+        this.db.prepare(`
+          INSERT INTO conversation_segments (
+            id, conversation_id, provider, provider_session_id,
+            provider_instance_id, ordinal, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+        `).run(
+          `${conversation.id}:${conversation.agentType}:${native.sessionId}`,
+          conversation.id,
+          conversation.agentType,
+          native.sessionId,
+          conversation.providerInstanceId,
+          conversation.createdAt,
+          conversation.createdAt,
+        )
+        this.db.prepare(`
+          INSERT OR REPLACE INTO thread_sessions (claude_session_id, thread_id, recorded_at)
+          VALUES (?, ?, ?)
+        `).run(native.sessionId, conversation.id, conversation.createdAt)
+      }
+
       const insertMessage = this.db.prepare(`
         INSERT INTO messages (
           id, conversation_id, role, content, tool_calls, images, timestamp,

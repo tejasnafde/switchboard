@@ -126,7 +126,10 @@ export class CodexProbeSession {
     this.pending.delete(record.id)
     if (record.error) {
       const err = record.error as Record<string, unknown>
-      entry.reject(new Error(typeof err.message === 'string' ? err.message : 'JSON-RPC error'))
+      entry.reject(Object.assign(
+        new Error(typeof err.message === 'string' ? err.message : 'JSON-RPC error'),
+        { code: err.code },
+      ))
       return
     }
     entry.resolve(record.result)

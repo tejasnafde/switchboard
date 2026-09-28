@@ -64,6 +64,7 @@ import type {
 import type { ProviderSkill, SessionSummary } from '@shared/types'
 import { decidePermission, denialMessage } from '../policy'
 import { findOpencodePath, buildOpencodeEnv } from './opencode/env'
+import { resolveResumeSegment } from '../../db/database'
 import { acpSwitchboardMcpServer, isSwitchboardOpencodeReadTool, isSwitchboardOpencodeTool, SWITCHBOARD_OPENCODE_TOOLS } from '../../mcp/agent-registration'
 
 const log = createLogger('provider:opencode-acp')
@@ -869,13 +870,31 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       // for them fall back to today's behavior. See
       // docs/feature-parity/agent-digest.json.
       // OpenCode also loads the MCP servers in the user's own opencode.json.
-      const newSession: NewSessionResponse = await connection.newSession({
-        cwd: opts.cwd,
-        mcpServers: opts.switchboardMcp ? [acpSwitchboardMcpServer(opts.switchboardMcp)] : [],
-      })
+      const mcpServers = opts.switchboardMcp ? [acpSwitchboardMcpServer(opts.switchboardMcp)] : []
+      // The session this chat last ran (or a native fork's), when the agent
+      // can resume one; otherwise a new session, which starts without the
+      // chat's earlier context.
+      const resumeId = init.agentCapabilities?.sessionCapabilities?.resume ? this.resumeTarget(opts) : null
+      let newSession: Pick<NewSessionResponse, 'sessionId' | 'models'> | null = null
+      if (resumeId) {
+        try {
+          const resumed = await connection.resumeSession({ sessionId: resumeId, cwd: opts.cwd, mcpServers })
+          newSession = { sessionId: resumeId, models: resumed.models }
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err)
+          log.warn(`acp resumeSession ${resumeId} failed, starting a new session: ${reason}`)
+          onEvent({
+            type: 'error',
+            threadId: opts.threadId,
+            message: `Could not resume OpenCode session ${resumeId}; this chat continues in a new session without its earlier context. ${reason}`,
+          })
+        }
+      }
+      newSession ??= await connection.newSession({ cwd: opts.cwd, mcpServers })
       active.sessionId = newSession.sessionId
       session.sessionId = newSession.sessionId
-      log.info(`acp newSession: ${newSession.sessionId}`)
+      log.info(`acp ${resumeId === newSession.sessionId ? 'resumeSession' : 'newSession'}: ${newSession.sessionId}`)
+      onEvent({ type: 'session', threadId: opts.threadId, sessionId: newSession.sessionId })
 
       // Capture initial model catalog
       if (newSession.models?.availableModels) {
@@ -924,6 +943,18 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     }
 
     return session
+  }
+
+  private resumeTarget(opts: SessionStartOpts): string | null {
+    try {
+      const segment = resolveResumeSegment(opts.threadId, 'opencode', opts.instanceId)
+      // Instances can keep sessions in different data dirs, so never cross one.
+      if (!segment || segment.provider_instance_id !== (opts.instanceId ?? null)) return null
+      return segment.provider_session_id
+    } catch (err) {
+      log.warn('resolveResumeSegment failed - starting a new OpenCode session', { threadId: opts.threadId, err })
+      return null
+    }
   }
 
   /**

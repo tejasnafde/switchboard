@@ -1,0 +1,67 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "native-fork-codex-opencode",
+  "summary": "Fork from here resumes natively for Codex and OpenCode where the CLI supports it, keeping the durable transcript handoff as the fallback. Codex: the anchor's turn id is read from the source thread's rollout JSONL under the source instance's own CODEX_HOME (event_msg task_started / turn_context / the item's own turn_id), and thread/fork is called with lastTurnId on a short-lived app-server spawned with that instance's env. Native only when the anchor is an assistant reply that ends its turn and the thread holds exactly the displayed prefix; a missing turn id, a mid-turn or user anchor, an earlier thread, a CLI without thread/fork (detected from the error: JSON-RPC -32601 or app-server's -32600 'unknown variant', never the version) or any fork error keeps the handoff. OpenCode: ACP session/fork copies the whole session (1.18.33 passes no message id), so it is native only for the latest assistant reply, in the same checkout, when the agent advertises sessionCapabilities.fork and one OpenCode session, recorded with the chat, holds all of it. The OpenCode adapter now reports its ACP session id (the same session event Codex and Claude emit) and resumes the recorded session on start when the agent advertises session/resume, falling back to a new session with a visible notice. A native fork commits a typed conversation segment and a thread_sessions row in the fork's commit transaction, so the adapters find the forked session exactly like a restart does. The history loader drops the parent prefix a forked Codex rollout copies (re-stamped with the fork time), which the fork's stored messages already hold. resumeMode 'native' drives the existing 'Native resume' / 'Transcript handoff' labels on every client; no new UI.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/conversations/fork-provider-artifacts.ts",
+        "src/main/conversations/native-fork.ts",
+        "src/main/conversations/native-fork-runners.ts",
+        "src/main/conversations/conversation-fork-runtime.ts",
+        "src/main/conversations/history.ts",
+        "src/main/worktree-creation/runtime.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/provider/usage/codex-usage.ts",
+        "src/renderer/components/chat/ForkLineageBanner.tsx",
+        "tests/unit/native-fork.test.ts",
+        "tests/unit/native-fork-coordinator.test.ts",
+        "tests/unit/native-fork-runners.test.ts",
+        "tests/unit/opencode-acp-resume.test.ts",
+        "tests/unit/conversation-history.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No client change: ThreadScreen already labels a fork from conversation.resumeMode and starts a native fork with resumeSessionId = its thread id, which the backend now resolves to the forked Codex thread or OpenCode session through the committed conversation segment. nativeResume is not decoded by the app."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No client change: ThreadSessionCoordinator already reattaches with resumeSessionId = threadId unless forkMetadata.resumeMode is transcript-handoff, and the backend resolves the forked Codex thread or OpenCode session from the committed segment. The fork wire decoder reads resumeMode only and ignores nativeResume, whose provider union widened additively."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/conversation-fork.ts",
+        "src/main/conversations/conversation-fork-coordinator.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/conversation-fork.ts",
+        "src/main/db/database.ts",
+        "tests/unit/native-fork-coordinator.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No packaging, channel or native-module change. Native fork support is detected per CLI at fork time (capability or method-not-found), so older installed Codex / OpenCode builds keep the transcript handoff with no version gate."
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest: native-fork (turn finder, method-not-found detection, OpenCode session pick), native-fork-coordinator (Codex fork at a turn, retry reconciliation, fallback on unknown method and missing turn id, rollout cleanup on a failed commit, OpenCode latest vs earlier anchor, missing capability), native-fork-runners (fake codex app-server and fake ACP agent built on the SDK), opencode-acp-resume, conversation-history copied-prefix drop",
+      "Manual protocol probe with CODEX_HOME in a scratch dir: Codex 0.144.1 and 0.158.0 thread/fork with lastTurnId on a synthetic rollout (materialized at once, resumable, cwd need not exist yet); unknown method returns -32600 'unknown variant'",
+      "Manual ACP probe with HOME/XDG in a scratch dir: OpenCode 1.17.18 and 1.18.33 advertise loadSession and sessionCapabilities fork/resume/list/close; newSession, session/fork, session/resume and session/load all succeed without an account"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A live turn on a real account in a native Codex or OpenCode fork (no account folder may be used)",
+      "OpenCode native fork into a new worktree (kept on the handoff)",
+      "Mobile and Android opening a native Codex / OpenCode fork against a real backend"
+    ]
+  }
+}
