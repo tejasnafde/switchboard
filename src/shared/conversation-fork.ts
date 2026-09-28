@@ -83,8 +83,11 @@ export interface ForkConversationResult {
   conversation: ForkConversationState
   messages: ChatMessage[]
   nativeResume?: {
-    provider: 'claude'
+    provider: 'claude' | 'codex' | 'opencode'
     sessionId: string
+    /** Codex only: how many leading messages of the forked rollout are the
+     * copied prefix, which the fork's own stored messages already show. */
+    copiedMessageCount?: number
   }
   git?: {
     baseSha: string

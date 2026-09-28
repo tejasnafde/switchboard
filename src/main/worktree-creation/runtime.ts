@@ -31,6 +31,7 @@ import {
   ForkWorktreeOwnerAdapter,
 } from '../conversations/fork-worktree-owner'
 import { DefaultProviderForkArtifacts } from '../conversations/fork-provider-artifacts'
+import { createNativeForkRunners } from '../conversations/native-fork-runners'
 import { configureConversationForkWorktreePort } from '../conversations/conversation-fork-runtime'
 import type {
   GetWorktreeCreationRequest,
@@ -91,6 +92,8 @@ export function createDefaultWorktreeCreationRuntime(
     const git = new ExecFileGitWorktreeAdapter()
     const providerArtifacts = new DefaultProviderForkArtifacts({
       resolveInstance: getProviderInstanceFull,
+      listSegments: listConversationSegments,
+      native: createNativeForkRunners(),
       listCompatibleSessionIds: (conversationId, providerInstanceId) => {
         const ids = listConversationSegments(conversationId)
           .filter((segment) => segment.provider === 'claude-code'

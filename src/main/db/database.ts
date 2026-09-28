@@ -7,7 +7,8 @@ import { AGENT_TYPES, defaultInstanceId } from '@shared/types'
 import { deriveProjectPositions } from './project-ordering'
 import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
 import { searchMessagesInDatabase, type SearchResult } from './message-search'
-import { ensureConversationForkSchema } from './conversation-fork'
+import { ensureConversationForkSchema, SqliteConversationForkStore } from './conversation-fork'
+import type { ForkConversationResult } from '../../shared/conversation-fork'
 import { ensureWorktreeCreationSchema } from './worktree-creation'
 import { ensureBookmarksTable } from './bookmarks'
 import { ensurePullRequestLinkSchema } from './pull-request-links'
@@ -648,4 +649,9 @@ export function closeDb(opts: { forQuit?: boolean } = {}): void {
 
 export function searchMessages(query: string, limit = 50): SearchResult[] {
   return searchMessagesInDatabase(getDb(), query, limit)
+}
+
+/** How a fork conversation resumed natively, from its committed fork receipt. */
+export function getNativeForkResume(conversationId: string): ForkConversationResult['nativeResume'] {
+  return new SqliteConversationForkStore(getDb()).getResultForConversation(conversationId)?.nativeResume
 }

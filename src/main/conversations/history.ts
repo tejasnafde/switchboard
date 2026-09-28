@@ -3,6 +3,7 @@ import {
   conversationSessionHints,
   getDisplayBodyEnrichments,
   getMessagesForConversation,
+  getNativeForkResume,
   listConversationSegments,
   messageRowsToChatMessages,
   threadFamilyIds,
@@ -68,9 +69,17 @@ export async function loadConversationHistory(
   }
 
   const codexSessions = await scanCodexSessionCopies(knownSessionIds, codexCandidateDirs())
+  // A native Codex fork's rollout starts with a copy of the parent's prefix,
+  // stamped with the fork time; the fork's stored messages already hold it.
+  const forkReceipt = codexSessions.length > 0
+    ? getNativeForkResume(conversationId)
+    : undefined
   for (const session of codexSessions) {
     if (!knownSessionIds.has(session.id) || !session.filePath) continue
-    const messages = await loadJsonlCached(session.filePath, 'codex')
+    const loaded = await loadJsonlCached(session.filePath, 'codex')
+    const messages = loaded && forkReceipt?.provider === 'codex' && forkReceipt.sessionId === session.id
+      ? loaded.slice(forkReceipt.copiedMessageCount ?? 0)
+      : loaded
     if (messages) {
       diskMessages.push(...messages)
       for (const message of messages) {

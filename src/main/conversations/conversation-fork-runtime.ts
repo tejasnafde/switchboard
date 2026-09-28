@@ -12,6 +12,7 @@ import {
   type ConversationForkWorktreePort,
 } from './conversation-fork-coordinator'
 import { DefaultProviderForkArtifacts } from './fork-provider-artifacts'
+import { createNativeForkRunners } from './native-fork-runners'
 import { projectForkSourceExecution } from './fork-source'
 import { loadConversationHistory } from './history'
 
@@ -40,6 +41,8 @@ export function getConversationForkCoordinator(): ConversationForkCoordinator {
     },
     providerArtifacts: new DefaultProviderForkArtifacts({
       resolveInstance: getProviderInstanceFull,
+      listSegments: listConversationSegments,
+      native: createNativeForkRunners(),
       listCompatibleSessionIds: (conversationId, providerInstanceId) => {
         const ids = listConversationSegments(conversationId)
           .filter((segment) =>

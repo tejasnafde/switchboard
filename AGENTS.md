@@ -362,7 +362,10 @@ One MCP server per backend process gives Claude, Codex and OpenCode the same too
 ### Conversation forking (`conversations/fork.ts`, `shared/conversation-fork.ts`)
 
 - IPC `app:fork-conversation` uses the versioned stable-anchor contract in `shared/conversation-fork.ts`: client request ID, source conversation ID, message ID + role/timestamp/full-message digest, and explicit shared-checkout or source-HEAD worktree policy. The backend owns IDs, canonical prefix resolution, provider artifacts, persistence, and worktree paths; `app:get-conversation-fork` reconciles response-loss retries.
-- Claude resumes natively only when the anchor has compatible lineage in the source conversation's committed credential profile. Codex and OpenCode use a durable exactly-once transcript handoff and never write fake resumable artifacts into provider discovery trees.
+- Claude resumes natively only when the anchor has compatible lineage in the source conversation's committed credential profile. Codex and OpenCode fork natively through their own CLIs where they can (`native-fork.ts` holds the rules, `native-fork-runners.ts` spawns the CLI with the source instance's env), and otherwise keep the durable exactly-once transcript handoff; neither ever writes fake resumable artifacts into provider discovery trees.
+  - **Codex**: `thread/fork` with `lastTurnId`, the anchor's turn read from the source rollout under the instance's own `CODEX_HOME`. Native only when the anchor is an assistant reply that ends its turn and the thread holds exactly the displayed prefix. A CLI without `thread/fork` answers `-32600 "unknown variant \`thread/fork\`"`, not `-32601`, so `isUnsupportedMethodError` checks both; never gate on the version string. The forked rollout re-copies the parent prefix stamped with the fork time, so `loadConversationHistory` drops its first `nativeResume.copiedMessageCount` messages or the prefix shows twice.
+  - **OpenCode**: ACP `session/fork` copies the WHOLE session (1.18.33 calls `session.fork` with no message id, and ACP has no message field), so it is native only for the latest assistant reply, in the same checkout, when `sessionCapabilities.fork` is advertised and one OpenCode segment recorded with the chat holds all of it.
+  - A native fork commits its typed segment and `thread_sessions` row in the fork transaction; the adapters then resume it exactly as after a restart. The OpenCode adapter emits `session` and resumes its latest segment (same instance only) when `sessionCapabilities.resume` is advertised, else starts a new session with a visible notice.
 - Fork conversation, rich messages, settings, handoff state, lineage, managed worktree projection, and operation result commit atomically. `project_path` remains the parent project; `worktree_path` is execution CWD. `thread_sessions` remains provider-session rotation lineage, separate from user-created fork lineage.
 
 ### Reviews (read-only pull requests, third top-level view)
@@ -453,7 +456,7 @@ One MCP server per backend process gives Claude, Codex and OpenCode the same too
 ## What's NOT working yet
 
 - **Production signing credentials** - implementation is ready, but releases remain unsigned until repository secrets contain the actual Apple Developer ID/notarization and Windows Authenticode credentials.
-- **Codex / OpenCode native fork resume** - both use the explicit durable transcript-handoff mode until their protocols expose and Switchboard verifies a compatible native resume primitive
+- **Codex / OpenCode native fork limits** - Codex cannot fork natively at a user message or mid-turn (turns are atomic); OpenCode only forks natively at the latest reply and never into a new worktree, and chats older than OpenCode session recording (or whose session was replaced) keep the handoff. A fork that fails to commit leaves an unused OpenCode session behind (ACP cannot delete one); a forked Codex rollout is deleted
 
 ## Skill exposure (shipped 2026-04-26)
 
