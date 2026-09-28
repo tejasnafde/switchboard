@@ -105,4 +105,27 @@ describe('consumers', () => {
     expect(generateTitle(userTypedText(`${FAILED}\nship it`))).toBe('ship it')
     expect(userTypedText(FAILED)).toBe('')
   })
+
+  // Verbatim from the 2026-09-29 Android screenshots; TaskNotificationRowsTest.kt holds the same.
+  it('splits the notices from the Android screenshots, alone or several in one message', () => {
+    const withOutputFile = `<task-notification>
+<task-id>busj5onh3</task-id>
+<output-file>/private/tmp/claude-501/-Users-tejas-Library-Application-Support-switchboard-worktrees-geoiq-lk-ssg-bot-v2-7b77f6fbb7-thread-442c0cd8-bfab-48cd-81cd-abce5144c9e9-c27284111e/4858f116-7ed1-4a57-8921-0b26aa79ccb9/tasks/busj5onh3.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for all VM eval runs to finish" completed (exit code 0)</summary>
+</task-notification>`
+    const withoutOutputFile = `<task-notification>
+<task-id>bcy3ng5gb</task-id>
+<status>completed</status>
+<summary>Remove VM worktree, drop temp World DB, clean temp files</summary>
+</task-notification>`
+    const labels = [
+      'Background task completed: Wait for all VM eval runs to finish',
+      'Background task completed: Remove VM worktree, drop temp World DB, clean temp files',
+    ]
+    for (const text of [withOutputFile, withoutOutputFile]) expect(isSyntheticOnlyUserText(text)).toBe(true)
+    const split = splitSyntheticUserText(`${withOutputFile}\n\n${withoutOutputFile}\n`)!
+    expect(split.userText).toBe('')
+    expect(split.parts.map(syntheticPartLabel)).toEqual(labels)
+  })
 })

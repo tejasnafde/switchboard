@@ -510,9 +510,18 @@ class ThreadSessionCoordinator(
         ThreadAction.Activate(scope.connectionId, scope.generation),
     )
     private var load: ThreadSessionLoad = ThreadSessionLoad.Loading(initialCached)
+
+    /**
+     * A mode picked on this phone that has not reached the backend yet (an
+     * offline pick, Implement's switch out of plan). It rides on the next turn
+     * only. The chat's own mode (read on load, followed through
+     * `session.provider`) is shown but never re-sent, so a chat set to full
+     * access on the desktop is not dropped to a local default.
+     */
+    private var pickedMode: RuntimeMode? = initialComposer?.runtimeMode.toRuntimeModeOrNull()
     private var composer = ThreadComposerState(
         draft = initialComposer?.text.orEmpty(),
-        runtimeMode = initialComposer?.runtimeMode.toRuntimeModeOrNull()
+        runtimeMode = pickedMode
             ?: initialCached?.runtimeMode.toRuntimeModeOrNull()
             ?: RuntimeMode.Sandbox,
         attachments = initialComposer?.attachments.orEmpty(),
@@ -624,7 +633,7 @@ class ThreadSessionCoordinator(
         val thread = currentThread()
         val result = enqueueDraft(
             text = text,
-            mode = composer.runtimeMode,
+            mode = pickedMode,
             attachments = composer.attachments,
             editingOrigin = composer.editingOrigin,
             delivery = TurnDeliveryPolicy.requestedDelivery(
@@ -637,6 +646,7 @@ class ThreadSessionCoordinator(
         return when (result) {
             is EnqueueResult.Durable -> {
                 addOptimistic(result.turn)
+                pickedMode = null
                 val cleared = composerPersistence.clear(composerKey)
                 composer = if (cleared) {
                     composerHasUnacknowledgedLocalChanges = false
@@ -681,13 +691,14 @@ class ThreadSessionCoordinator(
         publish()
         val result = enqueueDraft(
             text = trimmed,
-            mode = composer.runtimeMode,
+            mode = pickedMode,
             attachments = emptyList(),
             editingOrigin = null,
         )
         return when (result) {
             is EnqueueResult.Durable -> {
                 addOptimistic(result.turn)
+                pickedMode = null
                 composer = composer.copy(submitting = false, error = null)
                 publish()
                 ComposerSubmitResult.Durable(result.turn)
@@ -719,6 +730,8 @@ class ThreadSessionCoordinator(
                     )
                 }
                 if (response.outcome is RemoteOutcome.Success) {
+                    // Applied, so no turn needs to carry it.
+                    pickedMode = null
                     composerHasUnacknowledgedLocalChanges = true
                     persistComposer()
                 }
@@ -1066,6 +1079,7 @@ class ThreadSessionCoordinator(
                     reconcileOptimisticHistory()
                     optimisticTurns.values.forEach(::addOptimistic)
                     reduce(ThreadAction.CompleteReseed(scope))
+                    outcome.value.meta?.runtimeMode.toRuntimeModeOrNull()?.let { followBackendMode(it, supersedesPick = false) }
                     load = ThreadSessionLoad.Ready(requireNotNull(currentThread()))
                     persistSnapshot()
                     reattach(outcome.value)
@@ -1245,6 +1259,18 @@ class ThreadSessionCoordinator(
                             attachedProvider = provider
                             attachedInstanceId = currentThread()?.instanceId
                             controlMessage = null
+                            // A reattach to a live session answers with its status and emits
+                            // none, so an idle chat kept the cached or default "connecting"
+                            // ("Reconnecting") until its next turn.
+                            currentThread()?.let { thread ->
+                                store = store.copy(threads = store.threads + (key to thread.copy(status = outcome.value.status)))
+                                load = when (val current = load) {
+                                    is ThreadSessionLoad.Loading -> ThreadSessionLoad.Loading(currentThread())
+                                    is ThreadSessionLoad.Failed -> current.copy(cached = currentThread())
+                                    is ThreadSessionLoad.Ready -> current.copy(thread = requireNotNull(currentThread()))
+                                }
+                                persistSnapshot()
+                            }
                         }
                         is RemoteOutcome.Failure -> controlMessage = outcome.message
                     }
@@ -1297,6 +1323,7 @@ class ThreadSessionCoordinator(
             val providerEvent = known?.payload as?
                 app.switchboard.mobile.domain.thread.ThreadEventPayload.SessionProvider
             if (providerEvent != null) {
+                providerEvent.runtimeMode.toRuntimeModeOrNull()?.let { followBackendMode(it, supersedesPick = true) }
                 attachedInstanceId = providerEvent.instanceId
                 val provider = providerKind(providerEvent.provider)
                 profiles = profiles.copy(
@@ -1367,6 +1394,7 @@ class ThreadSessionCoordinator(
         }
         return when (val result = enqueueDraft(IMPLEMENT_PLAN_MESSAGE, RuntimeMode.Sandbox)) {
             is EnqueueResult.Durable -> {
+                pickedMode = null
                 pendingPlanOrigins[planId] = result.turn.origin
                 optimisticTurns[result.turn.origin] = result.turn
                 addOptimistic(result.turn)
@@ -1380,7 +1408,7 @@ class ThreadSessionCoordinator(
 
     private fun enqueueDraft(
         text: String,
-        mode: RuntimeMode,
+        mode: RuntimeMode?,
         attachments: List<ComposerAttachment> = emptyList(),
         editingOrigin: String? = null,
         delivery: TurnDelivery? = null,
@@ -1396,7 +1424,7 @@ class ThreadSessionCoordinator(
                         privateSourcePath = attachment.privateUri,
                     )
                 },
-                runtimeMode = mode.wire,
+                runtimeMode = mode?.wire,
                 createdAtMs = clock.nowMs(),
                 delivery = delivery?.wire,
             )
@@ -1514,12 +1542,13 @@ class ThreadSessionCoordinator(
             (!composerHydrated && !composerHasUnacknowledgedLocalChanges) || enteringQueuedEdit
         val acknowledgesLocalChanges = draft != null &&
             draft.text == composer.draft &&
-            incomingMode == composer.runtimeMode
+            incomingMode == pickedMode
         val focusRequest = if (enteringQueuedEdit) {
             composer.focusRequest + 1
         } else {
             composer.focusRequest
         }
+        if (installAuthoritativeText && incomingMode != null) pickedMode = incomingMode
         composer = composer.copy(
             draft = if (installAuthoritativeText) draft?.text.orEmpty() else composer.draft,
             runtimeMode = if (installAuthoritativeText) {
@@ -1538,12 +1567,26 @@ class ThreadSessionCoordinator(
         publish()
     }
 
+    /**
+     * Show the chat's mode as the backend reports it. A live announcement
+     * supersedes a pick not yet sent (the desktop changed it since); the mode
+     * read with history does not, since the backend has not seen the pick.
+     */
+    private fun followBackendMode(mode: RuntimeMode, supersedesPick: Boolean) {
+        currentThread()?.let { store = store.copy(threads = store.threads + (key to it.copy(runtimeMode = mode.wire))) }
+        if (supersedesPick && pickedMode != null && !composer.modeChanging) {
+            pickedMode = null
+            persistComposer()
+        }
+        if (pickedMode == null) composer = composer.copy(runtimeMode = mode)
+    }
+
     private fun persistComposer() {
         composerPersistence.save(
             ComposerDraft(
                 key = composerKey,
                 text = composer.draft,
-                runtimeMode = composer.runtimeMode.wire,
+                runtimeMode = pickedMode?.wire,
                 attachments = composer.attachments,
                 editingOrigin = composer.editingOrigin,
             ),

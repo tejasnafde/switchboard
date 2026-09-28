@@ -79,7 +79,7 @@ object ThreadEventDecoder {
             "status" -> ThreadEventKind.Status to ThreadEventPayload.Status(raw.requiredString("status"))
             "session" -> ThreadEventKind.Session to ThreadEventPayload.Session(raw.requiredString("sessionId"))
             "session.provider" -> ThreadEventKind.SessionProvider to ThreadEventPayload.SessionProvider(
-                raw.requiredString("provider"), raw.string("instanceId"), raw.string("instanceName"),
+                raw.requiredString("provider"), raw.string("instanceId"), raw.string("instanceName"), raw.string("runtimeMode"),
             )
             "context_window" -> ThreadEventKind.ContextWindow to ThreadEventPayload.ContextWindow(
                 raw.requiredLong("usedTokens"), raw.long("maxTokens"), raw.string("model"), raw.double("costUsd"),

@@ -125,7 +125,13 @@ sealed interface ThreadEventPayload {
     data class Error(val message: String, val turnId: String?) : ThreadEventPayload
     data class Status(val status: String) : ThreadEventPayload
     data class Session(val sessionId: String) : ThreadEventPayload
-    data class SessionProvider(val provider: String, val instanceId: String?, val instanceName: String?) : ThreadEventPayload
+    /** [runtimeMode] is set when the backend announces a mode change (from any client). */
+    data class SessionProvider(
+        val provider: String,
+        val instanceId: String?,
+        val instanceName: String?,
+        val runtimeMode: String? = null,
+    ) : ThreadEventPayload
     data class ContextWindow(
         val usedTokens: Long,
         val maxTokens: Long?,

@@ -56,7 +56,12 @@ export interface ThreadState {
   instanceId?: string | null
   instanceName?: string | null
   status: ProviderSessionStatus
+  /** What the picker shows: a pending pick, else the chat's mode as the backend reports it. */
   runtimeMode: RuntimeMode
+  /** A mode picked on this phone that has not reached the backend (offline,
+   *  or Implement's switch out of plan). It rides on the next turn only, so a
+   *  turn never resets the chat's mode. */
+  pickedMode?: RuntimeMode
   sessionId?: string
   usedTokens?: number
   maxTokens?: number | null
@@ -121,7 +126,12 @@ interface ChatState {
   /** Thread currently on screen - its events don't bump unread. */
   activeKey: string | null
   setActive: (key: string | null) => void
+  /** The chat's own mode (history, a new chat). A pending pick stays on show. */
   setRuntimeMode: (key: string, mode: RuntimeMode) => void
+  /** The user picked a mode on this phone. */
+  pickRuntimeMode: (key: string, mode: RuntimeMode) => void
+  /** The pick reached the backend (applied, or carried by a turn). */
+  settlePickedMode: (key: string, mode: RuntimeMode) => void
   /** `id` ties the bubble to its queued message so a failed send can undo it. */
   addUserMessage: (key: string, text: string, images?: string[], id?: string) => void
   markQuestionAnswered: (key: string, requestId: string, answers: string[][]) => void
@@ -455,6 +465,8 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             provider: event.provider,
             instanceId: event.instanceId,
             instanceName: event.instanceName,
+            // Announced from any client, so it supersedes a pick not yet sent.
+            ...(event.runtimeMode ? { runtimeMode: event.runtimeMode, pickedMode: undefined } : {}),
           }
         case 'session':
           return { sessionId: event.sessionId }
@@ -525,7 +537,13 @@ export const useChatStore = create<ChatState>()(
     })),
 
   setRuntimeMode: (key, mode) =>
-    set((s) => ({ threads: patchThread(s.threads, key, () => ({ runtimeMode: mode })) })),
+    set((s) => ({ threads: patchThread(s.threads, key, (t) => ({ runtimeMode: t.pickedMode ?? mode })) })),
+
+  pickRuntimeMode: (key, mode) =>
+    set((s) => ({ threads: patchThread(s.threads, key, () => ({ runtimeMode: mode, pickedMode: mode })) })),
+
+  settlePickedMode: (key, mode) =>
+    set((s) => ({ threads: patchThread(s.threads, key, (t) => (t.pickedMode === mode ? { pickedMode: undefined } : {})) })),
 
   addUserMessage: (key, text, images, id) =>
     set((s) => ({

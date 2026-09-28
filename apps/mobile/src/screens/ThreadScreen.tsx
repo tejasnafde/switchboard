@@ -31,7 +31,7 @@ import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ModelOption } from '@shared/models'
 import { formatTokens, contextPercent } from '@shared/format'
-import { echoMessageId } from '@shared/provider-events'
+import { echoMessageId, isRuntimeMode } from '@shared/provider-events'
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
@@ -57,7 +57,7 @@ import { SlashMenu } from '../components/SlashMenu'
 import { allCommands, detectSlash, filterCommands, type SlashCommand } from '../lib/slash'
 import { profilesFor } from '../lib/profiles'
 import { rotateWithinAgent } from '../lib/profile-rotation'
-import { buildTurn } from '../lib/turn-submit'
+import { buildTurn, enqueueTurn, modeToRestore } from '../lib/turn-submit'
 import { resolvedAmbiguousBubbleAction } from '../lib/outbox-model'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 import { historyToItems } from '../lib/thread-history'
@@ -226,6 +226,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
         provider = providerKindFor(loaded.meta?.agentType)
         setProvider(provider)
         const store = useChatStore.getState()
+        // The chat's real mode, not the store's default: the picker shows it.
+        if (isRuntimeMode(loaded.meta?.runtimeMode)) store.setRuntimeMode(key, loaded.meta.runtimeMode)
         const current = store.threads[key]
         const replaceable = (current?.items.length ?? 0) === 0 || current?.cached === true
         if (replaceable && loaded.messages.length > 0) {
@@ -250,7 +252,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         // Mirrors the desktop resume path: the conversation id doubles as the
         // resumeSessionId so the Claude adapter can --resume the JSONL chain.
         // Failure rejects (no { ok } envelope) and routes to the error feed.
-        await client.startSession({
+        const started = await client.startSession({
           threadId,
           provider,
           // `worktreePath ?? projectPath`, same as the desktop. Without it the
@@ -265,6 +267,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
           model: loadedMeta?.model ?? undefined,
           instanceId: loadedMeta?.providerInstanceId ?? undefined,
         })
+        // A reattach to a live session answers with its status and emits
+        // none, so a cached chat kept 'connecting' until its next turn.
+        useChatStore.getState().ingest(connectionId, { type: 'status', threadId, status: started.status })
       } catch (err) {
         startedKeyRef.current = null
         reportError(err)
@@ -308,13 +313,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
     })()
   }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated, thread.cached])
 
-  // Restore the user's last choices, pushing the mode to the backend too so the
-  // adapter and the chip agree.
+  // Restore the user's last choices. A new chat's mode is pushed to the backend
+  // too, so the adapter and the chip agree.
   const restoredKeyRef = useRef<string | null>(null)
   useEffect(() => {
     if (restoredKeyRef.current === key) return
     const saved = usePrefsStore.getState().threads[key]
-    const mode = saved?.mode ?? (isNew ? usePrefsStore.getState().defaultMode : undefined)
+    const mode = modeToRestore(isNew, saved?.mode, usePrefsStore.getState().defaultMode)
     if (mode === undefined && saved?.model === undefined && !saved?.draft) {
       restoredKeyRef.current = key
       return
@@ -459,10 +464,17 @@ export default function ThreadScreen({ route, navigation }: Props) {
   )
   const itemCount = reversedItems.length
 
+  const settlePick = useCallback((mode: string) => {
+    if (isRuntimeMode(mode)) useChatStore.getState().settlePickedMode(key, mode)
+  }, [key])
+
   const setMode = (mode: RuntimeMode) => {
-    useChatStore.getState().setRuntimeMode(key, mode)
+    useChatStore.getState().pickRuntimeMode(key, mode)
     usePrefsStore.getState().rememberMode(key, mode)
-    getClient(connectionId)?.setRuntimeMode(threadId, mode).catch(reportError)
+    // Offline, the pick waits for the next turn to carry it.
+    getClient(connectionId)?.setRuntimeMode(threadId, mode)
+      .then(() => useChatStore.getState().settlePickedMode(key, mode))
+      .catch(reportError)
   }
 
   // Optimistic like setMode: the chip updates now, a rejection lands in the feed.
@@ -536,7 +548,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       threadId,
       text,
       images,
-      runtimeMode: thread.runtimeMode,
+      runtimeMode: thread.pickedMode,
       titleCandidate,
       whenIdle: toggle.queues && !textOverride,
     })
@@ -546,7 +558,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // has not loaded yet, also has no user items - titling those would
     // overwrite a title the user already has.
     useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url), turn.bubbleId)
-    enqueue(turn.queued)
+    enqueueTurn(turn.queued, enqueue, settlePick)
       .then(async () => {
         if (!editingId) return
         await completeRejectedEdit(editingId)
@@ -583,7 +595,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
     // Same flow as the desktop PlanCard: drop to sandbox, then send the
     // implement follow-up.
-    useChatStore.getState().setRuntimeMode(key, 'sandbox')
+    useChatStore.getState().pickRuntimeMode(key, 'sandbox')
     client.setRuntimeMode(threadId, 'sandbox').catch(reportError)
     // Through the outbox like every other send, or it is lost off-socket.
     const turn = buildTurn({
@@ -593,11 +605,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
       runtimeMode: 'sandbox',
     })
     useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE, undefined, turn.bubbleId)
-    enqueue(turn.queued).catch((err: unknown) => {
+    enqueueTurn(turn.queued, enqueue, settlePick).catch((err: unknown) => {
       useChatStore.getState().removeUserMessage(key, turn.bubbleId)
       reportError(err)
     })
-  }, [connectionId, threadId, key, reportError])
+  }, [connectionId, threadId, key, reportError, settlePick])
 
   const decideApproval = useCallback(
     (requestId: string, decision: 'approve' | 'deny', response?: HostWriteResponse) => {

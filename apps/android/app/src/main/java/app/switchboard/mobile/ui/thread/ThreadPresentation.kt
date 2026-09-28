@@ -12,6 +12,7 @@ import app.switchboard.mobile.domain.thread.SyntheticTone
 import app.switchboard.mobile.domain.thread.SyntheticUserMessage
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonCodec
+import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.JsonValue
@@ -22,6 +23,11 @@ import java.util.Locale
 private const val RAW_NOTICE_DIAGNOSTIC_MAX_CHARS = 8_000
 private const val RAW_NOTICE_TRUNCATION_MARKER = "… <diagnostic truncated>"
 private const val TOOL_DETAIL_MAX_CHARS = 140
+
+/** Claude `mcp__switchboard__x`, OpenCode `switchboard_x`, Codex `switchboard:x`. */
+private val SWITCHBOARD_TOOL = Regex("""(?:mcp__switchboard__|switchboard[_:])(\w+)""")
+private val PR_NUMBER = Regex("""#?(\d+)""")
+private val PR_URL_NUMBER = Regex("""/(?:pull|pull-requests)/(\d+)""")
 private val TOOL_CAMEL_CASE = Regex("([a-z0-9])([A-Z])")
 private val TOOL_NAME_SEPARATORS = Regex("[^a-z0-9]+")
 private val TOOL_KEY_SEPARATORS = Regex("[^A-Za-z0-9]+")
@@ -464,6 +470,7 @@ object ThreadPresenter {
     )
 
     private fun toolSummary(toolName: String, input: JsonValue?): ToolSummary {
+        switchboardToolSummary(toolName, toolValues(input))?.let { return it }
         val normalizedName = normalizedToolName(toolName)
         val canonical = normalizedName.canonical
         val values = toolValues(input)
@@ -581,6 +588,49 @@ object ThreadPresenter {
         )
     }
 
+    /**
+     * Port of src/shared/tool-summary.ts `summarizeSwitchboardTool`: the
+     * Switchboard MCP tools' arguments are Markdown, so each gets an action
+     * label and the one field that identifies it.
+     */
+    private fun switchboardToolSummary(toolName: String, input: Map<String, JsonValue>): ToolSummary? {
+        val name = SWITCHBOARD_TOOL.matchEntire(toolName)?.groupValues?.get(1) ?: return null
+        // Codex nests an MCP call's arguments (codex-adapter.ts `codexToolInput`).
+        val values = if ("arguments" in input) (input["arguments"] as? JsonObject)?.values.orEmpty() else input
+        fun string(key: String) = (values[key] as? JsonString)?.value?.takeIf(String::isNotEmpty)
+        val pr = prLabel(values["pr"])
+        fun withPr(rest: String) = listOf(pr, rest).filter(String::isNotEmpty).joinToString(" · ")
+        val (label, detail) = when (name) {
+            "create_pull_request" -> "Open pull request" to condenseToolDetail(string("title").orEmpty())
+            "reply_to_conversation" -> "Reply" to pr
+            "resolve_conversation" -> "Resolve" to pr
+            "rerun_check" -> "Re-run check" to pr
+            "comment_on_line" -> "Comment on line" to string("path")?.let { path ->
+                concisePath(path) + ((values["line"] as? JsonNumber)?.let { ":${it.source}" }.orEmpty())
+            }.orEmpty()
+            "draft_review" -> "Draft review" to withPr(
+                (values["comments"] as? JsonArray)?.values?.size?.takeIf { it > 0 }
+                    ?.let { "$it ${if (it == 1) "comment" else "comments"}" }.orEmpty(),
+            )
+            "get_pr_status" -> "PR status" to pr
+            "list_pr_conversations" -> "PR conversations" to pr
+            "get_pr_diff" -> "PR diff" to withPr(concisePath(string("path").orEmpty()))
+            "send_agent_message" -> "Send to session" to ""
+            "list_agent_sessions" -> "List sessions" to ""
+            else -> return null
+        }
+        return ToolSummary(label, detail, ToolIconKind.OTHER, name == "comment_on_line")
+    }
+
+    /** "#612" from a number, "612", "#612" or a pull request URL. */
+    private fun prLabel(value: JsonValue?): String {
+        if (value is JsonNumber) return "#${value.source}"
+        val text = (value as? JsonString)?.value?.trim()?.takeIf(String::isNotEmpty) ?: return ""
+        val number = PR_NUMBER.matchEntire(text)?.groupValues?.get(1)
+            ?: PR_URL_NUMBER.find(text)?.groupValues?.get(1)
+        return number?.let { "#$it" } ?: condenseToolDetail(text, 60)
+    }
+
     private fun toolValues(input: JsonValue?): Map<String, JsonValue> = when (input) {
         is JsonObject -> input.values
         is JsonString -> runCatching { JsonCodec.parse(input.value) as? JsonObject }
@@ -654,10 +704,10 @@ object ThreadPresenter {
         .lowercase(Locale.US)
         .replaceFirstChar { it.titlecase(Locale.US) }
 
-    private fun condenseToolDetail(detail: String): String =
+    private fun condenseToolDetail(detail: String, max: Int = TOOL_DETAIL_MAX_CHARS): String =
         detail.replace(TOOL_WHITESPACE, " ").trim().let { condensed ->
-            if (condensed.length <= TOOL_DETAIL_MAX_CHARS) condensed
-            else condensed.take(TOOL_DETAIL_MAX_CHARS - 1) + "…"
+            if (condensed.length <= max) condensed
+            else condensed.take(max - 1) + "…"
         }
 
     /**
