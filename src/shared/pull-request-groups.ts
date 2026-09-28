@@ -8,7 +8,10 @@
  *   something is on you (failed checks, open conversations, changes
  *   requested).
  * - Ready to merge: your PR, open, with nothing blocking it.
- * - Waiting on others: every other open PR you are part of.
+ * - Your pull requests: your other open PRs (waiting for review, checks
+ *   running, a draft, approvals pending).
+ * - Reviewing: someone else's open PR you are part of and nothing is owed
+ *   (you reviewed, you commented, conflicts or checks on their side).
  * - Merged this week: merged in the last 7 days.
  *
  * Closed-without-merge and older merged PRs are not listed.
@@ -19,14 +22,15 @@
  */
 import { mergeBlockers, prKey, repoKey, type PrSummary } from './pull-requests'
 
-export type PrGroupId = 'needs-you' | 'waiting' | 'ready' | 'merged'
+export type PrGroupId = 'needs-you' | 'ready' | 'yours' | 'reviewing' | 'merged'
 
-export const PR_GROUP_ORDER: readonly PrGroupId[] = ['needs-you', 'waiting', 'ready', 'merged']
+export const PR_GROUP_ORDER: readonly PrGroupId[] = ['needs-you', 'ready', 'yours', 'reviewing', 'merged']
 
 export const PR_GROUP_LABEL: Record<PrGroupId, string> = {
   'needs-you': 'Needs you',
-  waiting: 'Waiting on others',
   ready: 'Ready to merge',
+  yours: 'Your pull requests',
+  reviewing: 'Reviewing',
   merged: 'Merged this week',
 }
 
@@ -69,12 +73,12 @@ export function prRowStatus(pr: PrSummary, now: number): PrRowStatus | null {
 
   if (!pr.viewer.isAuthor) {
     if (pr.viewer.isRequestedReviewer) return { group: 'needs-you', icon: 'review', phrase: 'your review' }
-    if (pr.mergeConflicts) return { group: 'waiting', icon: 'conflict', phrase: 'merge conflicts' }
-    if (pr.checks.state === 'pending') return { group: 'waiting', icon: 'running', phrase: 'checks running' }
-    return { group: 'waiting', icon: 'waiting', phrase: viewerPhrase(pr) }
+    if (pr.mergeConflicts) return { group: 'reviewing', icon: 'conflict', phrase: 'merge conflicts' }
+    if (pr.checks.state === 'pending') return { group: 'reviewing', icon: 'running', phrase: 'checks running' }
+    return { group: 'reviewing', icon: 'waiting', phrase: viewerPhrase(pr) }
   }
 
-  if (pr.draft) return { group: 'waiting', icon: 'draft', phrase: 'draft' }
+  if (pr.draft) return { group: 'yours', icon: 'draft', phrase: 'draft' }
   // Nothing else merges until the conflicts go, so they outrank a failed build.
   if (pr.mergeConflicts) return { group: 'needs-you', icon: 'conflict', phrase: 'merge conflicts' }
   if (pr.checks.state === 'failure') return { group: 'needs-you', icon: 'failed', phrase: 'build failed' }
@@ -83,11 +87,11 @@ export function prRowStatus(pr: PrSummary, now: number): PrRowStatus | null {
   if (pr.reviewers.some((r) => r.state === 'changes_requested')) {
     return { group: 'needs-you', icon: 'conversation', phrase: 'changes requested' }
   }
-  if (pr.checks.state === 'pending') return { group: 'waiting', icon: 'running', phrase: 'checks running' }
+  if (pr.checks.state === 'pending') return { group: 'yours', icon: 'running', phrase: 'checks running' }
   const { given, required } = pr.approvals
   const approved = required !== null ? given >= required : given > 0
   if (approved && mergeBlockers(pr).length === 0) return { group: 'ready', icon: 'ready', phrase: '' }
-  return { group: 'waiting', icon: 'waiting', phrase: approvalsPhrase(pr) }
+  return { group: 'yours', icon: 'waiting', phrase: approvalsPhrase(pr) }
 }
 
 export interface PrGroup {

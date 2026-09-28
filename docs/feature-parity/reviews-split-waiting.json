@@ -1,0 +1,53 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "reviews-split-waiting",
+  "summary": "Reviews By status no longer mixes the user's own open pull requests with other people's in one Waiting on others group. The 'waiting' group id is replaced by two (src/shared/pull-request-groups.ts): 'yours' (Your pull requests: open PRs the viewer authored that are not in Needs you or Ready, so waiting for review, checks running, a draft, approvals pending) and 'reviewing' (Reviewing: someone else's open PR the viewer is part of that is not in Needs you, so you reviewed, you commented, merge conflicts or checks running on their side). Order: Needs you, Ready to merge, Your pull requests, Reviewing, Merged this week; newest update first inside a group, as before. By repository keeps its rows in the same order, so a repository whose first row is your waiting PR now comes before one you only review, and Ready rows now come before your other waiting PRs inside a repository. Needs you, Ready and the hidden-PR comes-back rule (keyed on Needs you only) are unchanged. The demo adapter gains ssg-doctor #42, someone else's PR the viewer commented on, so the Reviews screens show both groups.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/ReviewsView.tsx",
+        "e2e/snapshots/reviews-dark-darwin.png",
+        "e2e/snapshots/reviews-by-repo-dark-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_reviews",
+      "followUpRelease": "mobile-v0.5.0, with the Reviews tab. apps/mobile has no pull request list and nothing there reads a group id, so nothing changes on the phone today; the Reviews tab will group with the same groupPullRequests and get both groups."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_reviews",
+      "followUpRelease": "Native Android 0.6.0, with the Reviews destination. No Android code reads pull requests or the group ids; nothing unfinished is reachable."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pull-request-groups.ts",
+        "src/main/pull-requests/demo.ts",
+        "tests/unit/pull-request-groups.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Group ids are computed on every render and never stored: the persisted Reviews settings are the group-by mode and collapsed repository keys, and hides are keyed by PR, so nothing refers to the removed 'waiting' id."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No wire, package, signing or update channel change. The grouping runs in the renderer over the unchanged PrSummary list, so any renderer/backend version pair works."
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest: your PR waiting for review with no reviewers, your draft, checks running and short of approvals are Your pull requests; someone else's PR you commented on, reviewed, with checks running or with conflicts is Reviewing; groups come in the order Needs you, Ready, Your pull requests, Reviewing, Merged, newest first inside; By repository puts a repository with your waiting PR ahead of one you only commented on; a hidden PR in either new group stays hidden when it changes.",
+      "Visual regressions (screens phase) re-recorded for the Reviews screens and run twice without updating."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not checked against a real account with ~26 repositories; only the demo data.",
+      "React Native and native Android are staged; nothing was run on a phone."
+    ]
+  }
+}
