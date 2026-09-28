@@ -401,7 +401,6 @@ describe('testBitbucket', () => {
     { host: 'bitbucket' as const, owner: 'geoiq', name: 'retailiq' },
     { host: 'bitbucket' as const, owner: 'personal', name: 'notes' },
   ]
-  const WRITES = ' This test does not check write:pullrequest:bitbucket; replies, approvals and merges are checked when you first make one.'
   const readable = (owner: string, name: string): Record<string, Route> => ({
     [`/repositories/${owner}/${name}`]: { body: {} },
     [`/repositories/${owner}/${name}/pullrequests`]: { body: { size: 0 } },
@@ -414,7 +413,7 @@ describe('testBitbucket', () => {
       ...readable('geoiq', 'retailiq'),
     })
     const result = await testBitbucket(new BitbucketClient(creds, impl), repos)
-    expect(result).toEqual({ ok: true, message: `Signed in as Tejas Nafde. Can read 2 of your 3 project repositories and their pull requests; cannot read personal/notes.${WRITES}` })
+    expect(result).toEqual({ ok: true, message: 'Signed in as Tejas Nafde.\n2 of 3 project repositories are readable.\nCannot read in personal: notes' })
     expect(calls.map((c) => c.url.split('?')[0].slice(BITBUCKET_API.length)).sort()).toEqual([
       '/repositories/geoiq/retailiq', '/repositories/geoiq/retailiq/pullrequests',
       '/repositories/geoiq/ssg-bot-v2', '/repositories/geoiq/ssg-bot-v2/pullrequests',
@@ -426,10 +425,10 @@ describe('testBitbucket', () => {
   it('says what it checked when every repository works, or there are none', async () => {
     const { impl } = fakeFetch({ '/user': { body: { display_name: 'Tejas' } }, ...readable('geoiq', 'ssg-bot-v2') })
     expect(await testBitbucket(new BitbucketClient(creds, impl), repos.slice(0, 1))).toEqual({
-      ok: true, message: `Signed in as Tejas. Can read your project repository and its pull requests.${WRITES}`,
+      ok: true, message: 'Signed in as Tejas.\nYour project repository is readable.',
     })
     expect(await testBitbucket(new BitbucketClient(creds, impl), [])).toEqual({
-      ok: true, message: 'Signed in as Tejas. None of your projects points at a Bitbucket repository yet, so no repository was checked.',
+      ok: true, message: 'Signed in as Tejas.\nNone of your projects uses a Bitbucket repository yet.',
     })
   })
 
@@ -441,7 +440,7 @@ describe('testBitbucket', () => {
     })
     expect(await testBitbucket(new BitbucketClient(creds, impl), repos.slice(0, 1))).toEqual({
       ok: false,
-      message: 'Signed in. Can read 0 of your 1 project repository and their pull requests; cannot read geoiq/ssg-bot-v2. The API token may be missing the read:pullrequest:bitbucket scope.',
+      message: 'Signed in.\nYour project repository is not readable.\nCannot read in geoiq: ssg-bot-v2 (pull requests)\nThe API token may be missing read:pullrequest:bitbucket.',
     })
   })
 
@@ -454,25 +453,25 @@ describe('testBitbucket', () => {
     })
     const result = await testBitbucket(new BitbucketClient(creds, impl), repos)
     expect(result.ok).toBe(false)
-    expect(result.message).toBe('Signed in. Can read 0 of your 3 project repositories and their pull requests; cannot read geoiq/retailiq, geoiq/ssg-bot-v2, personal/notes. The API token may be missing the read:repository:bitbucket scope.')
+    expect(result.message).toBe('Signed in.\nNone of your 3 project repositories is readable.\nCannot read in geoiq: retailiq, ssg-bot-v2\nCannot read in personal: notes\nThe API token may be missing read:repository:bitbucket.')
   })
 
   it('says to retry when Bitbucket rate-limits the checks', async () => {
     const { impl } = fakeFetch({ '/user': { body: {} }, '/repositories/geoiq/ssg-bot-v2': { status: 429, body: {} } })
     expect(await testBitbucket(new BitbucketClient(creds, impl), repos.slice(0, 1))).toEqual({
       ok: false,
-      message: 'Signed in. Can read 0 of your 1 project repository and their pull requests; cannot read geoiq/ssg-bot-v2. Bitbucket rate-limited some checks; try again in a minute.',
+      message: 'Signed in.\nYour project repository is not readable.\nCannot read in geoiq: ssg-bot-v2\nBitbucket rate-limited some checks. Try again in a minute.',
     })
   })
 
   it('caps the repositories it checks', async () => {
-    const many = Array.from({ length: 25 }, (_, i) => ({ host: 'bitbucket' as const, owner: 'ws', name: `r${i}` }))
+    const many = Array.from({ length: 55 }, (_, i) => ({ host: 'bitbucket' as const, owner: 'ws', name: `r${i}` }))
     const routes: Record<string, Route> = { '/user': { body: {} } }
     for (const r of many) Object.assign(routes, readable('ws', r.name))
     const { impl, calls } = fakeFetch(routes)
     const result = await testBitbucket(new BitbucketClient(creds, impl), many)
-    expect(calls).toHaveLength(41)
-    expect(result.message).toBe(`Signed in. Can read all 20 of your project repositories and their pull requests. Checked the first 20 of 25.${WRITES}`)
+    expect(calls).toHaveLength(101)
+    expect(result.message).toBe('Signed in.\nAll 50 project repositories are readable.\nChecked the first 50 of 55.')
   })
 
   it('says why a rejected token failed', async () => {
