@@ -320,6 +320,20 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  hostWriteSection: {
+    gap: 2,
+    marginBottom: 6,
+  },
+  hostWriteText: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  /** A long draft before it is opened; approval waits until it is. */
+  hostWritePreviewCollapsed: {
+    maxHeight: 200,
+    overflow: 'hidden',
+  },
   actionLabel: {
     color: '#fff',
     fontSize: 13,

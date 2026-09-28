@@ -131,6 +131,9 @@ export const ApprovalItem = memo(function ApprovalItem({
   const pending = item.state === 'pending'
   const card = item.hostWrite
   const actions = useMemo(() => approvalActions(item, backendTakesPhoneApproval), [item, backendTakesPhoneApproval])
+  const [expanded, setExpanded] = useState(false)
+  // A long draft starts collapsed, and nothing is approved until it has been opened.
+  const hidden = actions.kind === 'host-write' && actions.preview.long && !expanded
   return (
     <View style={[styles.itemBlock, styles.approvalCard, !pending && styles.cardResolved]}>
       <Text style={styles.approvalTitle}>
@@ -144,11 +147,33 @@ export const ApprovalItem = memo(function ApprovalItem({
           </>
         )
         : <Text style={styles.toolName}>{item.toolName}</Text>}
-      <Text style={styles.toolOutput} numberOfLines={card ? 24 : 6}>
-        {item.detail}
-      </Text>
+      {actions.kind === 'host-write'
+        ? (
+          <>
+            <View style={hidden && styles.hostWritePreviewCollapsed} testID="host-write-preview">
+              {actions.preview.sections.map((section, i) => (
+                <View key={i} style={styles.hostWriteSection}>
+                  <Text style={styles.toolName}>{section.label}</Text>
+                  <Text style={styles.hostWriteText} selectable>{section.text}</Text>
+                </View>
+              ))}
+            </View>
+            {actions.preview.long && (
+              <Pressable onPress={() => setExpanded((v) => !v)} accessibilityState={{ expanded }}>
+                <Text style={styles.toggleText}>{expanded ? 'Show less' : 'Show the full draft'}</Text>
+              </Pressable>
+            )}
+          </>
+        )
+        : (
+          <Text style={styles.toolOutput} numberOfLines={card ? 24 : 6}>
+            {item.detail}
+          </Text>
+        )}
       {pending && actions.kind === 'deny-only' && <Text style={styles.toolOutput}>Approve this on the desktop. You can deny it here.</Text>}
-      {pending && actions.kind === 'host-write' && <Text style={styles.toolOutput}>Posts as shown. Edit on the desktop.</Text>}
+      {pending && actions.kind === 'host-write' && (
+        <Text style={styles.toolOutput}>{hidden ? 'Show the full draft to approve it.' : 'Posts as shown. Edit on the desktop.'}</Text>
+      )}
       {pending && actions.kind === 'host-write' && actions.buttons.map((b) => b.problem && (
         <Text key={b.id} style={styles.toolOutput}>{b.label}: {b.problem}</Text>
       ))}
@@ -162,9 +187,9 @@ export const ApprovalItem = memo(function ApprovalItem({
           {actions.kind === 'host-write' && actions.buttons.map((b) => (
             <Pressable
               key={b.id}
-              disabled={b.problem !== null}
-              accessibilityState={{ disabled: b.problem !== null }}
-              style={[styles.actionButton, b.primary ? styles.approveButton : styles.secondaryButton, b.problem !== null && styles.buttonDisabled]}
+              disabled={hidden || b.problem !== null}
+              accessibilityState={{ disabled: hidden || b.problem !== null }}
+              style={[styles.actionButton, b.primary ? styles.approveButton : styles.secondaryButton, (hidden || b.problem !== null) && styles.buttonDisabled]}
               onPress={() => onDecide(item.requestId, 'approve', b.response)}
             >
               <Text style={styles.actionLabel}>{b.label}</Text>

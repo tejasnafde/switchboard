@@ -68,6 +68,7 @@ import { agentPullRequestAccess, buildPrTools } from '../mcp/pr-tools'
 import { buildPeerMcpTools } from '../mcp/peer-mcp-tools'
 import { switchboardMcpServer, type SwitchboardMcpLaunch, type SwitchboardMcpServer } from '../mcp/switchboard-mcp-server'
 import { parseHostWriteResponse } from '@shared/agent-host-writes'
+import { approvalChoiceOnly } from '@shared/host-write-phone'
 import { defaultClaudeDir, prepareClaudeProfileSwitch } from './claude-session-migrate'
 import { prepareCodexProfileSwitch } from './codex-session-migrate'
 import { remoteBlockedProviderLabel, remoteProviderLoginPrompt, remoteProviderConfigDir, checkRemoteProviderAuth } from './remote-gate'
@@ -1913,9 +1914,11 @@ export class ProviderRegistry implements PeerToolHost {
       if (AgentApprovalBroker.owns(requestId)) {
         // A device that may send the agent turns (the chat scope, which a
         // phone has) may approve the post it asked for: the card shows the
-        // text, and a full-access turn is the larger power. The Reviews write
-        // channels stay admin-scoped in device-auth.
-        const answer = this.agentApprovals.respond(threadId, requestId, decision, parseHostWriteResponse(response), {
+        // text, and a full-access turn is the larger power. Only an admin
+        // device may change that text, so a phone's approval posts the draft
+        // it showed. The Reviews write channels stay admin-scoped in device-auth.
+        const parsed = parseHostWriteResponse(response)
+        const answer = this.agentApprovals.respond(threadId, requestId, decision, remoteDeviceHasScope('admin') ? parsed : approvalChoiceOnly(parsed), {
           mayApproveHostWrite: remoteDeviceHasScope('chat'),
           label: describeRequestClient(),
         })

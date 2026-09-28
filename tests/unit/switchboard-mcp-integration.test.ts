@@ -246,9 +246,10 @@ describe('through the provider registry', () => {
     await expect(scopeless).rejects.toThrow('cannot post')
     expect(posted).toEqual([])
 
-    // The phone approves as drafted: no text, only the resolve choice.
+    // The phone approves the draft its card showed: replacement text from a
+    // device without the admin scope is dropped before the broker sees it.
     await withBackendRequestContext({ clientScope: 'phone', transport: 'remote', deviceScopes: ['chat'], deviceSessionId: 'dev_1' }, () =>
-      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false }))
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false, text: 'Replaced on the phone' }))
     const result = await reply
     expect((result.result as { isError?: boolean }).isError).toBeUndefined()
     expect(posted).toEqual([{ conversationId: 'T1', body: 'Because.\n\nvia Switchboard' }])
@@ -258,6 +259,31 @@ describe('through the provider registry', () => {
     await host.invoke(ProviderChannels.STOP_SESSION, 't1')
     await client.exited
     expect(server.isOpen('t1')).toBe(false)
+    await server.stop()
+    setAgentPullRequestAccess(null)
+  })
+
+  it('posts the desktop\'s edit of the draft', async () => {
+    setAgentPullRequestAccess(access)
+    posted.length = 0
+    const host = new FakeHost()
+    const adapter = new LaunchRecordingAdapter()
+    const server = new SwitchboardMcpServer({ bridgeDir: () => bridgeDir })
+    const registry = new ProviderRegistry(host, new Map([['codex', adapter]]), undefined, undefined, server)
+    registry.registerIpcHandlers()
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't3', provider: 'codex', cwd: '/tmp', runtimeMode: 'full-access' })
+    const client = connect(adapter.launches[0]!)
+    await client.request('initialize', {})
+    const reply = client.request('tools/call', { name: 'reply_to_conversation', arguments: { conversationId: 'T1', text: 'Because.' } })
+    await vi.waitFor(() => expect(host.events.some((e) => e.type === 'request.opened')).toBe(true))
+    const card = host.events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
+
+    await host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't3', card.requestId, 'approve', { resolve: false, text: 'Edited on the desktop.' })
+    await reply
+    expect(posted).toEqual([{ conversationId: 'T1', body: 'Edited on the desktop.\n\nvia Switchboard' }])
+
+    await host.invoke(ProviderChannels.STOP_SESSION, 't3')
+    await client.exited
     await server.stop()
     setAgentPullRequestAccess(null)
   })

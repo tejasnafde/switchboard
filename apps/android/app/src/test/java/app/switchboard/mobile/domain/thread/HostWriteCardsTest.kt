@@ -3,6 +3,7 @@ package app.switchboard.mobile.domain.thread
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonCodec
+import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.JsonValue
@@ -73,6 +74,49 @@ class HostWriteCardsTest {
         assertNull(HostWriteCards.decode(null))
         assertNull(HostWriteCards.decode(s("reply")))
         assertNull(HostWriteCards.decode(obj("host" to s("github"))))
+    }
+
+    @Test
+    fun previewHoldsEveryWordAReviewPostsUnderItsPlace() {
+        val text = "y".repeat(2_000)
+        val review = card(
+            "action" to s("review"),
+            "review" to obj(
+                "summary" to s("Sum."),
+                "comments" to JsonArray(listOf(obj("path" to s("a.ts"), "side" to s("old"), "line" to JsonNumber("9"), "startLine" to JsonNumber("4"), "text" to s(text)))),
+                "verdicts" to JsonArray(listOf(s("comment"))),
+            ),
+        )!!
+        assertEquals(
+            HostWritePreview(listOf(HostWritePreviewSection("Summary", "Sum."), HostWritePreviewSection("a.ts:4-9 (old)", text)), long = true),
+            HostWriteCards.preview(review),
+        )
+    }
+
+    @Test
+    fun previewShowsATitleTheWholeDescriptionAndTheQuotedComment() {
+        val description = "d".repeat(900)
+        val create = card(
+            "action" to s("create"),
+            "create" to obj("repoLabel" to s("acme/app"), "sourceBranch" to s("feat"), "targetBranch" to s("main"), "title" to s("Add it"), "description" to s(description)),
+        )!!
+        assertEquals(
+            listOf("Branches" to "acme/app: feat -> main", "Title" to "Add it", "Description" to description),
+            HostWriteCards.preview(create)!!.sections.map { it.label to it.text },
+        )
+        val reply = card("action" to s("reply"), "replyText" to s("Done."), "quote" to obj("author" to s("rev"), "body" to s("Why?")))!!
+        assertEquals(
+            HostWritePreview(listOf(HostWritePreviewSection("rev wrote", "Why?"), HostWritePreviewSection("Reply", "Done.")), long = false),
+            HostWriteCards.preview(reply),
+        )
+    }
+
+    @Test
+    fun previewIsNullWhenThePayloadLacksWhatTheApprovalWouldPost() {
+        assertNull(HostWriteCards.preview(card("action" to s("reply"))!!))
+        assertNull(HostWriteCards.preview(card("action" to s("review"), "review" to obj("summary" to s("x")))!!))
+        assertNull(HostWriteCards.preview(card("action" to s("create"))!!))
+        assertNull(HostWriteCards.preview(card("action" to s("merge"))!!))
     }
 
     private fun card(vararg fields: Pair<String, JsonValue>): HostWriteCard? = HostWriteCards.decode(

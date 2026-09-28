@@ -12,12 +12,17 @@ import { act } from 'react-test-renderer'
 import type { HostWriteCard } from '@shared/agent-host-writes'
 import { renderComponent, type Node } from '../../test/render'
 
-/** Tap the Pressable around the text `label`: a plain tap, not a gesture. */
-function press(root: Node, label: string): void {
+/** The Pressable around the text `label`. */
+function pressable(root: Node, label: string): Node {
   let node: Node | null = root.find((n) => typeof n.type === 'string' && n.children.length === 1 && n.children[0] === label)
   while (node && typeof node.props.onPress !== 'function') node = node.parent
   if (!node) throw new Error(`nothing pressable around "${label}"`)
-  const target = node
+  return node
+}
+
+/** Tap the Pressable around the text `label`: a plain tap, not a gesture. */
+function press(root: Node, label: string): void {
+  const target = pressable(root, label)
   act(() => target.props.onPress())
 }
 
@@ -197,6 +202,43 @@ describe('ApprovalItem', () => {
     expect(texts).toEqual(expect.arrayContaining(['Comment', 'Request changes', 'Approve', 'Deny']))
     press(root.root, 'Request changes')
     expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { verdict: 'request_changes' })
+  })
+
+  it('shows a long reply in full, and enables its buttons only once it is opened', () => {
+    const long = Array.from({ length: 40 }, (_, i) => `Line ${i + 1} of the reply.`).join('\n')
+    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: { ...reply, replyText: long } })} backendTakesPhoneApproval onDecide={() => {}} />)
+    expect(root.texts()).toContain(long)
+    expect(pressable(root.root, 'Post and resolve').props.disabled).toBe(true)
+    expect(root.texts()).toContain('Show the full draft to approve it.')
+    press(root.root, 'Show the full draft')
+    expect(pressable(root.root, 'Post and resolve').props.disabled).toBe(false)
+    expect(pressable(root.root, 'Post reply').props.disabled).toBe(false)
+    expect(root.texts()).toContain('Posts as shown. Edit on the desktop.')
+  })
+
+  it('shows every comment of a long review in full, with its place, before a verdict is enabled', () => {
+    const comments = Array.from({ length: 4 }, (_, i) => ({
+      id: `c${i + 1}`, path: `src/f${i}.ts`, side: 'new' as const, line: 10 + i, text: `${'x'.repeat(500)} end of comment ${i + 1}`, excerpt: [],
+    }))
+    const summary = `${'s'.repeat(400)} end of summary`
+    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: { ...review, review: { ...review.review!, summary, comments } } })} backendTakesPhoneApproval onDecide={() => {}} />)
+    const texts = root.texts()
+    expect(texts).toContain(summary)
+    for (const c of comments) {
+      expect(texts).toContain(`${c.path}:${c.line}`)
+      expect(texts).toContain(c.text)
+    }
+    expect(pressable(root.root, 'Approve').props.disabled).toBe(true)
+    press(root.root, 'Show the full draft')
+    expect(pressable(root.root, 'Approve').props.disabled).toBe(false)
+  })
+
+  it('sends the user to the desktop when the card cannot be shown in full', () => {
+    const older = { ...review, review: { summary: 'Two notes.', verdicts: ['approve'] } } as unknown as HostWriteCard
+    const texts = renderComponent(<ApprovalItem item={approval({ hostWrite: older })} backendTakesPhoneApproval onDecide={() => {}} />).texts()
+    expect(texts).not.toContain('Approve')
+    expect(texts).toContain('Deny')
+    expect(texts.join(' ')).toContain('Approve this on the desktop')
   })
 
   it('offers only Comment to the author', () => {

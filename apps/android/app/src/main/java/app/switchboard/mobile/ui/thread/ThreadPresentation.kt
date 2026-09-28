@@ -5,6 +5,7 @@ import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteButton
 import app.switchboard.mobile.domain.thread.HostWriteCard
 import app.switchboard.mobile.domain.thread.HostWriteCards
+import app.switchboard.mobile.domain.thread.HostWritePreview
 import app.switchboard.mobile.domain.thread.HostWriteResponse
 import app.switchboard.mobile.domain.thread.SyntheticPart
 import app.switchboard.mobile.domain.thread.SyntheticTone
@@ -726,7 +727,7 @@ object ThreadPresenter {
 sealed interface ApprovalActions {
     data object Plain : ApprovalActions
     data class DenyOnly(val card: HostWriteCard) : ApprovalActions
-    data class HostWrite(val card: HostWriteCard, val buttons: List<HostWriteButton>) : ApprovalActions
+    data class HostWrite(val card: HostWriteCard, val buttons: List<HostWriteButton>, val preview: HostWritePreview) : ApprovalActions
 }
 
 enum class ThreadApprovalDecision {
@@ -831,12 +832,15 @@ object ThreadInteractionPolicy {
      */
     fun approvalActions(item: FeedItem.Approval, backendTakesPhoneApproval: Boolean): ApprovalActions {
         val card = item.hostWrite ?: return ApprovalActions.Plain
-        return if (backendTakesPhoneApproval) {
-            ApprovalActions.HostWrite(card, HostWriteCards.buttons(card))
-        } else {
-            ApprovalActions.DenyOnly(card)
-        }
+        // A card the phone cannot show in full would post text the user never saw.
+        val preview = HostWriteCards.preview(card).takeIf { backendTakesPhoneApproval }
+            ?: return ApprovalActions.DenyOnly(card)
+        return ApprovalActions.HostWrite(card, HostWriteCards.buttons(card), preview)
     }
+
+    /** A long draft starts collapsed, and nothing is approved until it has been opened. */
+    fun hostWriteApprovable(actions: ApprovalActions.HostWrite, expanded: Boolean): Boolean =
+        !actions.preview.long || expanded
 
     fun answer(
         item: FeedItem.Question,

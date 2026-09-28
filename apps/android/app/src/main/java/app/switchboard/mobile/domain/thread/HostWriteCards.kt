@@ -52,6 +52,16 @@ data class HostWriteButton(
     val problem: String?,
 )
 
+/** One labelled block of a phone card: a title, a reply, one review comment. */
+data class HostWritePreviewSection(val label: String, val text: String)
+
+data class HostWritePreview(
+    /** Everything the approval posts, in full, plus the reviewer comment a reply answers. */
+    val sections: List<HostWritePreviewSection>,
+    /** Too long to show at once: the card starts collapsed and approval waits until it is opened. */
+    val long: Boolean,
+)
+
 object HostWriteCards {
     /** The backend takes a chat-scoped device's approval of these cards. */
     const val PHONE_APPROVAL_CAPABILITY = "agent_host_write_phone_approval_v1"
@@ -121,6 +131,69 @@ object HostWriteCards {
             )
             else -> emptyList()
         }
+    }
+
+    /**
+     * The card's whole content for the phone to show before it approves, or
+     * null when the payload lacks something the approval would post, so the
+     * user approves on the desktop instead. Never `detail`: that caps long
+     * comments. Ports `hostWritePreview` in `src/shared/host-write-phone.ts`.
+     */
+    fun preview(card: HostWriteCard): HostWritePreview? {
+        val raw = card.raw
+        val sections = mutableListOf<HostWritePreviewSection>()
+        fun add(label: String, text: String) {
+            if (text.isNotEmpty()) sections += HostWritePreviewSection(label, text)
+        }
+        (raw.values["quote"] as? JsonObject)?.let { quote ->
+            val author = quote.string("author")
+            val body = quote.string("body")
+            if (author != null && body != null) add("$author wrote", body)
+        }
+        when (card.action) {
+            "create" -> {
+                val create = raw.values["create"] as? JsonObject ?: return null
+                val title = create.string("title")?.takeIf { it.isNotEmpty() } ?: return null
+                val description = create.values["description"]
+                if (description != null && description !is JsonString) return null
+                add("Branches", "${create.string("repoLabel").orEmpty()}: ${create.string("sourceBranch").orEmpty()} -> ${create.string("targetBranch").orEmpty()}")
+                add("Title", title)
+                add("Description", (description as? JsonString)?.value.orEmpty())
+            }
+            "reply", "comment" -> {
+                val text = raw.string("replyText")?.takeIf { it.isNotEmpty() } ?: return null
+                add(if (card.action == "reply") "Reply" else "Comment", text)
+            }
+            "review" -> {
+                val review = raw.values["review"] as? JsonObject ?: return null
+                val comments = review.values["comments"] as? JsonArray ?: return null
+                val summary = review.values["summary"]
+                if (summary != null && summary !is JsonString) return null
+                add("Summary", (summary as? JsonString)?.value.orEmpty())
+                for (value in comments.values) {
+                    val comment = value as? JsonObject ?: return null
+                    val path = comment.string("path") ?: return null
+                    val line = comment.long("line") ?: return null
+                    val text = comment.string("text") ?: return null
+                    add(lineLocation(path, line, comment.long("startLine"), comment.string("side")), text)
+                }
+            }
+            "rerun" -> add("Check", raw.string("checkName") ?: "a failed check")
+            "resolve" -> Unit
+            else -> return null
+        }
+        val lines = sections.sumOf { 1 + it.text.split('\n').size }
+        val chars = sections.sumOf { it.label.length + it.text.length }
+        return HostWritePreview(sections, lines > PREVIEW_COLLAPSED_LINES || chars > PREVIEW_COLLAPSED_CHARS)
+    }
+
+    private const val PREVIEW_COLLAPSED_LINES = 12
+    private const val PREVIEW_COLLAPSED_CHARS = 800
+
+    /** "a.ts:4-9 (old)", as `lineLocation` in `src/shared/pull-request-writes.ts`. */
+    private fun lineLocation(path: String, line: Long, startLine: Long?, side: String?): String {
+        val lines = if (startLine != null && startLine < line) "$startLine-$line" else "$line"
+        return "$path:$lines${if (side == "old") " (old)" else ""}"
     }
 
     /** `reviewSubmitProblem` for a review sent as drafted; the size limits held when the agent drafted it. */

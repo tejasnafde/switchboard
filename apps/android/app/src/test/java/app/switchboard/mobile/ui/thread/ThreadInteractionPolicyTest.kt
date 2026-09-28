@@ -3,8 +3,11 @@ package app.switchboard.mobile.ui.thread
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.protocol.JsonArray
+import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
+import app.switchboard.mobile.protocol.JsonValue
 import app.switchboard.mobile.domain.thread.QuestionOption
 import app.switchboard.mobile.domain.thread.ThreadQuestion
 import org.junit.Assert.assertEquals
@@ -44,6 +47,45 @@ class ThreadInteractionPolicyTest {
             ThreadUiAction.Approval("sbmcp_1", ThreadApprovalDecision.APPROVE, HostWriteResponse(verdict = "comment")),
             ThreadInteractionPolicy.approval(approval, ThreadApprovalDecision.APPROVE, HostWriteResponse(verdict = "comment")),
         )
+    }
+
+    @Test
+    fun longReplyIsShownInFullAndApprovableOnlyOnceOpened() {
+        val long = (1..40).joinToString("\n") { "Line $it of the reply." }
+        val approval = hostWriteApproval("action" to JsonString("reply"), "replyText" to JsonString(long))
+        val actions = ThreadInteractionPolicy.approvalActions(approval, backendTakesPhoneApproval = true) as ApprovalActions.HostWrite
+        assertEquals(long, actions.preview.sections.single().text)
+        assertFalse(ThreadInteractionPolicy.hostWriteApprovable(actions, expanded = false))
+        assertTrue(ThreadInteractionPolicy.hostWriteApprovable(actions, expanded = true))
+    }
+
+    @Test
+    fun longReviewShowsEveryCommentInFullBeforeAVerdictIsEnabled() {
+        val comments = (1..4).map { i ->
+            JsonObject(linkedMapOf("path" to JsonString("src/f$i.ts"), "side" to JsonString("new"), "line" to JsonNumber("${10 + i}"), "text" to JsonString("x".repeat(500) + " end $i")))
+        }
+        val approval = hostWriteApproval(
+            "action" to JsonString("review"),
+            "review" to JsonObject(linkedMapOf("summary" to JsonString("Notes."), "comments" to JsonArray(comments), "verdicts" to JsonArray(listOf(JsonString("approve"))))),
+        )
+        val actions = ThreadInteractionPolicy.approvalActions(approval, backendTakesPhoneApproval = true) as ApprovalActions.HostWrite
+        assertEquals(
+            listOf("Summary" to "Notes.") + (1..4).map { "src/f$it.ts:${10 + it}" to "x".repeat(500) + " end $it" },
+            actions.preview.sections.map { it.label to it.text },
+        )
+        assertFalse(ThreadInteractionPolicy.hostWriteApprovable(actions, expanded = false))
+        assertTrue(ThreadInteractionPolicy.hostWriteApprovable(actions, expanded = true))
+    }
+
+    @Test
+    fun cardThePhoneCannotShowInFullIsDenyOnly() {
+        val approval = hostWriteApproval("action" to JsonString("review"), "review" to JsonObject(linkedMapOf("summary" to JsonString("Notes."))))
+        assertEquals(ApprovalActions.DenyOnly(approval.hostWrite!!), ThreadInteractionPolicy.approvalActions(approval, backendTakesPhoneApproval = true))
+    }
+
+    private fun hostWriteApproval(vararg fields: Pair<String, JsonValue>): FeedItem.Approval {
+        val card = HostWriteCards.decode(JsonObject(linkedMapOf("host" to JsonString("github"), "prLabel" to JsonString("app #1"), *fields)))!!
+        return FeedItem.Approval("a", "sbmcp_1", "mcp__switchboard__x", "capped detail", "tool", "pending", card)
     }
 
     @Test

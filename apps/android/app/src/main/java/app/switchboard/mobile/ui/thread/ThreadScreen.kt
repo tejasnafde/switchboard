@@ -80,6 +80,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -114,6 +115,7 @@ import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.thread.AgentDigest
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
+import app.switchboard.mobile.domain.thread.HostWritePreview
 import app.switchboard.mobile.domain.thread.SyntheticTone
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import app.switchboard.mobile.domain.remote.RuntimeMode
@@ -1936,6 +1938,8 @@ private fun ApprovalRow(
     val actions = remember(item, backendTakesPhoneApproval) {
         ThreadInteractionPolicy.approvalActions(item, backendTakesPhoneApproval)
     }
+    var expanded by rememberSaveable(item.requestId) { mutableStateOf(false) }
+    val approvable = actions !is ApprovalActions.HostWrite || ThreadInteractionPolicy.hostWriteApprovable(actions, expanded)
     CardContainer(tint = if (pending) Amber else TextDim) {
         Text(
             if (pending) "Approval needed" else item.state.replaceFirstChar(Char::uppercaseChar),
@@ -1948,12 +1952,16 @@ private fun ApprovalRow(
         } else {
             Text(item.toolName, color = Accent, fontFamily = GeistMono)
         }
-        Text(item.detail, style = MaterialTheme.typography.bodyMedium)
+        if (actions is ApprovalActions.HostWrite) {
+            HostWritePreviewBlock(actions.preview, expanded) { expanded = !expanded }
+        } else {
+            Text(item.detail, style = MaterialTheme.typography.bodyMedium)
+        }
         if (pending) {
             when (actions) {
                 is ApprovalActions.DenyOnly -> Text("Approve this on the desktop. You can deny it here.", color = TextDim)
                 is ApprovalActions.HostWrite -> {
-                    Text("Posts as shown. Edit on the desktop.", color = TextDim)
+                    Text(if (approvable) "Posts as shown. Edit on the desktop." else "Show the full draft to approve it.", color = TextDim)
                     actions.buttons.forEach { button ->
                         button.problem?.let { Text("${button.label}: $it", color = TextDim) }
                     }
@@ -1993,13 +2001,13 @@ private fun ApprovalRow(
                         if (button.primary) {
                             Button(
                                 onClick = onClick,
-                                enabled = button.problem == null,
+                                enabled = approvable && button.problem == null,
                                 modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.hostWriteButton(button.id)),
                             ) { Text(button.label) }
                         } else {
                             OutlinedButton(
                                 onClick = onClick,
-                                enabled = button.problem == null,
+                                enabled = approvable && button.problem == null,
                                 modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.hostWriteButton(button.id)),
                             ) { Text(button.label) }
                         }
@@ -2014,6 +2022,36 @@ private fun ApprovalRow(
                     modifier = Modifier.heightIn(min = 48.dp),
                 ) { Text("Deny") }
             }
+        }
+    }
+}
+
+/**
+ * Everything a host write card posts, uncapped. A long draft shows its first
+ * lines until opened; opened, it scrolls inside the card so the buttons stay
+ * in reach when the card sits above the composer.
+ */
+@Composable
+private fun HostWritePreviewBlock(preview: HostWritePreview, expanded: Boolean, onToggle: () -> Unit) {
+    val bounds = when {
+        !preview.long -> Modifier
+        expanded -> Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())
+        else -> Modifier.heightIn(max = 160.dp).clipToBounds()
+    }
+    SelectionContainer {
+        Column(
+            modifier = bounds.testTag(ThreadTestTags.HOST_WRITE_PREVIEW),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            preview.sections.forEach { section ->
+                Text(section.label, color = TextDim, fontFamily = GeistMono, style = MaterialTheme.typography.labelSmall)
+                Text(section.text, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+    if (preview.long) {
+        TextButton(onClick = onToggle, modifier = Modifier.testTag(ThreadTestTags.HOST_WRITE_EXPAND)) {
+            Text(if (expanded) "Show less" else "Show the full draft")
         }
     }
 }
