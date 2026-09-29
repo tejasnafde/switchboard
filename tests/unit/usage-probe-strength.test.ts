@@ -89,4 +89,45 @@ describe('usage probes for one instance', () => {
     expect((await Promise.all(forced)).map((r) => r.message)).toEqual(['forced', 'forced'])
     expect(most).toBe(1)
   })
+
+  it('does not cache or hand on a probe that was in flight when its instance was edited', async () => {
+    for (const edit of [() => invalidateUsage('a'), () => invalidateUsage()]) {
+      probes.length = 0
+      running = 0
+      most = 0
+      invalidateUsage()
+      const before = fetchInstanceUsage('a')
+      await flush()
+      edit()
+      // Asked after the edit, even unforced: waits, then probes the new credential.
+      const after = fetchInstanceUsage('a')
+      await flush()
+      expect(probes).toHaveLength(1)
+
+      probes[0].resolve(reading('old account'))
+      expect((await before).message).toBe('old account')
+      await flush()
+      expect(probes).toHaveLength(2)
+      probes[1].resolve(reading('new account'))
+      expect((await after).message).toBe('new account')
+      expect(most).toBe(1)
+
+      // The stale reading never reached the cache: this is the new one.
+      expect((await fetchInstanceUsage('a')).message).toBe('new account')
+      expect(probes).toHaveLength(2)
+    }
+  })
+
+  it('does not let a probe that was in flight during an edit fill the cache', async () => {
+    const before = fetchInstanceUsage('a')
+    await flush()
+    invalidateUsage('a')
+    probes[0].resolve(reading('old account'))
+    await before
+    const next = fetchInstanceUsage('a')
+    await flush()
+    expect(probes).toHaveLength(2)
+    probes[1].resolve(reading('new account'))
+    expect((await next).message).toBe('new account')
+  })
 })

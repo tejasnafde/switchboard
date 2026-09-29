@@ -23,8 +23,18 @@ const log = createMainLogger('provider:usage')
 const CACHE_TTL_MS = 45_000
 
 const cache = new Map<string, ProviderUsage>()
-/** A probe in flight, with how strong a request it answers (see `strength`). */
-const inFlight = new Map<string, { task: Promise<ProviderUsage>; strength: number }>()
+/**
+ * A probe in flight, with how strong a request it answers (see `strength`).
+ * `stale` is set when its instance is edited or deleted while it runs: its
+ * reading is then for the old credential, so it is neither cached nor handed
+ * to a request made after the edit.
+ */
+interface ActiveProbe {
+  task: Promise<ProviderUsage>
+  strength: number
+  stale: boolean
+}
+const inFlight = new Map<string, ActiveProbe>()
 
 /**
  * Codex probes spawn a ~260MB binary, so they run one at a time no matter
@@ -112,9 +122,12 @@ export function invalidateUsage(id?: string): void {
   forgetClaudeCredentialReads(id)
   if (id === undefined) {
     cache.clear()
+    for (const active of inFlight.values()) active.stale = true
     return
   }
   cache.delete(id)
+  const active = inFlight.get(id)
+  if (active) active.stale = true
 }
 
 /** 0 = may be cached, 1 = forced (the Usage refresh), 2 = refresh with a CLI turn. */
@@ -131,16 +144,17 @@ export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions =
     if (cached && Date.now() - cached.fetchedAtMs < CACHE_TTL_MS) return cached
   }
 
-  // A probe in flight answers any request no stronger than its own. A
-  // stronger one waits for it and then runs its own: never two probes at
-  // once, since each can be a keychain password prompt, and never an
-  // unforced reading handed to a forced request.
+  // A probe in flight answers any request no stronger than its own, unless
+  // it is stale. Otherwise the request waits for it and then runs its own:
+  // never two probes at once, since each can be a keychain password prompt,
+  // never an unforced reading handed to a forced request, and never the old
+  // credential's reading handed to a request made after an edit.
+  const joinable = (candidate: ActiveProbe) => !candidate.stale && candidate.strength >= wanted
   let existing = inFlight.get(id)
-  if (existing && existing.strength >= wanted) return existing.task
   while (existing) {
+    if (joinable(existing)) return existing.task
     await Promise.allSettled([existing.task])
     existing = inFlight.get(id)
-    if (existing && existing.strength >= wanted) return existing.task
   }
 
   // Resolved up front so a probe that throws can still report the right kind.
@@ -148,7 +162,7 @@ export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions =
 
   const task: Promise<ProviderUsage> = probe(id, agentType, opts)
     .then((result) => {
-      cache.set(id, result)
+      if (!active.stale) cache.set(id, result)
       return result
     })
     .catch((err): ProviderUsage => {
@@ -160,6 +174,7 @@ export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions =
       if (inFlight.get(id)?.task === task) inFlight.delete(id)
     })
 
-  inFlight.set(id, { task, strength: wanted })
+  const active: ActiveProbe = { task, strength: wanted, stale: false }
+  inFlight.set(id, active)
   return task
 }
