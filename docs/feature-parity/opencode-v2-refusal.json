@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "opencode-v2-refusal",
-  "summary": "OpenCode 2.x ships under the same opencode binary name but breaks the ACP surface Switchboard drives: opencode acp --cwd is rejected, session/set_model was removed, and opencode models attaches to a shared background service. Switchboard now reads opencode --version once per binary (cached by path, mtime and size) and refuses a 2.x or later binary with OpencodeUnsupportedVersionError, whose copy names the fix (install OpenCode 1.x with npm i -g opencode-ai, or switch back). The refusal runs before anything is spawned on every OpenCode path: the ACP adapter's startSession (so it reaches chat as the same start-session error text a TccAccessError does), the native-fork runner (the fork falls back to the transcript handoff), the opencode models catalog probe (no models, logged) and the Settings instance Test (same copy). The check runs --version in the session cwd (cached per cwd too), so a per-directory version shim answers for the binary the session will run. When --version fails or prints nothing parseable, the install's files decide without running anything: an opencode2 shim beside the binary (the v2 curl installer writes one and @opencode/cli declares it as a second npm bin; v1 has neither), or a real path inside the @opencode/cli package or the opencode-v2 Homebrew formula, is refused as 2.x. With no answer and no signal the binary is let through, so a working 1.x that cannot print its version is not locked out. Unparseable --version output is logged as a byte count only. ~/.opencode/bin/opencode, where the curl installers put the binary, is now a binary candidate, probed after the npm and brew locations.",
+  "summary": "OpenCode 2.x ships under the same opencode binary name but breaks the ACP surface Switchboard drives: opencode acp --cwd is rejected, session/set_model was removed, and opencode models attaches to a shared background service. Switchboard now reads opencode --version once per binary (cached by path, mtime and size) and refuses a 2.x or later binary with OpencodeUnsupportedVersionError, whose copy names the fix (install OpenCode 1.x with npm i -g opencode-ai, or switch back). The refusal runs before anything is spawned on every OpenCode path: the ACP adapter's startSession (so it reaches chat as the same start-session error text a TccAccessError does), the native-fork runner (the fork falls back to the transcript handoff, and its warning carries the refusal text so the user sees why), the opencode models catalog probe (no models, logged) and the Settings instance Test (same copy). The check runs --version in the session cwd, and the cache is keyed by cwd and by a hash of the env keys that can pick a binary (PATH, HOME, OPENCODE_*, XDG_* and version-manager keys; values are never logged), so a per-directory version shim answers for the binary the session will run. When --version fails or prints nothing parseable, the install's files decide without running anything: an opencode2 shim beside the binary (the v2 curl installer writes one and @opencode/cli declares it as a second npm bin; v1 has neither), or a real path inside the @opencode/cli package or the opencode-v2 Homebrew formula, is refused as 2.x. With no answer and no signal the binary is let through, so a working 1.x that cannot print its version is not locked out. Unparseable --version output is logged as a byte count only. ~/.opencode/bin/opencode, where the curl installers put the binary, is now a binary candidate, probed after the npm and brew locations.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -14,7 +14,9 @@
         "src/main/provider/catalog-probe.ts",
         "src/main/ipc/provider-instances.ts",
         "tests/unit/opencode-version-gate.test.ts",
-        "tests/unit/native-fork-runners.test.ts"
+        "tests/unit/native-fork-runners.test.ts",
+        "src/main/conversations/fork-provider-artifacts.ts",
+        "tests/unit/native-fork-coordinator.test.ts"
       ]
     },
     "reactNativeIos": {
@@ -47,7 +49,8 @@
   "verification": {
     "automated": [
       "npx vitest run tests/unit/opencode-version-gate.test.ts tests/unit/native-fork-runners.test.ts: version parsing (1.18.33, 2.0.19, prefixed and tagged forms, garbage), a failed --version run treated as supported and retried, the per-binary cache and its re-read after an in-place replace, and the refusal on the adapter, catalog probe, Settings Test and native-fork paths with fake opencode scripts that record their arguments (only --version ever runs against a 2.x fake); the install signals (opencode2 shim, @opencode/cli real path via a symlink, the opencode-v2 Cellar path, none, and a readable 1.x winning over a shim), --version run in and cached per cwd, and unparseable output logged as a byte count without its text.",
-      "npm run typecheck and npm test -- --maxWorkers=2."
+      "npm run typecheck and npm test -- --maxWorkers=2.",
+      "npx vitest run tests/unit/native-fork-coordinator.test.ts: a native OpenCode fork refused as 2.x completes with the transcript handoff and a native-fork-unsupported-version warning whose message is the refusal text. opencode-version-gate.test.ts: the env fingerprint ignores API keys and key order and changes with PATH or an OPENCODE_* key, and a changed OPENCODE_* value re-reads the version."
     ],
     "hardware": [],
     "notExercised": [

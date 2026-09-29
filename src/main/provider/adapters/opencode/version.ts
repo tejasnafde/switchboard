@@ -8,6 +8,7 @@
  * refuses a 2.x binary with one clear message instead of a CLI usage error.
  */
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
 import { createMainLogger } from '../../../logger'
@@ -86,16 +87,33 @@ const runVersion: VersionRunner = (bin, env, cwd) => new Promise((resolve, rejec
   child.stdin?.end()
 })
 
+/** Env keys a wrapper or version manager can use to pick which binary runs. */
+const BINARY_SELECTING_ENV = /^(PATH|HOME|OPENCODE_.*|XDG_.*|MISE_.*|ASDF_.*|VOLTA_.*|NVM_.*|NODE_.*|NPM_CONFIG_.*|BUN_.*)$/
+
+/**
+ * A hash of the binary-selecting env, so two instances whose env can resolve
+ * a wrapper differently never share a cached answer. Only the hash is kept;
+ * values are never logged.
+ */
+export function opencodeEnvFingerprint(env: Record<string, string>): string {
+  const hash = createHash('sha256')
+  for (const key of Object.keys(env).filter((k) => BINARY_SELECTING_ENV.test(k)).sort()) {
+    hash.update(`${key}\0${env[key]}\0`)
+  }
+  return hash.digest('hex').slice(0, 16)
+}
+
 /**
  * Keyed by path + mtime + size, so an in-place upgrade or downgrade is re-read,
- * and by cwd, since a version shim can resolve differently per project.
+ * by cwd, since a version shim can resolve differently per project, and by the
+ * env fingerprint, since a wrapper can pick its install from the env.
  */
 const cache = new Map<string, Promise<OpencodeVersion | null>>()
 
-function cacheKey(bin: string, cwd: string | undefined): string | null {
+function cacheKey(bin: string, env: Record<string, string>, cwd: string | undefined): string | null {
   try {
     const st = statSync(bin)
-    return `${bin}\0${st.mtimeMs}\0${st.size}\0${cwd ?? ''}`
+    return `${bin}\0${st.mtimeMs}\0${st.size}\0${cwd ?? ''}\0${opencodeEnvFingerprint(env)}`
   } catch (err) {
     log.warn(`cannot stat opencode binary ${bin}; version not cached`, err)
     return null
@@ -112,7 +130,7 @@ export function readOpencodeVersion(
   cwd?: string,
   run: VersionRunner = runVersion,
 ): Promise<OpencodeVersion | null> {
-  const key = cacheKey(bin, cwd)
+  const key = cacheKey(bin, env, cwd)
   const hit = key ? cache.get(key) : undefined
   if (hit) return hit
   const read = run(bin, env, cwd).then(

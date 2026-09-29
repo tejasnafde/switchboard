@@ -37,6 +37,7 @@ import {
   _resetOpencodeVersionCacheForTests,
   assertSupportedOpencode,
   parseOpencodeVersion,
+  opencodeEnvFingerprint,
   opencodeV2InstallSignal,
   readOpencodeVersion,
 } from '../../src/main/provider/adapters/opencode/version'
@@ -144,6 +145,25 @@ describe('readOpencodeVersion', () => {
     await readOpencodeVersion(fake.bin, {}, a)
     await readOpencodeVersion(fake.bin, {}, b)
     expect(fake.calls()).toEqual([`--version @${a}`, `--version @${b}`])
+  })
+
+  it('fingerprints only the env that can pick a binary, in any order', () => {
+    const base = { PATH: '/usr/bin', OPENCODE_CONFIG_DIR: '/a' }
+    expect(opencodeEnvFingerprint(base)).toBe(opencodeEnvFingerprint({ OPENCODE_CONFIG_DIR: '/a', PATH: '/usr/bin' }))
+    expect(opencodeEnvFingerprint(base)).toBe(opencodeEnvFingerprint({ ...base, OPENAI_API_KEY: 'sk-1' }))
+    expect(opencodeEnvFingerprint(base)).not.toBe(opencodeEnvFingerprint({ ...base, PATH: '/opt/v2/bin:/usr/bin' }))
+    expect(opencodeEnvFingerprint(base)).not.toBe(opencodeEnvFingerprint({ ...base, OPENCODE_CONFIG_DIR: '/b' }))
+    expect(opencodeEnvFingerprint(base)).not.toContain('/usr/bin')
+  })
+
+  itWithPosixToolShims('does not share a cached answer between envs that can pick different binaries', async () => {
+    const fake = fakeOpencode('1.18.33\n')
+    const one = { PATH: process.env.PATH ?? '', OPENCODE_INSTALL: 'one' }
+    await readOpencodeVersion(fake.bin, one)
+    await readOpencodeVersion(fake.bin, { ...one, GEMINI_API_KEY: 'k' })
+    expect(fake.calls()).toEqual(['--version'])
+    await readOpencodeVersion(fake.bin, { ...one, OPENCODE_INSTALL: 'two' })
+    expect(fake.calls()).toEqual(['--version', '--version'])
   })
 
   itWithPosixToolShims('reads a binary once, and again after it is replaced in place', async () => {

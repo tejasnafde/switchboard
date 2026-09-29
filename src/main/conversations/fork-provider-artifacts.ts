@@ -20,6 +20,7 @@ import {
   pickOpencodeForkSession,
   type OpencodeForkSegment,
 } from './native-fork'
+import { OpencodeUnsupportedVersionError } from '../provider/adapters/opencode/version'
 import type { NativeForkRunners } from './native-fork-runners'
 
 const log = createMainLogger('conversations:fork-artifacts')
@@ -242,6 +243,14 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
   }
 
   private nativeFailure(prepared: PreparedForkSnapshot, method: string, error: unknown): PreparedProviderForkArtifact {
+    if (error instanceof OpencodeUnsupportedVersionError) {
+      // The refusal names the fix; a generic "fork failed" would hide it.
+      log.warn(`native ${method} refused an unsupported OpenCode, falling back to a transcript handoff`, {
+        conversationId: prepared.source.conversationId,
+        version: error.version,
+      })
+      return handoff(prepared, 'native-fork-unsupported-version', `${error.message} The fork starts with a transcript handoff.`)
+    }
     const unsupported = isUnsupportedMethodError(error, method)
     log.warn(`native ${method} failed, falling back to a transcript handoff`, {
       conversationId: prepared.source.conversationId,
