@@ -166,6 +166,15 @@ object HostWriteCards {
                 add("Branches", "${create.string("repoLabel").orEmpty()}: ${create.string("sourceBranch").orEmpty()} -> ${create.string("targetBranch").orEmpty()}")
                 add("Title", title)
                 add("Description", (description as? JsonString)?.value.orEmpty())
+                if (create.values.containsKey("reviewers")) {
+                    val reviewers = create.values["reviewers"] as? JsonArray ?: return null
+                    val labels = reviewers.values.map { value ->
+                        val reviewer = value as? JsonObject ?: return null
+                        reviewerLabel(reviewer.string("login") ?: return null, reviewer.string("displayName") ?: return null)
+                    }
+                    // One line each, so the approval (which requests all of them) shows every one.
+                    add("Reviewers", labels.joinToString("\n"))
+                }
             }
             "reply", "comment" -> {
                 val text = raw.string("replyText")?.takeIf { it.isNotEmpty() } ?: return null
@@ -198,7 +207,8 @@ object HostWriteCards {
      * A fingerprint of one card as this phone showed it: FNV-1a 64 over the
      * UTF-16 code units (low byte first) of the request id, the target (host,
      * repository, PR number; for a create, the source and target branches),
-     * the action and every [preview] section's label and text, joined by NUL.
+     * the action and every [preview] section's label and text (a create's
+     * reviewers included), joined by NUL.
      * Ports `hostWriteShownDigest` in `src/shared/host-write-phone.ts`, which
      * the backend recomputes; `HostWriteCardsTest` pins the same vectors as the
      * vitest suite. Null without a preview or a target.
@@ -235,6 +245,10 @@ object HostWriteCards {
 
     private const val PREVIEW_COLLAPSED_LINES = 12
     private const val PREVIEW_COLLAPSED_CHARS = 800
+
+    /** "Jane Doe (jdoe)", or the login alone, as `reviewerLabel` in `src/shared/agent-pr-reviewers.ts`. */
+    private fun reviewerLabel(login: String, displayName: String): String =
+        if (displayName == login) login else "$displayName ($login)"
 
     /** "a.ts:4-9 (old)", as `lineLocation` in `src/shared/pull-request-writes.ts`. */
     private fun lineLocation(path: String, line: Long, startLine: Long?, side: String?): String {

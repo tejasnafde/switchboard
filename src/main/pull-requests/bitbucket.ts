@@ -7,7 +7,8 @@
  * api.bitbucket.org. It is never logged, and a `next` page link on any other
  * origin is refused rather than followed with credentials attached.
  */
-import type { CreatedPr, CreatePrInput } from '@shared/agent-pr-create'
+import type { CreatedPr, CreatePrInput, OpenedPr } from '@shared/agent-pr-create'
+import type { ReviewerViewer } from '@shared/agent-pr-reviewers'
 import type { InlineCommentInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import type {
   BitbucketCredentialInput,
@@ -503,12 +504,19 @@ export class BitbucketProvider implements PullRequestProvider {
     return own ? createdPr(own) : null
   }
 
-  async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<CreatedPr> {
+  async viewerIdentity(): Promise<ReviewerViewer> {
+    return { id: (await this.currentUser()).uuid, login: null }
+  }
+
+  /** The reviewers ride in the same POST, so they are asked with the pull request or not at all. */
+  async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<OpenedPr> {
+    const reviewers = input.reviewers ?? []
     const res = await this.client.send<BbCreated>('POST', `${repoPath(repo)}/pullrequests`, {
       title: input.title,
       description: input.description,
       source: { branch: { name: input.sourceBranch } },
       destination: { branch: { name: input.targetBranch } },
+      ...(reviewers.length > 0 ? { reviewers: reviewers.map((uuid) => ({ uuid })) } : {}),
     })
     const pr = res.data ? createdPr(res.data) : null
     if (!pr) throw new PrHostError({ kind: 'unknown', host: 'bitbucket', message: 'Bitbucket did not return the new pull request.' })

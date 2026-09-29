@@ -205,6 +205,23 @@ describe('ApprovalItem', () => {
     expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { verdict: 'request_changes', shown: hostWriteShownDigest('sbmcp_1', review) })
   })
 
+  it('shows the reviewers a pull request asks, and approves with a digest that covers them', () => {
+    const create: HostWriteCard = {
+      ...reply, action: 'create', prLabel: 'acme/app', target: { repository: 'acme/app', number: null }, location: null, replyText: undefined, suggestResolve: undefined,
+      create: {
+        repoLabel: 'acme/app', sourceBranch: 'feat/x', targetBranch: 'main', title: 'Add it', description: '', draft: false,
+        reviewers: [{ id: 'jdoe', login: 'jdoe', displayName: 'Jane Doe', kind: 'user' }, { id: 'rk', login: 'rk', displayName: 'rk', kind: 'user' }],
+      },
+    }
+    const decide = jest.fn()
+    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: create })} backendTakesPhoneApproval onDecide={decide} />)
+    expect(root.texts()).toContain('Jane Doe (jdoe)\nrk')
+    press(root.root, 'Open pull request')
+    const shown = hostWriteShownDigest('sbmcp_1', create)
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { shown })
+    expect(shown).not.toBe(hostWriteShownDigest('sbmcp_1', { ...create, create: { ...create.create!, reviewers: undefined } }))
+  })
+
   it('shows a long reply in full, and enables its buttons only once it is opened', () => {
     const long = Array.from({ length: 40 }, (_, i) => `Line ${i + 1} of the reply.`).join('\n')
     const root = renderComponent(<ApprovalItem item={approval({ hostWrite: { ...reply, replyText: long } })} backendTakesPhoneApproval onDecide={() => {}} />)

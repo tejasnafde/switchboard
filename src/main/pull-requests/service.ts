@@ -8,7 +8,8 @@
  * re-reads what it targets first (the thread, the diff line, the head and
  * blockers before a merge), so a stale screen cannot post to the wrong place.
  */
-import { validateCreatePr, type CreatedPr } from '@shared/agent-pr-create'
+import { validateCreatePr, type CreatedPr, type OpenedPr } from '@shared/agent-pr-create'
+import type { ReviewerViewer } from '@shared/agent-pr-reviewers'
 import {
   addReviewerPrecheck,
   findConversation,
@@ -253,14 +254,25 @@ export class PullRequestService {
    * Opens a pull request, unless one is already open for the source branch:
    * then that one is returned with `existing: true` and nothing is created.
    */
-  createPullRequest(repo: unknown, input: unknown): Promise<PrResult<CreatedPr & { existing: boolean }>> {
+  createPullRequest(repo: unknown, input: unknown): Promise<PrResult<OpenedPr & { existing: boolean }>> {
     return this.onRepo(repo, 'opening a pull request', async (p, r) => {
       const create = PullRequestService.unwrap(validateCreatePr(r.host, input))
       const open = await p.openPullRequestFor(r, create.sourceBranch)
       if (open) return { ...open, existing: true }
       const created = await p.createPullRequest(r, create)
-      log.info('pull request opened', { host: r.host, number: created.number })
+      log.info('pull request opened', { host: r.host, number: created.number, reviewers: create.reviewers?.length ?? 0 })
       return { ...created, existing: false }
+    })
+  }
+
+  /**
+   * Who may be asked to review a pull request opened on `repo`, ordered as
+   * the Reviewers card orders them, and the signed-in user, who may not.
+   */
+  reviewerPool(repo: unknown): Promise<PrResult<{ candidates: PrReviewerCandidate[]; viewer: ReviewerViewer }>> {
+    return this.onRepo(repo, 'reading reviewer candidates', async (p, r) => {
+      const [listed, members, viewer] = await Promise.all([p.list([r]), p.reviewerCandidates(r), p.viewerIdentity()])
+      return { candidates: orderReviewerCandidates(recentReviewers(listed.flatMap((l) => l.prs)), members), viewer }
     })
   }
 

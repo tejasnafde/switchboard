@@ -7,6 +7,7 @@
  */
 import type { HostWriteCard, HostWriteResponse } from './agent-host-writes'
 import { reviewFromResponse, reviewVerdictProblem } from './agent-pr-review'
+import { reviewerLabel } from './agent-pr-reviewers'
 import { lineLocation, REVIEW_EVENT_LABEL, type ReviewEvent } from './pull-request-writes'
 
 /**
@@ -124,6 +125,11 @@ export function hostWritePreview(card: HostWriteCard): HostWritePreview | null {
     add('Branches', `${c.repoLabel}: ${c.sourceBranch} -> ${c.targetBranch}`)
     add('Title', c.title)
     if (!add('Description', c.description ?? '')) return null
+    if (c.reviewers !== undefined) {
+      if (!Array.isArray(c.reviewers) || !c.reviewers.every((r) => r && typeof r.login === 'string' && typeof r.displayName === 'string')) return null
+      // One line each, so the approval (which requests all of them) shows every one.
+      add('Reviewers', c.reviewers.map(reviewerLabel).join('\n'))
+    }
   } else if (card.action === 'reply' || card.action === 'comment') {
     if (typeof card.replyText !== 'string' || !card.replyText) return null
     add(card.action === 'reply' ? 'Reply' : 'Comment', card.replyText)
@@ -149,7 +155,7 @@ export function hostWritePreview(card: HostWriteCard): HostWritePreview | null {
  * `shown` with its approval and the broker recomputes from its own card. It
  * binds the request id, the target (host, repository, PR number; for a create,
  * the source and target branches), the action and exactly what
- * `hostWritePreview` shows, so the same text on another PR or another card
+ * `hostWritePreview` shows (a create's reviewers included), so the same text on another PR or another card
  * does not match. An app that rendered a shortened detail (every build before
  * this one) sends none and is refused. It is not a secret: it proves which
  * draft was rendered, not who rendered it; the device scope does that.

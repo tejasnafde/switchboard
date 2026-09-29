@@ -1,0 +1,62 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "claude-usage-keychain-prompts",
+  "summary": "The Claude usage probe no longer asks for the macOS login password over and over. Keychain reads are shared by service name across instances and callers (45s window, concurrent reads joined), an item that holds no claudeAiOauth payload is read once per process instead of once per account candidate per load, and only the Accounts page (once per visit) or the Usage refresh reads usage: opening Settings on another page prewarms the account list only.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/usage/keychain-read-cache.ts",
+        "src/main/provider/usage/claude-keychain.ts",
+        "src/main/provider/usage/claude-usage.ts",
+        "src/main/provider/usage/index.ts",
+        "src/renderer/components/SettingsPage.tsx",
+        "src/renderer/components/settings/AccountsPanel.tsx",
+        "src/renderer/stores/provider-instance-store.ts",
+        "tests/unit/claude-keychain-read-sharing.test.ts",
+        "tests/unit/provider-instance-store-usage.test.ts",
+        "tests/unit/expired-token-status.test.ts",
+        "tests/unit/usage-probe-strength.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native app never calls provider-instances:usage and never reads a keychain item on the backend's machine; nothing under apps/mobile changes."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android calls provider-instances:list only and never reads usage, so no Android code path reaches the keychain probe."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/usage/index.ts",
+        "src/main/ipc/provider-instances.ts"
+      ],
+      "reason": "No channel or payload change: provider-instances:usage keeps its arguments and ProviderUsage shape. Only how often the backend reads the keychain behind it changes; a headless Linux backend reads the credentials file as before."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored: the shared reads and the no-payload memo live in main-process memory and are gone on restart. No table, setting or migration."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, entitlement, deep link or update-channel change. A newer renderer against an older backend still gets one read per Accounts visit instead of one per Settings open."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/claude-keychain-read-sharing.test.ts drives the credential reader with a fake security runner: one Accounts load reads each service once, two instances resolving to one service read it once, an item without a payload is read once (not again under the next account, not after a day), a fresh read or an edit of its instance reads it again, a timed-out read is not kept, a fresh read waits for one in flight instead of running beside it, and nothing spawns at import.",
+      "tests/unit/provider-instance-store-usage.test.ts: the list refresh Settings runs on open makes no usage call; an Accounts visit reads each account once, however often it syncs.",
+      "tests/unit/expired-token-status.test.ts: the re-read after a CLI token refresh is fresh.",
+      "tests/unit/usage-probe-strength.test.ts: a forced or refresh-with-turn request that arrives while a weaker probe is in flight waits for it and then runs its own (never two probes at once), and a weaker or equal request joins a stronger probe in flight. A probe in flight when its instance is edited (or all are invalidated) is not cached and not handed to a request made after the edit, which waits for it and then probes again.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against a real login keychain, by rule: the prompt count on a real Mac (one per item without lasting access, per Accounts visit at most, and none for an item without a payload after the first) is derived from the code and the fake runner, not observed.",
+      "A token refresh by Claude Code rewrites its item and resets the access `security` had, so the next Accounts visit after one can still prompt once for that item."
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chat-markdown-tables",
+  "summary": "Desktop chat renders markdown tables as real tables: a bordered, rounded table with a header band, cell dividers, row hover and tabular digits, inside its own horizontal scroll box so a wide table does not stretch the bubble. A column whose body cells are all numbers (thousands separators, decimals, percents, signs, bold) is right-aligned unless the author chose an alignment. Before, tables used bare browser defaults with no borders or alignment.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/MarkdownWithCopyControls.tsx",
+        "src/renderer/styles/global.css",
+        "tests/unit/markdown-tables.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native client draws tables with its own renderer (apps/mobile/src/components/Markdown.tsx: header row, horizontal scroll, per-cell alignment); this change is the desktop marked renderer and its CSS."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android client renders markdown with its own Compose renderer; this change touches only the desktop marked renderer and its CSS."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Rendering only; messages and the wire format are unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes; stored messages re-render with the new styles."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships in the normal desktop build."
+    }
+  },
+  "verification": {
+    "automated": [
+      "markdown-tables.test.ts renders the user's reported table and asserts the scroll wrapper, right-aligned numeric column (bold numbers included), untouched text columns, author alignment kept, and the numeric rule (thousands, decimals, percent, empty cells).",
+      "The visual screens phase (3 themes) passes with no baseline change."
+    ],
+    "hardware": [
+      "Dark and light screenshots of the reported table and a wide table, rendered with the app's global.css in Electron, were checked by eye."
+    ],
+    "notExercised": [
+      "Translucent theme on a real desktop background."
+    ]
+  }
+}
