@@ -86,6 +86,12 @@ describe('fetchClaudeUsage with an expired token', () => {
     expect(withoutTurn).toHaveBeenCalledWith(env)
     expect(withTurn).not.toHaveBeenCalled()
     expect(usage.status).toBe('ok')
+    // The first read may come from the shared keychain cache; the one after
+    // the refresh must not, or it would hand back the old token.
+    expect(readClaudeCredential.mock.calls.map((c) => c[1])).toEqual([
+      { fresh: undefined, owner: 'inst' },
+      { fresh: true, owner: 'inst' },
+    ])
   })
 
   it('reports signed in, usage after the next chat, when the CLI did not refresh', async () => {

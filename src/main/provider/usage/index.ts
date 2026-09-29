@@ -12,6 +12,7 @@ import { findCodexPath } from '../adapters/codex-adapter'
 import type { ProviderUsage } from '@shared/provider-usage'
 import { createMainLogger } from '../../logger'
 import { fetchClaudeUsage } from './claude-usage'
+import { forgetClaudeCredentialReads } from './claude-keychain'
 import { fetchCodexUsage } from './codex-usage'
 
 export { disposeUsageProbes } from './codex-usage'
@@ -65,7 +66,7 @@ export interface UsageRequestOptions {
  * stored env overlay (an oauth_dir profile can carry one too, for example
  * ANTHROPIC_BASE_URL); `getProviderInstanceFull` decrypts it only when the
  * row's key list does not prove it empty, because each decrypt can be a
- * keychain prompt on an unsigned macOS build and Settings reads every
+ * keychain prompt on an unsigned macOS build and Accounts reads every
  * instance's usage when it opens. Other kinds never decrypt.
  */
 export function usageInstance(id: string): ProviderInstanceRow | null {
@@ -81,7 +82,7 @@ async function probe(id: string, agentType: ProviderUsage['agentType'], opts: Us
   const env = resolveInstanceEnv(instance)
 
   if (instance.agentType === 'claude-code') {
-    return fetchClaudeUsage(id, env, instance.oauthDir, { refreshWithTurn: opts.refreshWithTurn })
+    return fetchClaudeUsage(id, env, instance.oauthDir, { force: opts.force, refreshWithTurn: opts.refreshWithTurn })
   }
 
   if (instance.agentType === 'codex') {
@@ -106,6 +107,8 @@ async function probe(id: string, agentType: ProviderUsage['agentType'], opts: Us
  * numbers would otherwise stand for up to the TTL.
  */
 export function invalidateUsage(id?: string): void {
+  // Includes a keychain item remembered as holding no credential.
+  forgetClaudeCredentialReads(id)
   if (id === undefined) {
     cache.clear()
     return

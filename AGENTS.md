@@ -341,6 +341,7 @@ One MCP server per backend process gives Claude, Codex and OpenCode the same too
   - Keychain service = `Claude Code-credentials-<sha256(CLAUDE_CONFIG_DIR)[0..8]>`, derived from the **effective env value**, which is what makes lookup per-instance.
   - Never reuse `runProbe` to read credentials: `security ... -w` prints the token on stdout, and `runProbe`'s callers surface stdout to the UI.
   - Tokens are never refreshed here - the CLI rotates and writes back, and racing it can log the user out. Expiry is checked locally.
+  - Every `security` read of an item it has no lasting access to is a macOS password prompt, and Claude Code resets that access whenever it rewrites the item on a token refresh. So reads are shared per SERVICE, not per instance (`usage/keychain-read-cache.ts`: 45s window, concurrent reads joined, an item without a `claudeAiOauth` payload remembered for the process and never retried under the next account), only the user's Usage refresh or an instance edit reads past that, and nothing reads usage unasked: Settings prewarms the account list only, and Accounts reads once per visit.
 
 ### Embedded IDE (code-server) + file IPC
 
