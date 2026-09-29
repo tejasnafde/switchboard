@@ -44,9 +44,11 @@ class HomePresentationTest {
                             status = "idle",
                             feed = listOf(question(answers = null)),
                         ),
-                        "working" to ThreadState(status = "running"),
-                        "failed" to ThreadState(status = "error"),
                         "done" to ThreadState(status = "idle", unread = 1),
+                    ),
+                    activity = mapOf(
+                        "working" to BrowseThreadActivity(status = "running", unread = 0),
+                        "failed" to BrowseThreadActivity(status = "error", unread = 0),
                     ),
                 ),
             ),
@@ -223,6 +225,28 @@ class HomePresentationTest {
         )
 
         assertNull(result.items.single().status)
+    }
+
+    @Test
+    fun `a cached running status shows nothing until live activity says so`() {
+        fun recent(activity: BrowseThreadActivity?) = HomePresenter.recents(
+            machines = listOf(
+                machine(
+                    projects = listOf(project("/repo", summary("chat", 1))),
+                    // The snapshot from when the chat was last open, mid-turn.
+                    states = mapOf("chat" to ThreadState(status = "running")),
+                    activity = listOfNotNull(activity?.let { "chat" to it }).toMap(),
+                ),
+            ),
+        ).items.single().status
+
+        // Cold start: no live status yet.
+        assertNull(recent(null))
+        // An idle live session (list-sessions), or a turn.completed that arrived with the chat closed.
+        assertNull(recent(BrowseThreadActivity(status = "idle", unread = 0)))
+        // No live session at all: missing from the list-sessions reply.
+        assertNull(recent(BrowseThreadActivity(status = null, unread = 0)))
+        assertEquals(HomeRecentStatus.Working, recent(BrowseThreadActivity(status = "running", unread = 0)))
     }
 
     private fun machine(

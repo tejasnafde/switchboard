@@ -1,6 +1,7 @@
 package app.switchboard.mobile.runtime
 
 import android.app.Application
+import android.util.Log
 import app.switchboard.mobile.data.connection.ConnectionFleet
 import app.switchboard.mobile.data.connection.DeviceConnectionFleetTargetResolver
 import app.switchboard.mobile.data.connection.NativeConnectionRepository
@@ -20,6 +21,8 @@ import app.switchboard.mobile.data.outbox.OutboxIdSource
 import app.switchboard.mobile.data.outbox.OutboxObserver
 import app.switchboard.mobile.data.outbox.OutboxRuntime
 import app.switchboard.mobile.data.outbox.RoomOutboxStore
+import app.switchboard.mobile.data.remote.ReadyClientLease
+import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.data.remote.ReadyClientRegistry
 import app.switchboard.mobile.data.remote.RoomBrowseSnapshotStore
 import app.switchboard.mobile.data.remote.RoomWorktreeCreationStore
@@ -209,6 +212,17 @@ class NativeAndroidRuntime private constructor(
         return browseActivityIndex.state(transportScope)
     }
 
+    fun refreshLiveStatuses(lease: ReadyClientLease) {
+        val mark = browseActivityIndex.statusMark()
+        lease.client.listSessionStatuses { response ->
+            when (val outcome = response.outcome) {
+                is RemoteOutcome.Success -> browseActivityIndex.seedStatuses(lease.scope, mark, outcome.value)
+                is RemoteOutcome.Failure ->
+                    Log.w(TAG, "list-sessions failed, recents show no live status: ${outcome.message}")
+            }
+        }
+    }
+
     fun seedPendingRequests(
         transportScope: TransportScope,
         threadId: String,
@@ -253,6 +267,8 @@ class NativeAndroidRuntime private constructor(
     }
 
     companion object {
+        private const val TAG = "NativeAndroidRuntime"
+
         fun create(application: Application): NativeAndroidRuntime {
             val applicationContext = application.applicationContext
             val database = SwitchboardDatabase.open(applicationContext)

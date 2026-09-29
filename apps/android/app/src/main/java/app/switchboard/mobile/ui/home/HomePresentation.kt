@@ -105,7 +105,11 @@ object HomePresenter {
                 }
             }
         }
-        return when ((state?.status ?: activity?.status)?.lowercase()) {
+        // Only this run's activity (live events, or the backend's list-sessions
+        // reply) says whether a turn is running. The thread snapshot's status is
+        // whatever it was when the chat was last open, so a chat left mid-turn
+        // kept reading Working after the turn ended, and again after a restart.
+        return when (activity?.status?.lowercase()) {
             "running", "thinking", "streaming", "working" -> HomeRecentStatus.Working
             "error", "failed" -> HomeRecentStatus.Failed
             else -> if (unread > 0) HomeRecentStatus.Done else null

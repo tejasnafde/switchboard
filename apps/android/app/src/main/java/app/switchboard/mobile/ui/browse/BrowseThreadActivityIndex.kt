@@ -16,6 +16,9 @@ class BrowseThreadActivityIndex {
     private val pendingAttention = mutableMapOf<Pair<TransportScope, String>, PendingAttention>()
     /** Assistant text of each thread's current turn, by message id, for the preview line. */
     private val turnText = mutableMapOf<Pair<TransportScope, String>, LinkedHashMap<String, String>>()
+    /** Counts live status changes, so a list-sessions reply cannot undo a newer one. */
+    private var statusClock = 0L
+    private val statusChangedAt = mutableMapOf<Pair<TransportScope, String>, Long>()
 
     @Synchronized
     fun state(scope: TransportScope): StateFlow<Map<String, BrowseThreadActivity>> =
@@ -68,9 +71,39 @@ class BrowseThreadActivityIndex {
             "plan.proposed" -> updateAttention(before, key, AttentionKind.Plan, opened = true, event)
             else -> before
         }
+        if (event.type == "status" || event.type == "error" || event.type == "turn.completed") {
+            statusChangedAt[key] = ++statusClock
+        }
         if (after != before || event.threadId !in flow.value) {
             flow.value = flow.value + (event.threadId to after)
         }
+    }
+
+    /** Taken before asking for `provider:list-sessions`; hand it back to [seedStatuses]. */
+    @Synchronized
+    fun statusMark(): Long = statusClock
+
+    /**
+     * Take each thread's current status from the backend's live sessions
+     * (`provider:list-sessions`), as the desktop does on launch. Live events
+     * miss a turn that ended while this app was disconnected or not running. A
+     * thread missing from the reply has no live session, so no turn. A thread
+     * whose status changed live after [mark] keeps the live value.
+     */
+    @Synchronized
+    fun seedStatuses(scope: TransportScope, mark: Long, statuses: Map<String, String>) {
+        val flow = mutableByScope.getOrPut(scope) { MutableStateFlow(emptyMap()) }
+        fun changedLive(threadId: String) = (statusChangedAt[scope to threadId] ?: 0L) > mark
+        val next = flow.value.toMutableMap()
+        next.keys.filter { it !in statuses && !changedLive(it) }.forEach { threadId ->
+            next[threadId] = next.getValue(threadId).copy(status = null)
+        }
+        statuses.forEach { (threadId, status) ->
+            if (changedLive(threadId)) return@forEach
+            val before = next[threadId] ?: BrowseThreadActivity(status = null, unread = 0)
+            next[threadId] = before.copy(status = status)
+        }
+        if (next != flow.value) flow.value = next
     }
 
     /**
@@ -122,6 +155,9 @@ class BrowseThreadActivityIndex {
             scope.connectionId == connectionId && scope.generation != generation
         }
         turnText.keys.removeAll { (scope, _) ->
+            scope.connectionId == connectionId && scope.generation != generation
+        }
+        statusChangedAt.keys.removeAll { (scope, _) ->
             scope.connectionId == connectionId && scope.generation != generation
         }
     }

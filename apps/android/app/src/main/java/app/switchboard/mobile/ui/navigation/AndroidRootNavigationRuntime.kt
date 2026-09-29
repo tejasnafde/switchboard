@@ -56,7 +56,10 @@ class AndroidRootNavigationRuntime(
     override val followUpDefault: StateFlow<TurnDelivery> = MutableStateFlow(TurnDelivery.Steer),
     private val persistFollowUpDefault: (TurnDelivery) -> Unit = {},
     private val seedPending: (TransportScope, String, List<JsonObject>) -> Unit = { _, _, _ -> },
+    private val refreshStatuses: (ReadyClientLease) -> Unit = {},
 ) : RootNavigationRuntime {
+    override fun refreshLiveStatuses(lease: ReadyClientLease) = refreshStatuses(lease)
+
     override fun seedPendingRequests(scope: TransportScope, threadId: String, pending: List<JsonObject>) =
         seedPending(scope, threadId, pending)
 

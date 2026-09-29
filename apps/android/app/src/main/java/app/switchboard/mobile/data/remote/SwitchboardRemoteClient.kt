@@ -86,6 +86,7 @@ object BackendChannels {
      *  `ProviderRegistry.getPendingRequests` and the `pending_requests_v1`
      *  backend capability. */
     const val GetPendingRequests = "provider:get-pending-requests"
+    const val ListSessions = "provider:list-sessions"
     const val ProviderEvents = "provider:event"
     const val PushRegister = "push:register"
     const val PushUnregister = "push:unregister"
@@ -521,6 +522,10 @@ class SwitchboardRemoteClient(
         RemoteDecoders::pendingRequests,
         callback,
     )
+
+    /** The backend's live sessions with their current status, which the desktop also adopts on launch. */
+    fun listSessionStatuses(callback: (RemoteResponse<Map<String, String>>) -> Unit) =
+        call(BackendChannels.ListSessions, decoder = RemoteDecoders::liveSessionStatuses, callback = callback)
 
     /** An instance's live catalog before any session exists (New Session screen).
      *  No thread is bound yet, so the backend starts the provider's own

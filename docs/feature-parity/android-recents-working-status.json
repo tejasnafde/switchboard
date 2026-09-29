@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-recents-working-status",
+  "summary": "Native Android Home > Recents showed Working on every chat the user had left mid-turn. The row read the thread snapshot's status first, which is only written while a chat is open and is restored from the Room cache on every launch. So a turn that ended with the chat closed kept its 'running' status, and a live 'idle' or turn.completed could not override it. Recents now takes a chat's status only from this run's activity: live events, plus the backend's provider:list-sessions reply (the same source the desktop adopts on launch), fetched on each Home visit. A thread missing from that reply has no live session, and a live status change after the request beats the reply. The cached status is no longer shown, so a cold start shows no status until the backend answers.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop already adopts each session's current status from provider:list-sessions on launch (App.tsx adoptLiveSessions) and does not persist a status across restarts, so it never showed a stale Working. Nothing on the desktop changes."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Checked, not affected: the Expo app has no Home recents. Its conversation list reads the chat store, which ingests runtime events for every thread from the connection (stores/connections.ts) whether or not the chat is open, and resets every cached thread's status to 'connecting' on rehydrate (stores/chat.ts), so neither a closed-chat turn end nor a cold start can leave it on 'running'."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/home/HomePresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseThreadActivityIndex.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseCachedActivity.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/runtime/NativeAndroidRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/home/HomePresentationTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/browse/BrowseThreadActivityIndexTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/browse/BrowseCachedActivityTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/remote/RemoteLiveSessionsDecoderTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Uses the existing provider:list-sessions channel unchanged. It is not in the phone's denied scopes (terminal:*, mobile-pairing:*, source-control:*, pull request writes), and its status is the registry's last published status, which every adapter sets to 'running' at turn start and 'idle' at turn end. A backend without the channel answers with a failure, which is logged, and Recents shows no status."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or cache format change. The thread snapshot still stores its status for the open chat; Home just stops reading it, so existing caches holding 'running' stop showing Working with no migration."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "A cached snapshot status of 'running' shows no Working with no live activity (cold start), with an idle live status, or with the thread missing from list-sessions; a live 'running' shows Working",
+      "turn.completed while no chat is open clears a seeded 'running'",
+      "A list-sessions reply sets live threads' status and clears a thread it does not list; a live status change after the request beats the reply in both directions",
+      "The cold-start cached activity keeps unread and drops status",
+      "provider:list-sessions decoding keeps threadId -> status and skips entries without either",
+      "./gradlew testDebugUnitTest lintDebug"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on the affected phone; the fix reaches it with the next APK. Threads the desktop started under a synthetic agent_<ts> id while Recents lists them by the provider's session id match neither live events nor the list-sessions reply, so they show no status (as before for live events) rather than a wrong one."
+    ]
+  }
+}

@@ -100,6 +100,9 @@ interface RootNavigationRuntime {
     fun browseActivity(scope: TransportScope): StateFlow<Map<String, BrowseThreadActivity>> =
         EmptyBrowseActivity
 
+    /** Re-read every chat's status from `provider:list-sessions`, for the Home recents. */
+    fun refreshLiveStatuses(lease: ReadyClientLease) = Unit
+
     /** A chat's open cards from `provider:get-pending-requests`, for Needs you. */
     fun seedPendingRequests(scope: TransportScope, threadId: String, pending: List<app.switchboard.mobile.protocol.JsonObject>) = Unit
 
