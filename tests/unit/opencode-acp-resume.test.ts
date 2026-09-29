@@ -26,6 +26,9 @@ vi.mock('child_process', () => ({
   }),
 }))
 
+// The version gate has its own tests; it must not run a real binary here.
+vi.mock('../../src/main/provider/adapters/opencode/version', () => ({ assertSupportedOpencode: async () => {} }))
+
 vi.mock('../../src/main/provider/adapters/opencode/env', () => ({
   findOpencodePath: () => '/usr/local/bin/opencode',
   buildOpencodeEnv: (overlay: Record<string, string>) => ({ ...overlay }),

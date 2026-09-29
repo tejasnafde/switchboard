@@ -64,6 +64,7 @@ import type {
 import type { ProviderSkill, SessionSummary } from '@shared/types'
 import { decidePermission, denialMessage } from '../policy'
 import { findOpencodePath, buildOpencodeEnv } from './opencode/env'
+import { assertSupportedOpencode } from './opencode/version'
 import { resolveResumeSegment } from '../../db/database'
 import { acpSwitchboardMcpServer, isSwitchboardOpencodeReadTool, isSwitchboardOpencodeTool, SWITCHBOARD_OPENCODE_TOOLS } from '../../mcp/agent-registration'
 
@@ -735,6 +736,21 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       throw new Error('OpenCode not found. Install: curl -fsSL https://opencode.ai/install | bash')
     }
 
+    // OPENCODE_ENABLE_QUESTION_TOOL=1 enables the AskUserQuestion-style tool
+    // for ACP clients (off by default since not all clients support
+    // interactive question UIs). We do, so flip it on.
+    //
+    // Provider-instance env vars (NVIDIA_API_KEY, GEMINI_API_KEY, etc.)
+    // overlay on top of `buildOpencodeEnv`'s shell + settings-DB layers
+    // so per-instance keys win.
+    const overlay: Record<string, string> = { OPENCODE_ENABLE_QUESTION_TOOL: '1' }
+    for (const [k, v] of Object.entries(opts.resolvedEnv ?? {})) {
+      if (v.length > 0) overlay[k] = v
+    }
+    let env = buildOpencodeEnv(overlay)
+    // Before any session state exists, so a refused 2.x leaves nothing to clean up.
+    await assertSupportedOpencode(binPath, env)
+
     const session: ProviderSession = {
       threadId: opts.threadId,
       provider: 'opencode',
@@ -770,18 +786,6 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
 
     onEvent({ type: 'status', threadId: opts.threadId, status: 'connecting' })
 
-    // OPENCODE_ENABLE_QUESTION_TOOL=1 enables the AskUserQuestion-style tool
-    // for ACP clients (off by default since not all clients support
-    // interactive question UIs). We do, so flip it on.
-    //
-    // Provider-instance env vars (NVIDIA_API_KEY, GEMINI_API_KEY, etc.)
-    // overlay on top of `buildOpencodeEnv`'s shell + settings-DB layers
-    // so per-instance keys win.
-    const overlay: Record<string, string> = { OPENCODE_ENABLE_QUESTION_TOOL: '1' }
-    for (const [k, v] of Object.entries(opts.resolvedEnv ?? {})) {
-      if (v.length > 0) overlay[k] = v
-    }
-    let env = buildOpencodeEnv(overlay)
     const userConfig = await collectConfiguredOpencodeUserConfig(opts.cwd, env)
     active.mcpServerNames = userConfig.mcpServerNames
       .map((name) => opencodePermissionNamePart(name.trim()))

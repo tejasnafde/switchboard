@@ -12,6 +12,7 @@ const applyCredentialHome = vi.fn((env: Record<string, string>, _agent: string, 
 vi.mock('../../src/main/provider/credential-home', () => ({ applyCredentialHome: (...a: [Record<string, string>, string, string]) => applyCredentialHome(...a) }))
 vi.mock('../../src/main/provider/remote-gate', () => ({ remoteProviderConfigDir: (_agent: string, seg: string) => `/home/vm/${seg}` }))
 vi.mock('../../src/main/provider/adapters/opencode/env', () => ({ findOpencodePath: () => '/bin/opencode', buildOpencodeEnv: () => ({}) }))
+vi.mock('../../src/main/provider/adapters/opencode/version', () => ({ assertSupportedOpencode: async () => {} }))
 vi.mock('../../src/main/provider/instance-env', () => ({ resolveInstanceEnv: () => ({}) }))
 const codexEnvs: Array<Record<string, string>> = []
 vi.mock('../../src/main/provider/usage/codex-usage', () => ({
