@@ -36,7 +36,7 @@
   },
   "verification": {
     "automated": [
-      "mobile-release.yml runs the Android unit and lint gate and verifies package, monotonic version, signer fingerprint and checksum before it publishes."
+      "mobile-release.yml runs the Android unit and lint gate and verifies package, signer fingerprint and checksum, and a version higher than the newest published APK when one exists (the monotonic check is skipped when no earlier APK asset is found), before it publishes."
     ],
     "hardware": [],
     "notExercised": [
