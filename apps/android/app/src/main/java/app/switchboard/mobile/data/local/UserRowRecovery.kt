@@ -198,7 +198,7 @@ class UserRowRecovery(
         where: String = "1",
         args: Array<Any?> = emptyArray(),
         map: (StoredRow) -> T,
-    ): List<T> = scan(table, where, args).mapNotNull { recovered ->
+    ): List<T> = scanOrEmpty(table, where, args).mapNotNull { recovered ->
         when (recovered) {
             is Recovered.Row -> try {
                 map(recovered.values)
@@ -211,6 +211,14 @@ class UserRowRecovery(
                 null
             }
         }
+    }
+
+    /** A read path must never fail on a table it cannot scan: it loses only those rows. */
+    private fun scanOrEmpty(table: UserRowTables.Table, where: String, args: Array<Any?>): List<Recovered> = try {
+        scan(table, where, args)
+    } catch (error: Exception) {
+        log.warn("${table.name} oversized rows skipped, scan failed: ${error.javaClass.simpleName}")
+        emptyList()
     }
 
     private fun columnsOf(table: String): List<String> =

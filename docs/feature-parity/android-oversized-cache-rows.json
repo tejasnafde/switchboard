@@ -47,6 +47,7 @@
       "Robolectric (native SQLite, real CursorWindow) reproduces 'Row too big to fit into CursorWindow' with a 3 MB row, then shows the on-open repair drops it by size without reading it and startup yields the machines list",
       "An unrepaired oversized cache row costs only that row in the offline snapshot; an unreadable cache table degrades to no cache",
       "A 1600 KiB queued message and a 3 MiB multi-byte draft survive the repair and load through the offline snapshot, RoomOutboxStore and RoomComposerDraftStore; a user row that is not valid UTF-8 is quarantined and kept, never deleted",
+      "The cache deletes commit in their own transaction before any user-row scan; a scan that throws (in the head query or columnsOf) for one table is logged by table and exception class and skipped, leaving the cache rows deleted, the other tables recovered and startup unblocked",
       "A legacy thread over the cap is not migrated and the migration still verifies and stays complete on the next run",
       "Thread metadata over the cap deletes the older persisted snapshot and its feed rows, in a fake DAO and in real Room",
       "Thread and browse cache stores never write a row over the cap and log sizes, never content",

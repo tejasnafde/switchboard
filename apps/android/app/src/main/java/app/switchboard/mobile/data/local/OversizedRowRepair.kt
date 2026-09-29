@@ -62,51 +62,75 @@ object OversizedRowRepair {
         ),
     )
 
-    fun run(db: SupportSQLiteDatabase, log: CacheLog = AndroidCacheLog): Report {
-        val dropped = mutableListOf<Dropped>()
-        val recovered = linkedMapOf<String, Int>()
-        val quarantined = mutableListOf<String>()
-        db.beginTransaction()
-        try {
-            TARGETS.forEach { target ->
-                val predicate = "${target.sizeExpression} > ${target.cap}"
-                val (rows, largest) = db.query(
-                    "SELECT COUNT(*), ifnull(MAX(${target.sizeExpression}), 0) FROM `${target.table}` WHERE $predicate",
-                ).use { cursor ->
-                    cursor.moveToFirst()
-                    cursor.getInt(0) to cursor.getLong(1)
-                }
-                if (rows == 0) return@forEach
-                target.statements.forEach { statement -> db.execSQL(statement.format(predicate)) }
-                dropped += Dropped(target.table, rows, largest)
-            }
-            val recovery = UserRowRecovery(db, log)
-            UserRowTables.ALL.forEach { table ->
-                recovery.scan(table).forEach { row ->
-                    when (row) {
-                        is UserRowRecovery.Recovered.Row ->
-                            recovered[table.name] = (recovered[table.name] ?: 0) + 1
-                        is UserRowRecovery.Recovered.Unreadable -> {
-                            quarantined += "${table.name}:${row.key}"
-                            if (table != UserRowTables.QUARANTINE) quarantine(db, table, row)
-                            log.warn("${table.name} row of ${row.bytes} bytes quarantined: ${row.reason}")
-                        }
-                    }
-                }
-            }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
-        }
+    /**
+     * The cache deletes commit first, on their own: they are what unblocks
+     * startup, so nothing after them can roll them back. Each user table is then
+     * scanned in its own transaction, and a table whose scan fails is logged and
+     * skipped without touching the others.
+     */
+    fun run(db: SupportSQLiteDatabase, log: CacheLog = AndroidCacheLog): Report =
+        run(db, log, UserRowRecovery(db, log)::scan)
+
+    internal fun run(
+        db: SupportSQLiteDatabase,
+        log: CacheLog,
+        scan: (UserRowTables.Table) -> List<UserRowRecovery.Recovered>,
+    ): Report {
+        val dropped = dropOversizedCaches(db)
         dropped.forEach { drop ->
             log.warn(
                 "dropped ${drop.rows} oversized row(s) from ${drop.table}, largest ${drop.largestBytes} bytes",
             )
         }
+        val recovered = linkedMapOf<String, Int>()
+        val quarantined = mutableListOf<String>()
+        UserRowTables.ALL.forEach { table ->
+            try {
+                val rows = inTransaction(db) {
+                    scan(table).onEach { row ->
+                        if (row is UserRowRecovery.Recovered.Unreadable && table != UserRowTables.QUARANTINE) {
+                            quarantine(db, table, row)
+                        }
+                    }
+                }
+                val kept = rows.count { it is UserRowRecovery.Recovered.Row }
+                if (kept > 0) recovered[table.name] = kept
+                rows.filterIsInstance<UserRowRecovery.Recovered.Unreadable>().forEach { row ->
+                    quarantined += "${table.name}:${row.key}"
+                    log.warn("${table.name} row of ${row.bytes} bytes quarantined: ${row.reason}")
+                }
+            } catch (error: Exception) {
+                log.warn("${table.name} oversized row scan failed: ${error.javaClass.simpleName}")
+            }
+        }
         recovered.forEach { (table, rows) ->
             log.warn("kept $rows oversized row(s) in $table, read back in chunks")
         }
         return Report(dropped, recovered, quarantined)
+    }
+
+    private fun dropOversizedCaches(db: SupportSQLiteDatabase): List<Dropped> = inTransaction(db) {
+        TARGETS.mapNotNull { target ->
+            val predicate = "${target.sizeExpression} > ${target.cap}"
+            val (rows, largest) = db.query(
+                "SELECT COUNT(*), ifnull(MAX(${target.sizeExpression}), 0) FROM `${target.table}` WHERE $predicate",
+            ).use { cursor ->
+                cursor.moveToFirst()
+                cursor.getInt(0) to cursor.getLong(1)
+            }
+            if (rows == 0) return@mapNotNull null
+            target.statements.forEach { statement -> db.execSQL(statement.format(predicate)) }
+            Dropped(target.table, rows, largest)
+        }
+    }
+
+    private fun <T> inTransaction(db: SupportSQLiteDatabase, block: () -> T): T {
+        db.beginTransaction()
+        try {
+            return block().also { db.setTransactionSuccessful() }
+        } finally {
+            db.endTransaction()
+        }
     }
 
     private fun quarantine(

@@ -3,6 +3,7 @@ package app.switchboard.mobile.data.local
 import android.content.Context
 import android.database.sqlite.SQLiteBlobTooBigException
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.switchboard.mobile.data.AtomicMigrationPlan
@@ -136,6 +137,65 @@ class OversizedRowRepairTest {
         assertEquals("outbox:bad", record.recordKey)
         assertTrue(record.detail, record.detail.startsWith("${invalidUtf8.size} bytes, not valid UTF-8"))
         assertEquals(listOf("outbox row of ${invalidUtf8.size} bytes quarantined: not valid UTF-8"), warnings)
+    }
+
+    @Test
+    fun aUserTableScanThatThrowsCannotUndoTheCacheRepairOrBlockStartup() {
+        seedOversizedRowsWithoutRepair(includeUserRows = true)
+        val database = unrepaired()
+        val db = database.openHelper.writableDatabase
+        val real = UserRowRecovery(db) {}
+        val warnings = mutableListOf<String>()
+
+        val report = OversizedRowRepair.run(db, warnings::add) { table ->
+            when (table) {
+                UserRowTables.OUTBOX -> throw IllegalArgumentException("column 'name' does not exist")
+                UserRowTables.THREAD_PREFERENCES -> throw SQLiteException("head query failed")
+                else -> real.scan(table)
+            }
+        }
+
+        assertEquals(listOf("cached_threads", "cached_feed_rows", "browse_snapshots"), report.dropped.map { it.table })
+        assertTrue(report.recovered.isEmpty())
+        assertTrue(warnings.contains("outbox oversized row scan failed: IllegalArgumentException"))
+        assertTrue(warnings.contains("thread_preferences oversized row scan failed: SQLiteException"))
+        assertTrue(warnings.none { "xxxx" in it || "qqqq" in it || "dddd" in it })
+        assertEquals(0L, raw { file -> countOver(file, "cached_feed_rows") })
+        rawQueryAll("SELECT * FROM cached_feed_rows")
+        rawQueryAll("SELECT * FROM cached_threads")
+        assertEquals(2L, raw { file -> count(file, "SELECT COUNT(*) FROM outbox") })
+
+        val runtime = StartupRuntime.direct(
+            migration = StartupMigrationRunner { StartupMigrationState.AlreadyComplete() },
+            snapshot = OfflineSnapshotReader(database::readOfflineSnapshot),
+            dialGate = StartupDialGate {},
+        )
+        runtime.start()
+        val machines = StartupConnectionsMapper.map(runtime.state) as ConnectionsLoadState.Ready
+        assertEquals(listOf("lan"), machines.connections.map { it.id })
+    }
+
+    @Test
+    fun aTableWhoseRealHeadQueryFailsIsSkippedAndTheOtherTablesStillRecover() {
+        seedOversizedRowsWithoutRepair(includeUserRows = true)
+        val database = unrepaired()
+        val db = database.openHelper.writableDatabase
+        db.execSQL("DROP TABLE pending_worktree_creations")
+        val warnings = mutableListOf<String>()
+
+        val report = OversizedRowRepair.run(db, warnings::add)
+
+        assertEquals(3, report.dropped.size)
+        assertEquals(mapOf("outbox" to 1, "thread_preferences" to 1), report.recovered)
+        assertTrue(warnings.contains("pending_worktree_creations oversized row scan failed: SQLiteException"))
+        assertEquals(0L, raw { file -> countOver(file, "cached_threads") })
+
+        val readWarnings = mutableListOf<String>()
+        assertTrue(UserRowRecovery(db, readWarnings::add).worktreeCreations().isEmpty())
+        assertEquals(
+            listOf("pending_worktree_creations oversized rows skipped, scan failed: SQLiteException"),
+            readWarnings,
+        )
     }
 
     @Test
