@@ -16,7 +16,8 @@
         "src/renderer/stores/provider-instance-store.ts",
         "tests/unit/claude-keychain-read-sharing.test.ts",
         "tests/unit/provider-instance-store-usage.test.ts",
-        "tests/unit/expired-token-status.test.ts"
+        "tests/unit/expired-token-status.test.ts",
+        "tests/unit/usage-probe-strength.test.ts"
       ]
     },
     "reactNativeIos": {
@@ -29,7 +30,10 @@
     },
     "sharedBackendApi": {
       "status": "implemented",
-      "evidence": ["src/main/provider/usage/index.ts", "src/main/ipc/provider-instances.ts"],
+      "evidence": [
+        "src/main/provider/usage/index.ts",
+        "src/main/ipc/provider-instances.ts"
+      ],
       "reason": "No channel or payload change: provider-instances:usage keeps its arguments and ProviderUsage shape. Only how often the backend reads the keychain behind it changes; a headless Linux backend reads the credentials file as before."
     },
     "storageDataMigration": {
@@ -46,6 +50,7 @@
       "tests/unit/claude-keychain-read-sharing.test.ts drives the credential reader with a fake security runner: one Accounts load reads each service once, two instances resolving to one service read it once, an item without a payload is read once (not again under the next account, not after a day), a fresh read or an edit of its instance reads it again, a timed-out read is not kept, a fresh read waits for one in flight instead of running beside it, and nothing spawns at import.",
       "tests/unit/provider-instance-store-usage.test.ts: the list refresh Settings runs on open makes no usage call; an Accounts visit reads each account once, however often it syncs.",
       "tests/unit/expired-token-status.test.ts: the re-read after a CLI token refresh is fresh.",
+      "tests/unit/usage-probe-strength.test.ts: a forced or refresh-with-turn request that arrives while a weaker probe is in flight waits for it and then runs its own (never two probes at once), and a weaker or equal request joins a stronger probe in flight.",
       "npm run typecheck and npm test pass."
     ],
     "hardware": [],

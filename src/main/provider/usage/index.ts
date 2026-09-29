@@ -23,7 +23,8 @@ const log = createMainLogger('provider:usage')
 const CACHE_TTL_MS = 45_000
 
 const cache = new Map<string, ProviderUsage>()
-const inFlight = new Map<string, Promise<ProviderUsage>>()
+/** A probe in flight, with how strong a request it answers (see `strength`). */
+const inFlight = new Map<string, { task: Promise<ProviderUsage>; strength: number }>()
 
 /**
  * Codex probes spawn a ~260MB binary, so they run one at a time no matter
@@ -116,22 +117,36 @@ export function invalidateUsage(id?: string): void {
   cache.delete(id)
 }
 
+/** 0 = may be cached, 1 = forced (the Usage refresh), 2 = refresh with a CLI turn. */
+function strength(opts: UsageRequestOptions): number {
+  if (opts.refreshWithTurn) return 2
+  return opts.force ? 1 : 0
+}
+
 export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions = {}): Promise<ProviderUsage> {
-  if (opts.force || opts.refreshWithTurn) cache.delete(id)
+  const wanted = strength(opts)
+  if (wanted > 0) cache.delete(id)
   else {
     const cached = cache.get(id)
     if (cached && Date.now() - cached.fetchedAtMs < CACHE_TTL_MS) return cached
   }
 
-  // Deliberately shared even for a forced refresh: two probes against the same
-  // credential would race, and the in-flight one is already fresh.
-  const existing = inFlight.get(id)
-  if (existing) return existing
+  // A probe in flight answers any request no stronger than its own. A
+  // stronger one waits for it and then runs its own: never two probes at
+  // once, since each can be a keychain password prompt, and never an
+  // unforced reading handed to a forced request.
+  let existing = inFlight.get(id)
+  if (existing && existing.strength >= wanted) return existing.task
+  while (existing) {
+    await Promise.allSettled([existing.task])
+    existing = inFlight.get(id)
+    if (existing && existing.strength >= wanted) return existing.task
+  }
 
   // Resolved up front so a probe that throws can still report the right kind.
   const agentType = getProviderInstanceFull(id, { withEnv: false })?.agentType ?? 'claude-code'
 
-  const task = probe(id, agentType, opts)
+  const task: Promise<ProviderUsage> = probe(id, agentType, opts)
     .then((result) => {
       cache.set(id, result)
       return result
@@ -142,9 +157,9 @@ export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions =
       return flat(id, agentType, 'error', message)
     })
     .finally(() => {
-      inFlight.delete(id)
+      if (inFlight.get(id)?.task === task) inFlight.delete(id)
     })
 
-  inFlight.set(id, task)
+  inFlight.set(id, { task, strength: wanted })
   return task
 }
