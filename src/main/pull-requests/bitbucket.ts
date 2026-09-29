@@ -57,6 +57,8 @@ const MERGED_WINDOW_DAYS = 7
 const PENDING_CHECKS_MAX_AGE_MS = 4 * 60_000
 /** Repository permission rarely changes; re-read it at most this often. */
 const PERMISSION_TTL_MS = 10 * 60_000
+/** Workspace members change rarely, and one workspace backs every repository in it. */
+const MEMBERS_TTL_MS = 10 * 60_000
 const BB_REJECTED = 'Bitbucket rejected the email and API token.'
 const BB_MISSING_SCOPE = `The API token is missing a scope this needs (${BITBUCKET_READ_SCOPES.join(', ')}).`
 
@@ -238,6 +240,7 @@ export class BitbucketProvider implements PullRequestProvider {
   private viewer: BbViewer | null = null
   private readonly enrichment = new VersionedCache<BbEnrichment>()
   private readonly permission = new Map<string, { at: number; write: boolean }>()
+  private readonly members = new Map<string, { at: number; read: Promise<PrReviewerCandidate[]> }>()
 
   constructor(
     private readonly client: BitbucketClient,
@@ -451,13 +454,33 @@ export class BitbucketProvider implements PullRequestProvider {
     throw new PrHostError({ kind: 'forbidden', host: 'bitbucket', message: "Bitbucket's API cannot re-run a pipeline." })
   }
 
-  /** Workspace members; a token without the workspace read scope sees none, and the card still offers recent reviewers. */
-  async reviewerCandidates(repo: RepoRef): Promise<PrReviewerCandidate[]> {
+  /**
+   * Workspace members; a token without the workspace read scope sees none, and
+   * the card still offers recent reviewers. A large workspace takes several
+   * serial pages (the endpoint filters by email only, so there is no search to
+   * push down), so the read is shared per workspace for 10 minutes, including
+   * one still in flight. An offline failure is not kept.
+   */
+  reviewerCandidates(repo: RepoRef): Promise<PrReviewerCandidate[]> {
+    const key = repo.owner.toLowerCase()
+    const hit = this.members.get(key)
+    if (hit && this.now() - hit.at < MEMBERS_TTL_MS) return hit.read
+    const read = this.readMembers(repo.owner)
+    this.members.set(key, { at: this.now(), read })
+    // The caller gets the same rejection and logs it; this only drops it from the cache.
+    read.catch(() => this.members.delete(key))
+    return read
+  }
+
+  private async readMembers(workspace: string): Promise<PrReviewerCandidate[]> {
+    const started = this.now()
     try {
-      return mapBbCandidates(await this.client.paged<BbWorkspaceMember>(`/workspaces/${encodeURIComponent(repo.owner)}/members?pagelen=100`))
+      const members = await this.client.paged<BbWorkspaceMember>(`/workspaces/${encodeURIComponent(workspace)}/members?pagelen=100`)
+      log.info('read workspace members', { ms: this.now() - started, pages: Math.max(1, Math.ceil(members.length / 100)), count: members.length })
+      return mapBbCandidates(members)
     } catch (err) {
       if (!(err instanceof PrHostError) || err.error.kind === 'offline') throw err
-      log.warn('listing workspace members failed', { workspace: repo.owner, kind: err.error.kind })
+      log.warn('listing workspace members failed', { workspace, kind: err.error.kind, ms: this.now() - started })
       return []
     }
   }

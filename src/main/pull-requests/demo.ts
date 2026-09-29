@@ -280,6 +280,13 @@ export interface DemoPrWrite {
 
 declare global {
   var __sbDemoPrWrites: DemoPrWrite[] | undefined
+  /** e2e only: how long the demo host takes to answer, in ms, so a test can see the loading and pending states. */
+  var __sbDemoPrDelayMs: Partial<Record<'list' | 'candidates' | 'write', number>> | undefined
+}
+
+async function hostDelay(kind: 'list' | 'candidates' | 'write'): Promise<void> {
+  const ms = globalThis.__sbDemoPrDelayMs?.[kind]
+  if (ms) await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 const MERGE_STRATEGIES: Record<'github' | 'bitbucket', MergeStrategy[]> = {
@@ -354,6 +361,7 @@ class DemoProvider implements PullRequestProvider {
   }
 
   async list(repos: RepoRef[]): Promise<RepoListResult[]> {
+    await hostDelay('list')
     const all = this.all()
     return repos.map((repo) => repo.owner === UNSEEN_WORKSPACE
       ? { repo, prs: [], error: { kind: 'not_found', host: this.host, message: 'Bitbucket could not find it, or this account cannot see it.' } }
@@ -386,7 +394,8 @@ class DemoProvider implements PullRequestProvider {
     return this.find(ref).checkList
   }
 
-  private record(action: string, ref: PrRef, input: unknown): void {
+  private async record(action: string, ref: PrRef, input: unknown): Promise<void> {
+    await hostDelay('write')
     globalThis.__sbDemoPrWrites ??= []
     globalThis.__sbDemoPrWrites.push({ action, ref, input })
   }
@@ -408,27 +417,27 @@ class DemoProvider implements PullRequestProvider {
   }
 
   async reply(ref: PrRef, conversationId: string, body: string): Promise<void> {
-    this.record('reply', ref, { conversationId, body })
+    await this.record('reply', ref, { conversationId, body })
     this.overlay.replies.set(conversationId, [...(this.overlay.replies.get(conversationId) ?? []), this.mine(body)])
   }
 
   async setResolved(ref: PrRef, conversationId: string, resolved: boolean): Promise<void> {
-    this.record(resolved ? 'resolve' : 'unresolve', ref, { conversationId })
+    await this.record(resolved ? 'resolve' : 'unresolve', ref, { conversationId })
     this.overlay.resolved.set(conversationId, resolved)
   }
 
   async comment(ref: PrRef, body: string): Promise<void> {
-    this.record('comment', ref, { body })
+    await this.record('comment', ref, { body })
     this.addActivity(ref, 'commented', body)
   }
 
   async inlineComment(ref: PrRef, comment: InlineCommentInput): Promise<void> {
-    this.record('inline-comment', ref, comment)
+    await this.record('inline-comment', ref, comment)
     this.addThread(ref, comment)
   }
 
   async submitReview(ref: PrRef, review: SubmitReviewInput): Promise<void> {
-    this.record('submit-review', ref, review)
+    await this.record('submit-review', ref, review)
     for (const c of review.comments) this.addThread(ref, c)
     const verdict = review.event === 'approve' ? 'approved' : review.event === 'request_changes' ? 'changes_requested' : 'commented'
     this.overlay.review.set(ref.number, verdict)
@@ -436,33 +445,34 @@ class DemoProvider implements PullRequestProvider {
   }
 
   async merge(ref: PrRef, strategy: MergeStrategy, headSha: string): Promise<void> {
-    this.record('merge', ref, { strategy, headSha })
+    await this.record('merge', ref, { strategy, headSha })
     this.overlay.merged.add(ref.number)
   }
 
   async rerunCheck(ref: PrRef, check: PrCheck): Promise<void> {
-    this.record('rerun-check', ref, { checkId: check.id, rerunId: check.rerunId })
+    await this.record('rerun-check', ref, { checkId: check.id, rerunId: check.rerunId })
     this.overlay.rerun.add(`${ref.number}:${check.id}`)
   }
 
   async reviewerCandidates(): Promise<PrReviewerCandidate[]> {
+    await hostDelay('candidates')
     return CANDIDATES.map((p) => ({ id: reviewerId(this.host, p), person: p, kind: 'user', reviewed: 0 }))
   }
 
   async addReviewer(ref: PrRef, reviewer: string): Promise<void> {
-    this.record('add-reviewer', ref, { reviewer })
+    await this.record('add-reviewer', ref, { reviewer })
     this.overlay.added.set(ref.number, [...(this.overlay.added.get(ref.number) ?? []), reviewer])
     this.overlay.removed.set(ref.number, (this.overlay.removed.get(ref.number) ?? []).filter((id) => id !== reviewer))
   }
 
   async removeReviewer(ref: PrRef, reviewer: string): Promise<void> {
-    this.record('remove-reviewer', ref, { reviewer })
+    await this.record('remove-reviewer', ref, { reviewer })
     this.overlay.removed.set(ref.number, [...(this.overlay.removed.get(ref.number) ?? []), reviewer])
     this.overlay.added.set(ref.number, (this.overlay.added.get(ref.number) ?? []).filter((id) => id !== reviewer))
   }
 
   async decline(ref: PrRef): Promise<void> {
-    this.record('decline', ref, {})
+    await this.record('decline', ref, {})
     this.overlay.declined.add(ref.number)
   }
 
@@ -478,7 +488,7 @@ class DemoProvider implements PullRequestProvider {
   /** Recorded only: the scripted list stays as it is for the visual harness. */
   async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<CreatedPr> {
     const number = 900 + ++this.seq
-    this.record('create', { ...repo, number }, input)
+    await this.record('create', { ...repo, number }, input)
     const path = this.host === 'github' ? 'pull' : 'pull-requests'
     return { number, url: `https://${this.host === 'github' ? 'github.com' : 'bitbucket.org'}/${repo.owner}/${repo.name}/${path}/${number}` }
   }

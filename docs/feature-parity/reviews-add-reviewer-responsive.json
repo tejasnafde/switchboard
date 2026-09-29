@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "reviews-add-reviewer-responsive",
+  "summary": "Adding a reviewer from the Reviews screen no longer looks stuck. The write itself was quick (logged as done), but the Reviewers card stayed disabled with no feedback until afterWrite had re-listed every repository (26+ in a large Bitbucket workspace) and only then re-read the PR. Now afterWrite refreshes the list without waiting for it and awaits only the written PR's reads, so every Reviews write control comes back as soon as its own PR is re-read. The card shows the picked person as a pending row with a spinner (Adding…, and Removing… on a row being removed) until the re-read PR has them; the popover already closed on a pick; a failed write still shows its inline error. While the backend reads the candidates, the combobox offers the recent reviewers of that repository from the list already on screen (offeredReviewers) instead of an empty box. Bitbucket workspace members (serial pages of 100, up to 5; the endpoint filters by email only, so there is no server-side name search) are shared per workspace for 10 minutes, including a read in flight, and an offline failure is not kept. The candidates read logs its time and count, and the members read its time, page count and member count, never names. The demo provider has an e2e-only delay knob (globalThis.__sbDemoPrDelayMs: list, candidates, write) so the e2e sees the loading and pending states.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/PrReviewers.tsx",
+        "src/renderer/stores/review-store.ts",
+        "e2e/review-writes.e2e.mjs",
+        "tests/unit/review-store-writes.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The phone has no Reviews screen and the reviewer write channels are admin-scoped, so a phone cannot add a reviewer; the candidates read is unchanged in shape."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android has no Reviews destination and no code calls the reviewer candidates or reviewer write channels; their shapes are unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pull-request-writes.ts",
+        "src/main/pull-requests/bitbucket.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/pull-requests/demo.ts",
+        "tests/unit/pull-request-writes.test.ts",
+        "tests/unit/pull-requests-bitbucket-writes.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored: the member cache lives in the Bitbucket provider's memory for 10 minutes and is gone on restart. No table, setting or file changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No channel, payload shape, package identity, signing, deep link or update channel change. The candidates read returns the same PrReviewerCandidate list; an older backend without the cache is only slower."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and npm test passed.",
+      "vitest: afterWrite re-reads the written PR while a list read never answers; offeredReviewers offers the repository's recent reviewers (not other repositories', not the author or anyone already asked) until the read answers, then the read; the Bitbucket member read is shared by two repositories of one workspace, reused at 9 minutes, re-read at 11, and an offline failure is not cached.",
+      "e2e/review-writes.e2e.mjs with the demo host slowed (candidates 2.5s, writes 1.5s, list 6s): the box offers a recent reviewer while members load, the search is usable and says Loading…, a pick closes the popover at once, a pending Adding… row shows, the box is usable again about 2s after the pick (before the 6s list refresh ends), the uuid is sent; Remove shows Removing… then drops the row. 42/42 passed.",
+      "SB_VISUAL_SCOPE=screens passed without updating any baseline (no covered screen shows a pending state)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against a real Bitbucket or GitHub account: the timings in the user's large workspace were inferred from the code path (every repository re-listed before the PR re-read), not measured. The new log lines ('read workspace members', 'read reviewer candidates') will give the real numbers.",
+      "No write was sent to a real host."
+    ]
+  }
+}

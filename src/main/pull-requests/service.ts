@@ -300,8 +300,11 @@ export class PullRequestService {
   reviewerCandidates(ref: unknown): Promise<PrResult<PrReviewerCandidate[]>> {
     return this.read(ref, 'reviewer candidates', async (p, r) => {
       const repo = { host: r.host, owner: r.owner, name: r.name }
+      const started = Date.now()
       const [listed, members] = await Promise.all([p.list([repo]), p.reviewerCandidates(repo)])
-      return orderReviewerCandidates(recentReviewers(listed.flatMap((l) => l.prs)), members)
+      const candidates = orderReviewerCandidates(recentReviewers(listed.flatMap((l) => l.prs)), members)
+      log.info('read reviewer candidates', { host: r.host, ms: Date.now() - started, count: candidates.length })
+      return candidates
     })
   }
 

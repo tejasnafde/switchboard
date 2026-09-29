@@ -10,7 +10,7 @@
  * and default, who may approve, when a review can be submitted, the merge
  * pre-check) are pure and live here too.
  */
-import type { MergeStrategy, PrConversation, PrChangedFile, PrDetail, PrError, PrHost, PrReviewer, PrReviewerCandidate, PrSummary, PrViewer } from './pull-requests'
+import { repoKey, type MergeStrategy, type PrConversation, type PrChangedFile, type PrDetail, type PrError, type PrHost, type PrReviewer, type PrReviewerCandidate, type PrSummary, type PrViewer } from './pull-requests'
 
 /** GitHub caps a comment at 65,536 characters; stay under it so a host never cuts one. */
 export const PR_TEXT_MAX_CHARS = 60_000
@@ -350,6 +350,21 @@ export function orderReviewerCandidates(recent: readonly PrReviewerCandidate[], 
 export function candidatesFor(candidates: readonly PrReviewerCandidate[], pr: Pick<PrSummary, 'author' | 'authorId' | 'reviewers'>): PrReviewerCandidate[] {
   const taken = new Set(pr.reviewers.filter((r) => r.requested && r.id).map((r) => r.id))
   return candidates.filter((c) => !taken.has(c.id) && c.id !== pr.authorId && c.person.login !== pr.author.login)
+}
+
+/**
+ * What Add reviewer offers: the backend's candidates once read, and until then
+ * the recent reviewers in the list already on screen, so a large workspace's
+ * member read does not leave the box empty.
+ */
+export function offeredReviewers(
+  read: readonly PrReviewerCandidate[] | null,
+  listed: readonly Pick<PrSummary, 'ref' | 'reviewers'>[],
+  pr: Pick<PrSummary, 'ref' | 'author' | 'authorId' | 'reviewers'>,
+): PrReviewerCandidate[] {
+  const repo = repoKey(pr.ref)
+  const all = read ?? orderReviewerCandidates(recentReviewers(listed.filter((p) => repoKey(p.ref) === repo)), [])
+  return candidatesFor(all, pr)
 }
 
 /** Counts reviews in the listed PRs of one repository, per reviewer. */

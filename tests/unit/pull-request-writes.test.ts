@@ -10,6 +10,7 @@ import {
   candidatesFor,
   canRemoveReviewer,
   managePrecheck,
+  offeredReviewers,
   orderReviewerCandidates,
   recentReviewers,
   removeReviewerPrecheck,
@@ -304,5 +305,16 @@ describe('reviewer candidates', () => {
     expect(candidatesFor([cand('me'), cand('pankaj'), cand('backend'), cand('barath')], pr).map((c) => c.id)).toEqual(['backend', 'barath'])
     // Bitbucket: the candidate id is the uuid, not the nickname.
     expect(candidatesFor([cand(UUID, { person: person('Tejas Nafde') })], { author: person('tejas'), authorId: UUID, reviewers: [] })).toEqual([])
+  })
+
+  it('offers the recent reviewers of the listed PRs until the read answers, then the read', () => {
+    const repo = { host: 'github' as const, owner: 'o', name: 'r' }
+    const pr = { ref: { ...repo, number: 7 }, author: person('me'), authorId: 'me', reviewers: [rv('pankaj', 'pending')] }
+    const listed = [
+      { ref: { ...repo, number: 1 }, reviewers: [rv('backend', 'approved'), rv('pankaj', 'approved')] },
+      { ref: { ...repo, name: 'other', number: 2 }, reviewers: [rv('zed', 'approved')] },
+    ]
+    expect(offeredReviewers(null, listed, pr).map((c) => c.id)).toEqual(['backend'])
+    expect(offeredReviewers([cand('barath'), cand('pankaj')], listed, pr).map((c) => c.id)).toEqual(['barath'])
   })
 })

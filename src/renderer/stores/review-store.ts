@@ -108,7 +108,7 @@ interface ReviewStore {
   setMergeStrategy: (ref: PrRef, strategy: MergeStrategy) => void
   /** Optimistic resolve: flips the thread in the loaded conversations now. */
   setConversationResolved: (ref: PrRef, id: string, resolved: boolean) => void
-  /** After a write succeeded: re-read the list and the PR's reads the write changed, keeping what is shown until they arrive. */
+  /** After a write succeeded: re-read the PR's reads the write changed (and, not awaited, the list), keeping what is shown until they arrive. */
   afterWrite: (ref: PrRef, refresh: PrResource[]) => Promise<void>
 }
 
@@ -363,7 +363,9 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
 
   afterWrite: async (ref, refresh) => {
     const key = prKey(ref)
-    await get().refresh('manual', { keep: key })
+    // The list reads every repository (slow in a large Bitbucket workspace), so it
+    // refreshes alongside; a control waits only for the PR it wrote to.
+    void get().refresh('manual', { keep: key })
     const loaded = get().resources[key] ?? {}
     await Promise.all(refresh.filter((r) => loaded[r] !== undefined).map((r) => get().load(ref, r, { force: true })))
   },

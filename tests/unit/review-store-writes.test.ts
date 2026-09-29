@@ -92,4 +92,12 @@ describe('afterWrite', () => {
     // `detail` was never loaded here, so the write does not start reading it.
     expect(s.getState().resources[key]?.detail).toBeUndefined()
   })
+  it('does not wait for a slow list before re-reading the written PR', async () => {
+    const conversations = vi.fn(async () => ({ ok: true, data: [thread(true)] }))
+    const s = await store({ conversations, list: () => new Promise(() => {}) })
+    await s.getState().afterWrite(ref, ['conversations'])
+    const c = s.getState().resources[key]?.conversations
+    expect(c?.status === 'ok' && c.data[0].resolved).toBe(true)
+    expect(s.getState().loading).toBe(true)
+  })
 })
