@@ -57,7 +57,7 @@ class AndroidStartupRuntime private constructor(
             core = StartupMigrationRunner(connectionMigration::run),
             google = google,
         ),
-        snapshot = OfflineSnapshotReader(database.offlineSnapshotDao()::read),
+        snapshot = OfflineSnapshotReader(database::readOfflineSnapshot),
         dialGate = StartupDialGate(dialGate::release),
     )
 
