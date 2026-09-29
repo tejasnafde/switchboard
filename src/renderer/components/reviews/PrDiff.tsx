@@ -85,13 +85,16 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
   const [dragSel, setDragSel] = useState<LineSelection | null>(null)
   // `moved` turns the click that ends a drag into a no-op.
   const dragRef = useRef<{ pointerId: number; sel: LineSelection; range: LineSelection | null; moved: boolean } | null>(null)
-  const swallowClick = useRef(false)
+  // The click that follows a drag's release is not a pick. A deadline, not a flag: a release
+  // click that never comes (pointer let go elsewhere) must not eat a later keyboard click.
+  const swallowClickUntil = useRef(0)
+  const SWALLOW_CLICK_MS = 1000
   const endDrag = (e: { currentTarget: HTMLButtonElement }, commit: boolean) => {
     const d = dragRef.current
     if (!d) return
     dragRef.current = null
     // A cancelled pointer sends no click, so only a committed drag swallows the next one.
-    swallowClick.current = commit && d.moved
+    swallowClickUntil.current = commit && d.moved ? performance.now() + SWALLOW_CLICK_MS : 0
     if (e.currentTarget.hasPointerCapture(d.pointerId)) e.currentTarget.releasePointerCapture(d.pointerId)
     setDragSel(null)
     if (!commit) return
@@ -101,7 +104,7 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
   }
   const drag = (side: 'new' | 'old', hunk: number) => (n: number): DragHandlers => ({
     onPointerDown: (e) => {
-      swallowClick.current = false
+      swallowClickUntil.current = 0
       if (e.button !== 0 || e.shiftKey) return
       // No text selection across the code while dragging; focus by hand since preventDefault skips it.
       e.preventDefault()
@@ -135,12 +138,12 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
       if (e.key !== 'Escape' || !d) return
       e.stopPropagation()
       endDrag(e, false)
-      swallowClick.current = true
+      swallowClickUntil.current = performance.now() + SWALLOW_CLICK_MS
     },
   })
   const pick = (side: 'new' | 'old', hunk: number, n: number, e: MouseEvent) => {
-    if (swallowClick.current) {
-      swallowClick.current = false
+    if (performance.now() < swallowClickUntil.current) {
+      swallowClickUntil.current = 0
       return
     }
     setComposing(false)
