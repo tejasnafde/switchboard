@@ -46,7 +46,7 @@ class RoomConnectionDatabase(
                 replacement,
                 NativeCredentialRefEntity(replacement.id, newCredentialRef),
             )
-            val reread = database.offlineSnapshotDao().read()
+            val reread = database.readOfflineSnapshot()
             check(reread.connections.any { it == replacement }) {
                 "connection replacement read-back failed"
             }
@@ -73,7 +73,7 @@ class RoomConnectionDatabase(
                 newRef,
             )
             if (changed == 1) {
-                val reread = database.offlineSnapshotDao().read()
+                val reread = database.readOfflineSnapshot()
                 check(
                     reread.nativeCredentialRefs.any {
                         it.connectionId == connectionId && it.logicalKey == newRef
@@ -88,5 +88,5 @@ class RoomConnectionDatabase(
     override fun delete(connectionId: String): Boolean =
         database.connectionDao().delete(connectionId) > 0
 
-    override fun snapshot(): OfflineSnapshot = database.offlineSnapshotDao().read()
+    override fun snapshot(): OfflineSnapshot = database.readOfflineSnapshot()
 }

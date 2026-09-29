@@ -352,7 +352,7 @@ class NativeAndroidRuntime private constructor(
                 ),
             ).also(BackgroundTurnNotificationRuntime::start)
             val outbox = OutboxRuntime(
-                store = RoomOutboxStore(database.outboxDao()),
+                store = RoomOutboxStore(database.outboxDao(), database::recoveredOutbox),
                 attachmentStager = AndroidPrivateFilesAttachmentStager(applicationContext),
                 imageMaterializer = PrivateFileOutboxImageMaterializer(),
                 clients = OutboxClientLookup { connectionId -> clients.lease(connectionId)?.client },
@@ -364,7 +364,7 @@ class NativeAndroidRuntime private constructor(
             )
             val composer = DurableComposerRuntime(
                 coordinator = ComposerDraftCoordinator(
-                    store = RoomComposerDraftStore(database.composerDraftDao()),
+                    store = RoomComposerDraftStore(database.composerDraftDao(), database::recoveredDrafts),
                     stager = AndroidComposerAttachmentStager(applicationContext),
                 ),
                 outbox = outbox,

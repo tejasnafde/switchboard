@@ -59,10 +59,14 @@ object ComposerDraftEntityMapper {
 
 class RoomComposerDraftStore(
     private val dao: ComposerDraftDao,
+    /** Drafts too big for the DAO's query, read back in chunks. */
+    private val oversized: () -> List<ComposerDraftWithAttachments> = { emptyList() },
 ) : ComposerDraftStore {
     override fun load(): ComposerDraftLoadResult = try {
         ComposerDraftLoadResult.Success(
-            dao.allWithAttachments().map(ComposerDraftEntityMapper::toDomain),
+            (dao.allWithAttachments() + oversized())
+                .sortedBy { it.preference.threadKey }
+                .map(ComposerDraftEntityMapper::toDomain),
         )
     } catch (exception: Exception) {
         ComposerDraftLoadResult.Failure(exception.message ?: "failed to load composer drafts")

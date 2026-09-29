@@ -1,6 +1,9 @@
 package app.switchboard.mobile.data.thread
 
+import app.switchboard.mobile.data.local.AndroidCacheLog
 import app.switchboard.mobile.data.local.CacheDao
+import app.switchboard.mobile.data.local.CacheLog
+import app.switchboard.mobile.data.local.CacheRowLimits
 import app.switchboard.mobile.data.local.CachedFeedRowEntity
 import app.switchboard.mobile.data.local.CachedThreadEntity
 import app.switchboard.mobile.data.local.CachedThreadWithFeed
@@ -31,6 +34,7 @@ data object NoOpThreadSnapshotStore : ThreadSnapshotStore {
 class RoomThreadSnapshotStore(
     private val dao: CacheDao,
     private val writes: Executor,
+    private val log: CacheLog = AndroidCacheLog,
 ) : ThreadSnapshotStore {
     private val states = linkedMapOf<String, ThreadState>()
     private val pending = linkedMapOf<String, PendingSnapshot>()
@@ -98,9 +102,30 @@ class RoomThreadSnapshotStore(
                     next.threadId,
                     next.state,
                 )
-                dao.replaceThread(encoded.thread, encoded.feed)
+                if (CacheRowLimits.fitsCache(encoded.thread.rawJson)) {
+                    dao.replaceThread(encoded.thread, boundedFeed(encoded.feed))
+                } else {
+                    // The older persisted snapshot goes too, so a restart cannot restore
+                    // a status and feed older than what this run last showed.
+                    log.warn(
+                        "thread cache cleared: metadata is ${CacheRowLimits.utf8Bytes(encoded.thread.rawJson)} bytes",
+                    )
+                    dao.deleteThread(encoded.thread.threadKey)
+                }
+            }.onFailure { error ->
+                log.warn("thread cache write failed: ${error.javaClass.simpleName}")
             }
         }
+    }
+
+    /** An oversized row (a file edit of a large file) is left out; the backend reseeds it. */
+    private fun boundedFeed(feed: List<CachedFeedRowEntity>): List<CachedFeedRowEntity> {
+        val (kept, dropped) = feed.partition { CacheRowLimits.fitsCache(it.rawJson) }
+        if (dropped.isNotEmpty()) {
+            val largest = dropped.maxOf { CacheRowLimits.utf8Bytes(it.rawJson) }
+            log.warn("thread cache left out ${dropped.size} oversized feed row(s), largest $largest bytes")
+        }
+        return kept
     }
 
     private data class PendingSnapshot(

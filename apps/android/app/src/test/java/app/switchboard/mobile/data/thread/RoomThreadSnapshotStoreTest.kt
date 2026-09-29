@@ -1,6 +1,7 @@
 package app.switchboard.mobile.data.thread
 
 import app.switchboard.mobile.data.local.CacheDao
+import app.switchboard.mobile.data.local.CacheRowLimits
 import app.switchboard.mobile.data.local.CachedFeedRowEntity
 import app.switchboard.mobile.data.local.CachedThreadEntity
 import app.switchboard.mobile.data.local.OfflineSnapshot
@@ -11,6 +12,7 @@ import app.switchboard.mobile.domain.thread.TodoEntry
 import java.util.concurrent.Executor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RoomThreadSnapshotStoreTest {
@@ -85,6 +87,69 @@ class RoomThreadSnapshotStoreTest {
         assertEquals("saved", userText(store.get("mac", "thread-2")))
     }
 
+    @Test
+    fun `an oversized feed row is left out of the cache and the rest is written`() {
+        val dao = FakeCacheDao()
+        val warnings = mutableListOf<String>()
+        val store = RoomThreadSnapshotStore(dao, Executor(Runnable::run), warnings::add)
+        val huge = "x".repeat(CacheRowLimits.MAX_CACHED_ROW_BYTES)
+
+        store.save(
+            "mac",
+            "thread-1",
+            ThreadState(
+                feed = listOf(
+                    FeedItem.User("before", "hi", 1),
+                    FeedItem.FileEdit("edit", "edit-1", "/repo", "package-lock.json", "modify", huge, huge),
+                    FeedItem.User("after", "bye", 2),
+                ),
+                status = "idle",
+            ),
+        )
+
+        assertEquals(listOf("before", "after"), dao.feedRows("mac:thread-1").map { it.itemId })
+        assertTrue(dao.allFeedRows().all { CacheRowLimits.fitsCache(it.rawJson) })
+        assertEquals(listOf("before", "after"), dao.decode("mac", "thread-1")?.feed?.map { it.id })
+        assertEquals(1, store.get("mac", "thread-1")?.feed?.count { it is FeedItem.FileEdit })
+        val warning = warnings.single()
+        assertTrue(warning, warning.startsWith("thread cache left out 1 oversized feed row(s)"))
+        assertTrue("never logs content", "xxxx" !in warning)
+    }
+
+    @Test
+    fun `metadata over the cap clears the older persisted snapshot so a restart cannot restore it`() {
+        val dao = FakeCacheDao()
+        val warnings = mutableListOf<String>()
+        val store = RoomThreadSnapshotStore(dao, Executor(Runnable::run), warnings::add)
+        store.save("mac", "thread-1", thread("old"))
+        store.save("mac", "thread-2", thread("other"))
+        val oversized = thread("new").copy(
+            status = "running",
+            availableVariants = listOf("v".repeat(CacheRowLimits.MAX_CACHED_ROW_BYTES)),
+        )
+
+        store.save("mac", "thread-1", oversized)
+
+        assertNull(dao.findThread("mac:thread-1"))
+        assertTrue(dao.feedRows("mac:thread-1").isEmpty())
+        assertEquals("other", userText(dao.decode("mac", "thread-2")))
+        assertEquals("new", userText(store.get("mac", "thread-1")))
+        val warning = warnings.single()
+        assertTrue(warning, warning.startsWith("thread cache cleared: metadata is "))
+        assertTrue("never logs content", "vvvv" !in warning)
+    }
+
+    @Test
+    fun `a failed cache write is logged instead of swallowed`() {
+        val warnings = mutableListOf<String>()
+        val store = RoomThreadSnapshotStore(ThrowingCacheDao(), Executor(Runnable::run), warnings::add)
+
+        store.save("mac", "thread-1", thread("hi"))
+
+        assertEquals(listOf("thread cache write failed: IllegalStateException"), warnings)
+        assertEquals("hi", userText(store.get("mac", "thread-1")))
+    }
+
     private fun thread(text: String) = ThreadState(
         feed = listOf(FeedItem.User("user", text, 1)),
         status = "idle",
@@ -153,6 +218,10 @@ private class FakeCacheDao : CacheDao() {
         feed.remove(threadKey)
     }
 
+    override fun deleteThreadRow(threadKey: String) {
+        threads.remove(threadKey)
+    }
+
     override fun findThread(threadKey: String): CachedThreadEntity? = threads[threadKey]
 
     override fun feedRows(threadKey: String): List<CachedFeedRowEntity> =
@@ -161,4 +230,22 @@ private class FakeCacheDao : CacheDao() {
     override fun allThreads(): List<CachedThreadEntity> = threads.values.toList()
 
     override fun allFeedRows(): List<CachedFeedRowEntity> = feed.values.flatten()
+}
+
+private class ThrowingCacheDao : CacheDao() {
+    override fun upsertThread(thread: CachedThreadEntity) = error("disk full")
+
+    override fun insertFeedRows(rows: List<CachedFeedRowEntity>) = error("disk full")
+
+    override fun clearFeedRows(threadKey: String) = Unit
+
+    override fun deleteThreadRow(threadKey: String) = Unit
+
+    override fun findThread(threadKey: String): CachedThreadEntity? = null
+
+    override fun feedRows(threadKey: String): List<CachedFeedRowEntity> = emptyList()
+
+    override fun allThreads(): List<CachedThreadEntity> = emptyList()
+
+    override fun allFeedRows(): List<CachedFeedRowEntity> = emptyList()
 }

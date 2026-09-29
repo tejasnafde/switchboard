@@ -2,6 +2,7 @@ package app.switchboard.mobile.data.remote
 
 import app.switchboard.mobile.data.local.BrowseSnapshotDao
 import app.switchboard.mobile.data.local.BrowseSnapshotEntity
+import app.switchboard.mobile.data.local.CacheRowLimits
 import app.switchboard.mobile.domain.remote.RemoteDecoders
 import app.switchboard.mobile.protocol.JsonCodec
 import org.junit.Assert.assertEquals
@@ -61,6 +62,24 @@ class RoomBrowseSnapshotStoreTest {
         assertEquals("Current", store.load("machine").projects.single().name)
     }
 
+    @Test
+    fun anOversizedSnapshotStaysInMemoryButIsNeverPersistedAndItsStaleCopyGoes() {
+        val dao = FakeBrowseSnapshotDao()
+        dao.upsert(row("machine", "projects", null, projectsJson("Stale"), 1))
+        val warnings = mutableListOf<String>()
+        val store = RoomBrowseSnapshotStore(emptyList(), dao, Runnable::run, warnings::add) { 42 }
+        val name = "p".repeat(CacheRowLimits.MAX_CACHED_ROW_BYTES)
+        val project = RemoteDecoders.projects(JsonCodec.parse(projectsJson(name))).single()
+
+        store.saveProjects("machine", listOf(project))
+
+        assertEquals(name, store.load("machine").projects.single().name)
+        assertTrue(dao.rows.isEmpty())
+        val warning = warnings.single()
+        assertTrue(warning, warning.startsWith("browse projects snapshot not cached: "))
+        assertTrue("never logs content", "pppp" !in warning)
+    }
+
     private fun row(
         connectionId: String,
         kind: String,
@@ -96,6 +115,10 @@ private class FakeBrowseSnapshotDao : BrowseSnapshotDao {
 
     override fun forConnection(connectionId: String): List<BrowseSnapshotEntity> =
         rows.filter { it.connectionId == connectionId }
+
+    override fun delete(snapshotKey: String) {
+        rows.removeAll { it.snapshotKey == snapshotKey }
+    }
 
     override fun deleteConnection(connectionId: String) {
         rows.removeAll { it.connectionId == connectionId }

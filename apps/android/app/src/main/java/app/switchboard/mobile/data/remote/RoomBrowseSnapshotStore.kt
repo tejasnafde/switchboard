@@ -1,7 +1,10 @@
 package app.switchboard.mobile.data.remote
 
+import app.switchboard.mobile.data.local.AndroidCacheLog
 import app.switchboard.mobile.data.local.BrowseSnapshotDao
 import app.switchboard.mobile.data.local.BrowseSnapshotEntity
+import app.switchboard.mobile.data.local.CacheLog
+import app.switchboard.mobile.data.local.CacheRowLimits
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.RemoteDecoders
@@ -14,6 +17,7 @@ class RoomBrowseSnapshotStore(
     initial: List<BrowseSnapshotEntity>,
     private val dao: BrowseSnapshotDao,
     private val writes: Executor,
+    private val log: CacheLog = AndroidCacheLog,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : BrowseSnapshotStore {
     private val rows = linkedMapOf<String, BrowseSnapshotEntity>()
@@ -78,7 +82,14 @@ class RoomBrowseSnapshotStore(
             updatedAtMs = clock(),
         )
         synchronized(this) { rows[row.snapshotKey] = row }
-        writes.execute { dao.upsert(row) }
+        if (CacheRowLimits.fitsCache(row.rawJson)) {
+            writes.execute { dao.upsert(row) }
+        } else {
+            // Kept in memory for this run; the stale persisted copy goes so a
+            // relaunch refetches instead of showing an older list.
+            log.warn("browse $kind snapshot not cached: ${CacheRowLimits.utf8Bytes(row.rawJson)} bytes")
+            writes.execute { dao.delete(row.snapshotKey) }
+        }
     }
 
     private fun <T> BrowseSnapshotEntity.decode(decoder: (app.switchboard.mobile.protocol.JsonValue?) -> List<T>): List<T>? =

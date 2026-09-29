@@ -29,6 +29,9 @@ private class RoomMigrationTransaction(
 ) : NativeMigrationTransaction {
     private val appliedWrites = mutableListOf<NativeMigrationWrite.Upsert>()
 
+    /** A legacy draft or queued message too big for Room's query is read back in chunks. */
+    private val recovery by lazy { database.recovery() }
+
     override fun upsert(write: NativeMigrationWrite.Upsert) {
         when (write) {
             is NativeMigrationWrite.UpsertConnection ->
@@ -46,10 +49,14 @@ private class RoomMigrationTransaction(
                 database.preferenceDao().replaceCollapsedWorkspaces(
                     write.workspaceIds.mapIndexed { index, id -> CollapsedWorkspaceEntity(id, index) },
                 )
-            is NativeMigrationWrite.UpsertCachedThread -> {
+            is NativeMigrationWrite.UpsertCachedThread -> if (CacheRowLimits.fitsCache(write.rawJson)) {
                 val mapped = LocalMigrationMapper.cachedThread(write)
                 database.cacheDao().upsertThread(mapped.thread)
                 database.cacheDao().replaceFeedRows(write.threadKey, mapped.feed)
+            } else {
+                AndroidCacheLog.warn(
+                    "legacy cached thread not migrated: ${CacheRowLimits.utf8Bytes(write.rawJson)} bytes",
+                )
             }
             is NativeMigrationWrite.UpsertOutbox -> {
                 val mapped = LocalMigrationMapper.outbox(write)
@@ -92,11 +99,17 @@ private class RoomMigrationTransaction(
             )
         }
         is NativeMigrationWrite.UpsertDefaultMode -> {
-            val row = requireNotNull(database.preferenceDao().findPreference(DEFAULT_MODE_KEY))
+            val row = requireNotNull(
+                database.preferenceDao().findPreference(DEFAULT_MODE_KEY)
+                    ?: recovery.preferences("`key` = ?", arrayOf(DEFAULT_MODE_KEY)).singleOrNull(),
+            )
             NativeMigrationWrite.UpsertDefaultMode(row.value)
         }
         is NativeMigrationWrite.UpsertThreadPreference -> {
-            val row = requireNotNull(database.preferenceDao().findThreadPreference(write.threadKey))
+            val row = requireNotNull(
+                database.preferenceDao().findThreadPreference(write.threadKey)
+                    ?: recovery.threadPreferences("threadKey = ?", arrayOf(write.threadKey)).singleOrNull(),
+            )
             NativeMigrationWrite.UpsertThreadPreference(
                 threadKey = row.threadKey,
                 preference = LegacyThreadPreference(
@@ -110,7 +123,12 @@ private class RoomMigrationTransaction(
         is NativeMigrationWrite.UpsertCollapsedWorkspaces -> NativeMigrationWrite.UpsertCollapsedWorkspaces(
             database.preferenceDao().allCollapsedWorkspaces().map { it.workspaceId },
         )
-        is NativeMigrationWrite.UpsertCachedThread -> {
+        // A legacy thread too big to cache was not written and refills from the
+        // backend. The planner still lists it (existing checkpoints hold that plan's
+        // fingerprint), so the read-back reports it as planned.
+        is NativeMigrationWrite.UpsertCachedThread -> if (!CacheRowLimits.fitsCache(write.rawJson)) {
+            write
+        } else {
             val row = requireNotNull(database.cacheDao().findThread(write.threadKey))
             val expectedFeed = LocalMigrationMapper.cachedThread(
                 NativeMigrationWrite.UpsertCachedThread(row.threadKey, row.rawJson),
@@ -119,7 +137,10 @@ private class RoomMigrationTransaction(
             NativeMigrationWrite.UpsertCachedThread(row.threadKey, row.rawJson)
         }
         is NativeMigrationWrite.UpsertOutbox -> {
-            val row = requireNotNull(database.outboxDao().find(write.messageId))
+            val row = requireNotNull(
+                database.outboxDao().find(write.messageId)
+                    ?: recovery.outbox("origin = ?", arrayOf(write.messageId)).singleOrNull(),
+            )
             require(database.outboxDao().attachments(write.messageId).isEmpty()) {
                 "legacy outbox row contains unverified attachment paths"
             }
@@ -128,7 +149,11 @@ private class RoomMigrationTransaction(
         is NativeMigrationWrite.UpsertQuarantine -> {
             val mapped = LocalMigrationMapper.quarantine(write)
             val row = requireNotNull(
-                database.migrationDao().findQuarantine(mapped.sourceKey, mapped.code, mapped.recordKey),
+                database.migrationDao().findQuarantine(mapped.sourceKey, mapped.code, mapped.recordKey)
+                    ?: recovery.quarantine(
+                        "sourceKey = ? AND code = ? AND recordKey = ?",
+                        arrayOf(mapped.sourceKey, mapped.code, mapped.recordKey),
+                    ).singleOrNull(),
             )
             NativeMigrationWrite.UpsertQuarantine(
                 LegacyDecodeIssue(

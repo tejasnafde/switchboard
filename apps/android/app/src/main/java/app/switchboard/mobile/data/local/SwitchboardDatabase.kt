@@ -41,6 +41,25 @@ abstract class SwitchboardDatabase : RoomDatabase() {
     abstract fun browseSnapshotDao(): BrowseSnapshotDao
     abstract fun pendingWorktreeCreationDao(): PendingWorktreeCreationDao
 
+    /**
+     * The offline snapshot plus any user row too big for Room's own queries, read
+     * back in chunks. Use this, not `offlineSnapshotDao().read()`, so a large queued
+     * message or draft is never missing from the snapshot.
+     */
+    fun readOfflineSnapshot(): OfflineSnapshot = runInTransaction<OfflineSnapshot> {
+        recovery().complete(offlineSnapshotDao().read())
+    }
+
+    fun recoveredOutbox(): List<OutboxWithAttachments> =
+        recovery().outbox().map { OutboxWithAttachments(it, outboxDao().attachments(it.origin)) }
+
+    fun recoveredDrafts(): List<ComposerDraftWithAttachments> =
+        recovery().threadPreferences().map {
+            ComposerDraftWithAttachments(it, composerDraftDao().attachments(it.threadKey))
+        }
+
+    internal fun recovery(): UserRowRecovery = UserRowRecovery(openHelper.writableDatabase)
+
     companion object {
         const val DATABASE_NAME = "switchboard-native.db"
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -166,11 +185,28 @@ abstract class SwitchboardDatabase : RoomDatabase() {
         private val EXPLICIT_MIGRATIONS: Array<Migration> =
             arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
-        fun open(context: Context): SwitchboardDatabase = Room.databaseBuilder(
+        fun open(context: Context): SwitchboardDatabase = builder(context).build()
+
+        internal fun builder(context: Context): RoomDatabase.Builder<SwitchboardDatabase> = Room.databaseBuilder(
             context.applicationContext,
             SwitchboardDatabase::class.java,
             DATABASE_NAME,
-        ).addMigrations(*EXPLICIT_MIGRATIONS).build()
+        ).addMigrations(*EXPLICIT_MIGRATIONS).addCallback(OVERSIZED_ROW_REPAIR)
+
+        /**
+         * Runs on every open, after migrations and before the first DAO query, so a
+         * phone that already holds a row too big for a CursorWindow is repaired on
+         * the next launch rather than blocked on it.
+         */
+        private val OVERSIZED_ROW_REPAIR = object : Callback() {
+            override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                try {
+                    OversizedRowRepair.run(db)
+                } catch (error: RuntimeException) {
+                    AndroidCacheLog.warn("oversized row repair failed: ${error.javaClass.simpleName}")
+                }
+            }
+        }
 
         private fun migrateOutboxV1(database: androidx.sqlite.db.SupportSQLiteDatabase) {
             database.execSQL(
