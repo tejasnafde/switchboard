@@ -9,6 +9,13 @@ import app.switchboard.mobile.data.AtomicMigrationPlan
 import app.switchboard.mobile.data.MigrationExecution
 import app.switchboard.mobile.data.MigrationExecutor
 import app.switchboard.mobile.data.NativeMigrationWrite
+import app.switchboard.mobile.data.composer.ComposerDraftLoadResult
+import app.switchboard.mobile.data.composer.RoomComposerDraftStore
+import app.switchboard.mobile.data.outbox.OutboxLoadResult
+import app.switchboard.mobile.data.outbox.RoomOutboxStore
+import app.switchboard.mobile.data.thread.RoomThreadSnapshotStore
+import app.switchboard.mobile.data.thread.ThreadState
+import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.platform.migration.StartupMigrationState
 import app.switchboard.mobile.platform.startup.OfflineSnapshotReader
 import app.switchboard.mobile.platform.startup.StartupDialGate
@@ -36,6 +43,12 @@ import org.robolectric.annotation.Config
 class OversizedRowRepairTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val huge = "x".repeat(3 * 1024 * 1024)
+
+    /** Over the readable cap but inside a 2 MB CursorWindow: the case a delete would lose. */
+    private val queuedText = "q".repeat(1600 * 1024)
+
+    /** Far past the CursorWindow, with multi-byte characters across chunk boundaries. */
+    private val draftText = "dé€😀".repeat(3 * 1024 * 1024 / 10)
     private val opened = mutableListOf<SwitchboardDatabase>()
 
     @Before
@@ -51,36 +64,96 @@ class OversizedRowRepairTest {
 
     @Test
     fun aPhoneAlreadyHoldingARowTooBigForTheCursorWindowIsRepairedOnTheNextOpen() {
-        seedOversizedRowsWithoutRepair(includeNonCacheRows = true)
+        seedOversizedRowsWithoutRepair(includeUserRows = true)
         assertThrows(SQLiteBlobTooBigException::class.java) {
             rawQueryAll("SELECT * FROM cached_feed_rows")
         }
 
         val warnings = mutableListOf<String>()
         val repairing = unrepaired()
-        val dropped = OversizedRowRepair.run(repairing.openHelper.writableDatabase, warnings::add)
+        val report = OversizedRowRepair.run(repairing.openHelper.writableDatabase, warnings::add)
         repairing.close()
+        opened.remove(repairing)
 
         assertEquals(
             listOf(
                 OversizedRowRepair.Dropped("cached_threads", 1, huge.length.toLong()),
                 OversizedRowRepair.Dropped("cached_feed_rows", 1, huge.length.toLong()),
                 OversizedRowRepair.Dropped("browse_snapshots", 1, huge.length.toLong()),
-                OversizedRowRepair.Dropped("outbox", 1, huge.length.toLong()),
-                OversizedRowRepair.Dropped("thread_preferences", 1, huge.length.toLong()),
             ),
-            dropped,
+            report.dropped,
         )
-        assertTrue(warnings.none { "xxxx" in it })
+        assertEquals(mapOf("outbox" to 1, "thread_preferences" to 1), report.recovered)
+        assertTrue(report.quarantined.isEmpty())
+        assertTrue(warnings.none { "xxxx" in it || "qqqq" in it || "dddd" in it })
         assertEquals(5, warnings.size)
 
-        val snapshot = open().offlineSnapshotDao().read()
+        val snapshot = open().readOfflineSnapshot()
         assertEquals(listOf("lan"), snapshot.connections.map { it.id })
         assertEquals(listOf("lan:small"), snapshot.cachedThreads.map { it.threadKey })
         assertEquals(listOf("small-row"), snapshot.feedRows.map { it.itemId })
         assertEquals(listOf("small-browse"), snapshot.browseSnapshots.map { it.snapshotKey })
+        assertEquals(listOf("hi", queuedText), snapshot.outbox.map { it.text })
+        assertEquals(listOf(draftText, "short"), snapshot.threadPreferences.map { it.draft })
+    }
+
+    @Test
+    fun aLargeQueuedMessageAndDraftSurviveTheRepairAndLoadThroughTheirStores() {
+        seedOversizedRowsWithoutRepair(includeUserRows = true)
+        val database = open()
+
+        val outbox = RoomOutboxStore(database.outboxDao(), database::recoveredOutbox).load() as OutboxLoadResult.Success
+        val drafts = RoomComposerDraftStore(database.composerDraftDao(), database::recoveredDrafts).load()
+            as ComposerDraftLoadResult.Success
+
+        assertEquals(listOf("small-queued", "o1"), outbox.turns.map { it.origin })
+        assertEquals(queuedText, outbox.turns.last().text)
+        assertEquals(listOf("lan:big", "lan:small"), drafts.drafts.map { it.key.storageKey })
+        assertEquals(draftText, drafts.drafts.first().text)
+        assertEquals(1L, raw { db -> count(db, "SELECT COUNT(*) FROM outbox WHERE origin = 'o1'") })
+    }
+
+    @Test
+    fun aUserRowThatCannotBeRecoveredIsQuarantinedAndKeptNotDeleted() {
+        val database = open()
+        database.connectionDao().upsert(connection())
+        database.outboxDao().insertMessage(outbox("bad", text = "placeholder", createdAtMs = 1))
+        val invalidUtf8 = ByteArray(CacheRowLimits.MAX_READABLE_ROW_BYTES + 1) { 0xFF.toByte() }
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE outbox SET text = CAST(? AS TEXT) WHERE origin = 'bad'",
+            arrayOf(invalidUtf8),
+        )
+
+        val warnings = mutableListOf<String>()
+        val report = OversizedRowRepair.run(database.openHelper.writableDatabase, warnings::add)
+
+        assertEquals(listOf("outbox:bad"), report.quarantined)
+        assertEquals(1L, raw { db -> count(db, "SELECT COUNT(*) FROM outbox WHERE origin = 'bad'") })
+        val snapshot = database.readOfflineSnapshot()
         assertTrue(snapshot.outbox.isEmpty())
-        assertNull(snapshot.threadPreferences.single().draft)
+        val record = snapshot.quarantinedRecords.single()
+        assertEquals(OversizedRowRepair.QUARANTINE_SOURCE, record.sourceKey)
+        assertEquals("outbox:bad", record.recordKey)
+        assertTrue(record.detail, record.detail.startsWith("${invalidUtf8.size} bytes, not valid UTF-8"))
+        assertEquals(listOf("outbox row of ${invalidUtf8.size} bytes quarantined: not valid UTF-8"), warnings)
+    }
+
+    @Test
+    fun oversizedThreadMetadataDeletesTheStaleRoomSnapshotAndItsFeed() {
+        val database = open()
+        val store = RoomThreadSnapshotStore(database.cacheDao(), Runnable::run) {}
+        store.save("lan", "t", ThreadState(feed = listOf(FeedItem.User("u", "old", 1)), status = "idle"))
+        assertEquals(1, database.cacheDao().feedRows("lan:t").size)
+
+        store.save(
+            "lan",
+            "t",
+            ThreadState(status = "running", availableVariants = listOf("v".repeat(CacheRowLimits.MAX_CACHED_ROW_BYTES))),
+        )
+
+        assertNull(database.cacheDao().findThread("lan:t"))
+        assertTrue(database.cacheDao().feedRows("lan:t").isEmpty())
+        assertEquals(0L, raw { db -> count(db, "SELECT COUNT(*) FROM cached_threads") })
     }
 
     @Test
@@ -89,7 +162,7 @@ class OversizedRowRepairTest {
 
         val runtime = StartupRuntime.direct(
             migration = StartupMigrationRunner { StartupMigrationState.AlreadyComplete() },
-            snapshot = OfflineSnapshotReader(open().offlineSnapshotDao()::read),
+            snapshot = OfflineSnapshotReader(open()::readOfflineSnapshot),
             dialGate = StartupDialGate {},
         )
         runtime.start()
@@ -143,7 +216,7 @@ class OversizedRowRepairTest {
         assertEquals(MigrationExecution.ALREADY_COMPLETE, MigrationExecutor.execute(plan, RoomNativeMigrationStore(database)))
     }
 
-    private fun seedOversizedRowsWithoutRepair(includeNonCacheRows: Boolean = false) {
+    private fun seedOversizedRowsWithoutRepair(includeUserRows: Boolean = false) {
         val database = unrepaired()
         database.connectionDao().upsert(connection())
         database.cacheDao().replaceThread(
@@ -156,23 +229,25 @@ class OversizedRowRepairTest {
         database.cacheDao().upsertThread(CachedThreadEntity("lan:huge", huge))
         database.browseSnapshotDao().upsert(BrowseSnapshotEntity("small-browse", "lan", "projects", null, "[]", 1))
         database.browseSnapshotDao().upsert(BrowseSnapshotEntity("huge-browse", "lan", "workspaces", null, huge, 1))
-        if (includeNonCacheRows) seedOversizedNonCacheRows(database)
+        if (includeUserRows) seedLargeUserRows(database)
         database.close()
         opened.remove(database)
     }
 
-    /** Not caches: only the repair handles these, once they could not be read at all. */
-    private fun seedOversizedNonCacheRows(database: SwitchboardDatabase) {
-        database.outboxDao().insertMessage(
-            OutboxEntity(
-                origin = "o1", bubbleId = "b1", connectionId = "lan", threadId = "t", text = huge,
-                runtimeMode = null, createdAtMs = 1, attempts = 0, nextAttemptAtMs = 1,
-                deliveryState = "pending", stateReason = null, receiptLegacy = null,
-                receiptDuplicate = null, receiptRawJson = null, legacyRawJson = null,
-            ),
-        )
-        database.preferenceDao().upsertThreadPreference(ThreadPreferenceEntity("lan:small", null, null, huge, 1))
+    /** What the user wrote: kept whatever its size, next to an ordinary row of each. */
+    private fun seedLargeUserRows(database: SwitchboardDatabase) {
+        database.outboxDao().insertMessage(outbox("small-queued", text = "hi", createdAtMs = 1))
+        database.outboxDao().insertMessage(outbox("o1", text = queuedText, createdAtMs = 2))
+        database.preferenceDao().upsertThreadPreference(ThreadPreferenceEntity("lan:small", null, null, "short", 1))
+        database.preferenceDao().upsertThreadPreference(ThreadPreferenceEntity("lan:big", null, null, draftText, 2))
     }
+
+    private fun outbox(origin: String, text: String, createdAtMs: Long) = OutboxEntity(
+        origin = origin, bubbleId = "b-$origin", connectionId = "lan", threadId = "t", text = text,
+        runtimeMode = null, createdAtMs = createdAtMs, attempts = 0, nextAttemptAtMs = createdAtMs,
+        deliveryState = "pending", stateReason = null, receiptLegacy = null,
+        receiptDuplicate = null, receiptRawJson = null, legacyRawJson = null,
+    )
 
     private fun connection() = ConnectionEntity("lan", "Mac", "ws", "ws://mac:8765", null, null, null, null)
 
@@ -201,6 +276,12 @@ class OversizedRowRepairTest {
     private fun rawQueryAll(sql: String) = raw { db ->
         db.rawQuery(sql, null).use { cursor -> while (cursor.moveToNext()) cursor.getString(0) }
     }
+
+    private fun count(db: SQLiteDatabase, sql: String): Long =
+        db.rawQuery(sql, null).use { cursor ->
+            cursor.moveToFirst()
+            cursor.getLong(0)
+        }
 
     private fun countOver(db: SQLiteDatabase, table: String): Long =
         db.rawQuery(

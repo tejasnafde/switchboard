@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "android-oversized-cache-rows",
-  "summary": "A native Android cache row larger than the ~2 MB CursorWindow (a file edit of a large file, a whole migrated legacy thread) failed the startup offline snapshot with SQLiteBlobTooBigException and left the machines list on 'Could not load machines'. Oversized rows are now dropped on open without being read, never written again, and skipped per row on read.",
+  "summary": "A native Android cache row larger than the ~2 MB CursorWindow (a file edit of a large file, a whole migrated legacy thread) failed the startup offline snapshot with SQLiteBlobTooBigException and left the machines list on 'Could not load machines'. Oversized cache rows are now dropped on open without being read, never written again, and skipped per row on read. Rows the user wrote (queued messages, drafts, pending actions, worktree requests) are never dropped: Room's queries skip an oversized one and it is read back in byte chunks, or quarantined in place if it cannot be decoded.",
   "surfaces": {
     "desktop": {
       "status": "not_applicable",
@@ -17,6 +17,7 @@
       "evidence": [
         "apps/android/app/src/main/java/app/switchboard/mobile/data/local/CacheRowLimits.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/local/OversizedRowRepair.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/UserRowRecovery.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/local/Daos.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSnapshotStore.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/RoomBrowseSnapshotStore.kt",
@@ -45,7 +46,9 @@
     "automated": [
       "Robolectric (native SQLite, real CursorWindow) reproduces 'Row too big to fit into CursorWindow' with a 3 MB row, then shows the on-open repair drops it by size without reading it and startup yields the machines list",
       "An unrepaired oversized cache row costs only that row in the offline snapshot; an unreadable cache table degrades to no cache",
+      "A 1600 KiB queued message and a 3 MiB multi-byte draft survive the repair and load through the offline snapshot, RoomOutboxStore and RoomComposerDraftStore; a user row that is not valid UTF-8 is quarantined and kept, never deleted",
       "A legacy thread over the cap is not migrated and the migration still verifies and stays complete on the next run",
+      "Thread metadata over the cap deletes the older persisted snapshot and its feed rows, in a fake DAO and in real Room",
       "Thread and browse cache stores never write a row over the cap and log sizes, never content",
       "./gradlew testDebugUnitTest lintDebug"
     ],

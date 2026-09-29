@@ -13,8 +13,9 @@ object CacheRowLimits {
     const val MAX_CACHED_ROW_BYTES = 512 * 1024
 
     /**
-     * Rows that are not caches (queued turns, drafts) are only dropped once they
-     * could no longer be read at all, well under the 2 MB window.
+     * A row that is not a cache (queued turns, drafts) is never dropped. Room's
+     * queries skip one over this size, well under the 2 MB window, and
+     * [UserRowRecovery] reads it back in chunks instead.
      */
     const val MAX_READABLE_ROW_BYTES = 1536 * 1024
 

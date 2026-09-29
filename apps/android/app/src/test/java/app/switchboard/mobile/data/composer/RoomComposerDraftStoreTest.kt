@@ -88,6 +88,9 @@ private class FakeComposerDraftDao : ComposerDraftDao() {
         return if (preferences.remove(threadKey) != null) 1 else 0
     }
 
+    override fun attachments(threadKey: String): List<ComposerDraftAttachmentEntity> =
+        attachments[threadKey].orEmpty()
+
     override fun allWithAttachments(): List<ComposerDraftWithAttachments> =
         preferences.values.map { preference ->
             ComposerDraftWithAttachments(

@@ -1,17 +1,31 @@
 package app.switchboard.mobile.data.local
 
 import androidx.sqlite.db.SupportSQLiteDatabase
+import app.switchboard.mobile.compat.LegacyIssueSeverity
 
 /**
- * Drops rows too large to read back before anything queries them. Sizes are
- * measured inside SQLite (`length(CAST(x AS BLOB))`), so an oversized payload
- * never enters a CursorWindow; only a count and a maximum come back.
+ * Runs before anything queries the database. Sizes are measured inside SQLite
+ * (`length(CAST(x AS BLOB))`), so an oversized payload never enters a
+ * CursorWindow; only a count and a maximum come back.
  *
- * Cache tables are cut at [CacheRowLimits.MAX_CACHED_ROW_BYTES] and refill from
- * the backend. Everything else is cut only once it could not be read at all.
+ * Only caches are dropped: rows over [CacheRowLimits.MAX_CACHED_ROW_BYTES] refill
+ * from the backend. What the user wrote is never deleted for its size. An
+ * oversized user row is read back in chunks to prove it recovers, and one that
+ * does not is recorded in quarantine and left in place, skipped by every read.
  */
 object OversizedRowRepair {
     data class Dropped(val table: String, val rows: Int, val largestBytes: Long)
+
+    data class Report(
+        val dropped: List<Dropped>,
+        /** Oversized user rows kept and recovered in chunks, as `table` to count. */
+        val recovered: Map<String, Int>,
+        /** Oversized user rows that could not be recovered, as `table:key`. */
+        val quarantined: List<String>,
+    )
+
+    internal const val QUARANTINE_SOURCE = "native-oversized-row"
+    internal const val QUARANTINE_CODE = "oversized_row_unreadable"
 
     private data class Target(
         val table: String,
@@ -46,49 +60,12 @@ object OversizedRowRepair {
             cap = CacheRowLimits.MAX_CACHED_ROW_BYTES,
             statements = listOf("DELETE FROM `browse_snapshots` WHERE %s"),
         ),
-        Target(
-            table = "outbox",
-            sizeExpression = bytes("text", "stateReason", "receiptRawJson", "legacyRawJson"),
-            cap = CacheRowLimits.MAX_READABLE_ROW_BYTES,
-            statements = listOf(
-                "DELETE FROM `outbox_attachments` WHERE `origin` IN (SELECT `origin` FROM `outbox` WHERE %s)",
-                "DELETE FROM `outbox` WHERE %s",
-            ),
-        ),
-        Target(
-            table = "thread_preferences",
-            sizeExpression = bytes("draft"),
-            cap = CacheRowLimits.MAX_READABLE_ROW_BYTES,
-            statements = listOf("UPDATE `thread_preferences` SET `draft` = NULL WHERE %s"),
-        ),
-        Target(
-            table = "pending_control_actions",
-            sizeExpression = bytes("argsJson", "lastError"),
-            cap = CacheRowLimits.MAX_READABLE_ROW_BYTES,
-            statements = listOf("DELETE FROM `pending_control_actions` WHERE %s"),
-        ),
-        Target(
-            table = "pending_worktree_creations",
-            sizeExpression = bytes("requestJson"),
-            cap = CacheRowLimits.MAX_READABLE_ROW_BYTES,
-            statements = listOf("DELETE FROM `pending_worktree_creations` WHERE %s"),
-        ),
-        Target(
-            table = "quarantined_records",
-            sizeExpression = bytes("detail"),
-            cap = CacheRowLimits.MAX_READABLE_ROW_BYTES,
-            statements = listOf("DELETE FROM `quarantined_records` WHERE %s"),
-        ),
-        Target(
-            table = "app_preferences",
-            sizeExpression = bytes("value"),
-            cap = CacheRowLimits.MAX_READABLE_ROW_BYTES,
-            statements = listOf("DELETE FROM `app_preferences` WHERE %s"),
-        ),
     )
 
-    fun run(db: SupportSQLiteDatabase, log: CacheLog = AndroidCacheLog): List<Dropped> {
+    fun run(db: SupportSQLiteDatabase, log: CacheLog = AndroidCacheLog): Report {
         val dropped = mutableListOf<Dropped>()
+        val recovered = linkedMapOf<String, Int>()
+        val quarantined = mutableListOf<String>()
         db.beginTransaction()
         try {
             TARGETS.forEach { target ->
@@ -103,6 +80,20 @@ object OversizedRowRepair {
                 target.statements.forEach { statement -> db.execSQL(statement.format(predicate)) }
                 dropped += Dropped(target.table, rows, largest)
             }
+            val recovery = UserRowRecovery(db, log)
+            UserRowTables.ALL.forEach { table ->
+                recovery.scan(table).forEach { row ->
+                    when (row) {
+                        is UserRowRecovery.Recovered.Row ->
+                            recovered[table.name] = (recovered[table.name] ?: 0) + 1
+                        is UserRowRecovery.Recovered.Unreadable -> {
+                            quarantined += "${table.name}:${row.key}"
+                            if (table != UserRowTables.QUARANTINE) quarantine(db, table, row)
+                            log.warn("${table.name} row of ${row.bytes} bytes quarantined: ${row.reason}")
+                        }
+                    }
+                }
+            }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -112,6 +103,27 @@ object OversizedRowRepair {
                 "dropped ${drop.rows} oversized row(s) from ${drop.table}, largest ${drop.largestBytes} bytes",
             )
         }
-        return dropped
+        recovered.forEach { (table, rows) ->
+            log.warn("kept $rows oversized row(s) in $table, read back in chunks")
+        }
+        return Report(dropped, recovered, quarantined)
+    }
+
+    private fun quarantine(
+        db: SupportSQLiteDatabase,
+        table: UserRowTables.Table,
+        row: UserRowRecovery.Recovered.Unreadable,
+    ) {
+        db.execSQL(
+            "INSERT OR REPLACE INTO quarantined_records (sourceKey, code, recordKey, detail, severity) " +
+                "VALUES (?, ?, ?, ?, ?)",
+            arrayOf(
+                QUARANTINE_SOURCE,
+                QUARANTINE_CODE,
+                "${table.name}:${row.key}",
+                "${row.bytes} bytes, ${row.reason}; kept in ${table.name}, skipped by reads",
+                LegacyIssueSeverity.QUARANTINED.name,
+            ),
+        )
     }
 }

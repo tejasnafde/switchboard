@@ -105,7 +105,12 @@ class RoomThreadSnapshotStore(
                 if (CacheRowLimits.fitsCache(encoded.thread.rawJson)) {
                     dao.replaceThread(encoded.thread, boundedFeed(encoded.feed))
                 } else {
-                    log.warn("thread cache not written: metadata is ${CacheRowLimits.utf8Bytes(encoded.thread.rawJson)} bytes")
+                    // The older persisted snapshot goes too, so a restart cannot restore
+                    // a status and feed older than what this run last showed.
+                    log.warn(
+                        "thread cache cleared: metadata is ${CacheRowLimits.utf8Bytes(encoded.thread.rawJson)} bytes",
+                    )
+                    dao.deleteThread(encoded.thread.threadKey)
                 }
             }.onFailure { error ->
                 log.warn("thread cache write failed: ${error.javaClass.simpleName}")

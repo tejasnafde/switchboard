@@ -29,6 +29,9 @@ private class RoomMigrationTransaction(
 ) : NativeMigrationTransaction {
     private val appliedWrites = mutableListOf<NativeMigrationWrite.Upsert>()
 
+    /** A legacy draft or queued message too big for Room's query is read back in chunks. */
+    private val recovery by lazy { database.recovery() }
+
     override fun upsert(write: NativeMigrationWrite.Upsert) {
         when (write) {
             is NativeMigrationWrite.UpsertConnection ->
@@ -96,11 +99,17 @@ private class RoomMigrationTransaction(
             )
         }
         is NativeMigrationWrite.UpsertDefaultMode -> {
-            val row = requireNotNull(database.preferenceDao().findPreference(DEFAULT_MODE_KEY))
+            val row = requireNotNull(
+                database.preferenceDao().findPreference(DEFAULT_MODE_KEY)
+                    ?: recovery.preferences("`key` = ?", arrayOf(DEFAULT_MODE_KEY)).singleOrNull(),
+            )
             NativeMigrationWrite.UpsertDefaultMode(row.value)
         }
         is NativeMigrationWrite.UpsertThreadPreference -> {
-            val row = requireNotNull(database.preferenceDao().findThreadPreference(write.threadKey))
+            val row = requireNotNull(
+                database.preferenceDao().findThreadPreference(write.threadKey)
+                    ?: recovery.threadPreferences("threadKey = ?", arrayOf(write.threadKey)).singleOrNull(),
+            )
             NativeMigrationWrite.UpsertThreadPreference(
                 threadKey = row.threadKey,
                 preference = LegacyThreadPreference(
@@ -128,7 +137,10 @@ private class RoomMigrationTransaction(
             NativeMigrationWrite.UpsertCachedThread(row.threadKey, row.rawJson)
         }
         is NativeMigrationWrite.UpsertOutbox -> {
-            val row = requireNotNull(database.outboxDao().find(write.messageId))
+            val row = requireNotNull(
+                database.outboxDao().find(write.messageId)
+                    ?: recovery.outbox("origin = ?", arrayOf(write.messageId)).singleOrNull(),
+            )
             require(database.outboxDao().attachments(write.messageId).isEmpty()) {
                 "legacy outbox row contains unverified attachment paths"
             }
@@ -137,7 +149,11 @@ private class RoomMigrationTransaction(
         is NativeMigrationWrite.UpsertQuarantine -> {
             val mapped = LocalMigrationMapper.quarantine(write)
             val row = requireNotNull(
-                database.migrationDao().findQuarantine(mapped.sourceKey, mapped.code, mapped.recordKey),
+                database.migrationDao().findQuarantine(mapped.sourceKey, mapped.code, mapped.recordKey)
+                    ?: recovery.quarantine(
+                        "sourceKey = ? AND code = ? AND recordKey = ?",
+                        arrayOf(mapped.sourceKey, mapped.code, mapped.recordKey),
+                    ).singleOrNull(),
             )
             NativeMigrationWrite.UpsertQuarantine(
                 LegacyDecodeIssue(

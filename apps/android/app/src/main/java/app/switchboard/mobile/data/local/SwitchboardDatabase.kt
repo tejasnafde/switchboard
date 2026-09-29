@@ -41,6 +41,25 @@ abstract class SwitchboardDatabase : RoomDatabase() {
     abstract fun browseSnapshotDao(): BrowseSnapshotDao
     abstract fun pendingWorktreeCreationDao(): PendingWorktreeCreationDao
 
+    /**
+     * The offline snapshot plus any user row too big for Room's own queries, read
+     * back in chunks. Use this, not `offlineSnapshotDao().read()`, so a large queued
+     * message or draft is never missing from the snapshot.
+     */
+    fun readOfflineSnapshot(): OfflineSnapshot = runInTransaction<OfflineSnapshot> {
+        recovery().complete(offlineSnapshotDao().read())
+    }
+
+    fun recoveredOutbox(): List<OutboxWithAttachments> =
+        recovery().outbox().map { OutboxWithAttachments(it, outboxDao().attachments(it.origin)) }
+
+    fun recoveredDrafts(): List<ComposerDraftWithAttachments> =
+        recovery().threadPreferences().map {
+            ComposerDraftWithAttachments(it, composerDraftDao().attachments(it.threadKey))
+        }
+
+    internal fun recovery(): UserRowRecovery = UserRowRecovery(openHelper.writableDatabase)
+
     companion object {
         const val DATABASE_NAME = "switchboard-native.db"
         val MIGRATION_1_2 = object : Migration(1, 2) {

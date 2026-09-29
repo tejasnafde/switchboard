@@ -117,6 +117,29 @@ class RoomThreadSnapshotStoreTest {
     }
 
     @Test
+    fun `metadata over the cap clears the older persisted snapshot so a restart cannot restore it`() {
+        val dao = FakeCacheDao()
+        val warnings = mutableListOf<String>()
+        val store = RoomThreadSnapshotStore(dao, Executor(Runnable::run), warnings::add)
+        store.save("mac", "thread-1", thread("old"))
+        store.save("mac", "thread-2", thread("other"))
+        val oversized = thread("new").copy(
+            status = "running",
+            availableVariants = listOf("v".repeat(CacheRowLimits.MAX_CACHED_ROW_BYTES)),
+        )
+
+        store.save("mac", "thread-1", oversized)
+
+        assertNull(dao.findThread("mac:thread-1"))
+        assertTrue(dao.feedRows("mac:thread-1").isEmpty())
+        assertEquals("other", userText(dao.decode("mac", "thread-2")))
+        assertEquals("new", userText(store.get("mac", "thread-1")))
+        val warning = warnings.single()
+        assertTrue(warning, warning.startsWith("thread cache cleared: metadata is "))
+        assertTrue("never logs content", "vvvv" !in warning)
+    }
+
+    @Test
     fun `a failed cache write is logged instead of swallowed`() {
         val warnings = mutableListOf<String>()
         val store = RoomThreadSnapshotStore(ThrowingCacheDao(), Executor(Runnable::run), warnings::add)
@@ -195,6 +218,10 @@ private class FakeCacheDao : CacheDao() {
         feed.remove(threadKey)
     }
 
+    override fun deleteThreadRow(threadKey: String) {
+        threads.remove(threadKey)
+    }
+
     override fun findThread(threadKey: String): CachedThreadEntity? = threads[threadKey]
 
     override fun feedRows(threadKey: String): List<CachedFeedRowEntity> =
@@ -211,6 +238,8 @@ private class ThrowingCacheDao : CacheDao() {
     override fun insertFeedRows(rows: List<CachedFeedRowEntity>) = error("disk full")
 
     override fun clearFeedRows(threadKey: String) = Unit
+
+    override fun deleteThreadRow(threadKey: String) = Unit
 
     override fun findThread(threadKey: String): CachedThreadEntity? = null
 

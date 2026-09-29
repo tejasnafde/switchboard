@@ -137,6 +137,8 @@ object OutboxEntityMapper {
 
 class RoomOutboxStore(
     private val dao: OutboxDao,
+    /** Queued messages too big for the DAO's query, read back in chunks. */
+    private val oversized: () -> List<OutboxWithAttachments> = { emptyList() },
 ) : OutboxStore {
     override fun insert(turn: QueuedTurn): OutboxStorageResult = storageOperation("insert", turn.origin) {
         val rows = OutboxEntityMapper.toRows(turn)
@@ -160,7 +162,11 @@ class RoomOutboxStore(
     }
 
     override fun load(): OutboxLoadResult = try {
-        OutboxLoadResult.Success(dao.allWithAttachments().map(OutboxEntityMapper::toDomain))
+        OutboxLoadResult.Success(
+            (dao.allWithAttachments() + oversized())
+                .sortedWith(compareBy({ it.message.createdAtMs }, { it.message.origin }))
+                .map(OutboxEntityMapper::toDomain),
+        )
     } catch (exception: Exception) {
         OutboxLoadResult.Failure(exception.message ?: "failed to load outbox")
     }
