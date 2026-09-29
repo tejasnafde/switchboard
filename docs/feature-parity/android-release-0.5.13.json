@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.13",
+  "summary": "Native Android release 0.5.13 (versionCode 15): a version bump only, so mobile-release.yml publishes the phone side of agent PR reviewers (#206: the approval card lists the reviewers and the shown-draft hash covers them).",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android version bump only; no desktop code changes."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client ships over its own OTA lane; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API or wire change."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes in this bump; the features it ships carry their own manifests."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "mobile-release.yml runs the Android unit and lint gate and verifies package, signer fingerprint and checksum, and a version higher than the newest published APK when one exists (the monotonic check is skipped when no earlier APK asset is found), before it publishes."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Installing the update on a physical device through the in-app updater."
+    ]
+  }
+}
