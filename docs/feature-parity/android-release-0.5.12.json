@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.12",
+  "summary": "Native Android release 0.5.12 (versionCode 14): a version bump only, so the manual mobile-release.yml lane publishes the Recents fix (Working shows only for a turn in progress; live status wins over the saved snapshot).",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android version bump only; no desktop code changes."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client ships over its own OTA lane; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API or wire change."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes in this bump; the features it ships carry their own manifests."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "mobile-release.yml runs the Android unit and lint gate and verifies package, monotonic version, signer fingerprint and checksum before it publishes."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Installing the update on a physical device through the in-app updater."
+    ]
+  }
+}
