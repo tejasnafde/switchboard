@@ -162,6 +162,48 @@ class BrowseThreadActivityIndexTest {
         assertEquals(BrowseThreadAttention.None, attention())
     }
 
+    @Test
+    fun listSessionsReplySetsTheStatusAndAMissingThreadHasNone() {
+        val index = BrowseThreadActivityIndex()
+        index.onEvent(scope, event("status", "status" to JsonString("running")))
+
+        index.seedStatuses(scope, index.statusMark(), mapOf("other" to "running"))
+
+        assertEquals(null, index.state(scope).value.getValue("thread").status)
+        assertEquals("running", index.state(scope).value.getValue("other").status)
+
+        index.seedStatuses(scope, index.statusMark(), mapOf("thread" to "idle", "other" to "idle"))
+        assertEquals("idle", index.state(scope).value.getValue("thread").status)
+        assertEquals("idle", index.state(scope).value.getValue("other").status)
+    }
+
+    @Test
+    fun aLiveStatusAfterTheRequestBeatsTheListSessionsReply() {
+        val index = BrowseThreadActivityIndex()
+        val mark = index.statusMark()
+        index.onEvent(scope, event("status", "status" to JsonString("running")))
+
+        // The reply was built before the turn started.
+        index.seedStatuses(scope, mark, emptyMap())
+        assertEquals("running", index.state(scope).value.getValue("thread").status)
+
+        val secondMark = index.statusMark()
+        index.onEvent(scope, event("turn.completed"))
+        index.seedStatuses(scope, secondMark, mapOf("thread" to "running"))
+        assertEquals("idle", index.state(scope).value.getValue("thread").status)
+    }
+
+    @Test
+    fun turnCompletedWhileNoChatIsOpenClearsTheStatus() {
+        val index = BrowseThreadActivityIndex()
+        index.seedStatuses(scope, index.statusMark(), mapOf("thread" to "running"))
+        assertEquals("running", index.state(scope).value.getValue("thread").status)
+
+        index.onEvent(scope, event("turn.completed"))
+
+        assertEquals("idle", index.state(scope).value.getValue("thread").status)
+    }
+
     private fun event(
         type: String,
         vararg fields: Pair<String, app.switchboard.mobile.protocol.JsonValue>,

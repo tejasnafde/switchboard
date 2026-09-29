@@ -125,6 +125,9 @@ class SwitchboardApplication : Application() {
         nativeRuntime.saveCollapsedWorkspaceIds(connectionId, workspaceIds)
     }
 
+    fun refreshLiveStatuses(lease: app.switchboard.mobile.data.remote.ReadyClientLease) =
+        nativeRuntime.refreshLiveStatuses(lease)
+
     fun seedPendingRequests(
         scope: TransportScope,
         threadId: String,

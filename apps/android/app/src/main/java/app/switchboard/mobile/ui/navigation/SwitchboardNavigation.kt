@@ -469,6 +469,11 @@ private fun HomeRouteHost(
             } else {
                 emptyMap()
             }
+            if (runtime != null && lease != null) {
+                // Asked on every Home visit: live events miss a turn that ended
+                // while this app was disconnected or not yet connected.
+                LaunchedEffect(runtime, lease.scope) { runtime.refreshLiveStatuses(lease) }
+            }
             val cachedActivity = remember(snapshot, connection.id) {
                 BrowseCachedActivity.from(snapshot, connection.id)
             }

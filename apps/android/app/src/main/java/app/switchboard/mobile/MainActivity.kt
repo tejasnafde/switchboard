@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
             followUpDefault = switchboardApplication.followUpDefault,
             persistFollowUpDefault = switchboardApplication::setFollowUpDefault,
             seedPending = switchboardApplication::seedPendingRequests,
+            refreshStatuses = switchboardApplication::refreshLiveStatuses,
         )
     }
 

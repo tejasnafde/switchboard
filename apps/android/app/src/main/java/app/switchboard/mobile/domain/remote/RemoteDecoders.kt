@@ -157,6 +157,16 @@ object RemoteDecoders {
         return value.array().values.map { it.obj() }
     }
 
+    /** `provider:list-sessions`: each live session's current status, by thread id. */
+    fun liveSessionStatuses(value: JsonValue?): Map<String, String> {
+        if (value == null || value === JsonNull) return emptyMap()
+        return value.array().values.mapNotNull {
+            val raw = it.obj()
+            val threadId = raw.string("threadId")?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+            threadId to (raw.string("status") ?: return@mapNotNull null)
+        }.toMap()
+    }
+
     fun queuedTurns(value: JsonValue?): List<app.switchboard.mobile.domain.thread.QueuedTurnSummary> {
         if (value == null || value === JsonNull) return emptyList()
         return value.array().values.map {
