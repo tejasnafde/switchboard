@@ -52,8 +52,11 @@
       "reason": "No table, column, setting or migration. The reviewers live on the in-memory approval card and in the host request; the phones cache the card payload whole (Expo store, Android ThreadSnapshotStore keeps the raw JSON), so an optional create.reviewers field needs no cache change."
     },
     "updateRelease": {
-      "status": "not_applicable",
-      "reason": "No package identity, signing, deep link, native module, permission or update channel change. The Expo change is test-only (the shared preview it renders already came from @shared), so it rides the ordinary OTA; the Android change is in HostWriteCards and ships with its next APK without a versionCode change here. Wire changes are additive: HostWriteCreate.reviewers and HostWriteResponse.reviewers are optional. A card without reviewers hashes exactly as before (the digest version is unchanged), so existing phone apps keep approving those; a card with reviewers is refused from a phone app that did not show them, which then asks to update or approve on the desktop. An older desktop renderer shows no reviewer rows and approves with every reviewer, as a phone does."
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/HostWriteCards.kt",
+        "docs/releasing.md"
+      ]
     }
   },
   "verification": {
