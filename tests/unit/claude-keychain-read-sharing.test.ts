@@ -161,6 +161,30 @@ describe('Claude keychain reads are shared by service', () => {
     expect(runSecurity.mock.calls.filter(([s]) => s === serviceA)).toHaveLength(2)
   })
 
+  it('neither keeps nor hands on a read in flight when its instance is edited', async () => {
+    for (const forget of [(r: { forget(o?: string): void }) => r.forget('a'), (r: { forget(o?: string): void }) => r.forget()]) {
+      const { reader, runSecurity, prompts } = setup({ [serviceA]: { payload: noPayload } })
+      const inner = runSecurity.getMockImplementation()!
+      let release!: () => void
+      const gate = new Promise<void>((r) => { release = r })
+      runSecurity.mockImplementationOnce(async (service: string, account: string | undefined) => {
+        await gate
+        return inner(service, account)
+      })
+      const pending = reader.read(dirA, { owner: 'a' })
+      await new Promise((r) => setTimeout(r, 0))
+      forget(reader)
+      // Asked after the edit: waits for the old read, then reads again.
+      const after = reader.read(dirA, { owner: 'a' })
+      release()
+      await Promise.all([pending, after])
+      expect(prompts(serviceA)).toBe(2)
+      // The post-edit read is the one kept.
+      await reader.read(dirA, { owner: 'a' })
+      expect(prompts(serviceA)).toBe(2)
+    }
+  })
+
   it('spawns nothing until something reads', async () => {
     createClaudeCredentialReader()
     await import('../../src/main/provider/usage/claude-keychain')
