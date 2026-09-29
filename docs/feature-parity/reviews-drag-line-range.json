@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "reviews-drag-line-range",
-  "summary": "Reviews > Files: press on a line number and drag up or down over the gutter to select a range, like GitHub. Same rules as shift-click: one side (the one pressed), inside the hunk the drag started in (a pointer over another hunk clamps to that hunk's first or last line on the side), extended from the pressed line. Pointer capture keeps the drag while the pointer leaves the button; a plain click still selects one line and shift-click still extends; Escape during a drag restores the selection from before it. Moving near the top or bottom of the diff's scroll pane scrolls it. Selected rows keep aria-selected.",
+  "summary": "Reviews > Files: press on a line number and drag up or down over the gutter to select a range, like GitHub. Same rules as shift-click: one side (the one pressed), inside the hunk the drag started in (a pointer over another hunk clamps to that hunk's first or last line on the side), extended from the pressed line. Pointer capture keeps the drag while the pointer leaves the button; a plain click still selects one line and shift-click still extends; The drag is drawn as a preview: the selection and an open comment box (with its text) stay until the drag is released on a new range, which selects it and closes the box; Escape or a cancelled pointer drops the preview and changes nothing. Moving near the top or bottom of the diff's scroll pane scrolls it. Selected rows keep aria-selected.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -37,7 +37,8 @@
   "verification": {
     "automated": [
       "dragLineSelection unit tests: extends from the anchor both ways, clamps to the start hunk when the pointer is over an earlier or later hunk, keeps the range over a row with no line on the side, reads only its own side.",
-      "e2e/review-writes.e2e.mjs drives Playwright mouse down/move/up on the built app: a drag down selects 3 rows, a drag up 4, Escape mid-drag keeps the previous 4; the existing click-to-select line comment flow still passes (40/40).",
+      "afterDrag unit tests: a drag that never moved or ends on the selected range keeps the selection and open comment box; a new range selects it and closes the box.",
+      "e2e/review-writes.e2e.mjs drives Playwright mouse down/move/up on the built app: a drag down selects 3 rows, a drag up 4, Escape mid-drag keeps the previous 4; with the comment box open and text typed, the box stays open during a drag and Escape keeps it and its text; the existing click-to-select line comment flow still passes (42/42).",
       "Visual screens phase passed with no baseline change (nothing is selected at rest)."
     ],
     "hardware": [],

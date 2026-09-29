@@ -42,3 +42,13 @@ export function dragLineSelection(sel: LineSelection, hunk: DiffHunk, overHunk: 
   const at = Math.min(Math.max(to, first), last)
   return { ...sel, start: Math.min(sel.anchor, at), end: Math.max(sel.anchor, at) }
 }
+
+/**
+ * The selection and comment box once a drag is released over `range` (null: it never left the
+ * pressed line). Only a new range replaces the selection and closes the box, so a drag that ends
+ * where it began keeps a half-written comment.
+ */
+export function afterDrag(state: { sel: LineSelection | null; composing: boolean }, range: LineSelection | null): { sel: LineSelection | null; composing: boolean } {
+  const same = range === null || (state.sel !== null && state.sel.side === range.side && state.sel.hunk === range.hunk && state.sel.start === range.start && state.sel.end === range.end)
+  return same ? state : { sel: range, composing: false }
+}

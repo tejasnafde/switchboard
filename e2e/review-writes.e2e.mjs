@@ -102,6 +102,12 @@ try {
   await reviews().getByRole('button', { name: 'Select line 87' }).last().click()
   await reviews().getByRole('button', { name: 'Comment', exact: true }).click()
   await reviews().getByLabel('Comment on line 87').fill('Clamp negatives here too.')
+  // A drag cancelled with Escape leaves the open comment box and its text alone.
+  await dragFrom(85, 86)
+  check('the comment box stays open during a drag', await reviews().getByLabel('Comment on line 87').isVisible())
+  await win.keyboard.press('Escape')
+  await win.mouse.up()
+  check('Escape keeps the comment box and its text', (await reviews().getByLabel('Comment on line 87').inputValue()) === 'Clamp negatives here too.')
   await shot('line-comment')
   await reviews().getByRole('button', { name: 'Add to review' }).click()
   await reviews().locator('[data-pending-comment]').waitFor({ state: 'visible' })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffHunk } from '../../src/shared/pull-requests'
-import { dragLineSelection, nextLineSelection } from '../../src/renderer/components/reviews/line-selection'
+import { afterDrag, dragLineSelection, nextLineSelection } from '../../src/renderer/components/reviews/line-selection'
 
 describe('nextLineSelection', () => {
   const one = nextLineSelection(null, 'new', 0, 12, false)
@@ -55,5 +55,24 @@ describe('dragLineSelection', () => {
   it('reads only its own side of the hunk', () => {
     const old = { side: 'old' as const, hunk: 1, anchor: 10, start: 10, end: 10 }
     expect(dragLineSelection(old, hunk, 2, null)).toMatchObject({ start: 10, end: 12 })
+  })
+})
+
+describe('afterDrag', () => {
+  const sel = { side: 'new' as const, hunk: 0, anchor: 12, start: 12, end: 12 }
+  const open = { sel, composing: true }
+
+  it('keeps the selection and an open comment box when the drag never moved', () => {
+    expect(afterDrag(open, null)).toBe(open)
+  })
+
+  it('keeps them when the drag ends on the range already selected', () => {
+    expect(afterDrag(open, { ...sel, anchor: 12 })).toBe(open)
+  })
+
+  it('selects a new range and closes the comment box', () => {
+    const range = { ...sel, end: 15 }
+    expect(afterDrag(open, range)).toEqual({ sel: range, composing: false })
+    expect(afterDrag({ sel: null, composing: false }, range)).toEqual({ sel: range, composing: false })
   })
 })

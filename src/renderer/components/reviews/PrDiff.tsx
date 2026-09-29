@@ -17,7 +17,7 @@ import { askAgent } from './review-to-chat'
 import { MarkdownWithCopyControls } from '../chat/MarkdownWithCopyControls'
 import { usePendingComments } from './PrReviewForm'
 import { LineCommentBox, PendingCommentCard, ThreadFooter } from './PrWriteControls'
-import { dragLineSelection, lineOn, nextLineSelection, type LineSelection } from './line-selection'
+import { afterDrag, dragLineSelection, lineOn, nextLineSelection, type LineSelection } from './line-selection'
 import type { PendingComment } from '../../stores/review-store'
 
 function anchoredTo(line: DiffLine, c: PrConversation): boolean {
@@ -80,15 +80,23 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
   const [sel, setSel] = useState<LineSelection | null>(null)
   const [composing, setComposing] = useState(false)
   const pending = usePendingComments(pr).filter((c) => c.path === file.path)
-  // A drag in progress: `before` is restored by Escape; `moved` turns the click that ends it into a no-op.
-  const dragRef = useRef<{ pointerId: number; sel: LineSelection; before: LineSelection | null; moved: boolean } | null>(null)
+  // The range a drag in progress would select, drawn over `sel`. `sel` and the comment box (with its
+  // text) stay as they are until the drag ends on a new range; Escape just drops the preview.
+  const [dragSel, setDragSel] = useState<LineSelection | null>(null)
+  // `moved` turns the click that ends a drag into a no-op.
+  const dragRef = useRef<{ pointerId: number; sel: LineSelection; range: LineSelection | null; moved: boolean } | null>(null)
   const swallowClick = useRef(false)
-  const endDrag = (e: { currentTarget: HTMLButtonElement }) => {
+  const endDrag = (e: { currentTarget: HTMLButtonElement }, commit: boolean) => {
     const d = dragRef.current
     if (!d) return
     dragRef.current = null
     swallowClick.current = d.moved
     if (e.currentTarget.hasPointerCapture(d.pointerId)) e.currentTarget.releasePointerCapture(d.pointerId)
+    setDragSel(null)
+    if (!commit) return
+    const next = afterDrag({ sel, composing }, d.range)
+    setSel(next.sel)
+    setComposing(next.composing)
   }
   const drag = (side: 'new' | 'old', hunk: number) => (n: number): DragHandlers => ({
     onPointerDown: (e) => {
@@ -98,7 +106,7 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
       e.preventDefault()
       e.currentTarget.focus()
       e.currentTarget.setPointerCapture(e.pointerId)
-      dragRef.current = { pointerId: e.pointerId, sel: { side, hunk, anchor: n, start: n, end: n }, before: sel, moved: false }
+      dragRef.current = { pointerId: e.pointerId, sel: { side, hunk, anchor: n, start: n, end: n }, range: null, moved: false }
     },
     onPointerMove: (e) => {
       const d = dragRef.current
@@ -116,18 +124,17 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
       const next = dragLineSelection(d.sel, file.hunks[d.sel.hunk], Number(row.dataset.diffHunk), at === undefined ? null : Number(at))
       if (!d.moved && next.start === next.end) return
       d.moved = true
-      setComposing(false)
-      setSel(next)
+      d.range = next
+      setDragSel(next)
     },
-    onPointerUp: endDrag,
-    onPointerCancel: endDrag,
+    onPointerUp: (e) => endDrag(e, true),
+    onPointerCancel: (e) => endDrag(e, false),
     onKeyDown: (e) => {
       const d = dragRef.current
       if (e.key !== 'Escape' || !d) return
       e.stopPropagation()
-      endDrag(e)
+      endDrag(e, false)
       swallowClick.current = true
-      setSel(d.before)
     },
   })
   const pick = (side: 'new' | 'old', hunk: number, n: number, e: MouseEvent) => {
@@ -138,10 +145,10 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
     setComposing(false)
     setSel((prev) => nextLineSelection(prev, side, hunk, n, e.shiftKey))
   }
-  const selected = (line: DiffLine, hunk: number) => {
-    if (!sel || sel.hunk !== hunk) return false
-    const n = lineOn(line, sel.side)
-    return n !== null && n >= sel.start && n <= sel.end
+  const inRange = (r: LineSelection | null, line: DiffLine, hunk: number) => {
+    if (!r || r.hunk !== hunk) return false
+    const n = lineOn(line, r.side)
+    return n !== null && n >= r.start && n <= r.end
   }
   const ask = () => {
     if (!sel) return
@@ -163,8 +170,8 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
       for (const c of here) placed.add(c.id)
       const heldHere = pending.filter((c) => !placedPending.has(c.id) && pendingAt(line, c))
       for (const c of heldHere) placedPending.add(c.id)
-      const isSel = selected(line, h)
-      const lastSel = isSel && sel !== null && lineOn(line, sel.side) === sel.end
+      const isSel = inRange(dragSel ?? sel, line, h)
+      const lastSel = inRange(sel, line, h) && sel !== null && lineOn(line, sel.side) === sel.end
       return [
         <div
           key={`h${h}l${i}`}
