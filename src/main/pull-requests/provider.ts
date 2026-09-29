@@ -4,7 +4,8 @@
  * checked against a fresh read (`shared/pull-request-writes.ts`); a
  * provider only shapes the host request and classifies its answer.
  */
-import type { CreatedPr, CreatePrInput } from '@shared/agent-pr-create'
+import type { CreatedPr, CreatePrInput, OpenedPr } from '@shared/agent-pr-create'
+import type { ReviewerViewer } from '@shared/agent-pr-reviewers'
 import type { InlineCommentInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import type {
   MergeStrategy,
@@ -57,8 +58,14 @@ export interface PullRequestProvider {
   defaultBranch(repo: RepoRef): Promise<string>
   /** An open pull request whose source is `branch` in this repository, or null. */
   openPullRequestFor(repo: RepoRef, branch: string): Promise<CreatedPr | null>
-  /** Opens one; the service validated `input` and checked no open one exists. */
-  createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<CreatedPr>
+  /**
+   * Opens one, asking `input.reviewers` to review it; the service validated
+   * `input` and checked no open one exists. A reviewer request that fails
+   * after the pull request was opened is `reviewerFailure`, never a throw.
+   */
+  createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<OpenedPr>
+  /** The signed-in user, who cannot review the pull requests they open. */
+  viewerIdentity(): Promise<ReviewerViewer>
 }
 
 /** A host failure already classified for the UI. Providers throw it; the service turns it into a result. */

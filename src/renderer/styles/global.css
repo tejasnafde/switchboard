@@ -2605,6 +2605,62 @@ html, body, #root {
   padding-left: 2.5em;
 }
 
+.markdown-content .markdown-table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.markdown-content table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 5px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.markdown-content th + th,
+.markdown-content td + td {
+  border-left: 1px solid var(--border);
+}
+
+.markdown-content th {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.markdown-content tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-content tbody tr:hover td {
+  background: var(--bg-hover);
+}
+
+.markdown-content th[align="right"],
+.markdown-content td[align="right"] {
+  text-align: right;
+}
+
+.markdown-content th[align="center"],
+.markdown-content td[align="center"] {
+  text-align: center;
+}
+
 .markdown-content a {
   color: var(--accent);
   text-decoration: none;

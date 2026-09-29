@@ -81,10 +81,48 @@ class HostWriteCardsTest {
         ),
     )
 
+    private fun reviewer(id: String, login: String, displayName: String, kind: String) =
+        obj("id" to s(id), "login" to s(login), "displayName" to s(displayName), "kind" to s(kind))
+    private val reviewersVector = obj(
+        "action" to s("create"), "host" to s("github"), "prLabel" to s("acme/app"),
+        "target" to obj("repository" to s("acme/app"), "number" to JsonNull),
+        "create" to obj(
+            "repoLabel" to s("acme/app"), "sourceBranch" to s("feat/x"), "targetBranch" to s("main"),
+            "title" to s("Add it"), "description" to s("Line one."), "draft" to JsonBoolean(false),
+            "reviewers" to JsonArray(
+                listOf(
+                    reviewer("jdoe", "jdoe", "Jane Doé", "user"),
+                    reviewer("team:platform", "team:platform", "platform", "team"),
+                    reviewer("rk", "rk", "rk", "user"),
+                ),
+            ),
+        ),
+    )
+
     @Test
     fun shownDigestMatchesTheSharedVectors() {
         assertEquals("d3cf5b181c2a5b68", HostWriteCards.shownDigest("sbmcp_42", HostWriteCards.decode(replyVector)!!))
         assertEquals("fa05a2aef032d27a", HostWriteCards.shownDigest("sbmcp_43", HostWriteCards.decode(createVector)!!))
+        assertEquals("3dc4b25b5a5e1bd1", HostWriteCards.shownDigest("sbmcp_44", HostWriteCards.decode(reviewersVector)!!))
+    }
+
+    @Test
+    fun previewAndDigestCoverACreatesReviewers() {
+        val preview = HostWriteCards.preview(HostWriteCards.decode(reviewersVector)!!)!!
+        assertEquals(HostWritePreviewSection("Reviewers", "Jane Doé (jdoe)\nplatform (team:platform)\nrk"), preview.sections.last())
+        val create = reviewersVector.values["create"] as JsonObject
+        fun withReviewers(value: JsonValue?) = JsonObject(
+            LinkedHashMap(reviewersVector.values).apply {
+                put("create", JsonObject(LinkedHashMap(create.values).apply { if (value == null) remove("reviewers") else put("reviewers", value) }))
+            },
+        )
+        val base = HostWriteCards.shownDigest("sbmcp_44", HostWriteCards.decode(reviewersVector)!!)
+        val fewer = withReviewers(JsonArray(listOf(reviewer("rk", "rk", "rk", "user"))))
+        assertNotEquals(base, HostWriteCards.shownDigest("sbmcp_44", HostWriteCards.decode(fewer)!!))
+        assertNotEquals(base, HostWriteCards.shownDigest("sbmcp_44", HostWriteCards.decode(withReviewers(null))!!))
+        val broken = withReviewers(JsonArray(listOf(obj("id" to s("x")))))
+        assertNull(HostWriteCards.preview(HostWriteCards.decode(broken)!!))
+        assertNull(HostWriteCards.shownDigest("sbmcp_44", HostWriteCards.decode(broken)!!))
     }
 
     @Test

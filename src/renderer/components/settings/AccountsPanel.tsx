@@ -84,6 +84,7 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
   const usages = useProviderInstanceStore((s) => s.usages)
   const usageLoading = useProviderInstanceStore((s) => s.usageLoading)
   const syncUsage = useProviderInstanceStore((s) => s.syncUsage)
+  const beginUsageVisit = useProviderInstanceStore((s) => s.beginUsageVisit)
   const loadUsage = useProviderInstanceStore((s) => s.loadUsage)
   const [editing, setEditing] = useState<ProviderInstance | null>(null)
   const [adding, setAdding] = useState<AgentProvider | null>(null)
@@ -118,8 +119,13 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
 
   const enabled = instances.filter((i) => i.enabled)
 
-  // Settings' prewarm already read these; this catches accounts added or
-  // edited since, since main drops its cached reading on save.
+  // One read per account per visit, plus one for an account added or edited
+  // during it, since main drops its cached reading on save. Declared before
+  // the sync so it runs first.
+  useEffect(() => {
+    beginUsageVisit()
+  }, [beginUsageVisit])
+
   const versions = enabled.map((i) => `${i.id}@${i.updatedAt}`).join(' ')
   useEffect(() => {
     syncUsage()

@@ -279,6 +279,7 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     defaultBranch: (repo) => getService().defaultBranch(repo),
     openPullRequestFor: (repo, branch) => getService().openPullRequestFor(repo, branch),
     createPullRequest: (repo, input) => getService().createPullRequest(repo, input),
+    reviewerPool: (repo) => getService().reviewerPool(repo),
     // An explicit ask, like Reviews' "Link to chat": it relinks one the user unlinked before.
     linkToChat: (chatId, ref, created) => {
       let added = false

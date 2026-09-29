@@ -30,11 +30,13 @@ interface ProviderInstanceStore {
   /** Ids with a read in flight; a card keeps its previous reading meanwhile. */
   usageLoading: Record<string, true>
   loadUsage: (id: string, opts?: UsageOpts) => Promise<void>
-  /** Reads every enabled instance not yet read at its current version since
-   *  the last prewarm (main drops its cached reading when one is saved). */
+  /** Reads every enabled instance not yet read at its current version in
+   *  this Accounts visit (main drops its cached reading when one is saved). */
   syncUsage: () => void
-  /** Re-list and read usage for every account; Settings calls it on open. */
-  prewarmUsage: () => Promise<void>
+  /** Starts an Accounts visit: the next syncUsage reads every account once.
+   *  Nothing else reads usage unasked, since a Claude read can be a macOS
+   *  password prompt per keychain item. */
+  beginUsageVisit: () => void
   clearError: () => void
   /** Helper: instances filtered to a given agent kind, in a stable order
    *  (default first, then alpha). Used by both the picker and the
@@ -47,7 +49,7 @@ type UsageOpts = { force?: boolean; refreshWithTurn?: boolean }
 const usageReads = new Map<string, Promise<void>>()
 /** A forced read asked for while one was in flight, run once it settles. */
 const queuedUsage = new Map<string, UsageOpts>()
-/** Instance id -> the version last read since the prewarm. */
+/** Instance id -> the version last read in this Accounts visit. */
 const requestedUsage = new Map<string, string>()
 
 function asMessage(err: unknown): string {
@@ -160,10 +162,8 @@ export const useProviderInstanceStore = create<ProviderInstanceStore>((set, get)
     }
   },
 
-  prewarmUsage: async () => {
+  beginUsageVisit: () => {
     requestedUsage.clear()
-    await get().refresh()
-    get().syncUsage()
   },
 
   clearError: () => set({ error: null }),

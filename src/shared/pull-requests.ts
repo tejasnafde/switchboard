@@ -64,6 +64,8 @@ export interface PrReviewerCandidate {
   kind: 'user' | 'team'
   /** Listed pull requests of this repository they reviewed; 0 for a member who has not. */
   reviewed: number
+  /** When the host lists one (neither collaborators nor workspace members do today), so an agent may name them by it. */
+  email?: string
 }
 
 export type CheckState = 'success' | 'failure' | 'pending' | 'skipped' | 'neutral'

@@ -156,7 +156,7 @@ export async function fetchClaudeUsage(
   instanceId: string,
   env: Record<string, string>,
   oauthDir: string | null,
-  opts: { refreshWithTurn?: boolean } = {},
+  opts: { force?: boolean; refreshWithTurn?: boolean } = {},
 ): Promise<ProviderUsage> {
   const now = Date.now()
   const result = base(instanceId, now)
@@ -170,7 +170,11 @@ export async function fetchClaudeUsage(
   const configDir = env.CLAUDE_CONFIG_DIR ?? null
   const loginCommand = oauthLoginCommand('claude-code', oauthDir || configDir || '~/.claude')
 
-  let credential = await readClaudeCredential(configDir)
+  // Only the user's Usage refresh reads past what the keychain cache kept.
+  let credential = await readClaudeCredential(configDir, {
+    fresh: opts.force || opts.refreshWithTurn,
+    owner: instanceId,
+  })
   if (credential.kind === 'found' && credential.credential.hasRefreshToken) {
     // The turn is the user's explicit "Refresh now", so it also covers a 401
     // on a token that had not expired locally. The no-model path only helps
@@ -178,7 +182,7 @@ export async function fetchClaudeUsage(
     const expired = providerAuthState({ credential: credential.credential, nowMs: now }) === 'refresh-pending'
     if (opts.refreshWithTurn || expired) {
       await (opts.refreshWithTurn ? refreshClaudeTokenWithTurn(env) : refreshClaudeTokenWithoutTurn(env))
-      credential = await readClaudeCredential(configDir)
+      credential = await readClaudeCredential(configDir, { fresh: true, owner: instanceId })
     }
   }
   if (credential.kind === 'unsupported') {

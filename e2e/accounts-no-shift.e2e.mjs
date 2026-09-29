@@ -6,8 +6,8 @@
  *
  * Every animation frame records each card's and summary tile's box; after the
  * readings settle, every box must equal the one it had when first painted.
- * Checked three ways: Settings opened and Accounts reached while the prewarm
- * is still reading, a manual refresh, and a reopen (cached values at once).
+ * Checked three ways: Settings opened and Accounts reached while its first
+ * readings are still out, a manual refresh, and a reopen (cached values at once).
  *
  * The fixture has no signed-out account: a card whose first reading says
  * "signed out" drops its bars, a different height nobody can know in advance.
@@ -89,7 +89,8 @@ async function checkNoShift(label) {
 }
 
 try {
-  // 1. Open Settings on General (the prewarm starts), go to Accounts at once.
+  // 1. Open Settings on General (the account list prewarms), go to Accounts
+  // at once: usage is read only from there.
   await startRecording()
   await win.getByTitle('Settings').click()
   await settings.waitFor({ state: 'visible' })

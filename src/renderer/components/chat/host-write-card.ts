@@ -60,10 +60,18 @@ const keptComments = (draft: ReviewDraftState) => draft.comments.filter((c) => !
 export interface CreateDraftState {
   title: string
   description: string
+  /** Ids of the card's reviewers the user removed. */
+  removedReviewers: string[]
 }
 
 export function initialCreateDraft(card: HostWriteCard | undefined): CreateDraftState {
-  return { title: card?.create?.title ?? '', description: card?.create?.description ?? '' }
+  return { title: card?.create?.title ?? '', description: card?.create?.description ?? '', removedReviewers: [] }
+}
+
+/** Removes the reviewer, or restores one already removed. */
+export function toggleReviewer(draft: CreateDraftState, id: string): CreateDraftState {
+  const removed = draft.removedReviewers.includes(id)
+  return { ...draft, removedReviewers: removed ? draft.removedReviewers.filter((r) => r !== id) : [...draft.removedReviewers, id] }
 }
 
 /** Why the pull request cannot be opened as the user left it, or null. The rules the backend applies again. */
@@ -79,7 +87,15 @@ export function createDraftProblem(draft: CreateDraftState): string | null {
  * it; `draft` the review and `create` the pull request as the user left them.
  */
 export function hostWriteResponse(card: HostWriteCard, button: HostWriteButton, text: string, draft: ReviewDraftState, create?: CreateDraftState): HostWriteResponse {
-  if (card.action === 'create') return create ? { title: create.title, description: create.description } : {}
+  if (card.action === 'create') {
+    if (!create) return {}
+    const reviewers = card.create?.reviewers
+    return {
+      title: create.title,
+      description: create.description,
+      ...(reviewers ? { reviewers: reviewers.filter((r) => !create.removedReviewers.includes(r.id)).map((r) => r.id) } : {}),
+    }
+  }
   if (card.action === 'comment') return { text }
   if (card.action === 'review') {
     if (!button.verdict) return {}

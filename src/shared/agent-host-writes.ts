@@ -13,6 +13,7 @@
 import type { DiffLineKind, PrHost } from './pull-requests'
 import { lineLocation, type ReviewEvent } from './pull-request-writes'
 import type { RuntimeMode } from './provider-events'
+import { reviewerLabel, type HostWriteReviewer } from './agent-pr-reviewers'
 
 /** The last line of everything an agent posts, so a reader knows a person did not type it. */
 export const VIA_SWITCHBOARD_MARKER = 'via Switchboard'
@@ -50,6 +51,8 @@ export interface HostWriteCreate {
   description: string
   /** GitHub only. */
   draft: boolean
+  /** The reviewers the agent named, each matched to one candidate. Absent when it named none. The user may remove any. */
+  reviewers?: HostWriteReviewer[]
 }
 
 /** A diff line shown in the card around the line a comment lands on. */
@@ -141,6 +144,8 @@ export interface HostWriteResponse {
   title?: string
   /** Create: the description as the user left it. */
   description?: string
+  /** Create: the ids of the card's reviewers the user kept. Absent: all of them. */
+  reviewers?: string[]
   /** A phone's `hostWriteShownDigest` of the draft it showed in full. Required on an approval from a device without the admin scope. */
   shown?: string
 }
@@ -195,6 +200,7 @@ export function hostWriteDetail(card: HostWriteCard): string {
   if (card.action === 'create' && card.create) {
     const c = card.create
     lines.push(`Open a${c.draft ? ' draft' : ''} pull request on ${c.repoLabel}: ${c.sourceBranch} -> ${c.targetBranch}`, '', c.title)
+    if (c.reviewers && c.reviewers.length > 0) lines.push('', `Reviewers: ${c.reviewers.map(reviewerLabel).join(', ')}`)
     if (c.description) lines.push('', capDetail(c.description))
   }
   if (card.action === 'reply') lines.push(`Reply on ${where}${card.suggestResolve ? ', then resolve' : ''}`)
@@ -244,6 +250,7 @@ export function parseHostWriteResponse(value: unknown): HostWriteResponse {
     ...(comments ? { comments } : {}),
     ...(typeof r.title === 'string' ? { title: r.title } : {}),
     ...(typeof r.description === 'string' ? { description: r.description } : {}),
+    ...(Array.isArray(r.reviewers) ? { reviewers: r.reviewers.filter((id): id is string => typeof id === 'string') } : {}),
     ...(typeof r.shown === 'string' ? { shown: r.shown } : {}),
   }
 }

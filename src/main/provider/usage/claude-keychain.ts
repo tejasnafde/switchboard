@@ -19,6 +19,7 @@ import { readFileSync } from 'fs'
 import { homedir, userInfo } from 'os'
 import { join, normalize, sep } from 'path'
 import { createMainLogger } from '../../logger'
+import { createKeychainReadCache, type ServiceOutcome } from './keychain-read-cache'
 
 const log = createMainLogger('provider:usage-keychain')
 
@@ -172,11 +173,13 @@ function readCredentialFile(configDir: string): StoredClaudeCredential | null {
  * Run `security find-generic-password -w`. Resolves the raw payload or null.
  * Deliberately returns no stdout on any failure path.
  */
-type SecurityResult =
+export type SecurityResult =
   | { kind: 'ok'; payload: string }
   | { kind: 'absent' }
   /** Killed by the timeout, which is what a blocking ACL prompt looks like. */
   | { kind: 'blocked' }
+
+export type SecurityRunner = (service: string, account: string | undefined) => Promise<SecurityResult>
 
 function runSecurity(service: string, account: string | undefined): Promise<SecurityResult> {
   const args = ['find-generic-password', '-s', service]
@@ -197,66 +200,138 @@ function runSecurity(service: string, account: string | undefined): Promise<Secu
   })
 }
 
+export interface ReadCredentialOptions {
+  /** Skip kept results: the user's Usage refresh, or a re-read after a token refresh. */
+  fresh?: boolean
+  /** The instance asking, so editing it forgets what it read. */
+  owner?: string
+}
+
+export interface ClaudeCredentialReader {
+  read(configDir: string | null, opts?: ReadCredentialOptions): Promise<CredentialReadResult>
+  /** Forget what `owner` read, or everything when omitted. */
+  forget(owner?: string): void
+}
+
+export interface ClaudeCredentialReaderDeps {
+  runSecurity?: SecurityRunner
+  platform?: NodeJS.Platform
+  homeDir?: string
+  now?: () => number
+}
+
 /**
- * Resolve the OAuth credential for an instance.
- *
- * @param configDir the EFFECTIVE CLAUDE_CONFIG_DIR from the resolved spawn
- *   env, not `instance.oauthDir` - an env overlay can set the variable
- *   directly (without tilde expansion), and the launching shell can leak one in.
+ * Keychain reads are shared by service across instances and callers, see
+ * keychain-read-cache.ts. A window as long as the usage cache's, so one
+ * Accounts visit reads each service once.
  */
-export async function readClaudeCredential(configDir: string | null): Promise<CredentialReadResult> {
-  // With no explicit dir the CLI uses ~/.claude, and that is where a Linux or
-  // headless-remote install writes its credentials file. Skipping this made
-  // Claude usage permanently unavailable on every non-macOS backend.
-  const fileDir = configDir ?? join(homedir(), '.claude')
-  const fromFile = readCredentialFile(fileDir)
-  if (fromFile) return { kind: 'found', credential: fromFile, source: 'credentials file' }
+const SERVICE_READ_TTL_MS = 45_000
 
-  if (process.platform !== 'darwin') {
-    return {
-      kind: 'unsupported',
-      message: `No credentials file at ${join(fileDir, '.credentials.json')}, and the macOS keychain is not available on this backend.`,
-    }
-  }
+export function createClaudeCredentialReader(deps: ClaudeCredentialReaderDeps = {}): ClaudeCredentialReader {
+  const run = deps.runSecurity ?? runSecurity
+  const platform = deps.platform ?? process.platform
+  const now = deps.now ?? Date.now
+  const cache = createKeychainReadCache<StoredClaudeCredential>({ ttlMs: SERVICE_READ_TTL_MS, now })
 
-  // Expansion needs the real home dir: an env overlay can set a literal
-  // "~/..." that never went through expandTilde.
-  const services = claudeKeychainServiceCandidates(configDir, homedir())
-  const accounts = keychainAccountCandidates(process.env.USER)
-  const deadline = Date.now() + KEYCHAIN_BUDGET_MS
-
-  let blocked = false
-  for (const service of services) {
+  async function readService(
+    service: string,
+    accounts: Array<string | undefined>,
+    deadline: number,
+  ): Promise<ServiceOutcome<StoredClaudeCredential>> {
     for (const account of accounts) {
-      if (Date.now() >= deadline) blocked = true
-      if (blocked) break
-      const out = await runSecurity(service, account)
+      if (now() >= deadline) return { kind: 'blocked' }
+      const out = await run(service, account)
       if (out.kind === 'blocked') {
         log.warn(`keychain lookup for ${service} was killed by the timeout`)
-        blocked = true
-        break
+        return { kind: 'blocked' }
       }
       if (out.kind === 'absent') continue
       const credential = parseStoredClaudeCredential(out.payload)
       if (credential) {
         log.debug(`credential resolved from keychain service ${service}`)
-        return { kind: 'found', credential, source: `keychain ${service}` }
+        return { kind: 'found', value: credential }
       }
-      log.warn(`keychain entry ${service} did not contain a claudeAiOauth payload`)
+      // The item exists. Trying the next account finds the same item and
+      // asks for the password again, for the same answer.
+      log.warn(`keychain entry ${service} did not contain a claudeAiOauth payload; not reading it again until a refresh`)
+      return { kind: 'no-payload' }
     }
-    if (blocked) break
+    return { kind: 'absent' }
   }
 
-  if (blocked) {
+  /**
+   * Resolve the OAuth credential for an instance.
+   *
+   * @param configDir the EFFECTIVE CLAUDE_CONFIG_DIR from the resolved spawn
+   *   env, not `instance.oauthDir` - an env overlay can set the variable
+   *   directly (without tilde expansion), and the launching shell can leak one in.
+   */
+  async function read(configDir: string | null, opts: ReadCredentialOptions = {}): Promise<CredentialReadResult> {
+    const home = deps.homeDir ?? homedir()
+    // With no explicit dir the CLI uses ~/.claude, and that is where a Linux or
+    // headless-remote install writes its credentials file. Skipping this made
+    // Claude usage permanently unavailable on every non-macOS backend.
+    const fileDir = configDir ?? join(home, '.claude')
+    const fromFile = readCredentialFile(fileDir)
+    if (fromFile) return { kind: 'found', credential: fromFile, source: 'credentials file' }
+
+    if (platform !== 'darwin') {
+      return {
+        kind: 'unsupported',
+        message: `No credentials file at ${join(fileDir, '.credentials.json')}, and the macOS keychain is not available on this backend.`,
+      }
+    }
+
+    // Expansion needs the real home dir: an env overlay can set a literal
+    // "~/..." that never went through expandTilde.
+    const services = claudeKeychainServiceCandidates(configDir, home)
+    const accounts = keychainAccountCandidates(process.env.USER)
+    const deadline = now() + KEYCHAIN_BUDGET_MS
+
+    let blocked = false
+    for (const service of services) {
+      if (now() >= deadline) {
+        blocked = true
+        break
+      }
+      const out = await cache.read(service, () => readService(service, accounts, deadline), opts)
+      if (out.kind === 'found') return { kind: 'found', credential: out.value, source: `keychain ${service}` }
+      if (out.kind === 'blocked') {
+        blocked = true
+        break
+      }
+    }
+
+    if (blocked) {
+      return {
+        kind: 'error',
+        message: 'Timed out reading the keychain. Access may be waiting on a permission prompt.',
+      }
+    }
+
+    log.info(`no keychain match for ${services.length} candidate service name(s)`)
     return {
-      kind: 'error',
-      message: 'Timed out reading the keychain. Access may be waiting on a permission prompt.',
+      kind: 'missing',
+      message: `No stored Claude login for this instance (looked for keychain entry ${services[0] ?? SERVICE_BASE}).`,
     }
   }
 
-  log.info(`no keychain match for ${services.length} candidate service name(s)`)
   return {
-    kind: 'missing',
-    message: `No stored Claude login for this instance (looked for keychain entry ${services[0] ?? SERVICE_BASE}).`,
+    read,
+    forget(owner) {
+      if (owner === undefined) cache.clear()
+      else cache.forgetOwner(owner)
+    },
   }
+}
+
+const reader = createClaudeCredentialReader()
+
+export function readClaudeCredential(configDir: string | null, opts?: ReadCredentialOptions): Promise<CredentialReadResult> {
+  return reader.read(configDir, opts)
+}
+
+/** Called when an instance is edited or deleted. */
+export function forgetClaudeCredentialReads(owner?: string): void {
+  reader.forget(owner)
 }

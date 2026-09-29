@@ -12,6 +12,7 @@ import { findCodexPath } from '../adapters/codex-adapter'
 import type { ProviderUsage } from '@shared/provider-usage'
 import { createMainLogger } from '../../logger'
 import { fetchClaudeUsage } from './claude-usage'
+import { forgetClaudeCredentialReads } from './claude-keychain'
 import { fetchCodexUsage } from './codex-usage'
 
 export { disposeUsageProbes } from './codex-usage'
@@ -22,7 +23,18 @@ const log = createMainLogger('provider:usage')
 const CACHE_TTL_MS = 45_000
 
 const cache = new Map<string, ProviderUsage>()
-const inFlight = new Map<string, Promise<ProviderUsage>>()
+/**
+ * A probe in flight, with how strong a request it answers (see `strength`).
+ * `stale` is set when its instance is edited or deleted while it runs: its
+ * reading is then for the old credential, so it is neither cached nor handed
+ * to a request made after the edit.
+ */
+interface ActiveProbe {
+  task: Promise<ProviderUsage>
+  strength: number
+  stale: boolean
+}
+const inFlight = new Map<string, ActiveProbe>()
 
 /**
  * Codex probes spawn a ~260MB binary, so they run one at a time no matter
@@ -65,7 +77,7 @@ export interface UsageRequestOptions {
  * stored env overlay (an oauth_dir profile can carry one too, for example
  * ANTHROPIC_BASE_URL); `getProviderInstanceFull` decrypts it only when the
  * row's key list does not prove it empty, because each decrypt can be a
- * keychain prompt on an unsigned macOS build and Settings reads every
+ * keychain prompt on an unsigned macOS build and Accounts reads every
  * instance's usage when it opens. Other kinds never decrypt.
  */
 export function usageInstance(id: string): ProviderInstanceRow | null {
@@ -81,7 +93,7 @@ async function probe(id: string, agentType: ProviderUsage['agentType'], opts: Us
   const env = resolveInstanceEnv(instance)
 
   if (instance.agentType === 'claude-code') {
-    return fetchClaudeUsage(id, env, instance.oauthDir, { refreshWithTurn: opts.refreshWithTurn })
+    return fetchClaudeUsage(id, env, instance.oauthDir, { force: opts.force, refreshWithTurn: opts.refreshWithTurn })
   }
 
   if (instance.agentType === 'codex') {
@@ -106,31 +118,51 @@ async function probe(id: string, agentType: ProviderUsage['agentType'], opts: Us
  * numbers would otherwise stand for up to the TTL.
  */
 export function invalidateUsage(id?: string): void {
+  // Includes a keychain item remembered as holding no credential.
+  forgetClaudeCredentialReads(id)
   if (id === undefined) {
     cache.clear()
+    for (const active of inFlight.values()) active.stale = true
     return
   }
   cache.delete(id)
+  const active = inFlight.get(id)
+  if (active) active.stale = true
+}
+
+/** 0 = may be cached, 1 = forced (the Usage refresh), 2 = refresh with a CLI turn. */
+function strength(opts: UsageRequestOptions): number {
+  if (opts.refreshWithTurn) return 2
+  return opts.force ? 1 : 0
 }
 
 export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions = {}): Promise<ProviderUsage> {
-  if (opts.force || opts.refreshWithTurn) cache.delete(id)
+  const wanted = strength(opts)
+  if (wanted > 0) cache.delete(id)
   else {
     const cached = cache.get(id)
     if (cached && Date.now() - cached.fetchedAtMs < CACHE_TTL_MS) return cached
   }
 
-  // Deliberately shared even for a forced refresh: two probes against the same
-  // credential would race, and the in-flight one is already fresh.
-  const existing = inFlight.get(id)
-  if (existing) return existing
+  // A probe in flight answers any request no stronger than its own, unless
+  // it is stale. Otherwise the request waits for it and then runs its own:
+  // never two probes at once, since each can be a keychain password prompt,
+  // never an unforced reading handed to a forced request, and never the old
+  // credential's reading handed to a request made after an edit.
+  const joinable = (candidate: ActiveProbe) => !candidate.stale && candidate.strength >= wanted
+  let existing = inFlight.get(id)
+  while (existing) {
+    if (joinable(existing)) return existing.task
+    await Promise.allSettled([existing.task])
+    existing = inFlight.get(id)
+  }
 
   // Resolved up front so a probe that throws can still report the right kind.
   const agentType = getProviderInstanceFull(id, { withEnv: false })?.agentType ?? 'claude-code'
 
-  const task = probe(id, agentType, opts)
+  const task: Promise<ProviderUsage> = probe(id, agentType, opts)
     .then((result) => {
-      cache.set(id, result)
+      if (!active.stale) cache.set(id, result)
       return result
     })
     .catch((err): ProviderUsage => {
@@ -139,9 +171,10 @@ export async function fetchInstanceUsage(id: string, opts: UsageRequestOptions =
       return flat(id, agentType, 'error', message)
     })
     .finally(() => {
-      inFlight.delete(id)
+      if (inFlight.get(id)?.task === task) inFlight.delete(id)
     })
 
-  inFlight.set(id, task)
+  const active: ActiveProbe = { task, strength: wanted, stale: false }
+  inFlight.set(id, active)
   return task
 }
