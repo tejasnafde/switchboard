@@ -90,7 +90,8 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
     const d = dragRef.current
     if (!d) return
     dragRef.current = null
-    swallowClick.current = d.moved
+    // A cancelled pointer sends no click, so only a committed drag swallows the next one.
+    swallowClick.current = commit && d.moved
     if (e.currentTarget.hasPointerCapture(d.pointerId)) e.currentTarget.releasePointerCapture(d.pointerId)
     setDragSel(null)
     if (!commit) return
