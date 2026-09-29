@@ -6,6 +6,8 @@
  */
 import { repoKey, type PrError, type PrHost, type RepoRef } from './pull-requests'
 import { parseRemoteUrl } from './pull-request-remote'
+import { isReviewerId } from './pull-request-writes'
+import { AGENT_PR_MAX_REVIEWERS, checkReviewerNames } from './agent-pr-reviewers'
 
 /** GitHub caps a title at 256 characters, Bitbucket at 255. */
 export const PR_TITLE_MAX_CHARS = 255
@@ -74,6 +76,8 @@ export interface CreatePrArgs {
   draft: boolean
   /** Null when the agent did not name one; it must be the chat's repository if it did. */
   repository: string | null
+  /** Names, logins or emails as the agent sent them, not yet matched (`resolveReviewers`). */
+  reviewers: string[]
 }
 
 /** The agent's arguments, before anything is read. */
@@ -88,6 +92,8 @@ export function checkCreatePrArgs(args: Record<string, unknown>): Checked<Create
   if (!target.ok) return target
   if (args.draft !== undefined && typeof args.draft !== 'boolean') return { ok: false, message: '"draft" is true or false.' }
   if (args.repository !== undefined && typeof args.repository !== 'string') return { ok: false, message: '"repository" is "owner/name" or its URL.' }
+  const reviewers = checkReviewerNames(args.reviewers)
+  if (!reviewers.ok) return reviewers
   return {
     ok: true,
     value: {
@@ -97,6 +103,7 @@ export function checkCreatePrArgs(args: Record<string, unknown>): Checked<Create
       targetBranch: target.value,
       draft: args.draft === true,
       repository: typeof args.repository === 'string' && args.repository.trim() ? args.repository.trim() : null,
+      reviewers: reviewers.value,
     },
   }
 }
@@ -124,11 +131,22 @@ export interface CreatePrInput {
   sourceBranch: string
   targetBranch: string
   draft: boolean
+  /** Reviewer ids (`PrReviewerCandidate.id`) the card kept; absent when there are none. */
+  reviewers?: string[]
 }
 
 export interface CreatedPr {
   number: number
   url: string
+}
+
+/**
+ * A pull request the host opened. On GitHub the reviewers are a second
+ * request after the create; when it fails the pull request still exists, so
+ * the failure rides along instead of failing the create.
+ */
+export interface OpenedPr extends CreatedPr {
+  reviewerFailure?: { reviewers: string[]; error: PrError }
 }
 
 /** The same rules again, in the service, for whatever reached it. */
@@ -146,7 +164,12 @@ export function validateCreatePr(host: PrHost, input: unknown): { ok: true; valu
   const draft = r.draft === true
   const refused = draftProblem(host, draft)
   if (refused) return invalid(refused)
-  return { ok: true, value: { title: title.value, description: r.description, sourceBranch: r.sourceBranch, targetBranch: r.targetBranch, draft } }
+  const reviewers = r.reviewers ?? []
+  if (!Array.isArray(reviewers) || reviewers.length > AGENT_PR_MAX_REVIEWERS || !reviewers.every((id) => isReviewerId(host, id))) return invalid('Not a reviewer on this host.')
+  if (new Set(reviewers).size !== reviewers.length) return invalid('A reviewer is listed twice.')
+  const value: CreatePrInput = { title: title.value, description: r.description, sourceBranch: r.sourceBranch, targetBranch: r.targetBranch, draft }
+  if (reviewers.length > 0) value.reviewers = reviewers
+  return { ok: true, value }
 }
 
 /**

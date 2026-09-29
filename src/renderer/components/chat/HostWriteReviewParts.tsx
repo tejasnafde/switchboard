@@ -1,9 +1,10 @@
 import type { HostWriteCreate, HostWriteDiffLine, HostWriteReview } from '@shared/agent-host-writes'
+import { reviewerLabel } from '@shared/agent-pr-reviewers'
 import { lineLocation } from '@shared/pull-request-writes'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
 import type { KeyboardEvent } from 'react'
-import type { CreateDraftState, ReviewDraftState } from './host-write-card'
+import { toggleReviewer, type CreateDraftState, type ReviewDraftState } from './host-write-card'
 
 const TEXTAREA =
   'w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 [font-family:inherit] text-[12.5px] leading-[1.5] text-[var(--text-primary)] outline-none focus-visible:border-[var(--accent)]'
@@ -112,7 +113,7 @@ interface CreatePrFieldsProps {
   onSubmit(): void
 }
 
-/** A pull request to open: the branches it merges, then its title and description as editable drafts. */
+/** A pull request to open: the branches it merges, its title and description as editable drafts, then the reviewers it asks. */
 export function CreatePrFields({ create, draft, editable, onChange, onSubmit }: CreatePrFieldsProps) {
   const submitOnModEnter = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -147,6 +148,32 @@ export function CreatePrFields({ create, draft, editable, onChange, onSubmit }: 
         rows={5}
         className={TEXTAREA}
       />
+      {create.reviewers && create.reviewers.length > 0 && (
+        <>
+          <div className="mt-2 mb-1 text-[11px] text-[var(--text-muted)]">
+            {draft.removedReviewers.length === 0
+              ? `${create.reviewers.length === 1 ? 'Reviewer' : 'Reviewers'} asked when it opens`
+              : `${create.reviewers.length - draft.removedReviewers.length} of ${create.reviewers.length} reviewers kept`}
+          </div>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
+            {create.reviewers.map((r) => {
+              const removed = draft.removedReviewers.includes(r.id)
+              const label = reviewerLabel(r)
+              return (
+                <li key={r.id} data-create-reviewer={r.id} data-removed={removed || undefined} className="flex items-center gap-2 rounded-md border border-[var(--border)] py-0.5 pr-0.5 pl-2">
+                  <span className={cn('min-w-0 flex-1 text-[12px] [overflow-wrap:anywhere] text-[var(--text-primary)]', removed && 'text-[var(--text-muted)] line-through')}>
+                    {label}{r.kind === 'team' && <span className="ml-1.5 text-[11px] text-[var(--text-muted)]">team</span>}
+                  </span>
+                  {/* Stays after the decision, disabled, so the rows keep their height. */}
+                  <Button size="sm" variant="ghost" disabled={!editable} aria-label={`${removed ? 'Restore' : 'Remove'} reviewer ${label}`} onClick={() => onChange(toggleReviewer(draft, r.id))}>
+                    {removed ? 'Restore' : 'Remove'}
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
     </div>
   )
 }

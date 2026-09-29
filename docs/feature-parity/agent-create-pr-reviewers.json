@@ -1,0 +1,76 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "agent-create-pr-reviewers",
+  "summary": "create_pull_request takes an optional reviewers: string[] (logins, display names or emails as the agent knows them, GitHub teams as team:<slug>, at most 10, case-insensitive duplicates dropped). Before the card, each name is matched against the repository's reviewer candidates (PullRequestService.reviewerPool: recent reviewers of listed PRs, then GitHub collaborators and teams or Bitbucket workspace members, the Reviewers card's order) plus the signed-in user (provider viewerIdentity: GitHub login, Bitbucket account uuid). A name matches only exactly, case and a leading @ aside, on the candidate id, login, display name, a listed email or a team's slug (shared/agent-pr-reviewers.ts resolveReviewers). A name matching nobody or several people, or the signed-in user, is refused as isError tool output naming every failed name with up to 5 close candidates; nothing is guessed and nothing is opened. The resolved reviewers (id, login, display name, kind) ride on the card as create.reviewers; the desktop card lists them with Remove / Restore like draft review comments and answers with the kept ids (HostWriteResponse.reviewers, only ids already on the card are honoured). hostWriteDetail adds a Reviewers line. A phone shows them as a Reviewers section of hostWritePreview (one 'Display (login)' line each) and approves all of them; the section is part of hostWriteShownDigest, so a phone build that did not show them cannot approve such a card. A third cross-implementation vector pins it in vitest and in the Android unit test. Hosts: Bitbucket sends reviewers: [{uuid}] in the same POST /pullrequests; GitHub creates the PR, then one POST pulls/{n}/requested_reviewers with reviewers and team_reviewers. If that second call fails, the PR stays opened and linked, the tool reports the URL and which reviewers failed, and the create is never sent again. Full access opens without a card with every resolved reviewer; plan mode still refuses before reading candidates. An already-open PR for the branch is returned as before, and the agent is told its reviewers were not changed. Also recorded in AGENTS.md: editing an agent draft on the phone is deferred (2026-09-29).",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/HostWriteReviewParts.tsx",
+        "src/renderer/components/chat/host-write-card.ts",
+        "tests/unit/host-write-card.test.ts",
+        "tests/unit/agent-pr-create.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/__tests__/feed-items.test.tsx",
+        "tests/unit/mobile-approval-actions.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/HostWriteCards.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/HostWriteCardsTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/agent-pr-reviewers.ts",
+        "src/shared/agent-pr-create.ts",
+        "src/shared/agent-host-writes.ts",
+        "src/shared/host-write-phone.ts",
+        "src/shared/pull-requests.ts",
+        "src/main/mcp/pr-tools.ts",
+        "src/main/ipc/pull-requests.ts",
+        "src/main/pull-requests/provider.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/pull-requests/github.ts",
+        "src/main/pull-requests/bitbucket.ts",
+        "src/main/pull-requests/demo.ts",
+        "tests/unit/agent-pr-reviewers.test.ts",
+        "tests/unit/mcp-pr-create-tool.test.ts",
+        "tests/unit/pull-request-create-hosts.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, column, setting or migration. The reviewers live on the in-memory approval card and in the host request; the phones cache the card payload whole (Expo store, Android ThreadSnapshotStore keeps the raw JSON), so an optional create.reviewers field needs no cache change."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, native module, permission or update channel change. The Expo change is test-only (the shared preview it renders already came from @shared), so it rides the ordinary OTA; the Android change is in HostWriteCards and ships with its next APK without a versionCode change here. Wire changes are additive: HostWriteCreate.reviewers and HostWriteResponse.reviewers are optional. A card without reviewers hashes exactly as before (the digest version is unchanged), so existing phone apps keep approving those; a card with reviewers is refused from a phone app that did not show them, which then asks to update or approve on the desktop. An older desktop renderer shows no reviewer rows and approves with every reviewer, as a phone does."
+    }
+  },
+  "verification": {
+    "automated": [
+      "agent-pr-reviewers: names absent, trimmed, deduped, non-list / empty / over-10 refused; exact match on login, display name, email and team slug ignoring case and @; unknown names refused with close candidates (including an email's local part); a shared display name refused as ambiguous; the signed-in user refused by GitHub login in any case and by Bitbucket uuid; every failed name reported at once; two names for one person kept once; keptReviewers and reviewerLabel.",
+      "mcp-pr-create-tool: the schema and description name reviewers; resolved reviewers on the card and its detail, sent with the create, reported to the agent; no candidate read without reviewers; unknown, author and over-10 refused before any card; a failed candidate read refuses; card removals honoured and reported; all removed sends none; full access with reviewers and no card; plan mode refuses before reading candidates; GitHub's second-call failure reported with the URL and names, the create called once; an open PR says reviewers were not changed.",
+      "pull-request-create-hosts (fake gh, fake fetch): GitHub POST pulls then one requested_reviewers call with reviewers and team_reviewers split; a refused second call returns reviewerFailure with the PR and never re-sends the create; Bitbucket sends reviewers [{uuid}] in the one POST; the service passes reviewer ids through and refuses non-host ids, duplicates, over 10 and a non-list before the host; reviewerPool orders recent reviewers first and refuses another repository.",
+      "host-write-card: the create response sends every reviewer until one is removed, only the kept ids after, Restore brings one back, and no field for a card without reviewers.",
+      "Phone digest: shared vector sbmcp_44 (GitHub create with three reviewers, one a team, one non-ASCII name) = 3dc4b25b5a5e1bd1, computed independently in Python, pinned in tests/unit/mobile-approval-actions.test.ts and HostWriteCardsTest.kt; removing a reviewer or the field changes it; an unlabelled reviewer makes the preview and digest null. Expo jest feed-items: the create card renders the reviewer lines and approves with that digest.",
+      "Android: ./gradlew testDebugUnitTest lintDebug with JDK 21."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No real pull request was opened and no real reviewer was requested on GitHub or Bitbucket; every host call ran against fakes.",
+      "No model called create_pull_request with reviewers in a live turn.",
+      "The desktop reviewer rows were not looked at in the running app or a visual baseline: no covered screen shows a create card with reviewers.",
+      "Neither phone app was run on a device."
+    ]
+  }
+}

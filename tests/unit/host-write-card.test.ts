@@ -3,7 +3,9 @@ import {
   hostWriteButtons,
   hostWriteContext,
   hostWriteResponse,
+  initialCreateDraft,
   initialReviewDraft,
+  toggleReviewer,
   replyTextProblem,
   reviewButtonProblem,
 } from '../../src/renderer/components/chat/host-write-card'
@@ -110,5 +112,31 @@ describe('a draft review card', () => {
     expect(reviewButtonProblem(review, 'comment', draft)).not.toBeNull()
     draft.comments[0] = { ...draft.comments[0], removed: false, text: '' }
     expect(reviewButtonProblem(review, 'comment', draft)).toContain('Comment 1 is empty')
+  })
+})
+
+describe('a pull request to open', () => {
+  const create: HostWriteCard = {
+    action: 'create', agentLabel: 'Codex', host: 'github', prLabel: 'acme/app', target: { repository: 'acme/app', number: null }, url: null,
+    location: null, quote: null, maxChars: 16000,
+    create: {
+      repoLabel: 'acme/app', sourceBranch: 'feat/x', targetBranch: 'main', title: 'T', description: 'D', draft: false,
+      reviewers: [{ id: 'jdoe', login: 'jdoe', displayName: 'Jane Doe', kind: 'user' }, { id: 'team:platform', login: 'team:platform', displayName: 'Platform', kind: 'team' }],
+    },
+  }
+
+  it('sends back every reviewer until one is removed, and only the kept ones after', () => {
+    const draft = initialCreateDraft(create)
+    const open = button(create, 'create')
+    expect(hostWriteResponse(create, open, '', noDraft, draft)).toEqual({ title: 'T', description: 'D', reviewers: ['jdoe', 'team:platform'] })
+    const removed = toggleReviewer(draft, 'jdoe')
+    expect(hostWriteResponse(create, open, '', noDraft, removed)).toEqual({ title: 'T', description: 'D', reviewers: ['team:platform'] })
+    // Restore brings them back.
+    expect(hostWriteResponse(create, open, '', noDraft, toggleReviewer(removed, 'jdoe')).reviewers).toEqual(['jdoe', 'team:platform'])
+  })
+
+  it('sends no reviewers field for a card that asked none', () => {
+    const plain: HostWriteCard = { ...create, create: { ...create.create!, reviewers: undefined } }
+    expect(hostWriteResponse(plain, button(plain, 'create'), '', noDraft, initialCreateDraft(plain))).toEqual({ title: 'T', description: 'D' })
   })
 })
