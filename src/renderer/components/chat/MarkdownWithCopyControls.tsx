@@ -166,6 +166,25 @@ function isSafeMarkdownDestination(href: string): boolean {
   return !scheme || scheme === 'http' || scheme === 'https' || scheme === 'mailto'
 }
 
+/** A cell that reads as a number: "18", "1,204", "-3.5", "42%", "**18**". */
+const NUMERIC_CELL = /^[-+]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?%?$/
+
+/**
+ * Right-aligns a table column whose body cells are all numbers, unless the
+ * author chose an alignment. Empty cells and a dash do not count against it.
+ */
+export function alignNumericColumns(token: Tokens.Table): void {
+  token.align.forEach((align, col) => {
+    if (align !== null) return
+    const cells = token.rows.map((row) => row[col]?.text.replace(/[*_`]/g, '').trim() ?? '').filter((t) => t !== '' && t !== '-')
+    if (cells.length === 0 || !cells.every((t) => NUMERIC_CELL.test(t))) return
+    // The renderer reads each cell's own align, not the table's.
+    token.align[col] = 'right'
+    if (token.header[col]) token.header[col].align = 'right'
+    for (const row of token.rows) if (row[col]) row[col].align = 'right'
+  })
+}
+
 export function renderMarkdownWithCopyControls(
   markdown: string,
   { mutable = false }: RenderMarkdownOptions = {},
@@ -174,7 +193,11 @@ export function renderMarkdownWithCopyControls(
   const renderCode = renderer.code.bind(renderer)
   const renderLink = renderer.link.bind(renderer)
   const renderImage = renderer.image.bind(renderer)
+  const renderTable = renderer.table.bind(renderer)
   let blockIndex = 0
+
+  // A wide table scrolls inside its own box instead of stretching the bubble.
+  renderer.table = (token: Tokens.Table) => `<div class="markdown-table">${renderTable(token)}</div>\n`
 
   renderer.code = (token: Tokens.Code) => {
     const index = blockIndex++
@@ -200,7 +223,13 @@ export function renderMarkdownWithCopyControls(
     )
   }
 
-  return marked.parse(markdown, { async: false, renderer }) as string
+  return marked.parse(markdown, {
+    async: false,
+    renderer,
+    walkTokens: (token) => {
+      if (token.type === 'table') alignNumericColumns(token as Tokens.Table)
+    },
+  }) as string
 }
 
 interface AtomicMarkdownRootProps {
