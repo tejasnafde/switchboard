@@ -11,12 +11,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { AgentApprovalBroker, type AgentApprovalOutcome } from '../../src/main/mcp/agent-approvals'
 import { AgentWriteBudget } from '../../src/main/mcp/agent-write-budget'
 import { buildPrTools, type AgentPullRequestAccess, type RemoteBranchCheck } from '../../src/main/mcp/pr-tools'
-import type { CreatedPr } from '../../src/shared/agent-pr-create'
-import type { PrError, PrRef, PrResult, RepoRef } from '../../src/shared/pull-requests'
+import type { CreatedPr, OpenedPr } from '../../src/shared/agent-pr-create'
+import type { ReviewerViewer } from '../../src/shared/agent-pr-reviewers'
+import type { PrError, PrRef, PrResult, PrReviewerCandidate, RepoRef } from '../../src/shared/pull-requests'
 import type { RuntimeEvent, RuntimeMode } from '../../src/shared/provider-events'
 
 const APP: RepoRef = { host: 'github', owner: 'acme', name: 'app' }
 const BOT: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2' }
+const candidate = (id: string, displayName = id, kind: 'user' | 'team' = 'user'): PrReviewerCandidate =>
+  ({ id, person: { login: kind === 'team' ? id.slice(5) : id, displayName, avatarUrl: null }, kind, reviewed: 0 })
+const CANDIDATES = [candidate('jdoe', 'Jane Doe'), candidate('rahul', 'Rahul K'), candidate('me', 'Me Myself'), candidate('team:platform', 'Platform', 'team')]
 
 interface Options {
   mode?: RuntimeMode
@@ -26,7 +30,9 @@ interface Options {
   pushed?: RemoteBranchCheck
   open?: CreatedPr | null
   /** What the create call answers; the default opens #42. */
-  create?: (input: unknown) => PrResult<CreatedPr & { existing: boolean }>
+  create?: (input: unknown) => PrResult<OpenedPr & { existing: boolean }>
+  /** Who may review; the default is Jane, Rahul and the signed-in user (me). */
+  pool?: PrResult<{ candidates: PrReviewerCandidate[]; viewer: ReviewerViewer }>
   answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => AgentApprovalOutcome | null
   budget?: AgentWriteBudget
   cwd?: string | null
@@ -52,6 +58,7 @@ function setup(opts: Options = {}) {
       return opts.create?.(input) ?? { ok: true as const, data: { number: 42, url: url(42), existing: false } }
     }),
     linkToChat: vi.fn((chatId: string, ref: PrRef, created: boolean) => { links.push({ chatId, ref, created }); return true }),
+    reviewerPool: vi.fn(async () => opts.pool ?? { ok: true as const, data: { candidates: CANDIDATES, viewer: { id: 'me', login: 'me' } } }),
   } as unknown as AgentPullRequestAccess
   const approvals = new AgentApprovalBroker({
     publish: (e) => {
@@ -94,7 +101,8 @@ describe('create_pull_request: what the agent is told', () => {
     expect(tool.description).toMatch(/instead of gh pr create, bbpr/)
     expect(tool.description).toMatch(/push the branch first/i)
     expect(tool.inputSchema.required).toEqual(['title'])
-    expect(Object.keys(tool.inputSchema.properties as object).sort()).toEqual(['description', 'draft', 'repository', 'sourceBranch', 'targetBranch', 'title'])
+    expect(Object.keys(tool.inputSchema.properties as object).sort()).toEqual(['description', 'draft', 'repository', 'reviewers', 'sourceBranch', 'targetBranch', 'title'])
+    expect(tool.description).toMatch(/"reviewers": up to 10 logins, display names or emails/)
   })
 })
 
@@ -382,5 +390,114 @@ describe('create_pull_request: the host answer', () => {
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('may or may not have been opened')
     expect(text(result)).toContain('Do not call create_pull_request again')
+  })
+})
+
+describe('create_pull_request: reviewers', () => {
+  it('resolves each name to one person, shows them on the card, and asks them with the create', async () => {
+    const s = setup({ answer: approve() })
+    const result = await s.call({ title: 'T', reviewers: ['Jane Doe', '@RAHUL', 'team:platform'] })
+    expect(result.isError).toBeFalsy()
+    expect(opened(s.events)[0].hostWrite?.create?.reviewers).toEqual([
+      { id: 'jdoe', login: 'jdoe', displayName: 'Jane Doe', kind: 'user' },
+      { id: 'rahul', login: 'rahul', displayName: 'Rahul K', kind: 'user' },
+      { id: 'team:platform', login: 'team:platform', displayName: 'Platform', kind: 'team' },
+    ])
+    expect(opened(s.events)[0].detail).toContain('Reviewers: Jane Doe (jdoe), Rahul K (rahul), Platform (team:platform)')
+    expect(s.access.reviewerPool).toHaveBeenCalledWith(APP)
+    expect(s.creates[0]).toMatchObject({ reviewers: ['jdoe', 'rahul', 'team:platform'] })
+    expect(text(result)).toContain('Asked Jane Doe (jdoe), Rahul K (rahul), Platform (team:platform) to review it.')
+  })
+
+  it('reads no candidates and sends no reviewers when the agent named none', async () => {
+    const s = setup({ answer: approve() })
+    await s.call({ title: 'T' })
+    expect(s.access.reviewerPool).not.toHaveBeenCalled()
+    expect(opened(s.events)[0].hostWrite?.create).not.toHaveProperty('reviewers')
+    expect(s.creates[0]).not.toHaveProperty('reviewers')
+  })
+
+  it('refuses an unknown or ambiguous name before the card, listing the close candidates', async () => {
+    const s = setup({ answer: approve() })
+    const result = await s.call({ title: 'T', reviewers: ['jane'] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('"jane" is not someone who can review here; close: Jane Doe (jdoe).')
+    expect(text(result)).toContain('Nothing was created.')
+    expect(opened(s.events)).toEqual([])
+    expect(s.creates).toEqual([])
+  })
+
+  it('refuses the signed-in user as a reviewer', async () => {
+    const s = setup({ answer: approve() })
+    const result = await s.call({ title: 'T', reviewers: ['jdoe', 'ME'] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('"ME" is the signed-in user')
+    expect(s.creates).toEqual([])
+  })
+
+  it('refuses more than 10 reviewers before reading anything', async () => {
+    const s = setup({ answer: approve() })
+    const result = await s.call({ title: 'T', reviewers: Array.from({ length: 11 }, (_, i) => `r${i}`) })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('at most 10')
+    expect(s.access.reviewerPool).not.toHaveBeenCalled()
+  })
+
+  it('refuses, opening nothing, when the candidates cannot be read', async () => {
+    const s = setup({ answer: approve(), pool: { ok: false, error: { kind: 'offline', host: 'github', message: 'No network.' } } })
+    const result = await s.call({ title: 'T', reviewers: ['jdoe'] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('Could not read who can review on acme/app: No network. Call again without "reviewers"')
+    expect(opened(s.events)).toEqual([])
+  })
+
+  it('asks only the reviewers the user kept in the card, and tells the agent who was removed', async () => {
+    const s = setup({ answer: approve({ reviewers: ['rahul', 'someone-else'] }) })
+    const result = await s.call({ title: 'T', reviewers: ['jdoe', 'rahul'] })
+    expect(s.creates[0]).toMatchObject({ reviewers: ['rahul'] })
+    expect(text(result)).toContain('The user edited the reviewers, removing Jane Doe (jdoe) first.')
+    expect(text(result)).toContain('Asked Rahul K (rahul) to review it.')
+  })
+
+  it('sends none when the user removed them all', async () => {
+    const s = setup({ answer: approve({ reviewers: [] }) })
+    await s.call({ title: 'T', reviewers: ['jdoe'] })
+    expect(s.creates[0]).not.toHaveProperty('reviewers')
+  })
+
+  it('opens with every reviewer and no card in full access; plan mode still refuses', async () => {
+    const full = setup({ mode: 'full-access' })
+    const result = await full.call({ title: 'T', reviewers: ['jdoe'] })
+    expect(result.isError).toBeFalsy()
+    expect(opened(full.events)).toEqual([])
+    expect(full.creates[0]).toMatchObject({ reviewers: ['jdoe'] })
+
+    const plan = setup({ mode: 'plan' })
+    expect((await plan.call({ title: 'T', reviewers: ['jdoe'] })).isError).toBe(true)
+    expect(plan.access.reviewerPool).not.toHaveBeenCalled()
+    expect(plan.creates).toEqual([])
+  })
+
+  it('reports the URL and which reviewers failed when GitHub opened the PR but refused them', async () => {
+    const s = setup({
+      answer: approve(),
+      create: () => ({
+        ok: true,
+        data: { number: 42, url: 'https://github.com/acme/app/pull/42', existing: false, reviewerFailure: { reviewers: ['jdoe', 'rahul'], error: { kind: 'invalid', host: 'github', message: 'Reviews may only be requested from collaborators.' } } },
+      }),
+    })
+    const result = await s.call({ title: 'T', reviewers: ['jdoe', 'rahul'] })
+    expect(result.isError).toBeFalsy()
+    expect(s.access.createPullRequest).toHaveBeenCalledTimes(1)
+    expect(text(result)).toContain('Opened acme/app #42: https://github.com/acme/app/pull/42')
+    expect(text(result)).toContain('Asking Jane Doe (jdoe), Rahul K (rahul) to review failed: Reviews may only be requested from collaborators.')
+    expect(text(result)).toContain('do not open it again')
+    expect(s.links).toHaveLength(1)
+  })
+
+  it('says the reviewers were not changed when a PR is already open for the branch', async () => {
+    const s = setup({ open: { number: 7, url: 'u7' } })
+    const result = await s.call({ title: 'T', reviewers: ['jdoe'] })
+    expect(text(result)).toContain('Its reviewers were not changed')
   })
 })

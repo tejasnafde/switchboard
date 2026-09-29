@@ -73,6 +73,28 @@ describe('GitHub', () => {
     expect(err.error.kind).toBe('invalid')
   })
 
+  it('asks the reviewers in one requested_reviewers call after the create, teams apart', async () => {
+    const { provider, calls } = fakeGh([
+      { stdout: JSON.stringify({ number: 190, html_url: 'https://github.com/acme/app/pull/190' }), stderr: '', code: 0 },
+      { stdout: '{}', stderr: '', code: 0 },
+    ])
+    expect(await provider.createPullRequest(APP, { ...input, reviewers: ['jdoe', 'team:platform', 'rahul'] })).toEqual({ number: 190, url: 'https://github.com/acme/app/pull/190' })
+    expect(calls[0].body).not.toHaveProperty('reviewers')
+    expect(calls[1].args).toEqual(['api', '--method', 'POST', 'repos/acme/app/pulls/190/requested_reviewers', '--input', '-'])
+    expect(calls[1].body).toEqual({ reviewers: ['jdoe', 'rahul'], team_reviewers: ['platform'] })
+  })
+
+  it('keeps the opened PR and reports the reviewers when the second call fails, never sending the create again', async () => {
+    const { provider, calls } = fakeGh([
+      { stdout: JSON.stringify({ number: 190, html_url: 'https://github.com/acme/app/pull/190' }), stderr: '', code: 0 },
+      { stdout: JSON.stringify({ message: 'Reviews may only be requested from collaborators.' }), stderr: 'gh: Reviews may only be requested from collaborators. (HTTP 422)', code: 1 },
+    ])
+    const opened = await provider.createPullRequest(APP, { ...input, reviewers: ['stranger'] })
+    expect(opened).toMatchObject({ number: 190, url: 'https://github.com/acme/app/pull/190', reviewerFailure: { reviewers: ['stranger'], error: { kind: 'invalid' } } })
+    expect(calls).toHaveLength(2)
+    expect(calls.filter((c) => c.args[3] === 'repos/acme/app/pulls')).toHaveLength(1)
+  })
+
   it('never retries the write itself', async () => {
     const { provider, calls } = fakeGh([{ stdout: '', stderr: 'gh: Bad gateway (HTTP 502)', code: 1 }])
     await expect(provider.createPullRequest(APP, input)).rejects.toBeInstanceOf(PrHostError)
@@ -104,6 +126,14 @@ describe('Bitbucket', () => {
       url: `${BB_REPO}/pullrequests`,
       body: { title: 'Backoff', description: 'Adds jitter.\n\nvia Switchboard', source: { branch: { name: 'feat/x' } }, destination: { branch: { name: 'main' } } },
     }])
+  })
+
+  it('asks the reviewers in the same POST, by account uuid', async () => {
+    const { provider, sent } = fakeFetch([{ status: 201, body: { id: 613, links: { html: { href: 'https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/613' } } } }])
+    const uuid = '{00000000-0000-4000-8000-000000000002}'
+    await provider.createPullRequest(BOT, { ...input, reviewers: [uuid] })
+    expect(sent).toHaveLength(1)
+    expect(sent[0].body).toMatchObject({ reviewers: [{ uuid }] })
   })
 
   it('says the API token is missing write:pullrequest when Bitbucket names the scope', async () => {
@@ -171,6 +201,32 @@ describe('PullRequestService.createPullRequest', () => {
     }
     expect(openPullRequestFor).not.toHaveBeenCalled()
     expect(createPullRequest).not.toHaveBeenCalled()
+  })
+
+  it('passes reviewer ids on, and refuses ones that are not this host\'s before the host', async () => {
+    const createPullRequest = vi.fn(async () => ({ number: 5, url: 'u' }))
+    const s = service({ openPullRequestFor: vi.fn(async () => null), createPullRequest })
+    await s.createPullRequest(APP, { ...input, reviewers: ['jdoe', 'team:platform'] })
+    expect(createPullRequest).toHaveBeenCalledWith(APP, { ...input, reviewers: ['jdoe', 'team:platform'] })
+    for (const reviewers of [['-x'], ['jdoe', 'jdoe'], Array.from({ length: 11 }, (_, i) => `r${i}`), 'jdoe']) {
+      const r = await s.createPullRequest(APP, { ...input, reviewers })
+      expect(r.ok ? null : r.error.kind).toBe('invalid')
+    }
+    expect(createPullRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns who may review a new PR, recent reviewers first, with the signed-in user', async () => {
+    const member = { id: 'rahul', person: { login: 'rahul', displayName: 'rahul', avatarUrl: null }, kind: 'user' as const, reviewed: 0 }
+    const s = service({
+      list: vi.fn(async () => [{ repo: APP, error: null, prs: [{ reviewers: [{ id: 'jdoe', person: { login: 'jdoe', displayName: 'Jane', avatarUrl: null }, state: 'approved' as const, requested: true }] }] }]) as unknown as PullRequestProvider['list'],
+      reviewerCandidates: vi.fn(async () => [member]),
+      viewerIdentity: vi.fn(async () => ({ id: 'me', login: 'me' })),
+    })
+    const pool = await s.reviewerPool(APP)
+    expect(pool.ok && pool.data.candidates.map((c) => c.id)).toEqual(['jdoe', 'rahul'])
+    expect(pool.ok && pool.data.viewer).toEqual({ id: 'me', login: 'me' })
+    const other = await s.reviewerPool({ ...APP, owner: 'someone' })
+    expect(other.ok ? null : other.error.kind).toBe('unsupported_repo')
   })
 
   it('refuses a Bitbucket draft', async () => {

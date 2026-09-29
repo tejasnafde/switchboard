@@ -8,7 +8,8 @@
  * `globalThis.__sbDemoPrWrites` (the e2e reads it from the main process) and
  * applied to an in-memory overlay, so the screens show the result.
  */
-import type { CreatedPr, CreatePrInput } from '@shared/agent-pr-create'
+import type { CreatedPr, CreatePrInput, OpenedPr } from '@shared/agent-pr-create'
+import type { ReviewerViewer } from '@shared/agent-pr-reviewers'
 import type { InlineCommentInput, SubmitReviewInput } from '@shared/pull-request-writes'
 import {
   mergeBlockers,
@@ -476,7 +477,11 @@ class DemoProvider implements PullRequestProvider {
   }
 
   /** Recorded only: the scripted list stays as it is for the visual harness. */
-  async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<CreatedPr> {
+  async viewerIdentity(): Promise<ReviewerViewer> {
+    return { id: reviewerId(this.host, ME), login: ME.login }
+  }
+
+  async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<OpenedPr> {
     const number = 900 + ++this.seq
     this.record('create', { ...repo, number }, input)
     const path = this.host === 'github' ? 'pull' : 'pull-requests'

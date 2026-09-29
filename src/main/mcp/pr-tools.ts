@@ -32,7 +32,16 @@ import {
   PR_DESCRIPTION_MAX_CHARS,
   repositoryProblem,
   type CreatedPr,
+  type OpenedPr,
 } from '@shared/agent-pr-create'
+import {
+  AGENT_PR_MAX_REVIEWERS,
+  keptReviewers,
+  resolveReviewers,
+  reviewerLabel,
+  type HostWriteReviewer,
+  type ReviewerViewer,
+} from '@shared/agent-pr-reviewers'
 import {
   checkCommentText,
   checkLineTarget,
@@ -61,6 +70,7 @@ import {
   type PrDetail,
   type PrRef,
   type PrResult,
+  type PrReviewerCandidate,
   type RepoRef,
 } from '@shared/pull-requests'
 import type { RuntimeEvent, RuntimeMode } from '@shared/provider-events'
@@ -108,7 +118,9 @@ export interface AgentPullRequestAccess {
   defaultBranch(repo: RepoRef): Promise<PrResult<string>>
   openPullRequestFor(repo: RepoRef, branch: string): Promise<PrResult<CreatedPr | null>>
   /** Returns the open one instead (`existing`) when one appeared for the branch meanwhile. */
-  createPullRequest(repo: RepoRef, input: { title: string; description: string; sourceBranch: string; targetBranch: string; draft: boolean }): Promise<PrResult<CreatedPr & { existing: boolean }>>
+  createPullRequest(repo: RepoRef, input: { title: string; description: string; sourceBranch: string; targetBranch: string; draft: boolean; reviewers?: string[] }): Promise<PrResult<OpenedPr & { existing: boolean }>>
+  /** Who may review a pull request opened on `repo` (the Reviewers card's candidates), and the signed-in user. */
+  reviewerPool(repo: RepoRef): Promise<PrResult<{ candidates: PrReviewerCandidate[]; viewer: ReviewerViewer }>>
   /** Links a PR of the chat's repository to the chat and tells clients; `created` asks Reviews to refresh. */
   /** False when the link could not be stored; the PR exists either way. */
   linkToChat(chatId: string, ref: PrRef, created: boolean): boolean
@@ -750,8 +762,12 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       'Commit and push the branch first (git push -u <remote> <branch>); the source branch must already be on the remote.',
       'sourceBranch defaults to the branch checked out in this chat, targetBranch to the repository\'s default branch.',
       'If a pull request is already open for the source branch, nothing is created: that one is linked to this chat and returned.',
-      'The user sees the title and description in a Switchboard approval card, can edit both, and decides whether it is opened (in full access it opens without a card).',
+      'The user sees the title, description and reviewers in a Switchboard approval card, can edit them, and decides whether it is opened (in full access it opens without a card).',
       'It is opened as the user, the description ending with a "via Switchboard" line. "draft" is GitHub only. Refused in plan mode.',
+      `To ask people to review it, pass "reviewers": up to ${AGENT_PR_MAX_REVIEWERS} logins, display names or emails, each matching exactly one person`,
+      'who can review on that repository (GitHub collaborators or a team as team:<slug>, Bitbucket workspace members); case does not matter.',
+      'A name that matches nobody or several people is refused before anything is opened, with the close matches listed: call again with one of those logins.',
+      'The user sees the reviewers in the card and may remove any. Never name the user: the author cannot review their own pull request.',
     ].join('\n'),
     inputSchema: {
       type: 'object',
@@ -762,6 +778,12 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         targetBranch: { type: 'string', description: 'The branch to merge into. Default: the repository\'s default branch.' },
         draft: { type: 'boolean', description: 'Open it as a draft. GitHub only; refused on Bitbucket.' },
         repository: { type: 'string', description: 'Optional: "owner/name" or its URL. Must be the repository of this chat\'s project; any other is refused.' },
+        reviewers: {
+          type: 'array',
+          items: { type: 'string' },
+          maxItems: AGENT_PR_MAX_REVIEWERS,
+          description: 'Optional: who to ask for a review, by login, display name or email (GitHub teams as team:<slug>). Each must match exactly one person.',
+        },
       },
       required: ['title'],
       additionalProperties: false,
@@ -802,7 +824,19 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if (!open.ok) return toolText(`Could not check for an open pull request on ${repoLabel}: ${open.error.message} Nothing was created.`, true)
       if (open.data) {
         const { linked } = linkCreated(access, repo, open.data, false)
-        return toolText(`A pull request is already open for ${source}: ${repoLabel} #${open.data.number}, ${open.data.url}. ${linked} No new one was created.`)
+        const skipped = input.value.reviewers.length > 0 ? ' Its reviewers were not changed; the user can add them in Reviews.' : ''
+        return toolText(`A pull request is already open for ${source}: ${repoLabel} #${open.data.number}, ${open.data.url}. ${linked} No new one was created.${skipped}`)
+      }
+
+      let reviewers: HostWriteReviewer[] = []
+      if (input.value.reviewers.length > 0) {
+        const pool = await access.reviewerPool(repo)
+        if (!pool.ok) {
+          return toolText(`Could not read who can review on ${repoLabel}: ${pool.error.message} Call again without "reviewers", or tell the user. Nothing was created.`, true)
+        }
+        const resolved = resolveReviewers(repo.host, input.value.reviewers, pool.data.candidates, pool.data.viewer)
+        if (!resolved.ok) return toolText(resolved.message, true)
+        reviewers = resolved.value
       }
 
       const draft = { title: input.value.title, description: input.value.description }
@@ -816,7 +850,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         url: null,
         location: null,
         quote: null,
-        create: { repoLabel, sourceBranch: source, targetBranch: target, ...draft, draft: input.value.draft },
+        create: { repoLabel, sourceBranch: source, targetBranch: target, ...draft, draft: input.value.draft, ...(reviewers.length > 0 ? { reviewers } : {}) },
         maxChars: PR_DESCRIPTION_MAX_CHARS,
       }, signal)
       if ('content' in outcome) return outcome
@@ -838,12 +872,14 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if (withoutCard && createPullRequestGate(ctx.runtimeMode()) !== 'allow') {
         return toolText('The chat left full access before the pull request was opened, so nothing was created. Call again: the user will see an approval card.', true)
       }
+      const kept = keptReviewers(reviewers, outcome.response.reviewers)
       const created = await access.createPullRequest(repo, {
         title: title.value,
         description: withViaMarker(description.value),
         sourceBranch: source,
         targetBranch: target,
         draft: input.value.draft,
+        ...(kept.length > 0 ? { reviewers: kept.map((r) => r.id) } : {}),
       })
       if (!created.ok) {
         if (!isUncertainCreateFailure(created.error)) return toolText(`Opening the pull request failed: ${created.error.message} Nothing was created.`, true)
@@ -851,7 +887,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         const after = await access.openPullRequestFor(repo, source)
         if (after.ok && after.data) {
           const { linked } = linkCreated(access, repo, after.data, true)
-          return toolText(`Opened ${repoLabel} #${after.data.number}: ${after.data.url} (the host's answer was lost, but the pull request is there). ${linked} Do not open it again.`)
+          const unsure = kept.length > 0 ? ' Whether its reviewers were asked is not known: tell the user to check them in Reviews.' : ''
+          return toolText(`Opened ${repoLabel} #${after.data.number}: ${after.data.url} (the host's answer was lost, but the pull request is there). ${linked} Do not open it again.${unsure}`)
         }
         log.warn('agent pull request create result uncertain', { host: repo.host, kind: created.error.kind })
         return toolText(
@@ -860,16 +897,25 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       }
       const { ref, linked } = linkCreated(access, repo, created.data, !created.data.existing)
       if (created.data.existing) {
-        return toolText(`A pull request for ${source} was opened while the card was open: ${repoLabel} #${ref.number}, ${created.data.url}. ${linked} No new one was created.`)
+        const skipped = kept.length > 0 ? ' Its reviewers were not changed; the user can add them in Reviews.' : ''
+        return toolText(`A pull request for ${source} was opened while the card was open: ${repoLabel} #${ref.number}, ${created.data.url}. ${linked} No new one was created.${skipped}`)
       }
-      log.info('agent pull request opened', { host: repo.host, number: ref.number })
+      log.info('agent pull request opened', { host: repo.host, number: ref.number, reviewers: kept.length })
+      const removed = reviewers.filter((r) => !kept.includes(r))
       const edits = [
         title.value !== draft.title ? `the title to "${title.value}"` : '',
         description.value !== draft.description ? 'the description' : '',
+        removed.length > 0 ? `the reviewers, removing ${removed.map(reviewerLabel).join(', ')}` : '',
       ].filter(Boolean)
+      const failure = created.data.reviewerFailure
+      const asked = kept.length === 0 ? ''
+        : failure
+          ? ` Asking ${kept.filter((r) => failure.reviewers.includes(r.id)).map(reviewerLabel).join(', ')} to review failed: ${failure.error.message} ` +
+            `The pull request is open either way: do not open it again. Tell the user, who can add them in Reviews.`
+          : ` Asked ${kept.map(reviewerLabel).join(', ')} to review it.`
       return toolText(
         `Opened ${repoLabel} #${ref.number}: ${created.data.url} (${source} -> ${target}). ${linked}` +
-        `${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}`,
+        `${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}${asked}`,
       )
     },
   }

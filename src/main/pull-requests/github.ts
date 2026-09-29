@@ -8,7 +8,8 @@
  * which would read a body starting with `@` as a file name.
  */
 import { execFile } from 'node:child_process'
-import type { CreatedPr, CreatePrInput } from '@shared/agent-pr-create'
+import type { CreatedPr, CreatePrInput, OpenedPr } from '@shared/agent-pr-create'
+import type { ReviewerViewer } from '@shared/agent-pr-reviewers'
 import type { InlineCommentInput, ReviewEvent, SubmitReviewInput } from '@shared/pull-request-writes'
 import type { MergeStrategy, PrChangedFile, PrCheck, PrConversation, PrDetail, PrError, PrRef, PrReviewerCandidate, RepoRef } from '@shared/pull-requests'
 import { repoKey } from '@shared/pull-requests'
@@ -481,7 +482,12 @@ export class GitHubProvider implements PullRequestProvider {
     return pr && Number.isInteger(pr.number) && pr.html_url ? { number: pr.number as number, url: pr.html_url } : null
   }
 
-  async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<CreatedPr> {
+  async viewerIdentity(): Promise<ReviewerViewer> {
+    const login = await this.viewerLogin()
+    return { id: login, login }
+  }
+
+  async createPullRequest(repo: RepoRef, input: CreatePrInput): Promise<OpenedPr> {
     let pr: { number?: number; html_url?: string } | null
     try {
       pr = await this.rest('POST', `repos/${repo.owner}/${repo.name}/pulls`, {
@@ -501,12 +507,30 @@ export class GitHubProvider implements PullRequestProvider {
     if (!pr || !Number.isInteger(pr.number) || !pr.html_url) {
       throw new PrHostError({ kind: 'unknown', host: 'github', message: 'GitHub did not return the new pull request.' })
     }
-    return { number: pr.number as number, url: pr.html_url }
+    const opened: OpenedPr = { number: pr.number as number, url: pr.html_url }
+    const reviewers = input.reviewers ?? []
+    if (reviewers.length === 0) return opened
+    // The pull request exists now: a failure here is reported, and the create is never sent again.
+    try {
+      await this.rest('POST', `repos/${repo.owner}/${repo.name}/pulls/${opened.number}/requested_reviewers`, ghReviewersBody(reviewers))
+      return opened
+    } catch (err) {
+      const error = err instanceof PrHostError ? err.error : { kind: 'unknown' as const, host: 'github' as const, message: String(err) }
+      log.warn('GitHub opened the pull request but refused its reviewers', { number: opened.number, kind: error.kind })
+      return { ...opened, reviewerFailure: { reviewers, error } }
+    }
   }
 }
 
 const GH_CREATE_SCOPE_HINT =
   "gh's token must be allowed to open pull requests here: the repo scope for a classic token (gh auth refresh -s repo), Pull requests: write for a fine-grained one."
+
+/** Several reviewers in one request: logins in `reviewers`, `team:<slug>` in `team_reviewers`. */
+export function ghReviewersBody(ids: readonly string[]): { reviewers?: string[]; team_reviewers?: string[] } {
+  const teams = ids.filter((id) => id.startsWith('team:')).map((id) => id.slice('team:'.length))
+  const users = ids.filter((id) => !id.startsWith('team:'))
+  return { ...(users.length > 0 ? { reviewers: users } : {}), ...(teams.length > 0 ? { team_reviewers: teams } : {}) }
+}
 
 /** `team:<slug>` goes in `team_reviewers`, a login in `reviewers`. */
 export function ghReviewerBody(reviewer: string): { reviewers: string[] } | { team_reviewers: string[] } {
