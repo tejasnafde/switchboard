@@ -144,4 +144,22 @@ describe('afterWrite', () => {
     }
     expect(listCalls).toHaveBeenCalledTimes(2)
   })
+  it('keeps the written PR through a stale follow-up that starts first, with one follow-up read', async () => {
+    let answer!: (v: unknown) => void
+    const listCalls = vi.fn()
+      .mockImplementationOnce(() => new Promise((r) => { answer = r }))
+      .mockImplementation(async () => ({ ok: true, data: list(3) }))
+    const s = await store({ list: listCalls, conversations: async () => ({ ok: true, data: [thread(true)] }) })
+    const inFlight = s.getState().refresh('manual')
+    s.getState().markStale()
+    await s.getState().afterWrite(ref, ['conversations'])
+    answer({ ok: true, data: list(2) })
+    await inFlight
+    await vi.waitFor(() => expect(s.getState().list?.prs[0].updatedAt).toBe(3))
+    await new Promise((r) => setTimeout(r, 0))
+    const c = s.getState().resources[key]?.conversations
+    expect(c?.status === 'ok' && c.data[0].resolved).toBe(true)
+    expect(listCalls).toHaveBeenCalledTimes(2)
+    expect(s.getState().stale).toBe(false)
+  })
 })
