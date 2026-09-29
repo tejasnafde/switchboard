@@ -84,9 +84,34 @@ describe('hostWriteShownDigest', () => {
     create: { repoLabel: 'acme/app', sourceBranch: 'feat/x', targetBranch: 'main', title: 'Add it', description: 'Line one.\nLine two.', draft: false },
   }
 
+  const withReviewers: HostWriteCard = {
+    ...create, host: 'github',
+    create: {
+      ...create.create!, description: 'Line one.',
+      reviewers: [
+        { id: 'jdoe', login: 'jdoe', displayName: 'Jane Doé', kind: 'user' },
+        { id: 'team:platform', login: 'team:platform', displayName: 'platform', kind: 'team' },
+        { id: 'rk', login: 'rk', displayName: 'rk', kind: 'user' },
+      ],
+    },
+  }
+
   it('matches the pinned cross-implementation vectors', () => {
     expect(hostWriteShownDigest('sbmcp_42', reply)).toBe('d3cf5b181c2a5b68')
     expect(hostWriteShownDigest('sbmcp_43', create)).toBe('fa05a2aef032d27a')
+    expect(hostWriteShownDigest('sbmcp_44', withReviewers)).toBe('3dc4b25b5a5e1bd1')
+  })
+
+  it('covers the reviewers a create asks, so a phone that did not show them cannot approve', () => {
+    expect(hostWritePreview(withReviewers)?.sections.at(-1)).toEqual({ label: 'Reviewers', text: 'Jane Doé (jdoe)\nplatform (team:platform)\nrk' })
+    const base = hostWriteShownDigest('sbmcp_44', withReviewers)
+    const fewer = { ...withReviewers, create: { ...withReviewers.create!, reviewers: withReviewers.create!.reviewers!.slice(1) } }
+    expect(hostWriteShownDigest('sbmcp_44', fewer)).not.toBe(base)
+    expect(hostWriteShownDigest('sbmcp_44', { ...withReviewers, create: { ...withReviewers.create!, reviewers: undefined } })).not.toBe(base)
+    // A reviewer the phone cannot label: it cannot show everything the approval asks.
+    const broken = { ...withReviewers, create: { ...withReviewers.create!, reviewers: [{ id: 'x' }] } } as unknown as HostWriteCard
+    expect(hostWritePreview(broken)).toBeNull()
+    expect(hostWriteShownDigest('sbmcp_44', broken)).toBeNull()
   })
 
   it('does not match the same text on another card, pull request, repository, host or branch', () => {

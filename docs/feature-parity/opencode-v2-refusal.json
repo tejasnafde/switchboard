@@ -1,0 +1,62 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "opencode-v2-refusal",
+  "summary": "OpenCode 2.x ships under the same opencode binary name but breaks the ACP surface Switchboard drives: opencode acp --cwd is rejected, session/set_model was removed, and opencode models attaches to a shared background service. Switchboard now reads opencode --version once per binary (cached by path, mtime and size) and refuses a 2.x or later binary with OpencodeUnsupportedVersionError, whose copy names the fix (install OpenCode 1.x with npm i -g opencode-ai, or switch back). The refusal runs before anything is spawned on every OpenCode path: the ACP adapter's startSession (so it reaches chat as the same start-session error text a TccAccessError does), the native-fork runner (the fork falls back to the transcript handoff, and its warning carries the refusal text so the user sees why), the opencode models catalog probe (no models, logged) and the Settings instance Test (same copy). The check runs --version in the session cwd, and the cache is keyed by cwd and by a hash of the env keys that can pick a binary (PATH, HOME, OPENCODE_*, XDG_* and version-manager keys; values are never logged), so a per-directory version shim answers for the binary the session will run. When --version fails or prints nothing parseable, the install's files decide without running anything: an opencode2 shim beside the binary (the v2 curl installer writes one and @opencode/cli declares it as a second npm bin; v1 has neither), or a real path inside the @opencode/cli package or the opencode-v2 Homebrew formula, is refused as 2.x. With no answer and no signal the binary is let through, so a working 1.x that cannot print its version is not locked out. Unparseable --version output is logged as a byte count only. ~/.opencode/bin/opencode, where the curl installers put the binary, is now a binary candidate, probed after the npm and brew locations.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/opencode/version.ts",
+        "src/main/provider/adapters/opencode/env.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/conversations/native-fork-runners.ts",
+        "src/main/provider/catalog-probe.ts",
+        "src/main/ipc/provider-instances.ts",
+        "tests/unit/opencode-version-gate.test.ts",
+        "tests/unit/native-fork-runners.test.ts",
+        "src/main/conversations/fork-provider-artifacts.ts",
+        "tests/unit/native-fork-coordinator.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The OpenCode adapter, catalog probe, fork runner and instance Test all run on the backend (desktop main process or headless server). A phone only sees the start-session error text, which it already renders for any failed start; no client code or event shape changed."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as React Native: the refusal happens on the backend and reaches Android as the existing start-session error string. No Android code or wire field changed."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/opencode/version.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/provider/catalog-probe.ts",
+        "src/main/ipc/provider-instances.ts",
+        "tests/unit/opencode-version-gate.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing Switchboard stores changed: the version is cached in memory per process, with no schema, migration or setting. OpenCode's own opencode.db is not written by this change, but one exception remains: a 2.x binary whose --version fails or is unparseable AND that has none of the install signals (no opencode2 shim beside it, not inside @opencode/cli or the opencode-v2 formula, for example a renamed or hand-copied binary) is let through, and running it can migrate opencode.db forward in place and move auth.json credentials into it. That is one-way: a later 1.x is not guaranteed to open the migrated DB. The research found this migration in the v2.0.19 source; it was not run."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, native module, deep link or release packaging changed. The headless server bundle picks up the same main-process code."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/opencode-version-gate.test.ts tests/unit/native-fork-runners.test.ts: version parsing (1.18.33, 2.0.19, prefixed and tagged forms, garbage), a failed --version run treated as supported and retried, the per-binary cache and its re-read after an in-place replace, and the refusal on the adapter, catalog probe, Settings Test and native-fork paths with fake opencode scripts that record their arguments (only --version ever runs against a 2.x fake); the install signals (opencode2 shim, @opencode/cli real path via a symlink, the opencode-v2 Cellar path, none, and a readable 1.x winning over a shim), --version run in and cached per cwd, and unparseable output logged as a byte count without its text.",
+      "npm run typecheck and npm test -- --maxWorkers=2.",
+      "npx vitest run tests/unit/native-fork-coordinator.test.ts: a native OpenCode fork refused as 2.x completes with the transcript handoff and a native-fork-unsupported-version warning whose message is the refusal text. opencode-version-gate.test.ts: the env fingerprint ignores API keys and key order and changes with PATH or an OPENCODE_* key, and a changed OPENCODE_* value re-reads the version."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No real OpenCode 1.x or 2.x binary was run. The 2.x behaviour (acp --cwd rejected, set_model removed, models on a shared service) comes from reading the v2.0.19 source, per /tmp/sb-ocv2detect-job/opencode-v2-research.md. The exact opencode --version output of 2.x was not observed; the parser accepts bare, v-prefixed and name-prefixed forms.",
+      "The in-app rendering of the refusal was not looked at in the running app; it is the existing start-session failure path that TccAccessError uses.",
+      "The v2 install signals come from the v2.0.19 install script and packages/cli/package.json, not from a real 2.x install. A stale opencode2 shim left beside a 1.x binary (for example after a manual downgrade) refuses that 1.x only when its --version also fails."
+    ]
+  }
+}

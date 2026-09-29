@@ -37,17 +37,24 @@ export const OPENCODE_API_KEYS = [
 
 let cachedPath: string | null | undefined
 
-/** Find opencode binary on PATH and common install locations. */
-export function findOpencodePath(): string | null {
-  if (cachedPath !== undefined) return cachedPath
-  const home = process.env.HOME || ''
-  const candidates = [
+/** Install locations probed before falling back to `which`, in order. */
+export function opencodeCandidatePaths(home: string): string[] {
+  return [
     '/opt/homebrew/bin/opencode',
     '/usr/local/bin/opencode',
     `${home}/.local/bin/opencode`,
     `${home}/.npm-global/bin/opencode`,
     `${home}/node_modules/.bin/opencode`,
+    // Where the curl installers (v1 and v2) put it. Last, so an npm or brew
+    // 1.x install wins over a curl-installed 2.x on the same machine.
+    `${home}/.opencode/bin/opencode`,
   ]
+}
+
+/** Find opencode binary on PATH and common install locations. */
+export function findOpencodePath(): string | null {
+  if (cachedPath !== undefined) return cachedPath
+  const candidates = opencodeCandidatePaths(process.env.HOME || '')
   for (const p of candidates) {
     try {
       execSync(`test -x "${p}"`, { timeout: 2000 })
@@ -61,7 +68,8 @@ export function findOpencodePath(): string | null {
     cachedPath = execSync('which opencode 2>/dev/null', {
       encoding: 'utf-8', timeout: 5000,
     }).trim().split('\n')[0] || null
-  } catch {
+  } catch (err) {
+    log.debug('opencode not found on PATH', err)
     cachedPath = null
   }
   return cachedPath

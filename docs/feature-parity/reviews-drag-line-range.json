@@ -1,0 +1,50 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "reviews-drag-line-range",
+  "summary": "Reviews > Files: press on a line number and drag up or down over the gutter to select a range, like GitHub. Same rules as shift-click: one side (the one pressed), inside the hunk the drag started in (a pointer over another hunk clamps to that hunk's first or last line on the side), extended from the pressed line. Pointer capture keeps the drag while the pointer leaves the button; a plain click still selects one line and shift-click still extends; The drag is drawn as a preview: the selection and an open comment box (with its text) stay until the drag is released on a new range, which selects it and closes the box; Escape or a cancelled pointer drops the preview and changes nothing. Moving near the top or bottom of the diff's scroll pane scrolls it. Selected rows keep aria-selected.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/PrDiff.tsx",
+        "src/renderer/components/reviews/line-selection.ts",
+        "tests/unit/review-line-selection.test.ts",
+        "e2e/review-writes.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No phone code changes. The phone has no Reviews screen (staged as mobile_reviews in reviews-write.json), so there is no diff gutter to drag."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No Android code changes. Android has no Reviews destination (staged as native_reviews in reviews-write.json)."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Renderer-only. The selection feeds the existing Comment and Ask the agent paths, which already take a start and end line in one hunk; no channel, type or validation changed."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored. The selection is component state and is dropped when the file changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package, signing, deep link or update channel change; ships with the next desktop build."
+    }
+  },
+  "verification": {
+    "automated": [
+      "dragLineSelection unit tests: extends from the anchor both ways, clamps to the start hunk when the pointer is over an earlier or later hunk, keeps the range over a row with no line on the side, reads only its own side.",
+      "afterDrag unit tests: a drag that never moved or ends on the selected range keeps the selection and open comment box; a new range selects it and closes the box.",
+      "e2e/review-writes.e2e.mjs drives Playwright mouse down/move/up on the built app: a drag down selects 3 rows, a drag up 4, Escape mid-drag keeps the previous 4; with the comment box open and text typed, the box stays open during a drag and Escape keeps it and its text; the existing click-to-select line comment flow still passes (42/42).",
+      "Visual screens phase passed with no baseline change (nothing is selected at rest)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The hunk clamp was not dragged in the e2e: the demo PR's file has one hunk. It is covered by the unit tests only.",
+      "Edge auto-scroll was not exercised by a test or by eye; it scrolls only while the pointer moves near an edge, not while it holds still."
+    ]
+  }
+}

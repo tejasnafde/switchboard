@@ -100,11 +100,12 @@ export function SettingsPage({ page, onNavigate, onClose }: SettingsPageProps) {
     setHighlight(null)
   }, [page])
 
-  // Usage reads take seconds, so they start when Settings opens, on any page,
-  // and Accounts & models has its numbers by the time it is reached.
+  // The account list is prewarmed so Accounts & models lays out its cards at
+  // once. Usage is not: a Claude usage read can be a macOS password prompt,
+  // so only Accounts itself reads it.
   const open = page !== null
   useEffect(() => {
-    if (open) void useProviderInstanceStore.getState().prewarmUsage()
+    if (open) void useProviderInstanceStore.getState().refresh()
   }, [open])
 
   const navigate = useCallback((next: SettingsPageId, rowId: string | null = null) => {

@@ -6,7 +6,7 @@
  * hunks (outdated, or outside the context) are listed after the diff so
  * none disappears.
  */
-import { useState, type MouseEvent } from 'react'
+import { useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { DiffLine, PrChangedFile, PrConversation, PrSummary } from '@shared/pull-requests'
 import { diffAround } from '@shared/review-context'
 import { cn } from '../../lib/utils'
@@ -17,7 +17,7 @@ import { askAgent } from './review-to-chat'
 import { MarkdownWithCopyControls } from '../chat/MarkdownWithCopyControls'
 import { usePendingComments } from './PrReviewForm'
 import { LineCommentBox, PendingCommentCard, ThreadFooter } from './PrWriteControls'
-import { nextLineSelection, type LineSelection } from './line-selection'
+import { afterDrag, dragLineSelection, lineOn, nextLineSelection, type LineSelection } from './line-selection'
 import type { PendingComment } from '../../stores/review-store'
 
 function anchoredTo(line: DiffLine, c: PrConversation): boolean {
@@ -48,18 +48,23 @@ export function ConversationThread({ conversation, now, className, markResolved 
   )
 }
 
-function lineOn(line: DiffLine, side: 'new' | 'old'): number | null {
-  return side === 'old' ? (line.kind !== 'add' ? line.oldLine : null) : (line.kind !== 'del' ? line.newLine : null)
+interface DragHandlers {
+  onPointerDown: (e: PointerEvent<HTMLButtonElement>) => void
+  onPointerMove: (e: PointerEvent<HTMLButtonElement>) => void
+  onPointerUp: (e: PointerEvent<HTMLButtonElement>) => void
+  onPointerCancel: (e: PointerEvent<HTMLButtonElement>) => void
+  onKeyDown: (e: KeyboardEvent<HTMLButtonElement>) => void
 }
 
-function LineNumber({ n, shown, onPick }: { n: number | null; shown: number | null; onPick: (n: number, e: MouseEvent) => void }) {
+function LineNumber({ n, shown, onPick, drag }: { n: number | null; shown: number | null; onPick: (n: number, e: MouseEvent) => void; drag: (n: number) => DragHandlers }) {
   if (n === null) return <span className="pr-[10px] text-right text-[var(--text-muted)] select-none">{shown ?? ''}</span>
   return (
     <button
       type="button"
       onClick={(e) => onPick(n, e)}
+      {...drag(n)}
       aria-label={`Select line ${n}`}
-      title="Select line (shift-click for a range)"
+      title="Select line (drag or shift-click for a range)"
       className="cursor-pointer border-none bg-transparent p-0 pr-[10px] text-right [font:inherit] text-[var(--text-muted)] select-none hover:text-[var(--text-primary)]"
     >
       {n}
@@ -75,14 +80,79 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
   const [sel, setSel] = useState<LineSelection | null>(null)
   const [composing, setComposing] = useState(false)
   const pending = usePendingComments(pr).filter((c) => c.path === file.path)
+  // The range a drag in progress would select, drawn over `sel`. `sel` and the comment box (with its
+  // text) stay as they are until the drag ends on a new range; Escape just drops the preview.
+  const [dragSel, setDragSel] = useState<LineSelection | null>(null)
+  // `moved` turns the click that ends a drag into a no-op.
+  const dragRef = useRef<{ pointerId: number; sel: LineSelection; range: LineSelection | null; moved: boolean } | null>(null)
+  // The click that follows a drag's release is not a pick. A deadline, not a flag: a release
+  // click that never comes (pointer let go elsewhere) must not eat a later keyboard click.
+  const swallowClickUntil = useRef(0)
+  const SWALLOW_CLICK_MS = 1000
+  const endDrag = (e: { currentTarget: HTMLButtonElement }, commit: boolean) => {
+    const d = dragRef.current
+    if (!d) return
+    dragRef.current = null
+    // A cancelled pointer sends no click, so only a committed drag swallows the next one.
+    swallowClickUntil.current = commit && d.moved ? performance.now() + SWALLOW_CLICK_MS : 0
+    if (e.currentTarget.hasPointerCapture(d.pointerId)) e.currentTarget.releasePointerCapture(d.pointerId)
+    setDragSel(null)
+    if (!commit) return
+    const next = afterDrag({ sel, composing }, d.range)
+    setSel(next.sel)
+    setComposing(next.composing)
+  }
+  const drag = (side: 'new' | 'old', hunk: number) => (n: number): DragHandlers => ({
+    onPointerDown: (e) => {
+      swallowClickUntil.current = 0
+      if (e.button !== 0 || e.shiftKey) return
+      // No text selection across the code while dragging; focus by hand since preventDefault skips it.
+      e.preventDefault()
+      e.currentTarget.focus()
+      e.currentTarget.setPointerCapture(e.pointerId)
+      dragRef.current = { pointerId: e.pointerId, sel: { side, hunk, anchor: n, start: n, end: n }, range: null, moved: false }
+    },
+    onPointerMove: (e) => {
+      const d = dragRef.current
+      if (!d || d.pointerId !== e.pointerId) return
+      // ponytail: scrolls only while the pointer moves near an edge (the top band clears the sticky file header), add a timer if holding still should scroll too.
+      const scroller = e.currentTarget.closest('[data-pr-diff]')?.parentElement
+      if (scroller) {
+        const box = scroller.getBoundingClientRect()
+        if (e.clientY < box.top + 48) scroller.scrollBy(0, -20)
+        else if (e.clientY > box.bottom - 24) scroller.scrollBy(0, 20)
+      }
+      const row = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-diff-hunk]')
+      if (!row) return
+      const at = row.dataset[d.sel.side === 'old' ? 'oldLine' : 'newLine']
+      const next = dragLineSelection(d.sel, file.hunks[d.sel.hunk], Number(row.dataset.diffHunk), at === undefined ? null : Number(at))
+      if (!d.moved && next.start === next.end) return
+      d.moved = true
+      d.range = next
+      setDragSel(next)
+    },
+    onPointerUp: (e) => endDrag(e, true),
+    onPointerCancel: (e) => endDrag(e, false),
+    onKeyDown: (e) => {
+      const d = dragRef.current
+      if (e.key !== 'Escape' || !d) return
+      e.stopPropagation()
+      endDrag(e, false)
+      swallowClickUntil.current = performance.now() + SWALLOW_CLICK_MS
+    },
+  })
   const pick = (side: 'new' | 'old', hunk: number, n: number, e: MouseEvent) => {
+    if (performance.now() < swallowClickUntil.current) {
+      swallowClickUntil.current = 0
+      return
+    }
     setComposing(false)
     setSel((prev) => nextLineSelection(prev, side, hunk, n, e.shiftKey))
   }
-  const selected = (line: DiffLine, hunk: number) => {
-    if (!sel || sel.hunk !== hunk) return false
-    const n = lineOn(line, sel.side)
-    return n !== null && n >= sel.start && n <= sel.end
+  const inRange = (r: LineSelection | null, line: DiffLine, hunk: number) => {
+    if (!r || r.hunk !== hunk) return false
+    const n = lineOn(line, r.side)
+    return n !== null && n >= r.start && n <= r.end
   }
   const ask = () => {
     if (!sel) return
@@ -104,12 +174,15 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
       for (const c of here) placed.add(c.id)
       const heldHere = pending.filter((c) => !placedPending.has(c.id) && pendingAt(line, c))
       for (const c of heldHere) placedPending.add(c.id)
-      const isSel = selected(line, h)
-      const lastSel = isSel && sel !== null && lineOn(line, sel.side) === sel.end
+      const isSel = inRange(dragSel ?? sel, line, h)
+      const lastSel = inRange(sel, line, h) && sel !== null && lineOn(line, sel.side) === sel.end
       return [
         <div
           key={`h${h}l${i}`}
           data-diff-line={line.kind}
+          data-diff-hunk={h}
+          data-old-line={lineOn(line, 'old') ?? undefined}
+          data-new-line={lineOn(line, 'new') ?? undefined}
           aria-selected={isSel || undefined}
           className={cn(
             // As wide as its own text, never narrower than the pane: a scrolled long line keeps its colour.
@@ -119,8 +192,8 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
             isSel && 'bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] shadow-[inset_3px_0_0_var(--accent)]',
           )}
         >
-          <LineNumber n={lineOn(line, 'old')} shown={line.oldLine} onPick={(n, e) => pick('old', h, n, e)} />
-          <LineNumber n={lineOn(line, 'new')} shown={line.newLine} onPick={(n, e) => pick('new', h, n, e)} />
+          <LineNumber n={lineOn(line, 'old')} shown={line.oldLine} onPick={(n, e) => pick('old', h, n, e)} drag={drag('old', h)} />
+          <LineNumber n={lineOn(line, 'new')} shown={line.newLine} onPick={(n, e) => pick('new', h, n, e)} drag={drag('new', h)} />
           <span className={cn('select-none', line.kind === 'context' ? 'text-[var(--text-muted)]' : line.kind === 'add' ? 'text-[var(--success)]' : 'text-[var(--error)]')}>
             {line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : ' '}
           </span>
@@ -150,7 +223,7 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
   const unplaced = conversations.filter((c) => !placed.has(c.id))
 
   return (
-    <div>
+    <div data-pr-diff>
       {file.binary && <div className="px-[14px] py-3 text-[12.5px] text-[var(--text-muted)]">Binary file, not shown.</div>}
       {!file.binary && file.hunks.length === 0 && (
         <div className="px-[14px] py-3 text-[12.5px] text-[var(--text-muted)]">

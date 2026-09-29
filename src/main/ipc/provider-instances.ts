@@ -26,6 +26,7 @@ import {
 import { findClaudeBin } from '../provider/adapters/claude-adapter'
 import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencode/env'
+import { assertSupportedOpencode } from '../provider/adapters/opencode/version'
 import { applyEnvOverlay } from '../provider/env-overlay'
 import { resolveInstanceEnv } from '../provider/instance-env'
 import { resolveOauthDirForCreate } from '../provider/oauth-path'
@@ -251,6 +252,8 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
       const overlay: Record<string, string> = {}
       applyEnvOverlay(overlay, instance.env)
       const probeEnv = buildOpencodeEnv(overlay)
+      // A refused 2.x lands in the catch below, so Test reads the same copy as chat.
+      await assertSupportedOpencode(bin, probeEnv)
       const out = await runProbe(bin, ['models'], probeEnv, 8000)
       if (out.error) return { ok: false, message: out.error.message }
       if (out.status !== 0) return { ok: false, message: out.stderr?.trim() || `exit ${out.status}` }

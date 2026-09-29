@@ -35,7 +35,7 @@ describe('arguments', () => {
   it('trims the title, keeps an empty description, and leaves the defaults to the tool', () => {
     expect(checkCreatePrArgs({ title: '  Add  jitter\n' })).toEqual({
       ok: true,
-      value: { title: 'Add jitter', description: '', sourceBranch: null, targetBranch: null, draft: false, repository: null },
+      value: { title: 'Add jitter', description: '', sourceBranch: null, targetBranch: null, draft: false, repository: null, reviewers: [] },
     })
   })
 
@@ -122,14 +122,14 @@ describe('the card', () => {
     expect(buttons.map((b) => [b.id, b.label, b.primary])).toEqual([['deny', 'Deny', false], ['create', 'Open pull request', true]])
     expect(hostWriteButtons({ ...card, create: { ...card.create!, draft: true } })[1].label).toBe('Open draft')
     const draft = initialCreateDraft(card)
-    expect(draft).toEqual({ title: 'Add jitter', description: 'Adds jitter.' })
-    expect(hostWriteResponse(card, buttons[1], '', initialReviewDraft(undefined), { title: 'Mine', description: 'Body' })).toEqual({ title: 'Mine', description: 'Body' })
+    expect(draft).toEqual({ title: 'Add jitter', description: 'Adds jitter.', removedReviewers: [] })
+    expect(hostWriteResponse(card, buttons[1], '', initialReviewDraft(undefined), { title: 'Mine', description: 'Body', removedReviewers: [] })).toEqual({ title: 'Mine', description: 'Body' })
     expect(parseHostWriteResponse({ title: 'Mine', description: 'Body', extra: 1 })).toEqual({ title: 'Mine', description: 'Body' })
   })
 
   it('will not open an emptied title', () => {
-    expect(createDraftProblem({ title: ' ', description: '' })).toBe('The title is empty.')
-    expect(createDraftProblem({ title: 'T', description: '' })).toBeNull()
+    expect(createDraftProblem({ title: ' ', description: '', removedReviewers: [] })).toBe('The title is empty.')
+    expect(createDraftProblem({ title: 'T', description: '', removedReviewers: [] })).toBeNull()
   })
 })
 
