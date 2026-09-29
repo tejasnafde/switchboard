@@ -11,8 +11,10 @@
  * asks through the confirm dialog naming branch and strategy, Cancel sends
  * nothing, Merge sends a merge commit with the head. #612 (yours, blocked,
  * Bitbucket): Merge is disabled and Checks says why there is no Re-run; its
- * merge conflicts show once in each place; a reviewer is added from the
- * combobox and another removed from the row menu; By repository groups and
+ * merge conflicts show once in each place; with a slow demo host, a reviewer
+ * is added from the combobox (recent reviewers while the members load, the
+ * popover closing on the pick, a pending row, the box usable again before the
+ * list refresh ends) and another removed from the row menu; By repository groups and
  * folds the list; #88 is hidden, shown and restored; #612 is declined after
  * the confirm (Cancel sends nothing).
  * Temp dirs are removed. SB_SHOTS=<dir> also saves the review form, the
@@ -188,18 +190,41 @@ try {
   await reviews().locator('[data-file-conflict]').first().waitFor({ state: 'visible', timeout: 10_000 })
   check('the Files tree marks both conflicted files', await reviews().locator('[data-file-conflict]').count() === 2)
 
-  // ── #612: add a reviewer, remove one ──
-  await reviews().getByRole('tab', { name: 'Overview' }).click()
-  await reviews().getByRole('combobox', { name: 'Add reviewer' }).click()
+  // ── #612: add a reviewer with a slow host, remove one ──
+  // A reload drops the candidates the Overview already read, so the slow read is seen from the start.
+  await app.evaluate(() => { globalThis.__sbDemoPrDelayMs = { candidates: 2_500, write: 1_500, list: 6_000 } })
+  await win.reload()
+  await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
+  await win.getByRole('button', { name: 'Reviews', exact: true }).click()
+  await reviews().locator('[data-pr-row]').first().waitFor({ state: 'visible', timeout: 20_000 })
+  await openPr(612)
+  const addBox = reviews().getByRole('combobox', { name: 'Add reviewer' })
+  await addBox.click()
+  const search = win.getByPlaceholder('Find a person')
+  await search.waitFor({ state: 'visible' })
+  check('while the members load, the box offers the repository\'s recent reviewers', await win.getByRole('option', { name: /backend/ }).isVisible())
+  await search.fill('bar')
+  check('the search is usable during the load and says it is loading', await search.isEnabled() && (await win.locator('[cmdk-empty]').innerText()) === 'Loading…')
+  await win.getByRole('option', { name: /barath/ }).waitFor({ state: 'visible', timeout: 15_000 })
   await win.getByRole('option', { name: /barath/ }).click()
+  const picked = Date.now()
+  const pendingRow = reviews().locator('[data-pr-reviewer-pending="barath"]')
+  await pendingRow.waitFor({ state: 'visible', timeout: 1_000 })
+  check('a pick closes the popover at once', !(await search.isVisible()))
+  check('the pending row says it is adding them', (await pendingRow.innerText()).includes('Adding…'))
   await reviews().locator('[data-pr-reviewer="barath"]').waitFor({ state: 'visible', timeout: 10_000 })
+  await addBox.and(win.locator(':enabled')).waitFor({ state: 'visible', timeout: 10_000 })
+  const usable = Date.now() - picked
+  check('the box is usable again once the write and the PR re-read are done, not the whole list', usable < 5_000 && await pendingRow.count() === 0, `${usable}ms`)
   const added = (await writes()).find((w) => w.action === 'add-reviewer')
   check('Add reviewer sends the Bitbucket account uuid', added?.input?.reviewer === '{00000000-0000-4000-8000-000000000005}', JSON.stringify(added))
   await reviews().locator('[data-pr-reviewer="pankaj"]').hover()
   await reviews().getByRole('button', { name: 'Actions for pankaj' }).click()
   await win.getByRole('menuitem', { name: 'Remove reviewer' }).click()
+  await reviews().locator('[data-pr-reviewer="pankaj"]').getByText('Removing…').waitFor({ state: 'visible', timeout: 1_000 })
   await reviews().locator('[data-pr-reviewer="pankaj"]').waitFor({ state: 'hidden', timeout: 10_000 })
-  check('Remove reviewer takes them off the card', true)
+  check('Remove reviewer shows Removing, then takes them off the card', true)
+  await app.evaluate(() => { globalThis.__sbDemoPrDelayMs = undefined })
 
   // ── By repository ──
   await reviews().getByRole('button', { name: 'By repository', exact: true }).click()

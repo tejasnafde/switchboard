@@ -2,11 +2,11 @@
  * The Overview's Reviewers card: who reviews and where they are, plus, where
  * the host lets you (the author, or write / admin access), Add reviewer (a
  * combobox of recent reviewers of the repository, then members the token can
- * see) and Remove in each row's hover menu. Both writes show their result
- * once the host has answered.
+ * see) and Remove in each row's hover menu. The person being added or
+ * removed shows as a pending row until the re-read PR has them (or not).
  */
 import { useEffect, useMemo, useState } from 'react'
-import { candidatesFor, canRemoveReviewer } from '@shared/pull-request-writes'
+import { canRemoveReviewer, offeredReviewers } from '@shared/pull-request-writes'
 import { repoKey, type PrDetail, type PrReviewer, type PrReviewerCandidate } from '@shared/pull-requests'
 import { useReviewStore } from '../../stores/review-store'
 import { Button } from '../ui/button'
@@ -35,12 +35,21 @@ export function ReviewersCard({ pr }: { pr: PrDetail }) {
   const approvals = pr.approvals.required !== null && pr.approvals.required > 0
     ? `${pr.approvals.given} of ${pr.approvals.required}`
     : `${pr.approvals.given} approved`
-  const remove = (r: PrReviewer) => {
+  // Who the write in flight is for: the card shows them as pending until it and the re-read are done.
+  const [adding, setAdding] = useState<PrReviewerCandidate | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
+  const remove = async (r: PrReviewer) => {
     if (!r.id) return
     const reviewer = r.id
-    void write.run('remove reviewer', () => window.api.pullRequests.removeReviewer(pr.ref, { reviewer }))
+    setRemoving(reviewer)
+    await write.run('remove reviewer', () => window.api.pullRequests.removeReviewer(pr.ref, { reviewer }))
+    setRemoving(null)
   }
-  const add = (reviewer: string) => void write.run('add reviewer', () => window.api.pullRequests.addReviewer(pr.ref, { reviewer }))
+  const add = async (c: PrReviewerCandidate) => {
+    setAdding(c)
+    await write.run('add reviewer', () => window.api.pullRequests.addReviewer(pr.ref, { reviewer: c.id }))
+    setAdding(null)
+  }
 
   return (
     <SideCard title="Reviewers" right={pr.reviewers.length > 0 ? approvals : undefined}>
@@ -49,14 +58,30 @@ export function ReviewersCard({ pr }: { pr: PrDetail }) {
         <div key={r.id ?? r.person.login} data-pr-reviewer={r.person.login} className="group">
           <CardRow>
             <Avatar person={r.person} />{r.person.displayName}
-            <span className="ml-auto text-[12px]" style={{ color: REVIEW_LABEL[r.state].color ?? 'var(--text-secondary)' }}>{REVIEW_LABEL[r.state].text}</span>
-            {manage && canRemoveReviewer(pr.ref.host, r) && <ReviewerMenu name={r.person.displayName} disabled={write.pending} onRemove={() => remove(r)} />}
+            {removing !== null && r.id === removing
+              ? <PendingLabel text="Removing…" />
+              : <span className="ml-auto text-[12px]" style={{ color: REVIEW_LABEL[r.state].color ?? 'var(--text-secondary)' }}>{REVIEW_LABEL[r.state].text}</span>}
+            {manage && canRemoveReviewer(pr.ref.host, r) && <ReviewerMenu name={r.person.displayName} disabled={write.pending} onRemove={() => void remove(r)} />}
           </CardRow>
         </div>
       ))}
-      {manage && <AddReviewer pr={pr} disabled={write.pending} onAdd={add} />}
+      {adding && !pr.reviewers.some((r) => r.id === adding.id) && (
+        <div data-pr-reviewer-pending={adding.person.login}>
+          <CardRow><Avatar person={adding.person} />{adding.person.displayName}<PendingLabel text="Adding…" /></CardRow>
+        </div>
+      )}
+      {manage && <AddReviewer pr={pr} disabled={write.pending} onAdd={(c) => void add(c)} />}
       {write.error && <div className="px-3 pb-2"><WriteError error={write.error} /></div>}
     </SideCard>
+  )
+}
+
+function PendingLabel({ text }: { text: string }) {
+  return (
+    <span role="status" className="ml-auto inline-flex items-center gap-[6px] text-[12px] text-[var(--text-muted)]">
+      <span aria-hidden="true" className="size-[10px] rounded-full border-[1.5px] border-solid border-[var(--border)] border-t-[var(--accent)] animate-[sb-spin_720ms_linear_infinite]" />
+      {text}
+    </span>
   )
 }
 
@@ -95,21 +120,26 @@ function ReviewerMenu({ name, disabled, onRemove }: { name: string; disabled: bo
   )
 }
 
-function AddReviewer({ pr, disabled, onAdd }: { pr: PrDetail; disabled: boolean; onAdd: (id: string) => void }) {
+function AddReviewer({ pr, disabled, onAdd }: { pr: PrDetail; disabled: boolean; onAdd: (c: PrReviewerCandidate) => void }) {
   const loaded = useReviewStore((s) => s.candidates[repoKey(pr.ref)])
   useEffect(() => {
     void useReviewStore.getState().loadCandidates(pr.ref)
   }, [pr.ref.host, pr.ref.owner, pr.ref.name])
-  const options = useMemo<ComboboxOption[]>(() => {
-    if (loaded?.status !== 'ok') return []
-    return candidatesFor(loaded.data, pr).map((c) => ({ value: c.id, label: c.person.displayName, hint: candidateHint(c, pr.ref.owner), keywords: [c.person.login] }))
-  }, [loaded, pr])
+  const listed = useReviewStore((s) => s.list?.prs)
+  const offered = useMemo(() => offeredReviewers(loaded?.status === 'ok' ? loaded.data : null, listed ?? [], pr), [loaded, listed, pr])
+  const options = useMemo<ComboboxOption[]>(
+    () => offered.map((c) => ({ value: c.id, label: c.person.displayName, hint: candidateHint(c, pr.ref.owner), keywords: [c.person.login] })),
+    [offered, pr.ref.owner],
+  )
   const emptyText = !loaded || loaded.status === 'loading' ? 'Loading…' : loaded.status === 'error' ? writeErrorText(loaded.error) : 'Nobody else to add.'
   return (
     <CardRow>
       <Combobox
         value=""
-        onValueChange={onAdd}
+        onValueChange={(id) => {
+          const picked = offered.find((c) => c.id === id)
+          if (picked) onAdd(picked)
+        }}
         options={options}
         placeholder="Add reviewer"
         searchPlaceholder="Find a person"

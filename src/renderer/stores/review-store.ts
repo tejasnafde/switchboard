@@ -21,6 +21,13 @@ const log = createRendererLogger('store:reviews')
  */
 const loadTokens = new Map<string, number>()
 let loadSeq = 0
+/**
+ * PRs a write changed, each with the number of list reads started before the write.
+ * Every list read keeps their tabs (the writer re-reads them in place) until a read
+ * that started after the write has succeeded; a read that may predate one queues one more.
+ */
+const writtenPrs = new Map<string, number>()
+let listReads = 0
 
 export type ReviewTab = 'overview' | 'files' | 'conversations' | 'checks'
 
@@ -97,7 +104,7 @@ interface ReviewStore {
   openFile: (path: string) => void
   select: (key: string) => void
   /** `asHeader`: a chat header showing a linked PR reads the list on the same cadence as the open view. */
-  refresh: (reason: PrRefreshReason, opts?: { asHeader?: boolean; keep?: string }) => Promise<void>
+  refresh: (reason: PrRefreshReason, opts?: { asHeader?: boolean }) => Promise<void>
   loadLinkedChats: (ref: PrRef) => Promise<PrLinkChat[]>
   setPendingAsk: (ctx: ReviewContext | null) => void
   load: <K extends TabResource>(ref: PrRef, resource: K, opts?: { force?: boolean }) => Promise<void>
@@ -108,7 +115,7 @@ interface ReviewStore {
   setMergeStrategy: (ref: PrRef, strategy: MergeStrategy) => void
   /** Optimistic resolve: flips the thread in the loaded conversations now. */
   setConversationResolved: (ref: PrRef, id: string, resolved: boolean) => void
-  /** After a write succeeded: re-read the list and the PR's reads the write changed, keeping what is shown until they arrive. */
+  /** After a write succeeded: re-read the PR's reads the write changed (and, not awaited, the list), keeping what is shown until they arrive. */
   afterWrite: (ref: PrRef, refresh: PrResource[]) => Promise<void>
 }
 
@@ -268,6 +275,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const visible = s.visible || opts.asHeader === true
     if (!shouldRefreshPullRequests({ lastFetchAt: s.lastFetchAt, inFlight: s.loading, visible, stale: s.stale }, reason, Date.now())) return
     set({ loading: true, lastFetchAt: Date.now(), stale: false })
+    const readNo = ++listReads
     let result: PrResult<PrListData>
     try {
       result = await window.api.pullRequests.list()
@@ -275,8 +283,12 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       log.warn('listing pull requests failed', err)
       result = { ok: false, error: toError(err) }
     }
-    // A PR an agent opened while this read was in flight may be missing from it.
-    if (get().stale && get().visible) queueMicrotask(() => void get().refresh('open'))
+    const kept = new Set(writtenPrs.keys())
+    const behindWrite = [...writtenPrs.values()].some((before) => before >= readNo)
+    // One follow-up for a write this read may predate (manual, so it always runs) or a PR an
+    // agent opened while it was in flight (may be missing from it).
+    const behindStale = get().stale && get().visible
+    if (behindWrite || behindStale) queueMicrotask(() => void get().refresh(behindWrite ? 'manual' : 'open'))
     if (!result.ok) {
       // Still missing whatever made it stale; the next refresh goes whatever its reason.
       set({ loading: false, listError: result.error, stale: s.stale || get().stale })
@@ -290,18 +302,19 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     }
     set((st) => {
       // A PR that changed on the host (edits, checks, conversations) loses its cached tabs,
-      // except the one a write just changed, whose reads the writer re-reads in place.
+      // except the ones writes just changed, whose reads the writers re-read in place.
       const resources = { ...st.resources }
       for (const key of changed) {
-        if (key === opts.keep) continue
+        if (kept.has(key)) continue
         for (const slot of [...loadTokens.keys()]) if (slot.startsWith(`${key}:`)) loadTokens.delete(slot)
         delete resources[key]
       }
       return { loading: false, listError: null, list: result.data, resources }
     })
+    for (const [key, before] of writtenPrs) if (before < readNo) writtenPrs.delete(key)
     // Tabs of a changed PR reload when their view asks again; a manual refresh re-reads the open PR's tabs now.
     const selected = findSummary(result.data, get().selectedKey)
-    if (selected && reason === 'manual' && prKey(selected.ref) !== opts.keep) {
+    if (selected && reason === 'manual' && !kept.has(prKey(selected.ref))) {
       for (const resource of Object.keys(get().resources[prKey(selected.ref)] ?? {}) as TabResource[]) {
         void get().load(selected.ref, resource, { force: true })
       }
@@ -363,7 +376,10 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
 
   afterWrite: async (ref, refresh) => {
     const key = prKey(ref)
-    await get().refresh('manual', { keep: key })
+    // The list reads every repository (slow in a large Bitbucket workspace), so it
+    // refreshes alongside; a control waits only for the PR it wrote to.
+    writtenPrs.set(key, listReads)
+    if (!get().loading) void get().refresh('manual')
     const loaded = get().resources[key] ?? {}
     await Promise.all(refresh.filter((r) => loaded[r] !== undefined).map((r) => get().load(ref, r, { force: true })))
   },

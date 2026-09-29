@@ -92,4 +92,74 @@ describe('afterWrite', () => {
     // `detail` was never loaded here, so the write does not start reading it.
     expect(s.getState().resources[key]?.detail).toBeUndefined()
   })
+  it('does not wait for a slow list before re-reading the written PR', async () => {
+    const conversations = vi.fn(async () => ({ ok: true, data: [thread(true)] }))
+    const s = await store({ conversations, list: () => new Promise(() => {}) })
+    await s.getState().afterWrite(ref, ['conversations'])
+    const c = s.getState().resources[key]?.conversations
+    expect(c?.status === 'ok' && c.data[0].resolved).toBe(true)
+    expect(s.getState().loading).toBe(true)
+  })
+  it('reads the list once more when the write lands during a list read, keeping the PR\'s tabs', async () => {
+    let answer!: (v: unknown) => void
+    const listCalls = vi.fn()
+      .mockImplementationOnce(() => new Promise((r) => { answer = r }))
+      .mockImplementation(async () => ({ ok: true, data: list(3) }))
+    const s = await store({ list: listCalls, conversations: async () => ({ ok: true, data: [thread(true)] }) })
+    const inFlight = s.getState().refresh('manual')
+    await s.getState().afterWrite(ref, ['conversations'])
+    expect(listCalls).toHaveBeenCalledTimes(1)
+    answer({ ok: true, data: list(2) })
+    await inFlight
+    await vi.waitFor(() => expect(listCalls).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(s.getState().list?.prs[0].updatedAt).toBe(3))
+    expect(s.getState().resources[key]?.conversations?.status).toBe('ok')
+  })
+  it('keeps every PR written during one list read, not only the last', async () => {
+    const other = (updatedAt: number): PrSummary => ({ ...summary(updatedAt), ref: { ...ref, number: 2 } })
+    const both = (updatedAt: number): PrListData => ({ ...list(updatedAt), prs: [summary(updatedAt), other(updatedAt)] })
+    const keyB = prKey(other(1).ref)
+    let answer!: (v: unknown) => void
+    const listCalls = vi.fn()
+      .mockImplementationOnce(() => new Promise((r) => { answer = r }))
+      .mockImplementation(async () => ({ ok: true, data: both(3) }))
+    const conversations = vi.fn(async () => ({ ok: true, data: [thread(true)] }))
+    const s = await store({ list: listCalls, conversations })
+    s.setState({
+      list: both(1),
+      resources: {
+        [key]: { conversations: { status: 'ok', data: [thread(false)], version: 1 } },
+        [keyB]: { conversations: { status: 'ok', data: [thread(false)], version: 1 } },
+      },
+    })
+    const inFlight = s.getState().refresh('manual')
+    await s.getState().afterWrite(ref, ['conversations'])
+    await s.getState().afterWrite(other(1).ref, ['conversations'])
+    answer({ ok: true, data: both(2) })
+    await inFlight
+    await vi.waitFor(() => expect(s.getState().list?.prs[0].updatedAt).toBe(3))
+    for (const k of [key, keyB]) {
+      const c = s.getState().resources[k]?.conversations
+      expect(c?.status === 'ok' && c.data[0].resolved).toBe(true)
+    }
+    expect(listCalls).toHaveBeenCalledTimes(2)
+  })
+  it('keeps the written PR through a stale follow-up that starts first, with one follow-up read', async () => {
+    let answer!: (v: unknown) => void
+    const listCalls = vi.fn()
+      .mockImplementationOnce(() => new Promise((r) => { answer = r }))
+      .mockImplementation(async () => ({ ok: true, data: list(3) }))
+    const s = await store({ list: listCalls, conversations: async () => ({ ok: true, data: [thread(true)] }) })
+    const inFlight = s.getState().refresh('manual')
+    s.getState().markStale()
+    await s.getState().afterWrite(ref, ['conversations'])
+    answer({ ok: true, data: list(2) })
+    await inFlight
+    await vi.waitFor(() => expect(s.getState().list?.prs[0].updatedAt).toBe(3))
+    await new Promise((r) => setTimeout(r, 0))
+    const c = s.getState().resources[key]?.conversations
+    expect(c?.status === 'ok' && c.data[0].resolved).toBe(true)
+    expect(listCalls).toHaveBeenCalledTimes(2)
+    expect(s.getState().stale).toBe(false)
+  })
 })

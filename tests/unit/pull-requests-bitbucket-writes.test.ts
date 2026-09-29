@@ -184,6 +184,44 @@ describe('Bitbucket reviewer and decline requests', () => {
     const denied = fakeFetch([{ status: 403, body: {} }])
     expect(await denied.provider.reviewerCandidates(repo)).toEqual([])
   })
+
+  it('reads a workspace\'s members once per 10 minutes across its repositories, and not an offline failure', async () => {
+    let now = 0
+    let calls = 0
+    let offline = true
+    const impl: FetchLike = vi.fn(async () => {
+      calls++
+      if (offline) throw new TypeError('fetch failed')
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ values: [{ user: { display_name: 'barath', uuid: B } }] }), text: async () => '' }
+    })
+    const provider = new BitbucketProvider(new BitbucketClient({ email: 'me@example.com', apiToken: 'tok-secret' }, impl), () => now)
+    const repo = (name: string) => ({ host: 'bitbucket' as const, owner: 'geoiq', name })
+    await expect(provider.reviewerCandidates(repo('a'))).rejects.toMatchObject({ error: { kind: 'offline' } })
+    offline = false
+    const [a, b] = await Promise.all([provider.reviewerCandidates(repo('a')), provider.reviewerCandidates(repo('b'))])
+    expect(a).toEqual(b)
+    expect(calls).toBe(2)
+    now = 9 * 60_000
+    await provider.reviewerCandidates(repo('c'))
+    expect(calls).toBe(2)
+    now = 11 * 60_000
+    await provider.reviewerCandidates(repo('a'))
+    expect(calls).toBe(3)
+  })
+
+  it('keeps a refused member read but asks again after a rate limit or a server error', async () => {
+    const repo = { host: 'bitbucket' as const, owner: 'geoiq', name: 'a' }
+    const refused = fakeFetch([{ status: 403, body: {} }])
+    expect(await refused.provider.reviewerCandidates(repo)).toEqual([])
+    expect(await refused.provider.reviewerCandidates(repo)).toEqual([])
+    expect(refused.sent).toHaveLength(1)
+    const members = { status: 200, body: { values: [{ user: { display_name: 'barath', uuid: B } }] } }
+    const flaky = fakeFetch([{ status: 429, body: {} }, { status: 503, body: {} }, members])
+    expect(await flaky.provider.reviewerCandidates(repo)).toEqual([])
+    expect(await flaky.provider.reviewerCandidates(repo)).toEqual([])
+    expect((await flaky.provider.reviewerCandidates(repo)).map((c) => c.id)).toEqual([B])
+    expect(flaky.sent).toHaveLength(3)
+  })
 })
 
 describe('mapBbMergeStrategies', () => {
