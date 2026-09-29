@@ -21,8 +21,8 @@ const log = createRendererLogger('store:reviews')
  */
 const loadTokens = new Map<string, number>()
 let loadSeq = 0
-/** A write landed while a list read was in flight: that read may predate it, so one more follows, keeping this PR's tabs. */
-let listAfterWrite: string | null = null
+/** PRs written while a list read was in flight: that read may predate them, so one more follows, keeping their tabs. */
+const listAfterWrite = new Set<string>()
 
 export type ReviewTab = 'overview' | 'files' | 'conversations' | 'checks'
 
@@ -99,7 +99,7 @@ interface ReviewStore {
   openFile: (path: string) => void
   select: (key: string) => void
   /** `asHeader`: a chat header showing a linked PR reads the list on the same cadence as the open view. */
-  refresh: (reason: PrRefreshReason, opts?: { asHeader?: boolean; keep?: string }) => Promise<void>
+  refresh: (reason: PrRefreshReason, opts?: { asHeader?: boolean; keep?: readonly string[] }) => Promise<void>
   loadLinkedChats: (ref: PrRef) => Promise<PrLinkChat[]>
   setPendingAsk: (ctx: ReviewContext | null) => void
   load: <K extends TabResource>(ref: PrRef, resource: K, opts?: { force?: boolean }) => Promise<void>
@@ -279,9 +279,10 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     }
     // A PR an agent opened while this read was in flight may be missing from it.
     if (get().stale && get().visible) queueMicrotask(() => void get().refresh('open'))
-    const writtenKey = listAfterWrite
-    listAfterWrite = null
-    if (writtenKey !== null) queueMicrotask(() => void get().refresh('manual', { keep: writtenKey }))
+    const written = [...listAfterWrite]
+    listAfterWrite.clear()
+    if (written.length > 0) queueMicrotask(() => void get().refresh('manual', { keep: written }))
+    const kept = new Set([...(opts.keep ?? []), ...written])
     if (!result.ok) {
       // Still missing whatever made it stale; the next refresh goes whatever its reason.
       set({ loading: false, listError: result.error, stale: s.stale || get().stale })
@@ -295,10 +296,10 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     }
     set((st) => {
       // A PR that changed on the host (edits, checks, conversations) loses its cached tabs,
-      // except the one a write just changed, whose reads the writer re-reads in place.
+      // except the ones writes just changed, whose reads the writers re-read in place.
       const resources = { ...st.resources }
       for (const key of changed) {
-        if (key === opts.keep || key === writtenKey) continue
+        if (kept.has(key)) continue
         for (const slot of [...loadTokens.keys()]) if (slot.startsWith(`${key}:`)) loadTokens.delete(slot)
         delete resources[key]
       }
@@ -306,7 +307,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     })
     // Tabs of a changed PR reload when their view asks again; a manual refresh re-reads the open PR's tabs now.
     const selected = findSummary(result.data, get().selectedKey)
-    if (selected && reason === 'manual' && prKey(selected.ref) !== opts.keep) {
+    if (selected && reason === 'manual' && !kept.has(prKey(selected.ref))) {
       for (const resource of Object.keys(get().resources[prKey(selected.ref)] ?? {}) as TabResource[]) {
         void get().load(selected.ref, resource, { force: true })
       }
@@ -370,8 +371,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const key = prKey(ref)
     // The list reads every repository (slow in a large Bitbucket workspace), so it
     // refreshes alongside; a control waits only for the PR it wrote to.
-    if (get().loading) listAfterWrite = key
-    else void get().refresh('manual', { keep: key })
+    if (get().loading) listAfterWrite.add(key)
+    else void get().refresh('manual', { keep: [key] })
     const loaded = get().resources[key] ?? {}
     await Promise.all(refresh.filter((r) => loaded[r] !== undefined).map((r) => get().load(ref, r, { force: true })))
   },
