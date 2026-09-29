@@ -208,6 +208,20 @@ describe('Bitbucket reviewer and decline requests', () => {
     await provider.reviewerCandidates(repo('a'))
     expect(calls).toBe(3)
   })
+
+  it('keeps a refused member read but asks again after a rate limit or a server error', async () => {
+    const repo = { host: 'bitbucket' as const, owner: 'geoiq', name: 'a' }
+    const refused = fakeFetch([{ status: 403, body: {} }])
+    expect(await refused.provider.reviewerCandidates(repo)).toEqual([])
+    expect(await refused.provider.reviewerCandidates(repo)).toEqual([])
+    expect(refused.sent).toHaveLength(1)
+    const members = { status: 200, body: { values: [{ user: { display_name: 'barath', uuid: B } }] } }
+    const flaky = fakeFetch([{ status: 429, body: {} }, { status: 503, body: {} }, members])
+    expect(await flaky.provider.reviewerCandidates(repo)).toEqual([])
+    expect(await flaky.provider.reviewerCandidates(repo)).toEqual([])
+    expect((await flaky.provider.reviewerCandidates(repo)).map((c) => c.id)).toEqual([B])
+    expect(flaky.sent).toHaveLength(3)
+  })
 })
 
 describe('mapBbMergeStrategies', () => {

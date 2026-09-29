@@ -459,20 +459,21 @@ export class BitbucketProvider implements PullRequestProvider {
    * the card still offers recent reviewers. A large workspace takes several
    * serial pages (the endpoint filters by email only, so there is no search to
    * push down), so the read is shared per workspace for 10 minutes, including
-   * one still in flight. An offline failure is not kept.
+   * one still in flight. An offline failure, a rate limit or a server
+   * error is asked again next time; a refusal (no scope, not found) is kept.
    */
   reviewerCandidates(repo: RepoRef): Promise<PrReviewerCandidate[]> {
     const key = repo.owner.toLowerCase()
     const hit = this.members.get(key)
     if (hit && this.now() - hit.at < MEMBERS_TTL_MS) return hit.read
-    const read = this.readMembers(repo.owner)
+    const read = this.readMembers(repo.owner, key)
     this.members.set(key, { at: this.now(), read })
     // The caller gets the same rejection and logs it; this only drops it from the cache.
     read.catch(() => this.members.delete(key))
     return read
   }
 
-  private async readMembers(workspace: string): Promise<PrReviewerCandidate[]> {
+  private async readMembers(workspace: string, key: string): Promise<PrReviewerCandidate[]> {
     const started = this.now()
     try {
       const members = await this.client.paged<BbWorkspaceMember>(`/workspaces/${encodeURIComponent(workspace)}/members?pagelen=100`)
@@ -481,6 +482,8 @@ export class BitbucketProvider implements PullRequestProvider {
     } catch (err) {
       if (!(err instanceof PrHostError) || err.error.kind === 'offline') throw err
       log.warn('listing workspace members failed', { workspace, kind: err.error.kind, ms: this.now() - started })
+      // A token that may not list members keeps its empty answer; a rate limit or a server error is asked again next time.
+      if (err.error.kind === 'rate_limited' || err.error.kind === 'unknown') this.members.delete(key)
       return []
     }
   }

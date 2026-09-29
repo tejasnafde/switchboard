@@ -21,6 +21,8 @@ const log = createRendererLogger('store:reviews')
  */
 const loadTokens = new Map<string, number>()
 let loadSeq = 0
+/** A write landed while a list read was in flight: that read may predate it, so one more follows, keeping this PR's tabs. */
+let listAfterWrite: string | null = null
 
 export type ReviewTab = 'overview' | 'files' | 'conversations' | 'checks'
 
@@ -277,6 +279,9 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     }
     // A PR an agent opened while this read was in flight may be missing from it.
     if (get().stale && get().visible) queueMicrotask(() => void get().refresh('open'))
+    const writtenKey = listAfterWrite
+    listAfterWrite = null
+    if (writtenKey !== null) queueMicrotask(() => void get().refresh('manual', { keep: writtenKey }))
     if (!result.ok) {
       // Still missing whatever made it stale; the next refresh goes whatever its reason.
       set({ loading: false, listError: result.error, stale: s.stale || get().stale })
@@ -293,7 +298,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       // except the one a write just changed, whose reads the writer re-reads in place.
       const resources = { ...st.resources }
       for (const key of changed) {
-        if (key === opts.keep) continue
+        if (key === opts.keep || key === writtenKey) continue
         for (const slot of [...loadTokens.keys()]) if (slot.startsWith(`${key}:`)) loadTokens.delete(slot)
         delete resources[key]
       }
@@ -365,7 +370,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const key = prKey(ref)
     // The list reads every repository (slow in a large Bitbucket workspace), so it
     // refreshes alongside; a control waits only for the PR it wrote to.
-    void get().refresh('manual', { keep: key })
+    if (get().loading) listAfterWrite = key
+    else void get().refresh('manual', { keep: key })
     const loaded = get().resources[key] ?? {}
     await Promise.all(refresh.filter((r) => loaded[r] !== undefined).map((r) => get().load(ref, r, { force: true })))
   },
