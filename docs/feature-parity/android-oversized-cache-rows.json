@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-oversized-cache-rows",
+  "summary": "A native Android cache row larger than the ~2 MB CursorWindow (a file edit of a large file, a whole migrated legacy thread) failed the startup offline snapshot with SQLiteBlobTooBigException and left the machines list on 'Could not load machines'. Oversized rows are now dropped on open without being read, never written again, and skipped per row on read.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop reads better-sqlite3 in Node, which has no CursorWindow and no per-row size limit, and none of these Room tables exist there."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "CursorWindow is an Android framework limit; iOS SQLite and AsyncStorage reads have no per-row window, and the RN app does not use these Room tables."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/CacheRowLimits.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/OversizedRowRepair.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/Daos.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSnapshotStore.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/RoomBrowseSnapshotStore.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/local/OversizedRowRepairTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Nothing on the wire changes; the backend still sends full file.edited contents and full lists, and only the phone's local cache is bounded."
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/SwitchboardDatabase.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/RoomNativeMigrationStore.kt"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Robolectric (native SQLite, real CursorWindow) reproduces 'Row too big to fit into CursorWindow' with a 3 MB row, then shows the on-open repair drops it by size without reading it and startup yields the machines list",
+      "An unrepaired oversized cache row costs only that row in the offline snapshot; an unreadable cache table degrades to no cache",
+      "A legacy thread over the cap is not migrated and the migration still verifies and stays complete on the next run",
+      "Thread and browse cache stores never write a row over the cap and log sizes, never content",
+      "./gradlew testDebugUnitTest lintDebug"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on the affected phone; the repair runs on the first launch of the next APK. No schema version change, so the Room upgrade path is unchanged."
+    ]
+  }
+}

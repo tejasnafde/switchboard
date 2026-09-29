@@ -1,5 +1,6 @@
 package app.switchboard.mobile.data.local
 
+import android.database.sqlite.SQLiteException
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -7,6 +8,13 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
+
+/**
+ * Bulk cache reads skip any row over the cache cap inside SQLite, so a row that
+ * slipped past the write cap costs that one item, never the query.
+ */
+private const val CACHED_ROW_FITS =
+    "length(CAST(rawJson AS BLOB)) <= ${CacheRowLimits.MAX_CACHED_ROW_BYTES}"
 
 @Dao
 abstract class ConnectionDao {
@@ -176,16 +184,16 @@ abstract class CacheDao {
         replaceFeedRows(thread.threadKey, rows)
     }
 
-    @Query("SELECT * FROM cached_threads WHERE threadKey = :threadKey")
+    @Query("SELECT * FROM cached_threads WHERE threadKey = :threadKey AND $CACHED_ROW_FITS")
     abstract fun findThread(threadKey: String): CachedThreadEntity?
 
-    @Query("SELECT * FROM cached_feed_rows WHERE threadKey = :threadKey ORDER BY position, itemId")
+    @Query("SELECT * FROM cached_feed_rows WHERE threadKey = :threadKey AND $CACHED_ROW_FITS ORDER BY position, itemId")
     abstract fun feedRows(threadKey: String): List<CachedFeedRowEntity>
 
-    @Query("SELECT * FROM cached_threads ORDER BY threadKey")
+    @Query("SELECT * FROM cached_threads WHERE $CACHED_ROW_FITS ORDER BY threadKey")
     abstract fun allThreads(): List<CachedThreadEntity>
 
-    @Query("SELECT * FROM cached_feed_rows ORDER BY threadKey, position, itemId")
+    @Query("SELECT * FROM cached_feed_rows WHERE $CACHED_ROW_FITS ORDER BY threadKey, position, itemId")
     abstract fun allFeedRows(): List<CachedFeedRowEntity>
 }
 
@@ -287,8 +295,11 @@ interface BrowseSnapshotDao {
     @Upsert
     fun upsert(snapshot: BrowseSnapshotEntity)
 
-    @Query("SELECT * FROM browse_snapshots WHERE connectionId = :connectionId ORDER BY snapshotKey")
+    @Query("SELECT * FROM browse_snapshots WHERE connectionId = :connectionId AND $CACHED_ROW_FITS ORDER BY snapshotKey")
     fun forConnection(connectionId: String): List<BrowseSnapshotEntity>
+
+    @Query("DELETE FROM browse_snapshots WHERE snapshotKey = :snapshotKey")
+    fun delete(snapshotKey: String)
 
     @Query("DELETE FROM browse_snapshots WHERE connectionId = :connectionId")
     fun deleteConnection(connectionId: String)
@@ -326,10 +337,10 @@ abstract class OfflineSnapshotDao {
     @Query("SELECT * FROM collapsed_workspaces ORDER BY position, workspaceId")
     protected abstract fun collapsedWorkspaces(): List<CollapsedWorkspaceEntity>
 
-    @Query("SELECT * FROM cached_threads ORDER BY threadKey")
+    @Query("SELECT * FROM cached_threads WHERE $CACHED_ROW_FITS ORDER BY threadKey")
     protected abstract fun cachedThreads(): List<CachedThreadEntity>
 
-    @Query("SELECT * FROM cached_feed_rows ORDER BY threadKey, position, itemId")
+    @Query("SELECT * FROM cached_feed_rows WHERE $CACHED_ROW_FITS ORDER BY threadKey, position, itemId")
     protected abstract fun feedRows(): List<CachedFeedRowEntity>
 
     @Query("SELECT * FROM outbox ORDER BY createdAtMs, origin")
@@ -350,7 +361,7 @@ abstract class OfflineSnapshotDao {
     @Query("SELECT * FROM draft_attachments ORDER BY threadKey, position")
     protected abstract fun draftAttachments(): List<ComposerDraftAttachmentEntity>
 
-    @Query("SELECT * FROM browse_snapshots ORDER BY snapshotKey")
+    @Query("SELECT * FROM browse_snapshots WHERE $CACHED_ROW_FITS ORDER BY snapshotKey")
     protected abstract fun browseSnapshots(): List<BrowseSnapshotEntity>
 
     @Query("SELECT * FROM pending_worktree_creations ORDER BY updatedAtMs, creationId")
@@ -364,15 +375,26 @@ abstract class OfflineSnapshotDao {
         preferences = preferences(),
         threadPreferences = threadPreferences(),
         collapsedWorkspaces = collapsedWorkspaces(),
-        cachedThreads = cachedThreads(),
-        feedRows = feedRows(),
+        cachedThreads = cacheOrEmpty("cached_threads", ::cachedThreads),
+        feedRows = cacheOrEmpty("cached_feed_rows", ::feedRows),
         outbox = outbox(),
         outboxAttachments = outboxAttachments(),
         replayStates = replayStates(),
         pendingControlActions = pendingControlActions(),
         quarantinedRecords = quarantinedRecords(),
         draftAttachments = draftAttachments(),
-        browseSnapshots = browseSnapshots(),
+        browseSnapshots = cacheOrEmpty("browse_snapshots", ::browseSnapshots),
         pendingWorktreeCreations = pendingWorktreeCreations(),
     )
+
+    /**
+     * The machines list comes from this snapshot, so a cache that still cannot be
+     * read degrades to no cache instead of failing startup.
+     */
+    private fun <T> cacheOrEmpty(table: String, read: () -> List<T>): List<T> = try {
+        read()
+    } catch (error: SQLiteException) {
+        AndroidCacheLog.warn("offline snapshot skipped $table: ${error.javaClass.simpleName}")
+        emptyList()
+    }
 }
