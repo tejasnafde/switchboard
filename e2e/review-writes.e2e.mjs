@@ -4,7 +4,8 @@
  * `globalThis.__sbDemoPrWrites` in the main process instead of sending it, so
  * nothing here reaches GitHub or Bitbucket.
  *
- * #161 (you review it): reply to a thread, resolve it, hold a line comment,
+ * #161 (you review it): reply to a thread, resolve it, drag a line range
+ * both ways (Escape cancels), hold a line comment,
  * then submit an approving review with it. #159 (yours, nothing blocks it):
  * no Review offered, the strategy menu lists merge commit first, the merge
  * asks through the confirm dialog naming branch and strategy, Cancel sends
@@ -66,7 +67,7 @@ try {
   await thread.waitFor({ state: 'visible', timeout: 20_000 })
   await thread.getByPlaceholder('Reply').fill('On purpose: 0 means no cap.')
   await thread.getByRole('button', { name: 'Reply', exact: true }).click()
-  await thread.getByText('On purpose: 0 means no cap.').waitFor({ state: 'visible', timeout: 10_000 })
+  await thread.locator('p', { hasText: 'On purpose: 0 means no cap.' }).waitFor({ state: 'visible', timeout: 10_000 })
   const reply = (await writes()).find((w) => w.action === 'reply')
   check('reply is recorded, not sent', reply?.input?.conversationId === 's1' && reply?.input?.body === 'On purpose: 0 means no cap.', JSON.stringify(reply))
   check('the reply box empties after it posts', (await thread.getByPlaceholder('Reply').inputValue()) === '')
@@ -75,6 +76,27 @@ try {
   await thread.getByRole('button', { name: 'Unresolve', exact: true }).waitFor({ state: 'visible', timeout: 5_000 })
   const resolve = (await writes()).find((w) => w.action === 'resolve')
   check('resolve is recorded and the thread shows it', resolve?.input?.conversationId === 's1', JSON.stringify(resolve))
+
+  // Drag over the new-side numbers: 85 down to 87 selects three rows, 88 up to
+  // 85 four; Escape mid-drag puts back what was there.
+  const gutter = (n) => reviews().locator(`[data-new-line="${n}"] > :nth-child(2)`)
+  const centre = async (loc) => { const b = await loc.boundingBox(); return [b.x + b.width / 2, b.y + b.height / 2] }
+  const dragFrom = async (from, to) => {
+    await win.mouse.move(...(await centre(gutter(from))))
+    await win.mouse.down()
+    await win.mouse.move(...(await centre(gutter(to))), { steps: 6 })
+  }
+  const selectedRows = () => reviews().locator('[data-diff-hunk][aria-selected="true"]').count()
+  await dragFrom(85, 87)
+  await win.mouse.up()
+  check('a drag down selects the lines it crossed', await selectedRows() === 3, String(await selectedRows()))
+  await dragFrom(88, 85)
+  await win.mouse.up()
+  check('a drag up selects the lines it crossed', await selectedRows() === 4, String(await selectedRows()))
+  await dragFrom(86, 87)
+  await win.keyboard.press('Escape')
+  await win.mouse.up()
+  check('Escape cancels a drag and keeps the previous selection', await selectedRows() === 4, String(await selectedRows()))
 
   // Select new line 87 by its number, Comment, hold it for the review.
   await reviews().getByRole('button', { name: 'Select line 87' }).last().click()

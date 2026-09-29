@@ -6,7 +6,7 @@
  * hunks (outdated, or outside the context) are listed after the diff so
  * none disappears.
  */
-import { useState, type MouseEvent } from 'react'
+import { useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { DiffLine, PrChangedFile, PrConversation, PrSummary } from '@shared/pull-requests'
 import { diffAround } from '@shared/review-context'
 import { cn } from '../../lib/utils'
@@ -17,7 +17,7 @@ import { askAgent } from './review-to-chat'
 import { MarkdownWithCopyControls } from '../chat/MarkdownWithCopyControls'
 import { usePendingComments } from './PrReviewForm'
 import { LineCommentBox, PendingCommentCard, ThreadFooter } from './PrWriteControls'
-import { nextLineSelection, type LineSelection } from './line-selection'
+import { dragLineSelection, lineOn, nextLineSelection, type LineSelection } from './line-selection'
 import type { PendingComment } from '../../stores/review-store'
 
 function anchoredTo(line: DiffLine, c: PrConversation): boolean {
@@ -48,18 +48,23 @@ export function ConversationThread({ conversation, now, className, markResolved 
   )
 }
 
-function lineOn(line: DiffLine, side: 'new' | 'old'): number | null {
-  return side === 'old' ? (line.kind !== 'add' ? line.oldLine : null) : (line.kind !== 'del' ? line.newLine : null)
+interface DragHandlers {
+  onPointerDown: (e: PointerEvent<HTMLButtonElement>) => void
+  onPointerMove: (e: PointerEvent<HTMLButtonElement>) => void
+  onPointerUp: (e: PointerEvent<HTMLButtonElement>) => void
+  onPointerCancel: (e: PointerEvent<HTMLButtonElement>) => void
+  onKeyDown: (e: KeyboardEvent<HTMLButtonElement>) => void
 }
 
-function LineNumber({ n, shown, onPick }: { n: number | null; shown: number | null; onPick: (n: number, e: MouseEvent) => void }) {
+function LineNumber({ n, shown, onPick, drag }: { n: number | null; shown: number | null; onPick: (n: number, e: MouseEvent) => void; drag: (n: number) => DragHandlers }) {
   if (n === null) return <span className="pr-[10px] text-right text-[var(--text-muted)] select-none">{shown ?? ''}</span>
   return (
     <button
       type="button"
       onClick={(e) => onPick(n, e)}
+      {...drag(n)}
       aria-label={`Select line ${n}`}
-      title="Select line (shift-click for a range)"
+      title="Select line (drag or shift-click for a range)"
       className="cursor-pointer border-none bg-transparent p-0 pr-[10px] text-right [font:inherit] text-[var(--text-muted)] select-none hover:text-[var(--text-primary)]"
     >
       {n}
@@ -75,7 +80,61 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
   const [sel, setSel] = useState<LineSelection | null>(null)
   const [composing, setComposing] = useState(false)
   const pending = usePendingComments(pr).filter((c) => c.path === file.path)
+  // A drag in progress: `before` is restored by Escape; `moved` turns the click that ends it into a no-op.
+  const dragRef = useRef<{ pointerId: number; sel: LineSelection; before: LineSelection | null; moved: boolean } | null>(null)
+  const swallowClick = useRef(false)
+  const endDrag = (e: { currentTarget: HTMLButtonElement }) => {
+    const d = dragRef.current
+    if (!d) return
+    dragRef.current = null
+    swallowClick.current = d.moved
+    if (e.currentTarget.hasPointerCapture(d.pointerId)) e.currentTarget.releasePointerCapture(d.pointerId)
+  }
+  const drag = (side: 'new' | 'old', hunk: number) => (n: number): DragHandlers => ({
+    onPointerDown: (e) => {
+      swallowClick.current = false
+      if (e.button !== 0 || e.shiftKey) return
+      // No text selection across the code while dragging; focus by hand since preventDefault skips it.
+      e.preventDefault()
+      e.currentTarget.focus()
+      e.currentTarget.setPointerCapture(e.pointerId)
+      dragRef.current = { pointerId: e.pointerId, sel: { side, hunk, anchor: n, start: n, end: n }, before: sel, moved: false }
+    },
+    onPointerMove: (e) => {
+      const d = dragRef.current
+      if (!d || d.pointerId !== e.pointerId) return
+      // ponytail: scrolls only while the pointer moves near an edge (the top band clears the sticky file header), add a timer if holding still should scroll too.
+      const scroller = e.currentTarget.closest('[data-pr-diff]')?.parentElement
+      if (scroller) {
+        const box = scroller.getBoundingClientRect()
+        if (e.clientY < box.top + 48) scroller.scrollBy(0, -20)
+        else if (e.clientY > box.bottom - 24) scroller.scrollBy(0, 20)
+      }
+      const row = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-diff-hunk]')
+      if (!row) return
+      const at = row.dataset[d.sel.side === 'old' ? 'oldLine' : 'newLine']
+      const next = dragLineSelection(d.sel, file.hunks[d.sel.hunk], Number(row.dataset.diffHunk), at === undefined ? null : Number(at))
+      if (!d.moved && next.start === next.end) return
+      d.moved = true
+      setComposing(false)
+      setSel(next)
+    },
+    onPointerUp: endDrag,
+    onPointerCancel: endDrag,
+    onKeyDown: (e) => {
+      const d = dragRef.current
+      if (e.key !== 'Escape' || !d) return
+      e.stopPropagation()
+      endDrag(e)
+      swallowClick.current = true
+      setSel(d.before)
+    },
+  })
   const pick = (side: 'new' | 'old', hunk: number, n: number, e: MouseEvent) => {
+    if (swallowClick.current) {
+      swallowClick.current = false
+      return
+    }
     setComposing(false)
     setSel((prev) => nextLineSelection(prev, side, hunk, n, e.shiftKey))
   }
@@ -110,6 +169,9 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
         <div
           key={`h${h}l${i}`}
           data-diff-line={line.kind}
+          data-diff-hunk={h}
+          data-old-line={lineOn(line, 'old') ?? undefined}
+          data-new-line={lineOn(line, 'new') ?? undefined}
           aria-selected={isSel || undefined}
           className={cn(
             // As wide as its own text, never narrower than the pane: a scrolled long line keeps its colour.
@@ -119,8 +181,8 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
             isSel && 'bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] shadow-[inset_3px_0_0_var(--accent)]',
           )}
         >
-          <LineNumber n={lineOn(line, 'old')} shown={line.oldLine} onPick={(n, e) => pick('old', h, n, e)} />
-          <LineNumber n={lineOn(line, 'new')} shown={line.newLine} onPick={(n, e) => pick('new', h, n, e)} />
+          <LineNumber n={lineOn(line, 'old')} shown={line.oldLine} onPick={(n, e) => pick('old', h, n, e)} drag={drag('old', h)} />
+          <LineNumber n={lineOn(line, 'new')} shown={line.newLine} onPick={(n, e) => pick('new', h, n, e)} drag={drag('new', h)} />
           <span className={cn('select-none', line.kind === 'context' ? 'text-[var(--text-muted)]' : line.kind === 'add' ? 'text-[var(--success)]' : 'text-[var(--error)]')}>
             {line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : ' '}
           </span>
@@ -150,7 +212,7 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
   const unplaced = conversations.filter((c) => !placed.has(c.id))
 
   return (
-    <div>
+    <div data-pr-diff>
       {file.binary && <div className="px-[14px] py-3 text-[12.5px] text-[var(--text-muted)]">Binary file, not shown.</div>}
       {!file.binary && file.hunks.length === 0 && (
         <div className="px-[14px] py-3 text-[12.5px] text-[var(--text-muted)]">
