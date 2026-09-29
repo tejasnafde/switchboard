@@ -526,7 +526,7 @@ async function captureThemeScreens(win, theme) {
 
   // Two more Claude accounts after the picker shot, so its baseline keeps
   // the fixture's one-per-agent list, and before Settings opens, so its
-  // prewarm reads them and Accounts sorts them on first paint. The main
+  // prewarm lists them and Accounts paints every card at once. The main
   // process answers usage from demoUsage (SB_DEMO_ADAPTER): no real
   // credential is read.
   await win.evaluate(() => Promise.all([

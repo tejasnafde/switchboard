@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "accounts-no-layout-shift",
-  "summary": "Settings' Accounts & models page no longer shifts while usage readings land. Usage reads start when Settings opens, on any page, and are kept in the provider-instance store so a reopened page shows the last readings at once. Cards reserve their final height with skeleton bars, keep their order while the page stays open (sorted by the readings at hand when first shown), keep the previous values dimmed during a refresh, and the summary tiles show a placeholder instead of a wrong 'None' until every first reading is in.",
+  "summary": "Settings' Accounts & models page no longer shifts while usage readings land. Usage reads start when Accounts opens (Settings prewarms only the account list, since a Claude read can be a macOS password prompt), and are kept in the provider-instance store so a reopened page shows the last readings at once. Cards reserve their final height with skeleton bars, keep their order while the page stays open (sorted by the readings at hand when first shown), keep the previous values dimmed during a refresh, and the summary tiles show a placeholder instead of a wrong 'None' until every first reading is in.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
