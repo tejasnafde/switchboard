@@ -18,6 +18,7 @@ import { createMainLogger } from '../logger'
 import { buildClaudeCliEnv, findClaudeBin } from './adapters/claude-adapter'
 import { buildCodexCliEnv, findCodexPath, parseCodexModels } from './adapters/codex-adapter'
 import { buildOpencodeEnv, findOpencodePath } from './adapters/opencode/env'
+import { assertSupportedOpencode } from './adapters/opencode/version'
 import { applyCredentialHome } from './credential-home'
 import { applyEnvOverlay } from './env-overlay'
 import { resolveInstanceEnv } from './instance-env'
@@ -75,13 +76,16 @@ async function probeCodex(env: Record<string, string>): Promise<ModelOption[]> {
   }
 }
 
-function probeOpencode(instanceEnv: Record<string, string>): Promise<ModelOption[]> {
+async function probeOpencode(instanceEnv: Record<string, string>): Promise<ModelOption[]> {
   const bin = findOpencodePath()
-  if (!bin) return Promise.reject(new Error('opencode binary not found'))
+  if (!bin) throw new Error('opencode binary not found')
   const overlay: Record<string, string> = {}
   applyEnvOverlay(overlay, instanceEnv)
+  const env = buildOpencodeEnv(overlay)
+  // 2.x `opencode models` attaches to a shared background service it starts.
+  await assertSupportedOpencode(bin, env)
   return new Promise((resolve, reject) => {
-    execFile(bin, ['models'], { env: buildOpencodeEnv(overlay), timeout: PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+    execFile(bin, ['models'], { env, timeout: PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (err, stdout) => {
       if (err) return reject(err)
       const ids = stdout.split('\n').map((line) => line.trim()).filter((line) => /^[\w.-]+\/\S+$/.test(line))
       resolve(ids.map((id) => ({ id, label: formatOpencodeModelLabel(id), tier: inferModelTier(id) })))

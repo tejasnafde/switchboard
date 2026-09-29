@@ -233,4 +233,15 @@ describe('native OpenCode fork', () => {
 
     expect(outcome).toMatchObject({ kind: 'completed', result: { warnings: [{ code: 'native-fork-unsupported' }] } })
   })
+  it('keeps the handoff and says why when OpenCode 2.x is refused', async () => {
+    const { OpencodeUnsupportedVersionError } = await import('../../src/main/provider/adapters/opencode/version')
+    const refusal = new OpencodeUnsupportedVersionError('2.0.19', '/usr/local/bin/opencode')
+    const h = harness('opencode', { forkOpencodeSession: async () => { throw refusal } })
+    const outcome = await h.coordinator.createOrGet(request(messages[3]))
+
+    expect(outcome).toMatchObject({
+      kind: 'completed',
+      result: { warnings: [{ code: 'native-fork-unsupported-version', message: `${refusal.message} The fork starts with a transcript handoff.` }] },
+    })
+  })
 })

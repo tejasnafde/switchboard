@@ -1,9 +1,10 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createNativeForkRunners } from '../../src/main/conversations/native-fork-runners'
 import { isUnsupportedMethodError } from '../../src/main/conversations/native-fork'
+import { OpencodeUnsupportedVersionError } from '../../src/main/provider/adapters/opencode/version'
 
 // Executable-script shims cannot be spawned on Windows, as elsewhere in the suite.
 const itWithPosixToolShims = process.platform === 'win32' ? it.skip : it
@@ -46,6 +47,10 @@ rl.on('line', (line) => {
 
 // A fake `opencode acp` built on the real ACP SDK's agent side.
 const FAKE_OPENCODE = `
+if (process.argv.includes('--version')) {
+  console.log(process.env.FAKE_VERSION || '1.18.33')
+  process.exit(0)
+}
 const { Readable, Writable } = require('stream')
 const acp = require(${JSON.stringify(resolve('node_modules/@agentclientprotocol/sdk/dist/acp.js'))})
 const stream = acp.ndJsonStream(Writable.toWeb(process.stdout), Readable.toWeb(process.stdin))
@@ -106,6 +111,16 @@ describe('native fork runners', () => {
     const dir = scratch()
     await expect(runners(dir).forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir }))
       .resolves.toBe('forked-ses_1')
+  })
+
+  itWithPosixToolShims('refuses an OpenCode 2.x before spawning acp', async () => {
+    const dir = scratch()
+    const pidFile = join(dir, 'pid')
+    const failure = await runners(dir, '', { FAKE_VERSION: '2.0.19', FAKE_PID_FILE: pidFile })
+      .forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir })
+      .catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(OpencodeUnsupportedVersionError)
+    expect(existsSync(pidFile)).toBe(false)
   })
 
   itWithPosixToolShims('reports an OpenCode without session/fork as unsupported, without calling it', async () => {

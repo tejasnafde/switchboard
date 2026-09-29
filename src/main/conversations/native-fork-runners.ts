@@ -10,6 +10,7 @@ import { createMainLogger } from '../logger'
 import { scanCodexSessionCopies } from '../projects/session-scanner'
 import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { buildOpencodeEnv, findOpencodePath } from '../provider/adapters/opencode/env'
+import { assertSupportedOpencode } from '../provider/adapters/opencode/version'
 import { resolveInstanceEnv } from '../provider/instance-env'
 import { CodexProbeSession } from '../provider/usage/codex-usage'
 import { NativeForkUnsupportedError } from './native-fork'
@@ -100,10 +101,12 @@ export function createNativeForkRunners(
     async forkOpencodeSession(instanceId, params) {
       const bin = binaries.opencode()
       if (!bin) throw new Error('OpenCode CLI not found')
+      const env = opencodeEnvOf(instanceId)
+      await assertSupportedOpencode(bin, env, params.cwd)
       const child = spawn(bin, ['acp', '--cwd', params.cwd], {
         cwd: params.cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: opencodeEnvOf(instanceId),
+        env,
       })
       // Its size only: OpenCode's stderr can carry anything it was handed.
       child.stderr.on('data', (data: Buffer) => log.debug('opencode fork stderr', { bytes: data.byteLength }))
