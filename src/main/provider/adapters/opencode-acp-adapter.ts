@@ -749,7 +749,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     }
     let env = buildOpencodeEnv(overlay)
     // Before any session state exists, so a refused 2.x leaves nothing to clean up.
-    await assertSupportedOpencode(binPath, env)
+    await assertSupportedOpencode(binPath, env, opts.cwd)
 
     const session: ProviderSession = {
       threadId: opts.threadId,

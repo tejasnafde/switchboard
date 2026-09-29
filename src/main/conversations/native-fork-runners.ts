@@ -102,7 +102,7 @@ export function createNativeForkRunners(
       const bin = binaries.opencode()
       if (!bin) throw new Error('OpenCode CLI not found')
       const env = opencodeEnvOf(instanceId)
-      await assertSupportedOpencode(bin, env)
+      await assertSupportedOpencode(bin, env, params.cwd)
       const child = spawn(bin, ['acp', '--cwd', params.cwd], {
         cwd: params.cwd,
         stdio: ['pipe', 'pipe', 'pipe'],

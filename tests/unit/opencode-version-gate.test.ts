@@ -5,12 +5,12 @@
  * binary here is a fake script that records its arguments; no real opencode
  * runs.
  */
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const state = vi.hoisted(() => ({ bin: null as string | null }))
+const state = vi.hoisted(() => ({ bin: null as string | null, warn: [] as unknown[][] }))
 
 vi.mock('../../src/main/provider/adapters/opencode/env', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../src/main/provider/adapters/opencode/env')>(),
@@ -28,7 +28,7 @@ vi.mock('../../src/main/db/provider-instances', () => ({
 vi.mock('../../src/main/provider/instance-env', () => ({ resolveInstanceEnv: () => ({ PATH: process.env.PATH ?? '' }) }))
 vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/switchboard-vitest') } }))
 vi.mock('../../src/main/logger', () => ({
-  createMainLogger: () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() }),
+  createMainLogger: () => ({ info: vi.fn(), warn: (...args: unknown[]) => { state.warn.push(args) }, debug: vi.fn(), error: vi.fn() }),
 }))
 vi.mock('../../src/main/provider/usage', () => ({ fetchInstanceUsage: vi.fn(), invalidateUsage: vi.fn() }))
 
@@ -37,6 +37,7 @@ import {
   _resetOpencodeVersionCacheForTests,
   assertSupportedOpencode,
   parseOpencodeVersion,
+  opencodeV2InstallSignal,
   readOpencodeVersion,
 } from '../../src/main/provider/adapters/opencode/version'
 import { opencodeCandidatePaths } from '../../src/main/provider/adapters/opencode/env'
@@ -54,17 +55,26 @@ beforeEach(() => {
   _resetOpencodeVersionCacheForTests()
   invalidateCatalog()
   state.bin = null
+  state.warn = []
 })
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
-/** A fake opencode that logs each invocation's arguments, one line per run. */
-function fakeOpencode(versionOutput: string, { versionExit = 0 } = {}): { bin: string; calls: () => string[] } {
-  const dir = mkdtempSync(join(tmpdir(), 'sb-opencode-version-'))
+function scratch(): string {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sb-opencode-version-')))
   dirs.push(dir)
+  return dir
+}
+
+/** A fake opencode that logs each invocation's arguments, one line per run. */
+function fakeOpencode(
+  versionOutput: string,
+  { versionExit = 0, dir = scratch(), logCwd = false } = {},
+): { bin: string; calls: () => string[] } {
+  mkdirSync(dir, { recursive: true })
   const bin = join(dir, 'opencode')
   const log = join(dir, 'calls')
   writeFileSync(bin, `#!${process.execPath}
-require('fs').appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(' ') + '\\n')
+require('fs').appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(' ') + (${logCwd} ? ' @' + process.cwd() : '') + '\\n')
 if (process.argv[2] === '--version') {
   process.stdout.write(${JSON.stringify(versionOutput)})
   process.exit(${versionExit})
@@ -116,7 +126,24 @@ describe('readOpencodeVersion', () => {
 
   it('treats unparseable output as unknown', async () => {
     const run = vi.fn(async () => 'garbage')
-    await expect(readOpencodeVersion('/nonexistent/opencode', {}, run)).resolves.toBeNull()
+    await expect(readOpencodeVersion('/nonexistent/opencode', {}, undefined, run)).resolves.toBeNull()
+  })
+
+  itWithPosixToolShims('logs only the size of output it cannot parse, never its text', async () => {
+    const fake = fakeOpencode('OPENAI_API_KEY=sk-secret-value\n')
+    await expect(readOpencodeVersion(fake.bin, {})).resolves.toBeNull()
+    expect(JSON.stringify(state.warn)).not.toContain('sk-secret')
+    expect(state.warn.some(([, detail]) => (detail as { bytes?: number })?.bytes === 31)).toBe(true)
+  })
+
+  itWithPosixToolShims('runs --version in the session cwd, and caches per cwd', async () => {
+    const fake = fakeOpencode('1.18.33\n', { logCwd: true })
+    const a = scratch()
+    const b = scratch()
+    await readOpencodeVersion(fake.bin, {}, a)
+    await readOpencodeVersion(fake.bin, {}, a)
+    await readOpencodeVersion(fake.bin, {}, b)
+    expect(fake.calls()).toEqual([`--version @${a}`, `--version @${b}`])
   })
 
   itWithPosixToolShims('reads a binary once, and again after it is replaced in place', async () => {
@@ -137,6 +164,46 @@ describe('readOpencodeVersion', () => {
     expect((failure as Error).message).toContain('OpenCode 2.0.19 is not supported yet')
     expect((failure as Error).message).toContain('npm i -g opencode-ai')
     await expect(assertSupportedOpencode(fakeOpencode('1.18.33\n').bin, {})).resolves.toBeUndefined()
+  })
+})
+
+describe('a 2.x install whose --version gives no answer', () => {
+  itWithPosixToolShims('is refused when an opencode2 shim sits beside it (v2 curl installer, @opencode/cli bin)', async () => {
+    const fake = fakeOpencode('', { versionExit: 1 })
+    writeFileSync(join(fake.bin, '..', 'opencode2'), '#!/bin/sh\n')
+    const failure = await assertSupportedOpencode(fake.bin, {}).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(OpencodeUnsupportedVersionError)
+    expect((failure as Error).message).toContain('OpenCode 2.x is not supported yet')
+  })
+
+  itWithPosixToolShims('is refused when it resolves into the @opencode/cli package', async () => {
+    const root = scratch()
+    const fake = fakeOpencode('garbage', { dir: join(root, 'lib', 'node_modules', '@opencode', 'cli', 'bin') })
+    mkdirSync(join(root, 'bin'))
+    const link = join(root, 'bin', 'opencode')
+    symlinkSync(fake.bin, link)
+    expect(opencodeV2InstallSignal(link)).toBe('installed from the @opencode/cli package')
+    await expect(assertSupportedOpencode(link, {})).rejects.toBeInstanceOf(OpencodeUnsupportedVersionError)
+  })
+
+  it('is recognised from the opencode-v2 Homebrew formula path', () => {
+    const root = scratch()
+    const dir = join(root, 'Cellar', 'opencode-v2', '2.0.19', 'bin')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'opencode'), '')
+    expect(opencodeV2InstallSignal(join(dir, 'opencode'))).toBe('installed from the opencode-v2 Homebrew formula')
+  })
+
+  itWithPosixToolShims('is let through with no signal, since a 1.x may simply fail --version', async () => {
+    const fake = fakeOpencode('', { versionExit: 1 })
+    expect(opencodeV2InstallSignal(fake.bin)).toBeNull()
+    await expect(assertSupportedOpencode(fake.bin, {})).resolves.toBeUndefined()
+  })
+
+  itWithPosixToolShims('does not override a readable 1.x version', async () => {
+    const fake = fakeOpencode('1.18.33\n')
+    writeFileSync(join(fake.bin, '..', 'opencode2'), '#!/bin/sh\n')
+    await expect(assertSupportedOpencode(fake.bin, {})).resolves.toBeUndefined()
   })
 })
 

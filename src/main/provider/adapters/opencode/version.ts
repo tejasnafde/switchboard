@@ -8,7 +8,8 @@
  * refuses a 2.x binary with one clear message instead of a CLI usage error.
  */
 import { execFile } from 'node:child_process'
-import { statSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
+import { dirname, join, sep } from 'node:path'
 import { createMainLogger } from '../../../logger'
 
 const log = createMainLogger('provider:opencode:version')
@@ -46,11 +47,38 @@ export class OpencodeUnsupportedVersionError extends Error {
   }
 }
 
-export type VersionRunner = (bin: string, env: Record<string, string>) => Promise<string>
+export type VersionRunner = (bin: string, env: Record<string, string>, cwd?: string) => Promise<string>
 
-const runVersion: VersionRunner = (bin, env) => new Promise((resolve, reject) => {
+/**
+ * Why `bin` is an OpenCode 2.x install, judged from the files alone (nothing
+ * is run), or null. Only consulted when `--version` gave no answer, so a 2.x
+ * binary that cannot report its version is still refused before it can
+ * migrate opencode.db forward. v1 has none of these:
+ * - an `opencode2` shim beside it: the v2 curl installer writes one, and
+ *   `@opencode/cli` declares it as a second npm bin;
+ * - a real path inside the `@opencode/cli` npm package or brew's
+ *   `opencode-v2` formula.
+ */
+export function opencodeV2InstallSignal(bin: string): string | null {
+  let real = bin
+  try {
+    real = realpathSync(bin)
+  } catch (err) {
+    log.debug(`cannot resolve opencode binary ${bin}`, err)
+  }
+  const inside = (part: string) => real.includes(`${sep}${part}${sep}`)
+  if (inside(join('node_modules', '@opencode', 'cli'))) return 'installed from the @opencode/cli package'
+  if (inside(join('Cellar', 'opencode-v2'))) return 'installed from the opencode-v2 Homebrew formula'
+  for (const dir of new Set([dirname(bin), dirname(real)])) {
+    if (existsSync(join(dir, 'opencode2'))) return `has an opencode2 shim beside it in ${dir}`
+  }
+  return null
+}
+
+const runVersion: VersionRunner = (bin, env, cwd) => new Promise((resolve, reject) => {
   // stdout only: a Node wrapper's stderr warnings can carry Node's own version.
-  const child = execFile(bin, ['--version'], { env, timeout: VERSION_TIMEOUT_MS, maxBuffer: 64 * 1024 }, (err, stdout) => {
+  // The spawn's own cwd, so a per-directory version shim picks what the session will run.
+  const child = execFile(bin, ['--version'], { env, cwd, timeout: VERSION_TIMEOUT_MS, maxBuffer: 64 * 1024 }, (err, stdout) => {
     if (err) return reject(err)
     resolve(stdout)
   })
@@ -58,13 +86,16 @@ const runVersion: VersionRunner = (bin, env) => new Promise((resolve, reject) =>
   child.stdin?.end()
 })
 
-/** Keyed by path + mtime + size, so an in-place upgrade or downgrade is re-read. */
+/**
+ * Keyed by path + mtime + size, so an in-place upgrade or downgrade is re-read,
+ * and by cwd, since a version shim can resolve differently per project.
+ */
 const cache = new Map<string, Promise<OpencodeVersion | null>>()
 
-function cacheKey(bin: string): string | null {
+function cacheKey(bin: string, cwd: string | undefined): string | null {
   try {
     const st = statSync(bin)
-    return `${bin}\0${st.mtimeMs}\0${st.size}`
+    return `${bin}\0${st.mtimeMs}\0${st.size}\0${cwd ?? ''}`
   } catch (err) {
     log.warn(`cannot stat opencode binary ${bin}; version not cached`, err)
     return null
@@ -78,20 +109,24 @@ function cacheKey(bin: string): string | null {
 export function readOpencodeVersion(
   bin: string,
   env: Record<string, string>,
+  cwd?: string,
   run: VersionRunner = runVersion,
 ): Promise<OpencodeVersion | null> {
-  const key = cacheKey(bin)
+  const key = cacheKey(bin, cwd)
   const hit = key ? cache.get(key) : undefined
   if (hit) return hit
-  const read = run(bin, env).then(
+  const read = run(bin, env, cwd).then(
     (output) => {
       const version = parseOpencodeVersion(output)
-      if (!version) log.warn(`could not parse opencode --version output from ${bin}`, { output: output.slice(0, 200) })
+      // Its size only: a wrapper's stdout can carry anything it inherited, keys included.
+      if (!version) log.warn(`could not parse opencode --version output from ${bin}`, { bytes: Buffer.byteLength(output) })
       else log.info(`opencode ${version.raw} at ${bin}`)
       return version
     },
     (err: unknown) => {
-      log.warn(`opencode --version failed for ${bin}; treating it as supported`, err)
+      // Not the error itself: execFile puts the child's stderr in its message.
+      const { code, signal, killed } = (err ?? {}) as { code?: unknown; signal?: unknown; killed?: unknown }
+      log.warn(`opencode --version failed for ${bin}`, { code, signal, killed })
       return null
     },
   )
@@ -103,19 +138,29 @@ export function readOpencodeVersion(
 }
 
 /**
- * Throws OpencodeUnsupportedVersionError for a 2.x (or later) binary. An
- * unreadable version is let through: refusing on a failed read would lock out
- * a working 1.x install.
+ * Throws OpencodeUnsupportedVersionError for a 2.x (or later) binary. When
+ * `--version` gives no answer, the install's files decide
+ * (`opencodeV2InstallSignal`); with neither, the binary is let through, since
+ * refusing on a failed read would lock out a working 1.x install. That last
+ * case can still run an unrecognised 2.x.
  */
 export async function assertSupportedOpencode(
   bin: string,
   env: Record<string, string>,
+  cwd?: string,
   run?: VersionRunner,
 ): Promise<void> {
-  const version = await readOpencodeVersion(bin, env, run)
-  if (version && version.major >= OPENCODE_FIRST_UNSUPPORTED_MAJOR) {
-    throw new OpencodeUnsupportedVersionError(version.raw, bin)
+  const version = await readOpencodeVersion(bin, env, cwd, run)
+  if (version) {
+    if (version.major >= OPENCODE_FIRST_UNSUPPORTED_MAJOR) throw new OpencodeUnsupportedVersionError(version.raw, bin)
+    return
   }
+  const signal = opencodeV2InstallSignal(bin)
+  if (signal) {
+    log.warn(`opencode at ${bin} gave no version but ${signal}; refusing it as 2.x`)
+    throw new OpencodeUnsupportedVersionError('2.x', bin)
+  }
+  log.warn(`opencode at ${bin} gave no version and looks like 1.x; letting it run`)
 }
 
 export function _resetOpencodeVersionCacheForTests(): void {
