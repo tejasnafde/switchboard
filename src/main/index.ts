@@ -306,6 +306,17 @@ app.on('open-url', (event, url) => {
 
 // Single instance lock - prevent multiple windows
 const gotTheLock = app.requestSingleInstanceLock()
+
+// Registered before the single-instance lock check: a second instance quits
+// right there, and before-quit fires synchronously inside app.quit(). Logged
+// once, since the coordinator prevents the first before-quit and quits again.
+let quitSourceLogged = false
+app.on('before-quit', () => {
+  if (quitSourceLogged) return
+  quitSourceLogged = true
+  log.info('quit requested', { ...quitSource(), uptimeSec: Math.round(process.uptime()) })
+})
+
 if (!gotTheLock) {
   // In dev this is almost always a STALE process from an earlier `npm run dev`
   // whose window was closed: it still holds the lock, so the fresh build loses
@@ -918,13 +929,7 @@ app.on('window-all-closed', () => {
   }
 })
 
-let quitSourceLogged = false
 app.on('before-quit', (event) => {
-  // Logged once: the coordinator prevents the first before-quit and quits again after teardown.
-  if (!quitSourceLogged) {
-    quitSourceLogged = true
-    log.info('quit requested', { ...quitSource(), uptimeSec: Math.round(process.uptime()) })
-  }
   if (quitCoordinator.handleBeforeQuit()) {
     event.preventDefault()
   }
