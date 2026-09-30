@@ -138,24 +138,25 @@ jobs:
           CHECKSUM_FILE="$RELEASE_APK.sha256"
           BADGING="$("$AAPT2" dump badging "$RELEASE_APK")"
           APK_VERSION_NAME="$(sed -n "s/^package:.* versionName='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -1)"
-          NEW_VERSION_CODE="$(sed -n "s/^package:.* versionCode='\([0-9][0-9]*\)'.*/\1/p" <<< "$BADGING" | head -1)"
           if [[ "$APK_VERSION_NAME" != "${{ steps.version.outputs.version }}" ]]; then
             echo "::error::APK versionName $APK_VERSION_NAME does not match release tag ${{ steps.version.outputs.tag }}"
             exit 1
           fi
 
-          PREVIOUS_APK_URL="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq \
-            '[.[] | select(.draft == false and (.tag_name | startswith("mobile-v"))) | .assets[] | select(.name | endswith(".apk"))][0].browser_download_url // empty')"
-          if [[ -n "$PREVIOUS_APK_URL" ]]; then
-            curl -fL --retry 3 --retry-delay 2 -o "$RUNNER_TEMP/switchboard-previous.apk" "$PREVIOUS_APK_URL"
-            node ../../scripts/verify-android-apk.mjs --identity-only --apk "$RUNNER_TEMP/switchboard-previous.apk"
-            PREVIOUS_BADGING="$("$AAPT2" dump badging "$RUNNER_TEMP/switchboard-previous.apk")"
-            PREVIOUS_VERSION_CODE="$(sed -n "s/^package:.* versionCode='\([0-9][0-9]*\)'.*/\1/p" <<< "$PREVIOUS_BADGING" | head -1)"
-            if (( NEW_VERSION_CODE <= PREVIOUS_VERSION_CODE )); then
-              echo "::error::Android versionCode $NEW_VERSION_CODE must exceed published versionCode $PREVIOUS_VERSION_CODE"
-              exit 1
-            fi
+          # Every published APK, not just the newest page: the new one must beat
+          # the highest versionCode and versionName ever released.
+          PUBLISHED_DIR="$RUNNER_TEMP/published-apks"
+          mkdir -p "$PUBLISHED_DIR"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq \
+            '.[] | select(.draft == false and (.tag_name | startswith("mobile-v"))) | .tag_name as $tag | .assets[] | select(.name | endswith(".apk")) | "\($tag)-\(.name)\t\(.browser_download_url)"' \
+            > "$RUNNER_TEMP/published-apks.tsv"
+          while IFS=$'\t' read -r PUBLISHED_NAME PUBLISHED_URL; do
+            curl -fL --retry 3 --retry-delay 2 -o "$PUBLISHED_DIR/$PUBLISHED_NAME" "$PUBLISHED_URL"
+          done < "$RUNNER_TEMP/published-apks.tsv"
+          if [[ ! -s "$RUNNER_TEMP/published-apks.tsv" ]]; then
+            echo "::notice::No published mobile-v APK found; skipping the monotonic version check for the first release"
           fi
+          node ../../scripts/verify-android-apk.mjs --apk "$RELEASE_APK" --newer-than-published "$PUBLISHED_DIR"
           node ../../scripts/verify-android-apk.mjs --apk "$RELEASE_APK" --checksum "$CHECKSUM_FILE"
 
       - name: Publish the GitHub release

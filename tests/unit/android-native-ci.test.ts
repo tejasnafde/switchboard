@@ -130,13 +130,14 @@ describe('native Android publishing lane', () => {
     expect(workflow).toContain('--latest=false')
   })
 
-  test('rejects a tag-version mismatch or a non-increasing Android version code', () => {
+  test('rejects a tag-version mismatch or a version not above every published APK', () => {
     const workflow = readFileSync(releaseWorkflowPath, 'utf8')
 
     expect(workflow).toContain('APK_VERSION_NAME')
-    expect(workflow).toContain('PREVIOUS_VERSION_CODE')
-    expect(workflow).toContain('NEW_VERSION_CODE <= PREVIOUS_VERSION_CODE')
-    expect(workflow).toContain('verify-android-apk.mjs --identity-only --apk "$RUNNER_TEMP/switchboard-previous.apk"')
+    expect(workflow).toContain('gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100"')
+    expect(workflow).toContain('select(.draft == false and (.tag_name | startswith("mobile-v")))')
+    expect(workflow).toContain('verify-android-apk.mjs --apk "$RELEASE_APK" --newer-than-published "$PUBLISHED_DIR"')
+    expect(workflow).not.toContain('][0].browser_download_url')
     expect(workflow).toContain('Release already exists; increment apps/android versionName and versionCode')
     expect(workflow).not.toContain("echo \"exists=true\" >> \"$GITHUB_OUTPUT\"")
   })
