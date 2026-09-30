@@ -1,0 +1,49 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "mobile-release-monotonic-check",
+  "summary": "The native Android release job compares the new APK's versionCode and versionName against the highest of every published mobile-v APK, across all release pages, instead of the first APK on one 100-release page.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Only the mobile release workflow and its verifier script change. No desktop runtime code, build config or packaging is touched."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile and mobile-ota.yml are untouched; iOS updates never go through the APK release job."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "apps/android is untouched: no app code, versionName, versionCode, signing or manifest change. What changes is the release gate that decides whether an APK may be published, recorded under updateRelease."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire protocol, IPC channel, event shape or handler changes. src/shared and src/main are untouched."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, migration or persisted-state changes. The check reads published release assets only."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/mobile-release.yml",
+        "scripts/verify-android-apk.mjs",
+        "tests/unit/android-apk-verifier.test.ts",
+        "tests/unit/android-native-ci.test.ts",
+        "docs/releasing.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/android-apk-verifier.test.ts covers verifyNewerThanPublished (no published APK, each maximum taken separately wherever it sits in the list, an equal or lower versionCode or versionName refused with the release it failed to beat) and the --newer-than-published CLI against a fake aapt2 over a directory of APKs.",
+      "The CLI was run locally with the real aapt2 (build-tools 36.0.0) against all 16 published mobile-v APKs (0.3.0 to 0.5.13) downloaded from the repository's releases: re-publishing 0.5.13 is refused on both versionCode 15 and versionName 0.5.13."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The workflow itself has not been dispatched: it only runs by hand and would publish a release. The pagination, download loop and notice for an empty release list are exercised only by reading them and by running a gh api --paginate query with the same release and asset filter locally, which listed all 16 APKs.",
+      "The first-release path (no published APK) is exercised only in the unit and CLI tests, since this repository already has published APKs."
+    ]
+  }
+}
