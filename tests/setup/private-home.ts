@@ -37,3 +37,35 @@ export function logFilesFromRun(
     })
     .map(({ name }) => name)
 }
+
+/** Every variable the setup overrides; teardown puts each one back. */
+export const PRIVATE_HOME_ENV_KEYS = [
+  'SB_TEST_REAL_HOME',
+  'SB_TEST_RUN_ROOT',
+  'SWITCHBOARD_DATA_DIR',
+  'HOME',
+  'USERPROFILE',
+] as const
+
+export type EnvSnapshot = Record<string, string | undefined>
+
+export function snapshotEnv(env: NodeJS.ProcessEnv, keys: readonly string[]): EnvSnapshot {
+  return Object.fromEntries(keys.map((key) => [key, env[key]]))
+}
+
+/** Puts every key back, deleting the ones that were unset. */
+export function restoreEnv(env: NodeJS.ProcessEnv, snapshot: EnvSnapshot): void {
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (value === undefined) delete env[key]
+    else env[key] = value
+  }
+}
+
+/**
+ * The developer's home, even when a setup runs again before the last one was
+ * torn down: HOME then already points at a private home, and only
+ * SB_TEST_REAL_HOME still names the real one.
+ */
+export function resolveRealHome(env: NodeJS.ProcessEnv, currentHome: string): string {
+  return env.SB_TEST_REAL_HOME || currentHome
+}
