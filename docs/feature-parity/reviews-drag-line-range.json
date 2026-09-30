@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "reviews-drag-line-range",
-  "summary": "Reviews > Files: press on a line number and drag up or down over the gutter to select a range, like GitHub. Same rules as shift-click: one side (the one pressed), inside the hunk the drag started in (a pointer over another hunk clamps to that hunk's first or last line on the side), extended from the pressed line. Pointer capture keeps the drag while the pointer leaves the button; a plain click still selects one line and shift-click still extends; The drag is drawn as a preview: the selection and an open comment box (with its text) stay until the drag is released on a new range, which selects it and closes the box; Escape or a cancelled pointer drops the preview and changes nothing. Moving near the top or bottom of the diff's scroll pane scrolls it. Selected rows keep aria-selected.",
+  "summary": "Reviews > Files: press on a line number and drag up or down over the gutter to select a range, like GitHub. Same rules as shift-click: one side (the one pressed), inside the hunk the drag started in (a pointer over another hunk clamps to that hunk's first or last line on the side), extended from the pressed line. Pointer capture keeps the drag while the pointer leaves the button; a plain click still selects one line and shift-click still extends; The drag is drawn as a preview: the selection and an open comment box (with its text) stay until the drag is released on a new range, which selects it and closes the box; Escape or a cancelled pointer drops the preview and changes nothing. Holding the pointer in a band at the top (below the sticky file header) or bottom of the diff's scroll pane keeps scrolling it, moving or not, faster the deeper into the band (capped), and extends the range to the row under the pointer each frame; the loop stops on release, cancel, Escape, leaving the band or unmount. Selected rows keep aria-selected.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -38,13 +38,15 @@
     "automated": [
       "dragLineSelection unit tests: extends from the anchor both ways, clamps to the start hunk when the pointer is over an earlier or later hunk, keeps the range over a row with no line on the side, reads only its own side.",
       "afterDrag unit tests: a drag that never moved or ends on the selected range keeps the selection and open comment box; a new range selects it and closes the box.",
+      "edgeScrollSpeed / edgeProbeY unit tests: no scroll between the bands, up in the top band under the header and down in the bottom band, faster deeper in and capped over the header or past the pane; the row probe stays below the header and inside the pane.",
       "e2e/review-writes.e2e.mjs drives Playwright mouse down/move/up on the built app: a drag down selects 3 rows, a drag up 4, Escape mid-drag keeps the previous 4; with the comment box open and text typed, the box stays open during a drag and Escape keeps it and its text; the existing click-to-select line comment flow still passes (42/42).",
-      "Visual screens phase passed with no baseline change (nothing is selected at rest)."
+      "Visual screens phase passed with no baseline change (nothing is selected at rest).",
+      "e2e/review-writes.e2e.mjs caps the diff pane's height, presses on line 84 and holds the pointer still at the bottom edge: scrollTop grows (30 -> 276 over 600 ms) and so does the selection, and after release scrollTop stops changing (50/50)."
     ],
     "hardware": [],
     "notExercised": [
       "The hunk clamp was not dragged in the e2e: the demo PR's file has one hunk. It is covered by the unit tests only.",
-      "Edge auto-scroll was not exercised by a test or by eye; it scrolls only while the pointer moves near an edge, not while it holds still."
+      "Holding at the top edge is covered by the unit tests only; the e2e holds at the bottom edge."
     ]
   }
 }

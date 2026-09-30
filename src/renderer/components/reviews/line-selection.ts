@@ -52,3 +52,26 @@ export function afterDrag(state: { sel: LineSelection | null; composing: boolean
   const same = range === null || (state.sel !== null && state.sel.side === range.side && state.sel.hunk === range.hunk && state.sel.start === range.start && state.sel.end === range.end)
   return same ? state : { sel: range, composing: false }
 }
+
+/** The sticky file header's height at the top of the diff's scroll pane, kept out of the top band. */
+export const EDGE_HEADER_PX = 40
+export const EDGE_BAND_PX = 32
+export const EDGE_MAX_SPEED_PX = 24
+
+/**
+ * Pixels per frame to scroll a pane spanning `top`..`bottom` while a drag holds the pointer at `y`:
+ * negative is up, 0 outside both bands. Faster the deeper into a band, capped at EDGE_MAX_SPEED_PX
+ * (over the header or past the pane counts as fully in). The top band starts under the file header.
+ */
+export function edgeScrollSpeed(y: number, top: number, bottom: number): number {
+  const speed = (depth: number) => Math.ceil(EDGE_MAX_SPEED_PX * Math.min(1, depth / EDGE_BAND_PX))
+  const up = top + EDGE_HEADER_PX + EDGE_BAND_PX - y
+  if (up > 0) return -speed(up)
+  const down = y - (bottom - EDGE_BAND_PX)
+  return down > 0 ? speed(down) : 0
+}
+
+/** Where to look for the row under a pointer at `y`: inside the pane and below the file header, so a pointer over either still finds the edge row. */
+export function edgeProbeY(y: number, top: number, bottom: number): number {
+  return Math.min(Math.max(y, top + EDGE_HEADER_PX), bottom - 1)
+}
