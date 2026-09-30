@@ -174,17 +174,22 @@ const SOURCE_SETTLE_ATTEMPTS = 3
 const SOURCE_SETTLE_DELAY_MS = 750
 const SOURCE_CHANGED = Symbol('source-changed')
 
+type TargetBaseline = { digest?: string | null }
+
 type SyncAttempt = TranscriptSyncResult & { [SOURCE_CHANGED]?: true }
 
 export async function synchronizeCompatibleTranscript(
   sourcePath: string,
   targetPath: string,
-  options: TranscriptSyncOptions & { settleDelayMs?: number } = {},
+  options: TranscriptSyncOptions & { settle?: () => Promise<void> } = {},
 ): Promise<TranscriptSyncResult> {
+  // The target seen by the first attempt. A retry that finds any other target
+  // (changed, created or deleted) aborts, so a retry never overwrites it.
+  const baseline: TargetBaseline = {}
   for (let attempt = 1; ; attempt++) {
-    const { [SOURCE_CHANGED]: sourceChanged, ...result } = await synchronizeOnce(sourcePath, targetPath, options)
+    const { [SOURCE_CHANGED]: sourceChanged, ...result } = await synchronizeOnce(sourcePath, targetPath, options, baseline)
     if (!sourceChanged || attempt >= SOURCE_SETTLE_ATTEMPTS) return result
-    await new Promise((resolve) => setTimeout(resolve, options.settleDelayMs ?? SOURCE_SETTLE_DELAY_MS))
+    await (options.settle?.() ?? new Promise((resolve) => setTimeout(resolve, SOURCE_SETTLE_DELAY_MS)))
   }
 }
 
@@ -192,11 +197,25 @@ async function synchronizeOnce(
   sourcePath: string,
   targetPath: string,
   options: TranscriptSyncOptions,
+  baseline: TargetBaseline,
 ): Promise<SyncAttempt> {
   try {
     const initial = await compareJsonlTranscripts(sourcePath, targetPath)
     if (initial.kind === 'unreadable' && initial.side === 'source' && initial.reason === CHANGED_WHILE_READ) {
       return { ...conflict(sourcePath, targetPath, initial.kind), [SOURCE_CHANGED]: true }
+    }
+    if (!(initial.kind === 'unreadable' && initial.side === 'target')) {
+      const target = initial.target?.digest ?? null
+      if (baseline.digest === undefined) baseline.digest = target
+      else if (baseline.digest !== target) {
+        return {
+          ok: false,
+          reason: 'concurrent-modification',
+          detail: 'Target transcript changed while the switch waited for the source to settle',
+          sourcePath,
+          targetPath,
+        }
+      }
     }
     if (initial.kind === 'divergent' || initial.kind === 'unreadable') {
       return conflict(sourcePath, targetPath, initial.kind)

@@ -169,7 +169,7 @@ describe('synchronizeCompatibleTranscript', () => {
     let calls = 0
 
     const result = await synchronizeCompatibleTranscript(paths.sourcePath, paths.targetPath, {
-      settleDelayMs: 0,
+      settle: async () => {},
       beforeReplace: async () => {
         if (calls++ === 0) await writeFile(paths.sourcePath, first + second)
       },
@@ -186,7 +186,7 @@ describe('synchronizeCompatibleTranscript', () => {
     let calls = 0
 
     const result = await synchronizeCompatibleTranscript(paths.sourcePath, paths.targetPath, {
-      settleDelayMs: 0,
+      settle: async () => {},
       beforeReplace: async () => {
         calls++
         source += third
@@ -196,5 +196,21 @@ describe('synchronizeCompatibleTranscript', () => {
 
     expect(result).toMatchObject({ ok: false, reason: 'concurrent-modification' })
     expect(calls).toBe(3)
+  })
+
+  it('aborts a retry when the target changed while the source settled', async () => {
+    const paths = await fixture(first, '')
+    let calls = 0
+
+    const result = await synchronizeCompatibleTranscript(paths.sourcePath, paths.targetPath, {
+      beforeReplace: async () => {
+        if (calls++ === 0) await writeFile(paths.sourcePath, first + second)
+      },
+      settle: () => writeFile(paths.targetPath, first),
+    })
+
+    expect(result).toMatchObject({ ok: false, reason: 'concurrent-modification' })
+    expect(calls).toBe(1)
+    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'target-prefix' })
   })
 })
