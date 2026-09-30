@@ -111,4 +111,15 @@ describe('edgeProbeY', () => {
     expect(edgeProbeY(110, 100, 600)).toBe(100 + EDGE_HEADER_PX)
     expect(edgeProbeY(900, 100, 600)).toBe(599)
   })
+
+  it('keeps the current range over a row with no line on the selected side', () => {
+    const hunk = { header: '@@', lines: [
+      { kind: 'context', oldLine: 1, newLine: 1, text: 'a' },
+      { kind: 'del', oldLine: 2, newLine: null, text: 'b' },
+      { kind: 'add', oldLine: null, newLine: 2, text: 'c' },
+      { kind: 'add', oldLine: null, newLine: 3, text: 'd' },
+    ] } as never
+    const range = { side: 'new' as const, hunk: 0, anchor: 1, start: 1, end: 3 }
+    expect(dragLineSelection(range, hunk, 0, null)).toEqual(range)
+  })
 })

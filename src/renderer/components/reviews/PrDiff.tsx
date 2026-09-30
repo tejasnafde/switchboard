@@ -118,7 +118,8 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
     const row = document.elementFromPoint(d.x, y)?.closest<HTMLElement>('[data-diff-hunk]')
     if (!row) return
     const at = row.dataset[d.sel.side === 'old' ? 'oldLine' : 'newLine']
-    const next = dragLineSelection(d.sel, file.hunks[d.sel.hunk], Number(row.dataset.diffHunk), at === undefined ? null : Number(at))
+    // From the current range, so a row with no line on this side (a deletion under a new-side drag) keeps it.
+    const next = dragLineSelection(d.range ?? d.sel, file.hunks[d.sel.hunk], Number(row.dataset.diffHunk), at === undefined ? null : Number(at))
     if (!d.moved && next.start === next.end) return
     d.moved = true
     d.range = next
