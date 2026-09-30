@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chat-table-copy",
+  "summary": "Desktop chat markdown tables get a copy control floating just above their top-right corner (no reserved height, clear of the header text), shown on hover and keyboard focus; the message's markdown root clips sideways only (overflow-x: clip, display: flow-root) so the control is not cut off when a table opens the message. Copy writes one clipboard item with an HTML table (thead/tbody, cell text with strong/em/code only, escaped, no classes or styles) and TSV text, so spreadsheets paste cells, Docs/Gmail/Notion paste a table and Slack renders a table. A Radix popover beside it offers Copy as Markdown (normalized pipe table, author's alignment) and Copy as CSV (RFC 4180, with non-numeric cells starting with = + - @ tab or CR prefixed by an apostrophe against CSV formula injection; TSV and HTML unchanged because the default copy's HTML pastes as values and an apostrophe would show in Slack). A table the stream may still extend stays provisional (no copy) until content follows it or the message settles. The shared markdown root also keeps one dangerouslySetInnerHTML object per html string, because React 19 rewrote innerHTML on every re-render, dropping focus and file chips.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/table-copy.ts",
+        "src/renderer/components/chat/TableCopyMenu.tsx",
+        "src/renderer/components/chat/MarkdownWithCopyControls.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/styles/global.css",
+        "tests/unit/table-copy.test.ts",
+        "tests/unit/markdown-tables.test.ts",
+        "e2e/table-copy-controls.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Out of scope for this change: the React Native client draws tables with its own renderer (apps/mobile/src/components/Markdown.tsx) and has no copy control on them; this change is the desktop marked renderer, its CSS and the renderer's clipboard."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Out of scope for this change: the native Android client renders markdown with its own Compose renderer and clipboard; nothing here reaches it."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Renderer only: the copy runs in the renderer with navigator.clipboard, no IPC channel, event or wire format changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes; existing messages render the control from their stored markdown."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships in the normal desktop build; no packaging, entitlement or update-channel change (the async clipboard already works in the renderer, as the image copy uses it)."
+    }
+  },
+  "verification": {
+    "automated": [
+      "table-copy.test.ts: the screenshot table's HTML and TSV, bold/em/code kept and links dropped, HTML escaping with no classes or styles, entity decoding, escaped pipes in every format, tabs and line breaks in cells, empty and missing cells, RFC 4180 quoting, CSV formula neutralization with numbers left alone, markdown alignment row, header-only table, the rendered controls, author alignment copied instead of the numeric right-alignment, provisional vs settled while streaming (nested in a list too), click target parsing and focus restore.",
+      "e2e/table-copy-controls.e2e.mjs against the built app and the real system clipboard (read back with Electron's clipboard in main): hidden until hover, floats above the table's top-right corner and covers no header text, unclipped when the table opens the message, Copy puts text/html plus TSV text/plain in one item, Copied feedback, CSV writes text/plain only, keyboard reaches Copy as Markdown, Escape and a choice return focus to the menu button, the button toggles the menu, a streaming table is provisional and settles once content follows, focus survives later streaming commits. The clipboard is restored afterwards.",
+      "e2e/code-copy-controls.e2e.mjs still passes.",
+      "Visual screens phase: the three chat baselines moved by a sub-pixel line shift, because the file chip in the message above now survives re-renders; all other screens unchanged; two runs without updating pass."
+    ],
+    "hardware": [
+      "Screenshots of the hovered table and the open menu in dark and light, checked by eye."
+    ],
+    "notExercised": [
+      "Pasting into the real Slack, Google Sheets, Excel, Notion, Google Docs and Gmail apps: the clipboard contents were verified, not each destination's paste.",
+      "The packaged (signed) app build; the e2e ran against the build:fast bundle in Electron.",
+      "Translucent theme for the controls themselves (no covered screen shows a table)."
+    ]
+  }
+}

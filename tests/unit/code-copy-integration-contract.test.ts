@@ -24,6 +24,9 @@ describe('code-copy integration contract', () => {
     expect(markdown).not.toContain('requestAnimationFrame')
     expect(markdown).not.toContain('addEventListener')
     expect(markdown).not.toContain('copiedBlockIndex: renderedCopiedIndex')
+    // React 19 rewrites innerHTML whenever the object's identity changes,
+    // which would wipe file chips and focus on every parent re-render.
+    expect(markdown).toContain('dangerouslySetInnerHTML={this.innerHtml}')
   })
 
   it('keys mutability to the message and preserves flush-before-settle ordering', () => {
