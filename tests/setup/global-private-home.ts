@@ -24,6 +24,8 @@ function readLogDir(dir: string): LogFileEntry[] {
 export interface PrivateHomeOptions {
   /** Lists the real home's log dir; injectable so a failing read can be tested. */
   readLogs?: (dir: string) => LogFileEntry[]
+  /** Removes the run root; injectable so a failing removal can be tested. */
+  removeDir?: (dir: string) => void
 }
 
 /**
@@ -33,7 +35,10 @@ export interface PrivateHomeOptions {
  * removes the run root and restores the env, so a watch-mode restart starts
  * again from the real home.
  */
-export function startPrivateHome({ readLogs = readLogDir }: PrivateHomeOptions = {}): () => void {
+export function startPrivateHome({
+  readLogs = readLogDir,
+  removeDir = (dir) => rmSync(dir, { recursive: true, force: true }),
+}: PrivateHomeOptions = {}): () => void {
   const startedAt = Date.now()
   const realHome = resolveRealHome(process.env, homedir())
   const tmpRoot = realpathSync(tmpdir())
@@ -58,8 +63,12 @@ export function startPrivateHome({ readLogs = readLogDir }: PrivateHomeOptions =
         throw new Error(`tests wrote ${leaked.length} log file(s) into ${realLogs}: ${leaked.slice(0, 5).join(', ')}`)
       }
     } finally {
-      if (isOwnedRunRoot(root, tmpRoot)) rmSync(root, { recursive: true, force: true })
-      restoreEnv(process.env, previousEnv)
+      // Restore even when the removal throws (EPERM, EBUSY): force only covers a missing path.
+      try {
+        if (isOwnedRunRoot(root, tmpRoot)) removeDir(root)
+      } finally {
+        restoreEnv(process.env, previousEnv)
+      }
     }
   }
 }

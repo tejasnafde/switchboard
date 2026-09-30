@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { userDataDir } from '../../src/main/runtime'
@@ -124,6 +124,21 @@ describe('startPrivateHome teardown', () => {
     expect(() => teardown()).toThrow('EACCES: logs unreadable')
     expect(existsSync(runRoot)).toBe(false)
     expect(envNow()).toEqual(before)
+  })
+
+  it('restores the env even when removing the run root fails, and keeps that error', () => {
+    const before = envNow()
+    let runRoot = ''
+    const teardown = startPrivateHome({
+      readLogs: noLogs,
+      removeDir: (dir) => {
+        runRoot = dir
+        throw new Error('EBUSY: run root in use')
+      },
+    })
+    expect(() => teardown()).toThrow('EBUSY: run root in use')
+    expect(envNow()).toEqual(before)
+    rmSync(runRoot, { recursive: true, force: true })
   })
 
   it('fails when a log file of this run appears in the real logs dir', () => {
