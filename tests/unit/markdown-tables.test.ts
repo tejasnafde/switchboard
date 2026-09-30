@@ -13,7 +13,7 @@ const table = [
 
 describe('chat markdown tables', () => {
   it('wraps a table in its own scroll box', () => {
-    expect(renderMarkdownWithCopyControls(table)).toMatch(/<div class="markdown-table"><table>/)
+    expect(renderMarkdownWithCopyControls(table)).toMatch(/<div class="markdown-table" data-table-state="settled">.*<div class="markdown-table-scroll"><table>/s)
   })
 
   it('right-aligns a column of numbers, bold ones included, and leaves text columns alone', () => {
