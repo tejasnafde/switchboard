@@ -240,6 +240,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - `request.opened` / `request.closed` · approval prompt flow (`requestType: 'command' | 'file' | 'tool'`)
 - `turn.completed` · turn ended, with `costUsd? / usedTokens? / maxTokens? / numTurns? / durationMs?`
 - `turn.queued` / `turn.dequeued` · a `delivery: 'queue'` message is held until the running turn ends / left the queue (`started | promoted | cancelled | dropped`), keyed by its chat row id (`echoMessageId(origin)`). The registry's `QueuedTurnLedger` fills in the text and serves list / promote / cancel (`turn_queue_controls_v1`); outstanding-turn accounting for a queued message is settled on `turn.dequeued` only, never in the IPC handlers
+  - **Codex native queue: tried and rejected (spike 2026-09-29, Codex 0.158).** Its `thread/queue/*` methods are experimental, and they cannot carry our semantics: `queue/start` refuses while a turn runs, so Send now (promote into the running turn) has no equivalent; queue items carry no settings, so a queued message's own runtime mode cannot apply when it starts; and the server starts the next item itself, so a failed start cannot be reported back. Decision: Codex keeps going through our `QueuedTurnLedger`. Re-check only once the queue leaves experimental, can merge an item into a running turn, and stores per-item settings.
 - `status` · session status change · `session` · sessionId recorded
 - `context_window` · live token count (polled after each turn)
 - `model.variants` · available model variants + current selection
