@@ -6,6 +6,7 @@
  * nothing else may.
  */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
+import './helpers/registry-session-mocks'
 
 vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({

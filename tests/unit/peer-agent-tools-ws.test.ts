@@ -12,6 +12,7 @@
  * cannot fan out past its own budget by opening more targets.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest'
+import './helpers/registry-session-mocks'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
