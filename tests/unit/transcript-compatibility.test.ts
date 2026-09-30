@@ -162,4 +162,39 @@ describe('synchronizeCompatibleTranscript', () => {
     expect(result).toMatchObject({ ok: false, reason: 'concurrent-modification' })
     await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'divergent' })
   })
+
+  it('compares again when only the stopping source appends a late record', async () => {
+    const paths = await fixture(first, '')
+    await writeFile(paths.targetPath, '')
+    let calls = 0
+
+    const result = await synchronizeCompatibleTranscript(paths.sourcePath, paths.targetPath, {
+      settleDelayMs: 0,
+      beforeReplace: async () => {
+        if (calls++ === 0) await writeFile(paths.sourcePath, first + second)
+      },
+    })
+
+    expect(result).toMatchObject({ ok: true, copied: true })
+    expect(calls).toBe(2)
+    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'equal' })
+  })
+
+  it('gives up after a bounded number of attempts when the source keeps changing', async () => {
+    const paths = await fixture(first, '')
+    let source = first
+    let calls = 0
+
+    const result = await synchronizeCompatibleTranscript(paths.sourcePath, paths.targetPath, {
+      settleDelayMs: 0,
+      beforeReplace: async () => {
+        calls++
+        source += third
+        await writeFile(paths.sourcePath, source)
+      },
+    })
+
+    expect(result).toMatchObject({ ok: false, reason: 'concurrent-modification' })
+    expect(calls).toBe(3)
+  })
 })

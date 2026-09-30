@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "profile-switch-source-settle",
+  "summary": "A Claude or Codex profile switch compares the transcripts again when only the stopped source session wrote a late record, instead of failing with a context conflict on the first try.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "No renderer change. The existing conflict dialog simply stops appearing for this case."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The phone asks the backend to switch; the retry runs in the backend, so the phone gets the fix with no change."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as React Native: the retry is backend-side."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/transcript-compatibility.ts",
+        "tests/unit/transcript-compatibility.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or stored data change. A target that changes still aborts without being overwritten."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships with the next desktop release; no wire or protocol change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/transcript-compatibility.test.ts: a source that appends one late record is compared again and copied; a source that keeps changing gives up after 3 attempts; a target that changes still aborts. Both new tests fail without the fix."
+    ],
+    "hardware": [
+      "Diagnosed from the packaged app log and the real transcript: the stopped Claude CLI appended a background-task notification about 2 s after stop, between the two compares."
+    ],
+    "notExercised": [
+      "The fixed switch has not been clicked in a packaged build yet."
+    ]
+  }
+}
