@@ -1,6 +1,6 @@
 /**
- * Import this FIRST in a test file that runs a real ProviderRegistry
- * START_SESSION, before the registry itself:
+ * Mocks for a test file that runs a real ProviderRegistry START_SESSION.
+ * Import it before anything that loads the registry:
  *
  *   import './helpers/registry-session-mocks'
  *
@@ -9,10 +9,6 @@
  * notebook attach walks the cwd and starts a watcher there, and git runs for
  * the toplevel and the turn checkpoint. Under load that pushed the first test
  * of a file toward the 5 s timeout.
- *
- * The mocks are registered when this module runs, so a file must import it
- * before anything that loads the logger, the notebook manager or
- * node:child_process.
  */
 import { vi } from 'vitest'
 
