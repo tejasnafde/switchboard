@@ -26,7 +26,11 @@ function electron(): typeof import('electron') {
 
 export function userDataDir(): string {
   if (isElectron) return electron().app.getPath('userData')
-  return process.env.SWITCHBOARD_DATA_DIR ?? join(homedir(), '.switchboard')
+  const override = process.env.SWITCHBOARD_DATA_DIR
+  // The vitest global setup always sets this; falling back under a test run
+  // would write logs and databases into the developer's real home.
+  if (!override && process.env.VITEST) throw new Error('SWITCHBOARD_DATA_DIR must be set under vitest')
+  return override ?? join(homedir(), '.switchboard')
 }
 
 export function appRootDir(): string {

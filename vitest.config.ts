@@ -5,6 +5,10 @@ export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.ts'],
     environment: 'node',
+    // A throwaway home + SWITCHBOARD_DATA_DIR per run, so tests never write
+    // into the real ~/.switchboard (logs, db, shell, worktrees).
+    globalSetup: ['tests/setup/global-private-home.ts'],
+    setupFiles: ['tests/setup/record-worker-pid.ts'],
     // ponytail: one global value. The Windows runner is slow at spawning git, and
     // the worktree tests (fork-worktree-request, worktree-creation-git-adapter)
     // hit the 5s default there. Raise it per file if one test ever needs more.
