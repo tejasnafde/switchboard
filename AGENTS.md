@@ -636,6 +636,8 @@ Outputs to DevTools console with `[SB:scope]` prefix matching the main-process c
 
 ### Rules
 
+- **Quit source**: any new code path that calls `app.quit()` must call `noteQuitSource(kind, detail)` from `src/main/quit-source.ts` first, so the `quit requested` log line names it. An untagged quit logs as `system`.
+
 - **Module-level constant**: `const log = createXxxLogger('scope')` - never inside functions.
 - **Scope format**: `'domain:subsystem'` - e.g. `'ipc:files'`, `'store:agent'`, `'ide:pane'`.
 - **No silent swallowing**: every `catch` block that doesn't re-throw must `log.warn` or `log.error`. `catch { /* ignore */ }` is a bug.

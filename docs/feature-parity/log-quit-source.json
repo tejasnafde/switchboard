@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "log-quit-source",
+  "summary": "Every quit writes one log line naming its source: the menu or Cmd+Q, the Relaunch button, the updater install, the last window closing (Windows and Linux), the single-instance lock, a fatal startup error, the smoke test, a SIGTERM/SIGINT/SIGHUP signal, or a macOS shutdown or logout. A quit with no in-app caller logs as system (the Dock, a macOS quit Apple event, or an untagged path). Added after a user's app quit cleanly with no trace of why.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/quit-source.ts",
+        "src/main/index.ts",
+        "src/main/ipc/app-desktop.ts",
+        "src/main/updater.ts",
+        "tests/unit/quit-source.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The phone app has no quit path of the desktop app; this is desktop main-process logging."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android client has no desktop quit path; this is desktop main-process logging."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No IPC or wire change; the headless server keeps its own signal handling."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data; one extra log line per quit."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "The updater install path only gains a log tag; packaging and channels are unchanged."
+    }
+  },
+  "verification": {
+    "automated": [
+      "quit-source.test.ts: system default, first reason wins, empty detail omitted. Typecheck covers the tagged call sites."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A real Cmd+Q, Dock quit, SIGTERM and macOS logout on the packaged app were not triggered by a test; the release smoke test exercises the quit path."
+    ]
+  }
+}

@@ -29,6 +29,7 @@ import type { UpdateStatus } from '@shared/update-status'
 import { withTimeout } from '@shared/promise-timeout'
 import { createMainLogger } from './logger'
 import { friendlyUpdateError, isStaleDownloadError, isCheckTimeout } from './updater-error'
+import { noteQuitSource } from './quit-source'
 
 const log = createMainLogger('updater')
 
@@ -201,6 +202,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
  */
 export function quitAndInstall(): void {
   if (!app.isPackaged) return
+  noteQuitSource('update-install')
   autoUpdater.quitAndInstall()
 }
 
