@@ -20,6 +20,7 @@
  * never find the transcript.
  */
 import { describe, expect, it, vi } from 'vitest'
+import './helpers/registry-session-mocks'
 
 const STORED_ID = '55555555-5555-4555-8555-555555555555' // DB-recorded resume id; its transcript lives in "another configured OAuth profile"
 const STALE_HINT = '66666666-6666-4666-8666-666666666666' // stale id the client's local store still remembers - must lose to STORED_ID

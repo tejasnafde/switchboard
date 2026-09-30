@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+import './helpers/registry-session-mocks'
 
 vi.setConfig({ testTimeout: 20_000 })
 

@@ -4,32 +4,7 @@
  * follow it. A turn that carries no mode leaves the chat's mode alone.
  */
 import { describe, expect, it, vi } from 'vitest'
-
-// START_SESSION on /tmp otherwise does real work: the first log line prunes
-// the shared log dir (tens of thousands of files), the notebook attach walks
-// /tmp and starts a watcher there, and git runs for the toplevel and the turn
-// checkpoint. None of it is what this file tests, and under load it pushed
-// the first test toward the 5 s timeout.
-vi.mock('../../src/main/logger', () => ({
-  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
-}))
-
-vi.mock('../../src/main/notebooks/manager', () => ({
-  notebookManager: {
-    setPublisher: () => {}, attach: () => [], detach: () => {}, beginTurn: () => {},
-    drainTurnEdits: () => [], explainsFileEdit: () => false,
-  },
-}))
-
-vi.mock('node:child_process', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:child_process')>()
-  return {
-    ...actual,
-    execFile: (...args: unknown[]) => {
-      (args[args.length - 1] as (err: Error) => void)(new Error('git does not run in this test'))
-    },
-  }
-})
+import './helpers/registry-session-mocks'
 
 vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({
