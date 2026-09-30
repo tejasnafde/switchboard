@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -14,6 +14,7 @@ import {
   parseApkSignerOutput,
   parseChecksumMetadata,
   verifyApkEvidence,
+  verifyNewerThanPublished,
 } from '../../scripts/verify-android-apk.mjs'
 
 const digest = '0'.repeat(64)
@@ -148,6 +149,81 @@ describe('Android APK release verifier', () => {
         apkFilename: 'switchboard-0.5.0.apk',
       }),
     ).toThrow('checksum')
+  })
+
+  describe('newer than every published APK', () => {
+    const published = [
+      { versionCode: 14, versionName: '0.5.13', source: 'mobile-v0.5.13-switchboard-0.5.13.apk' },
+      { versionCode: 20, versionName: '0.5.9', source: 'mobile-v0.5.9-switchboard-0.5.9.apk' },
+      { versionCode: 3, versionName: '0.5.1', source: 'mobile-v0.5.1-switchboard-0.5.1.apk' },
+    ]
+
+    test('has nothing to exceed before the first release', () => {
+      expect(verifyNewerThanPublished({ versionCode: 2, versionName: '0.5.0' }, [])).toBeNull()
+    })
+
+    test('compares code and name each against its own maximum, wherever it sits in the list', () => {
+      expect(verifyNewerThanPublished({ versionCode: 21, versionName: '0.5.14' }, published)).toEqual({
+        highestVersionCode: 20,
+        highestVersionName: '0.5.13',
+      })
+    })
+
+    test('refuses a versionCode that only beats the newest release, naming the one it does not beat', () => {
+      expect(() => verifyNewerThanPublished({ versionCode: 15, versionName: '0.5.14' }, published)).toThrow(
+        'versionCode 15 must exceed the highest published versionCode 20 (mobile-v0.5.9-switchboard-0.5.9.apk)',
+      )
+    })
+
+    test('refuses an equal versionCode and an equal or lower versionName', () => {
+      expect(() => verifyNewerThanPublished({ versionCode: 20, versionName: '0.5.14' }, published)).toThrow(
+        'versionCode 20 must exceed',
+      )
+      expect(() => verifyNewerThanPublished({ versionCode: 21, versionName: '0.5.13' }, published)).toThrow(
+        'versionName 0.5.13 must exceed the highest published versionName 0.5.13',
+      )
+      expect(() => verifyNewerThanPublished({ versionCode: 21, versionName: '0.5.10' }, published)).toThrow(
+        'versionName 0.5.10 must exceed',
+      )
+    })
+  })
+
+  testWithPosixToolShims('newer-than-published CLI reads every APK in the directory', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
+    try {
+      const publishedDir = join(dir, 'published')
+      mkdirSync(publishedDir)
+      const apk = join(dir, 'switchboard-0.5.14.apk')
+      const aapt = join(dir, 'fake-aapt2')
+      writeFileSync(apk, 'new')
+      writeFileSync(join(publishedDir, 'mobile-v0.5.13-switchboard-0.5.13.apk'), 'newest')
+      writeFileSync(join(publishedDir, 'mobile-v0.5.9-switchboard-0.5.9.apk'), 'highest code')
+      writeFileSync(
+        aapt,
+        '#!/bin/sh\ncase "$3" in\n' +
+          "  *0.5.14.apk) printf \"package: name='app.switchboard.mobile' versionCode='15' versionName='0.5.14'\\n\" ;;\n" +
+          "  *0.5.13.apk) printf \"package: name='app.switchboard.mobile' versionCode='14' versionName='0.5.13'\\n\" ;;\n" +
+          "  *) printf \"package: name='app.switchboard.mobile' versionCode='20' versionName='0.5.9'\\n\" ;;\n" +
+          'esac\n',
+      )
+      chmodSync(aapt, 0o755)
+
+      const refused = runVerifier(['--apk', apk, '--newer-than-published', publishedDir], { AAPT2: aapt })
+      expect(refused.status).not.toBe(0)
+      expect(refused.stderr).toContain('highest published versionCode 20')
+
+      rmSync(join(publishedDir, 'mobile-v0.5.9-switchboard-0.5.9.apk'))
+      const accepted = runVerifier(['--apk', apk, '--newer-than-published', publishedDir], { AAPT2: aapt })
+      expect(accepted.status).toBe(0)
+      expect(accepted.stdout).toContain('newer than all 1 published APKs')
+
+      rmSync(join(publishedDir, 'mobile-v0.5.13-switchboard-0.5.13.apk'))
+      const first = runVerifier(['--apk', apk, '--newer-than-published', publishedDir], { AAPT2: aapt })
+      expect(first.status).toBe(0)
+      expect(first.stdout).toContain('this is the first release')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   test('strict CLI fails clearly when no APK was supplied', () => {

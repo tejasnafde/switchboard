@@ -28,6 +28,18 @@ and its checksum file matches the APK bytes. Never generate a replacement key:
 Android would reject the update and force an uninstall, losing app-private
 data.
 
+Monotonic means strictly higher than every APK ever published, not just the
+newest one. The job pages through all releases (`gh api --paginate`), downloads
+the APK of every non-draft `mobile-v*` release, and
+`scripts/verify-android-apk.mjs --newer-than-published <dir>` refuses the new
+APK unless its `versionCode` exceeds the highest published `versionCode` and
+its `versionName` exceeds the highest published `versionName`, each compared
+with its own maximum and naming the release it failed to beat. The published
+APKs are only read for their version: 0.3.0 and 0.4.0 carry `versionCode` 1,
+below the native floor, so they are compared but not identity-checked. When no
+`mobile-v*` APK is published yet the check is skipped with a notice, which is
+the first release.
+
 React Native remains the iOS client. `mobile-ota.yml` now publishes EAS updates
 with `--platform ios`; native Android receives signed APK updates only.
 
