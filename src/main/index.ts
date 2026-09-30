@@ -314,7 +314,7 @@ let quitSourceLogged = false
 app.on('before-quit', () => {
   if (quitSourceLogged) return
   quitSourceLogged = true
-  log.info('quit requested', { ...quitSource(), uptimeSec: Math.round(process.uptime()) })
+  shutdownLog.info('quit requested', { ...quitSource(), uptimeSec: Math.round(process.uptime()) })
 })
 
 if (!gotTheLock) {
