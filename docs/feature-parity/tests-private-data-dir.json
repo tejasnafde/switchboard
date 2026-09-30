@@ -1,0 +1,43 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "tests-private-data-dir",
+  "summary": "Run the vitest suite against a throwaway home and SWITCHBOARD_DATA_DIR under the OS temp folder, so tests stop writing logs, databases, shell and worktree files into the developer's real ~/.switchboard.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Electron resolves userData through app.getPath and never reaches the changed branch. The one src/main edit (runtime.ts userDataDir) throws only when VITEST is set and SWITCHBOARD_DATA_DIR is not, which no packaged or dev app run does."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile is untouched. Its jest suite imports only @shared modules and writes no files, so it never touched the home folder."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "apps/android is untouched. Its JVM tests create files only through Files.createTempDirectory, createTempFile and kotlin createTempDirectory, which live under java.io.tmpdir."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire protocol, IPC channel, event shape or handler changes. src/shared is untouched, and the headless server still falls back to ~/.switchboard when SWITCHBOARD_DATA_DIR is unset outside vitest."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, migration or persisted-state change. Only where the test run puts its throwaway database moved, and existing files in ~/.switchboard are left in place."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Test configuration only (vitest.config.ts, tests/setup). No packaging, update channel, signing or release workflow changes."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/private-test-home.test.ts asserts os.homedir() and userDataDir() resolve inside the run root, that a real log line lands in the run root and not in the real ~/.switchboard/logs, that userDataDir() refuses the home fallback under vitest, and covers the guarded-removal and leak-matching rules.",
+      "The vitest global teardown fails the run if any log file named after one of the run's worker pids and written after the run started appears in the real ~/.switchboard/logs; a forced teardown throw was checked to exit vitest with code 1.",
+      "Full suite run: the real ~/.switchboard/logs file count and shell/.zshrc mtime were unchanged before and after."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The Windows CI runner: USERPROFILE is redirected alongside HOME, but the suite was only run locally on macOS."
+    ]
+  }
+}
