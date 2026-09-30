@@ -97,6 +97,30 @@ describe('table copy serializations', () => {
     expect(tableToCsv(table)).toBe('name,quote\r\n"Smith, J","she said ""hi"""\r\nplain,"1,204"')
   })
 
+  it('neutralizes CSV cells a spreadsheet would run as formulas, and leaves numbers alone', () => {
+    const table = source([
+      '| cell |', '| --- |',
+      '| =HYPERLINK("http://x","y") |', '| +cmd |', '| -rm |', '| @SUM(A1) |',
+      '| -3.5 |', '| +2 |', '| 1,204 |', '| -42% |', '| - |', '| a=b |',
+    ].join('\n'))
+    expect(tableToCsv(table).split('\r\n').slice(1)).toEqual([
+      '"\'=HYPERLINK(""http://x"",""y"")"', "'+cmd", "'-rm", "'@SUM(A1)",
+      '-3.5', '+2', '"1,204"', '-42%', "'-", 'a=b',
+    ])
+    expect(tableToTsv(table).split('\n')[1]).toBe('=HYPERLINK("http://x","y")')
+    expect(tableToHtml(table)).toContain('<td>+cmd</td>')
+  })
+
+  it('neutralizes a leading tab or carriage return in CSV', () => {
+    const table: CopyTableSource = {
+      header: [{ text: 'h', tokens: [{ type: 'codespan', raw: '`\t=1`', text: '\t=1' }], header: true, align: null }],
+      rows: [],
+      align: [null],
+    }
+    // cellText flattens and trims whitespace, so the formula character is what leads.
+    expect(tableToCsv(table)).toBe("'=1")
+  })
+
   it('writes a normalized markdown table that keeps the alignment row', () => {
     const table = source('|a|b|c|d|\n|:--|:-:|--:|---|\n|**1**|`2`|3|x|')
     expect(tableToMarkdown(table)).toBe('| a | b | c | d |\n| :--- | :---: | ---: | --- |\n| **1** | `2` | 3 | x |')

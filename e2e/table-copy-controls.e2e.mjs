@@ -98,6 +98,7 @@ function seedConversation() {
     `INSERT INTO projects (path, name, added_at) VALUES (${quote(projectPath)}, 'Table Copy Fixture', ${now});`,
     `INSERT INTO conversations (id, project_path, agent_type, title, created_at, updated_at, sidebar_role) VALUES (${quote(conversationId)}, ${quote(projectPath)}, 'codex', ${quote(title)}, ${now}, ${now}, 'managed');`,
     `INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES ('historical-table', ${quote(conversationId)}, 'assistant', ${quote(historical)}, ${now});`,
+    `INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES ('leading-table', ${quote(conversationId)}, 'assistant', ${quote('| Leading | Rate |\n| --- | --- |\n| first_table_marker | 1 |')}, ${now + 1});`,
   ].join('\n')
   execFileSync('sqlite3', [join(userDataDir, 'data', 'switchboard.db'), sql])
 }
@@ -120,6 +121,16 @@ async function waitForText(locator, text) {
   const deadline = Date.now() + 3_000
   while (Date.now() < deadline) {
     if (await locator.textContent() === text) return true
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  return false
+}
+
+// Radix returns focus in a timeout after the menu unmounts.
+async function waitForFocus(locator) {
+  const deadline = Date.now() + 2_000
+  while (Date.now() < deadline) {
+    if (await locator.evaluate((el) => document.activeElement === el)) return true
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
   return false
@@ -174,8 +185,25 @@ try {
   check(await controls.evaluate((el) => getComputedStyle(el).opacity) === '1', 'hovering the table shows the controls')
   const boxRect = await box.boundingBox()
   const controlsRect = await controls.boundingBox()
-  check(!!boxRect && !!controlsRect && Math.abs(boxRect.x + boxRect.width - (controlsRect.x + controlsRect.width)) < 8 && controlsRect.y - boxRect.y < 8, 'controls sit at the top-right of the table box')
-  if (screenshotDir) await box.screenshot({ path: join(screenshotDir, 'table-hover.png') })
+  check(!!boxRect && !!controlsRect && Math.abs(boxRect.x + boxRect.width - (controlsRect.x + controlsRect.width)) < 2, 'controls line up with the table box right edge')
+  check(controlsRect.y + controlsRect.height <= boxRect.y + 4, 'controls float above the table, not inside its header row')
+  const headerText = await box.locator('th').last().evaluate((th) => {
+    const range = document.createRange()
+    range.selectNodeContents(th)
+    const r = range.getBoundingClientRect()
+    return { x: r.x, y: r.y, right: r.right, bottom: r.bottom }
+  })
+  check(controlsRect.y + controlsRect.height <= headerText.y || controlsRect.x >= headerText.right, 'controls cover no header text')
+  const leading = win.locator('.markdown-content').filter({ hasText: 'first_table_marker' })
+  await leading.locator('.markdown-table').hover()
+  await win.waitForTimeout(200)
+  const leadingHit = await leading.locator('.table-copy-btn').evaluate((button) => {
+    const r = button.getBoundingClientRect()
+    return document.elementFromPoint(r.x + r.width / 2, r.y + 2) === button
+  })
+  check(leadingHit, 'a table that opens the message shows its controls unclipped')
+  await box.hover()
+  await win.waitForTimeout(200)
 
   await copyButton.click()
   check(await waitForText(copyButton, 'Copied'), 'copy feedback becomes Copied')
@@ -195,14 +223,13 @@ try {
   const menu = win.getByRole('dialog', { name: 'Copy table as' })
   await menu.waitFor({ state: 'visible', timeout: 3_000 })
   check(await menuButton.getAttribute('aria-expanded') === 'true', 'menu button reports expanded')
-  if (screenshotDir) await win.screenshot({ path: join(screenshotDir, 'table-menu.png') })
   await menu.getByRole('button', { name: /Copy as CSV/ }).click()
   await menu.waitFor({ state: 'hidden', timeout: 3_000 })
   const csv = await clipboardWhen((c) => c.text.startsWith('Check,'))
   check(csv.text.startsWith('Check,Match rate\r\n') && csv.text.includes('"roster_compliant = count, with a comma","38,236 / 39,459 (97%)"'), 'Copy as CSV writes RFC 4180 CSV')
   check(!csv.formats.includes('text/html'), 'Copy as CSV writes plain text only')
   check(await waitForText(copyButton, 'Copied'), 'menu choices show the same Copied feedback')
-  check(await menuButton.evaluate((el) => document.activeElement === el), 'focus returns to the menu button after a choice')
+  check(await waitForFocus(menuButton), 'focus returns to the menu button after a choice')
   check(await menuButton.getAttribute('aria-expanded') === 'false', 'menu button reports collapsed')
 
   await menuButton.press('Enter')
@@ -217,7 +244,7 @@ try {
   await menu.waitFor({ state: 'visible', timeout: 3_000 })
   await win.keyboard.press('Escape')
   await menu.waitFor({ state: 'hidden', timeout: 3_000 })
-  check(await menuButton.evaluate((el) => document.activeElement === el), 'Escape closes the menu and returns focus')
+  check(await waitForFocus(menuButton), 'Escape closes the menu and returns focus')
 
   await menuButton.click()
   await menu.waitFor({ state: 'visible', timeout: 3_000 })
@@ -243,6 +270,26 @@ try {
   check(await streaming.locator('.table-copy-btn').evaluate((el) => document.activeElement === el), 'keyboard focus survives later streaming commits')
 
   await emit({ type: 'turn.completed', threadId: conversationId, durationMs: 200 })
+
+  if (screenshotDir) {
+    for (const theme of ['Dark', 'Light']) {
+      await win.getByTitle('Settings').click()
+      await win.getByRole('button', { name: /^Appearance(?: \d+ changed)?$/ }).click()
+      await win.getByRole('button', { name: new RegExp(theme) }).click()
+      await win.keyboard.press('Escape')
+      await win.waitForTimeout(300)
+      await message.scrollIntoViewIfNeeded()
+      await box.hover()
+      await win.waitForTimeout(250)
+      const bubble = message.locator('xpath=ancestor::div[@class="message-bubble"]')
+      await bubble.screenshot({ path: join(screenshotDir, `table-hover-${theme.toLowerCase()}.png`) })
+      await menuButton.click()
+      await menu.waitFor({ state: 'visible', timeout: 3_000 })
+      await win.screenshot({ path: join(screenshotDir, `table-menu-${theme.toLowerCase()}.png`) })
+      await win.keyboard.press('Escape')
+      await menu.waitFor({ state: 'hidden', timeout: 3_000 })
+    }
+  }
   check(pageErrors.length === 0, `no page errors (${pageErrors.join('; ')})`)
 
   console.log('\nTABLE COPY CONTROLS E2E PASSED')

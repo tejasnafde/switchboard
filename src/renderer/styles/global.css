@@ -2617,15 +2617,18 @@ html, body, #root {
   overflow-x: auto;
 }
 
-/* Table copy controls: top-right over the header row, shown on hover and on
- * keyboard focus. Same look as the code block's copy button. */
+/* Table copy controls: just above the table's top-right corner, over the gap
+ * before it (they reserve no height), shown on hover and on keyboard focus.
+ * The 3px overlap stays inside the border and header padding, clear of text.
+ * Same look as the code block's copy button. */
 .markdown-content .table-copy-controls {
   position: absolute;
-  top: 5px;
-  right: 5px;
+  bottom: calc(100% - 3px);
+  right: 0;
   z-index: 1;
   display: flex;
   opacity: 0;
+  pointer-events: none;
   user-select: none;
   transition: opacity 0.12s;
 }
@@ -2635,6 +2638,7 @@ html, body, #root {
 .markdown-content .table-copy-controls:has(.copied),
 .markdown-content .table-copy-controls:has([aria-expanded='true']) {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .markdown-content .table-copy-controls button {
@@ -2683,6 +2687,7 @@ html, body, #root {
 @media (hover: none), (pointer: coarse) {
   .markdown-content .table-copy-controls {
     opacity: 1;
+    pointer-events: auto;
   }
 }
 

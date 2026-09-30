@@ -114,11 +114,27 @@ export function tableToTsv(source: CopyTableSource): string {
     .join('\n')
 }
 
-function csvField(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value
+const NUMBER = /^[-+]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?%?$/
+
+/**
+ * A CSV opened in a spreadsheet runs a cell starting with = + - @ (or a tab
+ * or carriage return) as a formula. A leading apostrophe makes it text
+ * (OWASP CSV injection); numbers such as -3.5 are left alone.
+ */
+function neutralizeFormula(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) && !NUMBER.test(value) ? `'${value}` : value
 }
 
-/** RFC 4180: CRLF between records, a field with a comma or quote is quoted. */
+function csvField(value: string): string {
+  const safe = neutralizeFormula(value)
+  return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe
+}
+
+/**
+ * RFC 4180: CRLF between records, a field with a comma or quote is quoted.
+ * Only CSV guards formulas: the default copy's HTML pastes into Sheets and
+ * Excel as values, and an apostrophe would show in Slack or a text field.
+ */
 export function tableToCsv(source: CopyTableSource): string {
   return [source.header, ...source.rows]
     .map((row) => rowCells(source, row).map((c) => csvField(cellText(c))).join(','))

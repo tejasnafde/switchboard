@@ -485,7 +485,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             markdown={markdownContent}
             mutable={isMutable}
             className="markdown-content"
-            style={{ overflow: 'hidden' }}
+            // Clip sideways only: a table's copy controls float just above
+            // it, over the bubble's padding when the table comes first.
+            style={{ overflowX: 'clip', display: 'flow-root' }}
           />
         ))}
 
