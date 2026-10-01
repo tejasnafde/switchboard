@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  hostWriteButtonLabel,
   hostWriteButtons,
   hostWriteContext,
   hostWriteResponse,
@@ -138,5 +139,14 @@ describe('a pull request to open', () => {
   it('sends no reviewers field for a card that asked none', () => {
     const plain: HostWriteCard = { ...create, create: { ...create.create!, reviewers: undefined } }
     expect(hostWriteResponse(plain, button(plain, 'create'), '', noDraft, initialCreateDraft(plain))).toEqual({ title: 'T', description: 'D' })
+  })
+})
+
+describe('hostWriteButtonLabel', () => {
+  it('says Dismiss and approves quietly when the user chose not to wake the agent', () => {
+    const [deny, postOnly] = hostWriteButtons(reply)
+    expect(hostWriteButtonLabel(deny, false)).toBe('Deny')
+    expect(hostWriteButtonLabel(deny, true)).toBe('Dismiss')
+    expect(hostWriteButtonLabel(postOnly, true)).toBe('Post only quietly')
   })
 })

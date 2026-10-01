@@ -891,6 +891,14 @@ object ThreadInteractionPolicy {
         return ApprovalActions.HostWrite(card, buttons, preview)
     }
 
+    /** Whether the card offers "Don't wake the agent": one the Switchboard server opened, on a backend that takes it. */
+    fun offersQuiet(item: FeedItem.Approval, backendAsyncApproval: Boolean): Boolean =
+        backendAsyncApproval && HostWriteCards.isServerCard(item.requestId)
+
+    /** The response an answer sends when the user chose not to wake the agent. */
+    fun quietly(response: HostWriteResponse?, quiet: Boolean): HostWriteResponse? =
+        if (quiet) (response ?: HostWriteResponse()).copy(quiet = true) else response
+
     /** A long draft starts collapsed, and nothing is approved until it has been opened. */
     fun hostWriteApprovable(actions: ApprovalActions.HostWrite, expanded: Boolean): Boolean =
         !actions.preview.long || expanded

@@ -5,11 +5,12 @@
  * what is posted, with the marker line, and every refusal is isError output.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { AgentApprovalBroker, type AgentApprovalAnswer, type AgentApprovalOutcome } from '../../src/main/mcp/agent-approvals'
-import { parseHostWriteResponse } from '../../src/shared/agent-host-writes'
+import { AgentApprovalBroker, type AgentApprovalAnswer } from '../../src/main/mcp/agent-approvals'
+import { parseHostWriteResponse, type HostWriteResponse } from '../../src/shared/agent-host-writes'
+import { declinedResultText } from '../../src/shared/agent-approval-cards'
 import { AgentWriteBudget } from '../../src/main/mcp/agent-write-budget'
-import { buildPrTools, pickLinkedPr, type AgentPullRequestAccess } from '../../src/main/mcp/pr-tools'
-import type { McpTool } from '../../src/main/mcp/mcp-session'
+import { buildPrTools, pickLinkedPr, prWritePlanSummary, runPrWritePlan, type AgentPullRequestAccess, type PrWritePlan } from '../../src/main/mcp/pr-tools'
+import { toolText, type McpTool, type McpToolResult } from '../../src/main/mcp/mcp-session'
 import type { PrChangedFile, PrCheck, PrConversation, PrDetail, PrRef } from '../../src/shared/pull-requests'
 import { parseHunks } from '../../src/shared/unified-diff'
 import type { RuntimeEvent, RuntimeMode } from '../../src/shared/provider-events'
@@ -78,11 +79,27 @@ function fakeAccess(linked: PrRef[] = [PR], over: Partial<PrDetail> = {}, diff: 
   return { access, calls }
 }
 
-function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<PrDetail>; files?: PrChangedFile[]; answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => AgentApprovalOutcome | null; budget?: AgentWriteBudget } = {}) {
+type Answer = { decision: 'approve'; response: HostWriteResponse } | { decision: 'deny' }
+
+/**
+ * The tools against a real broker. `answer` is the user, answering each card
+ * as it opens; `call` follows a queued write through to the result the agent
+ * is later told, which is what most of these tests are about.
+ */
+function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<PrDetail>; files?: PrChangedFile[]; answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => Answer | null; budget?: AgentWriteBudget } = {}) {
   const events: RuntimeEvent[] = []
   const refusals: AgentApprovalAnswer[] = []
+  const results: Array<Promise<McpToolResult>> = []
   const { access, calls } = fakeAccess(opts.linked, opts.detail, opts.files)
+  let mode: RuntimeMode = opts.mode ?? 'sandbox'
+  const runContext = { threadId: 't1', chatId: 'root-1', runtimeMode: () => mode, publish: (e: RuntimeEvent) => events.push(e), pullRequests: access }
   const approvals = new AgentApprovalBroker({
+    onClosed: (card, close, response) => {
+      const plan = card.plan as PrWritePlan
+      results.push(close.kind === 'approve'
+        ? runPrWritePlan(runContext, plan, response)
+        : Promise.resolve(toolText(declinedResultText(prWritePlanSummary(plan)), true)))
+    },
     publish: (e) => {
       events.push(e)
       if (e.type !== 'request.opened') return
@@ -96,7 +113,6 @@ function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<Pr
       })
     },
   })
-  let mode: RuntimeMode = opts.mode ?? 'sandbox'
   const tools = buildPrTools({
     threadId: 't1',
     chatId: 'root-1',
@@ -109,12 +125,18 @@ function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<Pr
     pullRequests: access,
   })
   const tool = (name: string): McpTool => tools.find((t) => t.name === name)!
-  const call = (name: string, args: Record<string, unknown>) => tool(name).call(args, { signal: new AbortController().signal })
-  return { tools, call, events, access, calls, refusals, setMode: (m: RuntimeMode) => { mode = m } }
+  const call = async (name: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    const before = results.length
+    const queued = await tool(name).call(args, { signal: new AbortController().signal })
+    if (queued.isError || !queued.content[0].text.startsWith('Queued for')) return queued
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    return results[before] ?? queued
+  }
+  return { tools, call, events, access, calls, refusals, approvals, setMode: (m: RuntimeMode) => { mode = m } }
 }
 
 const approve = (response = {}) => () => ({ decision: 'approve' as const, response })
-const deny = () => ({ decision: 'deny' as const, reason: 'user' as const })
+const deny = () => ({ decision: 'deny' as const })
 const opened = (events: RuntimeEvent[]) => events.filter((e) => e.type === 'request.opened') as Array<Extract<RuntimeEvent, { type: 'request.opened' }>>
 const text = (r: { content: Array<{ text: string }> }) => r.content[0].text
 
@@ -258,7 +280,7 @@ describe('reply_to_conversation', () => {
     const { call, calls } = setup({ answer: deny })
     const result = await call('reply_to_conversation', { conversationId: 'PRRT_1', text: 'Done.' })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('Nothing was posted')
+    expect(text(result)).toContain('The user declined')
     expect(calls).toEqual([])
   })
 
@@ -309,18 +331,21 @@ describe('reply_to_conversation', () => {
   })
 })
 
-describe('a call the agent cancels after the approval', () => {
-  it('posts nothing, since the agent would never hear it happened', async () => {
+describe('a card the agent does not wait on', () => {
+  it('answers at once that the write is queued, and posts when the user approves later, even after the call was cancelled', async () => {
     const controller = new AbortController()
-    const { tools, calls } = setup({
-      answer: () => {
-        queueMicrotask(() => controller.abort())
-        return { decision: 'approve' as const, response: {} }
-      },
-    })
+    const { tools, calls, events, approvals } = setup()
     const reply = tools.find((t) => t.name === 'reply_to_conversation')!
-    await reply.call({ conversationId: 'PRRT_1', text: 'Done.' }, { signal: controller.signal })
+    const queued = await reply.call({ conversationId: 'PRRT_1', text: 'Done.' }, { signal: controller.signal })
+    expect(queued.isError).toBeUndefined()
+    const card = opened(events)[0]
+    expect(text(queued)).toContain(`Queued for the user's approval (card ${card.requestId})`)
+    expect(text(queued)).toContain('Do not send it again')
+    controller.abort()
     expect(calls).toEqual([])
+    expect(approvals.respond('t1', card.requestId, 'approve', {}, { mayApproveHostWrite: true, label: 'test' })).toEqual({ ok: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls.map((c) => c.op)).toEqual(['reply'])
   })
 })
 
@@ -670,7 +695,7 @@ describe('draft_review', () => {
 
   it('posts nothing on deny', async () => {
     const { call, calls } = setup({ detail: reviewer, answer: deny })
-    expect(text(await call('draft_review', draft))).toContain('Nothing was posted')
+    expect(text(await call('draft_review', draft))).toContain('Nothing was sent')
     expect(calls).toEqual([])
   })
 

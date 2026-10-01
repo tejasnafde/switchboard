@@ -131,6 +131,12 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       }
       break
     }
+    case 'approval.result': {
+      // Same id and content as the row the backend stored, so a reload lands on it.
+      const exists = useAgentStore.getState().sessions.find((s) => s.id === tid)?.messages.some((m) => m.id === event.messageId)
+      if (!exists) appendMessage(tid, { id: event.messageId, role: 'system', content: event.content, timestamp: event.at })
+      break
+    }
     case 'task.notification': {
       // The transcript's copy is a user line, so this is one too: MessageBubble
       // splits both into the same row, and a reload replaces this one. A replay

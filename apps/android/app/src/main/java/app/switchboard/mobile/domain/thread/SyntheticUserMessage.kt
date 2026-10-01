@@ -67,6 +67,8 @@ object SyntheticUserMessage {
         Block("<environment_context>", "</environment_context>"),
         Block("<codex_internal_context", "</codex_internal_context>"),
         Block("<skill>", "</skill>"),
+        // A Switchboard approval result; the desktop shows its own row for it.
+        Block("<switchboard-approval-result>", "</switchboard-approval-result>"),
     )
 
     /** Port of `taskNotificationText`: the transcript form of a live task notification. */

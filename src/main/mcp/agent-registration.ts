@@ -10,7 +10,6 @@
  * - OpenCode: the ACP `session/new` `mcpServers` list; tools are `switchboard_<tool>`.
  */
 import { SWITCHBOARD_MCP_SERVER_NAME, type SwitchboardMcpLaunch } from './switchboard-mcp-server'
-import { HOST_WRITE_APPROVAL_TTL_MS } from '@shared/agent-host-writes'
 import { PEER_LIST_TOOL_NAME, PEER_SEND_TOOL_NAME } from '../provider/peer-tools'
 import {
   PR_COMMENT_TOOL,
@@ -23,13 +22,16 @@ import {
   PR_REVIEW_TOOL,
   PR_STATUS_TOOL,
 } from './pr-tools'
+import { WITHDRAW_APPROVAL_TOOL } from './approval-mcp-tools'
 
 /**
- * Codex gives up on an MCP call after 60 seconds by default, which is less
- * time than a person needs to read and edit a reply. Past the card's own
- * expiry, so the card always closes first and a late approval cannot post.
+ * Codex gives up on an MCP call after 60 seconds by default. No call waits on
+ * a person any more (a card is queued and the tool returns), but a create in
+ * full access runs several host calls with no card, each allowed 30 seconds,
+ * so the default could still cut one off and leave the agent unsure whether
+ * the pull request was opened.
  */
-export const CODEX_SWITCHBOARD_TOOL_TIMEOUT_SEC = Math.ceil(HOST_WRITE_APPROVAL_TTL_MS / 1000) + 300
+export const CODEX_SWITCHBOARD_TOOL_TIMEOUT_SEC = 180
 
 /** A TOML basic string. JSON's escapes are a subset TOML accepts. */
 function tomlString(value: string): string {
@@ -77,14 +79,14 @@ export function acpSwitchboardMcpServer(launch: SwitchboardMcpLaunch): AcpStdioM
 export const SWITCHBOARD_OPENCODE_TOOLS: readonly string[] = [
   PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PR_DIFF_TOOL, PR_REPLY_TOOL, PR_RESOLVE_TOOL, PR_RERUN_TOOL,
   PR_COMMENT_TOOL, PR_REVIEW_TOOL, PR_CREATE_TOOL,
-  PEER_LIST_TOOL_NAME, PEER_SEND_TOOL_NAME,
+  PEER_LIST_TOOL_NAME, PEER_SEND_TOOL_NAME, WITHDRAW_APPROVAL_TOOL,
 ].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`)
 
 const SWITCHBOARD_OPENCODE_TOOL_SET = new Set(SWITCHBOARD_OPENCODE_TOOLS)
 
-/** Our read-only tools, which plan mode allows. */
+/** Our tools plan mode allows: the reads, and withdrawing a card, which only takes a write back. */
 const SWITCHBOARD_OPENCODE_READ_TOOLS = new Set(
-  [PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PR_DIFF_TOOL, PEER_LIST_TOOL_NAME].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`),
+  [PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PR_DIFF_TOOL, PEER_LIST_TOOL_NAME, WITHDRAW_APPROVAL_TOOL].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`),
 )
 
 export function isSwitchboardOpencodeReadTool(toolName: string): boolean {

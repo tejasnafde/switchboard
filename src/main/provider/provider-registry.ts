@@ -33,7 +33,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
-import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
+import { commitConversationProviderSwitch, getConversationRuntimeMode, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope, describeRequestClient, remoteDeviceHasScope } from '../backend/request-context'
 import {
@@ -73,12 +73,26 @@ import {
   type PeerLinkView,
 } from '@shared/peer-links'
 import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
-import { AgentApprovalBroker } from '../mcp/agent-approvals'
+import { AgentApprovalBroker, type AgentApprovalCard, type AgentWritePlan } from '../mcp/agent-approvals'
 import { AgentWriteBudget } from '../mcp/agent-write-budget'
-import { agentPullRequestAccess, buildPrTools } from '../mcp/pr-tools'
-import { buildPeerMcpTools } from '../mcp/peer-mcp-tools'
+import { agentPullRequestAccess, buildPrTools, isPrWritePlan, prWritePlanSummary, runPrWritePlan } from '../mcp/pr-tools'
+import { buildPeerMcpTools, runPeerSendPlan } from '../mcp/peer-mcp-tools'
+import { buildApprovalMcpTools } from '../mcp/approval-mcp-tools'
+import { sqliteApprovalCardStore } from '../db/agent-approval-cards'
+import {
+  approvalResultDelivery,
+  approvalResultTurn,
+  closeWakesAgent,
+  declinedResultText,
+  formatApprovalResultMarker,
+  memoryApprovalCardStore,
+  type ApprovalCardClose,
+  type ApprovalCardStore,
+  type ApprovalResultDelivery,
+  type ApprovalResultOutcome,
+} from '@shared/agent-approval-cards'
 import { switchboardMcpServer, type SwitchboardMcpLaunch, type SwitchboardMcpServer } from '../mcp/switchboard-mcp-server'
-import { parseHostWriteResponse } from '@shared/agent-host-writes'
+import { hostWriteTitle, parseHostWriteResponse, type HostWriteResponse } from '@shared/agent-host-writes'
 import { approvalChoiceOnly } from '@shared/host-write-phone'
 import { defaultClaudeDir, prepareClaudeProfileSwitch } from './claude-session-migrate'
 import { prepareCodexProfileSwitch } from './codex-session-migrate'
@@ -241,8 +255,20 @@ export class ProviderRegistry implements PeerToolHost {
     // Tests that inject adapters get no MCP server unless they pass one, so
     // they neither listen on a port nor write the bridge into the data dir.
     switchboardMcp: SwitchboardMcpServer | null = adapters ? null : switchboardMcpServer(),
+    // Same rule for the card store: injected adapters mean a test, which gets
+    // an in-memory store unless it passes one.
+    approvalStore: ApprovalCardStore<AgentWritePlan> = adapters ? memoryApprovalCardStore() : sqliteApprovalCardStore(),
   ) {
     this.switchboardMcp = switchboardMcp
+    this.approvalStore = approvalStore
+    this.agentApprovals = new AgentApprovalBroker({
+      publish: (event) => this.publish(event),
+      sameChat: (a, b) => a === b || resolveRootThreadId(a) === resolveRootThreadId(b),
+      store: approvalStore,
+      onClosed: (card, close, response) => {
+        this.reportAgentCard(card, close, response).catch((err) => log.error(`reporting approval card ${card.requestId} failed`, err))
+      },
+    })
     activeRegistry = this
     this.host = host
     this.opencodeAcp = new OpencodeAcpAdapter()
@@ -308,12 +334,11 @@ export class ProviderRegistry implements PeerToolHost {
   /**
    * Approval cards the Switchboard MCP server opens for its own tools. Their
    * answers arrive on RESPOND_TO_REQUEST like any other and are routed here
-   * by request id instead of to the adapter.
+   * by request id instead of to the adapter. Stored, so a card outlives the
+   * agent's turn and a restart (`shared/agent-approval-cards.ts`).
    */
-  private readonly agentApprovals = new AgentApprovalBroker({
-    publish: (event) => this.publish(event),
-    sameChat: (a, b) => a === b || resolveRootThreadId(a) === resolveRootThreadId(b),
-  })
+  private readonly agentApprovals: AgentApprovalBroker
+  private readonly approvalStore: ApprovalCardStore<AgentWritePlan>
 
   /** Serves this backend's MCP tools to every agent; one per process, shared across registries. */
   private readonly switchboardMcp: SwitchboardMcpServer | null
@@ -559,8 +584,9 @@ export class ProviderRegistry implements PeerToolHost {
    * (see AGENTS.md's "Any new per-conversation setting..." note).
    */
   getPendingRequests(threadId: string): PendingBlockingEvent[] {
-    const byKey = this.pendingRequests.get(resolveRootThreadId(threadId))
-    return byKey ? [...byKey.values()] : []
+    const root = resolveRootThreadId(threadId)
+    const byKey = this.pendingRequests.get(root)
+    return [...(byKey ? byKey.values() : []), ...this.agentApprovals.pendingEvents(root)]
   }
 
   /** Whether any id of the thread has an accepted turn that has not completed. */
@@ -1000,6 +1026,175 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   /**
+   * The mode a chat's writes are judged by: the adapter's own record, which
+   * applies a queued message's mode only when it starts, or the saved mode of
+   * a chat whose session is not running (a card answered after a restart).
+   */
+  private chatRuntimeMode(threadId: string): RuntimeMode {
+    const live = this.liveSessionId(threadId)
+    if (live) return this.sessionAdapters.get(live)?.runtimeModeOf?.(live) ?? this.sessionDescriptors.get(live)?.runtimeMode ?? 'sandbox'
+    try {
+      const saved = getConversationRuntimeMode(resolveRootThreadId(threadId))
+      return isRuntimeMode(saved) ? saved : 'sandbox'
+    } catch (err) {
+      log.warn(`could not read the saved runtime mode of ${threadId}`, err)
+      return 'sandbox'
+    }
+  }
+
+  /**
+   * One of the MCP server's cards closed. Runs the write on an approval (with
+   * every check after the card), records what happened as a system row in the
+   * chat, and tells the agent unless the user chose quiet. The agent's turn is
+   * Switchboard's: it leaves hop depth, session links and pending plans alone,
+   * so a result can neither restart a peer chain nor stand in for the user.
+   */
+  private async reportAgentCard(card: AgentApprovalCard, close: ApprovalCardClose, response: HostWriteResponse): Promise<void> {
+    const plan = card.plan
+    const what = isPrWritePlan(plan) ? prWritePlanSummary(plan) : `the message to session ${plan.sessionId}`
+    let outcome: ApprovalResultOutcome
+    let text: string
+    if (close.kind === 'approve') {
+      try {
+        const result = await this.runAgentWrite(card, response)
+        outcome = result.isError ? 'failed' : 'done'
+        text = result.content.map((c) => c.text).join('\n')
+      } catch (err) {
+        // The tools report refusals as results; a throw is a bug, and the agent still hears something it can act on.
+        log.error(`running approved card ${card.requestId} threw`, err)
+        outcome = 'failed'
+        text = `Switchboard could not run ${what}: ${errorMessage(err)} It may or may not have been sent; tell the user rather than asking again.`
+      }
+    } else if (close.kind === 'deny') {
+      outcome = close.wake ? 'declined' : 'dismissed'
+      text = declinedResultText(what)
+    } else if (close.kind === 'withdrawn') {
+      outcome = 'withdrawn'
+      text = `You withdrew ${what}. Nothing was sent.`
+    } else {
+      outcome = 'stopped'
+      text = `The chat was stopped before the user answered, so ${what} was not sent.`
+    }
+    const delivery = await this.deliverApprovalResult(card, text, closeWakesAgent(close))
+    const messageId = `apr_${card.requestId}`
+    const content = formatApprovalResultMarker({
+      requestId: card.requestId,
+      title: card.hostWrite ? hostWriteTitle(card.hostWrite) : 'Message another session',
+      outcome,
+      text,
+      delivery,
+    })
+    try {
+      saveMessageIfAbsent(messageId, card.chatId, 'system', content)
+    } catch (err) {
+      log.warn(`failed to persist the result of approval card ${card.requestId}`, err)
+    }
+    this.publish({
+      type: 'approval.result', threadId: this.liveSessionId(card.threadId) ?? card.threadId,
+      messageId, requestId: card.requestId, content, at: Date.now(),
+    })
+  }
+
+  private async runAgentWrite(card: AgentApprovalCard, response: HostWriteResponse) {
+    const threadId = this.liveSessionId(card.threadId) ?? card.threadId
+    const runtimeMode = (): RuntimeMode => this.chatRuntimeMode(card.threadId)
+    const publish = (event: RuntimeEvent): void => this.publish(event)
+    const plan = card.plan
+    if (isPrWritePlan(plan)) {
+      return runPrWritePlan({ threadId, chatId: card.chatId, runtimeMode, publish, pullRequests: agentPullRequestAccess() }, plan, response)
+    }
+    return runPeerSendPlan({ threadId, runtimeMode, publish, peers: this }, plan)
+  }
+
+  /**
+   * Hand the agent its result: a new turn when it is idle, queued behind the
+   * running turn when it is not, or held until the chat's session runs again.
+   * Returns how it went, for the chat's row.
+   */
+  private async deliverApprovalResult(card: AgentApprovalCard, text: string, wake: boolean): Promise<ApprovalResultDelivery> {
+    const body = approvalResultTurn({ requestId: card.requestId, toolName: card.toolName, text })
+    const live = this.liveSessionId(card.threadId)
+    const running = live !== null && !this.switchingSessions.has(live)
+    const delivery = approvalResultDelivery({ wake, live: running, midTurn: live !== null && this.hasOutstandingTurn(live) })
+    if (delivery === 'none') return 'none'
+    if ((delivery === 'turn' || delivery === 'queue') && live && await this.sendApprovalResultTurn(live, body, card.requestId)) return delivery
+    this.holdApprovalResult(card.chatId, card.requestId, body)
+    return 'hold'
+  }
+
+  private holdApprovalResult(chatId: string, requestId: string, body: string): void {
+    try {
+      this.approvalStore.holdResult({ id: `apr_${requestId}`, chatId, body, at: Date.now() })
+    } catch (err) {
+      log.error(`could not keep the result of approval card ${requestId} for later; the agent will not hear about it`, err)
+    }
+  }
+
+  /**
+   * One result turn, with the bookkeeping an ordinary send does (checkpoint,
+   * outstanding turn) and none of a human one: `turnDepth`, links and pending
+   * plans are untouched. False when the adapter refused it.
+   */
+  private async sendApprovalResultTurn(threadId: string, body: string, requestId: string): Promise<boolean> {
+    const adapter = this.sessionAdapters.get(threadId)
+    if (!adapter) return false
+    this.beginPreparingTurn(threadId)
+    let preparing = true
+    const release = (): void => {
+      if (!preparing) return
+      preparing = false
+      this.finishPreparingTurn(threadId)
+    }
+    try {
+      const midTurn = this.hasOutstandingTurn(threadId)
+      const cwd = this.sessionCwd.get(threadId)
+      if (!midTurn && cwd) await this.checkpoints.beginTurn(threadId, cwd)
+      if (this.sessionAdapters.get(threadId) !== adapter) return false
+      notebookManager.beginTurn(threadId)
+      const delivery = midTurn ? 'queue' as const : undefined
+      const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(threadId), delivery)
+      if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
+      const queuedId = midTurn ? `apr_${requestId}` : undefined
+      if (queuedId) this.queuedTurns.expect(queuedId, 'Switchboard: an approval result', Date.now())
+      release()
+      try {
+        await adapter.sendTurn(threadId, body, undefined, undefined, delivery, queuedId)
+      } catch (err) {
+        if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
+        log.warn(`approval result ${requestId} was not delivered to ${threadId}`, err)
+        return false
+      } finally {
+        if (queuedId) this.queuedTurns.settle(queuedId)
+      }
+      log.info(`approval result ${requestId} delivered to ${threadId}${midTurn ? ' behind the running turn' : ''}`)
+      return true
+    } finally {
+      release()
+    }
+  }
+
+  /** Results held while the chat was not running, delivered once its session starts. */
+  private async flushHeldApprovalResults(threadId: string): Promise<void> {
+    const chatId = resolveRootThreadId(threadId)
+    let held
+    try {
+      held = this.approvalStore.takeHeldResults(chatId)
+    } catch (err) {
+      log.warn(`could not read held approval results for ${chatId}`, err)
+      return
+    }
+    for (const result of held) {
+      const requestId = result.id.replace(/^apr_/, '')
+      if (!await this.sendApprovalResultTurn(threadId, result.body, requestId)) this.holdApprovalResult(chatId, requestId, result.body)
+    }
+  }
+
+  /** The user stopped or archived the chat: its open cards close unanswered. */
+  closeAgentCards(threadId: string): void {
+    this.agentApprovals.closeChat(resolveRootThreadId(threadId))
+  }
+
+  /**
    * Give a starting session its Switchboard MCP server: a token bound to this
    * thread, and the tools built against this registry. A failure leaves the
    * agent without the tools rather than failing the session.
@@ -1007,9 +1202,7 @@ export class ProviderRegistry implements PeerToolHost {
   private async openSwitchboardMcp(threadId: string, provider: ProviderKind): Promise<SwitchboardMcpLaunch | null> {
     if (!this.switchboardMcp) return null
     const chatId = (): string => resolveRootThreadId(threadId)
-    // The adapter's own record, which applies a queued message's mode only when it starts.
-    const runtimeMode = (): RuntimeMode =>
-      this.sessionAdapters.get(threadId)?.runtimeModeOf?.(threadId) ?? this.sessionDescriptors.get(threadId)?.runtimeMode ?? 'sandbox'
+    const runtimeMode = (): RuntimeMode => this.chatRuntimeMode(threadId)
     const publish = (event: RuntimeEvent): void => this.publish(event)
     try {
       return await this.switchboardMcp.open(threadId, () => [
@@ -1024,7 +1217,8 @@ export class ProviderRegistry implements PeerToolHost {
           budget: this.agentWriteBudget,
           pullRequests: agentPullRequestAccess(),
         }),
-        ...buildPeerMcpTools({ threadId, runtimeMode, publish, approvals: this.agentApprovals, peers: this }),
+        ...buildPeerMcpTools({ threadId, chatId: chatId(), runtimeMode, publish, approvals: this.agentApprovals, peers: this }),
+        ...buildApprovalMcpTools({ chatId: chatId(), approvals: this.agentApprovals }),
       ])
     } catch (err) {
       log.warn(`Switchboard MCP server unavailable for ${threadId}; starting without its tools`, err)
@@ -1133,7 +1327,9 @@ export class ProviderRegistry implements PeerToolHost {
     // - a Codex steer or a `delivery: 'queue'` send can reach that point
     // while the running turn is still blocked on an open approval or
     // question, which must keep waiting for its own closing event.
-    if (event.type === 'request.opened' || event.type === 'question.asked' || event.type === 'plan.proposed') {
+    // The broker keeps its own cards (`getPendingRequests` asks it): they
+    // outlive the turn and the session, which this record does not.
+    if ((event.type === 'request.opened' && !AgentApprovalBroker.owns(event.requestId)) || event.type === 'question.asked' || event.type === 'plan.proposed') {
       this.addPendingRequest(event)
     }
     if (event.type === 'request.closed') this.resolvePendingRequest(event.threadId, event.requestId)
@@ -1508,7 +1704,8 @@ export class ProviderRegistry implements PeerToolHost {
       this.outstandingTurns.delete(threadId)
       this.queuedTurns.clear(threadId)
       this.turnDepth.delete(threadId)
-      this.agentApprovals.closeThread(threadId)
+      // Approval cards are not closed here: a profile switch or a relocation
+      // restarts the session, and the cards are the chat's. A user stop closes them.
       this.switchboardMcp?.close(threadId)
       this.pendingRequests.delete(threadId)
       this.checkpoints.clear(threadId)
@@ -1865,6 +2062,11 @@ export class ProviderRegistry implements PeerToolHost {
       })
       await this.attachNotebooks(opts.threadId, session.cwd)
       trackAnalyticsEvent('session_started', { provider: opts.provider })
+      // A plain start (not a relocation staging its events) can take the
+      // results of cards answered while the chat was not running.
+      if (!eventGate) {
+        this.flushHeldApprovalResults(opts.threadId).catch((err) => log.warn(`held approval results for ${opts.threadId} failed`, err))
+      }
       resolveStart(session)
       return session
       } catch (err) {
@@ -2321,6 +2523,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.host.handle(ProviderChannels.STOP_SESSION, async (threadId: string) => {
       this.executionRoot?.onSessionStopped(threadId)
       this.dropPeerLinks(threadId)
+      this.closeAgentCards(threadId)
       return await stopSession(threadId)
     })
 
@@ -2328,7 +2531,7 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   async stopAll(): Promise<void> {
-    this.agentApprovals.closeAll()
+    // Open approval cards stay in the store: a quit or a closed window is not an answer.
     for (const threadId of this.sessionAdapters.keys()) this.switchboardMcp?.close(threadId)
     for (const [threadId, adapter] of this.sessionAdapters) {
       await adapter.stopSession(threadId).catch((err) => {
@@ -2357,6 +2560,7 @@ export function notifyWorktreeSwap(threadId: string, cwd: string | null): void {
 /** An archived conversation loses its session links (ipc/app.ts's archive handler). */
 export function notifyConversationArchived(conversationId: string): void {
   activeRegistry?.dropPeerLinks(conversationId)
+  activeRegistry?.closeAgentCards(conversationId)
 }
 
 /**

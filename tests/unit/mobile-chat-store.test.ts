@@ -3,6 +3,7 @@
  * (streamed text duplicating, tool spinners never settling) and the event
  * coalescing that keeps a phone from rendering once per token.
  */
+import { formatApprovalResultMarker } from '../../src/shared/agent-approval-cards'
 import { echoMessageId } from '../../src/shared/provider-events'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
@@ -285,6 +286,19 @@ describe('messages the backend holds', () => {
     expect(Object.keys(heldTurns())).toEqual(['remote_q'])
     const { prunePersistedThreads } = await import('../../apps/mobile/src/stores/chat')
     expect(prunePersistedThreads(useChatStore.getState().threads)[KEY]).not.toHaveProperty('heldTurns')
+  })
+})
+
+describe('an approval card that closed later', () => {
+  it('shows what happened as a notice, once, even when the event is replayed', () => {
+    const content = formatApprovalResultMarker({ requestId: 'sbmcp_9', title: 'Re-run a failed check', outcome: 'done', text: 'Re-running integration.', delivery: 'turn' })
+    const event: RuntimeEvent = { type: 'approval.result', threadId: THREAD, messageId: 'apr_sbmcp_9', requestId: 'sbmcp_9', content, at: 1 }
+    ingest(event)
+    ingest(event)
+    flushQueue()
+    expect(items().filter((i) => i.kind === 'notice')).toEqual([
+      { kind: 'notice', id: 'apr_sbmcp_9', text: 'Re-run a failed check · Done · Sent to the agent: Re-running integration.' },
+    ])
   })
 })
 

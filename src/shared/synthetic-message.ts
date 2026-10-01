@@ -86,6 +86,9 @@ const BLOCKS: readonly Block[] = [
   { start: '<environment_context>', end: '</environment_context>' },
   { start: '<codex_internal_context', end: '</codex_internal_context>' },
   { start: '<skill>', end: '</skill>' },
+  // A Switchboard approval result (shared/agent-approval-cards.ts). The chat
+  // shows its own system row for it, so the turn the agent got renders nothing.
+  { start: '<switchboard-approval-result>', end: '</switchboard-approval-result>' },
 ]
 
 /**

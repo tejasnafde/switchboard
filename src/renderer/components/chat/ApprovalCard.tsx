@@ -2,12 +2,14 @@ import { useRef, useState } from 'react'
 import type { ChatMessage } from '@shared/types'
 import { createRendererLogger } from '../../logger'
 import { matchesShortcut } from '@shared/shortcuts'
+import { isAgentApprovalCardId } from '@shared/agent-approval-cards'
+import type { HostWriteResponse } from '@shared/agent-host-writes'
 
 const log = createRendererLogger('chat:approval-card')
 
 interface ApprovalCardProps {
   message: ChatMessage
-  onDecide: (requestId: string, decision: 'approve' | 'deny', note?: string) => void | Promise<void>
+  onDecide: (requestId: string, decision: 'approve' | 'deny', note?: string, response?: HostWriteResponse) => void | Promise<void>
 }
 
 /**
@@ -21,6 +23,10 @@ interface ApprovalCardProps {
  *
  * The note is sent as a user message alongside the decision so the agent
  * sees extra context on the next turn.
+ *
+ * A card the Switchboard MCP server opened (a peer message) does not hold the
+ * agent's turn, so it also offers Approve quietly and Dismiss: answer without
+ * waking the agent with the result.
  */
 export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
   const [noteMode, setNoteMode] = useState<null | 'approve' | 'deny'>(null)
@@ -33,6 +39,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
   if (!message.approval) return null
 
   const reqId = message.id.replace('approval_', '')
+  const queuedCard = isAgentApprovalCardId(reqId)
   const pending = message.approval.status === 'pending'
   const accepted = message.approval.status === 'accepted'
 
@@ -45,12 +52,12 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
       ? 'rgba(63, 185, 80, 0.05)'
       : 'rgba(248, 81, 73, 0.05)'
 
-  const commit = (decision: 'approve' | 'deny') => {
+  const commit = (decision: 'approve' | 'deny', quiet = false) => {
     if (submitRef.current) return
     submitRef.current = true
     setSubmitting(decision)
     const trimmed = note.trim()
-    Promise.resolve(onDecide(reqId, decision, trimmed || undefined))
+    Promise.resolve(onDecide(reqId, decision, trimmed || undefined, quiet ? { quiet: true } : undefined))
       .then(() => {
         setNoteMode(null)
         setNote('')
@@ -188,7 +195,27 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
               >
                 {'Yes, and…'}
               </button>
+              {queuedCard && (
+                <button
+                  onClick={() => commit('approve', true)}
+                  disabled={submitting !== null}
+                  style={withDisabled(btnStyles.secondary, submitting !== null)}
+                  title="Approve without sending the agent a message about it"
+                >
+                  Approve quietly
+                </button>
+              )}
               <span style={{ flex: 1 }} />
+              {queuedCard && (
+                <button
+                  onClick={() => commit('deny', true)}
+                  disabled={submitting !== null}
+                  style={withDisabled(btnStyles.ghost, submitting !== null)}
+                  title="Close the card without sending anything or telling the agent"
+                >
+                  Dismiss
+                </button>
+              )}
               <button
                 onClick={() => setNoteMode('deny')}
                 disabled={submitting !== null}

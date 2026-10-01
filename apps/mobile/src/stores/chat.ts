@@ -26,6 +26,7 @@ import { splitLegacyCachedItems } from '../lib/thread-history'
 import { applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { HostWriteCard } from '@shared/agent-host-writes'
+import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-approval-cards'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -492,6 +493,13 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             items: [...t.items, { kind: 'error', id: `e-${Date.now()}`, message: event.message }],
             status: 'error' as const,
           }
+        // An agent's approval card closed; the desktop shows the same row on reload.
+        case 'approval.result': {
+          if (t.items.some((i) => i.id === event.messageId)) return {}
+          const row = parseApprovalResultMarker(event.content)
+          if (!row) return {}
+          return { items: [...t.items, { kind: 'notice', id: event.messageId, text: `${approvalResultLabel(row)}: ${row.text}` }] }
+        }
         // Read on another client. applyEvent already resolved the connection's
         // thread key, so this only has to drop the count.
         case 'thread.read':

@@ -8,9 +8,12 @@
  * answer tells the agent not to try again.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { AgentApprovalBroker, type AgentApprovalOutcome } from '../../src/main/mcp/agent-approvals'
+import { AgentApprovalBroker } from '../../src/main/mcp/agent-approvals'
 import { AgentWriteBudget } from '../../src/main/mcp/agent-write-budget'
-import { buildPrTools, type AgentPullRequestAccess, type RemoteBranchCheck } from '../../src/main/mcp/pr-tools'
+import { buildPrTools, prWritePlanSummary, runPrWritePlan, type AgentPullRequestAccess, type PrWritePlan, type RemoteBranchCheck } from '../../src/main/mcp/pr-tools'
+import { toolText, type McpToolResult } from '../../src/main/mcp/mcp-session'
+import { declinedResultText } from '../../src/shared/agent-approval-cards'
+import type { HostWriteResponse } from '../../src/shared/agent-host-writes'
 import type { CreatedPr, OpenedPr } from '../../src/shared/agent-pr-create'
 import type { ReviewerViewer } from '../../src/shared/agent-pr-reviewers'
 import type { PrError, PrRef, PrResult, PrReviewerCandidate, RepoRef } from '../../src/shared/pull-requests'
@@ -33,7 +36,7 @@ interface Options {
   create?: (input: unknown) => PrResult<OpenedPr & { existing: boolean }>
   /** Who may review; the default is Jane, Rahul and the signed-in user (me). */
   pool?: PrResult<{ candidates: PrReviewerCandidate[]; viewer: ReviewerViewer }>
-  answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => AgentApprovalOutcome | null
+  answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => { decision: 'approve'; response: HostWriteResponse } | { decision: 'deny' } | null
   budget?: AgentWriteBudget
   cwd?: string | null
 }
@@ -60,7 +63,16 @@ function setup(opts: Options = {}) {
     linkToChat: vi.fn((chatId: string, ref: PrRef, created: boolean) => { links.push({ chatId, ref, created }); return true }),
     reviewerPool: vi.fn(async () => opts.pool ?? { ok: true as const, data: { candidates: CANDIDATES, viewer: { id: 'me', login: 'me' } } }),
   } as unknown as AgentPullRequestAccess
+  let mode: RuntimeMode = opts.mode ?? 'sandbox'
+  const results: Array<Promise<McpToolResult>> = []
+  const runContext = { threadId: 't1', chatId: 'root-1', runtimeMode: () => mode, publish: (e: RuntimeEvent) => events.push(e), pullRequests: access }
   const approvals = new AgentApprovalBroker({
+    onClosed: (card, close, response) => {
+      const plan = card.plan as PrWritePlan
+      results.push(close.kind === 'approve'
+        ? runPrWritePlan(runContext, plan, response)
+        : Promise.resolve(toolText(declinedResultText(prWritePlanSummary(plan)), true)))
+    },
     publish: (e) => {
       events.push(e)
       if (e.type !== 'request.opened') return
@@ -69,7 +81,6 @@ function setup(opts: Options = {}) {
       queueMicrotask(() => approvals.respond('t1', e.requestId, outcome.decision, outcome.decision === 'approve' ? outcome.response : {}, { mayApproveHostWrite: true, label: 'test' }))
     },
   })
-  let mode: RuntimeMode = opts.mode ?? 'sandbox'
   const tools = buildPrTools({
     threadId: 't1',
     chatId: 'root-1',
@@ -82,7 +93,14 @@ function setup(opts: Options = {}) {
     pullRequests: access,
   })
   const tool = tools.find((t) => t.name === 'create_pull_request')!
-  const call = (args: Record<string, unknown>, signal = new AbortController().signal) => tool.call(args, { signal })
+  /** Follows a queued card through to the result the agent is later told. */
+  const call = async (args: Record<string, unknown>, signal = new AbortController().signal): Promise<McpToolResult> => {
+    const before = results.length
+    const queued = await tool.call(args, { signal })
+    if (queued.isError || !queued.content[0].text.startsWith('Queued for')) return queued
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    return results[before] ?? queued
+  }
   return {
     tool, call, events, access, links, creates,
     setMode: (m: RuntimeMode) => { mode = m },
@@ -341,11 +359,12 @@ describe('create_pull_request: modes and the budget', () => {
     expect(s.creates).toEqual([])
   })
 
-  it('opens nothing when the agent stopped waiting', async () => {
+  it('keeps the card open after the agent stops waiting, and opens nothing until the user answers', async () => {
     const controller = new AbortController()
     const s = setup({ answer: () => { controller.abort(); return null } })
     const result = await s.call({ title: 'T' }, controller.signal)
-    expect(result.isError).toBe(true)
+    expect(result.isError).toBeFalsy()
+    expect(text(result)).toMatch(/^Queued for the user's approval/)
     expect(s.creates).toEqual([])
   })
 })

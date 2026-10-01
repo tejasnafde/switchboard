@@ -13,8 +13,10 @@ const log = createMainLogger('mcp:session')
 
 /**
  * How often a call still running reports progress. OpenCode calls MCP tools
- * with a timeout (30s by default) that progress resets, and a call waiting on
- * an approval card can run for minutes. Not configurable over ACP otherwise.
+ * with a timeout (30s by default) that progress resets, and is not
+ * configurable over ACP otherwise. No call waits on an approval card any more,
+ * but a create in full access makes several host calls with no card and can
+ * pass 30 seconds on a slow host.
  */
 const PROGRESS_INTERVAL_MS = 10_000
 
@@ -91,7 +93,7 @@ export class McpSession {
     void this.request(msg.id as JsonRpcId, msg.method, msg.params)
   }
 
-  /** The connection went away: abort every call still waiting (an open approval card closes). */
+  /** The connection went away: abort every call still running. An approval card stays open. */
   close(): void {
     this.closed = true
     for (const controller of this.inflight.values()) controller.abort()

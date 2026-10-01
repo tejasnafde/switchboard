@@ -13,6 +13,7 @@ import { ensureWorktreeCreationSchema } from './worktree-creation'
 import { ensureBookmarksTable } from './bookmarks'
 import { ensurePullRequestLinkSchema } from './pull-request-links'
 import { ensurePullRequestHiddenSchema } from './pull-request-hidden'
+import { ensureAgentApprovalCardSchema } from './agent-approval-cards'
 
 const log = createLogger('db')
 
@@ -622,6 +623,7 @@ function migrate(db: Database.Database): void {
   ensureWorktreeCreationSchema(db)
   ensurePullRequestLinkSchema(db)
   ensurePullRequestHiddenSchema(db)
+  ensureAgentApprovalCardSchema(db)
 
   log.info('database migrated')
 }
