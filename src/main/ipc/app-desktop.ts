@@ -13,6 +13,7 @@ import { getManagedRootConversationsForProject } from '../db/database'
 import { projectManagedRootSessions } from './terminal-sessions'
 import { addProject } from '../db/database'
 import type { Project } from '@shared/types'
+import { noteQuitSource } from '../quit-source'
 
 const log = createLogger('ipc:app-desktop')
 
@@ -74,6 +75,7 @@ export function registerAppDesktopHandlers(window: BrowserWindow): void {
 
   ipcMain.handle(AppChannels.RELAUNCH, () => {
     log.info('relaunching app...')
+    noteQuitSource('relaunch')
     app.relaunch()
     // quit(), not exit(): exit() skips the teardown (PTYs, providers, the
     // database) and can crash on Windows mid child-process spawn - see the

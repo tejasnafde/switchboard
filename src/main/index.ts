@@ -49,6 +49,7 @@ import { attachPullRequestAutoLink, registerPullRequestHandlers, startPullReques
 import { tryResolveProviderInstance } from './db/provider-instances'
 import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
 import { QuitCoordinator } from './quit-coordinator'
+import { noteQuitSource, quitSource } from './quit-source'
 import { InstallAttempt } from './install-attempt'
 import { runShutdownSequence } from './shutdown-sequence'
 import { isQuitSmoke, reportQuitSmoke, runQuitSmoke } from './smoke-quit'
@@ -169,7 +170,14 @@ function buildAppMenu(): void {
         { role: 'hideOthers' },
         { role: 'unhide' },
         { type: 'separator' },
-        { role: 'quit' },
+        {
+          label: `Quit ${app.name}`,
+          accelerator: 'CmdOrCtrl+Q',
+          click: unlessCapturing(() => {
+            noteQuitSource('menu')
+            app.quit()
+          }),
+        },
       ],
     },
     {
@@ -298,6 +306,17 @@ app.on('open-url', (event, url) => {
 
 // Single instance lock - prevent multiple windows
 const gotTheLock = app.requestSingleInstanceLock()
+
+// Registered before the single-instance lock check: a second instance quits
+// right there, and before-quit fires synchronously inside app.quit(). Logged
+// once, since the coordinator prevents the first before-quit and quits again.
+let quitSourceLogged = false
+app.on('before-quit', () => {
+  if (quitSourceLogged) return
+  quitSourceLogged = true
+  shutdownLog.info('quit requested', { ...quitSource(), uptimeSec: Math.round(process.uptime()) })
+})
+
 if (!gotTheLock) {
   // In dev this is almost always a STALE process from an earlier `npm run dev`
   // whose window was closed: it still holds the lock, so the fresh build loses
@@ -309,6 +328,7 @@ if (!gotTheLock) {
         "lsof -nP -iTCP:8765 -sTCP:LISTEN",
     )
   }
+  noteQuitSource('single-instance-lock', 'another Switchboard holds the lock')
   app.quit()
 } else {
   app.on('second-instance', () => {
@@ -329,6 +349,7 @@ if (!gotTheLock) {
     // and release the lock, so the next run - with the fresh build - wins.
     if (isDev) {
       log.info('stale dev instance with no window - quitting to release the single-instance lock')
+      noteQuitSource('stale-dev-instance')
       app.quit()
       return
     }
@@ -641,6 +662,7 @@ if (smokeDumpDir && (process.argv.includes('--smoke-test') || isQuitSmoke())) {
 if (process.argv.includes('--smoke-test')) {
   app.whenReady().then(() => {
     createMainLogger('smoke').info('[smoke-test] main module loaded + app ready, quitting')
+    noteQuitSource('smoke-test')
     app.quit()
   })
 }
@@ -697,6 +719,7 @@ app.whenReady().then(() => {
       'Switchboard could not start',
       `The local database could not be created:\n${err instanceof Error ? err.message : String(err)}\n\nCheck free disk space and permissions on the app data folder, then relaunch.`,
     )
+    noteQuitSource('fatal-startup', 'database unavailable')
     app.quit()
     return
   }
@@ -824,6 +847,7 @@ app.whenReady().then(() => {
 
   if (isQuitSmoke()) {
     // On failure no teardown report is printed, which the launcher counts as a failed run.
+    noteQuitSource('smoke-test', 'quit smoke')
     runQuitSmoke(mainWindow, () => app.quit()).catch((err) => {
       crashLog.error('[smoke-quit] could not open the session to quit from', err)
       app.quit()
@@ -887,8 +911,20 @@ app.whenReady().then(() => {
   })
 })
 
+// Electron already quits cleanly on these; handling them here only adds the name.
+for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+  process.on(signal, () => {
+    noteQuitSource('signal', signal)
+    app.quit()
+  })
+}
+app.whenReady().then(() => {
+  powerMonitor.on('shutdown', () => noteQuitSource('os-shutdown', 'macOS shutdown or logout'))
+}).catch((err) => log.warn('powerMonitor shutdown hook failed', err))
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    noteQuitSource('window-all-closed')
     app.quit()
   }
 })
