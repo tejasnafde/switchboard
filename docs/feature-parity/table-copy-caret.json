@@ -1,0 +1,25 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "table-copy-caret",
+  "summary": "The table copy menu button draws its caret as a centred SVG chevron instead of a fallback-font glyph that sat low.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/MarkdownWithCopyControls.tsx",
+        "src/renderer/styles/global.css"
+      ]
+    },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The phone has no table copy controls." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The phone has no table copy controls." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "Styling only; no API change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Styling only; nothing is stored." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release." }
+  },
+  "verification": {
+    "automated": ["npm run typecheck and the pre-commit test suite."],
+    "hardware": ["Rendered the old and new button side by side in Electron offscreen at 3x, dark theme; the chevron is vertically centred against Copy."],
+    "notExercised": ["Light and translucent themes were not rendered; the chevron uses currentColor, so it follows the same text colour as before."]
+  }
+}
