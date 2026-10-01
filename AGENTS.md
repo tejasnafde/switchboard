@@ -272,6 +272,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 One session hands a self-contained summary to another on the SAME backend. Two entry points, ONE delivery method - `ProviderRegistry.deliverPeerMessage(input)`:
 
 - **User-typed**: `/send-to <session>: <message>` (parsing + fuzzy target resolution in `renderer/components/chat/send-to-command.ts`) → `ProviderChannels.DELIVER_PEER_MESSAGE` → the registry with `initiator: 'user'`. The handler FORCES the initiator; a client claiming `'agent'` would take the agent path's budget while skipping the approval that path relies on.
+- **Linked sessions**: `/link <session> [messages]` / `/unlink [session]` (`renderer/components/chat/link-command.ts`, targets resolved like `/send-to`, and `/link` gets the same chat picker) let two sessions' agents message back and forth under the link's own budget (see the guard table). A trailing number is the budget unless the whole text is exactly a chat's title ("Issue 172").
 - **Agent-initiated (all three agents)**: `list_agent_sessions` and `send_agent_message` on the Switchboard MCP server (see the next section), so Claude sees `mcp__switchboard__*`, OpenCode `switchboard_*`. Names, descriptions and handler behaviour live in `provider/peer-tools.ts`; `mcp/peer-mcp-tools.ts` binds them to the server and applies the gate.
 
 Delivery is an ordinary `sendTurn`, which is what makes a peer message structurally unable to answer an approval: nothing on the path reaches `respondToRequest`. The receiving body is `wrapPeerMessage`, which tells the peer the message is not from the user and carries no authority.
@@ -285,6 +286,7 @@ Guards, all pure in `shared/peer-messaging.ts` and held by the BACKEND so every 
 | Dedupe | identical (from, target, text) inside 10 min | Content-addressed id `pm_<16 hex>` |
 | **Hop depth** | `PEER_MESSAGE_MAX_HOP_DEPTH = 1` | Agent sends only. Depth counts consecutive AGENT hops since the last human message, so a session acting on a peer message cannot pass one on: that is the A -> B -> A guard, and rate limits do not substitute for it |
 | **Per-sender budget** | 6 / 10 min per SENDING session | Agent sends only. The per-pair limit is multiplied by fan-out otherwise (5 siblings = 25/min) |
+| **Session link** (`shared/peer-links.ts`) | Per EDGE (both directions): the messages the user chose (`/link <session> [messages]`, default 20, 1 to 200) or 30 min, whichever first. A message the user types in either session, or sends along the edge, renews both; Extend adds 20 (never past 200) and restarts the window | Agent sends along a link the USER made skip hop depth and the per-sender budget, so two agents can hold a back-and-forth and a hub can fan out to any number of linked workers (no cap on links per session). Only along that edge: the same session sending to an unlinked one meets both limits. Body cap, dedupe and per-pair rate still apply. 200 is ten default budgets, more than an edge can spend in one window at the per-pair rate |
 
 Traps:
 
@@ -292,6 +294,12 @@ Traps:
 - **Hop depth is NOT cleared at turn end**, only by a user turn (set to 0 in `SEND_TURN`) or `STOP_SESSION`. Clearing it per turn would let an unattended chain continue by waiting.
 - **Refusals go back to the model as tool output with `isError`, never as a throw** - a thrown MCP error reaches it as an unreadable transport failure and it retries the same call.
 - The per-pair limit (5) is LOWER than the per-sender budget (6), so any test of the budget must fan out over two targets or the pair limit fires first.
+- **Links are edges, user-made, in memory.** `/link A`, `/link B` from a hub makes two edges; A and B are not linked with each other. Only `ProviderChannels.LINK_PEER` creates one (`PeerLinkBook.link` refuses an `'agent'` initiator, and no MCP tool reaches it). Keyed by `resolveRootThreadId`. Removed by `/unlink`, by `STOP_SESSION` on either side (not by a profile switch, which restarts the session) and by archiving either chat (`notifyConversationArchived`). Not persisted: a restart stops every session, which would remove them anyway. `list_agent_sessions` reports `linked`, and `provider:peer-links-changed` (`{ threadIds }`, root ids) drives the desktop banner (`PeerLinkBanner`).
+- **A link skips the hop limit, it does not reset it.** The receiving turn's depth still grows with each linked hop, so a session deep in a linked exchange cannot send to an UNLINKED session until the user speaks to it, and unlinking mid-exchange can leave both ends unable to send. That is deliberate: the link is consent for that edge only.
+- **A spent link never loses the message.** The refusal tells the model the message was NOT delivered, to keep working, and to put it in its final reply. The registry also stores it in the SENDER's chat as a `[[sb:peer-undelivered]] <json>` system row (`PEER_UNDELIVERED_MARKER_PREFIX`, `PeerUndeliveredRow`) with a Send button, which delivers it as a user send (renewing the edge) and rewrites the row as sent (`rewriteSystemMarker`, carried by `undeliveredId`). The first refusal after a run-out publishes `peer.undelivered` with `notify: true`, which the push notifier (`kind: 'link'`) and the desktop (`notifyPeerLinkSpent`) turn into one notification naming both sessions; later refusals are rows only, until the edge is renewed.
+- **Phones may unlink, never link or extend.** `provider:link-peer` and `provider:extend-peer-link` are admin-scoped in `device-auth.ts`: a link is consent to card-less agent traffic in auto mode, like approving a host write. `provider:unlink-peer` and the list stay open, since they only take power away or read.
+- **Card along a link**: auto mode sends without one (the user lets the agent settle routine calls there, and a card per message would undo the link); sandbox and accept-edits keep the card, plan still denies, full access already sends. A card-less send carries `requireLink`, so an unlink while it is in flight refuses it instead of delivering it uncarded.
+- **The link is checked again after the checkpoint await**, the one await between the charge and `sendTurn` (`peerDeliveryProblem`). The edge is compared by id (`PeerLinkBook.edgeId`), so an unlink there, or an unlink and relink, withdraws the send: the per-pair slot and the link charge are given back (`release` only refunds the edge that was charged), a checkpoint taken for a turn that will not happen is dropped, and the message is kept as a `link-removed` Not delivered row. A target that stopped or switched profile meanwhile is refused the same way.
 - Sender-side provenance is a marker prefix, not a field: `[[sb:peer-sent]]` vs `[[sb:peer-sent-agent]]` (`parseRotationMarker` kinds `peer` / `peer-agent`), because a reload reads the stored string and has nothing else to tell the two apart.
 
 ### Switchboard MCP server (`src/main/mcp/`, agent tools for all three agents)
@@ -320,7 +328,7 @@ One MCP server per backend process gives Claude, Codex and OpenCode the same too
 - `SlashCommandMenu` popover wired into `ChatInput` textarea
 - Trigger: `/` at start of line, matched by `^\/([^\s/]*)$` (mid-line slashes like paths don't fire)
 - Registry in `src/renderer/components/chat/slash-commands.ts`
-- v1 commands: `/plan`, `/sandbox`, `/edits`, `/full`, `/clear`, `/archive`, `/image`, `/stop`, `/help`
+- v1 commands: `/plan`, `/sandbox`, `/edits`, `/full`, `/clear`, `/archive`, `/image`, `/stop`, `/help`; later `/send-to`, `/link`, `/unlink`
 - `/help` opens an overlay listing everything
 
 ### Theme system

@@ -7,6 +7,7 @@ import { RoutingTable } from './routing-table'
 import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels, SettingsFileChannels, PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
+import type { PeerLinkView } from '@shared/peer-links'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent, WorktreeInfo } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
@@ -756,6 +757,18 @@ const api = {
 
     deliverPeerMessage: (input: PeerMessageInput) =>
       transport.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, input) as Promise<{ id: string }>,
+
+    /** Session links (`shared/peer-links.ts`). Each answers this chat's links after the change. */
+    linkPeer: (input: { threadId: string; peerThreadId: string; messages?: number }) =>
+      transport.invoke(ProviderChannels.LINK_PEER, input) as Promise<PeerLinkView[]>,
+    extendPeerLink: (input: { threadId: string; peerThreadId: string }) =>
+      transport.invoke(ProviderChannels.EXTEND_PEER_LINK, input) as Promise<PeerLinkView[]>,
+    unlinkPeer: (input: { threadId: string; peerThreadId?: string }) =>
+      transport.invoke(ProviderChannels.UNLINK_PEER, input) as Promise<PeerLinkView[]>,
+    listPeerLinks: (input: { threadId: string }) =>
+      transport.invoke(ProviderChannels.LIST_PEER_LINKS, input) as Promise<PeerLinkView[]>,
+    onPeerLinksChanged: (callback: (change: { threadIds: string[] }) => void): (() => void) =>
+      transport.on(ProviderChannels.PEER_LINKS_CHANGED, (change) => callback(change as { threadIds: string[] })),
 
     /** `response` carries a pull request write card's edited reply and its Post / Post and resolve choice. */
     respondToRequest: (threadId: string, requestId: string, decision: ApprovalDecision, response?: HostWriteResponse) =>

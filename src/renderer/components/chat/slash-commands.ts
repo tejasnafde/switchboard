@@ -123,6 +123,18 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     takesArgs: true,
   },
   {
+    name: 'link',
+    description: 'Link this chat with another open session so the two agents can message each other (default 20 messages)',
+    argumentHint: '<session> [messages]',
+    takesArgs: true,
+  },
+  {
+    name: 'unlink',
+    description: 'Remove a session link (no name removes every link of this chat)',
+    argumentHint: '[session]',
+    takesArgs: true,
+  },
+  {
     name: 'clear',
     description: 'Clear all messages in this conversation',
     run: (ctx) => ctx.clearMessages(),

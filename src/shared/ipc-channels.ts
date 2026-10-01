@@ -432,6 +432,20 @@ export const ProviderChannels = {
    * tool reaches this. Payload is a `PeerMessageInput`.
    */
   DELIVER_PEER_MESSAGE: 'provider:deliver-peer-message',
+  /**
+   * Session links (`shared/peer-links.ts`). User-directed only, like
+   * DELIVER_PEER_MESSAGE: no agent tool reaches these. LINK takes
+   * `{ threadId, peerThreadId, messages? }`, UNLINK `{ threadId, peerThreadId? }`
+   * (no peer = unlink all), LIST `{ threadId }`; each answers `PeerLinkView[]`.
+   * LINK and EXTEND are admin-scoped (`device-auth.ts`): a phone may unlink only.
+   */
+  LINK_PEER: 'provider:link-peer',
+  /** `{ threadId, peerThreadId }`: Extend, more messages and a fresh window. */
+  EXTEND_PEER_LINK: 'provider:extend-peer-link',
+  UNLINK_PEER: 'provider:unlink-peer',
+  LIST_PEER_LINKS: 'provider:list-peer-links',
+  /** Broadcast `{ threadIds }` (root ids) whose links or link budgets changed. */
+  PEER_LINKS_CHANGED: 'provider:peer-links-changed',
   EVENT: 'provider:event',
   IS_AVAILABLE: 'provider:is-available',
   /** Proactive remote-auth preflight - args[0] is a threadId purely so the

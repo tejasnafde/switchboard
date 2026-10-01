@@ -305,6 +305,35 @@ export function setFileDiffStatus(
   return threadFamilyIds(conversationId).some((id) => setStatus.run(status, messageId, id).changes > 0)
 }
 
+/**
+ * Rewrite a Switchboard marker row in place, keeping its position in the
+ * thread. Only a system row of this conversation's family whose content starts
+ * with `prefix`; `rewrite` returns the new content, or null to leave it. The
+ * FTS update trigger keeps search in step. Returns the new content, or null.
+ */
+export function rewriteSystemMarker(
+  conversationId: string,
+  messageId: string,
+  prefix: string,
+  rewrite: (content: string) => string | null,
+): string | null {
+  const db = getDb()
+  const read = db.prepare(
+    `SELECT conversation_id AS conversationId, content FROM messages
+      WHERE id = ? AND conversation_id = ? AND role = 'system' AND substr(content, 1, ?) = ?`,
+  )
+  const write = db.prepare('UPDATE messages SET content = ? WHERE id = ? AND conversation_id = ?')
+  for (const id of threadFamilyIds(conversationId)) {
+    const row = read.get(messageId, id, prefix.length, prefix) as { conversationId: string; content: string } | undefined
+    if (!row) continue
+    const next = rewrite(row.content)
+    if (next === null) return null
+    write.run(next, messageId, row.conversationId)
+    return next
+  }
+  return null
+}
+
 export function getSystemMarkerMessages(conversationId: string): Array<{
   id: string
   role: string

@@ -9,6 +9,7 @@ import { useMachineStore } from '../../stores/machine-store'
 import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotation-marker'
 import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
 import { parseSendTo, resolveSendToTarget } from './send-to-command'
+import { parseLinkCommand, resolveLinkTarget } from './link-command'
 import { reduceProviderEvent, upsertAssistantContent } from './provider-event-reducer'
 import { MessageList } from './MessageList'
 import { changeModel, changeReasoningEffort, changeRuntimeMode } from './chat-session-settings'
@@ -18,6 +19,7 @@ import { ChatInput, type ChatSendResult } from './ChatInput'
 import { chatIdentity } from './chat-identity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ForkLineageBanner } from './ForkLineageBanner'
+import { PeerLinkBanner } from './PeerLinkBanner'
 import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { isDraftSessionId } from '@shared/new-chat-draft'
@@ -709,6 +711,48 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         return { accepted: true }
       }
 
+      // `/link <session>` and `/unlink [session]` change who this chat's agent
+      // may message back and forth. The backend holds the link; the banner
+      // follows its broadcast.
+      const linkCommand = parseLinkCommand(message)
+      if (linkCommand) {
+        const fail = (error: string): ChatSendResult => ({ accepted: false, error })
+        if (!linkCommand.ok) return fail(linkCommand.error)
+        try {
+          if (linkCommand.kind === 'link') {
+            const store = useAgentStore.getState()
+            const target = resolveLinkTarget(
+              linkCommand,
+              store.sessions.filter((s) => !s.draft).map((s) => ({ id: s.id, title: s.title ?? s.id, machineId: s.machineId })),
+              sessionId,
+            )
+            if (!target.ok) return fail(target.error)
+            await window.api.provider.linkPeer({
+              threadId: sessionId,
+              peerThreadId: target.id,
+              ...(target.messages !== undefined ? { messages: target.messages } : {}),
+            })
+            return { accepted: true }
+          }
+          if (linkCommand.target === null) {
+            await window.api.provider.unlinkPeer({ threadId: sessionId })
+            return { accepted: true }
+          }
+          const links = await window.api.provider.listPeerLinks({ threadId: sessionId })
+          if (links.length === 0) return fail('This chat has no links.')
+          const target = resolveSendToTarget(
+            linkCommand.target,
+            links.map((l) => ({ id: l.peerThreadId, title: l.title })),
+            sessionId,
+          )
+          if (!target.ok) return fail(target.error)
+          await window.api.provider.unlinkPeer({ threadId: sessionId, peerThreadId: target.id })
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : String(err))
+        }
+        return { accepted: true }
+      }
+
       // Prepare sequentially so removing the count cap cannot fan out an
       // unbounded number of canvas/base64 allocations. Validate the growing
       // aggregate after every image and stop as soon as the 3 MiB wire budget
@@ -1198,6 +1242,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       {activeSession?.forkMetadata && (
         <ForkLineageBanner metadata={activeSession.forkMetadata} />
       )}
+
+      {sessionId && !activeSession?.draft && <PeerLinkBanner sessionId={sessionId} />}
 
       {offerCompaction && activeSession && (
         <CompactionOfferBanner

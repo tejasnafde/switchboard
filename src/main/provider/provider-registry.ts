@@ -33,7 +33,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
-import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
+import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope, describeRequestClient, remoteDeviceHasScope } from '../backend/request-context'
 import {
@@ -57,10 +57,21 @@ import {
   PeerAgentSendGuard,
   PeerMessageGuard,
   nextHopDepth,
+  peerMessageTooLarge,
   peerSentMarkerPrefix,
   wrapPeerMessage,
   type PeerMessageInput,
 } from '@shared/peer-messaging'
+import {
+  formatUndeliveredMarker,
+  parseUndeliveredMarker,
+  PeerLinkBook,
+  PEER_LINK_NOT_DELIVERED,
+  PEER_UNDELIVERED_MARKER_PREFIX,
+  peerUndeliveredId,
+  type PeerLinkRefusal,
+  type PeerLinkView,
+} from '@shared/peer-links'
 import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
 import { AgentApprovalBroker } from '../mcp/agent-approvals'
 import { AgentWriteBudget } from '../mcp/agent-write-budget'
@@ -285,6 +296,14 @@ export class ProviderRegistry implements PeerToolHost {
    * and there is nobody to run away from.
    */
   private readonly peerAgentGuard = new PeerAgentSendGuard()
+
+  /**
+   * Session links the user made, keyed by root conversation id. An agent send
+   * along a link skips `peerAgentGuard` and spends the edge's own budget.
+   * In memory on purpose: a restart stops every session, and a stop removes
+   * its links, so nothing a restart could restore would still be valid.
+   */
+  private readonly peerLinks = new PeerLinkBook()
 
   /**
    * Approval cards the Switchboard MCP server opens for its own tools. Their
@@ -580,9 +599,188 @@ export class ProviderRegistry implements PeerToolHost {
         folder: this.sessionCwd.get(threadId) ?? session.cwd,
         provider: session.provider,
         midTurn: this.hasOutstandingTurn(threadId),
+        linked: this.peerLinks.isLinked(ownRoot, resolveRootThreadId(threadId)),
       })
     }
     return out
+  }
+
+  isLinkedPeer(fromThreadId: string, sessionId: string): boolean {
+    return this.peerLinks.isLinked(resolveRootThreadId(fromThreadId), resolveRootThreadId(sessionId))
+  }
+
+  /** The id a live session runs under for this id: itself, its root, or another id rotated from that root. */
+  private liveSessionId(threadId: string): string | null {
+    if (this.sessionAdapters.has(threadId)) return threadId
+    const root = resolveRootThreadId(threadId)
+    if (this.sessionAdapters.has(root)) return root
+    for (const id of this.sessionAdapters.keys()) if (resolveRootThreadId(id) === root) return id
+    return null
+  }
+
+  private isLiveSession(threadId: string): boolean {
+    return this.liveSessionId(threadId) !== null
+  }
+
+  private sessionTitle(threadId: string): string {
+    return getConversationTitle(threadId) ?? threadId
+  }
+
+  /**
+   * Link two live sessions on this backend, or renew an existing link with a
+   * fresh budget of `messages`. Reached only from the LINK_PEER handler, which
+   * is user-directed and admin-scoped: no agent tool calls this.
+   */
+  linkPeers(threadId: string, peerThreadId: string, messages?: number): PeerLinkView[] {
+    const a = resolveRootThreadId(threadId)
+    const b = resolveRootThreadId(peerThreadId)
+    if (!this.isLiveSession(threadId)) throw new Error('This chat is not running. Send it a message first, then link it.')
+    if (!this.isLiveSession(peerThreadId)) {
+      throw new Error(`"${this.sessionTitle(peerThreadId)}" is not running. Open it, then link again.`)
+    }
+    const result = this.peerLinks.link(a, b, 'user', Date.now(), messages)
+    if (!result.ok) throw new Error(result.message)
+    log.info(`peer link ${result.created ? 'created' : 'renewed'}: ${a} <-> ${b}`)
+    this.announcePeerLinks([a, b])
+    return this.listPeerLinks(threadId)
+  }
+
+  /** Extend: more messages and a fresh window on one link. User-directed, admin-scoped. */
+  extendPeerLink(threadId: string, peerThreadId: string): PeerLinkView[] {
+    const a = resolveRootThreadId(threadId)
+    const b = resolveRootThreadId(peerThreadId)
+    const result = this.peerLinks.extend(a, b, 'user', Date.now())
+    if (!result.ok) throw new Error(result.message)
+    log.info(`peer link extended: ${a} <-> ${b}`)
+    this.announcePeerLinks([a, b])
+    return this.listPeerLinks(threadId)
+  }
+
+  /**
+   * Keep a message a spent link refused, in the sender's chat, where the user
+   * can read it and send it by hand. The agent is told to report it too, but
+   * an agent running unattended may never get that far.
+   */
+  private recordUndelivered(input: {
+    fromThreadId: string
+    fromLabel: string
+    targetRoot: string
+    targetLabel: string
+    text: string
+    reason: PeerLinkRefusal
+    notify: boolean
+  }): void {
+    const messageId = peerUndeliveredId(input.fromThreadId, input.targetRoot, input.text)
+    const content = formatUndeliveredMarker({
+      to: input.targetRoot, toLabel: input.targetLabel, reason: input.reason, text: input.text, sent: false,
+    })
+    try {
+      // The same text refused again (its id is content-addressed) is undelivered
+      // again, even if the user had sent the earlier copy by hand.
+      if (!saveMessageIfAbsent(messageId, input.fromThreadId, 'system', content)) {
+        rewriteSystemMarker(input.fromThreadId, messageId, PEER_UNDELIVERED_MARKER_PREFIX, () => content)
+      }
+    } catch (err) {
+      log.warn(`failed to persist undelivered peer message ${messageId}: ${err}`)
+    }
+    this.publish({
+      type: 'peer.undelivered', threadId: input.fromThreadId, messageId,
+      peerThreadId: input.targetRoot, peerLabel: input.targetLabel, fromLabel: input.fromLabel,
+      reason: input.reason, text: input.text, sent: false, notify: input.notify, at: Date.now(),
+    })
+  }
+
+  /**
+   * The user sent a kept message by hand: its row now says so, on every client.
+   * Only when what was delivered is that row's message to that session, so a
+   * client cannot mark a row sent by delivering something else.
+   */
+  private markUndeliveredSent(
+    fromThreadId: string,
+    messageId: string,
+    delivered: { targetRoot: string; text: string; fromLabel: string },
+  ): void {
+    let rewritten: string | null = null
+    try {
+      rewritten = rewriteSystemMarker(fromThreadId, messageId, PEER_UNDELIVERED_MARKER_PREFIX, (content) => {
+        const row = parseUndeliveredMarker(content)
+        if (!row || row.to !== delivered.targetRoot || row.text !== delivered.text) return null
+        return formatUndeliveredMarker({ ...row, sent: true })
+      })
+    } catch (err) {
+      log.warn(`failed to mark undelivered peer message ${messageId} as sent: ${err}`)
+    }
+    const row = rewritten === null ? null : parseUndeliveredMarker(rewritten)
+    if (!row) return
+    this.publish({
+      type: 'peer.undelivered', threadId: fromThreadId, messageId,
+      peerThreadId: row.to, peerLabel: row.toLabel, fromLabel: delivered.fromLabel,
+      reason: row.reason, text: row.text, sent: true, notify: false, at: Date.now(),
+    })
+  }
+
+  /**
+   * Why a prepared peer delivery must not go out after all, or null. Run after
+   * the checkpoint await: the target may have stopped or switched profile, and
+   * a linked send's link may have been removed (or replaced by a new one).
+   */
+  private peerDeliveryProblem(input: {
+    targetThreadId: string
+    adapter: ProviderAdapter
+    targetLabel: string
+    chargedEdge: number | null
+    fromRoot: string
+    targetRoot: string
+  }): { reason: 'link-removed' | 'target-gone'; message: string } | null {
+    if (input.chargedEdge !== null && this.peerLinks.edgeId(input.fromRoot, input.targetRoot) !== input.chargedEdge) {
+      return {
+        reason: 'link-removed',
+        message: `The user removed the link with "${input.targetLabel}" while this message was being prepared. ${PEER_LINK_NOT_DELIVERED}`,
+      }
+    }
+    if (this.sessionAdapters.get(input.targetThreadId) !== input.adapter || this.switchingSessions.has(input.targetThreadId)) {
+      return {
+        reason: 'target-gone',
+        message: `"${input.targetLabel}" stopped or changed profiles before the message went out, so it was NOT delivered. Send it again once that session is running.`,
+      }
+    }
+    return null
+  }
+
+  /** Remove one link, or every link of this session when `peerThreadId` is omitted. */
+  unlinkPeers(threadId: string, peerThreadId?: string): PeerLinkView[] {
+    const root = resolveRootThreadId(threadId)
+    const peers = this.peerLinks.unlink(root, peerThreadId === undefined ? undefined : resolveRootThreadId(peerThreadId))
+    if (peers.length > 0) {
+      log.info(`peer link removed: ${root} <-> ${peers.join(', ')}`)
+      this.announcePeerLinks([root, ...peers])
+    }
+    return this.listPeerLinks(threadId)
+  }
+
+  listPeerLinks(threadId: string): PeerLinkView[] {
+    return this.peerLinks.linksOf(resolveRootThreadId(threadId))
+      .map((link) => ({ ...link, title: this.sessionTitle(link.peerThreadId) }))
+  }
+
+  /** A stopped or archived session takes its links with it. */
+  dropPeerLinks(threadId: string): void {
+    const root = resolveRootThreadId(threadId)
+    const peers = this.peerLinks.removeSession(root)
+    if (peers.length === 0) return
+    log.info(`peer links dropped with ${root}: ${peers.join(', ')}`)
+    this.announcePeerLinks([root, ...peers])
+  }
+
+  /** The user typed in this session: every link it is on gets a fresh budget. */
+  private renewPeerLinks(threadId: string): void {
+    const root = resolveRootThreadId(threadId)
+    const peers = this.peerLinks.humanMessage(root, Date.now())
+    if (peers.length > 0) this.announcePeerLinks([root, ...peers])
+  }
+
+  private announcePeerLinks(threadIds: string[]): void {
+    this.host.emit(ProviderChannels.PEER_LINKS_CHANGED, { threadIds })
   }
 
   async startManagedSession(opts: SessionStartOpts): Promise<ProviderSession> {
@@ -610,9 +808,9 @@ export class ProviderRegistry implements PeerToolHost {
     // `sessionAdapters` is keyed by whatever id startSession ran under, so
     // try the caller's id before the resolved root. Resolving first reported
     // a live chat as "not running" whenever its session id had rotated.
-    const targetThreadId = this.sessionAdapters.has(input.targetThreadId)
-      ? input.targetThreadId
-      : resolveRootThreadId(input.targetThreadId)
+    // A "not delivered" row names its target by root id, so a session running
+    // under another id of that root is found too.
+    const targetThreadId = this.liveSessionId(input.targetThreadId) ?? resolveRootThreadId(input.targetThreadId)
     if (this.switchingSessions.has(targetThreadId)) {
       throw new Error('That session is changing profiles. Try again when it reconnects.')
     }
@@ -657,7 +855,40 @@ export class ProviderRegistry implements PeerToolHost {
     // Exact for the agent path: `fromThreadId` there is the id the adapter runs
     // its session under, which is the id a turn was recorded against.
     const senderDepth = this.turnDepth.get(input.fromThreadId) ?? 0
-    if (initiator === 'agent') {
+    const fromRoot = resolveRootThreadId(input.fromThreadId)
+    const targetRoot = resolveRootThreadId(targetThreadId)
+    // Before the link check, which would otherwise keep an oversized body as
+    // a "not delivered" row the per-pair guard never got to refuse.
+    const tooLarge = peerMessageTooLarge(input.text)
+    if (tooLarge) throw new Error(tooLarge)
+    // A send along a link the user made spends that edge's budget INSTEAD of
+    // the hop depth and per-sender budget. Only along that edge: the same
+    // session sending anywhere else still meets both.
+    const linkVerdict = initiator === 'agent'
+      ? this.peerLinks.checkSend(fromRoot, targetRoot, Date.now())
+      : { linked: false as const }
+    if (input.requireLink && !linkVerdict.linked) {
+      throw new Error('The user removed the link with that session, so this message was not sent.')
+    }
+    if (linkVerdict.linked && !linkVerdict.ok) {
+      log.warn(`linked peer send refused (${linkVerdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+      this.recordUndelivered({
+        fromThreadId: input.fromThreadId, fromLabel, targetRoot, targetLabel,
+        text: input.text, reason: linkVerdict.reason, notify: linkVerdict.firstRefusal,
+      })
+      this.announcePeerLinks([fromRoot, targetRoot])
+      throw new Error(linkVerdict.message)
+    }
+    // The edge this send was charged to. Checked again after the checkpoint
+    // await: an unlink there, or an unlink and relink, is not the consent the
+    // charge was made under.
+    const chargedEdge = linkVerdict.linked ? this.peerLinks.edgeId(fromRoot, targetRoot) : null
+    const releaseAgentSlot = (): void => {
+      if (initiator !== 'agent') return
+      if (chargedEdge !== null) this.peerLinks.release(fromRoot, targetRoot, chargedEdge)
+      else this.peerAgentGuard.release(input.fromThreadId)
+    }
+    if (initiator === 'agent' && !linkVerdict.linked) {
       const agentVerdict = this.peerAgentGuard.check(
         { fromThreadId: input.fromThreadId, senderDepth },
         Date.now(),
@@ -671,7 +902,7 @@ export class ProviderRegistry implements PeerToolHost {
     const key = { fromThreadId: input.fromThreadId, targetThreadId, text: input.text }
     const verdict = this.peerGuard.check(key, Date.now())
     if (!verdict.ok) {
-      if (initiator === 'agent') this.peerAgentGuard.release(input.fromThreadId)
+      releaseAgentSlot()
       log.warn(`peer message refused (${verdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
       throw new Error(verdict.message)
     }
@@ -680,7 +911,28 @@ export class ProviderRegistry implements PeerToolHost {
     // Same pre-turn bookkeeping an ordinary send does, or this turn's file
     // edits produce no diff cards and notebook mirrors go unwatched.
     const targetCwd = this.sessionCwd.get(targetThreadId)
+    const targetWasMidTurn = this.hasOutstandingTurn(targetThreadId)
     if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd)
+    // The only await before sendTurn: everything from here to it is
+    // synchronous, so what this sees is what the send runs under.
+    const withdrawn = this.peerDeliveryProblem({
+      targetThreadId, adapter, targetLabel, chargedEdge, fromRoot, targetRoot,
+    })
+    if (withdrawn) {
+      // A running turn keeps the checkpoint it now has; a fresh one belongs
+      // to a turn that will not happen.
+      if (targetCwd && !targetWasMidTurn) this.checkpoints.clear(targetThreadId)
+      this.peerGuard.release(verdict.id, key)
+      releaseAgentSlot()
+      log.warn(`peer message withdrawn before delivery (${withdrawn.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+      if (withdrawn.reason === 'link-removed') {
+        this.recordUndelivered({
+          fromThreadId: input.fromThreadId, fromLabel, targetRoot, targetLabel,
+          text: input.text, reason: 'link-removed', notify: false,
+        })
+      }
+      throw new Error(withdrawn.message)
+    }
     notebookManager.beginTurn(targetThreadId)
     const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(targetThreadId), undefined)
     if (startsNewProviderTurn) this.beginOutstandingTurn(targetThreadId)
@@ -696,7 +948,7 @@ export class ProviderRegistry implements PeerToolHost {
       // The turn did NOT happen, so release the guard slot: otherwise an
       // identical retry is refused as a duplicate for the next 10 minutes.
       this.peerGuard.release(verdict.id, key)
-      if (initiator === 'agent') this.peerAgentGuard.release(input.fromThreadId)
+      releaseAgentSlot()
       if (previousDepth === undefined) this.turnDepth.delete(targetThreadId)
       else this.turnDepth.set(targetThreadId, previousDepth)
       throw err
@@ -734,6 +986,13 @@ export class ProviderRegistry implements PeerToolHost {
       messageId: verdict.id, peerThreadId: input.fromThreadId, peerLabel: fromLabel,
       text: input.text, at,
     })
+    // A message the user sent along a link is a human message on that edge.
+    if (linkVerdict.linked || (initiator === 'user' && this.peerLinks.renew(fromRoot, targetRoot, at))) {
+      this.announcePeerLinks([fromRoot, targetRoot])
+    }
+    if (initiator === 'user' && input.undeliveredId) {
+      this.markUndeliveredSent(input.fromThreadId, input.undeliveredId, { targetRoot, text: input.text, fromLabel })
+    }
     return { id: verdict.id }
     } finally {
       releasePreparation()
@@ -1146,6 +1405,7 @@ export class ProviderRegistry implements PeerToolHost {
             if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
             notebookManager.beginTurn(threadId)
             this.turnDepth.set(threadId, 0)
+            this.renewPeerLinks(threadId)
             // The user just responded, resolving any plan awaiting
             // Implement/Iterate - same as hop depth resetting. Only plans:
             // this `prepare` also runs for a Codex steer or a
@@ -1881,6 +2141,7 @@ export class ProviderRegistry implements PeerToolHost {
           if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
           notebookManager.beginTurn(threadId)
           this.turnDepth.set(threadId, 0)
+          this.renewPeerLinks(threadId)
           // The user just responded, resolving any plan awaiting
           // Implement/Iterate - same as hop depth resetting. Only plans:
           // this can also run as a Codex steer while the running turn is
@@ -1940,6 +2201,14 @@ export class ProviderRegistry implements PeerToolHost {
     // path's budget while skipping the approval canUseTool gives it.
     this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) =>
       this.deliverPeerMessage({ ...input, initiator: 'user' }))
+    this.host.handle(ProviderChannels.LINK_PEER, async (input: { threadId: string; peerThreadId: string; messages?: number }) =>
+      this.linkPeers(input.threadId, input.peerThreadId, input.messages))
+    this.host.handle(ProviderChannels.EXTEND_PEER_LINK, async (input: { threadId: string; peerThreadId: string }) =>
+      this.extendPeerLink(input.threadId, input.peerThreadId))
+    this.host.handle(ProviderChannels.UNLINK_PEER, async (input: { threadId: string; peerThreadId?: string }) =>
+      this.unlinkPeers(input.threadId, input.peerThreadId))
+    this.host.handle(ProviderChannels.LIST_PEER_LINKS, async (input: { threadId: string }) =>
+      this.listPeerLinks(input.threadId))
 
     this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {
       const adapter = this.sessionAdapters.get(threadId)
@@ -2051,6 +2320,7 @@ export class ProviderRegistry implements PeerToolHost {
     // never arrive must not fire against the next session on this thread.
     this.host.handle(ProviderChannels.STOP_SESSION, async (threadId: string) => {
       this.executionRoot?.onSessionStopped(threadId)
+      this.dropPeerLinks(threadId)
       return await stopSession(threadId)
     })
 
@@ -2082,6 +2352,11 @@ let activeRegistry: ProviderRegistry | null = null
 
 export function notifyWorktreeSwap(threadId: string, cwd: string | null): void {
   if (cwd) activeRegistry?.updateSessionCwd(threadId, cwd)
+}
+
+/** An archived conversation loses its session links (ipc/app.ts's archive handler). */
+export function notifyConversationArchived(conversationId: string): void {
+  activeRegistry?.dropPeerLinks(conversationId)
 }
 
 /**

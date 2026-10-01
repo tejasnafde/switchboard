@@ -7,6 +7,13 @@
  * this adds is the gate Claude's `canUseTool` used to apply, because the
  * adapters no longer prompt for our tools: plan mode denies, full access
  * sends, everything else shows the ordinary approval card first.
+ *
+ * One exception, for a send along a session link in auto mode: no card. The
+ * link is the user's consent to that conversation, and auto is the mode in
+ * which they chose to let the agent settle routine calls itself, so a card per
+ * message would defeat the link they just made. Sandbox and accept-edits keep
+ * the card even when linked: in those modes the user reviews every outward
+ * action, and a peer message is one (its text can steer the other agent).
  */
 import type { RuntimeEvent, RuntimeMode } from '@shared/provider-events'
 import { decidePermission, denialMessage } from '../provider/policy'
@@ -72,7 +79,9 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
           message: typeof args.message === 'string' ? args.message : '',
         }
         const mode = ctx.runtimeMode()
-        const policy = decidePermission(mode, PEER_SEND_TOOL)
+        const decided = decidePermission(mode, PEER_SEND_TOOL)
+        const linkInsteadOfCard = decided === 'prompt' && mode === 'auto' && ctx.peers.isLinkedPeer(ctx.threadId, input.sessionId.trim())
+        const policy = linkInsteadOfCard ? 'allow' : decided
         if (policy === 'deny') {
           const reason = denialMessage(mode, PEER_SEND_TOOL)
           ctx.publish({ type: 'tool.denied', threadId: ctx.threadId, toolName: PEER_SEND_TOOL, reason, mode })
@@ -95,7 +104,7 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
             return toolText(reason, true)
           }
         }
-        return handlers.sendMessage(input)
+        return handlers.sendMessage(linkInsteadOfCard ? { ...input, requireLink: true } : input)
       },
     },
   ]

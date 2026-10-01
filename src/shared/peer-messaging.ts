@@ -76,6 +76,17 @@ export interface PeerMessageInput extends PeerMessageKey {
   fromLabel?: string
   /** Defaults to `'user'`: absent means a client asked, and only a user can. */
   initiator?: PeerMessageInitiator
+  /**
+   * Refuse unless the two sessions are linked when the send is delivered. Set
+   * by a send that skipped its approval card because of the link, so an
+   * unlink while it was in flight cannot let it through uncarded.
+   */
+  requireLink?: boolean
+  /**
+   * Id of the "not delivered" row this user send resends
+   * (`PEER_UNDELIVERED_MARKER_PREFIX`), so the row can say it went.
+   */
+  undeliveredId?: string
 }
 
 /**
@@ -159,6 +170,13 @@ export function wrapPeerMessage(fromLabel: string, text: string): string {
   ].join('\n')
 }
 
+/** The refusal for a body over the cap, or null when it fits. */
+export function peerMessageTooLarge(text: string, maxBytes = PEER_MESSAGE_MAX_BYTES): string | null {
+  const bytes = utf8ByteLength(text)
+  if (bytes <= maxBytes) return null
+  return `Message is ${bytes} bytes, over the ${maxBytes} byte limit for a session-to-session message. Send a summary instead.`
+}
+
 /**
  * Rate limit, dedupe and size guard for peer sends.
  *
@@ -185,14 +203,8 @@ export class PeerMessageGuard {
    * cannot spend a rate-limit slot.
    */
   check(key: PeerMessageKey, nowMs: number): PeerMessageCheck {
-    const bytes = utf8ByteLength(key.text)
-    if (bytes > this.maxBytes) {
-      return {
-        ok: false,
-        reason: 'too-large',
-        message: `Message is ${bytes} bytes, over the ${this.maxBytes} byte limit for a session-to-session message. Send a summary instead.`,
-      }
-    }
+    const tooLarge = peerMessageTooLarge(key.text, this.maxBytes)
+    if (tooLarge) return { ok: false, reason: 'too-large', message: tooLarge }
 
     const id = peerMessageId(key)
     this.expire(nowMs)

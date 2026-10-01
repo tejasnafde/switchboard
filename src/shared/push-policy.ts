@@ -6,6 +6,7 @@
  */
 import { hostWriteTitle } from './agent-host-writes'
 import { fmtDuration } from './format'
+import { peerLinkSpentText } from './peer-links'
 import type { RuntimeEvent } from './provider-events'
 
 export interface PushMessage {
@@ -19,7 +20,7 @@ export interface PushMessage {
   data: { threadId: string; kind: PushKind; projectPath?: string; clientRef?: string; title?: string }
 }
 
-export type PushKind = 'approval' | 'question' | 'done' | 'error'
+export type PushKind = 'approval' | 'question' | 'done' | 'error' | 'link'
 
 /**
  * Android 8+ delivers only through a channel, and a payload naming a channel
@@ -48,7 +49,7 @@ export interface PushContext {
 /**
  * Map a runtime event to a notification, or null for events not worth sending.
  *
- * Only four kinds qualify. A blocked agent is the important one: it waits
+ * Only a few kinds qualify. A blocked agent is the important one: it waits
  * indefinitely, so a missed approval costs the user a whole run. Streamed
  * content and tool calls are deliberately excluded - they would fire hundreds
  * of times per turn.
@@ -101,6 +102,16 @@ export function pushForEvent(event: RuntimeEvent, ctx: PushContext = {}): PushMe
 
     case 'error':
       return { title, body: clampBody(`Error: ${event.message}`), data: { threadId, kind: 'error' } }
+
+    // A session link ran out while the user was away. Once per run-out, not per
+    // refused message: a hub can hit a spent edge many times before anyone looks.
+    case 'peer.undelivered':
+      if (!event.notify || event.sent) return null
+      return {
+        title,
+        body: clampBody(peerLinkSpentText(event.fromLabel, event.peerLabel)),
+        data: { threadId, kind: 'link' },
+      }
 
     default:
       return null

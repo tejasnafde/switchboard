@@ -6,7 +6,7 @@
  * must name the candidates rather than pick one.
  */
 import { describe, it, expect } from 'vitest'
-import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger, sendToPickerItems, sendToPickInsertion, pinSendToTarget, sendToPickAfterSend } from '../../src/renderer/components/chat/send-to-command'
+import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger, detectPeerPickTrigger, peerPickReplacement, sendToPickerItems, sendToPickInsertion, pinSendToTarget, sendToPickAfterSend } from '../../src/renderer/components/chat/send-to-command'
 import { PEER_AGENT_SENT_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
 
 const sessions = [
@@ -399,5 +399,32 @@ describe('sendToPickAfterSend', () => {
   it('keeps a newer pick made while the send was in flight', () => {
     const newer = { sessionId: 's1', id: 'b2', title: 'Billing' }
     expect(sendToPickAfterSend(newer, pick, true)).toBe(newer)
+  })
+})
+
+describe('detectPeerPickTrigger', () => {
+  it('serves /send-to as before', () => {
+    expect(detectPeerPickTrigger('/send-to doc', 12, null)).toEqual({ query: 'doc', start: 9, end: 12, command: 'send-to' })
+  })
+
+  it('opens the picker for a /link target', () => {
+    expect(detectPeerPickTrigger('/link wor', 9, null)).toEqual({ query: 'wor', start: 6, end: 9, command: 'link' })
+  })
+
+  // /link has no colon: once a pick is in, what follows it is the budget.
+  it('stays closed after a pick while the budget is typed', () => {
+    expect(detectPeerPickTrigger('/link Worker A ', 15, 'Worker A')).toBeNull()
+    expect(detectPeerPickTrigger('/link Worker A 30', 17, 'Worker A')).toBeNull()
+    expect(detectPeerPickTrigger('/link Worker B', 14, 'Worker A')).toMatchObject({ command: 'link' })
+  })
+
+  it('does not fire for /unlink or other text', () => {
+    expect(detectPeerPickTrigger('/unlink x', 9, null)).toBeNull()
+    expect(detectPeerPickTrigger('/linked', 7, null)).toBeNull()
+  })
+
+  it('writes a colon for /send-to and a space for /link', () => {
+    expect(peerPickReplacement('send-to', 'Doc')).toBe('Doc: ')
+    expect(peerPickReplacement('link', 'Doc')).toBe('Doc ')
   })
 })

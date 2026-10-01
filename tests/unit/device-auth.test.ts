@@ -41,6 +41,17 @@ describe('isChannelAllowed', () => {
     expect(isChannelAllowed(FULL_SCOPES, WorktreeManagerChannels.REMOVE)).toBe(true)
   })
 
+  // A link lets two agents talk past the hop limit (card-less in auto mode), so
+  // granting one is the desktop's consent; taking one away is safe anywhere.
+  it('lets a phone unlink and read session links but never link or extend', () => {
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.LINK_PEER)).toBe(false)
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.EXTEND_PEER_LINK)).toBe(false)
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.UNLINK_PEER)).toBe(true)
+    expect(isChannelAllowed(PHONE_SCOPES, ProviderChannels.LIST_PEER_LINKS)).toBe(true)
+    expect(isChannelAllowed(FULL_SCOPES, ProviderChannels.LINK_PEER)).toBe(true)
+    expect(isChannelAllowed(FULL_SCOPES, ProviderChannels.EXTEND_PEER_LINK)).toBe(true)
+  })
+
   it('keeps a phone from every pull request write while it may still read and link', () => {
     const writes = Object.values(PullRequestWriteChannels)
     expect(writes).toEqual([
