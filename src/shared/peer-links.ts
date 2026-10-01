@@ -64,7 +64,11 @@ export interface PeerLinkView extends PeerLinkSummary {
   title: string
 }
 
-export type PeerLinkRefusal = 'link-budget' | 'link-expired'
+/**
+ * Why a linked send was not delivered. `link-removed` is a link the user took
+ * away (or a session that went away) while the send was being prepared.
+ */
+export type PeerLinkRefusal = 'link-budget' | 'link-expired' | 'link-removed'
 
 export type PeerLinkSendCheck =
   | { linked: false }
@@ -83,6 +87,8 @@ export type PeerLinkResult =
   | { ok: false; message: string }
 
 interface Edge {
+  /** Distinct per link, so an unlink and relink is a different edge, and a different consent. */
+  id: number
   since: number
   used: number
   budget: number
@@ -107,13 +113,14 @@ function otherEnd(key: string, id: string): string | null {
  * message did not arrive, the work must go on, and the undelivered text has to
  * reach the user some other way.
  */
-const NOT_DELIVERED =
+export const PEER_LINK_NOT_DELIVERED =
   'Your message was NOT delivered. Keep working on your own task, and put the undelivered message, ' +
   'or a summary of it, in your final reply to the user so nothing is lost. Switchboard has also kept ' +
   'the message in this chat for the user to send by hand.'
 
 export class PeerLinkBook {
   private readonly edges = new Map<string, Edge>()
+  private nextEdgeId = 0
 
   constructor(
     private readonly defaultBudget = PEER_LINK_MESSAGE_BUDGET,
@@ -140,7 +147,8 @@ export class PeerLinkBook {
     if (problem) return { ok: false, message: problem }
     const key = edgeKey(a, b)
     const created = !this.edges.has(key)
-    this.edges.set(key, { since: nowMs, used: 0, budget, notified: false })
+    const existing = this.edges.get(key)
+    this.edges.set(key, { id: existing?.id ?? ++this.nextEdgeId, since: nowMs, used: 0, budget, notified: false })
     return { ok: true, created }
   }
 
@@ -210,7 +218,7 @@ export class PeerLinkBook {
     const refuse = (reason: PeerLinkRefusal, why: string): PeerLinkSendCheck => {
       const firstRefusal = !edge.notified
       edge.notified = true
-      return { linked: true, ok: false, reason, firstRefusal, message: `${why} ${NOT_DELIVERED}` }
+      return { linked: true, ok: false, reason, firstRefusal, message: `${why} ${PEER_LINK_NOT_DELIVERED}` }
     }
     if (nowMs - edge.since >= this.windowMs) {
       return refuse('link-expired', `This link's ${Math.round(this.windowMs / 60_000)} minutes are up.`)
@@ -223,9 +231,19 @@ export class PeerLinkBook {
   }
 
   /** Give back the message a send charged when its delivery then failed. */
-  release(from: string, to: string): void {
+  release(from: string, to: string, edgeId?: number): void {
     const edge = this.edges.get(edgeKey(from, to))
-    if (edge && edge.used > 0) edge.used -= 1
+    if (!edge || (edgeId !== undefined && edge.id !== edgeId)) return
+    if (edge.used > 0) edge.used -= 1
+  }
+
+  /**
+   * The current edge's id, or null when the pair is not linked. A send checks
+   * this again after anything it awaits: the same id means the same link the
+   * user made, still in place.
+   */
+  edgeId(a: string, b: string): number | null {
+    return this.edges.get(edgeKey(a, b))?.id ?? null
   }
 
   /**
@@ -325,7 +343,7 @@ export function parseUndeliveredMarker(content: string): PeerUndelivered | null 
     if (!raw || typeof raw !== 'object') return null
     const r = raw as Record<string, unknown>
     if (typeof r.to !== 'string' || typeof r.toLabel !== 'string' || typeof r.text !== 'string') return null
-    if (r.reason !== 'link-budget' && r.reason !== 'link-expired') return null
+    if (r.reason !== 'link-budget' && r.reason !== 'link-expired' && r.reason !== 'link-removed') return null
     return { to: r.to, toLabel: r.toLabel, reason: r.reason, text: r.text, sent: r.sent === true }
   } catch {
     // A hand-edited or truncated row: show it as an ordinary system message.
@@ -341,6 +359,8 @@ export function peerLinkSpentText(fromLabel: string, toLabel: string): string {
 /** The row's heading. */
 export function peerUndeliveredHeading(undelivered: PeerUndelivered): string {
   if (undelivered.sent) return `Sent by you to ${undelivered.toLabel} after the link ran out`
-  const why = undelivered.reason === 'link-expired' ? 'link time used up' : 'link budget used up'
+  const why = undelivered.reason === 'link-expired'
+    ? 'link time used up'
+    : undelivered.reason === 'link-removed' ? 'link removed before it was sent' : 'link budget used up'
   return `Not delivered to ${undelivered.toLabel}: ${why}`
 }

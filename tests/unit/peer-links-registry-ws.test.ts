@@ -435,3 +435,75 @@ describe('no cap on links per session', () => {
     expect(adapter.turns).toHaveLength(10)
   })
 })
+
+// The checkpoint is the one await between the link check and sendTurn. What
+// happens to the link or the target there must stop the send.
+describe('a link changing while the send is prepared', () => {
+  type Internals = { checkpoints: { beginTurn: (threadId: string, cwd: string) => Promise<void> }; sessionAdapters: Map<string, unknown> }
+  const internals = () => registry as unknown as Internals
+  /** Run `during` inside the next checkpoint await, then let it finish. */
+  const duringCheckpoint = (during: () => Promise<void> | void) => {
+    const original = internals().checkpoints.beginTurn.bind(internals().checkpoints)
+    vi.spyOn(internals().checkpoints, 'beginTurn').mockImplementationOnce(async (threadId, cwd) => {
+      await during()
+      return original(threadId, cwd)
+    })
+  }
+
+  it('delivers nothing when the user unlinks during the await, and keeps the message', async () => {
+    const { cwd, adapter, events } = await setup()
+    await startAll(cwd, ['hub', 'w1'])
+    await link('hub', 'w1')
+    duringCheckpoint(() => client!.invoke(ProviderChannels.UNLINK_PEER, { threadId: 'hub', peerThreadId: 'w1' }).then(() => {}))
+
+    const out = await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'the plan', requireLink: true })
+    await flush()
+
+    expect(out.isError).toBe(true)
+    expect(text(out)).toMatch(/removed the link/i)
+    expect(text(out)).toMatch(/NOT delivered/)
+    expect(adapter.turns).toHaveLength(0)
+    const row = saved.find((m) => m.conversationId === 'hub' && m.role === 'system')
+    expect(parseUndeliveredMarker(row!.content)).toMatchObject({ to: 'w1', reason: 'link-removed', text: 'the plan', sent: false })
+    expect(events.some((e) => e.type === 'peer.undelivered' && e.notify)).toBe(false)
+
+    // The per-pair guard gave its slot back: after relinking, the same text is not a duplicate.
+    await link('hub', 'w1')
+    expect((await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'the plan' })).isError).toBeFalsy()
+    expect(adapter.turns).toHaveLength(1)
+  })
+
+  it('treats an unlink and relink during the await as a different link', async () => {
+    const { cwd, adapter } = await setup()
+    await startAll(cwd, ['hub', 'w1'])
+    await link('hub', 'w1')
+    duringCheckpoint(async () => {
+      await client!.invoke(ProviderChannels.UNLINK_PEER, { threadId: 'hub', peerThreadId: 'w1' })
+      await link('hub', 'w1')
+    })
+    const out = await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'the plan' })
+    expect(out.isError).toBe(true)
+    expect(adapter.turns).toHaveLength(0)
+    // The new link was never charged.
+    expect((await linksOf('hub'))[0].used).toBe(0)
+  })
+
+  it('refunds the link charge when the target goes away during the await', async () => {
+    const { cwd, adapter } = await setup()
+    await startAll(cwd, ['hub', 'w1'])
+    await link('hub', 'w1')
+    let gone: unknown
+    // A profile switch replaces the adapter without removing the link.
+    duringCheckpoint(() => {
+      gone = internals().sessionAdapters.get('w1')
+      internals().sessionAdapters.delete('w1')
+    })
+    const out = await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'the plan' })
+    internals().sessionAdapters.set('w1', gone)
+
+    expect(out.isError).toBe(true)
+    expect(text(out)).toMatch(/NOT delivered/)
+    expect(adapter.turns).toHaveLength(0)
+    expect((await linksOf('hub'))[0].used).toBe(0)
+  })
+})

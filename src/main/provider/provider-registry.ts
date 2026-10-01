@@ -66,6 +66,7 @@ import {
   formatUndeliveredMarker,
   parseUndeliveredMarker,
   PeerLinkBook,
+  PEER_LINK_NOT_DELIVERED,
   PEER_UNDELIVERED_MARKER_PREFIX,
   peerUndeliveredId,
   type PeerLinkRefusal,
@@ -718,6 +719,34 @@ export class ProviderRegistry implements PeerToolHost {
     })
   }
 
+  /**
+   * Why a prepared peer delivery must not go out after all, or null. Run after
+   * the checkpoint await: the target may have stopped or switched profile, and
+   * a linked send's link may have been removed (or replaced by a new one).
+   */
+  private peerDeliveryProblem(input: {
+    targetThreadId: string
+    adapter: ProviderAdapter
+    targetLabel: string
+    chargedEdge: number | null
+    fromRoot: string
+    targetRoot: string
+  }): { reason: 'link-removed' | 'target-gone'; message: string } | null {
+    if (input.chargedEdge !== null && this.peerLinks.edgeId(input.fromRoot, input.targetRoot) !== input.chargedEdge) {
+      return {
+        reason: 'link-removed',
+        message: `The user removed the link with "${input.targetLabel}" while this message was being prepared. ${PEER_LINK_NOT_DELIVERED}`,
+      }
+    }
+    if (this.sessionAdapters.get(input.targetThreadId) !== input.adapter || this.switchingSessions.has(input.targetThreadId)) {
+      return {
+        reason: 'target-gone',
+        message: `"${input.targetLabel}" stopped or changed profiles before the message went out, so it was NOT delivered. Send it again once that session is running.`,
+      }
+    }
+    return null
+  }
+
   /** Remove one link, or every link of this session when `peerThreadId` is omitted. */
   unlinkPeers(threadId: string, peerThreadId?: string): PeerLinkView[] {
     const root = resolveRootThreadId(threadId)
@@ -850,9 +879,13 @@ export class ProviderRegistry implements PeerToolHost {
       this.announcePeerLinks([fromRoot, targetRoot])
       throw new Error(linkVerdict.message)
     }
+    // The edge this send was charged to. Checked again after the checkpoint
+    // await: an unlink there, or an unlink and relink, is not the consent the
+    // charge was made under.
+    const chargedEdge = linkVerdict.linked ? this.peerLinks.edgeId(fromRoot, targetRoot) : null
     const releaseAgentSlot = (): void => {
       if (initiator !== 'agent') return
-      if (linkVerdict.linked) this.peerLinks.release(fromRoot, targetRoot)
+      if (chargedEdge !== null) this.peerLinks.release(fromRoot, targetRoot, chargedEdge)
       else this.peerAgentGuard.release(input.fromThreadId)
     }
     if (initiator === 'agent' && !linkVerdict.linked) {
@@ -878,7 +911,28 @@ export class ProviderRegistry implements PeerToolHost {
     // Same pre-turn bookkeeping an ordinary send does, or this turn's file
     // edits produce no diff cards and notebook mirrors go unwatched.
     const targetCwd = this.sessionCwd.get(targetThreadId)
+    const targetWasMidTurn = this.hasOutstandingTurn(targetThreadId)
     if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd)
+    // The only await before sendTurn: everything from here to it is
+    // synchronous, so what this sees is what the send runs under.
+    const withdrawn = this.peerDeliveryProblem({
+      targetThreadId, adapter, targetLabel, chargedEdge, fromRoot, targetRoot,
+    })
+    if (withdrawn) {
+      // A running turn keeps the checkpoint it now has; a fresh one belongs
+      // to a turn that will not happen.
+      if (targetCwd && !targetWasMidTurn) this.checkpoints.clear(targetThreadId)
+      this.peerGuard.release(verdict.id, key)
+      releaseAgentSlot()
+      log.warn(`peer message withdrawn before delivery (${withdrawn.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+      if (withdrawn.reason === 'link-removed') {
+        this.recordUndelivered({
+          fromThreadId: input.fromThreadId, fromLabel, targetRoot, targetLabel,
+          text: input.text, reason: 'link-removed', notify: false,
+        })
+      }
+      throw new Error(withdrawn.message)
+    }
     notebookManager.beginTurn(targetThreadId)
     const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(targetThreadId), undefined)
     if (startsNewProviderTurn) this.beginOutstandingTurn(targetThreadId)

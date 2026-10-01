@@ -160,6 +160,24 @@ describe('edge budget', () => {
     expect(book.linksOf('hub').every((l) => l.used === 0)).toBe(true)
   })
 
+  it('gives a charge back only to the edge that took it', () => {
+    const book = new PeerLinkBook(1)
+    book.link('a', 'b', 'user', T0)
+    const first = book.edgeId('a', 'b')
+    book.checkSend('a', 'b', T0)
+    book.unlink('a', 'b')
+    book.link('a', 'b', 'user', T0)
+    expect(book.edgeId('a', 'b')).not.toBe(first)
+    book.checkSend('a', 'b', T0)
+    book.release('a', 'b', first!)
+    expect(book.linksOf('a')[0].used).toBe(1)
+    // A relink of a live edge renews it in place.
+    const current = book.edgeId('a', 'b')
+    book.link('b', 'a', 'user', T0)
+    expect(book.edgeId('a', 'b')).toBe(current)
+    expect(book.edgeId('a', 'c')).toBeNull()
+  })
+
   it('gives back a charged message when delivery fails', () => {
     const book = new PeerLinkBook(1)
     book.link('a', 'b', 'user', T0)
@@ -312,6 +330,8 @@ describe('undelivered marker', () => {
   it('says what happened, and that it went once sent', () => {
     expect(peerUndeliveredHeading(row)).toBe('Not delivered to Worker A: link budget used up')
     expect(peerUndeliveredHeading({ ...row, reason: 'link-expired' })).toBe('Not delivered to Worker A: link time used up')
+    expect(peerUndeliveredHeading({ ...row, reason: 'link-removed' })).toBe('Not delivered to Worker A: link removed before it was sent')
+    expect(parseUndeliveredMarker(formatUndeliveredMarker({ ...row, reason: 'link-removed' }))?.reason).toBe('link-removed')
     expect(peerUndeliveredHeading({ ...row, sent: true })).toMatch(/^Sent by you/)
   })
 
