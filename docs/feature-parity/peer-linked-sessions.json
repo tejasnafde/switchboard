@@ -58,7 +58,6 @@
       "status": "implemented",
       "evidence": [
         "src/main/db/messages.ts",
-        "src/shared/peer-links.ts",
         "tests/unit/peer-links-registry-ws.test.ts"
       ]
     },
