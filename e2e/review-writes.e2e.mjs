@@ -5,7 +5,7 @@
  * nothing here reaches GitHub or Bitbucket.
  *
  * #161 (you review it): reply to a thread, resolve it, drag a line range
- * both ways (Escape cancels), hold a line comment,
+ * both ways (Escape cancels), hold still at the edge to scroll, hold a line comment,
  * then submit an approving review with it. #159 (yours, nothing blocks it):
  * no Review offered, the strategy menu lists merge commit first, the merge
  * asks through the confirm dialog naming branch and strategy, Cancel sends
@@ -99,6 +99,27 @@ try {
   await win.keyboard.press('Escape')
   await win.mouse.up()
   check('Escape cancels a drag and keeps the previous selection', await selectedRows() === 4, String(await selectedRows()))
+
+  // Holding still near the bottom edge keeps scrolling and grows the range. The demo file is
+  // short, so the pane is capped to make it scroll, and put back afterwards.
+  const pane = reviews().locator('[data-pr-diff]').locator('..')
+  await pane.evaluate((el) => { el.style.maxHeight = '130px'; el.scrollTop = 0 })
+  await win.mouse.move(...(await centre(gutter(84))))
+  await win.mouse.down()
+  const paneBox = await pane.boundingBox()
+  await win.mouse.move((await centre(gutter(84)))[0], paneBox.y + paneBox.height - 4, { steps: 4 })
+  const heldAt = await pane.evaluate((el) => el.scrollTop)
+  const heldRows = await selectedRows()
+  await win.waitForTimeout(600)
+  const scrolled = await pane.evaluate((el) => el.scrollTop)
+  const grown = await selectedRows()
+  check('holding still at the bottom edge keeps scrolling', scrolled > heldAt, `${heldAt} -> ${scrolled}`)
+  check('the range grows while it scrolls', grown > heldRows, `${heldRows} -> ${grown}`)
+  await win.mouse.up()
+  const after = await pane.evaluate((el) => el.scrollTop)
+  await win.waitForTimeout(300)
+  check('releasing stops the scroll', await pane.evaluate((el) => el.scrollTop) === after)
+  await pane.evaluate((el) => { el.style.maxHeight = ''; el.scrollTop = 0 })
 
   // Select new line 87 by its number, Comment, hold it for the review.
   await reviews().getByRole('button', { name: 'Select line 87' }).last().click()

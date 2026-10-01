@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffHunk } from '../../src/shared/pull-requests'
-import { afterDrag, dragLineSelection, nextLineSelection } from '../../src/renderer/components/reviews/line-selection'
+import { afterDrag, dragLineSelection, EDGE_BAND_PX, EDGE_HEADER_PX, EDGE_MAX_SPEED_PX, edgeProbeY, edgeScrollSpeed, nextLineSelection } from '../../src/renderer/components/reviews/line-selection'
 
 describe('nextLineSelection', () => {
   const one = nextLineSelection(null, 'new', 0, 12, false)
@@ -74,5 +74,52 @@ describe('afterDrag', () => {
     const range = { ...sel, end: 15 }
     expect(afterDrag(open, range)).toEqual({ sel: range, composing: false })
     expect(afterDrag({ sel: null, composing: false }, range)).toEqual({ sel: range, composing: false })
+  })
+})
+
+describe('edgeScrollSpeed', () => {
+  const top = 100
+  const bottom = 600
+  const bandTop = top + EDGE_HEADER_PX
+
+  it('does not scroll between the bands', () => {
+    expect(edgeScrollSpeed(bandTop + EDGE_BAND_PX, top, bottom)).toBe(0)
+    expect(edgeScrollSpeed(350, top, bottom)).toBe(0)
+    expect(edgeScrollSpeed(bottom - EDGE_BAND_PX, top, bottom)).toBe(0)
+  })
+
+  it('scrolls up in the top band under the header and down in the bottom band', () => {
+    expect(edgeScrollSpeed(bandTop + EDGE_BAND_PX - 1, top, bottom)).toBeLessThan(0)
+    expect(edgeScrollSpeed(bottom - EDGE_BAND_PX + 1, top, bottom)).toBeGreaterThan(0)
+  })
+
+  it('goes faster deeper into a band, capped over the header and past the pane', () => {
+    const shallow = edgeScrollSpeed(bottom - EDGE_BAND_PX + 4, top, bottom)
+    const deep = edgeScrollSpeed(bottom - 4, top, bottom)
+    expect(deep).toBeGreaterThan(shallow)
+    expect(edgeScrollSpeed(bottom, top, bottom)).toBe(EDGE_MAX_SPEED_PX)
+    expect(edgeScrollSpeed(bottom + 500, top, bottom)).toBe(EDGE_MAX_SPEED_PX)
+    expect(edgeScrollSpeed(bandTop, top, bottom)).toBe(-EDGE_MAX_SPEED_PX)
+    expect(edgeScrollSpeed(top + 5, top, bottom)).toBe(-EDGE_MAX_SPEED_PX)
+    expect(edgeScrollSpeed(top - 500, top, bottom)).toBe(-EDGE_MAX_SPEED_PX)
+  })
+})
+
+describe('edgeProbeY', () => {
+  it('keeps the probe below the header and inside the pane', () => {
+    expect(edgeProbeY(300, 100, 600)).toBe(300)
+    expect(edgeProbeY(110, 100, 600)).toBe(100 + EDGE_HEADER_PX)
+    expect(edgeProbeY(900, 100, 600)).toBe(599)
+  })
+
+  it('keeps the current range over a row with no line on the selected side', () => {
+    const hunk = { header: '@@', lines: [
+      { kind: 'context', oldLine: 1, newLine: 1, text: 'a' },
+      { kind: 'del', oldLine: 2, newLine: null, text: 'b' },
+      { kind: 'add', oldLine: null, newLine: 2, text: 'c' },
+      { kind: 'add', oldLine: null, newLine: 3, text: 'd' },
+    ] } as never
+    const range = { side: 'new' as const, hunk: 0, anchor: 1, start: 1, end: 3 }
+    expect(dragLineSelection(range, hunk, 0, null)).toEqual(range)
   })
 })

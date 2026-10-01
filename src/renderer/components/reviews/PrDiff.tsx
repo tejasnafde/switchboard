@@ -6,7 +6,7 @@
  * hunks (outdated, or outside the context) are listed after the diff so
  * none disappears.
  */
-import { useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { DiffLine, PrChangedFile, PrConversation, PrSummary } from '@shared/pull-requests'
 import { diffAround } from '@shared/review-context'
 import { cn } from '../../lib/utils'
@@ -17,7 +17,7 @@ import { askAgent } from './review-to-chat'
 import { MarkdownWithCopyControls } from '../chat/MarkdownWithCopyControls'
 import { usePendingComments } from './PrReviewForm'
 import { LineCommentBox, PendingCommentCard, ThreadFooter } from './PrWriteControls'
-import { afterDrag, dragLineSelection, lineOn, nextLineSelection, type LineSelection } from './line-selection'
+import { afterDrag, dragLineSelection, edgeProbeY, edgeScrollSpeed, lineOn, nextLineSelection, type LineSelection } from './line-selection'
 import type { PendingComment } from '../../stores/review-store'
 
 function anchoredTo(line: DiffLine, c: PrConversation): boolean {
@@ -84,7 +84,15 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
   // text) stay as they are until the drag ends on a new range; Escape just drops the preview.
   const [dragSel, setDragSel] = useState<LineSelection | null>(null)
   // `moved` turns the click that ends a drag into a no-op.
-  const dragRef = useRef<{ pointerId: number; sel: LineSelection; range: LineSelection | null; moved: boolean } | null>(null)
+  // `x`/`y` is the pointer's last position, which the edge scroll loop reads while it holds still.
+  const dragRef = useRef<{ pointerId: number; sel: LineSelection; range: LineSelection | null; moved: boolean; x: number; y: number; scroller: HTMLElement | null } | null>(null)
+  // The requestAnimationFrame id of the edge scroll loop, 0 when it is not running.
+  const edgeFrame = useRef(0)
+  const stopEdgeScroll = () => {
+    cancelAnimationFrame(edgeFrame.current)
+    edgeFrame.current = 0
+  }
+  useEffect(() => stopEdgeScroll, [])
   // The click that follows a drag's release is not a pick. A deadline, not a flag: a release
   // click that never comes (pointer let go elsewhere) must not eat a later keyboard click.
   const swallowClickUntil = useRef(0)
@@ -93,6 +101,7 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
     const d = dragRef.current
     if (!d) return
     dragRef.current = null
+    stopEdgeScroll()
     // A cancelled pointer sends no click, so only a committed drag swallows the next one.
     swallowClickUntil.current = commit && d.moved ? performance.now() + SWALLOW_CLICK_MS : 0
     if (e.currentTarget.hasPointerCapture(d.pointerId)) e.currentTarget.releasePointerCapture(d.pointerId)
@@ -102,6 +111,33 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
     setSel(next.sel)
     setComposing(next.composing)
   }
+  // Extend the drag to the row under its pointer.
+  const extendDrag = (d: NonNullable<typeof dragRef.current>) => {
+    const box = d.scroller?.getBoundingClientRect()
+    const y = box ? edgeProbeY(d.y, box.top, box.bottom) : d.y
+    const row = document.elementFromPoint(d.x, y)?.closest<HTMLElement>('[data-diff-hunk]')
+    if (!row) return
+    const at = row.dataset[d.sel.side === 'old' ? 'oldLine' : 'newLine']
+    // From the current range, so a row with no line on this side (a deletion under a new-side drag) keeps it.
+    const next = dragLineSelection(d.range ?? d.sel, file.hunks[d.sel.hunk], Number(row.dataset.diffHunk), at === undefined ? null : Number(at))
+    if (!d.moved && next.start === next.end) return
+    d.moved = true
+    d.range = next
+    setDragSel(next)
+  }
+  // One frame of the edge scroll: runs while a drag holds the pointer in a band, even without moving.
+  const edgeScroll = () => {
+    const d = dragRef.current
+    const box = d?.scroller?.getBoundingClientRect()
+    const speed = d && box ? edgeScrollSpeed(d.y, box.top, box.bottom) : 0
+    if (!d || speed === 0) {
+      edgeFrame.current = 0
+      return
+    }
+    d.scroller?.scrollBy(0, speed)
+    extendDrag(d)
+    edgeFrame.current = requestAnimationFrame(edgeScroll)
+  }
   const drag = (side: 'new' | 'old', hunk: number) => (n: number): DragHandlers => ({
     onPointerDown: (e) => {
       swallowClickUntil.current = 0
@@ -110,26 +146,16 @@ export function PrDiff({ pr, file, conversations, now }: { pr: PrSummary; file: 
       e.preventDefault()
       e.currentTarget.focus()
       e.currentTarget.setPointerCapture(e.pointerId)
-      dragRef.current = { pointerId: e.pointerId, sel: { side, hunk, anchor: n, start: n, end: n }, range: null, moved: false }
+      const scroller = e.currentTarget.closest('[data-pr-diff]')?.parentElement ?? null
+      dragRef.current = { pointerId: e.pointerId, sel: { side, hunk, anchor: n, start: n, end: n }, range: null, moved: false, x: e.clientX, y: e.clientY, scroller }
     },
     onPointerMove: (e) => {
       const d = dragRef.current
       if (!d || d.pointerId !== e.pointerId) return
-      // ponytail: scrolls only while the pointer moves near an edge (the top band clears the sticky file header), add a timer if holding still should scroll too.
-      const scroller = e.currentTarget.closest('[data-pr-diff]')?.parentElement
-      if (scroller) {
-        const box = scroller.getBoundingClientRect()
-        if (e.clientY < box.top + 48) scroller.scrollBy(0, -20)
-        else if (e.clientY > box.bottom - 24) scroller.scrollBy(0, 20)
-      }
-      const row = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-diff-hunk]')
-      if (!row) return
-      const at = row.dataset[d.sel.side === 'old' ? 'oldLine' : 'newLine']
-      const next = dragLineSelection(d.sel, file.hunks[d.sel.hunk], Number(row.dataset.diffHunk), at === undefined ? null : Number(at))
-      if (!d.moved && next.start === next.end) return
-      d.moved = true
-      d.range = next
-      setDragSel(next)
+      d.x = e.clientX
+      d.y = e.clientY
+      extendDrag(d)
+      if (!edgeFrame.current) edgeFrame.current = requestAnimationFrame(edgeScroll)
     },
     onPointerUp: (e) => endDrag(e, true),
     onPointerCancel: (e) => endDrag(e, false),
