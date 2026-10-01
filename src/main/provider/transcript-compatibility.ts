@@ -60,6 +60,8 @@ type ReadResult =
   | { ok: true; snapshot: TranscriptSnapshot; records: string[] }
   | { ok: false; reason: string }
 
+const CHANGED_WHILE_READ = 'Transcript changed while it was being read'
+
 async function readJsonl(path: string): Promise<ReadResult> {
   let handle
   try {
@@ -101,7 +103,7 @@ async function readJsonl(path: string): Promise<ReadResult> {
 
     const after = await handle.stat()
     if (!sameFileState(before, after)) {
-      return { ok: false, reason: 'Transcript changed while it was being read' }
+      return { ok: false, reason: CHANGED_WHILE_READ }
     }
     return {
       ok: true,
@@ -164,13 +166,57 @@ export async function compareJsonlTranscripts(
   return { kind: 'source-prefix', source: source.snapshot, target: target.snapshot }
 }
 
+// The source CLI is stopped just before a profile switch, but it keeps
+// writing for a moment (a stopped background task appends its notification
+// about two seconds later). A change on the source side alone is that tail,
+// so compare again once it lands. A change on the target side still aborts.
+const SOURCE_SETTLE_ATTEMPTS = 3
+const SOURCE_SETTLE_DELAY_MS = 750
+const SOURCE_CHANGED = Symbol('source-changed')
+
+type TargetBaseline = { digest?: string | null }
+
+type SyncAttempt = TranscriptSyncResult & { [SOURCE_CHANGED]?: true }
+
 export async function synchronizeCompatibleTranscript(
   sourcePath: string,
   targetPath: string,
-  options: TranscriptSyncOptions = {},
+  options: TranscriptSyncOptions & { settle?: () => Promise<void> } = {},
 ): Promise<TranscriptSyncResult> {
+  // The target seen by the first attempt. A retry that finds any other target
+  // (changed, created or deleted) aborts, so a retry never overwrites it.
+  const baseline: TargetBaseline = {}
+  for (let attempt = 1; ; attempt++) {
+    const { [SOURCE_CHANGED]: sourceChanged, ...result } = await synchronizeOnce(sourcePath, targetPath, options, baseline)
+    if (!sourceChanged || attempt >= SOURCE_SETTLE_ATTEMPTS) return result
+    await (options.settle?.() ?? new Promise((resolve) => setTimeout(resolve, SOURCE_SETTLE_DELAY_MS)))
+  }
+}
+
+async function synchronizeOnce(
+  sourcePath: string,
+  targetPath: string,
+  options: TranscriptSyncOptions,
+  baseline: TargetBaseline,
+): Promise<SyncAttempt> {
   try {
     const initial = await compareJsonlTranscripts(sourcePath, targetPath)
+    if (initial.kind === 'unreadable' && initial.side === 'source' && initial.reason === CHANGED_WHILE_READ) {
+      return { ...conflict(sourcePath, targetPath, initial.kind), [SOURCE_CHANGED]: true }
+    }
+    if (!(initial.kind === 'unreadable' && initial.side === 'target')) {
+      const target = initial.target?.digest ?? null
+      if (baseline.digest === undefined) baseline.digest = target
+      else if (baseline.digest !== target) {
+        return {
+          ok: false,
+          reason: 'concurrent-modification',
+          detail: 'Target transcript changed while the switch waited for the source to settle',
+          sourcePath,
+          targetPath,
+        }
+      }
+    }
     if (initial.kind === 'divergent' || initial.kind === 'unreadable') {
       return conflict(sourcePath, targetPath, initial.kind)
     }
@@ -188,6 +234,7 @@ export async function synchronizeCompatibleTranscript(
     const confirmed = await compareJsonlTranscripts(sourcePath, targetPath)
     if (!sameEvidence(initial, confirmed)) {
       return {
+        ...(onlySourceChanged(initial, confirmed) ? { [SOURCE_CHANGED]: true as const } : {}),
         ok: false,
         reason: 'concurrent-modification',
         detail: 'Source or target transcript changed after compatibility was checked',
@@ -203,6 +250,7 @@ export async function synchronizeCompatibleTranscript(
       const copied = await compareJsonlTranscripts(sourcePath, temporaryPath)
       if (copied.kind !== 'equal') {
         return {
+          [SOURCE_CHANGED]: true,
           ok: false,
           reason: 'concurrent-modification',
           detail: 'Source transcript changed while its replacement was copied',
@@ -214,6 +262,7 @@ export async function synchronizeCompatibleTranscript(
       const beforeRename = await compareJsonlTranscripts(sourcePath, targetPath)
       if (!sameEvidence(confirmed, beforeRename)) {
         return {
+          ...(onlySourceChanged(confirmed, beforeRename) ? { [SOURCE_CHANGED]: true as const } : {}),
           ok: false,
           reason: 'concurrent-modification',
           detail: 'Source or target transcript changed before replacement',
@@ -246,6 +295,10 @@ export async function synchronizeCompatibleTranscript(
       targetPath,
     }
   }
+}
+
+function onlySourceChanged(a: TranscriptCompatibility, b: TranscriptCompatibility): boolean {
+  return a.source?.digest !== b.source?.digest && a.target?.digest === b.target?.digest
 }
 
 function sameEvidence(a: TranscriptCompatibility, b: TranscriptCompatibility): boolean {
