@@ -1,6 +1,6 @@
 import type { BackendHost } from '../backend/host'
 import { stat } from 'fs/promises'
-import { notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
+import { notifyConversationArchived, notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { historyTail } from '@shared/turn-activity'
 import { parseFollowSuggestionMode } from '@shared/follow-suggestions'
@@ -674,6 +674,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   // Archive / unarchive conversations
   host.handle(AppChannels.ARCHIVE_CONVERSATION, (id: string) => {
     archiveConversation(id)
+    notifyConversationArchived(id)
     return { ok: true, archived: isConversationArchived(id) }
   })
 

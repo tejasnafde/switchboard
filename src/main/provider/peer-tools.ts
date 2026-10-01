@@ -31,7 +31,9 @@ export const PEER_SEND_TOOL = `mcp__${PEER_TOOL_SERVER_NAME}__${PEER_SEND_TOOL_N
 export const PEER_LIST_TOOL_DESCRIPTION = [
   'List the other agent sessions the user has open in Switchboard on this backend.',
   '',
-  `Returns each session's opaque id, title, project folder, provider and whether it is mid-turn.`,
+  `Returns each session's opaque id, title, project folder, provider, whether it is mid-turn, and`,
+  'whether the user LINKED it with this session (`linked: true`), which is who you may hold a',
+  `back-and-forth with through ${PEER_SEND_TOOL_NAME}.`,
   `Call this before ${PEER_SEND_TOOL_NAME} instead of guessing an id: ids are opaque, and a wrong`,
   'one is refused rather than delivered somewhere else. Read-only and cheap.',
 ].join('\n')
@@ -52,6 +54,12 @@ export const PEER_SEND_TOOL_DESCRIPTION = [
   'The user reviews each send unless this session runs in full access. Sends are rate limited, and a',
   'session that is itself acting on a peer message cannot pass one on, so treat each send as your',
   'one chance to say the whole thing.',
+  '',
+  `The exception is a session the user linked with this one (\`linked: true\` in ${PEER_LIST_TOOL_NAME}):`,
+  'there the user has asked the two of you to work together, so you may reply to its messages and it',
+  'may reply to yours, each reply arriving as a new message in the other transcript. A link has its',
+  'own message and time budget; when it runs out, stop and summarise for the user. A link never',
+  'extends to sessions it does not name, and you cannot create one.',
 ].join('\n')
 
 /** One other open session, as the model is shown it. */
@@ -62,6 +70,8 @@ export interface PeerSessionSummary {
   provider: ProviderKind
   /** A busy session still receives the message; it just answers later. */
   midTurn: boolean
+  /** The user linked it with the caller, so the two may message back and forth. */
+  linked: boolean
 }
 
 /**
@@ -71,6 +81,8 @@ export interface PeerSessionSummary {
  */
 export interface PeerToolHost {
   listPeerSessions(fromThreadId: string): PeerSessionSummary[]
+  /** Whether the user linked the two sessions (`shared/peer-links.ts`). */
+  isLinkedPeer(fromThreadId: string, sessionId: string): boolean
   deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string }>
 }
 
@@ -92,7 +104,14 @@ function say(text: string, isError = false): PeerToolResult {
 
 export interface PeerToolHandlers {
   listSessions(): Promise<PeerToolResult>
-  sendMessage(args: { sessionId: string; message: string }): Promise<PeerToolResult>
+  sendMessage(args: PeerSendArgs): Promise<PeerToolResult>
+}
+
+export interface PeerSendArgs {
+  sessionId: string
+  message: string
+  /** See `PeerMessageInput.requireLink`. */
+  requireLink?: boolean
 }
 
 /**
@@ -119,7 +138,7 @@ export function createPeerToolHandlers(host: PeerToolHost, fromThreadId: string)
       ].join('\n'))
     },
 
-    async sendMessage(args: { sessionId: string; message: string }): Promise<PeerToolResult> {
+    async sendMessage(args: PeerSendArgs): Promise<PeerToolResult> {
       const sessionId = args.sessionId.trim()
       const message = args.message.trim()
       if (!sessionId) {
@@ -135,8 +154,15 @@ export function createPeerToolHandlers(host: PeerToolHost, fromThreadId: string)
           targetThreadId: sessionId,
           text: message,
           initiator: 'agent',
+          ...(args.requireLink ? { requireLink: true } : {}),
         })
         log.info(`agent-initiated peer send ${id}: ${fromThreadId} -> ${sessionId}`)
+        if (host.isLinkedPeer(fromThreadId, sessionId)) {
+          return say(
+            `Delivered to linked session ${sessionId} as message ${id}. If it replies, the reply arrives ` +
+            'as a new message in this session; end your turn rather than waiting inside it.',
+          )
+        }
         return say(
           `Delivered to session ${sessionId} as message ${id}. That session acts on it in its own ` +
           'transcript and no reply comes back here, so continue without waiting.',

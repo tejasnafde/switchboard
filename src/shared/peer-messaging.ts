@@ -76,6 +76,12 @@ export interface PeerMessageInput extends PeerMessageKey {
   fromLabel?: string
   /** Defaults to `'user'`: absent means a client asked, and only a user can. */
   initiator?: PeerMessageInitiator
+  /**
+   * Refuse unless the two sessions are linked when the send is delivered. Set
+   * by a send that skipped its approval card because of the link, so an
+   * unlink while it was in flight cannot let it through uncarded.
+   */
+  requireLink?: boolean
 }
 
 /**

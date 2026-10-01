@@ -10,11 +10,12 @@ import type { PeerToolHost } from '../../src/main/provider/peer-tools'
 import type { PeerMessageInput } from '../../src/shared/peer-messaging'
 import type { RuntimeEvent, RuntimeMode } from '../../src/shared/provider-events'
 
-function setup(mode: RuntimeMode, decision?: 'approve' | 'deny') {
+function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false) {
   const events: RuntimeEvent[] = []
   const delivered: PeerMessageInput[] = []
   const peers: PeerToolHost = {
-    listPeerSessions: vi.fn(() => [{ sessionId: 's2', title: 'Other', folder: '/p', provider: 'codex' as const, midTurn: false }]),
+    listPeerSessions: vi.fn(() => [{ sessionId: 's2', title: 'Other', folder: '/p', provider: 'codex' as const, midTurn: false, linked }]),
+    isLinkedPeer: vi.fn(() => linked),
     deliverPeerMessage: vi.fn(async (input: PeerMessageInput) => { delivered.push(input); return { id: 'pm_0123456789abcdef' } }),
   }
   const approvals = new AgentApprovalBroker({
@@ -72,6 +73,7 @@ describe('send_agent_message', () => {
     const delivered: PeerMessageInput[] = []
     const peers: PeerToolHost = {
       listPeerSessions: vi.fn(() => []),
+      isLinkedPeer: vi.fn(() => false),
       deliverPeerMessage: vi.fn(async (input: PeerMessageInput) => { delivered.push(input); return { id: 'pm_0123456789abcdef' } }),
     }
     const approvals = new AgentApprovalBroker({
@@ -95,5 +97,48 @@ describe('send_agent_message', () => {
     const result = await send.call(args, { signal })
     expect(result.isError).toBe(true)
     expect(delivered).toEqual([])
+  })
+})
+
+// A link is consent to the conversation. In auto the user already lets the
+// agent settle routine calls, so a card per message would undo the link;
+// sandbox and accept-edits still review every send.
+describe('send_agent_message along a session link', () => {
+  it('sends without a card in auto mode when the target is linked', async () => {
+    const { send, events, delivered, signal } = setup('auto', undefined, true)
+    const result = await send.call(args, { signal })
+    expect(result.isError).toBeFalsy()
+    expect(events).toEqual([])
+    // Delivery re-checks the link, so an unlink in flight cannot pass uncarded.
+    expect(delivered).toEqual([{ fromThreadId: 't1', targetThreadId: 's2', text: 'the migration landed', initiator: 'agent', requireLink: true }])
+  })
+
+  it('still asks in auto mode when the target is not linked', async () => {
+    const { send, events, delivered, signal } = setup('auto', 'approve', false)
+    await send.call(args, { signal })
+    expect(events.map((e) => e.type)).toContain('request.opened')
+    expect(delivered).toHaveLength(1)
+  })
+
+  it('still asks in sandbox and accept-edits when linked', async () => {
+    for (const mode of ['sandbox', 'accept-edits'] as const) {
+      const { send, events, signal } = setup(mode, 'approve', true)
+      await send.call(args, { signal })
+      expect(events.map((e) => e.type)).toContain('request.opened')
+    }
+  })
+
+  it('is still denied in plan mode when linked', async () => {
+    const { send, delivered, signal } = setup('plan', undefined, true)
+    expect((await send.call(args, { signal })).isError).toBe(true)
+    expect(delivered).toEqual([])
+  })
+
+  // No tool can create or extend a link: the server offers the two session tools and nothing else.
+  it('offers the agent no way to link', () => {
+    const { list, send } = setup('full-access')
+    const tools = buildPeerMcpTools({ threadId: 't1', runtimeMode: () => 'full-access', publish: () => {}, approvals: { ask: vi.fn() }, peers: setup('full-access').peers })
+    expect(tools.map((t) => t.name)).toEqual([list.name, send.name])
+    expect(tools.map((t) => t.name)).toEqual(['list_agent_sessions', 'send_agent_message'])
   })
 })

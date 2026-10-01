@@ -61,6 +61,7 @@ import {
   wrapPeerMessage,
   type PeerMessageInput,
 } from '@shared/peer-messaging'
+import { PeerLinkBook, type PeerLinkView } from '@shared/peer-links'
 import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
 import { AgentApprovalBroker } from '../mcp/agent-approvals'
 import { AgentWriteBudget } from '../mcp/agent-write-budget'
@@ -285,6 +286,14 @@ export class ProviderRegistry implements PeerToolHost {
    * and there is nobody to run away from.
    */
   private readonly peerAgentGuard = new PeerAgentSendGuard()
+
+  /**
+   * Session links the user made, keyed by root conversation id. An agent send
+   * along a link skips `peerAgentGuard` and spends the edge's own budget.
+   * In memory on purpose: a restart stops every session, and a stop removes
+   * its links, so nothing a restart could restore would still be valid.
+   */
+  private readonly peerLinks = new PeerLinkBook()
 
   /**
    * Approval cards the Switchboard MCP server opens for its own tools. Their
@@ -580,9 +589,81 @@ export class ProviderRegistry implements PeerToolHost {
         folder: this.sessionCwd.get(threadId) ?? session.cwd,
         provider: session.provider,
         midTurn: this.hasOutstandingTurn(threadId),
+        linked: this.peerLinks.isLinked(ownRoot, resolveRootThreadId(threadId)),
       })
     }
     return out
+  }
+
+  isLinkedPeer(fromThreadId: string, sessionId: string): boolean {
+    return this.peerLinks.isLinked(resolveRootThreadId(fromThreadId), resolveRootThreadId(sessionId))
+  }
+
+  /** True when a live session runs under this id or one rotated from the same root. */
+  private isLiveSession(threadId: string): boolean {
+    if (this.sessionAdapters.has(threadId)) return true
+    const root = resolveRootThreadId(threadId)
+    for (const id of this.sessionAdapters.keys()) if (resolveRootThreadId(id) === root) return true
+    return false
+  }
+
+  private sessionTitle(threadId: string): string {
+    return getConversationTitle(threadId) ?? threadId
+  }
+
+  /**
+   * Link two live sessions on this backend, or renew an existing link's
+   * budget. Reached only from the LINK_PEER handler, which is user-directed:
+   * no agent tool calls this.
+   */
+  linkPeers(threadId: string, peerThreadId: string): PeerLinkView[] {
+    const a = resolveRootThreadId(threadId)
+    const b = resolveRootThreadId(peerThreadId)
+    if (!this.isLiveSession(threadId)) throw new Error('This chat is not running. Send it a message first, then link it.')
+    if (!this.isLiveSession(peerThreadId)) {
+      throw new Error(`"${this.sessionTitle(peerThreadId)}" is not running. Open it, then link again.`)
+    }
+    const result = this.peerLinks.link(a, b, 'user', Date.now())
+    if (!result.ok) throw new Error(result.message)
+    log.info(`peer link ${result.created ? 'created' : 'renewed'}: ${a} <-> ${b}`)
+    this.announcePeerLinks([a, b])
+    return this.listPeerLinks(threadId)
+  }
+
+  /** Remove one link, or every link of this session when `peerThreadId` is omitted. */
+  unlinkPeers(threadId: string, peerThreadId?: string): PeerLinkView[] {
+    const root = resolveRootThreadId(threadId)
+    const peers = this.peerLinks.unlink(root, peerThreadId === undefined ? undefined : resolveRootThreadId(peerThreadId))
+    if (peers.length > 0) {
+      log.info(`peer link removed: ${root} <-> ${peers.join(', ')}`)
+      this.announcePeerLinks([root, ...peers])
+    }
+    return this.listPeerLinks(threadId)
+  }
+
+  listPeerLinks(threadId: string): PeerLinkView[] {
+    return this.peerLinks.linksOf(resolveRootThreadId(threadId))
+      .map((link) => ({ ...link, title: this.sessionTitle(link.peerThreadId) }))
+  }
+
+  /** A stopped or archived session takes its links with it. */
+  dropPeerLinks(threadId: string): void {
+    const root = resolveRootThreadId(threadId)
+    const peers = this.peerLinks.removeSession(root)
+    if (peers.length === 0) return
+    log.info(`peer links dropped with ${root}: ${peers.join(', ')}`)
+    this.announcePeerLinks([root, ...peers])
+  }
+
+  /** The user typed in this session: every link it is on gets a fresh budget. */
+  private renewPeerLinks(threadId: string): void {
+    const root = resolveRootThreadId(threadId)
+    const peers = this.peerLinks.humanMessage(root, Date.now())
+    if (peers.length > 0) this.announcePeerLinks([root, ...peers])
+  }
+
+  private announcePeerLinks(threadIds: string[]): void {
+    this.host.emit(ProviderChannels.PEER_LINKS_CHANGED, { threadIds })
   }
 
   async startManagedSession(opts: SessionStartOpts): Promise<ProviderSession> {
@@ -657,7 +738,27 @@ export class ProviderRegistry implements PeerToolHost {
     // Exact for the agent path: `fromThreadId` there is the id the adapter runs
     // its session under, which is the id a turn was recorded against.
     const senderDepth = this.turnDepth.get(input.fromThreadId) ?? 0
-    if (initiator === 'agent') {
+    const fromRoot = resolveRootThreadId(input.fromThreadId)
+    const targetRoot = resolveRootThreadId(targetThreadId)
+    // A send along a link the user made spends that edge's budget INSTEAD of
+    // the hop depth and per-sender budget. Only along that edge: the same
+    // session sending anywhere else still meets both.
+    const linkVerdict = initiator === 'agent'
+      ? this.peerLinks.checkSend(fromRoot, targetRoot, Date.now())
+      : { linked: false as const }
+    if (input.requireLink && !linkVerdict.linked) {
+      throw new Error('The user removed the link with that session, so this message was not sent.')
+    }
+    if (linkVerdict.linked && !linkVerdict.ok) {
+      log.warn(`linked peer send refused (${linkVerdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+      throw new Error(linkVerdict.message)
+    }
+    const releaseAgentSlot = (): void => {
+      if (initiator !== 'agent') return
+      if (linkVerdict.linked) this.peerLinks.release(fromRoot, targetRoot)
+      else this.peerAgentGuard.release(input.fromThreadId)
+    }
+    if (initiator === 'agent' && !linkVerdict.linked) {
       const agentVerdict = this.peerAgentGuard.check(
         { fromThreadId: input.fromThreadId, senderDepth },
         Date.now(),
@@ -671,7 +772,7 @@ export class ProviderRegistry implements PeerToolHost {
     const key = { fromThreadId: input.fromThreadId, targetThreadId, text: input.text }
     const verdict = this.peerGuard.check(key, Date.now())
     if (!verdict.ok) {
-      if (initiator === 'agent') this.peerAgentGuard.release(input.fromThreadId)
+      releaseAgentSlot()
       log.warn(`peer message refused (${verdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
       throw new Error(verdict.message)
     }
@@ -696,7 +797,7 @@ export class ProviderRegistry implements PeerToolHost {
       // The turn did NOT happen, so release the guard slot: otherwise an
       // identical retry is refused as a duplicate for the next 10 minutes.
       this.peerGuard.release(verdict.id, key)
-      if (initiator === 'agent') this.peerAgentGuard.release(input.fromThreadId)
+      releaseAgentSlot()
       if (previousDepth === undefined) this.turnDepth.delete(targetThreadId)
       else this.turnDepth.set(targetThreadId, previousDepth)
       throw err
@@ -734,6 +835,7 @@ export class ProviderRegistry implements PeerToolHost {
       messageId: verdict.id, peerThreadId: input.fromThreadId, peerLabel: fromLabel,
       text: input.text, at,
     })
+    if (linkVerdict.linked) this.announcePeerLinks([fromRoot, targetRoot])
     return { id: verdict.id }
     } finally {
       releasePreparation()
@@ -1146,6 +1248,7 @@ export class ProviderRegistry implements PeerToolHost {
             if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
             notebookManager.beginTurn(threadId)
             this.turnDepth.set(threadId, 0)
+            this.renewPeerLinks(threadId)
             // The user just responded, resolving any plan awaiting
             // Implement/Iterate - same as hop depth resetting. Only plans:
             // this `prepare` also runs for a Codex steer or a
@@ -1881,6 +1984,7 @@ export class ProviderRegistry implements PeerToolHost {
           if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
           notebookManager.beginTurn(threadId)
           this.turnDepth.set(threadId, 0)
+          this.renewPeerLinks(threadId)
           // The user just responded, resolving any plan awaiting
           // Implement/Iterate - same as hop depth resetting. Only plans:
           // this can also run as a Codex steer while the running turn is
@@ -1940,6 +2044,12 @@ export class ProviderRegistry implements PeerToolHost {
     // path's budget while skipping the approval canUseTool gives it.
     this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) =>
       this.deliverPeerMessage({ ...input, initiator: 'user' }))
+    this.host.handle(ProviderChannels.LINK_PEER, async (input: { threadId: string; peerThreadId: string }) =>
+      this.linkPeers(input.threadId, input.peerThreadId))
+    this.host.handle(ProviderChannels.UNLINK_PEER, async (input: { threadId: string; peerThreadId?: string }) =>
+      this.unlinkPeers(input.threadId, input.peerThreadId))
+    this.host.handle(ProviderChannels.LIST_PEER_LINKS, async (input: { threadId: string }) =>
+      this.listPeerLinks(input.threadId))
 
     this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {
       const adapter = this.sessionAdapters.get(threadId)
@@ -2051,6 +2161,7 @@ export class ProviderRegistry implements PeerToolHost {
     // never arrive must not fire against the next session on this thread.
     this.host.handle(ProviderChannels.STOP_SESSION, async (threadId: string) => {
       this.executionRoot?.onSessionStopped(threadId)
+      this.dropPeerLinks(threadId)
       return await stopSession(threadId)
     })
 
@@ -2082,6 +2193,11 @@ let activeRegistry: ProviderRegistry | null = null
 
 export function notifyWorktreeSwap(threadId: string, cwd: string | null): void {
   if (cwd) activeRegistry?.updateSessionCwd(threadId, cwd)
+}
+
+/** An archived conversation loses its session links (ipc/app.ts's archive handler). */
+export function notifyConversationArchived(conversationId: string): void {
+  activeRegistry?.dropPeerLinks(conversationId)
 }
 
 /**

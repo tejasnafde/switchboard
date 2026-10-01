@@ -1,0 +1,67 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "peer-linked-sessions",
+  "summary": "The user links two sessions on one backend with /link (one chat may hold many links; each is an edge). Agent sends along a link skip the one-hop limit and the per-sender budget and spend the edge's own budget (20 agent messages or 30 minutes, renewed by a message the user types in either session); sends anywhere else keep every existing limit. Auto mode sends along a link without a card. Stop or archive removes a link; links are in memory only. list_agent_sessions marks linked sessions, and the desktop shows a banner with the links and Unlink.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/link-command.ts",
+        "src/renderer/components/chat/PeerLinkBanner.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/slash-commands.ts",
+        "src/renderer/styles/tailwind.css",
+        "src/preload/index.ts",
+        "tests/unit/link-command.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_peer_link_banner",
+      "followUpRelease": "mobile-v0.6.0. The phone neither creates links (out of scope by design: linking is a desktop action) nor shows the banner yet. Nothing unfinished is reachable: the React Native client calls none of the new channels and ignores the provider:peer-links-changed broadcast, and peer messages along a link render as the ordinary peer-message rows it already shows. The banner can read provider:list-peer-links, which is open to a chat-scoped device."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_peer_link_banner",
+      "followUpRelease": "Native Android 0.6.0. Same as the React Native client: no linking from the phone, no banner yet, no new channel called, and the existing peer.message rows render linked exchanges unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/peer-links.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/peer-tools.ts",
+        "src/main/mcp/peer-mcp-tools.ts",
+        "src/main/ipc/app.ts",
+        "tests/unit/peer-links.test.ts",
+        "tests/unit/peer-links-registry-ws.test.ts",
+        "tests/unit/mcp-peer-tools.test.ts",
+        "tests/unit/peer-tools.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Links live in the backend process's memory (PeerLinkBook in ProviderRegistry), never in SQLite or settings. A restart stops every session, and stopping a session removes its links, so there is nothing to persist or migrate. Peer messages along a link are stored exactly as before (same rows, same sender markers)."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, update channel or wire-frame change. provider:link-peer, provider:unlink-peer and provider:list-peer-links are additive request/response channels; a desktop pointed at an older backend gets the unknown-channel error, which /link shows in the composer and the banner logs and hides. provider:peer-links-changed is a broadcast older clients never subscribe to. The PeerSessionSummary gains a linked field the model reads as text."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/peer-links.test.ts: link lifecycle (either order, relink renews, unlink one or all), an agent cannot link, a hub with three edges where workers are not linked and each edge has its own budget, budget exhaustion across both directions, window expiry, renewal by a human message in either session (all of a hub's edges when the user types in the hub), release on failed delivery, the third-session hop limit, stop/archive removal, banner text.",
+      "tests/unit/peer-links-registry-ws.test.ts against the real registry over WsHost: linking needs both sessions live and broadcasts provider:peer-links-changed; list_agent_sessions marks linked sessions; a hub fans out past the per-sender budget and a worker acting on its message answers it; workers still cannot message each other; a linked session at depth > 0 still cannot send to an unlinked one; 20 linked messages exhaust the edge with an isError refusal and a SEND_TURN in the worker renews it; a per-pair rate refusal gives the edge charge back; unlink one/all, STOP_SESSION and archive remove links; unlinking restores the ordinary limits.",
+      "tests/unit/mcp-peer-tools.test.ts: auto mode sends along a link without a card, still carded when unlinked, sandbox and accept-edits still carded when linked, plan still denied, and the server offers no link tool.",
+      "tests/unit/link-command.test.ts: /link and /unlink parsing.",
+      "npm run typecheck and npm test green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against live Claude, Codex or OpenCode sessions: no real agent pair was driven through a linked back-and-forth, so how each model uses the reply path is untested.",
+      "The banner and the /link and /unlink commands were not exercised in the running desktop app or covered by an e2e; the visual screens do not include a linked chat."
+    ]
+  }
+}

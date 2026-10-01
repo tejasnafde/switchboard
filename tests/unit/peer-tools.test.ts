@@ -28,12 +28,14 @@ const sibling: PeerSessionSummary = {
   folder: '/repo/api',
   provider: 'codex',
   midTurn: false,
+  linked: false,
 }
 
 function fakeHost(over: Partial<PeerToolHost> = {}) {
   const delivered: PeerMessageInput[] = []
   const host: PeerToolHost = {
     listPeerSessions: () => [sibling],
+    isLinkedPeer: () => false,
     deliverPeerMessage: async (input) => {
       delivered.push(input)
       return { id: 'pm_0123456789abcdef' }
@@ -169,5 +171,19 @@ describe('send_agent_message', () => {
     expect(out.isError).toBe(true)
     expect(text(out)).toContain(PEER_LIST_TOOL_NAME)
     expect(delivered).toHaveLength(0)
+  })
+})
+
+describe('linked sessions', () => {
+  it('marks a linked session in the list', async () => {
+    const { host } = fakeHost({ listPeerSessions: () => [{ ...sibling, linked: true }] })
+    expect(text(await createPeerToolHandlers(host, 'sender').listSessions())).toContain('"linked": true')
+  })
+
+  it('tells the model a linked peer may reply', async () => {
+    const { host } = fakeHost({ isLinkedPeer: () => true })
+    const out = await createPeerToolHandlers(host, 'sender').sendMessage({ sessionId: 'agent_1712', message: 'ready' })
+    expect(text(out)).toMatch(/linked session/i)
+    expect(text(out)).toMatch(/reply arrives/i)
   })
 })
