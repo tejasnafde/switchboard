@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Project } from '@shared/types'
 import { useMachineStore } from '../stores/machine-store'
 import { fuzzyScore } from '../services/fuzzy-score'
+import { buildProjectTargets } from '../services/chat-landing'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('new-chat:picker')
@@ -62,13 +63,7 @@ export function NewChatProjectPicker({
   }, [open])
 
   const targets = useMemo(() => {
-    const all: PickerTarget[] = local.map((p) => ({ projectPath: p.path, machineId: 'local', name: p.name, where: 'local' }))
-    for (const machine of remotes) {
-      if (connections[machine.id] !== 'connected') continue
-      for (const p of remoteProjects[machine.id] ?? []) {
-        all.push({ projectPath: p.path, machineId: machine.id, name: p.name, where: machine.name })
-      }
-    }
+    const all = buildProjectTargets(local, { remotes, connections, projects: remoteProjects })
     const ordered = orderPickerTargets(all, current)
     if (!query.trim()) return ordered
     return ordered
