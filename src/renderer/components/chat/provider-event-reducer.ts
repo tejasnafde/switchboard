@@ -13,9 +13,10 @@ import { bufferContent, createStreamingBuffer, drainTurn } from '../../services/
 import type { ContentCoalescer } from '../../services/content-coalescer'
 import { acceptedDesktopUserMessage } from '../../services/desktop-turn-submission'
 import { emitSessionActivity, emitSessionRename, emitUserTurnAccepted } from '../../services/session-events'
-import { notifyTurnCompleted } from '../../services/notifications'
+import { notifyPeerLinkSpent, notifyTurnCompleted } from '../../services/notifications'
 import { createRendererLogger } from '../../logger'
 import { peerMessageToChatMessage } from './send-to-command'
+import { formatUndeliveredMarker } from '@shared/peer-links'
 import { clearProviderRetry, upsertProviderRetry } from './provider-retry'
 
 const log = createRendererLogger('chat:panel')
@@ -109,6 +110,25 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       // bubble instead of showing the delivery twice after a reload.
       const ownLabel = useAgentStore.getState().sessions.find((s) => s.id === tid)?.title ?? tid
       appendMessage(tid, peerMessageToChatMessage(event, ownLabel))
+      break
+    }
+    case 'peer.undelivered': {
+      // Same id as the row the backend stored, so a reload or a replay lands on it.
+      const content = formatUndeliveredMarker({
+        to: event.peerThreadId, toLabel: event.peerLabel, reason: event.reason, text: event.text, sent: event.sent,
+      })
+      const exists = useAgentStore.getState().sessions.find((s) => s.id === tid)?.messages.some((m) => m.id === event.messageId)
+      if (exists) updateMessage(tid, event.messageId, { content })
+      else appendMessage(tid, { id: event.messageId, role: 'system', content, timestamp: event.at })
+      if (event.notify) {
+        void notifyPeerLinkSpent({
+          fromLabel: event.fromLabel,
+          toLabel: event.peerLabel,
+          threadId: tid,
+          displayedSessionIds: useLayoutStore.getState().displayedChatSessionIds(),
+          onClick: () => useLayoutStore.getState().selectChatSession(tid),
+        })
+      }
       break
     }
     case 'task.notification': {

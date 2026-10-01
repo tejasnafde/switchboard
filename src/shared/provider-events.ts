@@ -13,6 +13,7 @@
 import type { HostWriteCard } from './agent-host-writes'
 import type { OverageScope } from './claude-rate-limit'
 import type { PeerMessageInitiator } from './peer-messaging'
+import type { PeerLinkRefusal } from './peer-links'
 import { stripHandoffPreamble } from './handoff'
 import { splitSyntheticUserText } from './synthetic-message'
 import type { AgentProvider } from './types'
@@ -217,6 +218,29 @@ export interface RuntimePeerMessageEvent {
   at: number
 }
 
+/**
+ * A session link refused an agent's message (budget or time used up), or the
+ * user then sent that message by hand (`sent`). On the SENDER's thread; the
+ * backend stores the same row under `messageId` as a
+ * `PEER_UNDELIVERED_MARKER_PREFIX` system message, so a reload shows it too.
+ */
+export interface RuntimePeerUndeliveredEvent {
+  type: 'peer.undelivered'
+  threadId: string
+  messageId: string
+  /** Root id of the session the message was for. */
+  peerThreadId: string
+  peerLabel: string
+  /** The sending session's title, for a notification that names both sides. */
+  fromLabel: string
+  reason: PeerLinkRefusal
+  text: string
+  sent: boolean
+  /** The first refusal since the link ran out: worth a notification. Later ones are not. */
+  notify: boolean
+  at: number
+}
+
 /** One entry of an agent's own progress checklist. */
 export type TodoStatus = 'pending' | 'in_progress' | 'completed'
 export interface TodoItem {
@@ -301,6 +325,7 @@ export type RuntimeEvent = (
   | RuntimeModelUnavailableEvent
   | RuntimeThreadReadEvent
   | RuntimePeerMessageEvent
+  | RuntimePeerUndeliveredEvent
   | RuntimeTodoUpdatedEvent
   | RuntimeTaskNotificationEvent
 ) & {

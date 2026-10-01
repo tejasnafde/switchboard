@@ -9,7 +9,7 @@ import { useMachineStore } from '../../stores/machine-store'
 import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotation-marker'
 import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
 import { parseSendTo, resolveSendToTarget } from './send-to-command'
-import { parseLinkCommand } from './link-command'
+import { parseLinkCommand, resolveLinkTarget } from './link-command'
 import { reduceProviderEvent, upsertAssistantContent } from './provider-event-reducer'
 import { MessageList } from './MessageList'
 import { changeModel, changeReasoningEffort, changeRuntimeMode } from './chat-session-settings'
@@ -721,13 +721,17 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         try {
           if (linkCommand.kind === 'link') {
             const store = useAgentStore.getState()
-            const target = resolveSendToTarget(
-              linkCommand.target,
+            const target = resolveLinkTarget(
+              linkCommand,
               store.sessions.filter((s) => !s.draft).map((s) => ({ id: s.id, title: s.title ?? s.id, machineId: s.machineId })),
               sessionId,
             )
             if (!target.ok) return fail(target.error)
-            await window.api.provider.linkPeer({ threadId: sessionId, peerThreadId: target.id })
+            await window.api.provider.linkPeer({
+              threadId: sessionId,
+              peerThreadId: target.id,
+              ...(target.messages !== undefined ? { messages: target.messages } : {}),
+            })
             return { accepted: true }
           }
           if (linkCommand.target === null) {

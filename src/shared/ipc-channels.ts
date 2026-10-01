@@ -434,11 +434,14 @@ export const ProviderChannels = {
   DELIVER_PEER_MESSAGE: 'provider:deliver-peer-message',
   /**
    * Session links (`shared/peer-links.ts`). User-directed only, like
-   * DELIVER_PEER_MESSAGE: no agent tool reaches these. LINK / UNLINK take
-   * `{ threadId, peerThreadId? }` (no peer = unlink all), LIST takes
-   * `{ threadId }` and answers `PeerLinkView[]`.
+   * DELIVER_PEER_MESSAGE: no agent tool reaches these. LINK takes
+   * `{ threadId, peerThreadId, messages? }`, UNLINK `{ threadId, peerThreadId? }`
+   * (no peer = unlink all), LIST `{ threadId }`; each answers `PeerLinkView[]`.
+   * LINK and EXTEND are admin-scoped (`device-auth.ts`): a phone may unlink only.
    */
   LINK_PEER: 'provider:link-peer',
+  /** `{ threadId, peerThreadId }`: Extend, more messages and a fresh window. */
+  EXTEND_PEER_LINK: 'provider:extend-peer-link',
   UNLINK_PEER: 'provider:unlink-peer',
   LIST_PEER_LINKS: 'provider:list-peer-links',
   /** Broadcast `{ threadIds }` (root ids) whose links or link budgets changed. */

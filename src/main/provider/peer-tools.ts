@@ -58,8 +58,9 @@ export const PEER_SEND_TOOL_DESCRIPTION = [
   `The exception is a session the user linked with this one (\`linked: true\` in ${PEER_LIST_TOOL_NAME}):`,
   'there the user has asked the two of you to work together, so you may reply to its messages and it',
   'may reply to yours, each reply arriving as a new message in the other transcript. A link has its',
-  'own message and time budget; when it runs out, stop and summarise for the user. A link never',
-  'extends to sessions it does not name, and you cannot create one.',
+  'own message and time budget. When it runs out a send is refused and NOT delivered: keep working',
+  'on your own task, and put what you meant to send in your final reply to the user. A link never',
+  'extends to sessions it does not name, and you cannot create or extend one.',
 ].join('\n')
 
 /** One other open session, as the model is shown it. */

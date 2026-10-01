@@ -759,8 +759,10 @@ const api = {
       transport.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, input) as Promise<{ id: string }>,
 
     /** Session links (`shared/peer-links.ts`). Each answers this chat's links after the change. */
-    linkPeer: (input: { threadId: string; peerThreadId: string }) =>
+    linkPeer: (input: { threadId: string; peerThreadId: string; messages?: number }) =>
       transport.invoke(ProviderChannels.LINK_PEER, input) as Promise<PeerLinkView[]>,
+    extendPeerLink: (input: { threadId: string; peerThreadId: string }) =>
+      transport.invoke(ProviderChannels.EXTEND_PEER_LINK, input) as Promise<PeerLinkView[]>,
     unlinkPeer: (input: { threadId: string; peerThreadId?: string }) =>
       transport.invoke(ProviderChannels.UNLINK_PEER, input) as Promise<PeerLinkView[]>,
     listPeerLinks: (input: { threadId: string }) =>

@@ -45,7 +45,8 @@ import {
   type SlashCommandContext,
 } from './slash-commands'
 import { detectAtTrigger, filterAtMatches } from './at-mention'
-import { detectSendToTrigger, pinSendToTarget, SEND_TO_EMPTY_MESSAGE, sendToPickAfterSend, sendToPickerItems, sendToPickInsertion } from './send-to-command'
+import { detectPeerPickTrigger, peerPickReplacement, pinSendToTarget, SEND_TO_EMPTY_MESSAGE, sendToPickAfterSend, sendToPickerItems, sendToPickInsertion, type PeerPickCommand } from './send-to-command'
+import { pinLinkTarget } from './link-command'
 import { fuzzyScore } from '../../services/fuzzy-score'
 import { AtMentionMenu } from './AtMentionMenu'
 import { DraftWorkspaceChips } from './DraftWorkspaceChips'
@@ -361,12 +362,13 @@ export function ChatInput({
   // is open at a time (different trigger chars on the same token).
   const [atQuery, setAtQuery] = useState<string | null>(null)
   const [atActiveIdx, setAtActiveIdx] = useState(0)
-  // `/send-to` target picker: the command needs an exact chat title, so
-  // offer the open ones rather than making the user recall one.
+  // `/send-to` and `/link` target picker: the commands need an exact chat
+  // title, so offer the open ones rather than making the user recall one.
   const [sendToQuery, setSendToQuery] = useState<string | null>(null)
   const [sendToActiveIdx, setSendToActiveIdx] = useState(0)
   const sendToRangeRef = useRef<{ start: number; end: number } | null>(null)
-  const sendToPickRef = useRef<{ sessionId: string; id: string; title: string } | null>(null)
+  const sendToCommandRef = useRef<PeerPickCommand>('send-to')
+  const sendToPickRef = useRef<{ sessionId: string; id: string; title: string; command: PeerPickCommand } | null>(null)
   const [atFiles, setAtFiles] = useState<string[]>([])
   const [atLoading, setAtLoading] = useState(false)
   // Read on demand, not subscribed: `sessions` changes identity on every
@@ -748,7 +750,8 @@ export function ChatInput({
     // chat-message quote) before handing off. Tokens whose pills were
     // already removed get dropped silently.
     const pick = sendToPickRef.current?.sessionId === submittedSessionId ? sendToPickRef.current : null
-    const body = pinSendToTarget(serializeBodyWithPills(trimmed, pillsById), pick)
+    const serialized = serializeBodyWithPills(trimmed, pillsById)
+    const body = pick?.command === 'link' ? pinLinkTarget(serialized, pick) : pinSendToTarget(serialized, pick)
     const pillsMeta: UserMessagePillsMeta = {}
     for (const p of pills) {
       if (trimmed.includes(`[[pill:${p.id}]]`)) {
@@ -1096,7 +1099,7 @@ export function ChatInput({
     }
   }, [repoRoot])
 
-  /** Commit a picked chat title as the `/send-to` target, colon included. */
+  /** Commit a picked chat title as the `/send-to` (colon included) or `/link` target. */
   const runSendToPick = useCallback((label: string) => {
     const range = sendToRangeRef.current
     const picked = sendToItems.find((i) => i.label === label)
@@ -1105,8 +1108,9 @@ export function ChatInput({
     // Two chats can share a title, so a title that would not resolve back to
     // this exact chat goes in as `#<id>` instead.
     const target = sendToPickInsertion(picked.id, useAgentStore.getState().sessions, sessionId ?? '')
-    if (sessionId) sendToPickRef.current = { sessionId, id: picked.id, title: target }
-    richRef.current?.replaceRange(range.start, range.end, `${target}: `)
+    const command = sendToCommandRef.current
+    if (sessionId) sendToPickRef.current = { sessionId, id: picked.id, title: target, command }
+    richRef.current?.replaceRange(range.start, range.end, peerPickReplacement(command, target))
     requestAnimationFrame(() => richRef.current?.focus())
   }, [sendToItems, sessionId])
 
@@ -1183,8 +1187,11 @@ export function ChatInput({
       dismissAt()
     }
 
-    const sendToTrigger = detectSendToTrigger(next, cur ?? next.length)
+    const linkPick = sendToPickRef.current
+    const committedLink = linkPick?.command === 'link' && linkPick.sessionId === sessionId ? linkPick.title : null
+    const sendToTrigger = detectPeerPickTrigger(next, cur ?? next.length, committedLink)
     if (sendToTrigger) {
+      sendToCommandRef.current = sendToTrigger.command
       if (sendToTrigger.query !== sendToQuery) {
         setSendToQuery(sendToTrigger.query)
         setSendToActiveIdx(0)

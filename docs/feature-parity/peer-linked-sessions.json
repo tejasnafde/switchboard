@@ -2,34 +2,45 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "peer-linked-sessions",
-  "summary": "The user links two sessions on one backend with /link (one chat may hold many links; each is an edge). Agent sends along a link skip the one-hop limit and the per-sender budget and spend the edge's own budget (20 agent messages or 30 minutes, renewed by a message the user types in either session); sends anywhere else keep every existing limit. Auto mode sends along a link without a card. Stop or archive removes a link; links are in memory only. list_agent_sessions marks linked sessions, and the desktop shows a banner with the links and Unlink.",
+  "summary": "The user links two sessions on one backend with /link <session> [messages] (one chat may hold any number of links; each is an edge, and /link has the /send-to chat picker). Agent sends along a link skip the one-hop limit and the per-sender budget and spend the edge's own budget (the chosen 1 to 200 messages, default 20, or 30 minutes, renewed by a message the user types in either session or sends along the edge; Extend adds 20 and restarts the window). Sends anywhere else keep every existing limit. Auto mode sends along a link without a card. A spent link refuses as tool output telling the agent the message was not delivered and to keep working and report it, stores the message in the sender's chat as a Not delivered row with Send, and notifies once by push and desktop notification. A paired phone may unlink but never link or extend. Stop or archive removes a link; links are in memory only. list_agent_sessions marks linked sessions, and the desktop shows a compact banner with Extend and Unlink.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
       "evidence": [
         "src/renderer/components/chat/link-command.ts",
+        "src/renderer/components/chat/send-to-command.ts",
+        "src/renderer/components/chat/ChatInput.tsx",
         "src/renderer/components/chat/PeerLinkBanner.tsx",
+        "src/renderer/components/chat/PeerUndeliveredRow.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "src/renderer/services/notifications.ts",
         "src/renderer/components/chat/ChatPanel.tsx",
         "src/renderer/components/chat/slash-commands.ts",
         "src/renderer/styles/tailwind.css",
         "src/preload/index.ts",
-        "tests/unit/link-command.test.ts"
+        "tests/unit/link-command.test.ts",
+        "tests/unit/send-to-command.test.ts"
       ]
     },
     "reactNativeIos": {
       "status": "staged",
       "flag": "mobile_peer_link_banner",
-      "followUpRelease": "mobile-v0.6.0. The phone neither creates links (out of scope by design: linking is a desktop action) nor shows the banner yet. Nothing unfinished is reachable: the React Native client calls none of the new channels and ignores the provider:peer-links-changed broadcast, and peer messages along a link render as the ordinary peer-message rows it already shows. The banner can read provider:list-peer-links, which is open to a chat-scoped device."
+      "followUpRelease": "mobile-v0.6.0. The phone neither creates nor extends links (refused for its chat scope in device-auth.ts, by design) and shows no banner or Not delivered row yet. Nothing unfinished is reachable: the React Native client calls none of the new channels, ignores provider:peer-links-changed and the new peer.undelivered event (its reducer has a default branch), and does not render system rows, so the stored Not delivered marker never appears raw. What it already gets: the link-spent push (kind 'link', routed by threadId like every other push) and the ordinary peer-message rows for linked exchanges. The follow-up adds the banner with Unlink, which the phone scope already allows."
     },
     "nativeAndroid": {
       "status": "staged",
       "flag": "native_peer_link_banner",
-      "followUpRelease": "Native Android 0.6.0. Same as the React Native client: no linking from the phone, no banner yet, no new channel called, and the existing peer.message rows render linked exchanges unchanged."
+      "followUpRelease": "Native Android 0.6.0. Same as the React Native client: no linking or extending (refused for the phone scope), no banner or Not delivered row yet, and peer.undelivered decodes as an Extension event that nothing renders. The link-spent push carries kind 'link'; RemotePushNotificationPolicy only builds its own completion notification for 'done', so whether the system shows this one in the Android app is unverified (see notExercised)."
     },
     "sharedBackendApi": {
       "status": "implemented",
       "evidence": [
         "src/shared/peer-links.ts",
+        "src/shared/peer-messaging.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/push-policy.ts",
+        "src/shared/device-auth.ts",
         "src/shared/ipc-channels.ts",
         "src/main/provider/provider-registry.ts",
         "src/main/provider/peer-tools.ts",
@@ -38,30 +49,39 @@
         "tests/unit/peer-links.test.ts",
         "tests/unit/peer-links-registry-ws.test.ts",
         "tests/unit/mcp-peer-tools.test.ts",
-        "tests/unit/peer-tools.test.ts"
+        "tests/unit/peer-tools.test.ts",
+        "tests/unit/push-policy.test.ts",
+        "tests/unit/device-auth.test.ts"
       ]
     },
     "storageDataMigration": {
-      "status": "not_applicable",
-      "reason": "Links live in the backend process's memory (PeerLinkBook in ProviderRegistry), never in SQLite or settings. A restart stops every session, and stopping a session removes its links, so there is nothing to persist or migrate. Peer messages along a link are stored exactly as before (same rows, same sender markers)."
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/messages.ts",
+        "src/shared/peer-links.ts",
+        "tests/unit/peer-links-registry-ws.test.ts"
+      ]
     },
     "updateRelease": {
       "status": "not_applicable",
-      "reason": "No package identity, signing, deep link, update channel or wire-frame change. provider:link-peer, provider:unlink-peer and provider:list-peer-links are additive request/response channels; a desktop pointed at an older backend gets the unknown-channel error, which /link shows in the composer and the banner logs and hides. provider:peer-links-changed is a broadcast older clients never subscribe to. The PeerSessionSummary gains a linked field the model reads as text."
+      "reason": "No package identity, signing, deep link, update channel or wire-frame change. provider:link-peer, provider:extend-peer-link, provider:unlink-peer and provider:list-peer-links are additive request/response channels; a desktop pointed at an older backend gets the unknown-channel error, which /link shows in the composer and the banner logs and hides. provider:peer-links-changed is a broadcast older clients never subscribe to, and peer.undelivered is a new RuntimeEvent older clients drop (desktop reducer and React Native default branches, Android Extension kind). The Not delivered row is an ordinary system message with a [[sb: prefix, so it reloads through the existing getSystemMarkerMessages path with no schema change; an older desktop renders it as a plain system line. The new push kind 'link' is routed by threadId like the others."
     }
   },
   "verification": {
     "automated": [
-      "tests/unit/peer-links.test.ts: link lifecycle (either order, relink renews, unlink one or all), an agent cannot link, a hub with three edges where workers are not linked and each edge has its own budget, budget exhaustion across both directions, window expiry, renewal by a human message in either session (all of a hub's edges when the user types in the hub), release on failed delivery, the third-session hop limit, stop/archive removal, banner text.",
-      "tests/unit/peer-links-registry-ws.test.ts against the real registry over WsHost: linking needs both sessions live and broadcasts provider:peer-links-changed; list_agent_sessions marks linked sessions; a hub fans out past the per-sender budget and a worker acting on its message answers it; workers still cannot message each other; a linked session at depth > 0 still cannot send to an unlinked one; 20 linked messages exhaust the edge with an isError refusal and a SEND_TURN in the worker renews it; a per-pair rate refusal gives the edge charge back; unlink one/all, STOP_SESSION and archive remove links; unlinking restores the ordinary limits.",
-      "tests/unit/mcp-peer-tools.test.ts: auto mode sends along a link without a card, still carded when unlinked, sandbox and accept-edits still carded when linked, plan still denied, and the server offers no link tool.",
-      "tests/unit/link-command.test.ts: /link and /unlink parsing.",
+      "tests/unit/peer-links.test.ts: link lifecycle; an agent cannot link or extend; a hub with three and with ten edges, workers not linked; budgets per edge, chosen budget 1 to 200 (0, 201, 1.5 refused), kept across renewals; exhaustion and expiry; refusal text says NOT delivered, keep working, final reply; first refusal reported once until renewed; renewal by a human message in either session or by a user send along the edge; Extend adds 20, restarts the window, caps at 200 and refuses at the cap when spent; release; the third-session hop limit; banner text for two and for ten links (with the used-up count); the undelivered marker round trip, broken rows, stable ids and heading.",
+      "tests/unit/peer-links-registry-ws.test.ts against the real registry over WsHost: linking needs both sessions live and broadcasts; list_agent_sessions marks linked sessions; a hub fans out past the per-sender budget, and to ten workers; workers still cannot message each other; a linked session at depth > 0 still cannot reach an unlinked one; 20 messages exhaust an edge and a human turn renews it; a spent link stores each refused message in the sender's chat and publishes peer.undelivered with notify only on the first; Send (a user delivery with undeliveredId) delivers it, renews the edge and marks the row sent; a chosen budget and the 200 bound over the wire; Extend over the wire; unlink, stop and archive; requireLink after an unlink.",
+      "tests/unit/push-policy.test.ts: the link-spent push names both sessions, kind 'link', once (not for notify:false or a sent row).",
+      "tests/unit/device-auth.test.ts: a phone scope cannot call provider:link-peer or provider:extend-peer-link, and can call provider:unlink-peer and provider:list-peer-links.",
+      "tests/unit/mcp-peer-tools.test.ts: the card rules by mode, and the server exposes no link tool.",
+      "tests/unit/link-command.test.ts and send-to-command.test.ts: /link budget parsing, a chat titled 'Issue 172' stays reachable, out-of-range budgets refused, picker trigger for /link (closed while the budget is typed), pinning a picked title with its budget.",
       "npm run typecheck and npm test green."
     ],
     "hardware": [],
     "notExercised": [
-      "Not run against live Claude, Codex or OpenCode sessions: no real agent pair was driven through a linked back-and-forth, so how each model uses the reply path is untested.",
-      "The banner and the /link and /unlink commands were not exercised in the running desktop app or covered by an e2e; the visual screens do not include a linked chat."
+      "Not run against live Claude, Codex or OpenCode sessions: no real agent pair was driven through a linked back-and-forth, so how each model uses the reply path and the not-delivered instruction is untested.",
+      "The banner (Extend, Manage popover with ten links), the Not delivered row and its Send button, the /link picker and the desktop notification were not exercised in the running app or by an e2e; the visual screens do not include a linked chat.",
+      "No push was sent to a real phone. Whether the native Android app displays a kind 'link' push (its RemotePushNotificationPolicy special-cases only 'done') is unverified."
     ]
   }
 }

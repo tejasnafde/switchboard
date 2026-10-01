@@ -77,6 +77,24 @@ describe('pushForEvent', () => {
   })
 })
 
+describe('pushForEvent for a session link running out', () => {
+  const event = (over: Partial<Extract<RuntimeEvent, { type: 'peer.undelivered' }>> = {}): RuntimeEvent => ({
+    type: 'peer.undelivered', threadId: 'w1', messageId: 'pu_1', peerThreadId: 'hub', peerLabel: 'Lead',
+    fromLabel: 'Worker A', reason: 'link-budget', text: 'finding', sent: false, notify: true, at: 1, ...over,
+  })
+
+  it('wakes the phone once, naming both sessions', () => {
+    const message = pushForEvent(event(), { title: 'Worker A' })
+    expect(message?.data).toEqual({ threadId: 'w1', kind: 'link' })
+    expect(message?.body).toContain('"Worker A" and "Lead"')
+  })
+
+  it('stays quiet for later refusals and for a message the user sent', () => {
+    expect(pushForEvent(event({ notify: false }))).toBeNull()
+    expect(pushForEvent(event({ sent: true }))).toBeNull()
+  })
+})
+
 describe('clampBody', () => {
   it('collapses whitespace so a multi-line error stays one line', () => {
     expect(clampBody('a\n\n  b   c')).toBe('a b c')

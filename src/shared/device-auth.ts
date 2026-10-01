@@ -11,7 +11,7 @@
  * surface runs an agent. This is a reduction in blast radius, not a sandbox.
  */
 import { KEYBOARD_OVERRIDES_SETTING } from './shortcuts'
-import { PullRequestWriteChannels } from './ipc-channels'
+import { ProviderChannels, PullRequestWriteChannels } from './ipc-channels'
 import { governedSettingKey } from './project-settings'
 
 /** `terminal` is separate because a PTY is arbitrary code execution and nothing
@@ -52,6 +52,12 @@ const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> =
     'worktree-manager:set-protection',
     'kanban:remove-stale-worktree',
     ...Object.values(PullRequestWriteChannels),
+    // A session link lets two agents message each other past the hop limit,
+    // without a card in auto mode. Creating or extending one is consent a
+    // phone credential must not be able to grant, like approving a host
+    // write; unlinking only takes power away, so it stays open.
+    ProviderChannels.LINK_PEER,
+    ProviderChannels.EXTEND_PEER_LINK,
   ],
 }
 

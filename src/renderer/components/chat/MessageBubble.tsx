@@ -22,6 +22,8 @@ import {
 } from '../../services/fork-session'
 import { isForkableForkMessage } from '@shared/conversation-fork'
 import { parseRotationMarker } from './rotation-marker'
+import { parseUndeliveredMarker } from '@shared/peer-links'
+import { PeerUndeliveredRow } from './PeerUndeliveredRow'
 import { SyntheticUserRow } from './SyntheticUserRow'
 import { splitSyntheticUserText } from '@shared/synthetic-message'
 import { stripDigest } from '@shared/agent-digest'
@@ -220,6 +222,8 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   const isSystem = message.role === 'system'
   const isError = isSystem && /^Error:/i.test(message.content)
   const rotation = isSystem ? parseRotationMarker(message.content) : null
+  const undelivered = isSystem ? parseUndeliveredMarker(message.content) : null
+  if (undelivered) return <PeerUndeliveredRow row={undelivered} messageId={message.id} sessionId={sessionId} />
 
   // Compact, persistent indicator that the conversation's provider instance
   // changed mid-flight. Renders inline with surrounding bubbles so the

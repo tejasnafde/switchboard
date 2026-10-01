@@ -15,6 +15,7 @@
  * platform notifications on macOS/Windows/Linux.
  */
 
+import { peerLinkSpentText } from '@shared/peer-links'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('service:notifications')
@@ -104,6 +105,51 @@ export function shouldSuppressTurnNotification(
   appVisible: boolean,
 ): boolean {
   return appVisible && displayedSessionIds.includes(threadId)
+}
+
+/** Permission as the notification helpers need it: granted, or asked for once. */
+async function notificationPermitted(): Promise<boolean> {
+  if (typeof Notification === 'undefined') return false
+  if (Notification.permission === 'denied') return false
+  if (Notification.permission === 'default') {
+    try {
+      await Notification.requestPermission()
+    } catch (err) {
+      log.debug('Notification.requestPermission failed', err)
+    }
+  }
+  return Notification.permission === 'granted'
+}
+
+/**
+ * A session link ran out, so an agent's message was kept instead of sent.
+ * Fired once per run-out (the backend decides), and skipped only when the
+ * sender's chat is on screen, where its "Not delivered" row already shows.
+ */
+export async function notifyPeerLinkSpent(opts: {
+  fromLabel: string
+  toLabel: string
+  threadId: string
+  displayedSessionIds: readonly string[]
+  onClick?: () => void
+}): Promise<void> {
+  if (!(await areNotificationsEnabled())) return
+  const windowFocused = document.hasFocus() && document.visibilityState === 'visible'
+  if (shouldSuppressTurnNotification(opts.threadId, opts.displayedSessionIds, windowFocused)) return
+  if (!(await notificationPermitted())) return
+  const notif = new Notification('Session link used up', {
+    body: peerLinkSpentText(opts.fromLabel, opts.toLabel),
+    tag: `peer-link.${opts.threadId}`,
+  })
+  notif.onclick = () => {
+    try {
+      window.focus()
+    } catch (err) {
+      log.debug('window.focus() failed from link notification click', err)
+    }
+    opts.onClick?.()
+    notif.close()
+  }
 }
 
 /**

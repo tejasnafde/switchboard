@@ -158,6 +158,33 @@ export function detectSendToTrigger(body: string, caret: number): SendToTrigger 
   return { query: target, start: prefix.length, end: caret }
 }
 
+/** Which command's target the picker is filling. */
+export type PeerPickCommand = 'send-to' | 'link'
+
+export interface PeerPickTrigger extends SendToTrigger {
+  command: PeerPickCommand
+}
+
+/**
+ * The chat picker trigger for `/send-to` and `/link`. `/link` has no colon to
+ * end its target, so a target that already starts with the picked insertion
+ * (`committed`) is done: what follows it is the budget, not a new search.
+ */
+export function detectPeerPickTrigger(body: string, caret: number, committed: string | null): PeerPickTrigger | null {
+  const sendTo = detectSendToTrigger(body, caret)
+  if (sendTo) return { ...sendTo, command: 'send-to' }
+  const prefix = '/link '
+  if (!body.startsWith(prefix) || caret < prefix.length) return null
+  const target = body.slice(prefix.length, caret)
+  if (committed !== null && (target === committed || target.startsWith(`${committed} `))) return null
+  return { query: target, start: prefix.length, end: caret, command: 'link' }
+}
+
+/** What a pick writes in place of the typed target: `/send-to` needs its colon, `/link` a space before the budget. */
+export function peerPickReplacement(command: PeerPickCommand, target: string): string {
+  return command === 'send-to' ? `${target}: ` : `${target} `
+}
+
 /** One row of the `/send-to` target picker. */
 export interface SendToPickerItem {
   id: string

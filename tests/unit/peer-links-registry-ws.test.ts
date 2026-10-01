@@ -36,7 +36,14 @@ vi.mock('../../src/main/db/database', () => ({
   updateConversationSessionId: () => {},
   resolveRootThreadId: (id: string) => id,
   getConversationTitle: (id: string) => titles.get(id) ?? null,
+  rewriteSystemMarker: (conversationId: string, id: string, prefix: string, rewrite: (content: string) => string | null) => {
+    const row = saved.find((m) => m.id === id && m.conversationId === conversationId && m.role === 'system' && m.content.startsWith(prefix))
+    const next = row ? rewrite(row.content) : null
+    if (row && next !== null) row.content = next
+    return next
+  },
   saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string) => {
+    if (saved.some((m) => m.id === id)) return false
     saved.push({ id, conversationId, role, content })
     return true
   },
@@ -54,7 +61,13 @@ import { WsTransport } from '../../src/shared/ws-transport'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
 import { createPeerToolHandlers } from '../../src/main/provider/peer-tools'
 import { PEER_AGENT_SEND_BUDGET, PEER_MESSAGE_RATE_LIMIT, PEER_MESSAGE_RATE_WINDOW_MS } from '../../src/shared/peer-messaging'
-import { PEER_LINK_MESSAGE_BUDGET, type PeerLinkView } from '../../src/shared/peer-links'
+import {
+  parseUndeliveredMarker,
+  PEER_LINK_EXTEND_MESSAGES,
+  PEER_LINK_MAX_MESSAGES,
+  PEER_LINK_MESSAGE_BUDGET,
+  type PeerLinkView,
+} from '../../src/shared/peer-links'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
@@ -146,8 +159,8 @@ afterEach(async () => {
 })
 
 
-const link = (threadId: string, peerThreadId: string) =>
-  client!.invoke(ProviderChannels.LINK_PEER, { threadId, peerThreadId }) as Promise<PeerLinkView[]>
+const link = (threadId: string, peerThreadId: string, messages?: number) =>
+  client!.invoke(ProviderChannels.LINK_PEER, { threadId, peerThreadId, ...(messages ? { messages } : {}) }) as Promise<PeerLinkView[]>
 const linksOf = (threadId: string) =>
   client!.invoke(ProviderChannels.LIST_PEER_LINKS, { threadId }) as Promise<PeerLinkView[]>
 
@@ -253,8 +266,8 @@ describe('the edge budget', () => {
 
     const over = await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'one more' })
     expect(over.isError).toBe(true)
-    expect(text(over)).toMatch(/its limit/i)
-    expect(text(over)).toMatch(/relink/i)
+    expect(text(over)).toMatch(/NOT delivered/)
+    expect(text(over)).toMatch(/final reply/i)
     expect(adapter.turns).toHaveLength(PEER_LINK_MESSAGE_BUDGET)
 
     // The user typing in the WORKER renews the edge for the hub too.
@@ -324,5 +337,101 @@ describe('unlinking', () => {
     const back = await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'and now?' })
     expect(back.isError).toBe(true)
     expect(text(back)).toMatch(/acting on a message from another session/i)
+  })
+})
+
+describe('a budget running out never loses the message', () => {
+  async function spentLink() {
+    const ctx = await setup()
+    await startAll(ctx.cwd, ['hub', 'w1'])
+    await link('hub', 'w1', 1)
+    await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'first task' })
+    return ctx
+  }
+  const undelivered = (events: RuntimeEvent[]) =>
+    events.filter((e): e is Extract<RuntimeEvent, { type: 'peer.undelivered' }> => e.type === 'peer.undelivered')
+
+  it('keeps the refused message in the sender chat and tells clients once', async () => {
+    const { events } = await spentLink()
+    await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'here is my whole finding' })
+    await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'and a second one' })
+    await flush()
+
+    const rows = saved.filter((m) => m.conversationId === 'w1' && m.role === 'system').map((m) => parseUndeliveredMarker(m.content))
+    expect(rows).toEqual([
+      { to: 'hub', toLabel: 'Lead', reason: 'link-budget', text: 'here is my whole finding', sent: false },
+      { to: 'hub', toLabel: 'Lead', reason: 'link-budget', text: 'and a second one', sent: false },
+    ])
+    const seen = undelivered(events)
+    expect(seen.map((e) => [e.threadId, e.fromLabel, e.peerLabel, e.notify])).toEqual([
+      ['w1', 'Worker A', 'Lead', true],
+      ['w1', 'Worker A', 'Lead', false],
+    ])
+  })
+
+  it('delivers it when the user presses Send, renews the link, and marks the row sent', async () => {
+    const { adapter, events } = await spentLink()
+    await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'here is my whole finding' })
+    await flush()
+    const id = undelivered(events)[0].messageId
+
+    await client!.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, {
+      fromThreadId: 'w1', fromLabel: 'Worker A', targetThreadId: 'hub', text: 'here is my whole finding', undeliveredId: id,
+    })
+    await flush()
+
+    expect(adapter.turns.at(-1)?.threadId).toBe('hub')
+    expect((await linksOf('hub'))[0].used).toBe(0)
+    expect(parseUndeliveredMarker(saved.find((m) => m.id === id)!.content)?.sent).toBe(true)
+    expect(undelivered(events).at(-1)).toMatchObject({ messageId: id, sent: true, notify: false })
+  })
+
+  it('does not mark a row sent when something else was delivered', async () => {
+    const { events } = await spentLink()
+    await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'the real finding' })
+    await flush()
+    const id = undelivered(events)[0].messageId
+    await client!.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, {
+      fromThreadId: 'w1', fromLabel: 'Worker A', targetThreadId: 'hub', text: 'something else', undeliveredId: id,
+    })
+    expect(parseUndeliveredMarker(saved.find((m) => m.id === id)!.content)?.sent).toBe(false)
+  })
+
+  it('keeps nothing over the body cap', async () => {
+    await spentLink()
+    const out = await toolsFor('w1').sendMessage({ sessionId: 'hub', message: 'x'.repeat(17 * 1024) })
+    expect(text(out)).toMatch(/byte limit/)
+    expect(saved.some((m) => m.conversationId === 'w1' && m.role === 'system')).toBe(false)
+  })
+})
+
+describe('choosing and extending a budget', () => {
+  it('links with the budget asked for, and refuses one past the maximum', async () => {
+    const { cwd } = await setup()
+    await startAll(cwd)
+    expect((await link('hub', 'w1', 50))[0].budget).toBe(50)
+    await expect(link('hub', 'w2', PEER_LINK_MAX_MESSAGES + 1)).rejects.toThrow(/1 to 200/)
+  })
+
+  it('extends over the wire', async () => {
+    const { cwd } = await setup()
+    await startAll(cwd)
+    await link('hub', 'w1')
+    const after = await client!.invoke(ProviderChannels.EXTEND_PEER_LINK, { threadId: 'w1', peerThreadId: 'hub' }) as PeerLinkView[]
+    expect(after[0].budget).toBe(PEER_LINK_MESSAGE_BUDGET + PEER_LINK_EXTEND_MESSAGES)
+  })
+})
+
+describe('no cap on links per session', () => {
+  it('lets a hub link and message ten workers', async () => {
+    const workers = Array.from({ length: 10 }, (_, i) => `x${i}`)
+    const { cwd, adapter } = await setup()
+    await startAll(cwd, ['hub', ...workers])
+    for (const w of workers) await link('hub', w)
+    expect(await linksOf('hub')).toHaveLength(10)
+    for (const w of workers) {
+      expect((await toolsFor('hub').sendMessage({ sessionId: w, message: `task for ${w}` })).isError).toBeFalsy()
+    }
+    expect(adapter.turns).toHaveLength(10)
   })
 })

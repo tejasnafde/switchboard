@@ -2,12 +2,17 @@
  * Session links: the user lets two sessions on one backend talk to each other.
  *
  * A link is an EDGE between two sessions, and one session can hold many, so a
- * hub thread linked to three workers is three edges and the workers stay
- * unlinked from each other. Along an edge an agent send skips the hop-depth
+ * hub thread linked to any number of workers holds one edge per worker, and
+ * the workers stay unlinked from each other. Along an edge an agent send skips the hop-depth
  * limit and the per-sender budget (`peer-messaging.ts`), and is bounded by
- * this edge's own exchange budget instead: a fixed number of agent messages or
- * a time window, whichever ends first, both renewed by a human message in
- * either session.
+ * this edge's own exchange budget instead: a number of agent messages the
+ * user picks when linking, or a time window, whichever ends first. A message
+ * the user types in either session renews both; Extend adds messages and
+ * restarts the window.
+ *
+ * Running out never loses work: the refused message is handed back to the
+ * model to report, and stored in the sender's chat (`PEER_UNDELIVERED_MARKER_PREFIX`)
+ * for the user to send by hand.
  *
  * Only the user links. `link` refuses an agent initiator, and no tool reaches
  * it; the IPC handler forces `'user'` the same way `/send-to` does.
@@ -20,12 +25,29 @@
  * restart: every session is stopped by then, and stopping a session removes
  * its links anyway, so a persisted link would only ever be a stale one.
  */
-import type { PeerMessageInitiator } from './peer-messaging'
+import { peerMessageId, type PeerMessageInitiator } from './peer-messaging'
 
-/** Agent messages allowed on one edge, both directions together. */
+/** Agent messages allowed on one edge by default, both directions together. */
 export const PEER_LINK_MESSAGE_BUDGET = 20
-/** How long an edge's budget lasts after the link or the last human message. */
+/**
+ * The most messages one edge may ever hold, whether set by `/link` or reached
+ * by Extend. Ten default budgets: at the per-pair rate (5 a minute each way)
+ * an exchange cannot even spend that inside one window, so a higher number
+ * would only ever let an unattended pair run longer between the user's looks.
+ */
+export const PEER_LINK_MAX_MESSAGES = 200
+/** Messages one Extend adds. */
+export const PEER_LINK_EXTEND_MESSAGES = 20
+/** How long an edge's budget lasts after the link, the last human message or an Extend. */
 export const PEER_LINK_WINDOW_MS = 30 * 60_000
+
+/** Null when `value` is a valid per-link budget, else what is wrong with it. */
+export function peerLinkBudgetProblem(value: number): string | null {
+  if (!Number.isInteger(value) || value < 1 || value > PEER_LINK_MAX_MESSAGES) {
+    return `A link allows 1 to ${PEER_LINK_MAX_MESSAGES} messages.`
+  }
+  return null
+}
 
 /** One of a session's links, as the banner and the agent tool show it. */
 export interface PeerLinkSummary {
@@ -47,7 +69,14 @@ export type PeerLinkRefusal = 'link-budget' | 'link-expired'
 export type PeerLinkSendCheck =
   | { linked: false }
   | { linked: true; ok: true }
-  | { linked: true; ok: false; reason: PeerLinkRefusal; message: string }
+  | {
+    linked: true
+    ok: false
+    reason: PeerLinkRefusal
+    message: string
+    /** True for the first refusal since the edge ran out, which is the one the user is notified about. */
+    firstRefusal: boolean
+  }
 
 export type PeerLinkResult =
   | { ok: true; created: boolean }
@@ -56,6 +85,9 @@ export type PeerLinkResult =
 interface Edge {
   since: number
   used: number
+  budget: number
+  /** The user has been told this edge ran out; cleared whenever it is renewed. */
+  notified: boolean
 }
 
 /** Order-independent key, NUL-separated like `peerMessageId`. */
@@ -70,13 +102,21 @@ function otherEnd(key: string, id: string): string | null {
   return null
 }
 
-const RELINK_HINT = 'The user can relink the two sessions, or type in either chat, to renew it.'
+/**
+ * Addressed to the model, which may be running with nobody watching: the
+ * message did not arrive, the work must go on, and the undelivered text has to
+ * reach the user some other way.
+ */
+const NOT_DELIVERED =
+  'Your message was NOT delivered. Keep working on your own task, and put the undelivered message, ' +
+  'or a summary of it, in your final reply to the user so nothing is lost. Switchboard has also kept ' +
+  'the message in this chat for the user to send by hand.'
 
 export class PeerLinkBook {
   private readonly edges = new Map<string, Edge>()
 
   constructor(
-    private readonly budget = PEER_LINK_MESSAGE_BUDGET,
+    private readonly defaultBudget = PEER_LINK_MESSAGE_BUDGET,
     private readonly windowMs = PEER_LINK_WINDOW_MS,
   ) {}
 
@@ -85,15 +125,43 @@ export class PeerLinkBook {
    * agent: a link is the user's consent, and a model that could grant it to
    * itself would have no limit at all.
    */
-  link(a: string, b: string, initiator: PeerMessageInitiator, nowMs: number): PeerLinkResult {
+  link(
+    a: string,
+    b: string,
+    initiator: PeerMessageInitiator,
+    nowMs: number,
+    budget = this.defaultBudget,
+  ): PeerLinkResult {
     if (initiator !== 'user') {
       return { ok: false, message: 'Only the user can link sessions.' }
     }
     if (a === b) return { ok: false, message: 'A session cannot be linked with itself.' }
+    const problem = peerLinkBudgetProblem(budget)
+    if (problem) return { ok: false, message: problem }
     const key = edgeKey(a, b)
     const created = !this.edges.has(key)
-    this.edges.set(key, { since: nowMs, used: 0 })
+    this.edges.set(key, { since: nowMs, used: 0, budget, notified: false })
     return { ok: true, created }
+  }
+
+  /**
+   * Extend: `PEER_LINK_EXTEND_MESSAGES` more messages (up to the maximum) and
+   * a fresh window. User-only, like `link`, for the same reason.
+   */
+  extend(a: string, b: string, initiator: PeerMessageInitiator, nowMs: number): PeerLinkResult {
+    if (initiator !== 'user') return { ok: false, message: 'Only the user can extend a link.' }
+    const edge = this.edges.get(edgeKey(a, b))
+    if (!edge) return { ok: false, message: 'Those sessions are not linked.' }
+    if (edge.budget >= PEER_LINK_MAX_MESSAGES && edge.used >= edge.budget) {
+      return {
+        ok: false,
+        message: `This link is at its ${PEER_LINK_MAX_MESSAGES} message maximum. Type in either chat to start a fresh budget.`,
+      }
+    }
+    edge.budget = Math.min(edge.budget + PEER_LINK_EXTEND_MESSAGES, PEER_LINK_MAX_MESSAGES)
+    edge.since = nowMs
+    edge.notified = false
+    return { ok: true, created: false }
   }
 
   /** Remove one edge, or every edge of `a` when `b` is omitted. Returns the peers unlinked. */
@@ -123,7 +191,7 @@ export class PeerLinkBook {
     for (const [key, edge] of this.edges) {
       const peer = otherEnd(key, id)
       if (peer === null) continue
-      out.push({ peerThreadId: peer, used: edge.used, budget: this.budget, expiresAt: edge.since + this.windowMs })
+      out.push({ peerThreadId: peer, used: edge.used, budget: edge.budget, expiresAt: edge.since + this.windowMs })
     }
     return out
   }
@@ -139,25 +207,16 @@ export class PeerLinkBook {
   checkSend(from: string, to: string, nowMs: number): PeerLinkSendCheck {
     const edge = this.edges.get(edgeKey(from, to))
     if (!edge) return { linked: false }
-    if (nowMs - edge.since >= this.windowMs) {
-      return {
-        linked: true,
-        ok: false,
-        reason: 'link-expired',
-        message:
-          `This link's ${Math.round(this.windowMs / 60_000)} minutes are up, so nothing more is sent along it. ` +
-          `Stop the exchange here and summarise where it got to for the user. ${RELINK_HINT}`,
-      }
+    const refuse = (reason: PeerLinkRefusal, why: string): PeerLinkSendCheck => {
+      const firstRefusal = !edge.notified
+      edge.notified = true
+      return { linked: true, ok: false, reason, firstRefusal, message: `${why} ${NOT_DELIVERED}` }
     }
-    if (edge.used >= this.budget) {
-      return {
-        linked: true,
-        ok: false,
-        reason: 'link-budget',
-        message:
-          `The two sessions have exchanged ${this.budget} messages on this link, which is its limit. ` +
-          `Stop the exchange here and summarise where it got to for the user. ${RELINK_HINT}`,
-      }
+    if (nowMs - edge.since >= this.windowMs) {
+      return refuse('link-expired', `This link's ${Math.round(this.windowMs / 60_000)} minutes are up.`)
+    }
+    if (edge.used >= edge.budget) {
+      return refuse('link-budget', `The two sessions have used all ${edge.budget} messages of this link.`)
     }
     edge.used += 1
     return { linked: true, ok: true }
@@ -178,12 +237,28 @@ export class PeerLinkBook {
     for (const [key, edge] of this.edges) {
       const peer = otherEnd(key, id)
       if (peer === null) continue
-      edge.since = nowMs
-      edge.used = 0
+      renewEdge(edge, nowMs)
       peers.push(peer)
     }
     return peers
   }
+
+  /**
+   * The user sent along this one edge (`/send-to`, or Send on a message that
+   * was not delivered): renew it alone. False when the pair is not linked.
+   */
+  renew(a: string, b: string, nowMs: number): boolean {
+    const edge = this.edges.get(edgeKey(a, b))
+    if (!edge) return false
+    renewEdge(edge, nowMs)
+    return true
+  }
+}
+
+function renewEdge(edge: Edge, nowMs: number): void {
+  edge.since = nowMs
+  edge.used = 0
+  edge.notified = false
 }
 
 /**
@@ -199,10 +274,73 @@ export function peerLinkLabel(link: PeerLinkView, nowMs: number): string {
 /** Above this many links the banner names a count and the popover lists them. */
 export const PEER_LINK_BANNER_INLINE_MAX = 2
 
-/** The banner's one line: every link inline, or a count once there are several. */
+export function isPeerLinkSpent(link: PeerLinkSummary, nowMs: number): boolean {
+  return nowMs >= link.expiresAt || link.used >= link.budget
+}
+
+/**
+ * The banner's one line: every link inline, or a count once there are several
+ * (a hub may hold any number), naming how many are spent so the one that
+ * needs Extend is not hidden behind the count.
+ */
 export function peerLinksBannerText(links: ReadonlyArray<PeerLinkView>, nowMs: number): string {
   if (links.length <= PEER_LINK_BANNER_INLINE_MAX) {
     return `Linked with ${links.map((link) => peerLinkLabel(link, nowMs)).join(', ')}`
   }
-  return `Linked with ${links.length} sessions`
+  const spent = links.filter((link) => isPeerLinkSpent(link, nowMs)).length
+  return `Linked with ${links.length} sessions${spent > 0 ? ` · ${spent} used up` : ''}`
+}
+
+/**
+ * System row written in the SENDER's chat when a link refused an agent's
+ * message, followed by the JSON of a `PeerUndelivered`. JSON rather than the
+ * `<from> → <to>` shape of the other markers because it carries the whole
+ * message body, which may contain anything.
+ */
+export const PEER_UNDELIVERED_MARKER_PREFIX = '[[sb:peer-undelivered]]'
+
+export interface PeerUndelivered {
+  /** Root id of the session the message was for. */
+  to: string
+  toLabel: string
+  reason: PeerLinkRefusal
+  text: string
+  /** The user has since sent it by hand. */
+  sent: boolean
+}
+
+/** One id per (sender, target, text), so a model retrying the same refused send stores it once. */
+export function peerUndeliveredId(fromThreadId: string, targetThreadId: string, text: string): string {
+  return `pu_${peerMessageId({ fromThreadId, targetThreadId, text }).slice('pm_'.length)}`
+}
+
+export function formatUndeliveredMarker(undelivered: PeerUndelivered): string {
+  return `${PEER_UNDELIVERED_MARKER_PREFIX} ${JSON.stringify(undelivered)}`
+}
+
+export function parseUndeliveredMarker(content: string): PeerUndelivered | null {
+  if (!content.startsWith(PEER_UNDELIVERED_MARKER_PREFIX)) return null
+  try {
+    const raw: unknown = JSON.parse(content.slice(PEER_UNDELIVERED_MARKER_PREFIX.length))
+    if (!raw || typeof raw !== 'object') return null
+    const r = raw as Record<string, unknown>
+    if (typeof r.to !== 'string' || typeof r.toLabel !== 'string' || typeof r.text !== 'string') return null
+    if (r.reason !== 'link-budget' && r.reason !== 'link-expired') return null
+    return { to: r.to, toLabel: r.toLabel, reason: r.reason, text: r.text, sent: r.sent === true }
+  } catch {
+    // A hand-edited or truncated row: show it as an ordinary system message.
+    return null
+  }
+}
+
+/** The notification text for a link that ran out, naming both sessions. */
+export function peerLinkSpentText(fromLabel: string, toLabel: string): string {
+  return `The link between "${fromLabel}" and "${toLabel}" is used up. A message was not delivered; it is kept in "${fromLabel}" for you to send.`
+}
+
+/** The row's heading. */
+export function peerUndeliveredHeading(undelivered: PeerUndelivered): string {
+  if (undelivered.sent) return `Sent by you to ${undelivered.toLabel} after the link ran out`
+  const why = undelivered.reason === 'link-expired' ? 'link time used up' : 'link budget used up'
+  return `Not delivered to ${undelivered.toLabel}: ${why}`
 }

@@ -33,7 +33,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
-import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
+import { commitConversationProviderSwitch, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope, describeRequestClient, remoteDeviceHasScope } from '../backend/request-context'
 import {
@@ -57,11 +57,20 @@ import {
   PeerAgentSendGuard,
   PeerMessageGuard,
   nextHopDepth,
+  peerMessageTooLarge,
   peerSentMarkerPrefix,
   wrapPeerMessage,
   type PeerMessageInput,
 } from '@shared/peer-messaging'
-import { PeerLinkBook, type PeerLinkView } from '@shared/peer-links'
+import {
+  formatUndeliveredMarker,
+  parseUndeliveredMarker,
+  PeerLinkBook,
+  PEER_UNDELIVERED_MARKER_PREFIX,
+  peerUndeliveredId,
+  type PeerLinkRefusal,
+  type PeerLinkView,
+} from '@shared/peer-links'
 import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
 import { AgentApprovalBroker } from '../mcp/agent-approvals'
 import { AgentWriteBudget } from '../mcp/agent-write-budget'
@@ -599,12 +608,17 @@ export class ProviderRegistry implements PeerToolHost {
     return this.peerLinks.isLinked(resolveRootThreadId(fromThreadId), resolveRootThreadId(sessionId))
   }
 
-  /** True when a live session runs under this id or one rotated from the same root. */
-  private isLiveSession(threadId: string): boolean {
-    if (this.sessionAdapters.has(threadId)) return true
+  /** The id a live session runs under for this id: itself, its root, or another id rotated from that root. */
+  private liveSessionId(threadId: string): string | null {
+    if (this.sessionAdapters.has(threadId)) return threadId
     const root = resolveRootThreadId(threadId)
-    for (const id of this.sessionAdapters.keys()) if (resolveRootThreadId(id) === root) return true
-    return false
+    if (this.sessionAdapters.has(root)) return root
+    for (const id of this.sessionAdapters.keys()) if (resolveRootThreadId(id) === root) return id
+    return null
+  }
+
+  private isLiveSession(threadId: string): boolean {
+    return this.liveSessionId(threadId) !== null
   }
 
   private sessionTitle(threadId: string): string {
@@ -612,22 +626,96 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   /**
-   * Link two live sessions on this backend, or renew an existing link's
-   * budget. Reached only from the LINK_PEER handler, which is user-directed:
-   * no agent tool calls this.
+   * Link two live sessions on this backend, or renew an existing link with a
+   * fresh budget of `messages`. Reached only from the LINK_PEER handler, which
+   * is user-directed and admin-scoped: no agent tool calls this.
    */
-  linkPeers(threadId: string, peerThreadId: string): PeerLinkView[] {
+  linkPeers(threadId: string, peerThreadId: string, messages?: number): PeerLinkView[] {
     const a = resolveRootThreadId(threadId)
     const b = resolveRootThreadId(peerThreadId)
     if (!this.isLiveSession(threadId)) throw new Error('This chat is not running. Send it a message first, then link it.')
     if (!this.isLiveSession(peerThreadId)) {
       throw new Error(`"${this.sessionTitle(peerThreadId)}" is not running. Open it, then link again.`)
     }
-    const result = this.peerLinks.link(a, b, 'user', Date.now())
+    const result = this.peerLinks.link(a, b, 'user', Date.now(), messages)
     if (!result.ok) throw new Error(result.message)
     log.info(`peer link ${result.created ? 'created' : 'renewed'}: ${a} <-> ${b}`)
     this.announcePeerLinks([a, b])
     return this.listPeerLinks(threadId)
+  }
+
+  /** Extend: more messages and a fresh window on one link. User-directed, admin-scoped. */
+  extendPeerLink(threadId: string, peerThreadId: string): PeerLinkView[] {
+    const a = resolveRootThreadId(threadId)
+    const b = resolveRootThreadId(peerThreadId)
+    const result = this.peerLinks.extend(a, b, 'user', Date.now())
+    if (!result.ok) throw new Error(result.message)
+    log.info(`peer link extended: ${a} <-> ${b}`)
+    this.announcePeerLinks([a, b])
+    return this.listPeerLinks(threadId)
+  }
+
+  /**
+   * Keep a message a spent link refused, in the sender's chat, where the user
+   * can read it and send it by hand. The agent is told to report it too, but
+   * an agent running unattended may never get that far.
+   */
+  private recordUndelivered(input: {
+    fromThreadId: string
+    fromLabel: string
+    targetRoot: string
+    targetLabel: string
+    text: string
+    reason: PeerLinkRefusal
+    notify: boolean
+  }): void {
+    const messageId = peerUndeliveredId(input.fromThreadId, input.targetRoot, input.text)
+    const content = formatUndeliveredMarker({
+      to: input.targetRoot, toLabel: input.targetLabel, reason: input.reason, text: input.text, sent: false,
+    })
+    try {
+      // The same text refused again (its id is content-addressed) is undelivered
+      // again, even if the user had sent the earlier copy by hand.
+      if (!saveMessageIfAbsent(messageId, input.fromThreadId, 'system', content)) {
+        rewriteSystemMarker(input.fromThreadId, messageId, PEER_UNDELIVERED_MARKER_PREFIX, () => content)
+      }
+    } catch (err) {
+      log.warn(`failed to persist undelivered peer message ${messageId}: ${err}`)
+    }
+    this.publish({
+      type: 'peer.undelivered', threadId: input.fromThreadId, messageId,
+      peerThreadId: input.targetRoot, peerLabel: input.targetLabel, fromLabel: input.fromLabel,
+      reason: input.reason, text: input.text, sent: false, notify: input.notify, at: Date.now(),
+    })
+  }
+
+  /**
+   * The user sent a kept message by hand: its row now says so, on every client.
+   * Only when what was delivered is that row's message to that session, so a
+   * client cannot mark a row sent by delivering something else.
+   */
+  private markUndeliveredSent(
+    fromThreadId: string,
+    messageId: string,
+    delivered: { targetRoot: string; text: string; fromLabel: string },
+  ): void {
+    let rewritten: string | null = null
+    try {
+      rewritten = rewriteSystemMarker(fromThreadId, messageId, PEER_UNDELIVERED_MARKER_PREFIX, (content) => {
+        const row = parseUndeliveredMarker(content)
+        if (!row || row.to !== delivered.targetRoot || row.text !== delivered.text) return null
+        return formatUndeliveredMarker({ ...row, sent: true })
+      })
+    } catch (err) {
+      log.warn(`failed to mark undelivered peer message ${messageId} as sent: ${err}`)
+    }
+    const row = rewritten === null ? null : parseUndeliveredMarker(rewritten)
+    if (!row) return
+    this.publish({
+      type: 'peer.undelivered', threadId: fromThreadId, messageId,
+      peerThreadId: row.to, peerLabel: row.toLabel, fromLabel: delivered.fromLabel,
+      reason: row.reason, text: row.text, sent: true, notify: false, at: Date.now(),
+    })
   }
 
   /** Remove one link, or every link of this session when `peerThreadId` is omitted. */
@@ -691,9 +779,9 @@ export class ProviderRegistry implements PeerToolHost {
     // `sessionAdapters` is keyed by whatever id startSession ran under, so
     // try the caller's id before the resolved root. Resolving first reported
     // a live chat as "not running" whenever its session id had rotated.
-    const targetThreadId = this.sessionAdapters.has(input.targetThreadId)
-      ? input.targetThreadId
-      : resolveRootThreadId(input.targetThreadId)
+    // A "not delivered" row names its target by root id, so a session running
+    // under another id of that root is found too.
+    const targetThreadId = this.liveSessionId(input.targetThreadId) ?? resolveRootThreadId(input.targetThreadId)
     if (this.switchingSessions.has(targetThreadId)) {
       throw new Error('That session is changing profiles. Try again when it reconnects.')
     }
@@ -740,6 +828,10 @@ export class ProviderRegistry implements PeerToolHost {
     const senderDepth = this.turnDepth.get(input.fromThreadId) ?? 0
     const fromRoot = resolveRootThreadId(input.fromThreadId)
     const targetRoot = resolveRootThreadId(targetThreadId)
+    // Before the link check, which would otherwise keep an oversized body as
+    // a "not delivered" row the per-pair guard never got to refuse.
+    const tooLarge = peerMessageTooLarge(input.text)
+    if (tooLarge) throw new Error(tooLarge)
     // A send along a link the user made spends that edge's budget INSTEAD of
     // the hop depth and per-sender budget. Only along that edge: the same
     // session sending anywhere else still meets both.
@@ -751,6 +843,11 @@ export class ProviderRegistry implements PeerToolHost {
     }
     if (linkVerdict.linked && !linkVerdict.ok) {
       log.warn(`linked peer send refused (${linkVerdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+      this.recordUndelivered({
+        fromThreadId: input.fromThreadId, fromLabel, targetRoot, targetLabel,
+        text: input.text, reason: linkVerdict.reason, notify: linkVerdict.firstRefusal,
+      })
+      this.announcePeerLinks([fromRoot, targetRoot])
       throw new Error(linkVerdict.message)
     }
     const releaseAgentSlot = (): void => {
@@ -835,7 +932,13 @@ export class ProviderRegistry implements PeerToolHost {
       messageId: verdict.id, peerThreadId: input.fromThreadId, peerLabel: fromLabel,
       text: input.text, at,
     })
-    if (linkVerdict.linked) this.announcePeerLinks([fromRoot, targetRoot])
+    // A message the user sent along a link is a human message on that edge.
+    if (linkVerdict.linked || (initiator === 'user' && this.peerLinks.renew(fromRoot, targetRoot, at))) {
+      this.announcePeerLinks([fromRoot, targetRoot])
+    }
+    if (initiator === 'user' && input.undeliveredId) {
+      this.markUndeliveredSent(input.fromThreadId, input.undeliveredId, { targetRoot, text: input.text, fromLabel })
+    }
     return { id: verdict.id }
     } finally {
       releasePreparation()
@@ -2044,8 +2147,10 @@ export class ProviderRegistry implements PeerToolHost {
     // path's budget while skipping the approval canUseTool gives it.
     this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) =>
       this.deliverPeerMessage({ ...input, initiator: 'user' }))
-    this.host.handle(ProviderChannels.LINK_PEER, async (input: { threadId: string; peerThreadId: string }) =>
-      this.linkPeers(input.threadId, input.peerThreadId))
+    this.host.handle(ProviderChannels.LINK_PEER, async (input: { threadId: string; peerThreadId: string; messages?: number }) =>
+      this.linkPeers(input.threadId, input.peerThreadId, input.messages))
+    this.host.handle(ProviderChannels.EXTEND_PEER_LINK, async (input: { threadId: string; peerThreadId: string }) =>
+      this.extendPeerLink(input.threadId, input.peerThreadId))
     this.host.handle(ProviderChannels.UNLINK_PEER, async (input: { threadId: string; peerThreadId?: string }) =>
       this.unlinkPeers(input.threadId, input.peerThreadId))
     this.host.handle(ProviderChannels.LIST_PEER_LINKS, async (input: { threadId: string }) =>
