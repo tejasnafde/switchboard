@@ -2642,6 +2642,8 @@ html, body, #root {
 }
 
 .markdown-content .table-copy-controls button {
+  display: inline-flex;
+  align-items: center;
   padding: 2px 7px;
   border: 1px solid var(--border);
   background: var(--bg-secondary);
@@ -2658,6 +2660,7 @@ html, body, #root {
 }
 
 .markdown-content .table-copy-controls .table-copy-menu-btn {
+  padding: 2px 5px;
   border-left: none;
   border-radius: 0 3px 3px 0;
 }

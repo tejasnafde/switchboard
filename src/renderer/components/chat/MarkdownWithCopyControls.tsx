@@ -258,7 +258,7 @@ export function wrapRenderedTable(
   const n = index + 1
   const controls = '<div class="table-copy-controls">' +
     `<button class="table-copy-btn" type="button" aria-label="Copy table ${n}" aria-live="polite" data-table-copy-index="${index}">Copy</button>` +
-    `<button class="table-copy-menu-btn" type="button" aria-label="More ways to copy table ${n}" aria-haspopup="dialog" aria-expanded="false" data-table-menu-index="${index}">▾</button>` +
+    `<button class="table-copy-menu-btn" type="button" aria-label="More ways to copy table ${n}" aria-haspopup="dialog" aria-expanded="false" data-table-menu-index="${index}"><svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.5 3 4 5.5 6.5 3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` +
     '</div>'
   // A wide table scrolls inside its own box instead of stretching the bubble;
   // the controls sit outside that box so they stay put while it scrolls.
