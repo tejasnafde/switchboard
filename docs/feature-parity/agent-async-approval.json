@@ -95,15 +95,18 @@
       "tests/unit/switchboard-mcp-integration.test.ts: over the real stdio bridge the reply call answers Queued at once, the phone still needs the digest, the approval posts and the agent then gets a result turn; a user stop closes the card.",
       "tests/unit/agent-approval-cards-sqlite.test.ts: the SQLite store reads back cards and held results across stores on one database and forgets what was taken.",
       "apps/mobile jest (feed-items.test.tsx): the Don't wake the agent toggle appears only on a backend with agent_async_approval_v1, renames the buttons, and sends quiet with the approval and with Dismiss. tests/unit/mobile-chat-store.test.ts: approval.result becomes one notice.",
-      "Android unit tests added (ThreadInteractionPolicyTest, HostWriteCardsTest) for offersQuiet, quietly and the quiet field on the wire; they run in the Android native CI job, not locally (no JDK on this machine).",
+      "Android: ./gradlew testDebugUnitTest passed locally on Homebrew OpenJDK 17, including ThreadInteractionPolicyTest (offersQuiet, quietly) and HostWriteCardsTest (quiet on the wire). The Don't wake the agent row is one toggleable checkbox semantics node.",
+      "tests/unit/agent-approval-results-registry.test.ts: a card answered while a profile switch is in progress is held, then delivered exactly once after the switch commits, and exactly once to the restored session after a rollback (both fail without the flush when the switch settles).",
+      "tests/unit/agent-approval-cards-sqlite.test.ts: one row with unreadable JSON (or a plan without a kind) is deleted and its chat told, while every other card still loads.",
       "npm run typecheck and npm test green."
     ],
     "hardware": [],
     "notExercised": [
       "Not run against live Claude, Codex or OpenCode sessions: how each model reacts to a queued answer, and to a result turn that arrives later or queued behind its turn, is untested. The adapters' delivery: 'queue' path is exercised only through the fake adapter.",
       "The desktop card's Don't wake the agent toggle and the result row were not seen in the running app; the visual baselines for the agent write card were refreshed by the screens phase only.",
-      "The Android build and its unit tests were not run locally (no Java runtime here); they rely on the Android native CI job. Neither phone was driven on hardware.",
-      "A backend restart was simulated with a second registry on the same store, not by quitting the app."
+      "A backend restart was simulated with a second registry on the same store, not by quitting the app.",
+      "Android was not driven on a device or emulator, and neither phone on hardware; lintDebug and the release assembles were left to the Android native CI job.",
+      "A result answered during an execution-root relocation is held and flushed when relocate() (or the turn-boundary relocation) returns; that path is covered by code reading, not by a test."
     ]
   }
 }

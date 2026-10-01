@@ -1114,7 +1114,9 @@ export class ProviderRegistry implements PeerToolHost {
   private async deliverApprovalResult(card: AgentApprovalCard, text: string, wake: boolean): Promise<ApprovalResultDelivery> {
     const body = approvalResultTurn({ requestId: card.requestId, toolName: card.toolName, text })
     const live = this.liveSessionId(card.threadId)
-    const running = live !== null && !this.switchingSessions.has(live)
+    // A profile switch or relocation is restarting the session: hold it, and
+    // the move flushes it once it commits or rolls back (`flushHeldApprovalResults`).
+    const running = live !== null && !this.switchingSessions.has(live) && !this.executionRoot?.isRelocating(live)
     const delivery = approvalResultDelivery({ wake, live: running, midTurn: live !== null && this.hasOutstandingTurn(live) })
     if (delivery === 'none') return 'none'
     if ((delivery === 'turn' || delivery === 'queue') && live && await this.sendApprovalResultTurn(live, body, card.requestId)) return delivery
@@ -1173,8 +1175,13 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
-  /** Results held while the chat was not running, delivered once its session starts. */
+  /**
+   * Results held while the chat was not running, delivered once its session
+   * runs again: after a plain start, and after a profile switch or relocation
+   * commits or rolls back. A no-op while one of those is still under way.
+   */
   private async flushHeldApprovalResults(threadId: string): Promise<void> {
+    if (!this.sessionAdapters.has(threadId) || this.switchingSessions.has(threadId) || this.executionRoot?.isRelocating(threadId)) return
     const chatId = resolveRootThreadId(threadId)
     let held
     try {
@@ -1187,6 +1194,10 @@ export class ProviderRegistry implements PeerToolHost {
       const requestId = result.id.replace(/^apr_/, '')
       if (!await this.sendApprovalResultTurn(threadId, result.body, requestId)) this.holdApprovalResult(chatId, requestId, result.body)
     }
+  }
+
+  private flushHeldApprovalResultsLater(threadId: string): void {
+    this.flushHeldApprovalResults(threadId).catch((err) => log.warn(`held approval results for ${threadId} failed`, err))
   }
 
   /** The user stopped or archived the chat: its open cards close unanswered. */
@@ -1370,7 +1381,9 @@ export class ProviderRegistry implements PeerToolHost {
     if (event.type === 'turn.completed') {
       // A Follow clicked mid-turn waited for exactly this moment. Killing the
       // turn to satisfy the click would have been worse than the wait.
-      void this.executionRoot?.onTurnBoundary(event.threadId)
+      const boundary = this.executionRoot?.onTurnBoundary(event.threadId)
+      // A relocation queued for this boundary held any result answered meanwhile.
+      if (boundary) void boundary.finally(() => this.flushHeldApprovalResultsLater(event.threadId))
       void this.driftHook((watcher, cwd) => watcher.onTurnCompleted(event.threadId, cwd), event.threadId)
     }
   }
@@ -1871,6 +1884,7 @@ export class ProviderRegistry implements PeerToolHost {
           if (event) this.publishAdapterEvent(event, agentType, instanceId)
         }
         gate.state = 'committed'
+        // Still relocating here: held results are flushed once relocate() returns.
       },
       publish: (event) => { this.bus.publish(event) },
     }
@@ -1880,7 +1894,12 @@ export class ProviderRegistry implements PeerToolHost {
       ProviderChannels.RELOCATE_EXECUTION_ROOT,
       async (request: RelocateExecutionRootRequest) => {
         if (!this.executionRoot) throw new Error('Execution-root coordinator is not ready')
-        return await this.executionRoot.relocate(request)
+        try {
+          return await this.executionRoot.relocate(request)
+        } finally {
+          // Committed or rolled back, results answered during the move go out now.
+          this.flushHeldApprovalResultsLater(request.threadId)
+        }
       },
     )
 
@@ -2062,11 +2081,10 @@ export class ProviderRegistry implements PeerToolHost {
       })
       await this.attachNotebooks(opts.threadId, session.cwd)
       trackAnalyticsEvent('session_started', { provider: opts.provider })
-      // A plain start (not a relocation staging its events) can take the
-      // results of cards answered while the chat was not running.
-      if (!eventGate) {
-        this.flushHeldApprovalResults(opts.threadId).catch((err) => log.warn(`held approval results for ${opts.threadId} failed`, err))
-      }
+      // Results of cards answered while the chat was not running. A start
+      // inside a profile switch or relocation (gated, or a rollback) is
+      // skipped here; that flow flushes once it settles.
+      if (!eventGate) this.flushHeldApprovalResultsLater(opts.threadId)
       resolveStart(session)
       return session
       } catch (err) {
@@ -2290,6 +2308,8 @@ export class ProviderRegistry implements PeerToolHost {
         }
       } finally {
         this.switchingSessions.delete(threadId)
+        // Committed or rolled back, results answered during the switch go out now.
+        this.flushHeldApprovalResultsLater(threadId)
       }
     })
 

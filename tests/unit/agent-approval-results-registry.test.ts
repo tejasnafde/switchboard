@@ -10,7 +10,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
 vi.mock('../../src/main/db/provider-instances', () => ({
-  resolveProviderInstance: (agentType: string, id?: string) => ({ id: id ?? `${agentType}-default`, env: {}, oauthDir: null }),
+  resolveProviderInstance: (agentType: string, id?: string) => ({ id: id ?? `${agentType}-default`, agentType, displayName: id ?? `${agentType}-default`, enabled: true, env: {}, oauthDir: null }),
+  getProviderInstanceFull: (id: string) => ({ id, agentType: 'claude-code', displayName: id, enabled: true, env: {}, oauthDir: null }),
   listOauthDirsForAgent: () => [],
 }))
 
@@ -32,6 +33,10 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationExecutionRoot: () => null,
   getConversationProviderInstanceId: () => null,
   getSetting: () => null,
+  getConversationById: (id: string) => ({ id }),
+  recordConversationSegment: () => {},
+  commitConversationProviderSwitch: () => {},
+  setConversationProviderInstanceId: () => {},
 }))
 
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
@@ -64,6 +69,47 @@ class FakeHost implements BackendHost {
     const fn = this.handlers.get(channel)
     if (!fn) throw new Error(`no handler registered for ${channel}`)
     return (await fn(...args)) as T
+  }
+}
+
+/** Holds a start of the target profile until released, so a card can be answered mid-switch. */
+class SwitchingAdapter implements ProviderAdapter {
+  readonly provider = 'claude' as const
+  readonly turns: Array<{ threadId: string; message: string }> = []
+  private emit = new Map<string, (e: RuntimeEvent) => void>()
+  failTarget = false
+  private release: (() => void) | null = null
+  targetEntered: Promise<void> = new Promise(() => {})
+
+  holdNextTarget(): () => void {
+    let entered!: () => void
+    this.targetEntered = new Promise((resolve) => { entered = resolve })
+    const gate = new Promise<void>((resolve) => { this.release = resolve })
+    this.onTarget = async () => { entered(); await gate }
+    return () => this.release?.()
+  }
+  private onTarget: () => Promise<void> = async () => {}
+
+  async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
+    if (opts.instanceId === 'claude-personal') {
+      await this.onTarget()
+      if (this.failTarget) throw new Error('target auth failed')
+    }
+    this.emit.set(opts.threadId, onEvent)
+    return { threadId: opts.threadId, provider: 'claude', status: 'ready', runtimeMode: opts.runtimeMode ?? 'sandbox', cwd: opts.cwd, createdAt: 0 }
+  }
+  async sendTurn(threadId: string, message: string): Promise<void> {
+    this.turns.push({ threadId, message })
+    this.emit.get(threadId)?.({ type: 'turn.completed', threadId })
+  }
+  async respondToRequest(): Promise<void> {}
+  async interruptTurn(): Promise<void> {}
+  async stopSession(threadId: string): Promise<void> {
+    this.emit.delete(threadId)
+  }
+  async setRuntimeMode(): Promise<void> {}
+  async isAvailable(): Promise<boolean> {
+    return true
   }
 }
 
@@ -256,3 +302,49 @@ describe('a chat that is not running, and a restart', () => {
     expect(after.resultTurns('hub')).toHaveLength(1)
   })
 })
+
+describe('a card answered while the session is changing profiles', () => {
+  async function midSwitch(failTarget: boolean) {
+    const host = new FakeHost()
+    const adapter = new SwitchingAdapter()
+    adapter.failTarget = failTarget
+    const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, null, memoryApprovalCardStore())
+    registry.registerIpcHandlers()
+    registries.push(registry)
+    saved.length = 0
+    const broker = (registry as unknown as { agentApprovals: AgentApprovalBroker }).agentApprovals
+    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'hub', provider: 'claude', cwd: '/tmp', instanceId: 'claude-work' })
+    const opened = broker.open({ threadId: 'hub', chatId: 'hub', toolName: 'x', detail: 'd', plan: { kind: 'peer-send', sessionId: 'nobody', message: 'm' } })
+    if (!opened.ok) throw new Error(opened.message)
+
+    const release = adapter.holdNextTarget()
+    const switched = host.invoke<{ ok: boolean; rolledBack?: boolean }>(ProviderChannels.SWITCH_INSTANCE, 'hub', {
+      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+    })
+    await adapter.targetEntered
+    await host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 'hub', opened.requestId, 'deny', {})
+    await settle()
+    const heldDuring = adapter.turns.length
+    release()
+    const result = await switched
+    await settle()
+    const results = adapter.turns.filter((t) => t.message.startsWith(`<${APPROVAL_RESULT_TAG}>`))
+    return { heldDuring, result, results, rows: saved.flatMap((m) => parseApprovalResultMarker(m.content) ?? []) }
+  }
+
+  it('holds the result during the switch and delivers it once after the commit', async () => {
+    const { heldDuring, result, results, rows } = await midSwitch(false)
+    expect(heldDuring).toBe(0)
+    expect(result.ok).toBe(true)
+    expect(results).toHaveLength(1)
+    expect(rows).toEqual([expect.objectContaining({ outcome: 'declined', delivery: 'hold' })])
+  })
+
+  it('delivers it once to the restored session after a rollback', async () => {
+    const { heldDuring, result, results } = await midSwitch(true)
+    expect(heldDuring).toBe(0)
+    expect(result).toMatchObject({ ok: false, rolledBack: true })
+    expect(results).toHaveLength(1)
+  })
+})
+

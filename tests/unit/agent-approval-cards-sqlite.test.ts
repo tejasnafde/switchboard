@@ -5,7 +5,7 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
 import { ensureAgentApprovalCardSchema, sqliteApprovalCardStore } from '../../src/main/db/agent-approval-cards'
-import { ApprovalCardBook, type StoredApprovalCard } from '../../src/shared/agent-approval-cards'
+import { ApprovalCardBook, parseApprovalResultMarker, type StoredApprovalCard } from '../../src/shared/agent-approval-cards'
 import type { HostWriteCard } from '../../src/shared/agent-host-writes'
 
 const hostWrite: HostWriteCard = {
@@ -35,6 +35,26 @@ describe('sqliteApprovalCardStore', () => {
     expect(new ApprovalCardBook(sqliteApprovalCardStore(() => db)).forChat('root').map((c) => c.requestId)).toEqual(['sbmcp_2'])
     expect(store.takeHeldResults('root')).toEqual([{ id: 'apr_sbmcp_0', chatId: 'root', body: 'later', at: 7 }])
     expect(store.takeHeldResults('root')).toEqual([])
+    db.close()
+  })
+
+  it('drops only an unreadable row: deleted, and its chat told, while every other card loads', () => {
+    const db = new Database(':memory:')
+    ensureAgentApprovalCardSchema(db)
+    const told: Array<{ chatId: string; messageId: string; content: string }> = []
+    const store = sqliteApprovalCardStore<typeof card.plan>(() => db, { tellChat: (chatId, messageId, content) => told.push({ chatId, messageId, content }) })
+    const book = new ApprovalCardBook(store)
+    book.add(card)
+    book.add({ ...card, requestId: 'sbmcp_3', openedAt: 300 })
+    db.prepare(`INSERT INTO agent_approval_cards VALUES ('sbmcp_bad', 'other', 't', 'x', 'Reply on app #9', NULL, '{not json', 200)`).run()
+    db.prepare(`INSERT INTO agent_approval_cards VALUES ('sbmcp_kindless', 'other', 't', 'x', 'd', NULL, '{}', 250)`).run()
+
+    const restarted = new ApprovalCardBook(store)
+    expect(restarted.all().map((c) => c.requestId)).toEqual(['sbmcp_1', 'sbmcp_3'])
+    expect(db.prepare('SELECT request_id FROM agent_approval_cards ORDER BY opened_at').all()).toEqual([{ request_id: 'sbmcp_1' }, { request_id: 'sbmcp_3' }])
+    expect(told.map((t) => [t.chatId, t.messageId])).toEqual([['other', 'apr_sbmcp_bad'], ['other', 'apr_sbmcp_kindless']])
+    expect(parseApprovalResultMarker(told[0].content)).toMatchObject({ requestId: 'sbmcp_bad', outcome: 'failed', delivery: 'none' })
+    expect(told[0].content).toContain('Reply on app #9')
     db.close()
   })
 })

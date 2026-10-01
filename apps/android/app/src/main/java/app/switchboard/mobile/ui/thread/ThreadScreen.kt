@@ -85,6 +85,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collapse
@@ -1976,11 +1977,15 @@ private fun ApprovalRow(
                 ApprovalActions.Plain -> Unit
             }
             if (offersQuiet && pendingDecision == null) {
+                // The whole row is the one checkbox a screen reader sees and a tap toggles.
                 Row(
-                    modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.APPROVAL_QUIET),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .toggleable(value = quiet, role = Role.Checkbox, onValueChange = { quiet = it })
+                        .testTag(ThreadTestTags.APPROVAL_QUIET),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Checkbox(checked = quiet, onCheckedChange = { quiet = it })
+                    Checkbox(checked = quiet, onCheckedChange = null)
                     Text("Don't wake the agent", color = TextDim)
                 }
             }

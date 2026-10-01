@@ -1,6 +1,11 @@
 import Database from 'better-sqlite3'
-import type { ApprovalCardStore, HeldApprovalResult, StoredApprovalCard } from '@shared/agent-approval-cards'
+import { formatApprovalResultMarker, type ApprovalCardStore, type HeldApprovalResult, type StoredApprovalCard } from '@shared/agent-approval-cards'
+import type { HostWriteCard } from '@shared/agent-host-writes'
+import { createMainLogger } from '../logger'
 import { getDb } from './database'
+import { saveMessageIfAbsent } from './messages'
+
+const log = createMainLogger('db:approval-cards')
 
 // ─── Agent approval cards ───────────────────────────────────────
 //
@@ -44,21 +49,66 @@ interface CardRow {
   opened_at: number
 }
 
-export function sqliteApprovalCardStore<Plan>(open?: () => Database.Database): ApprovalCardStore<Plan> {
+/** The card a row stores, or null when its JSON cannot be read back. */
+function cardFromRow<Plan>(r: CardRow): StoredApprovalCard<Plan> | null {
+  try {
+    const plan = JSON.parse(r.plan_json) as unknown
+    const hostWrite = r.host_write_json ? JSON.parse(r.host_write_json) as unknown : null
+    if (!plan || typeof plan !== 'object' || typeof (plan as { kind?: unknown }).kind !== 'string') return null
+    if (hostWrite !== null && (typeof hostWrite !== 'object' || typeof (hostWrite as { action?: unknown }).action !== 'string')) return null
+    return {
+      requestId: r.request_id,
+      chatId: r.conversation_id,
+      threadId: r.thread_id,
+      toolName: r.tool_name,
+      detail: r.detail,
+      hostWrite: hostWrite as HostWriteCard | null,
+      plan: plan as Plan,
+      openedAt: r.opened_at,
+    }
+  } catch (err) {
+    log.warn(`approval card ${r.request_id} has unreadable JSON`, err)
+    return null
+  }
+}
+
+export interface SqliteApprovalCardStoreOptions {
+  /** Tells a chat that one of its cards could not be read back. Default: a system row in the chat. */
+  tellChat?(chatId: string, messageId: string, content: string): void
+}
+
+export function sqliteApprovalCardStore<Plan>(open?: () => Database.Database, opts: SqliteApprovalCardStoreOptions = {}): ApprovalCardStore<Plan> {
   const db = (): Database.Database => (open ?? getDb)()
+  const tellChat = opts.tellChat ?? ((chatId, messageId, content) => { saveMessageIfAbsent(messageId, chatId, 'system', content) })
   return {
+    /**
+     * One row that cannot be read is dropped, not every card: it is deleted,
+     * since nothing could ever answer it, and its chat is told it was closed.
+     */
     loadCards(): StoredApprovalCard<Plan>[] {
       const rows = db().prepare('SELECT * FROM agent_approval_cards ORDER BY opened_at').all() as CardRow[]
-      return rows.map((r) => ({
-        requestId: r.request_id,
-        chatId: r.conversation_id,
-        threadId: r.thread_id,
-        toolName: r.tool_name,
-        detail: r.detail,
-        hostWrite: r.host_write_json ? JSON.parse(r.host_write_json) : null,
-        plan: JSON.parse(r.plan_json) as Plan,
-        openedAt: r.opened_at,
-      }))
+      const cards: StoredApprovalCard<Plan>[] = []
+      for (const r of rows) {
+        const card = cardFromRow<Plan>(r)
+        if (card) {
+          cards.push(card)
+          continue
+        }
+        log.error(`dropping unreadable approval card ${r.request_id} of ${r.conversation_id}`)
+        db().prepare('DELETE FROM agent_approval_cards WHERE request_id = ?').run(r.request_id)
+        try {
+          tellChat(r.conversation_id, `apr_${r.request_id}`, formatApprovalResultMarker({
+            requestId: r.request_id,
+            title: 'Approval card',
+            outcome: 'failed',
+            text: `Switchboard could not read this approval card back after a restart, so it was closed. Nothing was sent. It asked for: ${r.detail}`,
+            delivery: 'none',
+          }))
+        } catch (err) {
+          log.warn(`could not tell ${r.conversation_id} that card ${r.request_id} was dropped`, err)
+        }
+      }
+      return cards
     },
     putCard(card) {
       db().prepare(
