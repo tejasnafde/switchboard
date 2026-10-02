@@ -1,11 +1,13 @@
 /**
  * The cross-session tools on the Switchboard MCP server keep the gate Claude's
  * canUseTool used to apply, now for all three agents: listing runs unasked,
- * a send is denied in plan, sent in full access and carded otherwise.
+ * a send is denied in plan, sent in full access and carded otherwise. A card
+ * does not hold the call: the tool says it is queued, and the approval sends.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { AgentApprovalBroker } from '../../src/main/mcp/agent-approvals'
-import { buildPeerMcpTools } from '../../src/main/mcp/peer-mcp-tools'
+import { buildPeerMcpTools, runPeerSendPlan, type PeerSendPlan } from '../../src/main/mcp/peer-mcp-tools'
+import type { McpTool } from '../../src/main/mcp/mcp-session'
 import type { PeerToolHost } from '../../src/main/provider/peer-tools'
 import type { PeerMessageInput } from '../../src/shared/peer-messaging'
 import type { RuntimeEvent, RuntimeMode } from '../../src/shared/provider-events'
@@ -23,10 +25,18 @@ function setup(mode: RuntimeMode, decision?: 'approve' | 'deny', linked = false)
       events.push(e)
       if (e.type === 'request.opened' && decision) queueMicrotask(() => approvals.respond('t1', e.requestId, decision, {}, { mayApproveHostWrite: false, label: 'test' }))
     },
+    onClosed: (card, close) => {
+      if (close.kind === 'approve') void runPeerSendPlan({ threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), peers }, card.plan as PeerSendPlan)
+    },
   })
-  const [list, send] = buildPeerMcpTools({ threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), approvals, peers })
+  const [list, rawSend] = buildPeerMcpTools({ threadId: 't1', chatId: 'root-1', runtimeMode: () => mode, publish: (e) => events.push(e), approvals, peers })
   const signal = new AbortController().signal
-  return { list, send, events, delivered, peers, signal }
+  return { list, send: settled(rawSend), events, delivered, peers, signal }
+}
+
+/** The tool, plus a tick for a card answered as it opened to run its send. */
+function settled(tool: McpTool): McpTool {
+  return { ...tool, call: async (args, ctx) => { const r = await tool.call(args, ctx); await new Promise((resolve) => setTimeout(resolve, 0)); return r } }
 }
 
 const args = { sessionId: 's2', message: 'the migration landed' }
@@ -76,6 +86,7 @@ describe('send_agent_message', () => {
       isLinkedPeer: vi.fn(() => false),
       deliverPeerMessage: vi.fn(async (input: PeerMessageInput) => { delivered.push(input); return { id: 'pm_0123456789abcdef' } }),
     }
+    const results: Array<Promise<{ isError?: boolean }>> = []
     const approvals = new AgentApprovalBroker({
       publish: (e) => {
         events.push(e)
@@ -84,19 +95,29 @@ describe('send_agent_message', () => {
           queueMicrotask(() => approvals.respond('t1', e.requestId, 'approve', {}, { mayApproveHostWrite: false, label: 'test' }))
         }
       },
+      onClosed: (card) => { results.push(runPeerSendPlan({ threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), peers }, card.plan as PeerSendPlan)) },
     })
-    const [, send] = buildPeerMcpTools({ threadId: 't1', runtimeMode: () => mode, publish: (e) => events.push(e), approvals, peers })
-    const result = await send.call(args, { signal: new AbortController().signal })
-    expect(result.isError).toBe(true)
+    const [, send] = buildPeerMcpTools({ threadId: 't1', chatId: 'root-1', runtimeMode: () => mode, publish: (e) => events.push(e), approvals, peers })
+    await send.call(args, { signal: new AbortController().signal })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect((await results[0]).isError).toBe(true)
     expect(delivered).toEqual([])
     expect(events).toContainEqual(expect.objectContaining({ type: 'tool.denied', mode: 'plan' }))
   })
 
-  it('sends nothing when the user denies', async () => {
-    const { send, delivered, signal } = setup('sandbox', 'deny')
+  it('answers at once that the message is queued, and sends nothing when the user denies', async () => {
+    const { send, delivered, events, signal } = setup('sandbox', 'deny')
     const result = await send.call(args, { signal })
-    expect(result.isError).toBe(true)
+    expect(result.isError).toBeFalsy()
+    expect(result.content[0].text).toMatch(/^Queued for the user's approval \(card sbmcp_/)
+    expect(events.map((e) => e.type)).toEqual(['request.opened', 'request.closed'])
     expect(delivered).toEqual([])
+  })
+
+  it('refuses an empty message before it costs the user a card', async () => {
+    const { send, events, signal } = setup('sandbox', 'approve')
+    expect((await send.call({ sessionId: 's2', message: '  ' }, { signal })).isError).toBe(true)
+    expect(events).toEqual([])
   })
 })
 
@@ -137,7 +158,7 @@ describe('send_agent_message along a session link', () => {
   // No tool can create or extend a link: the server offers the two session tools and nothing else.
   it('offers the agent no way to link', () => {
     const { list, send } = setup('full-access')
-    const tools = buildPeerMcpTools({ threadId: 't1', runtimeMode: () => 'full-access', publish: () => {}, approvals: { ask: vi.fn() }, peers: setup('full-access').peers })
+    const tools = buildPeerMcpTools({ threadId: 't1', chatId: 'root-1', runtimeMode: () => 'full-access', publish: () => {}, approvals: { open: vi.fn() }, peers: setup('full-access').peers })
     expect(tools.map((t) => t.name)).toEqual([list.name, send.name])
     expect(tools.map((t) => t.name)).toEqual(['list_agent_sessions', 'send_agent_message'])
   })

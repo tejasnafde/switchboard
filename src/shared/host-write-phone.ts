@@ -73,7 +73,7 @@ export function hostWriteApprovalProblem(card: HostWriteCard, response: HostWrit
 
 /**
  * What an approval from a device without the admin scope carries to the
- * broker: the choice (resolve, verdict), never replacement content. A phone
+ * broker: the choice (resolve, verdict, quiet), never replacement content. A phone
  * approves the draft its card showed; only the desktop edits.
  */
 export function approvalChoiceOnly(response: HostWriteResponse): HostWriteResponse {
@@ -81,6 +81,7 @@ export function approvalChoiceOnly(response: HostWriteResponse): HostWriteRespon
     ...(response.resolve !== undefined ? { resolve: response.resolve } : {}),
     ...(response.verdict !== undefined ? { verdict: response.verdict } : {}),
     ...(response.shown !== undefined ? { shown: response.shown } : {}),
+    ...(response.quiet ? { quiet: true } : {}),
   }
 }
 

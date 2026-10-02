@@ -73,6 +73,7 @@ import { outboxPresentation, recoverRejectedDraft } from '../lib/outbox-model'
 import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-fork'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
+import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '@shared/agent-approval-cards'
 import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
 import { styles } from './thread-screen.styles'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
@@ -757,6 +758,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // controls check too, rather than offer buttons whose channel is missing.
   const canControlQueue = getClient(connectionId)?.supportsCapability('turn_queue_controls_v1') === true
   const phoneApprovesHostWrites = getClient(connectionId)?.supportsCapability(HOST_WRITE_PHONE_APPROVAL_CAPABILITY) === true
+  const asyncApprovals = getClient(connectionId)?.supportsCapability(AGENT_ASYNC_APPROVAL_CAPABILITY) === true
 
   // A refused Send now / Cancel belongs on its row: reporting it as a thread
   // error would mark a still-running thread as failed and hide Stop.
@@ -860,7 +862,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
             </View>
           )
         case 'approval':
-          return <ApprovalItem item={item} backendTakesPhoneApproval={phoneApprovesHostWrites} onDecide={decideApproval} />
+          return <ApprovalItem item={item} backendTakesPhoneApproval={phoneApprovesHostWrites} backendAsyncApproval={asyncApprovals} onDecide={decideApproval} />
         case 'question':
           return <QuestionItem item={item} onSubmit={submitAnswers} />
         case 'plan':
@@ -884,6 +886,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     [
       decideApproval,
       phoneApprovesHostWrites,
+      asyncApprovals,
       submitAnswers,
       implementPlan,
       focusComposer,

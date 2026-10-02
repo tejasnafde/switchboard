@@ -195,7 +195,10 @@ class LaunchRecordingAdapter implements ProviderAdapter {
     this.launches.push(opts.switchboardMcp)
     return { threadId: opts.threadId, provider: 'codex', status: 'idle', runtimeMode: opts.runtimeMode ?? 'sandbox', cwd: opts.cwd, createdAt: 0 }
   }
-  async sendTurn(): Promise<void> {}
+  turns: string[] = []
+  async sendTurn(_threadId: string, message: string): Promise<void> {
+    this.turns.push(message)
+  }
   async respondToRequest(): Promise<void> {
     this.respondCalls++
   }
@@ -236,6 +239,8 @@ describe('through the provider registry', () => {
     const client = connect(launch)
     await client.request('initialize', {})
     const reply = client.request('tools/call', { name: 'reply_to_conversation', arguments: { conversationId: 'T1', text: 'Because.' } })
+    // The call does not wait for the user: it answers that the write is queued.
+    expect(((await reply).result as { content: Array<{ text: string }> }).content[0].text).toMatch(/^Queued for the user's approval \(card sbmcp_/)
 
     await vi.waitFor(() => expect(host.events.some((e) => e.type === 'request.opened')).toBe(true))
     const card = host.events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
@@ -260,9 +265,12 @@ describe('through the provider registry', () => {
       host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false, text: 'Replaced on the phone', shown: hostWriteShownDigest(card.requestId, card.hostWrite!) }))
     const result = await reply
     expect((result.result as { isError?: boolean }).isError).toBeUndefined()
+    await vi.waitFor(() => expect(host.events.some((e) => e.type === 'approval.result')).toBe(true))
     expect(posted).toEqual([{ conversationId: 'T1', body: 'Because.\n\nvia Switchboard' }])
     expect(adapter.respondCalls).toBe(0)
-    expect(host.events.at(-1)).toMatchObject({ type: 'request.closed', requestId: card.requestId, decision: 'approve' })
+    expect(host.events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: card.requestId, decision: 'approve' })
+    // The agent hears the result in a later turn of its own.
+    expect(adapter.turns.at(-1)).toContain('Posted the reply')
 
     await host.invoke(ProviderChannels.STOP_SESSION, 't1')
     await client.exited
@@ -296,7 +304,7 @@ describe('through the provider registry', () => {
     setAgentPullRequestAccess(null)
   })
 
-  it('closes an open card when the session stops, so it never posts', async () => {
+  it('closes an open card when the user stops the session, so it never posts', async () => {
     setAgentPullRequestAccess(access)
     posted.length = 0
     const host = new FakeHost()

@@ -49,6 +49,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
@@ -84,6 +85,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collapse
@@ -301,6 +303,7 @@ fun ThreadScreen(
                     pendingActions.approvalDecisions[it.source.requestId]
                 },
                 backendTakesPhoneApproval = pendingActions.backendTakesPhoneApproval,
+                backendAsyncApproval = pendingActions.backendAsyncApproval,
                 composer = composer,
                 queuedTurns = queuedTurns,
                 onRetry = onRetry,
@@ -494,6 +497,7 @@ private fun ThreadBottomArea(
     pendingApproval: ThreadRowPresentation.Approval?,
     pendingDecision: ApprovalDecision?,
     backendTakesPhoneApproval: Boolean,
+    backendAsyncApproval: Boolean,
     composer: ThreadComposerPresentation?,
     queuedTurns: List<QueuedTurn>,
     onRetry: () -> Unit,
@@ -524,7 +528,7 @@ private fun ThreadBottomArea(
                     .background(MaterialTheme.colorScheme.background)
                     .testTag(ThreadTestTags.APPROVAL_SLOT),
             ) {
-                ApprovalRow(pendingApproval.source, pendingDecision, backendTakesPhoneApproval, onAction)
+                ApprovalRow(pendingApproval.source, pendingDecision, backendTakesPhoneApproval, backendAsyncApproval, onAction)
             }
         }
         if (composer != null) {
@@ -1307,6 +1311,7 @@ private fun ThreadRow(
             row.source,
             pendingActions.approvalDecisions[row.source.requestId],
             pendingActions.backendTakesPhoneApproval,
+            pendingActions.backendAsyncApproval,
             onAction,
         )
         is ThreadRowPresentation.Retry -> NoticeCard(
@@ -1932,6 +1937,7 @@ private fun ApprovalRow(
     item: FeedItem.Approval,
     pendingDecision: ApprovalDecision?,
     backendTakesPhoneApproval: Boolean,
+    backendAsyncApproval: Boolean,
     onAction: (ThreadUiAction) -> Unit,
 ) {
     val pending = item.state == "pending"
@@ -1939,6 +1945,8 @@ private fun ApprovalRow(
         ThreadInteractionPolicy.approvalActions(item, backendTakesPhoneApproval)
     }
     var expanded by rememberSaveable(item.requestId) { mutableStateOf(false) }
+    val offersQuiet = ThreadInteractionPolicy.offersQuiet(item, backendAsyncApproval)
+    var quiet by rememberSaveable(item.requestId) { mutableStateOf(false) }
     val approvable = actions !is ApprovalActions.HostWrite || ThreadInteractionPolicy.hostWriteApprovable(actions, expanded)
     CardContainer(tint = if (pending) Amber else TextDim) {
         Text(
@@ -1968,6 +1976,19 @@ private fun ApprovalRow(
                 }
                 ApprovalActions.Plain -> Unit
             }
+            if (offersQuiet && pendingDecision == null) {
+                // The whole row is the one checkbox a screen reader sees and a tap toggles.
+                Row(
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .toggleable(value = quiet, role = Role.Checkbox, onValueChange = { quiet = it })
+                        .testTag(ThreadTestTags.APPROVAL_QUIET),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = quiet, onCheckedChange = null)
+                    Text("Don't wake the agent", color = TextDim)
+                }
+            }
             if (pendingDecision != null) {
                 Row(
                     modifier = Modifier.heightIn(min = 48.dp),
@@ -1987,14 +2008,14 @@ private fun ApprovalRow(
                 when (actions) {
                     ApprovalActions.Plain -> Button(
                         onClick = {
-                            ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.APPROVE)
+                            ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.APPROVE, ThreadInteractionPolicy.quietly(null, quiet))
                                 ?.let(onAction)
                         },
                         modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text("Approve") }
+                    ) { Text(if (quiet) "Approve quietly" else "Approve") }
                     is ApprovalActions.HostWrite -> actions.buttons.forEach { button ->
                         val onClick = {
-                            ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.APPROVE, button.response)
+                            ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.APPROVE, ThreadInteractionPolicy.quietly(button.response, quiet))
                                 ?.let(onAction)
                             Unit
                         }
@@ -2003,24 +2024,24 @@ private fun ApprovalRow(
                                 onClick = onClick,
                                 enabled = approvable && button.problem == null,
                                 modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.hostWriteButton(button.id)),
-                            ) { Text(button.label) }
+                            ) { Text(if (quiet) "${button.label} quietly" else button.label) }
                         } else {
                             OutlinedButton(
                                 onClick = onClick,
                                 enabled = approvable && button.problem == null,
                                 modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.hostWriteButton(button.id)),
-                            ) { Text(button.label) }
+                            ) { Text(if (quiet) "${button.label} quietly" else button.label) }
                         }
                     }
                     is ApprovalActions.DenyOnly -> Unit
                 }
                 OutlinedButton(
                     onClick = {
-                        ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.DENY)
+                        ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.DENY, ThreadInteractionPolicy.quietly(null, quiet))
                             ?.let(onAction)
                     },
                     modifier = Modifier.heightIn(min = 48.dp),
-                ) { Text("Deny") }
+                ) { Text(if (quiet) "Dismiss" else "Deny") }
             }
         }
     }

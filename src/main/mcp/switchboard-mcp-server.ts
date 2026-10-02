@@ -35,7 +35,9 @@ const INSTRUCTIONS = [
   'and call create_pull_request: do not use gh pr create, bbpr or a host API for it. It opens the pull request on the',
   'repository of this chat\'s project with the account the user set up in Switchboard, links it to this chat and',
   'shows it in Reviews. The other pull request tools act only on pull requests linked to this chat.',
-  'Every write shows the user an approval card first and is posted as the user. Approving, requesting',
+  'Every write shows the user an approval card first and is posted as the user. The tool does not wait for the',
+  'answer: it says the write is queued, and the result arrives later as a Switchboard message in this chat. Do not',
+  'ask for the same write again while it is queued; withdraw_approval takes a card back. Approving, requesting',
   'changes and merging are left to the user. The session tools message the user\'s other open agent sessions.',
 ].join(' ')
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { approvalActions } from '../../apps/mobile/src/lib/approval-actions'
+import { approvalActions, offersQuiet, quietLabel, quietly } from '../../apps/mobile/src/lib/approval-actions'
+import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '../../src/shared/agent-approval-cards'
 import { approvalChoiceOnly, HOST_WRITE_PHONE_APPROVAL_CAPABILITY, hostWritePreview, hostWriteShownDigest } from '../../src/shared/host-write-phone'
 import { BACKEND_CAPABILITIES } from '../../src/shared/ws-protocol'
 import type { HostWriteCard } from '../../src/shared/agent-host-writes'
@@ -34,6 +35,24 @@ describe('approvalActions', () => {
 
   it('is advertised by every backend host', () => {
     expect(BACKEND_CAPABILITIES).toContain(HOST_WRITE_PHONE_APPROVAL_CAPABILITY)
+  })
+})
+
+describe('a quiet answer on the phone', () => {
+  it('is offered only on cards the server opened, on a backend that takes it', () => {
+    expect(BACKEND_CAPABILITIES).toContain(AGENT_ASYNC_APPROVAL_CAPABILITY)
+    expect(offersQuiet(item(), true)).toBe(true)
+    expect(offersQuiet(item(), false)).toBe(false)
+    expect(offersQuiet(item({ requestId: 'toolu_1' }), true)).toBe(false)
+  })
+
+  it('rides on the response the button already sends, and renames the buttons', () => {
+    expect(quietly({ shown: 'ab' }, true)).toEqual({ shown: 'ab', quiet: true })
+    expect(quietly(undefined, true)).toEqual({ quiet: true })
+    expect(quietly({ shown: 'ab' }, false)).toEqual({ shown: 'ab' })
+    expect(quietLabel('Post comment', 'approve', true)).toBe('Post comment quietly')
+    expect(quietLabel('Deny', 'deny', true)).toBe('Dismiss')
+    expect(quietLabel('Deny', 'deny', false)).toBe('Deny')
   })
 })
 

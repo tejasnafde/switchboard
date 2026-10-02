@@ -1,0 +1,112 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "agent-async-approval",
+  "summary": "An approval card the Switchboard MCP server opens (the six pull request writes and send_agent_message) no longer holds the agent's tool call. The tool answers at once, as a success, that the write is queued for the user (card id, do not send it again), and the agent carries on or ends its turn. The card has no time limit, survives the turn ending, a profile switch and a backend restart (stored in agent_approval_cards, keyed by the root conversation), and closes only when the user approves or denies it (optionally without waking the agent: Approve quietly, Dismiss), the agent withdraws it with the new withdraw_approval tool, or the user stops or archives the chat. An approval runs the write with every check after the card that ran before (plan mode, the PR link, the project's repository, a phone's shown digest, the link and guards of a peer send); reply with resolve stays one card. The chat gets a system row with what happened, and the agent gets a Switchboard turn with the result: at once when idle, queued behind a running turn, or held until the chat runs again. That turn is marked as Switchboard's, carries no authority, and resets neither peer hop depth nor a link budget. A chat holds at most 20 open cards; the write budget still counts when a card opens. The backend advertises agent_async_approval_v1.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/HostWriteApprovalCard.tsx",
+        "src/renderer/components/chat/host-write-card.ts",
+        "src/renderer/components/chat/ApprovalCard.tsx",
+        "src/renderer/components/chat/ApprovalResultRow.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "src/renderer/styles/tailwind.css",
+        "tests/unit/host-write-card.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/approval-actions.ts",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/screens/__tests__/feed-items.test.tsx",
+        "tests/unit/mobile-approval-actions.test.ts",
+        "tests/unit/mobile-chat-store.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/HostWriteCards.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SyntheticUserMessage.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadInteractionPolicyTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/HostWriteCardsTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/agent-approval-cards.ts",
+        "src/shared/agent-host-writes.ts",
+        "src/shared/host-write-phone.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/synthetic-message.ts",
+        "src/shared/ws-protocol.ts",
+        "src/main/mcp/agent-approvals.ts",
+        "src/main/mcp/approval-mcp-tools.ts",
+        "src/main/mcp/pr-tools.ts",
+        "src/main/mcp/peer-mcp-tools.ts",
+        "src/main/mcp/agent-registration.ts",
+        "src/main/mcp/mcp-session.ts",
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/agent-approval-cards.test.ts",
+        "tests/unit/agent-approvals.test.ts",
+        "tests/unit/agent-approval-results-registry.test.ts",
+        "tests/unit/mcp-pr-tools.test.ts",
+        "tests/unit/mcp-pr-create-tool.test.ts",
+        "tests/unit/mcp-peer-tools.test.ts",
+        "tests/unit/switchboard-mcp-integration.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/agent-approval-cards.ts",
+        "src/main/db/database.ts",
+        "tests/unit/agent-approval-cards-sqlite.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/ws-protocol.ts",
+        "apps/mobile/src/lib/approval-actions.ts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/HostWriteCards.kt",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/agent-approval-cards.test.ts: how each answer closes a card and whether it wakes the agent (approve, approve quietly, deny, dismiss, withdraw, stop); delivery now, queued, held or none; the per-chat cap of 20 and its release; a card handed out exactly once; cards and held results surviving a new book on the same store; the queued tool answer; the result turn wrapper (Switchboard's, no authority, cannot be closed early by the text, dropped by every surface's synthetic split); the chat row marker round trip and label; quiet on the wire and kept for a phone.",
+      "tests/unit/agent-approvals.test.ts: the broker's scope, phone digest and review checks unchanged; quiet approve and dismiss; a second answer refused; withdraw only within the chat; a user stop closes only that chat's cards; the cap; a card restored after a restart is listed, answered from a phone with the digest under a rotated id, and closed on both ids.",
+      "tests/unit/agent-approval-results-registry.test.ts against the real registry: an approved peer send is delivered and the idle agent gets one Switchboard turn that the transcript hides; approve quietly sends no turn; a result behind a running turn goes with delivery 'queue'; dismiss, withdraw and a user stop record rows and wake nobody; a result turn leaves the hop depth (an unlinked send stays refused) and the link budget (used stays 1) untouched, while the user's own send does renew the edge (both assertions fail when the registry resets depth or renews links on a result turn); a result for a chat that is not running is held and delivered when it starts; a card survives a new registry on the same store and runs when answered.",
+      "tests/unit/mcp-pr-tools.test.ts and mcp-pr-create-tool.test.ts: every pull request write followed from the queued answer through the user's answer to the result; every check after the card still refuses (plan mode, unlink, repository moved, edited text refused, resolve not done when the mode changed during the reply); the budget still counts at the card; full access still opens a pull request in the same call.",
+      "tests/unit/mcp-peer-tools.test.ts: a peer send is queued, an empty one refused before a card, plan mode after the card sends nothing.",
+      "tests/unit/switchboard-mcp-integration.test.ts: over the real stdio bridge the reply call answers Queued at once, the phone still needs the digest, the approval posts and the agent then gets a result turn; a user stop closes the card.",
+      "tests/unit/agent-approval-cards-sqlite.test.ts: the SQLite store reads back cards and held results across stores on one database and forgets what was taken.",
+      "apps/mobile jest (feed-items.test.tsx): the Don't wake the agent toggle appears only on a backend with agent_async_approval_v1, renames the buttons, and sends quiet with the approval and with Dismiss. tests/unit/mobile-chat-store.test.ts: approval.result becomes one notice.",
+      "Android: ./gradlew testDebugUnitTest passed locally on Homebrew OpenJDK 17, including ThreadInteractionPolicyTest (offersQuiet, quietly) and HostWriteCardsTest (quiet on the wire). The Don't wake the agent row is one toggleable checkbox semantics node.",
+      "tests/unit/agent-approval-results-registry.test.ts: a card answered while a profile switch is in progress is held, then delivered exactly once after the switch commits, and exactly once to the restored session after a rollback (both fail without the flush when the switch settles).",
+      "tests/unit/agent-approval-cards-sqlite.test.ts: one row with unreadable JSON (or a plan without a kind) is deleted and its chat told, while every other card still loads.",
+      "npm run typecheck and npm test green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against live Claude, Codex or OpenCode sessions: how each model reacts to a queued answer, and to a result turn that arrives later or queued behind its turn, is untested. The adapters' delivery: 'queue' path is exercised only through the fake adapter.",
+      "The desktop card's Don't wake the agent toggle and the result row were not seen in the running app; the visual baselines for the agent write card were refreshed by the screens phase only.",
+      "A backend restart was simulated with a second registry on the same store, not by quitting the app.",
+      "Android was not driven on a device or emulator, and neither phone on hardware; lintDebug and the release assembles were left to the Android native CI job.",
+      "A result answered during an execution-root relocation is held and flushed when relocate() (or the turn-boundary relocation) returns; that path is covered by code reading, not by a test."
+    ]
+  }
+}

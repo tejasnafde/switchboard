@@ -241,6 +241,20 @@ export interface RuntimePeerUndeliveredEvent {
   at: number
 }
 
+/**
+ * An agent's approval card closed and Switchboard recorded what happened
+ * (`shared/agent-approval-cards.ts`). `content` is the stored system row, so
+ * a live client shows exactly what a reload shows.
+ */
+export interface RuntimeApprovalResultEvent {
+  type: 'approval.result'
+  threadId: string
+  messageId: string
+  requestId: string
+  content: string
+  at: number
+}
+
 /** One entry of an agent's own progress checklist. */
 export type TodoStatus = 'pending' | 'in_progress' | 'completed'
 export interface TodoItem {
@@ -326,6 +340,7 @@ export type RuntimeEvent = (
   | RuntimeThreadReadEvent
   | RuntimePeerMessageEvent
   | RuntimePeerUndeliveredEvent
+  | RuntimeApprovalResultEvent
   | RuntimeTodoUpdatedEvent
   | RuntimeTaskNotificationEvent
 ) & {

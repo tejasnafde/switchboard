@@ -8,7 +8,8 @@
  * a `hostWrite` payload, so a client that does not know the payload still
  * renders a plain approval from `detail`. The answer comes back on
  * `provider:respond-to-request` with an optional `HostWriteResponse`: the
- * text the user edited in the card is the text that gets posted.
+ * text the user edited in the card is the text that gets posted. The tool
+ * call does not wait for it (`agent-approval-cards.ts`).
  */
 import type { DiffLineKind, PrHost } from './pull-requests'
 import { lineLocation, type ReviewEvent } from './pull-request-writes'
@@ -24,12 +25,6 @@ export const AGENT_REPLY_MAX_CHARS = 8_000
 /** Writes one chat may ask for inside the window, approved or not. */
 export const AGENT_WRITE_BUDGET = 10
 export const AGENT_WRITE_WINDOW_MS = 10 * 60_000
-
-/**
- * How long a card waits for an answer. An unanswered card is denied after
- * this, so an agent that timed out on its side can never post later.
- */
-export const HOST_WRITE_APPROVAL_TTL_MS = 10 * 60_000
 
 /** The most lines one agent comment may cover. A longer range is a file-level remark, not a line comment. */
 export const AGENT_COMMENT_MAX_LINES = 200
@@ -148,6 +143,8 @@ export interface HostWriteResponse {
   reviewers?: string[]
   /** A phone's `hostWriteShownDigest` of the draft it showed in full. Required on an approval from a device without the admin scope. */
   shown?: string
+  /** Approve or deny without waking the agent ("Approve quietly", "Dismiss"). Any card the server opens takes it. */
+  quiet?: boolean
 }
 
 export type AgentToolGate = 'allow' | 'deny' | 'card'
@@ -252,5 +249,6 @@ export function parseHostWriteResponse(value: unknown): HostWriteResponse {
     ...(typeof r.description === 'string' ? { description: r.description } : {}),
     ...(Array.isArray(r.reviewers) ? { reviewers: r.reviewers.filter((id): id is string => typeof id === 'string') } : {}),
     ...(typeof r.shown === 'string' ? { shown: r.shown } : {}),
+    ...(r.quiet === true ? { quiet: true } : {}),
   }
 }

@@ -127,6 +127,8 @@ data class ThreadPendingActions(
     val planIds: Set<String> = emptySet(),
     /** The backend takes this device's approval of an agent's pull request write card. */
     val backendTakesPhoneApproval: Boolean = false,
+    /** The backend's agent cards wait without a time limit and take a quiet answer. */
+    val backendAsyncApproval: Boolean = false,
 )
 
 sealed interface ComposerSubmitResult {
@@ -1504,6 +1506,7 @@ class ThreadSessionCoordinator(
                 questionRequestIds = pendingQuestionRequestIds.toSet(),
                 planIds = pendingPlanOrigins.keys.toSet(),
                 backendTakesPhoneApproval = HostWriteCards.PHONE_APPROVAL_CAPABILITY in capabilities,
+                backendAsyncApproval = HostWriteCards.ASYNC_APPROVAL_CAPABILITY in capabilities,
             ),
             forkMetadata = forkMetadata,
             followUp = ThreadFollowUpState(

@@ -26,6 +26,7 @@
 @source '../components/chat/TableCopyMenu.tsx';
 @source '../components/chat/PeerLinkBanner.tsx';
 @source '../components/chat/PeerUndeliveredRow.tsx';
+@source '../components/chat/ApprovalResultRow.tsx';
 @source '../components/CommandPalette.tsx';
 @source '../components/SessionPickerModal.tsx';
 @source '../components/SearchModal.tsx';

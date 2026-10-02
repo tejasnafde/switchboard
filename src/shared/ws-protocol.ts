@@ -55,6 +55,11 @@ export const BACKEND_CAPABILITIES = [
    *  card (`HOST_WRITE_PHONE_APPROVAL_CAPABILITY` in shared/host-write-phone).
    *  Without it the backend refuses, so the phone offers Deny only. */
   'agent_host_write_phone_approval_v1',
+  /** An agent's approval card has no time limit, and its answer reaches the
+   *  agent as a later turn; a response may carry `quiet` (approve or deny
+   *  without waking it). `AGENT_ASYNC_APPROVAL_CAPABILITY` in
+   *  shared/agent-approval-cards. */
+  'agent_async_approval_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

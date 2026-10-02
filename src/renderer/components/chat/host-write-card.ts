@@ -41,6 +41,15 @@ export function hostWriteButtons(card: HostWriteCard): HostWriteButton[] {
   ]
 }
 
+/**
+ * A button's label when the user chose not to wake the agent: Deny closes the
+ * card unannounced (Dismiss), an approval runs the write without a result turn.
+ */
+export function hostWriteButtonLabel(button: HostWriteButton, quiet: boolean): string {
+  if (!quiet) return button.label
+  return button.decision === 'deny' ? 'Dismiss' : `${button.label} quietly`
+}
+
 /** A draft review as the user is editing it in the card. */
 export interface ReviewDraftState {
   summary: string

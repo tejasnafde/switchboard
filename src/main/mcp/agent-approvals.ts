@@ -3,102 +3,107 @@
  *
  * None of the three agents asks the user before one of our MCP tools runs in
  * every mode (OpenCode never does, Codex only asks yes or no), so the server
- * is the gate, and this is where it waits. A card is an ordinary
- * `request.opened` / `request.closed` pair on the chat's event stream; the
- * answer arrives on `provider:respond-to-request`, which the registry routes
- * here for ids this broker minted instead of to the adapter.
+ * is the gate. A card is an ordinary `request.opened` / `request.closed` pair
+ * on the chat's event stream; the answer arrives on
+ * `provider:respond-to-request`, which the registry routes here for ids this
+ * broker minted instead of to the adapter.
  *
- * Every card closes exactly once: answered, expired, cancelled by the agent
- * (it timed out or the user stopped the turn), or its session stopped. A card
- * that closes any way but an approval never runs its write.
+ * The tool call does not wait for the answer (`shared/agent-approval-cards.ts`):
+ * the card is stored with the write it would run (`plan`) and stays open, with
+ * no time limit and across a restart, until the user answers or dismisses it,
+ * the agent withdraws it, or the user stops or archives the chat. Every card
+ * closes exactly once, and only an approval runs its write, which `onClosed`
+ * does.
  */
 import { randomBytes } from 'node:crypto'
-import type { ApprovalDecision, RuntimeEvent } from '@shared/provider-events'
-import { HOST_WRITE_APPROVAL_TTL_MS, type HostWriteCard, type HostWriteResponse } from '@shared/agent-host-writes'
+import type { ApprovalDecision, RuntimeEvent, RuntimeRequestOpenedEvent } from '@shared/provider-events'
+import type { HostWriteCard, HostWriteResponse } from '@shared/agent-host-writes'
+import {
+  AGENT_APPROVAL_ID_PREFIX,
+  ApprovalCardBook,
+  isAgentApprovalCardId,
+  closeFromAnswer,
+  memoryApprovalCardStore,
+  type ApprovalCardClose,
+  type ApprovalCardStore,
+  type StoredApprovalCard,
+} from '@shared/agent-approval-cards'
 import { HOST_WRITE_SHOWN_REQUIRED, hostWriteApprovalProblem, hostWriteShownDigest } from '@shared/host-write-phone'
+import type { PrWritePlan } from './pr-tools'
+import type { PeerSendPlan } from './peer-mcp-tools'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('mcp:approvals')
 
-const REQUEST_ID_PREFIX = 'sbmcp_'
+/** The write an approval runs, as data, so it survives a restart. */
+export type AgentWritePlan = PrWritePlan | PeerSendPlan
 
-export type AgentApprovalDenyReason = 'user' | 'expired' | 'cancelled' | 'stopped'
-
-export type AgentApprovalOutcome =
-  | { decision: 'approve'; response: HostWriteResponse }
-  | { decision: 'deny'; reason: AgentApprovalDenyReason }
+export type AgentApprovalCard = StoredApprovalCard<AgentWritePlan>
 
 export interface AgentApprovalRequest {
   threadId: string
+  /** The root conversation id. */
+  chatId: string
   toolName: string
   detail: string
   hostWrite?: HostWriteCard
-  signal?: AbortSignal
+  plan: AgentWritePlan
 }
 
 export type AgentApprovalAnswer = { ok: true } | { ok: false; message: string }
+
+export type AgentApprovalOpened = { ok: true; requestId: string } | { ok: false; message: string }
 
 export interface AgentApprovalBrokerDeps {
   publish(event: RuntimeEvent): void
   /** Whether two ids name the same chat (a rotated provider session id vs. the root). */
   sameChat?(a: string, b: string): boolean
-  ttlMs?: number
-}
-
-interface OpenCard {
-  requestId: string
-  threadId: string
-  hostWrite: HostWriteCard | null
-  settle(outcome: AgentApprovalOutcome): void
+  store?: ApprovalCardStore<AgentWritePlan>
+  /** A card closed: run the write on an approval, and tell the chat and the agent. */
+  onClosed?(card: AgentApprovalCard, close: ApprovalCardClose, response: HostWriteResponse): void
+  now?(): number
 }
 
 export class AgentApprovalBroker {
-  private open = new Map<string, OpenCard>()
-  private readonly ttlMs: number
+  private readonly book: ApprovalCardBook<AgentWritePlan>
 
   constructor(private readonly deps: AgentApprovalBrokerDeps) {
-    this.ttlMs = deps.ttlMs ?? HOST_WRITE_APPROVAL_TTL_MS
+    this.book = new ApprovalCardBook(restoreSafely(deps.store ?? memoryApprovalCardStore()))
+    const restored = this.book.all().length
+    if (restored > 0) log.info(`restored ${restored} open approval cards`)
   }
 
   static owns(requestId: unknown): boolean {
-    return typeof requestId === 'string' && requestId.startsWith(REQUEST_ID_PREFIX)
+    return isAgentApprovalCardId(requestId)
   }
 
-  ask(req: AgentApprovalRequest): Promise<AgentApprovalOutcome> {
-    if (req.signal?.aborted) return Promise.resolve({ decision: 'deny', reason: 'cancelled' })
-    const requestId = `${REQUEST_ID_PREFIX}${Date.now()}_${randomBytes(4).toString('hex')}`
-    return new Promise<AgentApprovalOutcome>((resolve) => {
-      let timer: ReturnType<typeof setTimeout> | null = null
-      const onAbort = (): void => card.settle({ decision: 'deny', reason: 'cancelled' })
-      const card: OpenCard = {
-        requestId,
-        threadId: req.threadId,
-        hostWrite: req.hostWrite ?? null,
-        settle: (outcome) => {
-          if (!this.open.delete(requestId)) return
-          if (timer) clearTimeout(timer)
-          req.signal?.removeEventListener('abort', onAbort)
-          if (outcome.decision === 'deny' && outcome.reason !== 'user') {
-            log.info(`card ${requestId} closed without an answer: ${outcome.reason}`)
-          }
-          this.deps.publish({ type: 'request.closed', threadId: req.threadId, requestId, decision: outcome.decision as ApprovalDecision })
-          resolve(outcome)
-        },
-      }
-      this.open.set(requestId, card)
-      timer = setTimeout(() => card.settle({ decision: 'deny', reason: 'expired' }), this.ttlMs)
-      timer.unref?.()
-      req.signal?.addEventListener('abort', onAbort, { once: true })
-      this.deps.publish({
-        type: 'request.opened',
-        threadId: req.threadId,
-        requestId,
-        requestType: 'tool',
-        toolName: req.toolName,
-        detail: req.detail,
-        ...(req.hostWrite ? { hostWrite: req.hostWrite } : {}),
-      })
-    })
+  /** Why the chat may not open another card (the cap), or null. Asked before the write budget is charged. */
+  openProblem(chatId: string): string | null {
+    return this.book.openProblem(chatId)
+  }
+
+  open(req: AgentApprovalRequest): AgentApprovalOpened {
+    const problem = this.book.openProblem(req.chatId)
+    if (problem) return { ok: false, message: problem }
+    const requestId = `${AGENT_APPROVAL_ID_PREFIX}${Date.now()}_${randomBytes(4).toString('hex')}`
+    const card: AgentApprovalCard = {
+      requestId,
+      chatId: req.chatId,
+      threadId: req.threadId,
+      toolName: req.toolName,
+      detail: req.detail,
+      hostWrite: req.hostWrite ?? null,
+      plan: req.plan,
+      openedAt: this.deps.now?.() ?? Date.now(),
+    }
+    this.book.add(card)
+    this.deps.publish(openedEvent(card))
+    return { ok: true, requestId }
+  }
+
+  /** The chat's open cards as their `request.opened` events, for a client recovering them. */
+  pendingEvents(chatId: string): RuntimeRequestOpenedEvent[] {
+    return this.book.forChat(chatId).map(openedEvent)
   }
 
   /**
@@ -108,7 +113,8 @@ export class AgentApprovalBroker {
    * for a device that cannot edit (a phone): its approval must carry the
    * digest of the draft it showed in full (`response.shown`), so an app that
    * showed a shortened card cannot approve it. `approver.label` names the
-   * client in the log line an approved host write leaves.
+   * client in the log line an approved host write leaves. `response.quiet`
+   * approves or denies without waking the agent.
    */
   respond(
     threadId: string,
@@ -117,7 +123,7 @@ export class AgentApprovalBroker {
     response: HostWriteResponse,
     approver: { mayApproveHostWrite: boolean; mustProveShown?: boolean; label: string },
   ): AgentApprovalAnswer {
-    const card = this.open.get(requestId)
+    const card = this.book.get(requestId)
     if (!card) return { ok: false, message: 'That request is no longer open.' }
     const same = this.deps.sameChat ?? ((a, b) => a === b)
     if (!same(card.threadId, threadId)) return { ok: false, message: 'That request belongs to another chat.' }
@@ -134,18 +140,61 @@ export class AgentApprovalBroker {
       if (problem) return { ok: false, message: problem }
       log.info(`host write ${card.hostWrite.action} on ${card.hostWrite.prLabel} approved by ${approver.label}: ${requestId}`)
     }
-    card.settle(decision === 'approve' ? { decision: 'approve', response } : { decision: 'deny', reason: 'user' })
+    this.close(requestId, closeFromAnswer(decision, response.quiet === true), response, threadId)
     return { ok: true }
   }
 
-  /** The session stopped: nothing it asked for can still happen. */
-  closeThread(threadId: string): void {
-    for (const card of [...this.open.values()]) {
-      if (card.threadId === threadId) card.settle({ decision: 'deny', reason: 'stopped' })
-    }
+  /** The agent took a card back (`withdraw_approval`). Only one of its own chat's. */
+  withdraw(chatId: string, requestId: string): AgentApprovalAnswer {
+    const card = this.book.get(requestId)
+    if (!card || card.chatId !== chatId) return { ok: false, message: `No open approval card ${requestId} in this chat.` }
+    this.close(requestId, { kind: 'withdrawn' }, {})
+    return { ok: true }
   }
 
-  closeAll(): void {
-    for (const card of [...this.open.values()]) card.settle({ decision: 'deny', reason: 'stopped' })
+  /** The user stopped or archived the chat: nothing it asked for can still happen. */
+  closeChat(chatId: string): void {
+    for (const card of this.book.forChat(chatId)) this.close(card.requestId, { kind: 'stopped' }, {})
+  }
+
+  private close(requestId: string, close: ApprovalCardClose, response: HostWriteResponse, answeredOn?: string): void {
+    const card = this.book.take(requestId)
+    if (!card) return
+    if (close.kind === 'stopped' || close.kind === 'withdrawn') log.info(`card ${requestId} closed without an answer: ${close.kind}`)
+    const decision: ApprovalDecision = close.kind === 'approve' ? 'approve' : 'deny'
+    this.deps.publish({ type: 'request.closed', threadId: card.threadId, requestId, decision })
+    // A card restored after a restart was recovered under whatever id the
+    // answering client knows the chat by, which can differ from the one it opened on.
+    if (answeredOn && answeredOn !== card.threadId) {
+      this.deps.publish({ type: 'request.closed', threadId: answeredOn, requestId, decision })
+    }
+    this.deps.onClosed?.(card, close, response)
+  }
+}
+
+/** A store that cannot be read (a damaged row, a closed database) leaves the broker empty rather than failing the backend. */
+function restoreSafely(store: ApprovalCardStore<AgentWritePlan>): ApprovalCardStore<AgentWritePlan> {
+  return {
+    ...store,
+    loadCards: () => {
+      try {
+        return store.loadCards()
+      } catch (err) {
+        log.error('could not restore open approval cards; they stay in the store until it can be read', err)
+        return []
+      }
+    },
+  }
+}
+
+function openedEvent(card: AgentApprovalCard): RuntimeRequestOpenedEvent {
+  return {
+    type: 'request.opened',
+    threadId: card.threadId,
+    requestId: card.requestId,
+    requestType: 'tool',
+    toolName: card.toolName,
+    detail: card.detail,
+    ...(card.hostWrite ? { hostWrite: card.hostWrite } : {}),
   }
 }
