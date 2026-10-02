@@ -4,13 +4,16 @@ import { useAgentStore } from '../../stores/agent-store'
 import { showDragOverlay, hideDragOverlay } from '../../services/drag-overlay'
 import { nextChatPresentation, shouldShowChatFocusIndicator, type ChatPresentation } from '../../services/chat-workspace'
 import { ChatPanel } from './ChatPanel'
+import { ChatLanding } from './ChatLanding'
 
 export function ChatWorkspacePanels({
   dataScienceMode,
   onOpenBeside,
+  ensureDraftSession,
 }: {
   dataScienceMode: boolean
   onOpenBeside: () => void
+  ensureDraftSession: (projectPath: string, machineId: string) => Promise<string>
 }) {
   const chatSplitRatio = useLayoutStore((s) => s.chatSplitRatio)
   const setChatSplitRatio = useLayoutStore((s) => s.setChatSplitRatio)
@@ -93,13 +96,17 @@ export function ChatWorkspacePanels({
           overflow: 'hidden',
         }}
       >
-        <ChatPanel
-          chatSlot="primary"
-          visible={!tabbed || focusedSlot === 'primary'}
-          showFocusIndicator={showFocusIndicator}
-          onClose={dual ? () => closeChatSlot('primary') : undefined}
-          onOpenBeside={onOpenBeside}
-        />
+        {primarySessionId === null ? (
+          <ChatLanding ensureDraftSession={ensureDraftSession} />
+        ) : (
+          <ChatPanel
+            chatSlot="primary"
+            visible={!tabbed || focusedSlot === 'primary'}
+            showFocusIndicator={showFocusIndicator}
+            onClose={dual ? () => closeChatSlot('primary') : undefined}
+            onOpenBeside={onOpenBeside}
+          />
+        )}
       </div>
       {dual && !tabbed && (
         <ChatSplitHandle

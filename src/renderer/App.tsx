@@ -51,7 +51,7 @@ import {
 import { createDesktopNewChatJournal } from './services/desktop-new-chat-journal'
 import { WorktreeCreationProgress } from './components/worktree/WorktreeCreationProgress'
 import type { WorktreeCreationRecoveryAction, WorktreeCreationSnapshot } from '@shared/worktree-creation'
-import { draftSessionId } from '@shared/new-chat-draft'
+import { draftSessionId, isDraftSessionId } from '@shared/new-chat-draft'
 import { parkFirstSend, peekFirstSend, setDraftMaterializer, takeFirstSend } from './services/draft-chat'
 import { toAgentProvider, type SessionSummary, type ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
@@ -63,6 +63,7 @@ import { nextDualChatShortcutAction, shouldEvictReplacedSession } from './servic
 import type { AgentProvider } from '@shared/types'
 import { recoverPendingRequests } from './services/pending-request-recovery'
 import { resolveGlobalKeydown } from './services/global-keybindings'
+import { LANDING_COMPOSER_ID, newChatShortcutTarget } from './services/chat-landing'
 
 const log = createRendererLogger('app')
 
@@ -309,9 +310,13 @@ export function App() {
       previousIds = key
       useLayoutStore.getState().reconcileChatSessions(ids)
       if (!useLayoutStore.getState().primarySessionId) {
-        const initial = state.activeSessionId && ids.includes(state.activeSessionId)
+        // A draft is shown only when asked for. The landing screen keeps one
+        // that is bound to no slot, and seeding it here would replace the
+        // landing screen with a bare draft.
+        const chats = ids.filter((id) => !isDraftSessionId(id))
+        const initial = state.activeSessionId && chats.includes(state.activeSessionId)
           ? state.activeSessionId
-          : ids[0]
+          : chats[0]
         if (initial) useLayoutStore.getState().selectChatSession(initial)
       }
     }
@@ -642,10 +647,10 @@ export function App() {
     },
   }), [publishAuthoritativeSession])
 
-  // "+ New Chat" and cmd+shift+O open a draft. Nothing is created until the
-  // first send, so an abandoned click leaves no conversation row and no worktree.
-  const openDraftChat = useCallback(async (projectPath: string, machineId: string = 'local') => {
-    useLayoutStore.getState().setAppView('chats')
+  // "+ New Chat", cmd+shift+O and the landing screen open a draft. Nothing is
+  // created until the first send, so an abandoned click leaves no
+  // conversation row and no worktree.
+  const ensureDraftSession = useCallback(async (projectPath: string, machineId: string = 'local'): Promise<string> => {
     const id = draftSessionId(machineId, projectPath)
     const store = useAgentStore.getState()
     if (!store.sessions.some((s) => s.id === id)) {
@@ -656,7 +661,7 @@ export function App() {
       const carry = from && !from.draft && from.type !== 'terminal' ? from : undefined
       const { runtimeMode, envMode } = await newChatDefaultsFor(projectPath, carry?.runtimeMode)
       // A second open for the same project can land during the await.
-      if (useAgentStore.getState().sessions.some((s) => s.id === id)) { selectChatSession(id); return }
+      if (useAgentStore.getState().sessions.some((s) => s.id === id)) return id
       window.api.routing.bind(id, machineId)
       store.addSession({
         id,
@@ -672,8 +677,13 @@ export function App() {
         draft: { checkout: envMode === 'worktree' ? 'worktree' : 'project', baseRef: 'HEAD' },
       })
     }
-    selectChatSession(id)
-  }, [selectChatSession])
+    return id
+  }, [])
+
+  const openDraftChat = useCallback(async (projectPath: string, machineId: string = 'local') => {
+    useLayoutStore.getState().setAppView('chats')
+    selectChatSession(await ensureDraftSession(projectPath, machineId))
+  }, [ensureDraftSession, selectChatSession])
 
   const retainCoordinator = useCallback((coordinator: DesktopNewChatCoordinator, checkout: 'project' | 'worktree') => {
     const state = coordinator.state()
@@ -1212,7 +1222,12 @@ export function App() {
           break
         case 'new-chat':
           e.preventDefault()
-          setNewChatPickerOpen(true)
+          if (newChatShortcutTarget(useLayoutStore.getState().primarySessionId) === 'landing') {
+            useLayoutStore.getState().setAppView('chats')
+            focusComposer(LANDING_COMPOSER_ID)
+          } else {
+            setNewChatPickerOpen(true)
+          }
           break
         case 'toggle-palette':
           e.preventDefault()
@@ -1490,6 +1505,7 @@ export function App() {
               <ChatWorkspacePanels
                 dataScienceMode={dataScienceMode}
                 onOpenBeside={() => setSessionPickerOpen(true)}
+                ensureDraftSession={ensureDraftSession}
               />
             </div>
             {activeTerminalPaneId && (

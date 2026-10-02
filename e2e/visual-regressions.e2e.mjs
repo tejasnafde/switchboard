@@ -493,6 +493,15 @@ async function captureThemeScreens(win, theme) {
   const turnTimes = win.locator('.turn-timestamp')
   const editor = win.locator('.chat-composer [aria-label="Chat message"]').first()
 
+  // No chat is open yet, so the primary slot shows the landing screen: the
+  // heading, the project chip (most recently used project) and the composer.
+  await win.getByTestId('chat-landing').waitFor({ state: 'visible', timeout: 20_000 })
+  // Editable once the project's draft is open behind the composer.
+  await win.locator('.chat-landing .chat-composer [contenteditable="true"]').waitFor({ state: 'visible', timeout: 20_000 })
+  // Choosing the theme leaves focus (and its ring) on the settings button.
+  await editor.click()
+  await snapScreen(win, 'landing', theme, win, [win.locator('.sidebar-root')])
+
   // A finished turn: text, an Edit tool call and the collapsed "Changed 1
   // file" group. Captured before switching threads, since reopening a thread
   // reloads it from the database.

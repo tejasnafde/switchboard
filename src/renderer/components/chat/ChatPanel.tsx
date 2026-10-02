@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { useAgentStore, adoptStartedRuntimeMode, runtimeModeToSend, type RuntimeMode } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
@@ -87,6 +87,13 @@ interface ChatPanelProps {
   /** Optional close button for the right-hand panel in dual mode. */
   onClose?: () => void
   onOpenBeside?: () => void
+  /**
+   * The landing screen: this content, centred above the composer, in place
+   * of the header and the transcript (`ChatLanding`).
+   */
+  landing?: ReactNode
+  /** Composer placeholder while there is no session. */
+  emptyPlaceholder?: string
 }
 
 function slotSessions(
@@ -98,7 +105,7 @@ function slotSessions(
   return { own: null, other: null }
 }
 
-export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFocusIndicator = false, onClose, onOpenBeside }: ChatPanelProps = {}) {
+export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFocusIndicator = false, onClose, onOpenBeside, landing, emptyPlaceholder }: ChatPanelProps = {}) {
   const [agentType, setAgentType] = useState<AgentType>('claude-code')
   const [editingTitle, setEditingTitle] = useState(false)
   const [editTitleValue, setEditTitleValue] = useState('')
@@ -1057,215 +1064,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     handleChatSearchClose,
   } = useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot })
 
-  return (
-    <div
-      ref={panelRef}
-      data-chat-panel="true"
-      data-chat-slot={chatSlot}
-      data-session-id={sessionId ?? undefined}
-      data-focused={showFocusIndicator ? isVisiblyFocused : undefined}
-      onFocusCapture={focusSlot}
-      onPointerDown={focusSlot}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        height: '100%',
-        background: 'var(--bg-primary)',
-        position: 'relative',
-        boxShadow: isVisiblyFocused
-          ? 'inset 0 0 0 1px color-mix(in srgb, var(--accent) 46%, transparent)'
-          : undefined,
-      }}
-    >
-      {searchOpen && (
-        <InPaneSearchBar
-          onQuery={handleChatSearchQuery}
-          onNext={handleChatSearchNext}
-          onPrev={handleChatSearchPrev}
-          onClose={handleChatSearchClose}
-          matches={chatSearchMatchInfo}
-          placeholder="Find in chat"
-        />
-      )}
-      {/* ── Top bar: folder / chat name ──────────────────────── */}
-      <div
-        className="chat-panel-header"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '7px 16px',
-          borderBottom: '1px solid var(--border)',
-          gap: '6px',
-          flexShrink: 0,
-          background: 'var(--bg-secondary)',
-          fontSize: '12px',
-          minHeight: '32px',
-          // The linked-PR control hides itself when the header is too narrow for it.
-          containerType: 'inline-size',
-        }}
-      >
-        {/* Plain identity breadcrumb; only consequential state receives color. */}
-        {hasSession ? (
-          <div className="chat-identity" title={projectPath}>
-            {identity.breadcrumb.slice(0, -1).map((part, index) => (
-              <span className="chat-identity-parent" key={`${part}-${index}`}>
-                {part}<span className="chat-identity-separator">/</span>
-              </span>
-            ))}
-            {editingTitle ? (
-              <input
-                ref={titleInputRef}
-                value={editTitleValue}
-                onChange={(e) => setEditTitleValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitRename()
-                  if (e.key === 'Escape') setEditingTitle(false)
-                }}
-                onBlur={commitRename}
-                style={{
-                  border: '1px solid var(--border-focus)',
-                  borderRadius: '3px',
-                  background: 'var(--bg-primary)',
-                  color: 'var(--text-primary)',
-                  fontSize: '12px',
-                  padding: '1px 6px',
-                  outline: 'none',
-                  flex: '1 1 0%',
-                  minWidth: 0,
-                }}
-              />
-            ) : (
-              <span className="chat-identity-title" title={chatTitle}>{chatTitle}</span>
-            )}
-            {!editingTitle && (
-              <button
-                onClick={startRename}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '0 2px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  opacity: 0.5,
-                  transition: 'opacity 0.12s',
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.5' }}
-                title="Rename"
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                </svg>
-              </button>
-            )}
-            {identity.branch && (
-              <span className="chat-identity-branch" title={activeSession?.worktreePath ?? identity.branch}>
-                {identity.branch}
-              </span>
-            )}
-          </div>
-        ) : (
-          <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Switchboard</span>
-        )}
-
-        <span style={{ flex: 1 }} />
-
-        {activeSession && activeSession.type !== 'terminal' && <LinkedPrControl sessionId={activeSession.id} />}
-
-        {otherSessionId && (
-          <button
-            type="button"
-            onClick={copyPromptToOtherChat}
-            disabled={!hasDraftPayload}
-            aria-label="Copy prompt to other chat"
-            title="Copy this draft and its attachments to the other chat for comparison"
-            className="chat-header-action"
-          >
-            Copy prompt → other
-          </button>
-        )}
-
-        {onOpenBeside && (
-          <button
-            type="button"
-            onClick={onOpenBeside}
-            aria-label="Open beside"
-            title="Compare or delegate with two chats side by side"
-            className="chat-header-action"
-          >
-            Open beside
-          </button>
-        )}
-
-        {/* Right-panel close button (only shown when this is the secondary
-            panel in dual-chat mode - passed via `onClose` prop) */}
-        {onClose && (
-          <button
-            onClick={onClose}
-            title="Close this panel (⌘⇧\\)"
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              padding: '2px 6px',
-              borderRadius: '3px',
-              fontSize: '14px',
-              lineHeight: 1,
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
-          >
-            ×
-          </button>
-        )}
-
-        {/* Status text */}
-        {hasSession && (
-          <span style={{ color: status === 'error' ? 'var(--error, #f85149)' : 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
-            {activeSession?.draft
-              ? status === 'running' ? 'creating…' : 'draft'
-              : status === 'running'
-                ? 'thinking…'
-                : status === 'idle' && pendingDeliveryState === 'pending'
-                  ? 'sending…'
-                  : status === 'idle' ? 'ready' : status}
-          </span>
-        )}
-      </div>
-
-      {activeSession?.forkMetadata && (
-        <ForkLineageBanner metadata={activeSession.forkMetadata} />
-      )}
-
-      {sessionId && !activeSession?.draft && <PeerLinkBanner sessionId={sessionId} />}
-
-      {offerCompaction && activeSession && (
-        <CompactionOfferBanner
-          usedTokens={activeSession.tokenUsage?.usedTokens ?? 0}
-          onCompact={() => { void handleSend('/compact') }}
-          onDismiss={() => setCompactionDismissedFor(activeSession.id)}
-        />
-      )}
-
-      {/* Messages */}
-      <MessageList
-        messages={messages}
-        sessionId={sessionId}
-        visible={visible}
-        busy={status === 'running' || status === 'thinking'}
-        agentType={activeSession?.type ?? agentType}
-        onApproval={handleApproval}
-        onAnswerQuestion={handleAnswerQuestion}
-        onPlanAction={handlePlanAction}
-        onFileDiffResolve={handleFileDiffResolve}
-      />
-
+  const composer = (
+    <>
       {/* Thinking indicator */}
       {(status === 'running' || status === 'thinking' || pendingDeliveryState === 'pending') && (
         <div style={{
@@ -1284,6 +1084,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           </span>
           <span>{pendingDeliveryState === 'pending' && status === 'idle'
             ? 'Sending…'
+            : activeSession?.draft ? 'Creating the chat…'
             : status === 'thinking' ? 'Thinking…' : 'Working…'}</span>
         </div>
       )}
@@ -1307,7 +1108,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           status === 'exited'
             ? 'Agent has exited. Start a new session.'
             : !hasSession
-              ? 'Click "+ New Chat" or select a session to start...'
+              ? emptyPlaceholder ?? 'Click "+ New Chat" or select a session to start...'
               : status === 'running' || status === 'thinking'
                 ? runningPlaceholder(activeSession?.type, followUpDefault)
                 : 'Message the agent...'
@@ -1378,6 +1179,230 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         onShowSlashHelp={() => setSlashHelpOpen(true)}
       />
 
+    </>
+  )
+
+  return (
+    <div
+      ref={panelRef}
+      data-chat-panel="true"
+      data-chat-slot={chatSlot}
+      data-session-id={sessionId ?? undefined}
+      data-focused={showFocusIndicator ? isVisiblyFocused : undefined}
+      onFocusCapture={focusSlot}
+      onPointerDown={focusSlot}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        height: '100%',
+        background: 'var(--bg-primary)',
+        position: 'relative',
+        boxShadow: isVisiblyFocused
+          ? 'inset 0 0 0 1px color-mix(in srgb, var(--accent) 46%, transparent)'
+          : undefined,
+      }}
+    >
+      {searchOpen && (
+        <InPaneSearchBar
+          onQuery={handleChatSearchQuery}
+          onNext={handleChatSearchNext}
+          onPrev={handleChatSearchPrev}
+          onClose={handleChatSearchClose}
+          matches={chatSearchMatchInfo}
+          placeholder="Find in chat"
+        />
+      )}
+      {landing ? (
+        <div className="chat-landing">
+          <div className="chat-landing-column">
+            {landing}
+            {composer}
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* ── Top bar: folder / chat name ──────────────────────── */}
+          <div
+            className="chat-panel-header"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '7px 16px',
+              borderBottom: '1px solid var(--border)',
+              gap: '6px',
+              flexShrink: 0,
+              background: 'var(--bg-secondary)',
+              fontSize: '12px',
+              minHeight: '32px',
+              // The linked-PR control hides itself when the header is too narrow for it.
+              containerType: 'inline-size',
+            }}
+          >
+            {/* Plain identity breadcrumb; only consequential state receives color. */}
+            {hasSession ? (
+              <div className="chat-identity" title={projectPath}>
+                {identity.breadcrumb.slice(0, -1).map((part, index) => (
+                  <span className="chat-identity-parent" key={`${part}-${index}`}>
+                    {part}<span className="chat-identity-separator">/</span>
+                  </span>
+                ))}
+                {editingTitle ? (
+                  <input
+                    ref={titleInputRef}
+                    value={editTitleValue}
+                    onChange={(e) => setEditTitleValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename()
+                      if (e.key === 'Escape') setEditingTitle(false)
+                    }}
+                    onBlur={commitRename}
+                    style={{
+                      border: '1px solid var(--border-focus)',
+                      borderRadius: '3px',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                      padding: '1px 6px',
+                      outline: 'none',
+                      flex: '1 1 0%',
+                      minWidth: 0,
+                    }}
+                  />
+                ) : (
+                  <span className="chat-identity-title" title={chatTitle}>{chatTitle}</span>
+                )}
+                {!editingTitle && (
+                  <button
+                    onClick={startRename}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: '0 2px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      opacity: 0.5,
+                      transition: 'opacity 0.12s',
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.5' }}
+                    title="Rename"
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                    </svg>
+                  </button>
+                )}
+                {identity.branch && (
+                  <span className="chat-identity-branch" title={activeSession?.worktreePath ?? identity.branch}>
+                    {identity.branch}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Switchboard</span>
+            )}
+
+            <span style={{ flex: 1 }} />
+
+            {activeSession && activeSession.type !== 'terminal' && <LinkedPrControl sessionId={activeSession.id} />}
+
+            {otherSessionId && (
+              <button
+                type="button"
+                onClick={copyPromptToOtherChat}
+                disabled={!hasDraftPayload}
+                aria-label="Copy prompt to other chat"
+                title="Copy this draft and its attachments to the other chat for comparison"
+                className="chat-header-action"
+              >
+                Copy prompt → other
+              </button>
+            )}
+
+            {onOpenBeside && (
+              <button
+                type="button"
+                onClick={onOpenBeside}
+                aria-label="Open beside"
+                title="Compare or delegate with two chats side by side"
+                className="chat-header-action"
+              >
+                Open beside
+              </button>
+            )}
+
+            {/* Right-panel close button (only shown when this is the secondary
+                panel in dual-chat mode - passed via `onClose` prop) */}
+            {onClose && (
+              <button
+                onClick={onClose}
+                title="Close this panel (⌘⇧\\)"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px 6px',
+                  borderRadius: '3px',
+                  fontSize: '14px',
+                  lineHeight: 1,
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+              >
+                ×
+              </button>
+            )}
+
+            {/* Status text */}
+            {hasSession && (
+              <span style={{ color: status === 'error' ? 'var(--error, #f85149)' : 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
+                {activeSession?.draft
+                  ? status === 'running' ? 'creating…' : 'draft'
+                  : status === 'running'
+                    ? 'thinking…'
+                    : status === 'idle' && pendingDeliveryState === 'pending'
+                      ? 'sending…'
+                      : status === 'idle' ? 'ready' : status}
+              </span>
+            )}
+          </div>
+
+          {activeSession?.forkMetadata && (
+            <ForkLineageBanner metadata={activeSession.forkMetadata} />
+          )}
+
+          {sessionId && !activeSession?.draft && <PeerLinkBanner sessionId={sessionId} />}
+
+          {offerCompaction && activeSession && (
+            <CompactionOfferBanner
+              usedTokens={activeSession.tokenUsage?.usedTokens ?? 0}
+              onCompact={() => { void handleSend('/compact') }}
+              onDismiss={() => setCompactionDismissedFor(activeSession.id)}
+            />
+          )}
+
+          {/* Messages */}
+          <MessageList
+            messages={messages}
+            sessionId={sessionId}
+            visible={visible}
+            busy={status === 'running' || status === 'thinking'}
+            agentType={activeSession?.type ?? agentType}
+            onApproval={handleApproval}
+            onAnswerQuestion={handleAnswerQuestion}
+            onPlanAction={handlePlanAction}
+            onFileDiffResolve={handleFileDiffResolve}
+          />
+
+          {composer}
+        </>
+      )}
       {slashHelpOpen && (
         <SlashHelpOverlay onClose={() => setSlashHelpOpen(false)} />
       )}

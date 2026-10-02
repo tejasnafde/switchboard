@@ -289,6 +289,8 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     // The new project would otherwise land inside the folded This Mac row.
     const layout = useLayoutStore.getState()
     if (!layout.sidebarLocalTreeExpanded) layout.toggleSidebarLocalTree()
+    // The landing screen lists projects too.
+    window.dispatchEvent(new CustomEvent('sidebar-refresh'))
   }, [])
 
   const handleScan = useCallback(async (projectPath: string) => {
