@@ -23,6 +23,7 @@ import type {
 } from '../types'
 import { decidePermission, denialMessage } from '../policy'
 import { parseCodexTodoItems, parseCodexTodoMarkdown } from './codex-todo'
+import { markAgentSpawnEnv } from '../agent-spawn-env'
 import { applyEnvOverlay } from '../env-overlay'
 import {
   createExecutableCache,
@@ -681,9 +682,11 @@ export class CodexAdapter implements ProviderAdapter {
     // letting each instance be `codex login`'d under a separate account, and
     // at the canonical ~/.codex otherwise - shared with the Test/usage probes
     // via applyCodexHome so no path can resolve a different account.
-    const codexEnv = buildCodexCliEnv()
-    applyEnvOverlay(codexEnv, opts.resolvedEnv)
-    applyCodexHome(codexEnv, opts.resolvedOauthDir)
+    const baseEnv = buildCodexCliEnv()
+    applyEnvOverlay(baseEnv, opts.resolvedEnv)
+    applyCodexHome(baseEnv, opts.resolvedOauthDir)
+    // Marked last, like Claude's, so an instance overlay cannot unset it.
+    const codexEnv = markAgentSpawnEnv(baseEnv)
 
     // Spawn codex app-server. One per chat, so the Switchboard MCP server's
     // per-chat token can ride config overrides; the user's own servers in

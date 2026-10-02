@@ -2,12 +2,17 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "e2e-background-windows",
-  "summary": "With SB_E2E_BACKGROUND=1, macOS e2e runs open the app as an accessory app with an inactive window so tests never take focus. Background windows are also fully transparent and click-through, so they never cover the screen on a one-display machine.",
+  "summary": "With SB_E2E_BACKGROUND=1, or by default when an agent launched the app (CLAUDECODE=1 from Claude Code, or SWITCHBOARD_AGENT=1, which Switchboard sets on every agent it starts), macOS runs open the app as an accessory app with an invisible, click-through, inactive window, so they never take focus or cover the screen. SB_E2E_BACKGROUND=0 forces the foreground.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/main/index.ts"
+        "src/main/index.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/provider/agent-spawn-env.ts",
+        "tests/unit/agent-spawn-env.test.ts"
       ]
     },
     "reactNativeIos": {
@@ -41,7 +46,8 @@
       "Frontmost app sampled every 2 s during both runs on a Mac in use; the test app never came to the front."
     ],
     "notExercised": [
-      "The visual behaviour phase, which must run without the variable."
+      "The visual behaviour phase, which sets SB_E2E_BACKGROUND=0 for its own launches; not run here.",
+      "An agent-launched npm run dev from a Codex or OpenCode chat has not been watched live; the env marker is covered by unit tests."
     ]
   }
 }
