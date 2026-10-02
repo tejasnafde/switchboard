@@ -1,0 +1,48 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.14",
+  "summary": "Native Android release 0.5.14 (versionCode 16): adds assets/adi-registration.properties, the Android developer verification token, so a signed release APK proves that the GlycoCare developer account owns app.switchboard.mobile and its signing key.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android-only asset and version bump; no desktop code changes."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client ships over its own OTA lane; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        "apps/android/app/src/main/assets/adi-registration.properties"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API or wire change."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "mobile-release.yml runs the Android unit and lint gate and verifies package, signer fingerprint and checksum, and a version higher than the newest published APK when one exists (the monotonic check is skipped when no earlier APK asset is found), before it publishes."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Installing the update on a physical device through the in-app updater.",
+      "The verification API accepting the APK; that runs after the release publishes."
+    ]
+  }
+}
