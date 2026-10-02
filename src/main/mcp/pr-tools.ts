@@ -34,10 +34,14 @@ import {
   draftProblem,
   isUncertainCreateFailure,
   PR_DESCRIPTION_MAX_CHARS,
+  repoArgCandidates,
+  repoPathRepositoryProblem,
   repositoryProblem,
   type CreatedPr,
+  type CreatePrArgs,
   type OpenedPr,
 } from '@shared/agent-pr-create'
+import { coveredRepos, describeChildRepos, findChildRepo, projectCoversRepo, type ProjectRepos } from '@shared/project-repos'
 import {
   AGENT_PR_MAX_REVIEWERS,
   keptReviewers,
@@ -68,7 +72,6 @@ import {
   HOST_CAPABILITIES,
   PR_HOST_LABEL,
   prKey,
-  repoKey,
   type PrChangedFile,
   type PrConversation,
   type PrDetail,
@@ -83,6 +86,7 @@ import type { AgentApprovalBroker } from './agent-approvals'
 import type { AgentWriteBudget } from './agent-write-budget'
 import { toolText, type McpTool, type McpToolResult } from './mcp-session'
 import { diffPage } from './pr-diff-page'
+import type { RepoDir } from '../pull-requests/project-repos'
 
 const log = createMainLogger('mcp:pr-tools')
 
@@ -95,6 +99,15 @@ export const PR_DIFF_TOOL = 'get_pr_diff'
 export const PR_COMMENT_TOOL = 'comment_on_line'
 export const PR_REVIEW_TOOL = 'draft_review'
 export const PR_CREATE_TOOL = 'create_pull_request'
+
+/** Where `create_pull_request` opens: the repository, and the work tree whose branch is the source. */
+interface CreateTarget {
+  projectPath: string
+  repo: RepoRef
+  cwd: string
+  /** The child work tree relative to the project folder, shown in the card; null for the project's own checkout. */
+  localPath: string | null
+}
 
 export type RemoteBranchCheck = { ok: true; found: boolean; remote: string } | { ok: false; message: string }
 
@@ -113,8 +126,12 @@ export interface AgentPullRequestAccess {
 
   /** The chat's project path (root conversation), or null when it has no Switchboard record. */
   chatProject(chatId: string): string | null
-  /** The repository a project's git remotes point at. */
-  repoFor(projectPath: string): Promise<RepoRef | null>
+  /** The repository a directory's git remotes point at. */
+  repoFor(dir: string): Promise<RepoRef | null>
+  /** The repositories a project covers (`shared/project-repos.ts`). */
+  projectRepos(projectPath: string): Promise<ProjectRepos>
+  /** `repoPath` as the real path of a git work tree inside the project folder (`pull-requests/project-repos.ts`). */
+  resolveRepoDir(projectPath: string, repoPath: string): Promise<RepoDir>
   /** The branch checked out in `cwd`, or null. */
   currentBranch(cwd: string): Promise<string | null>
   /** Whether `branch` is on the checkout's remote for `repo` (git ls-remote). */
@@ -661,13 +678,53 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     },
   }
 
-  /** The chat's repository, from its project's remotes, or why there is none. */
-  const chatRepo = async (access: AgentPullRequestAccess): Promise<{ projectPath: string; repo: RepoRef } | McpToolResult> => {
+  /**
+   * The repository to open on and the work tree whose branch is the source:
+   * `repoPath` when given, else the project's own repository and the chat's
+   * checkout, else the one child repository of a parent folder that
+   * `repository` names. Every path ends at a repository the project covers.
+   */
+  const createTarget = async (access: AgentPullRequestAccess, input: CreatePrArgs): Promise<CreateTarget | McpToolResult> => {
     const projectPath = access.chatProject(ctx.chatId)
     if (!projectPath) return toolText('This chat has no Switchboard project record, so there is no repository to open a pull request on.', true)
-    const repo = await access.repoFor(projectPath)
-    if (!repo) return toolText(`The git remotes of ${projectPath} point at neither GitHub nor Bitbucket, so Switchboard cannot open a pull request for it.`, true)
-    return { projectPath, repo }
+    const project = await access.projectRepos(projectPath)
+    if (input.repoPath) {
+      const dir = await access.resolveRepoDir(projectPath, input.repoPath)
+      if (!dir.ok) return toolText(`${dir.message} Nothing was created.`, true)
+      const repo = await access.repoFor(dir.dir)
+      if (!repo) return toolText(`The git remotes of ${dir.relPath} (under ${projectPath}) point at neither GitHub nor Bitbucket, so Switchboard cannot open a pull request for it. Nothing was created.`, true)
+      const refused = repoPathRepositoryProblem(input.repository, repo, dir.relPath)
+      if (refused) return toolText(refused, true)
+      if (!projectCoversRepo(project, repo)) {
+        const covered = coveredRepos(project).map((r) => `${r.owner}/${r.name}`).join(', ')
+        return toolText(
+          `${dir.relPath} points at ${repo.owner}/${repo.name}, which is not a repository this chat's project covers` +
+          `${covered ? ` (it covers ${covered})` : ''}. A repository nested inside the project's own one does not count. Nothing was created.`, true)
+      }
+      return { projectPath, repo, cwd: dir.dir, localPath: dir.relPath === '.' ? null : dir.relPath }
+    }
+    if (project.own) {
+      const refused = repositoryProblem(input.repository, project.own)
+      if (refused) return toolText(refused, true)
+      return { projectPath, repo: project.own, cwd: ctx.cwd() ?? projectPath, localPath: null }
+    }
+    if (project.children.length === 0) {
+      return toolText(
+        `The git remotes of ${projectPath} point at neither GitHub nor Bitbucket, and no GitHub or Bitbucket repository was found up to two folders below it, ` +
+        'so Switchboard cannot open a pull request for it.', true)
+    }
+    const listed = describeChildRepos(project.children)
+    if (!input.repository) {
+      return toolText(`${projectPath} is not a repository itself; it holds ${listed}. Call again with "repoPath" naming the one the change is in. Nothing was created.`, true)
+    }
+    const match = findChildRepo(project, repoArgCandidates(input.repository))
+    if (match.kind === 'none') {
+      return toolText(`No repository under ${projectPath} has its remote at "${input.repository}". It holds ${listed}. Nothing was created.`, true)
+    }
+    if (match.kind === 'many') {
+      return toolText(`Several checkouts under ${projectPath} point at "${input.repository}": ${describeChildRepos(match.matches)}. Call again with "repoPath" naming one. Nothing was created.`, true)
+    }
+    return { projectPath, repo: match.child.repo, cwd: match.child.path, localPath: match.child.relPath }
   }
 
   const createTool: McpTool = {
@@ -678,6 +735,9 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       'it is the path that is set up with write access, and the pull request is linked to this chat so it shows in Reviews.',
       'Commit and push the branch first (git push -u <remote> <branch>); the source branch must already be on the remote.',
       'sourceBranch defaults to the branch checked out in this chat, targetBranch to the repository\'s default branch.',
+      'When the project folder holds several repositories (it is not one itself), pass "repoPath": the repository the change is in,',
+      'relative to the project folder or absolute; its git remote is the repository and its checked-out branch the default sourceBranch.',
+      '"repository" alone also works there when exactly one repository under the folder has that remote.',
       'If a pull request is already open for the source branch, nothing is created: that one is linked to this chat and returned.',
       'The user sees the title, description and reviewers in a Switchboard approval card, can edit them, and decides whether it is opened (in full access it opens without a card).',
       'It is opened as the user, the description ending with a "via Switchboard" line. "draft" is GitHub only. Refused in plan mode.',
@@ -694,7 +754,11 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         sourceBranch: { type: 'string', description: 'The branch to merge from, already pushed. Default: the branch checked out in this chat.' },
         targetBranch: { type: 'string', description: 'The branch to merge into. Default: the repository\'s default branch.' },
         draft: { type: 'boolean', description: 'Open it as a draft. GitHub only; refused on Bitbucket.' },
-        repository: { type: 'string', description: 'Optional: "owner/name" or its URL. Must be the repository of this chat\'s project; any other is refused.' },
+        repository: { type: 'string', description: 'Optional: "owner/name" or its URL. Must be a repository of this chat\'s project (with repoPath, that path\'s remote); any other is refused.' },
+        repoPath: {
+          type: 'string',
+          description: 'Optional: a git repository inside this chat\'s project folder, relative to it or absolute, for a project folder that holds several repositories. Anything outside the folder is refused.',
+        },
         reviewers: {
           type: 'array',
           items: { type: 'string' },
@@ -713,14 +777,13 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if (!input.ok) return toolText(`${input.message} Nothing was created.`, true)
       const gated = refusePlan(PR_CREATE_TOOL)
       if (gated) return gated
-      const chat = await chatRepo(access)
+      const chat = await createTarget(access, input.value)
       if ('content' in chat) return chat
-      const { repo } = chat
+      const { repo, cwd } = chat
       const repoLabel = `${repo.owner}/${repo.name}`
-      const refused = repositoryProblem(input.value.repository, repo) ?? draftProblem(repo.host, input.value.draft)
+      const refused = draftProblem(repo.host, input.value.draft)
       if (refused) return toolText(refused, true)
 
-      const cwd = ctx.cwd() ?? chat.projectPath
       const source = input.value.sourceBranch ?? await access.currentBranch(cwd)
       if (!source) return toolText(`No branch is checked out in ${cwd} (a detached HEAD?). Pass "sourceBranch". Nothing was created.`, true)
       let target = input.value.targetBranch
@@ -776,7 +839,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         location: null,
         quote: null,
         create: {
-          repoLabel, sourceBranch: source, targetBranch: target, title: plan.title, description: plan.description,
+          repoLabel, ...(chat.localPath ? { localPath: chat.localPath } : {}), sourceBranch: source, targetBranch: target, title: plan.title, description: plan.description,
           draft: input.value.draft, ...(reviewers.length > 0 ? { reviewers } : {}),
         },
         maxChars: PR_DESCRIPTION_MAX_CHARS,
@@ -951,10 +1014,9 @@ async function runCreate(
   const repoLabel = `${repo.owner}/${repo.name}`
   const gated = refusePlanFor(ctx, PR_CREATE_TOOL)
   if (gated) return gated
-  // The link rule again: the project must still point at the repository the card named.
-  const now = await access.repoFor(plan.projectPath)
-  if (!now || repoKey(now) !== repoKey(repo)) {
-    return toolText(`This chat's project no longer points at ${repoLabel}. Nothing was created.`, true)
+  // The link rule again: the project must still cover the repository the card named.
+  if (!projectCoversRepo(await access.projectRepos(plan.projectPath), repo)) {
+    return toolText(`This chat's project no longer covers ${repoLabel}. Nothing was created.`, true)
   }
 
   const title = response.title === undefined ? { ok: true as const, value: plan.title } : checkPrTitle(response.title)

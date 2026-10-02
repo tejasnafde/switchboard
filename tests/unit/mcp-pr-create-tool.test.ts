@@ -15,6 +15,8 @@ import { toolText, type McpToolResult } from '../../src/main/mcp/mcp-session'
 import { declinedResultText } from '../../src/shared/agent-approval-cards'
 import type { HostWriteResponse } from '../../src/shared/agent-host-writes'
 import type { CreatedPr, OpenedPr } from '../../src/shared/agent-pr-create'
+import { projectReposFrom, type ChildRepo } from '../../src/shared/project-repos'
+import type { RepoDir } from '../../src/main/pull-requests/project-repos'
 import type { ReviewerViewer } from '../../src/shared/agent-pr-reviewers'
 import type { PrError, PrRef, PrResult, PrReviewerCandidate, RepoRef } from '../../src/shared/pull-requests'
 import type { RuntimeEvent, RuntimeMode } from '../../src/shared/provider-events'
@@ -39,6 +41,12 @@ interface Options {
   answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => { decision: 'approve'; response: HostWriteResponse } | { decision: 'deny' } | null
   budget?: AgentWriteBudget
   cwd?: string | null
+  /** Work trees under the project folder, covered only when `repo` is null. */
+  children?: ChildRepo[]
+  /** What `resolveRepoDir` answers per repoPath; any other is refused as outside the folder. */
+  repoDirs?: Record<string, RepoDir>
+  /** The remote of a directory other than the project folder. */
+  dirRepos?: Record<string, RepoRef | null>
 }
 
 function setup(opts: Options = {}) {
@@ -48,10 +56,13 @@ function setup(opts: Options = {}) {
   let open = opts.open ?? null
   const repo = opts.repo === undefined ? APP : opts.repo
   const url = (n: number) => `https://github.com/acme/app/pull/${n}`
-  const access = {
+  const access: AgentPullRequestAccess = {
     linkedPrs: vi.fn(() => []),
     chatProject: vi.fn((chatId: string) => (chatId === 'root-1' ? '/p' : null)),
-    repoFor: vi.fn(async () => repo),
+    repoFor: vi.fn(async (dir: string) => (opts.dirRepos && dir in opts.dirRepos ? opts.dirRepos[dir] : repo)),
+    projectRepos: vi.fn(async (projectPath: string) => projectReposFrom(await access.repoFor(projectPath), opts.children ?? [])),
+    resolveRepoDir: vi.fn(async (_projectPath: string, repoPath: string): Promise<RepoDir> =>
+      opts.repoDirs?.[repoPath] ?? { ok: false, message: `repoPath "${repoPath}" is outside this chat's project folder /p; only a repository inside it can be used.` }),
     currentBranch: vi.fn(async () => (opts.branch === undefined ? 'feat/x' : opts.branch)),
     remoteHasBranch: vi.fn(async (): Promise<RemoteBranchCheck> => opts.pushed ?? { ok: true, found: true, remote: 'origin' }),
     defaultBranch: vi.fn(async () => opts.defaultBranch ?? { ok: true as const, data: 'main' }),
@@ -119,7 +130,8 @@ describe('create_pull_request: what the agent is told', () => {
     expect(tool.description).toMatch(/instead of gh pr create, bbpr/)
     expect(tool.description).toMatch(/push the branch first/i)
     expect(tool.inputSchema.required).toEqual(['title'])
-    expect(Object.keys(tool.inputSchema.properties as object).sort()).toEqual(['description', 'draft', 'repository', 'reviewers', 'sourceBranch', 'targetBranch', 'title'])
+    expect(Object.keys(tool.inputSchema.properties as object).sort()).toEqual(['description', 'draft', 'repoPath', 'repository', 'reviewers', 'sourceBranch', 'targetBranch', 'title'])
+    expect(tool.description).toMatch(/several repositories.*"repoPath"/)
     expect(tool.description).toMatch(/"reviewers": up to 10 logins, display names or emails/)
   })
 })
@@ -355,7 +367,7 @@ describe('create_pull_request: modes and the budget', () => {
     })
     const result = await s.call({ title: 'T' })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('no longer points at acme/app')
+    expect(text(result)).toContain('no longer covers acme/app')
     expect(s.creates).toEqual([])
   })
 
@@ -518,5 +530,84 @@ describe('create_pull_request: reviewers', () => {
     const s = setup({ open: { number: 7, url: 'u7' } })
     const result = await s.call({ title: 'T', reviewers: ['jdoe'] })
     expect(text(result)).toContain('Its reviewers were not changed')
+  })
+})
+
+describe('create_pull_request: a project folder that holds several repositories', () => {
+  const CORE: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'geoiq-ssg-core-v1' }
+  const STUDIO: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'geoiq-ssg-studio-v1' }
+  const children: ChildRepo[] = [
+    { path: '/p/core', relPath: 'core', repo: CORE },
+    { path: '/p/apps/studio', relPath: 'apps/studio', repo: STUDIO },
+  ]
+  const parent = (extra: Options = {}) => setup({
+    repo: null, children, answer: approve(),
+    repoDirs: { core: { ok: true, dir: '/p/core', relPath: 'core' }, '/p/apps/studio': { ok: true, dir: '/p/apps/studio', relPath: 'apps/studio' } },
+    dirRepos: { '/p/core': CORE, '/p/apps/studio': STUDIO },
+    ...extra,
+  })
+
+  it('opens from repoPath: its remote is the repository, its branch the source, and the card names the path', async () => {
+    const s = parent({ answer: undefined })
+    const queued = await s.tool.call({ title: 'T', repoPath: 'core' }, { signal: new AbortController().signal })
+    expect(queued.isError).toBeFalsy()
+    expect(s.access.currentBranch).toHaveBeenCalledWith('/p/core')
+    expect(s.access.remoteHasBranch).toHaveBeenCalledWith('/p/core', CORE, 'feat/x')
+    const card = opened(s.events)[0]
+    expect(card.hostWrite).toMatchObject({ target: { repository: 'geoiq/geoiq-ssg-core-v1', number: null }, create: { repoLabel: 'geoiq/geoiq-ssg-core-v1', localPath: 'core' } })
+    expect(card.detail).toContain('From the local repository core')
+  })
+
+  it('links what it opened to the chat', async () => {
+    const s = parent()
+    const result = await s.call({ title: 'T', repoPath: '/p/apps/studio' })
+    expect(result.isError).toBeFalsy()
+    expect(s.access.createPullRequest).toHaveBeenCalledWith(STUDIO, expect.anything())
+    expect(s.links).toEqual([{ chatId: 'root-1', ref: { ...STUDIO, number: 42 }, created: true }])
+  })
+
+  it('refuses a repoPath outside the folder, one with no supported remote, and a repository that is not its remote', async () => {
+    const outside = await parent().call({ title: 'T', repoPath: '../elsewhere' })
+    expect(text(outside)).toContain('outside this chat\'s project folder')
+
+    const noRemote = parent({ dirRepos: { '/p/core': null } })
+    expect(text(await noRemote.call({ title: 'T', repoPath: 'core' }))).toContain('The git remotes of core (under /p) point at neither GitHub nor Bitbucket')
+
+    const mismatch = parent()
+    const result = await mismatch.call({ title: 'T', repoPath: 'core', repository: 'geoiq/geoiq-ssg-studio-v1' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('The git remote of core points at geoiq/geoiq-ssg-core-v1, not "geoiq/geoiq-ssg-studio-v1"')
+    expect(opened(mismatch.events)).toEqual([])
+    expect(mismatch.creates).toEqual([])
+  })
+
+  it('refuses a repository nested inside a project that is a repository itself', async () => {
+    const s = setup({ repoDirs: { vendor: { ok: true, dir: '/p/vendor', relPath: 'vendor' } }, dirRepos: { '/p/vendor': CORE } })
+    const result = await s.call({ title: 'T', repoPath: 'vendor' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('not a repository this chat\'s project covers (it covers acme/app)')
+  })
+
+  it('finds the one child repository whose remote "repository" names', async () => {
+    const s = parent()
+    const result = await s.call({ title: 'T', repository: 'https://bitbucket.org/geoiq/geoiq-ssg-studio-v1' })
+    expect(result.isError).toBeFalsy()
+    expect(s.access.currentBranch).toHaveBeenCalledWith('/p/apps/studio')
+    expect(s.access.createPullRequest).toHaveBeenCalledWith(STUDIO, expect.anything())
+  })
+
+  it('refuses no match, several checkouts, or no repository named, listing the candidates', async () => {
+    const none = await parent().call({ title: 'T', repository: 'geoiq/ssg-bot-v2' })
+    expect(text(none)).toContain('No repository under /p has its remote at "geoiq/ssg-bot-v2". It holds geoiq/geoiq-ssg-core-v1 (core), geoiq/geoiq-ssg-studio-v1 (apps/studio)')
+
+    const twice = parent({ children: [...children, { path: '/p/core-copy', relPath: 'core-copy', repo: CORE }] })
+    expect(text(await twice.call({ title: 'T', repository: 'geoiq/geoiq-ssg-core-v1' }))).toContain('Several checkouts under /p point at "geoiq/geoiq-ssg-core-v1": geoiq/geoiq-ssg-core-v1 (core), geoiq/geoiq-ssg-core-v1 (core-copy)')
+
+    const unnamed = await parent().call({ title: 'T' })
+    expect(unnamed.isError).toBe(true)
+    expect(text(unnamed)).toContain('/p is not a repository itself; it holds geoiq/geoiq-ssg-core-v1 (core)')
+
+    const empty = await parent({ children: [] }).call({ title: 'T', repository: 'geoiq/x' })
+    expect(text(empty)).toContain('no GitHub or Bitbucket repository was found up to two folders below it')
   })
 })
