@@ -1,0 +1,35 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "steer-turn-count",
+  "summary": "A message steered into a running Claude turn no longer counts as a turn of its own, so the chat stops looking busy for good and a profile switch is no longer refused after steering.",
+  "surfaces": {
+    "desktop": { "status": "not_applicable", "reason": "No renderer change; the existing busy refusal simply stops firing after a finished turn." },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The phone asks the backend to switch; the count lives in the backend." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "Same as React Native: the count lives in the backend." },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/turn-delivery.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/turn-delivery.test.ts",
+        "tests/unit/provider-registry-queued-turns.test.ts",
+        "tests/unit/provider-switch-ws.test.ts"
+      ]
+    },
+    "storageDataMigration": { "status": "not_applicable", "reason": "In-memory count only; nothing stored changes." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release; no wire change." }
+  },
+  "verification": {
+    "automated": [
+      "Unit and WebSocket-boundary tests: three Claude prompts settled by one turn.completed leave the chat switchable; a promoted Claude message releases its count; a tool.started after the result (a late steer run as its own turn) keeps the chat busy until its turn.completed. The first three fail without the fix."
+    ],
+    "hardware": [
+      "Diagnosed from the packaged app log on 2026-10-02: chat 71c92391 had six submitUserTurn entries between 08:47 and 08:52 UTC and one turn.completed at 09:09, then every profile switch was refused as busy until an agent switch restarted the session."
+    ],
+    "notExercised": [
+      "A live profile switch after steering has not been clicked in a packaged build yet.",
+      "A late steer whose own turn uses no tool and only writes text is not re-marked busy, so a switch in that window is not refused by the count; the session status check still applies."
+    ]
+  }
+}

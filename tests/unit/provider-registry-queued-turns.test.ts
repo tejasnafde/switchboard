@@ -180,12 +180,12 @@ describe('ProviderRegistry queued messages', () => {
     expect(t.outstanding()).toBe(0)
   })
 
-  it('keeps the count of a promoted Claude message, whose steer is a turn of its own', async () => {
+  it('releases the count of a promoted Claude message, whose steer joins the running turn', async () => {
     const t = await setup('claude')
     await t.submit('a')
     await t.submit('b', 'queue')
     expect(await t.promote('remote_b')).toMatchObject({ ok: true })
-    expect(t.outstanding()).toBe(2)
+    expect(t.outstanding()).toBe(1)
     expect(deleted).toEqual([])
   })
 

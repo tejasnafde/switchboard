@@ -357,8 +357,9 @@ export class ProviderRegistry implements PeerToolHost {
   private turnDepth = new Map<string, number>()
 
   /** Accepted turns not yet matched by a turn.completed event. This is a
-   * count, not a boolean: Claude accepts a second prompt into its queue before
-   * the first completes, and a profile switch must wait for both. */
+   * count, not a boolean: a queued message is its own turn after the running
+   * one, and a profile switch must wait for both. A steer joins the running
+   * turn and is not counted (`startsOwnProviderTurn`). */
   private outstandingTurns = new Map<string, number>()
 
   private hasOutstandingTurn(threadId: string): boolean {
@@ -1352,6 +1353,12 @@ export class ProviderRegistry implements PeerToolHost {
     }
     this.bufferAssistantText(event)
     this.bufferToolCall(event)
+    // A steer is not counted, but one that lands after the turn's last tool
+    // step runs as a turn of its own. Its tool calls mark the chat busy again
+    // until that turn's own turn.completed. Only tool.started: it happens
+    // inside a turn and nowhere else, unlike content, which also carries
+    // notices sent while the chat is idle.
+    if (event.type === 'tool.started' && !this.hasOutstandingTurn(event.threadId)) this.beginOutstandingTurn(event.threadId)
     if (event.type === 'turn.completed') this.finishOutstandingTurn(event.threadId)
     this.bus.publish(event)
     if (event.type === 'turn.dequeued') {
