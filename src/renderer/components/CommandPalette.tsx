@@ -19,7 +19,8 @@ interface CommandPaletteProps {
   onOpenSessionPicker?: () => void
   onOpenQuickPrompt?: () => void
   onContextBridge?: () => void
-  onNewChat?: (projectPath: string) => void
+  /** Go to the landing screen, where a new chat is written. */
+  onNewChat?: () => void
 }
 
 /**
@@ -59,6 +60,7 @@ function buildCommands(opts: {
   onOpenSessionPicker?: () => void
   onOpenQuickPrompt?: () => void
   onContextBridge?: () => void
+  onNewChat?: () => void
 }): Cmd[] {
   const { onClose, onOpenSettings, onOpenSearch, onOpenSessionPicker } = opts
 
@@ -98,6 +100,9 @@ function buildCommands(opts: {
       run: () => { opts.onContextBridge?.(); onClose() } },
 
     // ── Chat ─────────────────────────────────────────────────────
+    { id: 'chat.new', group: 'Chat', label: 'New chat', shortcut: shortcutLabel('chat.new'),
+      available: () => !!opts.onNewChat,
+      run: () => { opts.onNewChat?.(); onClose() } },
     { id: 'chat.interrupt', group: 'Chat', label: 'Stop current turn', shortcut: shortcutLabel('chat.interrupt'),
       available: () => {
         const sid = commandTargetSessionId(layout())
@@ -168,14 +173,15 @@ export function CommandPalette({
   onOpenSessionPicker,
   onOpenQuickPrompt,
   onContextBridge,
+  onNewChat,
 }: CommandPaletteProps) {
   const { setTheme } = useThemeStore()
   const sessions = useAgentStore((s) => s.sessions)
   const selectChatSession = useLayoutStore((s) => s.selectChatSession)
 
   const commands = useMemo(
-    () => buildCommands({ onClose, onOpenSettings, onOpenSearch, onOpenSessionPicker, onOpenQuickPrompt, onContextBridge }),
-    [onClose, onOpenSettings, onOpenSearch, onOpenSessionPicker, onOpenQuickPrompt, onContextBridge],
+    () => buildCommands({ onClose, onOpenSettings, onOpenSearch, onOpenSessionPicker, onOpenQuickPrompt, onContextBridge, onNewChat }),
+    [onClose, onOpenSettings, onOpenSearch, onOpenSessionPicker, onOpenQuickPrompt, onContextBridge, onNewChat],
   )
 
   const visibleCommands = commands.filter((c) => (c.available ? c.available() : true))

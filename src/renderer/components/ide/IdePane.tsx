@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import { useMachineStore } from '../../stores/machine-store'
-import { useLayoutStore } from '../../stores/layout-store'
+import { selectCompanionSessionId, useLayoutStore } from '../../stores/layout-store'
 import { useThemeStore } from '../../stores/theme-store'
 import { createRendererLogger } from '../../logger'
 import {
@@ -38,11 +38,7 @@ type PaneState =
   | { kind: 'error'; message: string }
 
 export function IdePane(): React.ReactElement {
-  const companionSessionId = useLayoutStore((s) =>
-    s.focusedChatSlot === 'secondary' && s.secondarySessionId
-      ? s.secondarySessionId
-      : s.primarySessionId,
-  )
+  const companionSessionId = useLayoutStore(selectCompanionSessionId)
   const folder = useAgentStore((s) => {
     const session = s.sessions.find((x) => x.id === companionSessionId)
     return session?.worktreePath ?? session?.projectPath ?? null

@@ -13,17 +13,3 @@ describe('new chat draft ids', () => {
     }
   })
 })
-
-import { orderPickerTargets } from '../../src/renderer/components/NewChatProjectPicker'
-
-describe('new chat project picker order', () => {
-  const t = (projectPath: string, machineId = 'local') => ({ projectPath, machineId, name: projectPath, where: machineId })
-  it('puts the current project first and keeps sidebar order for the rest', () => {
-    const ordered = orderPickerTargets([t('/a'), t('/b'), t('/c')], { projectPath: '/b' })
-    expect(ordered.map((x) => x.projectPath)).toEqual(['/b', '/a', '/c'])
-  })
-  it('treats the same path on another machine as a different project', () => {
-    const ordered = orderPickerTargets([t('/a', 'vm'), t('/a')], { projectPath: '/a', machineId: 'vm' })
-    expect(ordered.map((x) => x.machineId)).toEqual(['vm', 'local'])
-  })
-})

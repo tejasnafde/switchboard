@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth } from './stores/layout-store'
+import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth, selectCompanionSessionId } from './stores/layout-store'
 import { useAgentStore, setStoreDefaultRuntimeMode, runtimeModeToSend, type RuntimeMode } from './stores/agent-store'
 import { classifyCloseFocus, type ClosestEl } from './close-focus'
 import { useBookmarkStore } from './stores/bookmark-store'
@@ -21,7 +21,6 @@ import { registerReviewChatOpener } from './components/reviews/review-to-chat'
 import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
-import { NewChatProjectPicker } from './components/NewChatProjectPicker'
 import { SearchModal } from './components/SearchModal'
 import { StatusBar } from './components/StatusBar'
 import { SessionPickerModal } from './components/SessionPickerModal'
@@ -63,7 +62,14 @@ import { nextDualChatShortcutAction, shouldEvictReplacedSession } from './servic
 import type { AgentProvider } from '@shared/types'
 import { recoverPendingRequests } from './services/pending-request-recovery'
 import { resolveGlobalKeydown } from './services/global-keybindings'
-import { LANDING_COMPOSER_ID, newChatShortcutTarget } from './services/chat-landing'
+import {
+  LANDING_COMPOSER_ID,
+  landingPickFor,
+  newChatShortcutAction,
+  openLandingProjectPicker,
+  primaryShowsLanding,
+  readRememberedPick,
+} from './services/chat-landing'
 
 const log = createRendererLogger('app')
 
@@ -134,7 +140,6 @@ export function App() {
   const [settingsPage, setSettingsPage] = useState<SettingsPageId | null>(null)
   const settingsOpen = settingsPage !== null
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [newChatPickerOpen, setNewChatPickerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
   const [quickPromptOpen, setQuickPromptOpen] = useState(false)
@@ -573,7 +578,14 @@ export function App() {
     if (draft?.reasoningEffort) window.api.app.setConversationReasoningEffort(session.id, draft.reasoningEffort).catch((err: unknown) => log.warn('carry draft effort failed', err))
     // An unresolved mode is not stored: a stored mode would outrank the project's override on the backend.
     if (draft && session.runtimeMode) window.api.app.setConversationRuntimeMode?.(session.id, session.runtimeMode).catch((err: unknown) => log.warn('persist runtime mode failed', err))
-    selectChatSession(session.id)
+    // The new chat takes the slot its draft was written in (the landing
+    // screen is the primary one), not whichever slot has focus.
+    if (parkedDraftId && useLayoutStore.getState().slotForChatSession(parkedDraftId)) {
+      useLayoutStore.getState().rotateChatSessionId(parkedDraftId, session.id)
+      useLayoutStore.getState().selectChatSession(session.id)
+    } else {
+      selectChatSession(session.id)
+    }
     if (session.machineId === 'local') {
       emitSessionCreated({
         id: session.id,
@@ -680,10 +692,43 @@ export function App() {
     return id
   }, [])
 
+  // A new chat is written on the landing screen, which takes the primary
+  // slot; the chat it replaces stays open in the sidebar.
   const openDraftChat = useCallback(async (projectPath: string, machineId: string = 'local') => {
     useLayoutStore.getState().setAppView('chats')
-    selectChatSession(await ensureDraftSession(projectPath, machineId))
-  }, [ensureDraftSession, selectChatSession])
+    useLayoutStore.getState().showLanding(await ensureDraftSession(projectPath, machineId))
+    requestAnimationFrame(() => focusComposer(LANDING_COMPOSER_ID))
+  }, [ensureDraftSession])
+
+  // cmd+shift+O, "+ New chat" and the palette: the landing screen, on the
+  // project of the chat in focus.
+  const showLandingScreen = useCallback(async () => {
+    const layout = useLayoutStore.getState()
+    layout.setAppView('chats')
+    if (primaryShowsLanding(layout.primarySessionId)) {
+      focusComposer(LANDING_COMPOSER_ID)
+      return
+    }
+    const focused = useAgentStore.getState().sessions.find((s) => s.id === layout.focusedChatSessionId())
+    let pick = landingPickFor(focused, readRememberedPick(localStorage))
+    if (!pick) {
+      try {
+        const first = (await window.api.app.getProjects())[0]
+        if (first) pick = { projectPath: first.path, machineId: 'local' }
+      } catch (err) {
+        log.warn('listing projects for the landing screen failed', err)
+      }
+    }
+    if (!pick) {
+      log.warn('new chat: no project to start one in')
+      return
+    }
+    try {
+      await openDraftChat(pick.projectPath, pick.machineId)
+    } catch (err) {
+      log.warn('opening the landing screen failed', err)
+    }
+  }, [openDraftChat])
 
   const retainCoordinator = useCallback((coordinator: DesktopNewChatCoordinator, checkout: 'project' | 'worktree') => {
     const state = coordinator.state()
@@ -1163,11 +1208,7 @@ export function App() {
   }, [registerSidebarEl, registerTerminalEl])
 
   // The single companion terminal strip follows chat focus, not primary identity.
-  const companionAgentSessionId = useLayoutStore((s) =>
-    s.focusedChatSlot === 'secondary' && s.secondarySessionId
-      ? s.secondarySessionId
-      : s.primarySessionId,
-  )
+  const companionAgentSessionId = useLayoutStore(selectCompanionSessionId)
   // Narrow to the one primitive we render below (terminal pane id). Selecting
   // the whole session object returned a fresh reference every token and forced
   // a per-token App re-render.
@@ -1222,11 +1263,11 @@ export function App() {
           break
         case 'new-chat':
           e.preventDefault()
-          if (newChatShortcutTarget(useLayoutStore.getState().primarySessionId) === 'landing') {
+          if (newChatShortcutAction(useLayoutStore.getState().primarySessionId) === 'pick-project') {
             useLayoutStore.getState().setAppView('chats')
-            focusComposer(LANDING_COMPOSER_ID)
+            openLandingProjectPicker()
           } else {
-            setNewChatPickerOpen(true)
+            void showLandingScreen()
           }
           break
         case 'toggle-palette':
@@ -1237,22 +1278,13 @@ export function App() {
           e.preventDefault()
           setSearchOpen((prev) => !prev)
           break
-        // Previously: silently did nothing when `activeSessionId` was
-        // null - a bad UX that made the shortcut feel broken. Now:
-        // falls back to the first available session; if none exist,
-        // logs a helpful console warning so devtools shows the reason.
+        // On the landing screen the companion is its draft, so the terminal
+        // opens in the project its chip shows.
         case 'new-terminal-window': {
           e.preventDefault()
-          const agentState = useAgentStore.getState()
-          let sid = useLayoutStore.getState().companionSessionId()
+          const sid = useLayoutStore.getState().companionSessionId()
           if (!sid) {
-            // Fallback - pick the most recent session so ⌘T still works
-            // even if the user hasn't explicitly focused a chat.
-            sid = agentState.sessions[0]?.id ?? null
-            if (sid) useLayoutStore.getState().selectChatSession(sid)
-          }
-          if (!sid) {
-            log.warn('⌘T: no session available - open or create a chat first')
+            log.warn('⌘T: no session available - add a project first')
             return
           }
           const st = useTerminalStore.getState()
@@ -1359,7 +1391,7 @@ export function App() {
     // Capture phase so we get events before element-level handlers (xterm, etc.)
     window.addEventListener('keydown', handleKeyDown, true)
     return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [toggleSidebar, toggleTerminal, toggleRightPaneMode])
+  }, [toggleSidebar, toggleTerminal, toggleRightPaneMode, showLandingScreen])
 
   const handleSidebarResizeEnd = useCallback(
     (px: number) => setSidebarWidth(px),
@@ -1444,7 +1476,7 @@ export function App() {
         >
           <Sidebar
             onNewChat={openDraftChat}
-            onPickNewChat={() => setNewChatPickerOpen(true)}
+            onPickNewChat={() => { void showLandingScreen() }}
             onSessionSelect={handleSessionSelect}
             onOpenBeside={(session, projectPath, machineId) => {
               void handleSessionSelect(session, projectPath, machineId, 'beside')
@@ -1506,6 +1538,7 @@ export function App() {
                 dataScienceMode={dataScienceMode}
                 onOpenBeside={() => setSessionPickerOpen(true)}
                 ensureDraftSession={ensureDraftSession}
+                onOpenChat={(chat) => { void handleSessionSelect(chat.session, chat.projectPath, chat.machineId) }}
               />
             </div>
             {activeTerminalPaneId && (
@@ -1618,16 +1651,6 @@ export function App() {
 
       <SettingsPage page={settingsPage} onNavigate={setSettingsPage} onClose={() => setSettingsPage(null)} />
       <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
-      <NewChatProjectPicker
-        open={newChatPickerOpen}
-        current={(() => {
-          const focusedId = useLayoutStore.getState().focusedChatSessionId()
-          const focused = useAgentStore.getState().sessions.find((s) => s.id === focusedId)
-          return focused ? { projectPath: focused.projectPath, machineId: focused.machineId } : undefined
-        })()}
-        onPick={(projectPath, machineId) => { setNewChatPickerOpen(false); void openDraftChat(projectPath, machineId) }}
-        onClose={() => setNewChatPickerOpen(false)}
-      />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -1636,7 +1659,7 @@ export function App() {
         onOpenSessionPicker={() => { setPaletteOpen(false); setSessionPickerOpen(true) }}
         onOpenQuickPrompt={() => { setPaletteOpen(false); setQuickPromptOpen(true) }}
         onContextBridge={() => { setPaletteOpen(false); appendTerminalSelectionToDraft() }}
-        onNewChat={openDraftChat}
+        onNewChat={() => { void showLandingScreen() }}
       />
       <SessionPickerModal
         open={sessionPickerOpen}

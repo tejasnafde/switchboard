@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { openLandingProjectPicker } from './lib/new-chat.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
@@ -75,9 +76,7 @@ try {
   }
   async function newChatMode(projectName) {
     await win.locator('body').click({ position: { x: 900, y: 400 } })
-    await win.keyboard.press('Meta+Shift+O')
-    const picker = win.getByTestId('new-chat-project-picker')
-    await picker.getByRole('option').first().waitFor({ timeout: 5000 })
+    await openLandingProjectPicker(win)
     await win.keyboard.type(projectName)
     await win.keyboard.press('Enter')
     await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })

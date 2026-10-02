@@ -1467,6 +1467,7 @@ html, body, #root {
 }
 
 .chat-landing {
+  position: relative;
   flex: 1 1 0%;
   min-height: 0;
   display: flex;
@@ -1479,53 +1480,58 @@ html, body, #root {
 
 .chat-landing-column {
   width: 100%;
-  max-width: 760px;
+  max-width: 680px;
   margin: 0 auto;
+  padding: 0 16px;
+  box-sizing: border-box;
 }
 
-/* The composer's band (top rule, tinted strip) belongs to the foot of a
-   transcript; floating mid-screen it reads as a stray bar. Inline styles, so
-   !important is the only way over them; the extra attribute outranks the
-   translucent theme's composer rule further down. */
+/* Floating mid-screen the composer is a card holding the input and its bar,
+   not the band at the foot of a transcript. Inline styles, so !important is
+   the only way over them; the extra attribute outranks the translucent
+   theme's composer rules further down. */
 [data-chat-panel] .chat-landing .chat-composer {
-  border-top: none !important;
+  padding: 4px 8px 8px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px;
+  background: var(--bg-secondary) !important;
+  transition: border-color 120ms ease;
+}
+
+[data-chat-panel] .chat-landing .chat-composer:focus-within {
+  border-color: var(--border-focus) !important;
+}
+
+[data-chat-panel] .chat-landing .chat-composer .sb-rci-content {
+  border-color: transparent !important;
   background: transparent !important;
 }
 
+.theme-translucent [data-chat-panel] .chat-landing .chat-composer {
+  background: rgba(0, 0, 0, 0.14) !important;
+}
+
 .chat-landing-intro {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 0 16px 18px;
+  padding: 0 0 20px;
   text-align: center;
 }
 
 .chat-landing-heading {
   margin: 0;
   color: var(--text-primary);
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
-.chat-landing-project {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
 .chat-landing-add {
-  padding: 4px 12px;
+  padding: 3px 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--bg-tertiary);
   color: var(--text-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
 }
 
@@ -1537,6 +1543,96 @@ html, body, #root {
 .chat-landing-add:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.chat-landing-recents {
+  margin-top: 24px;
+}
+
+.chat-landing-recents-label {
+  margin: 0 8px 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.chat-landing-recent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-landing-recent:hover,
+.chat-landing-recent[data-highlighted] {
+  background: var(--bg-hover);
+}
+
+.chat-landing-recent:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.chat-landing-recent .sidebar-project-favicon {
+  flex-shrink: 0;
+}
+
+.chat-landing-recent-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-landing-recent-meta {
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.chat-landing-hints {
+  position: absolute;
+  right: 0;
+  bottom: 14px;
+  left: 0;
+  padding: 0 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-height: 560px) {
+  .chat-landing-hints {
+    display: none;
+  }
+}
+
+.chat-landing-hints kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  font-family: var(--font-sans);
+  font-size: 10px;
 }
 
 .chat-identity {

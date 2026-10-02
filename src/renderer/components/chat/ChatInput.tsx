@@ -1,5 +1,5 @@
 import { USER_MESSAGE_IMAGE_TYPES } from '@shared/provider-events'
-import { useState, useCallback, useMemo, useRef, useEffect, type DragEvent } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect, type DragEvent, type ReactNode } from 'react'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('chat:input')
@@ -146,6 +146,8 @@ interface ChatInputProps {
   onArchive?: () => void
   /** Show slash-command help overlay */
   onShowSlashHelp?: () => void
+  /** Rendered first in the footer bar (the landing screen's project chip). */
+  leadingControl?: ReactNode
 }
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
@@ -205,6 +207,7 @@ export function ChatInput({
   onClearMessages,
   onArchive,
   onShowSlashHelp,
+  leadingControl,
 }: ChatInputProps) {
   // Static fallback list - used until a dynamic fetch returns (OpenCode
   // shells out to `opencode models`; Claude asks the live SDK query).
@@ -1640,6 +1643,8 @@ export function ChatInput({
           fontSize: '11px',
         }}
       >
+        {leadingControl}
+
         {/* Unified provider/instance/model picker - single drop-up popover
             consolidating what used to be three separate footer controls. */}
         {onModelChange && onInstanceChange && (

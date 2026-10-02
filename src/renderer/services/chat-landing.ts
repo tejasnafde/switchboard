@@ -4,7 +4,8 @@
  * may be off. The chat itself is the ordinary per-project draft
  * (`draftSessionId`), so nothing here creates anything.
  */
-import type { Project } from '@shared/types'
+import type { Project, SessionSummary } from '@shared/types'
+import { isDraftSessionId } from '@shared/new-chat-draft'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('chat:landing')
@@ -140,12 +141,159 @@ export function mergeMovedDraft<P, I>(
 }
 
 /**
- * The new-chat shortcut. With no chat in the primary slot the landing
- * composer is already a new chat, so the shortcut returns to it instead of
- * asking for a project.
+ * The primary slot shows the landing screen when it holds nothing, or a
+ * draft: a draft is a chat not created yet, and the landing screen is where
+ * one is written.
  */
-export function newChatShortcutTarget(primarySessionId: string | null): 'landing' | 'picker' {
-  return primarySessionId === null ? 'landing' : 'picker'
+export function primaryShowsLanding(primarySessionId: string | null): boolean {
+  return primarySessionId === null || isDraftSessionId(primarySessionId)
+}
+
+/**
+ * The new-chat shortcut. On the landing screen it opens the project chip's
+ * picker; anywhere else it goes back to the landing screen.
+ */
+export function newChatShortcutAction(primarySessionId: string | null): 'pick-project' | 'show-landing' {
+  return primaryShowsLanding(primarySessionId) ? 'pick-project' : 'show-landing'
+}
+
+/**
+ * The project the landing screen opens on when asked for from a chat: that
+ * chat's, else the one last picked there, else null.
+ */
+export function landingPickFor(
+  focused: { projectPath?: string; machineId?: string } | undefined,
+  remembered: LandingPick | null,
+): LandingPick | null {
+  if (focused?.projectPath) return { projectPath: focused.projectPath, machineId: focused.machineId ?? 'local' }
+  return remembered
+}
+
+export interface RecentChat {
+  session: SessionSummary
+  projectPath: string
+  projectName: string
+  machineId: string
+}
+
+/**
+ * "Pick up where you left off": the most recent chats across local projects
+ * and connected machines, newest first. A chat listed under two projects
+ * appears once.
+ */
+export function recentLandingChats(
+  local: readonly Project[],
+  remote: RemoteProjectsInput,
+  limit = 3,
+): RecentChat[] {
+  const sets: Array<{ machineId: string; projects: readonly Project[] }> = [{ machineId: 'local', projects: local }]
+  for (const machine of remote.remotes) {
+    if (remote.connections[machine.id] !== 'connected') continue
+    sets.push({ machineId: machine.id, projects: remote.projects[machine.id] ?? [] })
+  }
+  const seen = new Set<string>()
+  const all: RecentChat[] = []
+  for (const { machineId, projects } of sets) {
+    for (const project of projects) {
+      for (const session of project.sessions ?? []) {
+        if (session.agentType === 'terminal') continue
+        const key = `${machineId}\u0000${session.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        all.push({ session, projectPath: project.path, projectName: project.name, machineId })
+      }
+    }
+  }
+  return all.sort((a, b) => b.session.startedAt - a.session.startedAt).slice(0, limit)
+}
+
+export interface RecentKeyInput {
+  key: string
+  shiftKey: boolean
+  metaKey: boolean
+  ctrlKey: boolean
+  altKey: boolean
+  isComposing?: boolean
+}
+
+export interface RecentKeyResult {
+  /** The highlighted recent chat after the key, or null for none. */
+  highlight: number | null
+  /** Index of the recent chat to open. */
+  open?: number
+  /** True when the key belongs to the list and must not reach the composer. */
+  consume: boolean
+}
+
+const MODIFIER_KEYS = new Set(['Shift', 'Meta', 'Control', 'Alt', 'CapsLock'])
+
+/**
+ * Arrow keys walk the recent chats while the landing composer is empty, and
+ * Enter opens the highlighted one. With text in the composer every key is
+ * the composer's, and typing or Escape drops the highlight.
+ */
+export function landingRecentKey(
+  input: RecentKeyInput,
+  highlight: number | null,
+  count: number,
+  composerEmpty: boolean,
+): RecentKeyResult {
+  const pass = (next: number | null): RecentKeyResult => ({ highlight: next, consume: false })
+  if (input.isComposing || MODIFIER_KEYS.has(input.key)) return pass(highlight)
+  if (input.metaKey || input.ctrlKey || input.altKey) return pass(highlight)
+  if (count === 0 || !composerEmpty) return pass(null)
+  const current = highlight !== null && highlight < count ? highlight : null
+  switch (input.key) {
+    case 'ArrowDown':
+      if (input.shiftKey) return pass(current)
+      return { highlight: current === null ? 0 : Math.min(current + 1, count - 1), consume: true }
+    case 'ArrowUp':
+      if (input.shiftKey) return pass(current)
+      // Up from the first row goes back to the composer.
+      return { highlight: current === null ? count - 1 : current === 0 ? null : current - 1, consume: true }
+    case 'Enter':
+      if (current === null || input.shiftKey) return pass(null)
+      return { highlight: null, open: current, consume: true }
+    case 'Escape':
+      return current === null ? pass(null) : { highlight: null, consume: true }
+    default:
+      return pass(null)
+  }
+}
+
+export interface ShortcutHint {
+  keys: string
+  label: string
+}
+
+/**
+ * The hint line under the landing screen, read from the live bindings so a
+ * rebind shows the real key and an unbound command is left out.
+ */
+export function landingShortcutHints(labelFor: (id: string) => string): ShortcutHint[] {
+  const hints: ShortcutHint[] = []
+  const project = labelFor('chat.new')
+  if (project) hints.push({ keys: project, label: 'switch project' })
+  hints.push({ keys: '↑↓', label: 'recent chats' })
+  const prompt = labelFor('chat.quick-prompt')
+  if (prompt) hints.push({ keys: prompt, label: 'quick prompt' })
+  return hints
+}
+
+type ProjectPickerOpener = () => void
+let projectPickerOpener: ProjectPickerOpener | null = null
+
+/** The landing screen registers its project chip so cmd+shift+O can open it. */
+export function registerLandingProjectPicker(open: ProjectPickerOpener): () => void {
+  projectPickerOpener = open
+  return () => { if (projectPickerOpener === open) projectPickerOpener = null }
+}
+
+/** False when no landing screen is mounted. */
+export function openLandingProjectPicker(): boolean {
+  if (!projectPickerOpener) return false
+  projectPickerOpener()
+  return true
 }
 
 /** The landing composer's key in the composer registry (`focusComposer`). */

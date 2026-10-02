@@ -8,7 +8,7 @@
       "status": "implemented",
       "evidence": [
         "src/renderer/App.tsx",
-        "src/renderer/components/NewChatProjectPicker.tsx",
+        "src/renderer/components/chat/ChatLanding.tsx",
         "src/renderer/components/chat/DraftWorkspaceChips.tsx",
         "src/renderer/components/chat/ChatPanel.tsx",
         "src/renderer/components/chat/ChatInput.tsx",

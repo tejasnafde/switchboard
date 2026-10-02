@@ -16,6 +16,8 @@ export interface FirstSend {
     displayBody?: string
     pillsMeta?: UserMessagePillsMeta
   }
+  /** Sent from outside the draft's composer (cmd+K), so what it holds stays. */
+  keepDraft?: boolean
 }
 
 export interface ParkedFirstSend extends FirstSend {

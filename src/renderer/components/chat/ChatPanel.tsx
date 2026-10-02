@@ -88,10 +88,16 @@ interface ChatPanelProps {
   onClose?: () => void
   onOpenBeside?: () => void
   /**
-   * The landing screen: this content, centred above the composer, in place
-   * of the header and the transcript (`ChatLanding`).
+   * The landing screen (`ChatLanding`), in place of the header and the
+   * transcript: `intro` above the composer, `composerLead` first in its
+   * footer bar, `after` below it and `footer` pinned to the bottom.
    */
-  landing?: ReactNode
+  landing?: {
+    intro: ReactNode
+    composerLead?: ReactNode
+    after?: ReactNode
+    footer?: ReactNode
+  }
   /** Composer placeholder while there is no session. */
   emptyPlaceholder?: string
 }
@@ -115,7 +121,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const focusedChatSlot = useLayoutStore((state) => state.focusedChatSlot)
   const focusChatSlot = useLayoutStore((state) => state.focusChatSlot)
   const activeSession = useAgentStore((s) => {
-    const resolvedId = sessionIdOverride ?? (chatSlot ? slotSessionId : s.activeSessionId)
+    // The landing screen names its draft itself, and null there means none:
+    // the draft in the slot may be for a project no longer listed.
+    const resolvedId = landing ? sessionIdOverride : sessionIdOverride ?? (chatSlot ? slotSessionId : s.activeSessionId)
     return s.sessions.find((sess) => sess.id === resolvedId)
   })
   // Per-action selectors (stable identities) instead of a bare useAgentStore(),
@@ -655,7 +663,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     if (!sessionId || isDraftSessionId(sessionId)) return
     const parked = takeFirstSend(sessionId)
     if (!parked) return
-    useDraftStore.getState().clearDraft(parked.draftId)
+    if (!parked.keepDraft) useDraftStore.getState().clearDraft(parked.draftId)
     // The draft id is reused by the next draft for this project, so terminals
     // opened in this one must go with it rather than reappear there.
     // They are closed, not moved: moving is only right for a project checkout.
@@ -1177,6 +1185,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           removeSession(sessionId)
         }}
         onShowSlashHelp={() => setSlashHelpOpen(true)}
+        leadingControl={landing?.composerLead}
       />
 
     </>
@@ -1216,9 +1225,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       {landing ? (
         <div className="chat-landing">
           <div className="chat-landing-column">
-            {landing}
+            {landing.intro}
             {composer}
+            {landing.after}
           </div>
+          {landing.footer}
         </div>
       ) : (
         <>

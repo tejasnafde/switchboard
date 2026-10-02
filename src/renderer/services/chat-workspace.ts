@@ -17,6 +17,7 @@ export type ChatWorkspaceEvent =
   | { type: 'restore'; availableSessionIds: readonly string[] }
   | { type: 'forward-target'; sourceSessionId: string; targetSessionId: string }
   | { type: 'set-split-ratio'; ratio: number }
+  | { type: 'show-landing'; sessionId: string }
 
 export type CanonicalSessionId = (sessionId: string) => string
 
@@ -53,6 +54,15 @@ export function focusedChatSessionId(state: ChatWorkspaceState): string | null {
 }
 
 export const companionSessionId = focusedChatSessionId
+
+/**
+ * The chat the shortcuts, terminals and IDE act on. With nothing in the
+ * primary slot the landing screen's draft stands in, so cmd+T, cmd+J, cmd+L
+ * and the rest reach the project the landing chip shows.
+ */
+export function companionWithLanding(state: ChatWorkspaceState, landingDraftId: string | null): string | null {
+  return focusedChatSessionId(state) ?? landingDraftId
+}
 
 export type DualChatShortcutAction = 'open-picker' | 'close-secondary'
 
@@ -205,6 +215,10 @@ export function reconcileChatWorkspace(
       }
       return normalize({ ...state, secondarySessionId: event.targetSessionId, focusedSlot: 'secondary' }, canonicalId)
     }
+
+    // The landing screen takes the primary slot only; a chat beside it stays.
+    case 'show-landing':
+      return normalize({ ...state, primarySessionId: event.sessionId, focusedSlot: 'primary' }, canonicalId)
 
     case 'set-split-ratio':
       return { ...state, splitRatio: Math.max(0.2, Math.min(0.8, event.ratio)) }
