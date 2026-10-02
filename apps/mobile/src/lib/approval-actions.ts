@@ -8,6 +8,8 @@
  * would post text the user never saw.
  */
 import { hostWritePreview, hostWriteShownDigest, phoneHostWriteButtons, type HostWritePreview, type PhoneHostWriteButton } from '@shared/host-write-phone'
+import { isAgentApprovalCardId } from '@shared/agent-approval-cards'
+import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { FeedItem } from '../stores/chat'
 
 export type ApprovalActions =
@@ -31,4 +33,24 @@ export function approvalActions(
   // Cached before the card rode along on the item.
   if (item.desktopOnly) return { kind: 'deny-only' }
   return { kind: 'plain' }
+}
+
+/**
+ * Whether the card offers "Don't wake the agent": one the Switchboard server
+ * opened (it does not hold the agent's turn), on a backend that takes a quiet
+ * answer (`AGENT_ASYNC_APPROVAL_CAPABILITY`).
+ */
+export function offersQuiet(item: Extract<FeedItem, { kind: 'approval' }>, backendAsyncApproval: boolean): boolean {
+  return backendAsyncApproval && isAgentApprovalCardId(item.requestId)
+}
+
+/** The response an answer sends when the user chose not to wake the agent. */
+export function quietly(response: HostWriteResponse | undefined, quiet: boolean): HostWriteResponse | undefined {
+  return quiet ? { ...response, quiet: true } : response
+}
+
+/** A button's label when quiet: Deny becomes Dismiss, an approval says it is quiet. */
+export function quietLabel(label: string, decision: 'approve' | 'deny', quiet: boolean): string {
+  if (!quiet) return label
+  return decision === 'deny' ? 'Dismiss' : `${label} quietly`
 }

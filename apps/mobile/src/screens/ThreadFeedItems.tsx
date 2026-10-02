@@ -11,7 +11,7 @@ import type { FeedItem } from '../stores/chat'
 import { styles } from './thread-screen.styles'
 import type { HeldTurnActions } from '../lib/held-turns'
 import { fileEditCounts, type FileGroupRow } from '../lib/file-groups'
-import { approvalActions } from '../lib/approval-actions'
+import { approvalActions, offersQuiet, quietLabel, quietly } from '../lib/approval-actions'
 import { hostWriteTitle, type HostWriteResponse } from '@shared/agent-host-writes'
 import { PR_HOST_LABEL } from '@shared/pull-requests'
 
@@ -122,16 +122,20 @@ export const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedIte
 export const ApprovalItem = memo(function ApprovalItem({
   item,
   backendTakesPhoneApproval,
+  backendAsyncApproval = false,
   onDecide,
 }: {
   item: Extract<FeedItem, { kind: 'approval' }>
   backendTakesPhoneApproval: boolean
+  backendAsyncApproval?: boolean
   onDecide: (requestId: string, decision: 'approve' | 'deny', response?: HostWriteResponse) => void
 }) {
   const pending = item.state === 'pending'
   const card = item.hostWrite
   const actions = useMemo(() => approvalActions(item, backendTakesPhoneApproval), [item, backendTakesPhoneApproval])
   const [expanded, setExpanded] = useState(false)
+  const quietOffered = offersQuiet(item, backendAsyncApproval)
+  const [quiet, setQuiet] = useState(false)
   // A long draft starts collapsed, and nothing is approved until it has been opened.
   const hidden = actions.kind === 'host-write' && actions.preview.long && !expanded
   return (
@@ -177,11 +181,21 @@ export const ApprovalItem = memo(function ApprovalItem({
       {pending && actions.kind === 'host-write' && actions.buttons.map((b) => b.problem && (
         <Text key={b.id} style={styles.toolOutput}>{b.label}: {b.problem}</Text>
       ))}
+      {pending && quietOffered && (
+        <Pressable
+          testID="approval-quiet"
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: quiet }}
+          onPress={() => setQuiet((v) => !v)}
+        >
+          <Text style={styles.toggleText}>{quiet ? '☑' : '☐'} Don't wake the agent</Text>
+        </Pressable>
+      )}
       {pending && (
         <View style={styles.buttonRowWrap}>
           {actions.kind === 'plain' && (
-            <Pressable style={[styles.actionButton, styles.approveButton]} onPress={() => onDecide(item.requestId, 'approve')}>
-              <Text style={styles.actionLabel}>Approve</Text>
+            <Pressable style={[styles.actionButton, styles.approveButton]} onPress={() => onDecide(item.requestId, 'approve', quietly(undefined, quiet))}>
+              <Text style={styles.actionLabel}>{quietLabel('Approve', 'approve', quiet)}</Text>
             </Pressable>
           )}
           {actions.kind === 'host-write' && actions.buttons.map((b) => (
@@ -190,13 +204,13 @@ export const ApprovalItem = memo(function ApprovalItem({
               disabled={hidden || b.problem !== null}
               accessibilityState={{ disabled: hidden || b.problem !== null }}
               style={[styles.actionButton, b.primary ? styles.approveButton : styles.secondaryButton, (hidden || b.problem !== null) && styles.buttonDisabled]}
-              onPress={() => onDecide(item.requestId, 'approve', b.response)}
+              onPress={() => onDecide(item.requestId, 'approve', quietly(b.response, quiet))}
             >
-              <Text style={styles.actionLabel}>{b.label}</Text>
+              <Text style={styles.actionLabel}>{quietLabel(b.label, 'approve', quiet)}</Text>
             </Pressable>
           ))}
-          <Pressable style={[styles.actionButton, styles.denyButton]} onPress={() => onDecide(item.requestId, 'deny')}>
-            <Text style={styles.actionLabel}>Deny</Text>
+          <Pressable style={[styles.actionButton, styles.denyButton]} onPress={() => onDecide(item.requestId, 'deny', quietly(undefined, quiet))}>
+            <Text style={styles.actionLabel}>{quietLabel('Deny', 'deny', quiet)}</Text>
           </Pressable>
         </View>
       )}

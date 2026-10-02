@@ -141,6 +141,7 @@ class HostWriteCardsTest {
         assertEquals("""{"resolve":true,"shown":"00ff"}""", JsonCodec.encode(HostWriteResponse(resolve = true, shown = "00ff").toJson()))
         assertEquals("""{"verdict":"comment"}""", JsonCodec.encode(HostWriteResponse(verdict = "comment").toJson()))
         assertEquals("""{"resolve":false}""", JsonCodec.encode(HostWriteResponse(resolve = false).toJson()))
+        assertEquals("""{"verdict":"comment","quiet":true}""", JsonCodec.encode(HostWriteResponse(verdict = "comment", quiet = true).toJson()))
     }
 
     @Test

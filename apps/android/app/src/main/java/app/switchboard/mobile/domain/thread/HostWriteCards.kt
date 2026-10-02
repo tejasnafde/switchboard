@@ -39,12 +39,15 @@ data class HostWriteResponse(
     val verdict: String? = null,
     /** [HostWriteCards.shownDigest] of the draft this phone showed in full; the backend refuses an approval without it. */
     val shown: String? = null,
+    /** Answer without waking the agent: approve quietly, or dismiss. Needs [HostWriteCards.ASYNC_APPROVAL_CAPABILITY]. */
+    val quiet: Boolean = false,
 ) {
     fun toJson(): JsonObject = JsonObject(
         linkedMapOf<String, JsonValue>().apply {
             resolve?.let { put("resolve", JsonBoolean(it)) }
             verdict?.let { put("verdict", JsonString(it)) }
             shown?.let { put("shown", JsonString(it)) }
+            if (quiet) put("quiet", JsonBoolean(true))
         },
     )
 }
@@ -72,6 +75,16 @@ data class HostWritePreview(
 object HostWriteCards {
     /** The backend takes a chat-scoped device's approval of these cards. */
     const val PHONE_APPROVAL_CAPABILITY = "agent_host_write_phone_approval_v1"
+
+    /**
+     * Port of `AGENT_ASYNC_APPROVAL_CAPABILITY`: the backend's cards no longer
+     * expire, their answer reaches the agent as a later turn, and a response may
+     * carry `quiet`.
+     */
+    const val ASYNC_APPROVAL_CAPABILITY = "agent_async_approval_v1"
+
+    /** Port of `isAgentApprovalCardId`: a card the Switchboard MCP server opened. */
+    fun isServerCard(requestId: String): Boolean = requestId.startsWith("sbmcp_")
 
     private val VERDICT_ORDER = listOf("comment", "request_changes", "approve")
     private val VERDICT_LABEL = mapOf("comment" to "Comment", "request_changes" to "Request changes", "approve" to "Approve")

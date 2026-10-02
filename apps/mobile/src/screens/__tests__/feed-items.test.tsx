@@ -222,6 +222,23 @@ describe('ApprovalItem', () => {
     expect(shown).not.toBe(hostWriteShownDigest('sbmcp_1', { ...create, create: { ...create.create!, reviewers: undefined } }))
   })
 
+  it('answers quietly once "Don\'t wake the agent" is ticked, on a backend that takes it', () => {
+    const decide = jest.fn()
+    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval backendAsyncApproval onDecide={decide} />)
+    expect(root.texts().join(' ')).toContain("Don't wake the agent")
+    act(() => { root.root.findByProps({ testID: 'approval-quiet' }).props.onPress() })
+    expect(root.texts()).toContain('Dismiss')
+    press(root.root, 'Post and resolve quietly')
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { resolve: true, shown: hostWriteShownDigest('sbmcp_1', reply), quiet: true })
+    press(root.root, 'Dismiss')
+    expect(decide).toHaveBeenLastCalledWith('sbmcp_1', 'deny', { quiet: true })
+  })
+
+  it('offers no quiet answer on an older backend', () => {
+    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval onDecide={() => {}} />)
+    expect(root.texts().join(' ')).not.toContain("Don't wake the agent")
+  })
+
   it('shows a long reply in full, and enables its buttons only once it is opened', () => {
     const long = Array.from({ length: 40 }, (_, i) => `Line ${i + 1} of the reply.`).join('\n')
     const root = renderComponent(<ApprovalItem item={approval({ hostWrite: { ...reply, replyText: long } })} backendTakesPhoneApproval onDecide={() => {}} />)

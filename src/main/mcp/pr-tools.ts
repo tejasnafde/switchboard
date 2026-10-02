@@ -5,7 +5,9 @@
  * hands the user a draft, and the user picks Comment, Request changes or
  * Approve in the card.
  *
- * Every tool works only on pull requests linked to the calling chat, except
+ * A write does not wait for the card: the tool queues it and returns, and the
+ * approval runs its stored plan later (`runPrWritePlan`), with the link and
+ * mode re-checked then. Every tool works only on pull requests linked to the calling chat, except
  * `create_pull_request`, which opens one on the repository of the chat's
  * project and links it. Every refusal is tool output with `isError`, never a
  * throw, so the model reads the reason instead of retrying a transport failure.
@@ -21,8 +23,10 @@ import {
   hostWriteGate,
   withViaMarker,
   type HostWriteCard,
+  type HostWriteResponse,
   type HostWriteReview,
 } from '@shared/agent-host-writes'
+import { queuedToolText } from '@shared/agent-approval-cards'
 import {
   checkCreatePrArgs,
   checkPrDescription,
@@ -75,7 +79,7 @@ import {
 } from '@shared/pull-requests'
 import type { RuntimeEvent, RuntimeMode } from '@shared/provider-events'
 import { createMainLogger } from '../logger'
-import type { AgentApprovalBroker, AgentApprovalOutcome } from './agent-approvals'
+import type { AgentApprovalBroker } from './agent-approvals'
 import type { AgentWriteBudget } from './agent-write-budget'
 import { toolText, type McpTool, type McpToolResult } from './mcp-session'
 import { diffPage } from './pr-diff-page'
@@ -147,10 +151,39 @@ export interface PrToolContext {
   cwd(): string | null
   runtimeMode(): RuntimeMode
   publish(event: RuntimeEvent): void
-  approvals: Pick<AgentApprovalBroker, 'ask'>
+  approvals: Pick<AgentApprovalBroker, 'open' | 'openProblem'>
   budget: Pick<AgentWriteBudget, 'take'>
   /** Null on a backend without Reviews. */
   pullRequests: AgentPullRequestAccess | null
+}
+
+/** What running an approved write needs: the chat, its mode now, and Reviews. */
+export type PrWriteRunContext = Pick<PrToolContext, 'threadId' | 'chatId' | 'runtimeMode' | 'publish' | 'pullRequests'>
+
+/**
+ * A pull request write as an approval card stores it: everything the write
+ * needs after the card, as data, so the card survives a backend restart.
+ */
+export type PrWritePlan =
+  | { kind: 'pr-reply'; ref: PrRef; conversationId: string; conversationResolved: boolean; location: string | null; draft: string; suggestResolve: boolean }
+  | { kind: 'pr-resolve'; ref: PrRef; conversationId: string; location: string | null }
+  | { kind: 'pr-rerun'; ref: PrRef; checkId: string; checkName: string }
+  | { kind: 'pr-comment'; ref: PrRef; target: Omit<DraftLineComment, 'text'>; draft: string }
+  | { kind: 'pr-review'; ref: PrRef; review: HostWriteReview }
+  | {
+      kind: 'pr-create'
+      repo: RepoRef
+      projectPath: string
+      source: string
+      target: string
+      title: string
+      description: string
+      draft: boolean
+      reviewers: HostWriteReviewer[]
+    }
+
+export function isPrWritePlan(plan: { kind: string }): plan is PrWritePlan {
+  return plan.kind.startsWith('pr-')
 }
 
 const QUOTE_MAX_CHARS = 600
@@ -227,14 +260,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     return picked.ok ? { ref: picked.ref, access } : toolText(picked.message, true)
   }
 
-  /** Plan mode refuses before anything is read. */
-  const refusePlan = (toolName: string): McpToolResult | null => {
-    const mode = ctx.runtimeMode()
-    if (hostWriteGate(mode) !== 'deny') return null
-    const reason = 'Plan mode - nothing is posted to a pull request. Tell the user what you would post, or ask them to switch modes.'
-    ctx.publish({ type: 'tool.denied', threadId: ctx.threadId, toolName: `mcp__switchboard__${toolName}`, reason, mode })
-    return toolText(reason, true)
-  }
+  const refusePlan = (toolName: string): McpToolResult | null => refusePlanFor(ctx, toolName)
 
   const conversationOf = async (p: Picked, id: unknown): Promise<PrConversation | McpToolResult> => {
     if (typeof id !== 'string' || !id.trim()) return toolText(`No conversationId given. Call ${PR_CONVERSATIONS_TOOL} for the ids.`, true)
@@ -244,48 +270,25 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     return found ?? toolText(`No conversation ${id} on ${prLabel(p.ref)}. Call ${PR_CONVERSATIONS_TOOL} for the current ids.`, true)
   }
 
-  /** Charges the budget, then opens the card: a write counts once it would interrupt the user. */
-  const ask = async (toolName: string, card: HostWriteCard, signal: AbortSignal): Promise<AgentApprovalOutcome | McpToolResult> => {
+  /**
+   * Opens the card and returns at once: the approval runs `plan` later. The
+   * cap is checked before the budget is charged, and the budget before the
+   * card opens: a write counts once it would interrupt the user.
+   */
+  const queue = (toolName: string, card: HostWriteCard, plan: PrWritePlan): McpToolResult => {
+    const full = ctx.approvals.openProblem(ctx.chatId)
+    if (full) return toolText(full, true)
     const budget = ctx.budget.take(ctx.chatId)
     if (!budget.ok) return toolText(budget.message, true)
-    return ctx.approvals.ask({
+    const opened = ctx.approvals.open({
       threadId: ctx.threadId,
+      chatId: ctx.chatId,
       toolName: `mcp__switchboard__${toolName}`,
       detail: hostWriteDetail(card),
       hostWrite: card,
-      signal,
+      plan,
     })
-  }
-
-  /** A write the mode allows without a card: it still counts against the budget. */
-  const autoApproved = (): AgentApprovalOutcome | McpToolResult => {
-    const budget = ctx.budget.take(ctx.chatId)
-    return budget.ok ? { decision: 'approve', response: {} } : toolText(budget.message, true)
-  }
-
-  const declined = (outcome: Extract<AgentApprovalOutcome, { decision: 'deny' }>): McpToolResult => {
-    if (outcome.reason === 'expired') {
-      return toolText('The approval card expired without an answer, so nothing was posted. Ask the user before trying again.', true)
-    }
-    if (outcome.reason === 'stopped') return toolText('The session stopped before the user answered. Nothing was posted.', true)
-    if (outcome.reason === 'cancelled') return toolText('The call was cancelled before anything was posted.', true)
-    return toolText('The user declined. Nothing was posted. Ask them what they want instead of retrying.', true)
-  }
-
-  /**
-   * Checked last, right before the write: while the card was open the agent
-   * may have stopped waiting (it would never hear the write happened and could
-   * ask again), and the user may have unlinked the PR or switched to plan mode.
-   */
-  const afterApproval = (ref: PrRef, toolName: string, signal: AbortSignal): McpToolResult | null => {
-    if (signal.aborted) return declined({ decision: 'deny', reason: 'cancelled' })
-    const plan = refusePlan(toolName)
-    if (plan) return plan
-    const key = prKey(normalizePrRef(ref))
-    if (!ctx.pullRequests?.linkedPrs(ctx.chatId).some((r) => prKey(normalizePrRef(r)) === key)) {
-      return toolText(`${prLabel(ref)} was unlinked from this chat while the card was open. Nothing was posted.`, true)
-    }
-    return null
+    return opened.ok ? toolText(queuedToolText(opened.requestId)) : toolText(opened.message, true)
   }
 
   const card = (ref: PrRef, action: HostWriteCard['action'], rest: Partial<HostWriteCard>): HostWriteCard => ({
@@ -396,7 +399,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       additionalProperties: false,
     },
     annotations: { title: 'Reply to a review conversation', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    async call(args, { signal }) {
+    async call(args) {
       const p = pick(args)
       if ('content' in p) return p
       const draft = checkReplyText(args.text)
@@ -406,36 +409,21 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const conversation = await conversationOf(p, args.conversationId)
       if ('content' in conversation) return conversation
       const suggestResolve = args.resolve === true && !conversation.resolved
-      const outcome = await ask(PR_REPLY_TOOL, card(p.ref, 'reply', {
+      return queue(PR_REPLY_TOOL, card(p.ref, 'reply', {
         url: conversation.comments[0]?.url ?? null,
         location: location(conversation),
         quote: quoteOf(conversation),
         replyText: draft.text,
         suggestResolve,
-      }), signal)
-      if ('content' in outcome) return outcome
-      if (outcome.decision === 'deny') return declined(outcome)
-      const changed = afterApproval(p.ref, PR_REPLY_TOOL, signal)
-      if (changed) return changed
-
-      const final = outcome.response.text === undefined ? draft : checkReplyText(outcome.response.text)
-      if (!final.ok) return toolText(`The edited reply was refused: ${final.message} Nothing was posted.`, true)
-      const resolve = !conversation.resolved && (outcome.response.resolve ?? suggestResolve)
-      const posted = await p.access.reply(p.ref, { conversationId: conversation.id, body: withViaMarker(final.text) })
-      if (!posted.ok) return toolText(`Posting failed: ${posted.error.message} Nothing was posted.`, true)
-      log.info('agent reply posted', { host: p.ref.host, number: p.ref.number, resolve })
-
-      const edited = final.text !== draft.text ? ` The user edited your reply first; what was posted:\n${final.text}` : ''
-      if (!resolve) return toolText(`Posted the reply on ${prLabel(p.ref)}${location(conversation) ? ` at ${location(conversation)}` : ''}. The conversation stays open.${edited}`)
-      // The post can take a while: check the link and the mode again before the second write.
-      if (afterApproval(p.ref, PR_REPLY_TOOL, signal)) {
-        return toolText(`Posted the reply on ${prLabel(p.ref)}, but did not resolve the conversation: the chat's link or mode changed while the reply was posting. Do not post the reply again.${edited}`, true)
-      }
-      const resolved = await p.access.setResolved(p.ref, { conversationId: conversation.id }, true)
-      if (!resolved.ok) {
-        return toolText(`Posted the reply, but resolving the conversation failed: ${resolved.error.message} Do not post the reply again.${edited}`, true)
-      }
-      return toolText(`Posted the reply on ${prLabel(p.ref)} and resolved the conversation.${edited}`)
+      }), {
+        kind: 'pr-reply',
+        ref: p.ref,
+        conversationId: conversation.id,
+        conversationResolved: conversation.resolved,
+        location: location(conversation),
+        draft: draft.text,
+        suggestResolve,
+      })
     },
   }
 
@@ -453,7 +441,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       additionalProperties: false,
     },
     annotations: { title: 'Resolve a review conversation', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    async call(args, { signal }) {
+    async call(args) {
       const p = pick(args)
       if ('content' in p) return p
       const gated = refusePlan(PR_RESOLVE_TOOL)
@@ -461,18 +449,11 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const conversation = await conversationOf(p, args.conversationId)
       if ('content' in conversation) return conversation
       if (conversation.resolved) return toolText('That conversation is already resolved. Nothing to do.')
-      const outcome = await ask(PR_RESOLVE_TOOL, card(p.ref, 'resolve', {
+      return queue(PR_RESOLVE_TOOL, card(p.ref, 'resolve', {
         url: conversation.comments[0]?.url ?? null,
         location: location(conversation),
         quote: quoteOf(conversation),
-      }), signal)
-      if ('content' in outcome) return outcome
-      if (outcome.decision === 'deny') return declined(outcome)
-      const changed = afterApproval(p.ref, PR_RESOLVE_TOOL, signal)
-      if (changed) return changed
-      const done = await p.access.setResolved(p.ref, { conversationId: conversation.id }, true)
-      if (!done.ok) return toolText(`Resolving failed: ${done.error.message}`, true)
-      return toolText(`Resolved the conversation${location(conversation) ? ` at ${location(conversation)}` : ''} on ${prLabel(p.ref)}.`)
+      }), { kind: 'pr-resolve', ref: p.ref, conversationId: conversation.id, location: location(conversation) })
     },
   }
 
@@ -490,7 +471,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       additionalProperties: false,
     },
     annotations: { title: 'Re-run a failed check', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    async call(args, { signal }) {
+    async call(args) {
       const p = pick(args)
       if ('content' in p) return p
       const caps = HOST_CAPABILITIES[p.ref.host]
@@ -504,14 +485,9 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if (!check) return toolText(`No check ${args.checkId} on the head commit. Call ${PR_STATUS_TOOL} for the current ids.`, true)
       if (check.state !== 'failure') return toolText(`${check.name} is ${check.state}, not failed. Only a failed check is re-run.`, true)
       if (!check.rerunId) return toolText(`${check.name} is not a GitHub Actions run; it is re-run where it ran.`, true)
-      const outcome = await ask(PR_RERUN_TOOL, card(p.ref, 'rerun', { url: check.url, checkName: check.name }), signal)
-      if ('content' in outcome) return outcome
-      if (outcome.decision === 'deny') return declined(outcome)
-      const changed = afterApproval(p.ref, PR_RERUN_TOOL, signal)
-      if (changed) return changed
-      const done = await p.access.rerunCheck(p.ref, { checkId: check.id })
-      if (!done.ok) return toolText(`Re-running failed: ${done.error.message}`, true)
-      return toolText(`Re-running ${check.name} on ${prLabel(p.ref)}. Check back with ${PR_STATUS_TOOL} later.`)
+      return queue(PR_RERUN_TOOL, card(p.ref, 'rerun', { url: check.url, checkName: check.name }), {
+        kind: 'pr-rerun', ref: p.ref, checkId: check.id, checkName: check.name,
+      })
     },
   }
 
@@ -592,7 +568,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       additionalProperties: false,
     },
     annotations: { title: 'Comment on a line', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    async call(args, { signal }) {
+    async call(args) {
       const p = pick(args)
       if ('content' in p) return p
       const target = checkLineTarget(args)
@@ -612,24 +588,12 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         return toolText(`${where} is not a line the diff shows on the ${target.value.side} side. Call ${PR_DIFF_TOOL} and pick a line from it. Nothing was sent.`, true)
       }
       const { startLine, line } = target.value
-      const outcome = await ask(PR_COMMENT_TOOL, card(p.ref, 'comment', {
+      return queue(PR_COMMENT_TOOL, card(p.ref, 'comment', {
         location: where,
         replyText: draft.value,
         excerpt: diffExcerpt(files.data, target.value, COMMENT_EXCERPT_RADIUS),
         ...(startLine !== undefined ? { lineRange: { start: startLine, end: line } } : {}),
-      }), signal)
-      if ('content' in outcome) return outcome
-      if (outcome.decision === 'deny') return declined(outcome)
-      const changed = afterApproval(p.ref, PR_COMMENT_TOOL, signal)
-      if (changed) return changed
-
-      const final = outcome.response.text === undefined ? draft : checkCommentText(outcome.response.text)
-      if (!final.ok) return toolText(`The edited comment was refused: ${final.message} Nothing was posted.`, true)
-      const posted = await p.access.inlineComment(p.ref, { ...target.value, body: withViaMarker(final.value) })
-      if (!posted.ok) return toolText(`Posting failed: ${posted.error.message} Nothing was posted.`, true)
-      log.info('agent line comment posted', { host: p.ref.host, number: p.ref.number })
-      const edited = final.value !== draft.value ? ` The user edited your comment first; what was posted:\n${final.value}` : ''
-      return toolText(`Posted the comment at ${where} on ${prLabel(p.ref)}.${edited}`)
+      }), { kind: 'pr-comment', ref: p.ref, target: target.value, draft: draft.value })
     },
   }
 
@@ -667,7 +631,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       additionalProperties: false,
     },
     annotations: { title: 'Draft a review', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    async call(args, { signal }) {
+    async call(args) {
       const p = pick(args)
       if ('content' in p) return p
       const draft = checkReviewDraft(args)
@@ -693,42 +657,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         verdicts: commentOnly ? ['comment'] : reviewEventsFor(detail.data.viewer),
         ...(commentOnly ? { commentOnly } : {}),
       }
-      const outcome = await ask(PR_REVIEW_TOOL, card(p.ref, 'review', { url: detail.data.url, review }), signal)
-      if ('content' in outcome) return outcome
-      if (outcome.decision === 'deny') return declined(outcome)
-      const changed = afterApproval(p.ref, PR_REVIEW_TOOL, signal)
-      if (changed) return changed
-
-      const final = reviewFromResponse(p.ref.host, review, outcome.response)
-      if (!final.ok) return toolText(final.message, true)
-      const { verdict } = final.value
-      const submitted = await p.access.submitReview(p.ref, {
-        event: verdict,
-        body: withViaMarker(final.value.summary),
-        comments: final.value.comments.map((c) => ({
-          path: c.path,
-          side: c.side,
-          line: c.line,
-          ...(c.startLine !== undefined ? { startLine: c.startLine } : {}),
-          body: withViaMarker(c.text),
-        })),
-      })
-      if (!submitted.ok) {
-        const posted = submitted.error.postedComments ?? 0
-        return toolText(posted > 0
-          ? `Submitting the review failed part way: ${submitted.error.message} ${posted} of its comments were posted. Do not submit it again; tell the user.`
-          : `Submitting the review failed: ${submitted.error.message} Nothing was posted.`, true)
-      }
-      log.info('agent review submitted', { host: p.ref.host, number: p.ref.number, verdict, comments: final.value.comments.length })
-      const notes = [
-        final.value.removed > 0 ? `removed ${final.value.removed} of your comments` : '',
-        final.value.edited > 0 ? `edited ${final.value.edited}` : '',
-        final.value.summary !== summary ? 'edited the summary' : '',
-      ].filter(Boolean)
-      return toolText(
-        `The user submitted the review on ${prLabel(p.ref)} as ${REVIEW_EVENT_LABEL[verdict]}, with ${final.value.comments.length} inline comments.` +
-        `${notes.length > 0 ? ` They ${notes.join(', ')} first.` : ''} Do not post these comments again.`,
-      )
+      return queue(PR_REVIEW_TOOL, card(p.ref, 'review', { url: detail.data.url, review }), { kind: 'pr-review', ref: p.ref, review })
     },
   }
 
@@ -739,18 +668,6 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     const repo = await access.repoFor(projectPath)
     if (!repo) return toolText(`The git remotes of ${projectPath} point at neither GitHub nor Bitbucket, so Switchboard cannot open a pull request for it.`, true)
     return { projectPath, repo }
-  }
-
-  const linkCreated = (access: AgentPullRequestAccess, repo: RepoRef, pr: CreatedPr, created: boolean): { ref: PrRef; linked: string } => {
-    const ref: PrRef = { ...repo, number: pr.number }
-    const ok = access.linkToChat(ctx.chatId, ref, created)
-    return {
-      ref,
-      // The PR tools act only on linked PRs, so they are offered only when the link held.
-      linked: ok
-        ? 'It is linked to this chat and shows in Reviews, and the pull request tools can act on it now.'
-        : 'Linking it to this chat failed, so the pull request tools cannot act on it yet: ask the user to use Link to chat in Reviews.',
-    }
   }
 
   const createTool: McpTool = {
@@ -789,7 +706,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       additionalProperties: false,
     },
     annotations: { title: 'Open a pull request', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    async call(args, { signal }) {
+    async call(args) {
       const access = ctx.pullRequests
       if (!access) return toolText('Reviews is not available on this backend, so a pull request cannot be opened here.', true)
       const input = checkCreatePrArgs(args)
@@ -823,7 +740,7 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const open = await access.openPullRequestFor(repo, source)
       if (!open.ok) return toolText(`Could not check for an open pull request on ${repoLabel}: ${open.error.message} Nothing was created.`, true)
       if (open.data) {
-        const { linked } = linkCreated(access, repo, open.data, false)
+        const { linked } = linkCreated(access, ctx.chatId, repo, open.data, false)
         const skipped = input.value.reviewers.length > 0 ? ' Its reviewers were not changed; the user can add them in Reviews.' : ''
         return toolText(`A pull request is already open for ${source}: ${repoLabel} #${open.data.number}, ${open.data.url}. ${linked} No new one was created.${skipped}`)
       }
@@ -839,9 +756,17 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         reviewers = resolved.value
       }
 
-      const draft = { title: input.value.title, description: input.value.description }
-      const withoutCard = createPullRequestGate(ctx.runtimeMode()) === 'allow'
-      const outcome = withoutCard ? autoApproved() : await ask(PR_CREATE_TOOL, {
+      const plan: PrWritePlan = {
+        kind: 'pr-create', repo, projectPath: chat.projectPath, source, target,
+        title: input.value.title, description: input.value.description, draft: input.value.draft, reviewers,
+      }
+      // Full access opens it without a card, in this call.
+      if (createPullRequestGate(ctx.runtimeMode()) === 'allow') {
+        const budget = ctx.budget.take(ctx.chatId)
+        if (!budget.ok) return toolText(budget.message, true)
+        return runPrWritePlan(ctx, plan, {}, { withoutCard: true })
+      }
+      return queue(PR_CREATE_TOOL, {
         action: 'create',
         agentLabel: ctx.agentLabel,
         host: repo.host,
@@ -850,75 +775,239 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         url: null,
         location: null,
         quote: null,
-        create: { repoLabel, sourceBranch: source, targetBranch: target, ...draft, draft: input.value.draft, ...(reviewers.length > 0 ? { reviewers } : {}) },
+        create: {
+          repoLabel, sourceBranch: source, targetBranch: target, title: plan.title, description: plan.description,
+          draft: input.value.draft, ...(reviewers.length > 0 ? { reviewers } : {}),
+        },
         maxChars: PR_DESCRIPTION_MAX_CHARS,
-      }, signal)
-      if ('content' in outcome) return outcome
-      if (outcome.decision === 'deny') return declined(outcome)
-      if (signal.aborted) return declined({ decision: 'deny', reason: 'cancelled' })
-      const plan = refusePlan(PR_CREATE_TOOL)
-      if (plan) return plan
-      // The link rule again: the project must still point at the repository the card named.
-      const now = await access.repoFor(chat.projectPath)
-      if (!now || repoKey(now) !== repoKey(repo)) {
-        return toolText(`This chat's project no longer points at ${repoLabel}. Nothing was created.`, true)
-      }
-
-      const title = outcome.response.title === undefined ? { ok: true as const, value: draft.title } : checkPrTitle(outcome.response.title)
-      if (!title.ok) return toolText(`The edited title was refused: ${title.message} Nothing was created.`, true)
-      const description = outcome.response.description === undefined ? { ok: true as const, value: draft.description } : checkPrDescription(outcome.response.description)
-      if (!description.ok) return toolText(`The edited description was refused: ${description.message} Nothing was created.`, true)
-      // No card was shown, so full access must still hold after the awaits above.
-      if (withoutCard && createPullRequestGate(ctx.runtimeMode()) !== 'allow') {
-        return toolText('The chat left full access before the pull request was opened, so nothing was created. Call again: the user will see an approval card.', true)
-      }
-      const kept = keptReviewers(reviewers, outcome.response.reviewers)
-      const created = await access.createPullRequest(repo, {
-        title: title.value,
-        description: withViaMarker(description.value),
-        sourceBranch: source,
-        targetBranch: target,
-        draft: input.value.draft,
-        ...(kept.length > 0 ? { reviewers: kept.map((r) => r.id) } : {}),
-      })
-      if (!created.ok) {
-        if (!isUncertainCreateFailure(created.error)) return toolText(`Opening the pull request failed: ${created.error.message} Nothing was created.`, true)
-        // The request may have gone out: look before telling the agent anything.
-        const after = await access.openPullRequestFor(repo, source)
-        if (after.ok && after.data) {
-          const { linked } = linkCreated(access, repo, after.data, true)
-          const unsure = kept.length > 0 ? ' Whether its reviewers were asked is not known: tell the user to check them in Reviews.' : ''
-          return toolText(`Opened ${repoLabel} #${after.data.number}: ${after.data.url} (the host's answer was lost, but the pull request is there). ${linked} Do not open it again.${unsure}`)
-        }
-        log.warn('agent pull request create result uncertain', { host: repo.host, kind: created.error.kind })
-        return toolText(
-          `The host did not answer clearly: ${created.error.message} The pull request may or may not have been opened. ` +
-          `Do not call ${PR_CREATE_TOOL} again; ask the user to check ${PR_HOST_LABEL[repo.host]} or Reviews.`, true)
-      }
-      const { ref, linked } = linkCreated(access, repo, created.data, !created.data.existing)
-      if (created.data.existing) {
-        const skipped = kept.length > 0 ? ' Its reviewers were not changed; the user can add them in Reviews.' : ''
-        return toolText(`A pull request for ${source} was opened while the card was open: ${repoLabel} #${ref.number}, ${created.data.url}. ${linked} No new one was created.${skipped}`)
-      }
-      log.info('agent pull request opened', { host: repo.host, number: ref.number, reviewers: kept.length })
-      const removed = reviewers.filter((r) => !kept.includes(r))
-      const edits = [
-        title.value !== draft.title ? `the title to "${title.value}"` : '',
-        description.value !== draft.description ? 'the description' : '',
-        removed.length > 0 ? `the reviewers, removing ${removed.map(reviewerLabel).join(', ')}` : '',
-      ].filter(Boolean)
-      const failure = created.data.reviewerFailure
-      const asked = kept.length === 0 ? ''
-        : failure
-          ? ` Asking ${kept.filter((r) => failure.reviewers.includes(r.id)).map(reviewerLabel).join(', ')} to review failed: ${failure.error.message} ` +
-            `The pull request is open either way: do not open it again. Tell the user, who can add them in Reviews.`
-          : ` Asked ${kept.map(reviewerLabel).join(', ')} to review it.`
-      return toolText(
-        `Opened ${repoLabel} #${ref.number}: ${created.data.url} (${source} -> ${target}). ${linked}` +
-        `${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}${asked}`,
-      )
+      }, plan)
     },
   }
 
   return [statusTool, conversationsTool, diffTool, createTool, replyTool, resolveTool, rerunTool, commentTool, reviewTool]
+}
+
+type PlanGateContext = Pick<PrToolContext, 'threadId' | 'runtimeMode' | 'publish'>
+
+/** Plan mode refuses a write: before anything is read, and again after the card. */
+function refusePlanFor(ctx: PlanGateContext, toolName: string): McpToolResult | null {
+  const mode = ctx.runtimeMode()
+  if (hostWriteGate(mode) !== 'deny') return null
+  const reason = 'Plan mode - nothing is posted to a pull request. Tell the user what you would post, or ask them to switch modes.'
+  ctx.publish({ type: 'tool.denied', threadId: ctx.threadId, toolName: `mcp__switchboard__${toolName}`, reason, mode })
+  return toolText(reason, true)
+}
+
+/**
+ * Checked after the card, right before the write: while it was open the user
+ * may have unlinked the PR or switched to plan mode.
+ */
+function changedSinceCard(ctx: PrWriteRunContext, ref: PrRef, toolName: string): McpToolResult | null {
+  const plan = refusePlanFor(ctx, toolName)
+  if (plan) return plan
+  const key = prKey(normalizePrRef(ref))
+  if (!ctx.pullRequests?.linkedPrs(ctx.chatId).some((r) => prKey(normalizePrRef(r)) === key)) {
+    return toolText(`${prLabel(ref)} was unlinked from this chat while the card was open. Nothing was posted.`, true)
+  }
+  return null
+}
+
+function linkCreated(access: AgentPullRequestAccess, chatId: string, repo: RepoRef, pr: CreatedPr, created: boolean): { ref: PrRef; linked: string } {
+  const ref: PrRef = { ...repo, number: pr.number }
+  const ok = access.linkToChat(chatId, ref, created)
+  return {
+    ref,
+    // The PR tools act only on linked PRs, so they are offered only when the link held.
+    linked: ok
+      ? 'It is linked to this chat and shows in Reviews, and the pull request tools can act on it now.'
+      : 'Linking it to this chat failed, so the pull request tools cannot act on it yet: ask the user to use Link to chat in Reviews.',
+  }
+}
+
+const PLAN_TOOL: Record<PrWritePlan['kind'], string> = {
+  'pr-reply': PR_REPLY_TOOL,
+  'pr-resolve': PR_RESOLVE_TOOL,
+  'pr-rerun': PR_RERUN_TOOL,
+  'pr-comment': PR_COMMENT_TOOL,
+  'pr-review': PR_REVIEW_TOOL,
+  'pr-create': PR_CREATE_TOOL,
+}
+
+/** What the agent is told it asked for, in a denial or a withdrawal. */
+export function prWritePlanSummary(plan: PrWritePlan): string {
+  switch (plan.kind) {
+    case 'pr-reply': return `the reply on ${prLabel(plan.ref)}${plan.location ? ` at ${plan.location}` : ''}`
+    case 'pr-resolve': return `resolving the conversation${plan.location ? ` at ${plan.location}` : ''} on ${prLabel(plan.ref)}`
+    case 'pr-rerun': return `re-running ${plan.checkName} on ${prLabel(plan.ref)}`
+    case 'pr-comment': return `the comment at ${lineLocation(plan.target)} on ${prLabel(plan.ref)}`
+    case 'pr-review': return `the review of ${prLabel(plan.ref)}`
+    case 'pr-create': return `opening a pull request from ${plan.source} into ${plan.target} on ${plan.repo.owner}/${plan.repo.name}`
+  }
+}
+
+/**
+ * Run a write the user approved (or, for a create in full access, that needs
+ * no card), with the card's response. Every check after the card runs here:
+ * plan mode, the link, the PR re-read the host write does itself.
+ */
+export async function runPrWritePlan(
+  ctx: PrWriteRunContext,
+  plan: PrWritePlan,
+  response: HostWriteResponse,
+  opts: { withoutCard?: boolean } = {},
+): Promise<McpToolResult> {
+  const access = ctx.pullRequests
+  if (!access) return toolText('Reviews is not available on this backend, so nothing was posted.', true)
+  if (plan.kind === 'pr-create') return runCreate(ctx, access, plan, response, opts.withoutCard === true)
+  const changed = changedSinceCard(ctx, plan.ref, PLAN_TOOL[plan.kind])
+  if (changed) return changed
+  const ref = plan.ref
+
+  if (plan.kind === 'pr-reply') {
+    const final = response.text === undefined ? checkReplyText(plan.draft) : checkReplyText(response.text)
+    if (!final.ok) return toolText(`The edited reply was refused: ${final.message} Nothing was posted.`, true)
+    const resolve = !plan.conversationResolved && (response.resolve ?? plan.suggestResolve)
+    const posted = await access.reply(ref, { conversationId: plan.conversationId, body: withViaMarker(final.text) })
+    if (!posted.ok) return toolText(`Posting failed: ${posted.error.message} Nothing was posted.`, true)
+    log.info('agent reply posted', { host: ref.host, number: ref.number, resolve })
+
+    const edited = final.text !== plan.draft ? ` The user edited your reply first; what was posted:\n${final.text}` : ''
+    if (!resolve) return toolText(`Posted the reply on ${prLabel(ref)}${plan.location ? ` at ${plan.location}` : ''}. The conversation stays open.${edited}`)
+    // The post can take a while: check the link and the mode again before the second write.
+    if (changedSinceCard(ctx, ref, PR_REPLY_TOOL)) {
+      return toolText(`Posted the reply on ${prLabel(ref)}, but did not resolve the conversation: the chat's link or mode changed while the reply was posting. Do not post the reply again.${edited}`, true)
+    }
+    const resolved = await access.setResolved(ref, { conversationId: plan.conversationId }, true)
+    if (!resolved.ok) {
+      return toolText(`Posted the reply, but resolving the conversation failed: ${resolved.error.message} Do not post the reply again.${edited}`, true)
+    }
+    return toolText(`Posted the reply on ${prLabel(ref)} and resolved the conversation.${edited}`)
+  }
+
+  if (plan.kind === 'pr-resolve') {
+    const done = await access.setResolved(ref, { conversationId: plan.conversationId }, true)
+    if (!done.ok) return toolText(`Resolving failed: ${done.error.message}`, true)
+    return toolText(`Resolved the conversation${plan.location ? ` at ${plan.location}` : ''} on ${prLabel(ref)}.`)
+  }
+
+  if (plan.kind === 'pr-rerun') {
+    const done = await access.rerunCheck(ref, { checkId: plan.checkId })
+    if (!done.ok) return toolText(`Re-running failed: ${done.error.message}`, true)
+    return toolText(`Re-running ${plan.checkName} on ${prLabel(ref)}. Check back with ${PR_STATUS_TOOL} later.`)
+  }
+
+  if (plan.kind === 'pr-comment') {
+    const where = lineLocation(plan.target)
+    const final = response.text === undefined ? checkCommentText(plan.draft) : checkCommentText(response.text)
+    if (!final.ok) return toolText(`The edited comment was refused: ${final.message} Nothing was posted.`, true)
+    const posted = await access.inlineComment(ref, { ...plan.target, body: withViaMarker(final.value) })
+    if (!posted.ok) return toolText(`Posting failed: ${posted.error.message} Nothing was posted.`, true)
+    log.info('agent line comment posted', { host: ref.host, number: ref.number })
+    const edited = final.value !== plan.draft ? ` The user edited your comment first; what was posted:\n${final.value}` : ''
+    return toolText(`Posted the comment at ${where} on ${prLabel(ref)}.${edited}`)
+  }
+
+  const review = plan.review
+  const final = reviewFromResponse(ref.host, review, response)
+  if (!final.ok) return toolText(final.message, true)
+  const { verdict } = final.value
+  const submitted = await access.submitReview(ref, {
+    event: verdict,
+    body: withViaMarker(final.value.summary),
+    comments: final.value.comments.map((c) => ({
+      path: c.path,
+      side: c.side,
+      line: c.line,
+      ...(c.startLine !== undefined ? { startLine: c.startLine } : {}),
+      body: withViaMarker(c.text),
+    })),
+  })
+  if (!submitted.ok) {
+    const posted = submitted.error.postedComments ?? 0
+    return toolText(posted > 0
+      ? `Submitting the review failed part way: ${submitted.error.message} ${posted} of its comments were posted. Do not submit it again; tell the user.`
+      : `Submitting the review failed: ${submitted.error.message} Nothing was posted.`, true)
+  }
+  log.info('agent review submitted', { host: ref.host, number: ref.number, verdict, comments: final.value.comments.length })
+  const notes = [
+    final.value.removed > 0 ? `removed ${final.value.removed} of your comments` : '',
+    final.value.edited > 0 ? `edited ${final.value.edited}` : '',
+    final.value.summary !== review.summary ? 'edited the summary' : '',
+  ].filter(Boolean)
+  return toolText(
+    `The user submitted the review on ${prLabel(ref)} as ${REVIEW_EVENT_LABEL[verdict]}, with ${final.value.comments.length} inline comments.` +
+    `${notes.length > 0 ? ` They ${notes.join(', ')} first.` : ''} Do not post these comments again.`,
+  )
+}
+
+async function runCreate(
+  ctx: PrWriteRunContext,
+  access: AgentPullRequestAccess,
+  plan: Extract<PrWritePlan, { kind: 'pr-create' }>,
+  response: HostWriteResponse,
+  withoutCard: boolean,
+): Promise<McpToolResult> {
+  const { repo, source, target, reviewers } = plan
+  const repoLabel = `${repo.owner}/${repo.name}`
+  const gated = refusePlanFor(ctx, PR_CREATE_TOOL)
+  if (gated) return gated
+  // The link rule again: the project must still point at the repository the card named.
+  const now = await access.repoFor(plan.projectPath)
+  if (!now || repoKey(now) !== repoKey(repo)) {
+    return toolText(`This chat's project no longer points at ${repoLabel}. Nothing was created.`, true)
+  }
+
+  const title = response.title === undefined ? { ok: true as const, value: plan.title } : checkPrTitle(response.title)
+  if (!title.ok) return toolText(`The edited title was refused: ${title.message} Nothing was created.`, true)
+  const description = response.description === undefined ? { ok: true as const, value: plan.description } : checkPrDescription(response.description)
+  if (!description.ok) return toolText(`The edited description was refused: ${description.message} Nothing was created.`, true)
+  // No card was shown, so full access must still hold after the awaits above.
+  if (withoutCard && createPullRequestGate(ctx.runtimeMode()) !== 'allow') {
+    return toolText('The chat left full access before the pull request was opened, so nothing was created. Call again: the user will see an approval card.', true)
+  }
+  const kept = keptReviewers(reviewers, response.reviewers)
+  const created = await access.createPullRequest(repo, {
+    title: title.value,
+    description: withViaMarker(description.value),
+    sourceBranch: source,
+    targetBranch: target,
+    draft: plan.draft,
+    ...(kept.length > 0 ? { reviewers: kept.map((r) => r.id) } : {}),
+  })
+  if (!created.ok) {
+    if (!isUncertainCreateFailure(created.error)) return toolText(`Opening the pull request failed: ${created.error.message} Nothing was created.`, true)
+    // The request may have gone out: look before telling the agent anything.
+    const after = await access.openPullRequestFor(repo, source)
+    if (after.ok && after.data) {
+      const { linked } = linkCreated(access, ctx.chatId, repo, after.data, true)
+      const unsure = kept.length > 0 ? ' Whether its reviewers were asked is not known: tell the user to check them in Reviews.' : ''
+      return toolText(`Opened ${repoLabel} #${after.data.number}: ${after.data.url} (the host's answer was lost, but the pull request is there). ${linked} Do not open it again.${unsure}`)
+    }
+    log.warn('agent pull request create result uncertain', { host: repo.host, kind: created.error.kind })
+    return toolText(
+      `The host did not answer clearly: ${created.error.message} The pull request may or may not have been opened. ` +
+      `Do not call ${PR_CREATE_TOOL} again; ask the user to check ${PR_HOST_LABEL[repo.host]} or Reviews.`, true)
+  }
+  const { ref, linked } = linkCreated(access, ctx.chatId, repo, created.data, !created.data.existing)
+  if (created.data.existing) {
+    const skipped = kept.length > 0 ? ' Its reviewers were not changed; the user can add them in Reviews.' : ''
+    return toolText(`A pull request for ${source} was opened while the card was open: ${repoLabel} #${ref.number}, ${created.data.url}. ${linked} No new one was created.${skipped}`)
+  }
+  log.info('agent pull request opened', { host: repo.host, number: ref.number, reviewers: kept.length })
+  const removed = reviewers.filter((r) => !kept.some((k) => k.id === r.id))
+  const edits = [
+    title.value !== plan.title ? `the title to "${title.value}"` : '',
+    description.value !== plan.description ? 'the description' : '',
+    removed.length > 0 ? `the reviewers, removing ${removed.map(reviewerLabel).join(', ')}` : '',
+  ].filter(Boolean)
+  const failure = created.data.reviewerFailure
+  const asked = kept.length === 0 ? ''
+    : failure
+      ? ` Asking ${kept.filter((r) => failure.reviewers.includes(r.id)).map(reviewerLabel).join(', ')} to review failed: ${failure.error.message} ` +
+        `The pull request is open either way: do not open it again. Tell the user, who can add them in Reviews.`
+      : ` Asked ${kept.map(reviewerLabel).join(', ')} to review it.`
+  return toolText(
+    `Opened ${repoLabel} #${ref.number}: ${created.data.url} (${source} -> ${target}). ${linked}` +
+    `${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}${asked}`,
+  )
 }

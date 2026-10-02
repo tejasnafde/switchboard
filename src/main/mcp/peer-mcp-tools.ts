@@ -14,6 +14,10 @@
  * message would defeat the link they just made. Sandbox and accept-edits keep
  * the card even when linked: in those modes the user reviews every outward
  * action, and a peer message is one (its text can steer the other agent).
+ *
+ * The card does not hold the turn: the tool says the message is queued for
+ * the user and returns, and the approval sends it later (`runPeerSendPlan`),
+ * with plan mode and every delivery guard checked then.
  */
 import type { RuntimeEvent, RuntimeMode } from '@shared/provider-events'
 import { decidePermission, denialMessage } from '../provider/policy'
@@ -26,22 +30,39 @@ import {
   PEER_SEND_TOOL_NAME,
   type PeerToolHost,
 } from '../provider/peer-tools'
-import type { AgentApprovalBroker, AgentApprovalDenyReason } from './agent-approvals'
-import { toolText, type McpTool } from './mcp-session'
+import { queuedToolText } from '@shared/agent-approval-cards'
+import type { AgentApprovalBroker } from './agent-approvals'
+import { toolText, type McpTool, type McpToolResult } from './mcp-session'
 
-const PEER_DENIED: Record<AgentApprovalDenyReason, string> = {
-  user: 'User denied permission',
-  expired: 'The approval expired without an answer. Nothing was sent.',
-  cancelled: 'The call was cancelled before the user answered. Nothing was sent.',
-  stopped: 'The session stopped before the user answered. Nothing was sent.',
+/** A peer send as its approval card stores it. */
+export interface PeerSendPlan {
+  kind: 'peer-send'
+  sessionId: string
+  message: string
 }
 
 export interface PeerMcpToolContext {
   threadId: string
+  /** The root conversation id. */
+  chatId: string
   runtimeMode(): RuntimeMode
   publish(event: RuntimeEvent): void
-  approvals: Pick<AgentApprovalBroker, 'ask'>
+  approvals: Pick<AgentApprovalBroker, 'open'>
   peers: PeerToolHost
+}
+
+/** What sending an approved peer message needs. `threadId` is the id the sender runs under now. */
+export type PeerSendRunContext = Pick<PeerMcpToolContext, 'threadId' | 'runtimeMode' | 'publish' | 'peers'>
+
+/** Send a message the user approved. Plan mode may have been switched on while the card was open. */
+export async function runPeerSendPlan(ctx: PeerSendRunContext, plan: PeerSendPlan): Promise<McpToolResult> {
+  const now = ctx.runtimeMode()
+  if (decidePermission(now, PEER_SEND_TOOL) === 'deny') {
+    const reason = denialMessage(now, PEER_SEND_TOOL)
+    ctx.publish({ type: 'tool.denied', threadId: ctx.threadId, toolName: PEER_SEND_TOOL, reason, mode: now })
+    return toolText(`${reason} Nothing was sent.`, true)
+  }
+  return createPeerToolHandlers(ctx.peers, ctx.threadId).sendMessage({ sessionId: plan.sessionId, message: plan.message })
 }
 
 export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
@@ -73,7 +94,7 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
         additionalProperties: false,
       },
       annotations: { title: 'Message another agent session', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-      async call(args, { signal }) {
+      async call(args) {
         const input = {
           sessionId: typeof args.sessionId === 'string' ? args.sessionId : '',
           message: typeof args.message === 'string' ? args.message : '',
@@ -87,22 +108,16 @@ export function buildPeerMcpTools(ctx: PeerMcpToolContext): McpTool[] {
           ctx.publish({ type: 'tool.denied', threadId: ctx.threadId, toolName: PEER_SEND_TOOL, reason, mode })
           return toolText(reason, true)
         }
-        if (policy === 'prompt') {
-          const outcome = await ctx.approvals.ask({
+        // An empty id or message is refused before it costs the user a card.
+        if (policy === 'prompt' && input.sessionId.trim() && input.message.trim()) {
+          const opened = ctx.approvals.open({
             threadId: ctx.threadId,
+            chatId: ctx.chatId,
             toolName: PEER_SEND_TOOL,
             detail: JSON.stringify(input, null, 2).slice(0, 500),
-            signal,
+            plan: { kind: 'peer-send', sessionId: input.sessionId, message: input.message },
           })
-          if (outcome.decision === 'deny') return toolText(PEER_DENIED[outcome.reason], true)
-          if (signal.aborted) return toolText(PEER_DENIED.cancelled, true)
-          // The card can stay open for minutes: a switch to plan mode meanwhile still wins.
-          const now = ctx.runtimeMode()
-          if (decidePermission(now, PEER_SEND_TOOL) === 'deny') {
-            const reason = denialMessage(now, PEER_SEND_TOOL)
-            ctx.publish({ type: 'tool.denied', threadId: ctx.threadId, toolName: PEER_SEND_TOOL, reason, mode: now })
-            return toolText(reason, true)
-          }
+          return opened.ok ? toolText(queuedToolText(opened.requestId)) : toolText(opened.message, true)
         }
         return handlers.sendMessage(linkInsteadOfCard ? { ...input, requireLink: true } : input)
       },

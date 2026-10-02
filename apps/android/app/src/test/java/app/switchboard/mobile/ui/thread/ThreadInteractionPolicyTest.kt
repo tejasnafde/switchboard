@@ -51,6 +51,18 @@ class ThreadInteractionPolicyTest {
     }
 
     @Test
+    fun quietAnswerIsOfferedOnlyOnServerCardsOfABackendThatTakesIt() {
+        val server = FeedItem.Approval("a", "sbmcp_1", "send_agent_message", "msg", "tool", "pending")
+        val adapter = FeedItem.Approval("b", "request-1", "Bash", "run", "tool", "pending")
+        assertTrue(ThreadInteractionPolicy.offersQuiet(server, backendAsyncApproval = true))
+        assertFalse(ThreadInteractionPolicy.offersQuiet(server, backendAsyncApproval = false))
+        assertFalse(ThreadInteractionPolicy.offersQuiet(adapter, backendAsyncApproval = true))
+        assertEquals(HostWriteResponse(quiet = true), ThreadInteractionPolicy.quietly(null, quiet = true))
+        assertEquals(HostWriteResponse(verdict = "comment", quiet = true), ThreadInteractionPolicy.quietly(HostWriteResponse(verdict = "comment"), quiet = true))
+        assertNull(ThreadInteractionPolicy.quietly(null, quiet = false))
+    }
+
+    @Test
     fun longReplyIsShownInFullAndApprovableOnlyOnceOpened() {
         val long = (1..40).joinToString("\n") { "Line $it of the reply." }
         val approval = hostWriteApproval("action" to JsonString("reply"), "replyText" to JsonString(long))

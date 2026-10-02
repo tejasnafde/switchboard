@@ -9,6 +9,7 @@ object ThreadTestTags {
     const val ARCHIVE_ACTION = "thread-archive-action"
     const val ARCHIVE_CONFIRM = "thread-archive-confirm"
     const val APPROVAL_SLOT = "thread-approval-slot"
+    const val APPROVAL_QUIET = "thread-approval-quiet"
     const val HOST_WRITE_PREVIEW = "thread-host-write-preview"
     const val HOST_WRITE_EXPAND = "thread-host-write-expand"
     const val QUEUE_TOGGLE = "thread-queue-next-toggle"

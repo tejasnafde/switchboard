@@ -7,6 +7,7 @@ import { openExternal } from '../reviews/review-ui'
 import { createRendererLogger } from '../../logger'
 import {
   createDraftProblem,
+  hostWriteButtonLabel,
   hostWriteButtons,
   hostWriteContext,
   hostWriteResponse,
@@ -34,6 +35,8 @@ interface HostWriteApprovalCardProps {
  * text as an editable draft, and what it posts.
  * The text left in the boxes is the text that is posted. A draft review ends
  * in one button per verdict the user may give, none of them preselected.
+ * The agent does not wait on the card; "Don't wake the agent" answers it
+ * without sending the agent the result (Approve quietly, or Dismiss).
  */
 export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCardProps) {
   const card = message.approval?.hostWrite
@@ -43,6 +46,7 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
   // `pending` flips only when request.closed round-trips; this stops a double post before then.
   const submitRef = useRef(false)
   const [submitting, setSubmitting] = useState<HostWriteButton['id'] | null>(null)
+  const [quiet, setQuiet] = useState(false)
 
   if (!message.approval || !card) return null
   const reqId = message.id.replace('approval_', '')
@@ -63,7 +67,8 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
     if (buttonProblem(button)) return
     submitRef.current = true
     setSubmitting(button.id)
-    const response = button.decision === 'approve' ? hostWriteResponse(card, button, text, draft, create) : undefined
+    const answer = button.decision === 'approve' ? hostWriteResponse(card, button, text, draft, create) : {}
+    const response = quiet ? { ...answer, quiet: true } : button.decision === 'approve' ? answer : undefined
     Promise.resolve(onDecide(reqId, button.decision, undefined, response)).catch((err) => {
       // ChatPanel already put the failure in the chat; let the user try again.
       log.warn('decision failed, re-enabling card', { reqId, button: button.id, err })
@@ -163,7 +168,18 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
       {pending && (
         <div data-host-write-actions className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] px-3 py-2">
           {/* Shares the row when there is room, takes its own line in a narrow chat. */}
-          <span className="mr-auto min-w-0 flex-[1_1_14rem] text-[11px] text-[var(--text-muted)]">{card.agentLabel} asked for this; Switchboard holds it until you choose.</span>
+          <span className="mr-auto min-w-0 flex-[1_1_14rem] text-[11px] text-[var(--text-muted)]">{card.agentLabel} asked for this and carried on. It hears what you choose.</span>
+          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[var(--text-secondary)]" title="Answer without sending the agent a message about it">
+            <input
+              type="checkbox"
+              data-host-write-quiet
+              checked={quiet}
+              disabled={submitting !== null}
+              onChange={(e) => setQuiet(e.target.checked)}
+              className="m-0 accent-[var(--accent)]"
+            />
+            Don't wake the agent
+          </label>
           {buttons.map((b) => (
             <Button
               key={b.id}
@@ -174,7 +190,7 @@ export function HostWriteApprovalCard({ message, onDecide }: HostWriteApprovalCa
               aria-busy={submitting === b.id || undefined}
               onClick={() => choose(b)}
             >
-              {b.label}
+              {hostWriteButtonLabel(b, quiet)}
             </Button>
           ))}
         </div>

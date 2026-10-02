@@ -7,7 +7,6 @@ import {
   isSwitchboardOpencodeReadTool,
   isSwitchboardOpencodeTool,
 } from '../../src/main/mcp/agent-registration'
-import { HOST_WRITE_APPROVAL_TTL_MS } from '../../src/shared/agent-host-writes'
 
 const launch = {
   command: 'C:\\Program Files\\Switchboard\\Switchboard.exe',
@@ -25,8 +24,8 @@ describe('Codex', () => {
     ])
   })
 
-  it('waits on a call longer than a card lives, so the card always closes first', () => {
-    expect(CODEX_SWITCHBOARD_TOOL_TIMEOUT_SEC * 1000).toBeGreaterThan(HOST_WRITE_APPROVAL_TTL_MS)
+  it('allows a slow host call past Codex\'s 60 second default; no call waits on a card any more', () => {
+    expect(CODEX_SWITCHBOARD_TOOL_TIMEOUT_SEC).toBe(180)
   })
 
   it('recognises only our own server\'s confirm', () => {
