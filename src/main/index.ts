@@ -394,7 +394,13 @@ function saveWindowBounds(window: BrowserWindow): void {
 // activated, and showInactive() draws the window without making it key.
 // Not for the visual behaviour phase, which reads the real screen.
 const e2eBackground = process.platform === 'darwin' && process.env.SB_E2E_BACKGROUND === '1'
-if (e2eBackground) app.setActivationPolicy('accessory')
+if (e2eBackground) {
+  app.setActivationPolicy('accessory')
+  // The window is fully transparent (below), and Chromium stops painting a
+  // window it thinks is hidden or covered; screenshots need the frames.
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+}
 
 function createWindow(): BrowserWindow {
   const iconPath = join(app.getAppPath(), 'resources/icons/switchboard-logo-1024.png')
@@ -422,10 +428,19 @@ function createWindow(): BrowserWindow {
       sandbox: false,
       // Embedded IDE: the code-server workbench renders in a <webview>.
       webviewTag: true,
+      backgroundThrottling: !e2eBackground,
     },
   })
 
-  if (e2eBackground) window.once('ready-to-show', () => window.showInactive())
+  // An unfocused window still covers the user's work on a one-screen
+  // machine, so a background window is also invisible and lets clicks
+  // through. Tests drive it over CDP and read the renderer's own pixels,
+  // which window opacity does not touch.
+  if (e2eBackground) {
+    window.setOpacity(0)
+    window.setIgnoreMouseEvents(true)
+    window.once('ready-to-show', () => window.showInactive())
+  }
 
   if (process.platform === 'darwin') {
     window.webContents.on('did-finish-load', () => {
