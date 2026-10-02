@@ -120,10 +120,15 @@ export function ChatLanding({
     }
   }, [])
 
+  // A later pick supersedes an earlier one still waiting on its draft, so
+  // the typed text cannot land on a project the chip no longer shows.
+  const chooseRequestRef = useRef(0)
   const choose = useCallback(async (target: ProjectTarget) => {
     if (sameTarget(target, selected)) return
+    const request = ++chooseRequestRef.current
     const from = draftId
     const to = await ensureDraftSession(target.projectPath, target.machineId)
+    if (request !== chooseRequestRef.current) return
     // What was typed follows the project chip instead of staying behind in
     // a draft the landing screen no longer shows.
     if (from && from !== to) {
@@ -155,6 +160,9 @@ export function ChatLanding({
   ], [targets, withMachine])
 
   const block = local === null ? null : landingSendBlock(selected, targets.length)
+  // Only the selected project's own draft may take input: a target that a
+  // refresh or a disconnect removed must not be sent to on the next render.
+  const liveDraftId = selected && draftId === draftSessionId(selected.machineId, selected.projectPath) ? draftId : null
 
   const heading = (
     <div className="chat-landing-intro" data-testid="chat-landing">
@@ -197,7 +205,7 @@ export function ChatLanding({
   return (
     <ChatPanel
       chatSlot="primary"
-      sessionIdOverride={draftId}
+      sessionIdOverride={liveDraftId}
       landing={heading}
       emptyPlaceholder={block ?? 'Message the agent...'}
     />
