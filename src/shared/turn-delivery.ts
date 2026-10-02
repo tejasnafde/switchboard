@@ -73,12 +73,16 @@ export function runningPlaceholder(provider: string | undefined | null, preferre
 
 /**
  * Does an accepted send start a provider turn of its own, one the registry
- * waits on a `turn.completed` for? A Codex steer joins the running turn and
- * does not; everything else does, including a queued message, which becomes
- * its own turn once the running one ends.
+ * waits on a `turn.completed` for? A steer joins the running turn and does
+ * not: Codex steers into it, and Claude reads it at the next tool boundary,
+ * so six steers end in ONE result (measured 2026-10-02). Counting each one
+ * left the chat "busy" for good and refused every profile switch. A queued
+ * message does count: it becomes its own turn once the running one ends.
+ * OpenCode refuses a mid-turn send that is not queued, so it never steers.
+ * `provider` stays in the signature for callers and a provider that differs.
  */
-export function startsOwnProviderTurn(provider: string, midTurn: boolean, delivery: TurnDelivery | undefined): boolean {
-  return provider !== 'codex' || !midTurn || delivery === 'queue'
+export function startsOwnProviderTurn(_provider: string, midTurn: boolean, delivery: TurnDelivery | undefined): boolean {
+  return !midTurn || delivery === 'queue'
 }
 
 /**

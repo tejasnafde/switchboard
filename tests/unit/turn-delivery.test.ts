@@ -71,17 +71,21 @@ describe('send button', () => {
 })
 
 describe('queued turn accounting', () => {
-  it('counts every send as a turn of its own except a Codex steer', () => {
+  it('counts every send as a turn of its own except a steer into a running turn', () => {
     expect(startsOwnProviderTurn('codex', true, 'steer')).toBe(false)
     expect(startsOwnProviderTurn('codex', true, undefined)).toBe(false)
     expect(startsOwnProviderTurn('codex', true, 'queue')).toBe(true)
     expect(startsOwnProviderTurn('codex', false, undefined)).toBe(true)
-    expect(startsOwnProviderTurn('claude', true, 'steer')).toBe(true)
+    // Claude reads a steer at the next tool boundary: one result for all of them.
+    expect(startsOwnProviderTurn('claude', true, 'steer')).toBe(false)
+    expect(startsOwnProviderTurn('claude', true, undefined)).toBe(false)
+    expect(startsOwnProviderTurn('claude', true, 'queue')).toBe(true)
+    expect(startsOwnProviderTurn('claude', false, 'steer')).toBe(true)
   })
-  it('releases a cancelled message everywhere, a promoted one only where a steer joins the turn', () => {
+  it('releases a cancelled or promoted message, since a promoted one joins the running turn', () => {
     for (const p of ['claude', 'codex', 'opencode']) expect(releasesOutstandingTurn(p, 'cancelled')).toBe(true)
     expect(releasesOutstandingTurn('codex', 'promoted')).toBe(true)
-    expect(releasesOutstandingTurn('claude', 'promoted')).toBe(false)
+    expect(releasesOutstandingTurn('claude', 'promoted')).toBe(true)
   })
   it('explains why OpenCode cannot send a queued message now', () => {
     expect(promoteUnavailableReason('claude-code')).toBeNull()

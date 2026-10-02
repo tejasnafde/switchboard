@@ -374,6 +374,10 @@ class QueueingAdapter extends MockEchoAdapter {
   complete(threadId: string): void {
     this.emit.get(threadId)?.({ type: 'turn.completed', threadId })
   }
+
+  toolStarted(threadId: string): void {
+    this.emit.get(threadId)?.({ type: 'tool.started', threadId, toolId: 'late-1', toolName: 'Bash', input: {} })
+  }
 }
 
 class CodexSteeringAdapter implements ProviderAdapter {
@@ -1213,16 +1217,33 @@ describe('provider switching over the WebSocket boundary', () => {
     expect(adapter.stops).toEqual([])
   })
 
-  it('does not switch while a second accepted Claude prompt remains queued', async () => {
+  it('does not count a Claude steer: one result settles the running turn and its steers', async () => {
     const adapter = new QueueingAdapter()
     const { cwd } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, {
       threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
     })
     await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'first')
-    await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'second')
+    await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'steer one')
+    await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'steer two')
 
     adapter.complete('t1')
+    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+    })).resolves.toMatchObject({ ok: true, instanceId: 'claude-personal' })
+  })
+
+  it('stays busy while a late steer runs as a turn of its own', async () => {
+    const adapter = new QueueingAdapter()
+    const { cwd } = await setup(adapter)
+    await client!.invoke(ProviderChannels.START_SESSION, {
+      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+    })
+    await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'first')
+    await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'steer after the last tool step')
+
+    adapter.complete('t1')
+    adapter.toolStarted('t1')
     await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
       targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
     })).resolves.toMatchObject({ ok: false, code: 'busy' })
