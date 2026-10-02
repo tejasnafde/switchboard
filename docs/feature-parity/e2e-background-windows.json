@@ -2,11 +2,13 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "e2e-background-windows",
-  "summary": "With SB_E2E_BACKGROUND=1, macOS e2e runs open the app as an accessory app with an inactive window so tests never take focus.",
+  "summary": "With SB_E2E_BACKGROUND=1, macOS e2e runs open the app as an accessory app with an inactive window so tests never take focus. Background windows are also fully transparent and click-through, so they never cover the screen on a one-display machine.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
-      "evidence": ["src/main/index.ts"]
+      "evidence": [
+        "src/main/index.ts"
+      ]
     },
     "reactNativeIos": {
       "status": "not_applicable",
@@ -32,9 +34,14 @@
   "verification": {
     "automated": [
       "SB_E2E_BACKGROUND=1 node e2e/radix-overlays.e2e.mjs (68 checks)",
-      "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens node e2e/visual-regressions.e2e.mjs"
+      "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens node e2e/visual-regressions.e2e.mjs",
+      "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual passed against the existing baselines with the window at opacity 0, and a once-a-second lsappinfo front log showed Firefox in front for all 132 s of the run."
     ],
-    "hardware": ["Frontmost app sampled every 2 s during both runs on a Mac in use; the test app never came to the front."],
-    "notExercised": ["The visual behaviour phase, which must run without the variable."]
+    "hardware": [
+      "Frontmost app sampled every 2 s during both runs on a Mac in use; the test app never came to the front."
+    ],
+    "notExercised": [
+      "The visual behaviour phase, which must run without the variable."
+    ]
   }
 }
