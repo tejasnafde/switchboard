@@ -23,6 +23,7 @@ import type {
 } from '../types'
 import { decidePermission, denialMessage } from '../policy'
 import { parseCodexTodoItems, parseCodexTodoMarkdown } from './codex-todo'
+import { markAgentSpawnEnv } from '../agent-spawn-env'
 import { applyEnvOverlay } from '../env-overlay'
 import {
   createExecutableCache,
@@ -681,7 +682,7 @@ export class CodexAdapter implements ProviderAdapter {
     // letting each instance be `codex login`'d under a separate account, and
     // at the canonical ~/.codex otherwise - shared with the Test/usage probes
     // via applyCodexHome so no path can resolve a different account.
-    const codexEnv = buildCodexCliEnv()
+    const codexEnv = markAgentSpawnEnv(buildCodexCliEnv())
     applyEnvOverlay(codexEnv, opts.resolvedEnv)
     applyCodexHome(codexEnv, opts.resolvedOauthDir)
 

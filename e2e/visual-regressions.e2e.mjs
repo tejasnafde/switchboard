@@ -767,6 +767,9 @@ async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) 
       ELECTRON_RUN_AS_NODE: '',
       ELECTRON_DISABLE_SECURITY_WARNINGS: '1',
       SB_USER_DATA: userData,
+      // The behaviour phase reads the real screen, so it must stay in front
+      // even when an agent runs it (agents default to background windows).
+      ...(demo ? {} : { SB_E2E_BACKGROUND: '0' }),
       ...demoEnv,
     },
   })

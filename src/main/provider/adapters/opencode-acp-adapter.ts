@@ -67,6 +67,7 @@ import { findOpencodePath, buildOpencodeEnv } from './opencode/env'
 import { assertSupportedOpencode } from './opencode/version'
 import { resolveResumeSegment } from '../../db/database'
 import { acpSwitchboardMcpServer, isSwitchboardOpencodeReadTool, isSwitchboardOpencodeTool, SWITCHBOARD_OPENCODE_TOOLS } from '../../mcp/agent-registration'
+import { markAgentSpawnEnv } from '../agent-spawn-env'
 
 const log = createLogger('provider:opencode-acp')
 const LOG_PAYLOAD_LIMIT = 4000
@@ -813,7 +814,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     const child = spawn(binPath, ['acp', '--cwd', opts.cwd], {
       cwd: opts.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env,
+      env: markAgentSpawnEnv(env),
     })
     active.child = child
     log.info(`spawned opencode acp pid=${child.pid} cwd=${opts.cwd}`)
