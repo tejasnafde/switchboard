@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Command } from 'cmdk'
 import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from './popover'
@@ -25,6 +25,11 @@ interface ComboboxProps {
   contentClassName?: string
   /** Call `event.preventDefault()` to keep focus off the trigger after a pick. */
   onCloseAutoFocus?: (event: Event) => void
+  /** Before the trigger's text, e.g. an icon. */
+  leading?: ReactNode
+  /** Controlled open state, for a caller that opens it from a shortcut. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 /**
@@ -48,9 +53,19 @@ export function Combobox({
   className,
   contentClassName,
   onCloseAutoFocus,
+  leading,
+  open: controlledOpen,
+  onOpenChange,
 }: ComboboxProps) {
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = (next: boolean) => {
+    // Cleared on close, so an open from outside (a shortcut) starts empty too.
+    if (!next) setQuery('')
+    setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
   const inputRef = useRef<HTMLInputElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -66,10 +81,7 @@ export function Combobox({
       // list would not scroll with the wheel otherwise.
       modal
       open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (next) setQuery('')
-      }}
+      onOpenChange={setOpen}
     >
       <PopoverTrigger asChild>
         <button
@@ -85,6 +97,7 @@ export function Combobox({
             className,
           )}
         >
+          {leading}
           <span className={cn('truncate', !selected && 'text-[var(--text-muted)]')}>{selected?.label ?? placeholder}</span>
           <svg aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--text-muted)]">
             <polyline points="6 9 12 15 18 9" />

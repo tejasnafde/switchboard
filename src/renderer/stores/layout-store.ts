@@ -4,9 +4,8 @@ import { useAgentStore } from './agent-store'
 import { SETTING_SHOW_FILE_DIFFS } from '@shared/project-settings'
 import { FOLLOW_UP_DEFAULT_KEY, parseFollowUpDefault, type TurnDelivery } from '@shared/turn-delivery'
 import {
-  companionSessionId,
+  companionWithLanding,
   displayedChatSessionIds,
-  focusedChatSessionId,
   reconcileChatWorkspace,
   sessionForSlot,
   slotForSession,
@@ -121,6 +120,11 @@ interface LayoutStore {
   sessionForChatSlot: (slot: ChatSlot) => string | null
   slotForChatSession: (sessionId: string) => ChatSlot | null
   companionSessionId: () => string | null
+  /** The draft the landing screen's composer writes to while it shows (`ChatLanding`). */
+  landingDraftSessionId: string | null
+  setLandingDraftSession: (sessionId: string | null) => void
+  /** Show the landing screen, bound to this draft, in the primary slot. */
+  showLanding: (draftSessionId: string) => void
 
   // ─── Persisted sidebar collapse state ────────────────────────
   // String[] (not Set) because settings are JSON-serialized via
@@ -239,6 +243,18 @@ function persistList(key: string, list: string[]): void {
 // hide/show cycle and broke both ResizeHandle drag handles. Pinned by
 // tests/unit/resize-handle-wiring.test.ts.
 
+/** `companionSessionId()` as a selector, for components that re-render on it. */
+export function selectCompanionSessionId(
+  s: Pick<LayoutStore, 'primarySessionId' | 'secondarySessionId' | 'focusedChatSlot' | 'chatSplitRatio' | 'landingDraftSessionId'>,
+): string | null {
+  return companionWithLanding({
+    primarySessionId: s.primarySessionId,
+    secondarySessionId: s.secondarySessionId,
+    focusedSlot: s.focusedChatSlot,
+    splitRatio: s.chatSplitRatio,
+  }, s.landingDraftSessionId)
+}
+
 export const useLayoutStore = create<LayoutStore>((set, get) => ({
   sidebarWidth: SIDEBAR_DEFAULT,
   terminalWidth: TERMINAL_DEFAULT,
@@ -256,11 +272,14 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   reconcileChatSessions: (availableSessionIds) => applyChatWorkspaceEvent({ type: 'restore', availableSessionIds }),
   rotateChatSessionId: (fromSessionId, toSessionId) => applyChatWorkspaceEvent({ type: 'rotate', fromSessionId, toSessionId }),
   forwardToChat: (sourceSessionId, targetSessionId) => applyChatWorkspaceEvent({ type: 'forward-target', sourceSessionId, targetSessionId }),
-  focusedChatSessionId: () => focusedChatSessionId(currentChatWorkspace()),
+  focusedChatSessionId: () => companionWithLanding(currentChatWorkspace(), get().landingDraftSessionId),
   displayedChatSessionIds: () => displayedChatSessionIds(currentChatWorkspace()),
   sessionForChatSlot: (slot) => sessionForSlot(currentChatWorkspace(), slot),
   slotForChatSession: (sessionId) => slotForSession(currentChatWorkspace(), sessionId, canonicalSessionId),
-  companionSessionId: () => companionSessionId(currentChatWorkspace()),
+  companionSessionId: () => companionWithLanding(currentChatWorkspace(), get().landingDraftSessionId),
+  landingDraftSessionId: null,
+  setLandingDraftSession: (sessionId) => set({ landingDraftSessionId: sessionId }),
+  showLanding: (draftSessionId) => applyChatWorkspaceEvent({ type: 'show-landing', sessionId: draftSessionId }),
 
   rightPaneMode: 'terminal',
   setRightPaneMode: (mode) => {

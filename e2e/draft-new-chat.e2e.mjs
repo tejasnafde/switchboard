@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { openLandingProjectPicker } from './lib/new-chat.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
@@ -61,11 +62,8 @@ const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); c
 async function run(checkout) {
   const before = Number(q('SELECT count(*) FROM conversations;'))
   await win.locator('body').click({ position: { x: 900, y: 400 } })
-  await win.keyboard.press('Meta+Shift+O')
-  const picker = win.getByTestId('new-chat-project-picker')
-  await picker.waitFor({ timeout: 5000 })
-  check(`${checkout}: picker opens on cmd+shift+O`, true)
-  await picker.getByRole('option').first().waitFor({ timeout: 5000 })
+  await openLandingProjectPicker(win)
+  check(`${checkout}: project picker opens on cmd+shift+O`, true)
   await win.keyboard.press('Enter')
   await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })
   check(`${checkout}: draft opens with workspace chip`, true)
@@ -99,9 +97,7 @@ try {
   await run('worktree')
   async function draftIn(filter, checkout, text) {
     await win.locator('body').click({ position: { x: 900, y: 400 } })
-    await win.keyboard.press('Meta+Shift+O')
-    const picker = win.getByTestId('new-chat-project-picker')
-    await picker.getByRole('option').first().waitFor({ timeout: 5000 })
+    await openLandingProjectPicker(win)
     await win.keyboard.type(filter)
     await win.keyboard.press('Enter')
     await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })
@@ -114,8 +110,7 @@ try {
   const existingPath = q(`SELECT worktree_path FROM conversations WHERE worktree_path IS NOT NULL ORDER BY created_at DESC LIMIT 1;`)
   const worktreesBefore = execFileSync('git', ['-C', project, 'worktree', 'list']).toString().trim().split('\n').length
   await win.locator('body').click({ position: { x: 900, y: 400 } })
-  await win.keyboard.press('Meta+Shift+O')
-  await win.getByTestId('new-chat-project-picker').getByRole('option').first().waitFor({ timeout: 5000 })
+  await openLandingProjectPicker(win)
   await win.keyboard.type('drafty')
   await win.keyboard.press('Enter')
   await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })

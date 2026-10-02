@@ -6,7 +6,7 @@ import {
   formatTerminalContext,
   sendQuickPrompt,
 } from '../services/context-bridge'
-import { useLayoutStore } from '../stores/layout-store'
+import { selectCompanionSessionId, useLayoutStore } from '../stores/layout-store'
 import { cn } from '../lib/utils'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 
@@ -29,11 +29,7 @@ interface QuickPromptModalProps {
  * Escapes via Esc or outside-click. Enter sends; Shift+Enter newline.
  */
 export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }: QuickPromptModalProps) {
-  const focusedSessionId = useLayoutStore((s) =>
-    s.focusedChatSlot === 'secondary' && s.secondarySessionId
-      ? s.secondarySessionId
-      : s.primarySessionId,
-  )
+  const focusedSessionId = useLayoutStore(selectCompanionSessionId)
   const resolvedSessionId = targetSessionId ?? focusedSessionId
   const activeSession = useAgentStore((s) =>
     s.sessions.find((sess) => sess.id === resolvedSessionId),

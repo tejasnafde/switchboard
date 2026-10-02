@@ -2,42 +2,53 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "chat-landing-screen",
-  "summary": "When the desktop's primary chat slot is empty (first launch, after closing or archiving the last chat), it shows a landing screen instead of a blank chat: 'What should we work on?', a 'New chat in <project>' chip and the ordinary composer (pills, @-mentions, slash commands, provider picker, runtime mode, checkout chip and images all work). The composer is bound to that project's existing renderer-only draft (draftSessionId), so the first send goes through the same draft materializer as + New Chat and cmd+shift+O; there is no second creation path. The chip defaults to the project last picked there while its draft still holds text, else the most recently used project, lists local projects and those of connected remote machines (machine name shown when there is more than one machine), and switching it moves the typed text, pills and images to the new project's draft. With no projects it reads 'Add a project' and opens the folder picker, and Send stays off with a placeholder saying why. The composer is focused when the screen appears, and the new-chat shortcut (cmd+shift+O) returns to it while no chat is open instead of asking for a project. A draft is no longer picked to fill an empty primary slot on its own, so the landing draft never replaces the landing screen. The secondary slot is unchanged.",
+  "summary": "The desktop's primary chat slot shows a landing screen when it holds no chat (first launch, after closing or archiving the last chat) or a draft (cmd+shift+O, + New chat or the palette's New chat from an open chat, which replaces the primary panel only and leaves the chat open in the sidebar, nothing closed or stopped). Design A: 'What should we work on?' above the composer, capped at 680 px and centred, drawn as one card; the project chip (favicon, name, caret) is the first chip of the composer's own bottom bar, before the checkout, provider and runtime mode controls. The composer is the ordinary one bound to that project's renderer-only draft (draftSessionId), so the first send goes through the same draft materializer as before; there is no second creation path. Under it, 'Pick up where you left off' lists the 3 most recent chats across local projects and connected machines (favicon, title, project and relative time); a click opens one, and with the composer empty ArrowDown/ArrowUp move a highlight through them and Enter opens it, while typing or Escape clears it. A hint line at the bottom names cmd+shift+O, the arrows and cmd+K from the live shortcut bindings. On the landing screen the landing draft counts as the companion session, so cmd+T, cmd+shift+T and cmd+\\ open a terminal in the selected project and stay there, cmd+J shows that draft's terminals, cmd+L appends to the landing composer, cmd+shift+E opens the IDE on the project, and cmd+K's quick prompt creates the chat through the draft materializer while leaving the landing composer's text in place. cmd+shift+O on the landing screen opens the project chip's picker with its search focused. The chip opens on the focused chat's project when reached from a chat, else on the project last picked there while its draft holds text, else the most recently used one; switching it moves the typed text, pills and images. With no projects it reads 'Add a project'. The old new-chat project picker modal is removed: cmd+shift+O and + New chat were its only callers (dual-chat open beside uses the session picker).",
   "surfaces": {
     "desktop": {
       "status": "implemented",
       "evidence": [
         "src/renderer/components/chat/ChatLanding.tsx",
         "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/ChatInput.tsx",
         "src/renderer/components/chat/ChatWorkspacePanels.tsx",
-        "src/renderer/components/NewChatProjectPicker.tsx",
-        "src/renderer/components/sidebar/Sidebar.tsx",
+        "src/renderer/components/ui/combobox.tsx",
+        "src/renderer/components/CommandPalette.tsx",
+        "src/renderer/components/QuickPromptModal.tsx",
+        "src/renderer/components/ide/IdePane.tsx",
         "src/renderer/services/chat-landing.ts",
+        "src/renderer/services/chat-workspace.ts",
+        "src/renderer/services/context-bridge.ts",
+        "src/renderer/services/draft-chat.ts",
+        "src/renderer/stores/layout-store.ts",
         "src/renderer/App.tsx",
         "src/renderer/styles/global.css",
-        "src/renderer/styles/tailwind.css",
         "tests/unit/chat-landing.test.ts",
+        "tests/unit/chat-workspace.test.ts",
+        "e2e/lib/new-chat.mjs",
         "e2e/visual-regressions.e2e.mjs",
         "e2e/snapshots/landing-dark-darwin.png",
         "e2e/snapshots/landing-light-darwin.png",
-        "e2e/snapshots/landing-translucent-darwin.png"
+        "e2e/snapshots/landing-translucent-darwin.png",
+        "e2e/snapshots/command-palette-dark-darwin.png",
+        "e2e/snapshots/command-palette-light-darwin.png",
+        "e2e/snapshots/command-palette-translucent-darwin.png"
       ]
     },
     "reactNativeIos": {
       "status": "not_applicable",
-      "reason": "The Expo app opens on its connections and thread list, never on an empty chat slot, and starting a chat there is unchanged; there is no blank chat area to replace."
+      "reason": "The Expo app opens on its connections and thread list, never on an empty chat slot, and has no cmd+shift+O, terminal, IDE or quick prompt shortcuts for a landing screen to route; starting and reopening a chat there is unchanged."
     },
     "nativeAndroid": {
       "status": "not_applicable",
-      "reason": "Native Android opens on its connections and thread list like the Expo app, and creating a chat there is unchanged; there is no empty chat slot."
+      "reason": "Native Android opens on its connections and thread list like the Expo app, has no desktop keyboard shortcuts or terminal pane for a landing draft to own, and creating a chat there is unchanged."
     },
     "sharedBackendApi": {
       "status": "not_applicable",
-      "reason": "No channel, payload or capability change. The landing screen reads projects with the existing app:get-projects and the machine store, adds projects with the existing app:open-folder, and creates the chat through the existing draft materializer and new-chat coordinator."
+      "reason": "No channel, payload or capability change. The landing screen reads projects and their sessions with the existing app:get-projects and the machine store, opens a recent chat through the sidebar's own open path, and creates chats (also from cmd+K) through the existing draft materializer and new-chat coordinator."
     },
     "storageDataMigration": {
       "status": "not_applicable",
-      "reason": "No table, setting or migration. The landing's last picked project is one renderer localStorage key (sb:landing-project) next to the draft store's own localStorage drafts; a missing or unreadable value falls back to the most recently used project, so older and newer builds read it safely."
+      "reason": "No table, setting or migration. The last picked project stays one renderer localStorage key (sb:landing-project); the landing draft and the slot it holds are renderer state that is rebuilt at launch, so older and newer builds read the same data."
     },
     "updateRelease": {
       "status": "not_applicable",
@@ -46,16 +57,20 @@
   },
   "verification": {
     "automated": [
-      "tests/unit/chat-landing.test.ts: project targets (local, then connected machines only, latest activity), the default pick (most recent, tie keeps list order, the remembered pick only while its draft has content, a vanished or other-machine pick), chip labels and machine names, the send block with no project, remembered-pick parsing, moving a draft onto an empty or non-empty draft, and the new-chat shortcut target.",
-      "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual: the landing screen added in Dark, Light and Translucent; two runs pass against the unchanged baselines of every other screen.",
-      "A one-off Playwright probe against the built app (isolated profile, demo adapter, background mode): with no projects the Add a project button is focused and Send is off; with projects the composer is focused, typed text follows the chip to another project and back, survives a relaunch, and Enter creates exactly one conversation row after which the landing screen gives way to the new chat; cmd+shift+O then opens the project picker.",
+      "tests/unit/chat-landing.test.ts: project targets, default pick, chip labels, send block, remembered pick, moving a draft; plus the landing-shows rule (empty slot or a draft), the cmd+shift+O action (picker on the landing screen, landing elsewhere), the project the landing opens on from a chat, the project-picker registry, the three recent chats (newest first, connected machines only, no duplicates, no terminal sessions), every recent-chat key (arrows, Up from the first row, Enter, Shift+Enter, Escape, typing, text in the composer, no rows, modifiers, IME, a shrunken list) and the hint line from live and unbound shortcuts.",
+      "tests/unit/chat-workspace.test.ts: show-landing replaces only the primary slot and keeps the chat beside it, and the landing draft stands in as the companion only while no chat is open.",
+      "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual: landing baselines redrawn in Dark, Light and Translucent and read; the command palette baselines gain the New chat row; two runs pass without updating.",
+      "A one-off Playwright probe against the built app (seeded demo workspace, demo adapter, background mode): three recent rows; arrows highlight, Escape and typing clear, arrows do nothing with text; cmd+T on the landing screen opens a terminal and stays on it; Enter opens the highlighted chat; cmd+shift+O from the chat shows the landing screen with the chat's project, the chat still in the sidebar; cmd+shift+O again opens the picker with its search focused, and typing plus Enter switches the project; cmd+K on the landing screen creates exactly one conversation and the landing composer's own text survives.",
+      "e2e/draft-new-chat, e2e/project-scopes, e2e/queue-steer and e2e/message-overflow pass with their new-chat step moved to the landing project picker (e2e/lib/new-chat.mjs).",
       "npm run typecheck and npm test pass."
     ],
     "hardware": [],
     "notExercised": [
-      "The chip's remote-machine rows were not driven against a real connected machine; the listing rule is unit-tested and is the same one the new-chat picker uses.",
-      "Add a project was not clicked in the probe, since it opens the native folder dialog.",
-      "cmd+shift+O while the landing screen shows (focus returns to its composer) was not pressed in the app; the routing rule is unit-tested."
+      "cmd+J, cmd+L and cmd+shift+E on the landing screen were not pressed in the app; they read the same companion rule the probe exercised through cmd+T and is unit-tested.",
+      "cmd+shift+O in dual chat (the landing screen replacing the primary panel only) was not driven in the app; the workspace reducer is unit-tested.",
+      "Remote-machine rows (chip and recent chats) were not driven against a real connected machine.",
+      "e2e/chat-render-order and e2e/reopen-tool-rows were updated the same way but not run: they drive a real Claude CLI.",
+      "Add a project was not clicked, since it opens the native folder dialog."
     ]
   }
 }

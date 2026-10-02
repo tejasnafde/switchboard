@@ -24,6 +24,8 @@ import { agentShortLabel } from '@shared/types'
 import { formatFileViewerContext, formatChatMessageContext } from './context-formatters'
 import { useLayoutStore } from '../stores/layout-store'
 import { focusComposer } from './composer-registry'
+import { materializeDraft } from './draft-chat'
+import { isDraftSessionId } from '@shared/new-chat-draft'
 import {
   getCommittedIdeWorkspaceBinding,
   type IdeWorkspaceBinding,
@@ -329,6 +331,15 @@ export async function sendQuickPrompt(
       const ctx = captureTerminalContext(found.sessionId, found.paneId, found.selection)
       message = formatTerminalContext(ctx) + '\n' + prompt
     }
+  }
+
+  // A draft (the landing screen's) has no conversation yet: the prompt is
+  // its first send and creates the chat through the same path as Send in its
+  // composer, leaving whatever that composer holds for the next chat.
+  if (isDraftSessionId(agentSid)) {
+    const result = await materializeDraft(agentSid, { message, keepDraft: true })
+    if (!result.accepted) log.warn('quick prompt could not start the chat', result.error)
+    return result.accepted
   }
 
   // Runtime-mode from the active session so the prompt respects current policy.

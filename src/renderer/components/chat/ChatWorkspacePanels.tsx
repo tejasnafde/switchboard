@@ -5,15 +5,18 @@ import { showDragOverlay, hideDragOverlay } from '../../services/drag-overlay'
 import { nextChatPresentation, shouldShowChatFocusIndicator, type ChatPresentation } from '../../services/chat-workspace'
 import { ChatPanel } from './ChatPanel'
 import { ChatLanding } from './ChatLanding'
+import { primaryShowsLanding, type RecentChat } from '../../services/chat-landing'
 
 export function ChatWorkspacePanels({
   dataScienceMode,
   onOpenBeside,
   ensureDraftSession,
+  onOpenChat,
 }: {
   dataScienceMode: boolean
   onOpenBeside: () => void
   ensureDraftSession: (projectPath: string, machineId: string) => Promise<string>
+  onOpenChat: (chat: RecentChat) => void
 }) {
   const chatSplitRatio = useLayoutStore((s) => s.chatSplitRatio)
   const setChatSplitRatio = useLayoutStore((s) => s.setChatSplitRatio)
@@ -96,8 +99,8 @@ export function ChatWorkspacePanels({
           overflow: 'hidden',
         }}
       >
-        {primarySessionId === null ? (
-          <ChatLanding ensureDraftSession={ensureDraftSession} />
+        {primaryShowsLanding(primarySessionId) ? (
+          <ChatLanding ensureDraftSession={ensureDraftSession} onOpenChat={onOpenChat} />
         ) : (
           <ChatPanel
             chatSlot="primary"

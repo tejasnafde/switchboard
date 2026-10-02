@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_CHAT_WORKSPACE,
+  companionWithLanding,
   nextChatPresentation,
   nextDualChatShortcutAction,
   reconcileChatWorkspace,
@@ -194,5 +195,22 @@ describe('chat workspace reconciliation', () => {
   it('gives native and renderer shortcuts the same open-or-close decision', () => {
     expect(nextDualChatShortcutAction(DEFAULT_CHAT_WORKSPACE)).toBe('open-picker')
     expect(nextDualChatShortcutAction(dual())).toBe('close-secondary')
+  })
+})
+
+describe('landing screen in the workspace', () => {
+  it('takes the primary slot only and keeps the chat beside it', () => {
+    expect(reconcileChatWorkspace(dual({ focusedSlot: 'secondary' }), { type: 'show-landing', sessionId: 'draft:local:/p' }))
+      .toEqual(dual({ primarySessionId: 'draft:local:/p', focusedSlot: 'primary' }))
+  })
+  it('fills an empty workspace', () => {
+    expect(reconcileChatWorkspace(DEFAULT_CHAT_WORKSPACE, { type: 'show-landing', sessionId: 'draft:local:/p' }).primarySessionId)
+      .toBe('draft:local:/p')
+  })
+  it('lets the landing draft stand in as the companion only while no chat is open', () => {
+    expect(companionWithLanding(DEFAULT_CHAT_WORKSPACE, 'draft:local:/p')).toBe('draft:local:/p')
+    expect(companionWithLanding(DEFAULT_CHAT_WORKSPACE, null)).toBeNull()
+    expect(companionWithLanding(dual(), 'draft:local:/p')).toBe('a')
+    expect(companionWithLanding(dual({ focusedSlot: 'secondary' }), 'draft:local:/p')).toBe('b')
   })
 })
