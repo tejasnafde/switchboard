@@ -1,3 +1,4 @@
+import { beginChatOpen } from './services/perf-chat-open'
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth, selectCompanionSessionId } from './stores/layout-store'
 import { useAgentStore, setStoreDefaultRuntimeMode, runtimeModeToSend, type RuntimeMode } from './stores/agent-store'
@@ -925,6 +926,18 @@ export function App() {
       machineId: string = 'local',
       placement: 'select' | 'beside' = 'select',
     ) => {
+      const openTiming = beginChatOpen(session.id)
+      let storeMs = 0
+      const setLoadedMessages = (id: string, messages: ChatMessage[]) => {
+        const start = performance.now()
+        setMessages(id, messages)
+        storeMs += performance.now() - start
+      }
+      const readyTiming = (id: string, timing?: import('@shared/perf-chat').ChatLoadTiming) => {
+        const messages = useAgentStore.getState().sessions.find((s) => s.id === id)?.messages
+        if (messages) openTiming.ready(id, messages, { ...timing, storeMs })
+        else openTiming.cancel('no-session')
+      }
       useLayoutStore.getState().setAppView('chats')
       // Terminal summaries are companion surfaces, not chats. Treat an
       // "open beside" request from a generic sidebar menu as an ordinary
@@ -935,6 +948,7 @@ export function App() {
 
       const recoveryKey = retainedWorktreeCreationKey(session, machineId)
       if (recoveryKey) {
+        openTiming.cancel('recovery')
         try {
           const snapshot = await window.api.worktreeCreation.get(recoveryKey)
           setWorktreeCreationSnapshots((current) => ({ ...current, [snapshot.creationId]: snapshot }))
@@ -972,6 +986,7 @@ export function App() {
       }
 
       if (existing) {
+        let loadTiming: import('@shared/perf-chat').ChatLoadTiming | undefined
         placeAndEvict(session.id)
         setTitle(session.id, resolveSessionDisplayTitle(session.title, existing.title))
         // Messages may have been evicted - reload from disk if so.
@@ -979,10 +994,12 @@ export function App() {
           try {
             const resp = await window.api.app.loadSessionById(session.id) as {
               messages: ChatMessage[]
+              timing?: import('@shared/perf-chat').ChatLoadTiming
               meta: { id: string; title: string; projectPath: string; agentType: string } | null
             }
+            loadTiming = resp?.timing
             if (resp?.messages?.length) {
-              setMessages(session.id, resp.messages)
+              setLoadedMessages(session.id, resp.messages)
             } else if (effectiveMachineId !== 'local') {
               // Empty reload for a remote chat means routing/scan failure, not
               // an empty conversation.
@@ -996,11 +1013,13 @@ export function App() {
         // gap or a reload dropped. Cards are never persisted to history, so
         // this runs whether or not the reload above ran.
         if (session.agentType !== 'terminal') void recoverPendingRequests(session.id)
+        readyTiming(session.id, loadTiming)
         return
       }
 
       // Terminal sessions have no JSONL - PTY is gone after restart, just activate.
       if (session.agentType === 'terminal') {
+        openTiming.cancel('terminal')
         addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title, machineId: effectiveMachineId })
         placeAndEvict(session.id)
         return
@@ -1010,6 +1029,7 @@ export function App() {
       // a click on a rotated id can activate the live thread instead of
       // building a twin next to it.
       type LoadedSession = {
+        timing?: import('@shared/perf-chat').ChatLoadTiming
         messages: ChatMessage[]
         meta: {
           id: string
@@ -1053,6 +1073,7 @@ export function App() {
         }
         placeAndEvict(targetId)
         void recoverPendingRequests(targetId)
+        readyTiming(targetId, loaded?.timing)
         return
       }
 
@@ -1161,7 +1182,8 @@ export function App() {
         log.warn('restore pinned model failed', { sessionId: session.id, err: modelResult.reason })
       }
 
-      if (loaded?.messages?.length) setMessages(session.id, loaded.messages)
+      if (loaded?.messages?.length) setLoadedMessages(session.id, loaded.messages)
+      readyTiming(session.id, loaded?.timing)
       void recoverPendingRequests(session.id)
     },
     [addSession, selectChatSession, openChatBeside, setMessages, clearMessages],

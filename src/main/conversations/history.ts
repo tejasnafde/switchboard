@@ -1,3 +1,4 @@
+import type { ChatLoadTiming } from '@shared/perf-chat'
 import type { ChatMessage } from '@shared/types'
 import {
   conversationSessionHints,
@@ -26,12 +27,15 @@ export interface ConversationHistory {
   familyIds: string[]
   diskMessageCount: number
   databaseMessageCount: number
+  timing: ChatLoadTiming
 }
 
 export async function loadConversationHistory(
   conversationId: string,
   _projectPath: string,
 ): Promise<ConversationHistory> {
+  const timing: ChatLoadTiming = { readMs: 0, parseMs: 0, diskMs: 0, dbMs: 0, mergeMs: 0, enrichMs: 0, diskBytes: 0, diskLines: 0, cacheHits: 0 }
+  const metadataStart = performance.now()
   const familyIds = threadFamilyIds(conversationId)
   const legacySessionHints = conversationSessionHints(conversationId)
   const segments = listConversationSegments(conversationId)
@@ -50,10 +54,12 @@ export async function loadConversationHistory(
       .filter((segment) => segment.provider === 'claude-code')
       .map((segment) => segment.provider_session_id),
   ])
+  timing.dbMs += performance.now() - metadataStart
+  const diskStart = performance.now()
   for (const sessionId of claudeIds) {
     for (const baseDir of claudeCandidateDirs()) {
       for (const copy of listClaudeSessionCopies(baseDir, sessionId)) {
-        const messages = await loadJsonlCached(copy.path, 'claude-code')
+        const messages = await loadJsonlCached(copy.path, 'claude-code', timing)
         if (messages) {
           diskMessages.push(...messages)
           for (const message of messages) {
@@ -76,7 +82,7 @@ export async function loadConversationHistory(
     : undefined
   for (const session of codexSessions) {
     if (!knownSessionIds.has(session.id) || !session.filePath) continue
-    const loaded = await loadJsonlCached(session.filePath, 'codex')
+    const loaded = await loadJsonlCached(session.filePath, 'codex', timing)
     const messages = loaded && forkReceipt?.provider === 'codex' && forkReceipt.sessionId === session.id
       ? loaded.slice(forkReceipt.copiedMessageCount ?? 0)
       : loaded
@@ -92,6 +98,8 @@ export async function loadConversationHistory(
     }
   }
 
+  timing.diskMs = performance.now() - diskStart
+  const dbStart = performance.now()
   const databaseMessages = familyIds.flatMap((id) =>
     messageRowsToChatMessages(getMessagesForConversation(id))
   )
@@ -101,12 +109,16 @@ export async function loadConversationHistory(
       enrichments.set(content, enrichment)
     }
   }
-  const messages = enrichMessagesWithDisplayBody(
-    mergeConversationMessages(diskMessages, databaseMessages),
-    enrichments,
-  )
+  timing.dbMs += performance.now() - dbStart
+  const mergeStart = performance.now()
+  const merged = mergeConversationMessages(diskMessages, databaseMessages)
+  timing.mergeMs = performance.now() - mergeStart
+  const enrichStart = performance.now()
+  const messages = enrichMessagesWithDisplayBody(merged, enrichments)
+  timing.enrichMs = performance.now() - enrichStart
 
   return {
+    timing,
     messages,
     forkMessages: messages.map((message) => ({
       message,

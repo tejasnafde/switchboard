@@ -1,3 +1,4 @@
+import { perfSpan } from '../../perf'
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { useAgentStore, adoptStartedRuntimeMode, runtimeModeToSend, type RuntimeMode } from '../../stores/agent-store'
@@ -278,6 +279,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     const prevType = agentType
     setAgentType(t)
     if (!sessionId) return
+    const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'agent', from: prevType, to: t })
+    try {
     // Persist first so a failed write cannot leave the picker and DB on
     // different providers.
     try {
@@ -336,6 +339,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       log.warn(`stopSession failed for ${sessionId} during agent switch`, err)
     })
     messageLifecycle.settleThread(sessionId)
+    } finally {
+      switchSpan.end()
+    }
   }, [sessionId, storeSetAgentType, agentType, activeSession?.messages?.length, appendMessage])
 
   // Existing sessions rotate atomically on the backend: it owns stop/start,
@@ -345,6 +351,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     if (!sessionId || !nextInstanceId) return
     const prevInstanceId = instanceId
     if (prevInstanceId === nextInstanceId) return
+    const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'profile' })
+    try {
     let result
     try {
       result = await window.api.provider.switchInstance(sessionId, {
@@ -436,6 +444,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     // machine's cached auth verdicts so the banner re-probes under it.
     const machineForSession = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId
     if (machineForSession && machineForSession !== 'local') invalidateRemoteAuthCache(machineForSession)
+    } finally {
+      switchSpan.end()
+    }
   }, [sessionId, storeSetInstanceId, instanceId, activeSession?.messages?.length, appendMessage, agentType])
 
   // ── Provider event listener (new SDK bridge) ──────────────────
@@ -830,7 +841,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       if (pendingHandoffFrom) {
         // Live read - the closure's `messages` lags in-place streamed edits.
         const history = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.messages ?? []
+        const handoffSpan = perfSpan('handoff.build', { thread: sessionId, messages: history.length })
         const preamble = buildHandoffPreamble(history)
+        handoffSpan.end({ characters: preamble?.length ?? 0 })
         if (preamble) {
           wireMessage = `${preamble}\n\n${message}`
           const handoffFrom = pendingHandoffFrom as NonNullable<UserTurnSubmissionV1['handoff']>['expectedFrom']
