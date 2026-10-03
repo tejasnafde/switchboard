@@ -17,6 +17,8 @@ import {
   formatPeerLinkTimeLeft,
   parsePeerLinkDuration,
   peerLinkDefaultWindow,
+  peerLinkDurationChoice,
+  PEER_LINK_DURATION_CHOICES,
   peerLinkWindowProblem,
   PEER_LINK_MAX_WINDOW_MS,
   PEER_LINK_MIN_WINDOW_MS,
@@ -369,6 +371,15 @@ describe('link duration', () => {
   it('reads the Settings default, falling back to 30 minutes', () => {
     expect(peerLinkDefaultWindow('4h')).toBe(4 * HOUR)
     for (const bad of [null, undefined, '', '5m', '25h', 'soon']) expect(peerLinkDefaultWindow(bad)).toBe(PEER_LINK_WINDOW_MS)
+  })
+
+  // The Settings row shows this value, so it must be an option and match what the backend uses.
+  it('shows a stored value the row has no option for as 30m, the value the backend uses', () => {
+    for (const choice of PEER_LINK_DURATION_CHOICES) expect(peerLinkDurationChoice(choice)).toBe(choice)
+    for (const bad of [null, undefined, '', '25h', 'soon', '90m']) {
+      expect(peerLinkDurationChoice(bad)).toBe('30m')
+      expect(peerLinkDefaultWindow(bad)).toBe(parsePeerLinkDuration(peerLinkDurationChoice(bad)))
+    }
   })
 
   it('formats a duration and the time left', () => {

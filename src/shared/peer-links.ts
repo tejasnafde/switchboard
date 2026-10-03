@@ -71,10 +71,20 @@ export function peerLinkWindowProblem(ms: number): string | null {
   return null
 }
 
-/** The stored Settings default as a window; anything unreadable or out of range is the 30 minute default. */
+export type PeerLinkDurationChoice = typeof PEER_LINK_DURATION_CHOICES[number]
+
+/**
+ * The stored Settings default as one of its choices; anything else is `30m`.
+ * The Settings row shows this and the backend links with it, so the two never
+ * disagree about a value the row has no option for.
+ */
+export function peerLinkDurationChoice(stored: string | null | undefined): PeerLinkDurationChoice {
+  return PEER_LINK_DURATION_CHOICES.find((choice) => choice === stored) ?? '30m'
+}
+
+/** The window a `/link` without a time gets, from the stored Settings default. */
 export function peerLinkDefaultWindow(stored: string | null | undefined): number {
-  const ms = stored ? parsePeerLinkDuration(stored) : null
-  return ms !== null && peerLinkWindowProblem(ms) === null ? ms : PEER_LINK_WINDOW_MS
+  return parsePeerLinkDuration(peerLinkDurationChoice(stored))!
 }
 
 /** `30 minutes`, `4 hours`, `1 hour 30 minutes`. */
