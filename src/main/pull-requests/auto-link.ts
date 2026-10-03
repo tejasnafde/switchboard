@@ -2,8 +2,8 @@
  * Links a chat to a pull request the first time the chat's assistant text, a
  * tool's input or a tool's output names that PR's URL, or a tool's input runs
  * `bbpr <n>` in the chat's own repository (a Bitbucket project only; see
- * `bbpr-targets.ts`), provided the PR is on the repository
- * of the chat's own project. So a PR opened with `gh pr create` or bbpr in a
+ * `bbpr-targets.ts`), provided the PR is on a repository the chat's project
+ * covers (`shared/project-repos.ts`). So a PR opened with `gh pr create` or bbpr in a
  * shell links itself too. Assistant text streams in deltas, so it is scanned
  * whole at the end of the turn; a tool's input and output arrive complete.
  */
@@ -12,6 +12,7 @@ import { applyContentText } from '@shared/content-stream'
 import { bbprTargetsForInput, toolInputCommand, toolInputCwd } from '@shared/bbpr-command'
 import { findPullRequestUrls, projectPrRefs } from '@shared/pull-request-links'
 import type { PrRef, RepoRef } from '@shared/pull-requests'
+import type { ProjectRepos } from '@shared/project-repos'
 import { createMainLogger } from '../logger'
 import { bbprNumbersInRepo } from './bbpr-targets'
 
@@ -37,7 +38,9 @@ function toolInputText(input: unknown): string {
 export interface AutoLinkDeps {
   /** Root conversation id, project and working directory (its worktree, else the project) of a thread, `null` when it has no row. */
   conversationFor(threadId: string): { id: string; projectPath: string; cwd: string } | null
-  /** The repository a directory's git remotes point at: the project's, or a directory a `bbpr` command `cd`s into. */
+  /** The repositories a project covers (`PullRequestService.projectRepos`). */
+  projectRepos(projectPath: string): Promise<ProjectRepos>
+  /** The repository a directory's git remotes point at: a directory a `bbpr` command `cd`s into. */
   repoForProject(path: string): Promise<RepoRef | null>
   /** Returns whether a link was added (an existing or removed link returns false). */
   link(conversationId: string, ref: PrRef): boolean
@@ -81,10 +84,10 @@ export class PullRequestAutoLinker {
     try {
       const chat = this.deps.conversationFor(threadId)
       if (!chat) return
-      const repo = await this.deps.repoForProject(chat.projectPath)
-      const bbprNumbers = mayHaveBbpr ? await bbprNumbersInRepo(bbprTargetsForInput(command, chat.cwd, commandCwd), repo, (dir) => this.deps.repoForProject(dir)) : []
+      const project = await this.deps.projectRepos(chat.projectPath)
+      const bbprNumbers = mayHaveBbpr ? await bbprNumbersInRepo(bbprTargetsForInput(command, chat.cwd, commandCwd), project.own, (dir) => this.deps.repoForProject(dir)) : []
       let added = false
-      for (const ref of projectPrRefs(text, bbprNumbers, repo)) {
+      for (const ref of projectPrRefs(text, bbprNumbers, project)) {
         if (this.deps.link(chat.id, ref)) added = true
       }
       if (added) this.deps.notify(chat.id)
