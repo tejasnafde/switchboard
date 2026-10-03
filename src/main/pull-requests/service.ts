@@ -77,7 +77,8 @@ export interface PullRequestServiceDeps {
   /** `git remote -v` output for a project, or '' when it is not a repository. */
   readRemotes(projectPath: string): Promise<string>
   /** Absolute paths of the git work trees under a project folder (`scanChildRepoDirs`); absent means none are scanned. */
-  scanChildRepos?(projectPath: string): Promise<string[]>
+  /** `complete: false` when a directory could not be read, so the list may miss a repository. */
+  scanChildRepos?(projectPath: string): Promise<string[] | { dirs: string[]; complete: boolean }>
   github(): PullRequestProvider
   /** `null` when no Bitbucket account is usable; `bitbucketState` says why. */
   bitbucket(): PullRequestProvider | null
@@ -128,23 +129,32 @@ export class PullRequestService {
   projectRepos(projectPath: string, opts: { fresh?: boolean } = {}): Promise<ProjectRepos> {
     const hit = this.projects.get(projectPath)
     if (!opts.fresh && hit && this.now() - hit.at < CHILD_REPOS_TTL_MS) return hit.repos
-    const repos = this.readProjectRepos(projectPath)
-    this.projects.set(projectPath, { at: this.now(), repos })
-    return repos
+    const entry = { at: this.now(), repos: this.readProjectRepos(projectPath).then(({ repos, complete }) => {
+      // A scan that could not read every directory may have missed a child the
+      // last complete scan found; keep that one for the next caller instead.
+      if (!complete && hit && this.projects.get(projectPath) === entry) this.projects.set(projectPath, hit)
+      return repos
+    }) }
+    this.projects.set(projectPath, entry)
+    return entry.repos
   }
 
-  private async readProjectRepos(projectPath: string): Promise<ProjectRepos> {
+  private async readProjectRepos(projectPath: string): Promise<{ repos: ProjectRepos; complete: boolean }> {
     const own = await this.repoFor(projectPath)
-    if (own || !this.deps.scanChildRepos) return projectReposFrom(own, [])
+    if (own || !this.deps.scanChildRepos) return { repos: projectReposFrom(own, []), complete: true }
     let dirs: string[] = []
+    let complete = true
     try {
-      dirs = await this.deps.scanChildRepos(projectPath)
+      const scanned = await this.deps.scanChildRepos(projectPath)
+      if (Array.isArray(scanned)) dirs = scanned
+      else ({ dirs, complete } = scanned)
     } catch (err) {
+      complete = false
       log.warn('scanning a project folder for repositories failed', { projectPath, err: String(err) })
     }
     const found = await Promise.all(dirs.map(async (dir) => ({ dir, repo: await this.repoFor(dir) })))
     const children: ChildRepo[] = found.flatMap(({ dir, repo }) => (repo ? [{ path: dir, relPath: relativeLabel(projectPath, dir), repo }] : []))
-    return projectReposFrom(null, children)
+    return { repos: projectReposFrom(null, children), complete }
   }
 
   async detect(): Promise<DetectedRepos> {

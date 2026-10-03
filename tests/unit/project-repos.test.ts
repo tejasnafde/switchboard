@@ -136,12 +136,14 @@ describe('on disk', () => {
   const worktree: GitRun = async () => ({ code: 0, stdout: 'true\n', stderr: '' })
 
   it('scans the real folder without following the symlink out of it', async () => {
-    expect((await scanChildRepoDirs(project)).sort()).toEqual([path.join(project, 'core'), path.join(project, 'group', 'studio')])
+    const scanned = await scanChildRepoDirs(project)
+    expect(scanned.complete).toBe(true)
+    expect(scanned.dirs.sort()).toEqual([path.join(project, 'core'), path.join(project, 'group', 'studio')])
   })
 
   it('never scans the home folder or a filesystem root', async () => {
-    expect(await scanChildRepoDirs(homedir())).toEqual([])
-    expect(await scanChildRepoDirs(path.parse(root).root)).toEqual([])
+    expect(await scanChildRepoDirs(homedir())).toEqual({ dirs: [], complete: true })
+    expect(await scanChildRepoDirs(path.parse(root).root)).toEqual({ dirs: [], complete: true })
   })
 
   it('accepts the folder itself and anything below it, nothing else', () => {

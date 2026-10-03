@@ -218,6 +218,26 @@ describe('PullRequestService: a project folder that holds several repositories',
     expect(d.scanChildRepos).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps the last complete scan when a fresh scan could not read every directory', async () => {
+    let now = 0
+    let partial = false
+    const d = ssgDeps({
+      now: () => now,
+      scanChildRepos: vi.fn(async (path: string) => partial
+        ? { dirs: (children[path] ?? []).filter((dir) => dir !== '/w/ssg/core'), complete: false }
+        : { dirs: children[path] ?? [], complete: true }),
+    })
+    const service = new PullRequestService(d)
+    expect((await service.projectRepos('/w/ssg')).children.map((c) => c.relPath)).toEqual(['core', 'apps/studio'])
+    partial = true
+    // The fresh caller sees what the scan could read...
+    expect((await service.projectRepos('/w/ssg', { fresh: true })).children.map((c) => c.relPath)).toEqual(['apps/studio'])
+    // ...but the cache keeps the complete result for the next one.
+    expect((await service.projectRepos('/w/ssg')).children.map((c) => c.relPath)).toEqual(['core', 'apps/studio'])
+    now += 61_000
+    expect((await service.projectRepos('/w/ssg')).children.map((c) => c.relPath)).toEqual(['apps/studio'])
+  })
+
   it('rescans on a fresh read and caches the result for the next one', async () => {
     const d = ssgDeps()
     const service = new PullRequestService(d)

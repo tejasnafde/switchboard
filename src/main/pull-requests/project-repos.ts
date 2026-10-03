@@ -29,9 +29,10 @@ export function relativeLabel(folder: string, target: string): string {
  * ~/Desktop, ~/Documents or ~/Downloads would raise a macOS privacy prompt,
  * and Reviews would fill with every checkout on the machine.
  */
-export async function scanChildRepoDirs(projectPath: string): Promise<string[]> {
+export async function scanChildRepoDirs(projectPath: string): Promise<{ dirs: string[]; complete: boolean }> {
   const resolved = path.resolve(projectPath)
-  if (resolved === path.resolve(homedir()) || resolved === path.parse(resolved).root) return []
+  if (resolved === path.resolve(homedir()) || resolved === path.parse(resolved).root) return { dirs: [], complete: true }
+  let complete = true
   const listDir = async (rel: string): Promise<ScanEntry[]> => {
     const entries = await readdir(path.join(projectPath, ...rel.split('/').filter(Boolean)), { withFileTypes: true })
     return entries.map((e) => ({
@@ -40,9 +41,10 @@ export async function scanChildRepoDirs(projectPath: string): Promise<string[]> 
     }))
   }
   const found = await scanChildWorkTrees(listDir, (rel, err) => {
+    complete = false
     log.debug('skipping an unreadable directory', { projectPath, rel, err: String(err) })
   })
-  return found.map((rel) => path.join(projectPath, ...rel.split('/')))
+  return { dirs: found.map((rel) => path.join(projectPath, ...rel.split('/'))), complete }
 }
 
 export interface RepoDirDeps {
