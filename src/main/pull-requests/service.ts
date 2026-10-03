@@ -120,10 +120,14 @@ export class PullRequestService {
     return repo
   }
 
-  /** The repositories a project covers (`shared/project-repos.ts`): its own, or the work trees under a folder that has none. */
-  projectRepos(projectPath: string): Promise<ProjectRepos> {
+  /**
+   * The repositories a project covers (`shared/project-repos.ts`): its own, or
+   * the work trees under a folder that has none. `fresh` rescans instead of
+   * reusing the cached result, for a check right before a host write.
+   */
+  projectRepos(projectPath: string, opts: { fresh?: boolean } = {}): Promise<ProjectRepos> {
     const hit = this.projects.get(projectPath)
-    if (hit && this.now() - hit.at < CHILD_REPOS_TTL_MS) return hit.repos
+    if (!opts.fresh && hit && this.now() - hit.at < CHILD_REPOS_TTL_MS) return hit.repos
     const repos = this.readProjectRepos(projectPath)
     this.projects.set(projectPath, { at: this.now(), repos })
     return repos

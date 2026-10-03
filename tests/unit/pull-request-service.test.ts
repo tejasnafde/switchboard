@@ -218,6 +218,16 @@ describe('PullRequestService: a project folder that holds several repositories',
     expect(d.scanChildRepos).toHaveBeenCalledTimes(2)
   })
 
+  it('rescans on a fresh read and caches the result for the next one', async () => {
+    const d = ssgDeps()
+    const service = new PullRequestService(d)
+    await service.projectRepos('/w/ssg')
+    await service.projectRepos('/w/ssg', { fresh: true })
+    expect(d.scanChildRepos).toHaveBeenCalledTimes(2)
+    await service.projectRepos('/w/ssg')
+    expect(d.scanChildRepos).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps a folder whose scan fails, or finds nothing, as unsupported', async () => {
     const result = await new PullRequestService(ssgDeps({ scanChildRepos: async () => { throw new Error('EACCES') } })).list()
     if (!result.ok) throw new Error('expected ok')

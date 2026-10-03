@@ -128,8 +128,8 @@ export interface AgentPullRequestAccess {
   chatProject(chatId: string): string | null
   /** The repository a directory's git remotes point at. */
   repoFor(dir: string): Promise<RepoRef | null>
-  /** The repositories a project covers (`shared/project-repos.ts`). */
-  projectRepos(projectPath: string): Promise<ProjectRepos>
+  /** The repositories a project covers (`shared/project-repos.ts`); `fresh` skips the cached scan. */
+  projectRepos(projectPath: string, opts?: { fresh?: boolean }): Promise<ProjectRepos>
   /** `repoPath` as the real path of a git work tree inside the project folder (`pull-requests/project-repos.ts`). */
   resolveRepoDir(projectPath: string, repoPath: string): Promise<RepoDir>
   /** The branch checked out in `cwd`, or null. */
@@ -691,17 +691,28 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     if (input.repoPath) {
       const dir = await access.resolveRepoDir(projectPath, input.repoPath)
       if (!dir.ok) return toolText(`${dir.message} Nothing was created.`, true)
-      const repo = await access.repoFor(dir.dir)
-      if (!repo) return toolText(`The git remotes of ${dir.relPath} (under ${projectPath}) point at neither GitHub nor Bitbucket, so Switchboard cannot open a pull request for it. Nothing was created.`, true)
-      const refused = repoPathRepositoryProblem(input.repository, repo, dir.relPath)
-      if (refused) return toolText(refused, true)
-      if (!projectCoversRepo(project, repo)) {
-        const covered = coveredRepos(project).map((r) => `${r.owner}/${r.name}`).join(', ')
-        return toolText(
-          `${dir.relPath} points at ${repo.owner}/${repo.name}, which is not a repository this chat's project covers` +
-          `${covered ? ` (it covers ${covered})` : ''}. A repository nested inside the project's own one does not count. Nothing was created.`, true)
+      if (project.own) {
+        // A project that is a repository covers only its own checkout: a nested
+        // clone of the same remote must not become the source branch. The
+        // folder itself falls through to the chat's checkout below.
+        if (dir.relPath !== '.') {
+          return toolText(
+            `${projectPath} is itself a repository (${project.own.owner}/${project.own.name}), so "repoPath" can only be the project folder; ` +
+            `${dir.relPath} is inside it. Call again without "repoPath". Nothing was created.`, true)
+        }
+      } else {
+        const repo = await access.repoFor(dir.dir)
+        if (!repo) return toolText(`The git remotes of ${dir.relPath} (under ${projectPath}) point at neither GitHub nor Bitbucket, so Switchboard cannot open a pull request for it. Nothing was created.`, true)
+        const refused = repoPathRepositoryProblem(input.repository, repo, dir.relPath)
+        if (refused) return toolText(refused, true)
+        if (!projectCoversRepo(project, repo)) {
+          const covered = coveredRepos(project).map((r) => `${r.owner}/${r.name}`).join(', ')
+          return toolText(
+            `${dir.relPath} points at ${repo.owner}/${repo.name}, which is not a repository this chat's project covers` +
+            `${covered ? ` (it covers ${covered})` : ''}. Nothing was created.`, true)
+        }
+        return { projectPath, repo, cwd: dir.dir, localPath: dir.relPath }
       }
-      return { projectPath, repo, cwd: dir.dir, localPath: dir.relPath === '.' ? null : dir.relPath }
     }
     if (project.own) {
       const refused = repositoryProblem(input.repository, project.own)
@@ -1015,7 +1026,7 @@ async function runCreate(
   const gated = refusePlanFor(ctx, PR_CREATE_TOOL)
   if (gated) return gated
   // The link rule again: the project must still cover the repository the card named.
-  if (!projectCoversRepo(await access.projectRepos(plan.projectPath), repo)) {
+  if (!projectCoversRepo(await access.projectRepos(plan.projectPath, { fresh: true }), repo)) {
     return toolText(`This chat's project no longer covers ${repoLabel}. Nothing was created.`, true)
   }
 

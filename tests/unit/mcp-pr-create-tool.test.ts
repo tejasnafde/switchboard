@@ -581,11 +581,38 @@ describe('create_pull_request: a project folder that holds several repositories'
     expect(mismatch.creates).toEqual([])
   })
 
-  it('refuses a repository nested inside a project that is a repository itself', async () => {
-    const s = setup({ repoDirs: { vendor: { ok: true, dir: '/p/vendor', relPath: 'vendor' } }, dirRepos: { '/p/vendor': CORE } })
-    const result = await s.call({ title: 'T', repoPath: 'vendor' })
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('not a repository this chat\'s project covers (it covers acme/app)')
+  it('refuses any nested checkout in a project that is a repository itself, even one of the same repository', async () => {
+    for (const nested of [CORE, APP]) {
+      const s = setup({ repoDirs: { vendor: { ok: true, dir: '/p/vendor', relPath: 'vendor' } }, dirRepos: { '/p/vendor': nested } })
+      const result = await s.call({ title: 'T', repoPath: 'vendor' })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('/p is itself a repository (acme/app), so "repoPath" can only be the project folder; vendor is inside it')
+      expect(s.access.currentBranch).not.toHaveBeenCalledWith('/p/vendor')
+      expect(s.creates).toEqual([])
+    }
+  })
+
+  it('treats repoPath "." in a project that is a repository as the chat\'s own checkout', async () => {
+    const s = setup({ answer: approve(), repoDirs: { '.': { ok: true, dir: '/p', relPath: '.' } } })
+    const result = await s.call({ title: 'T', repoPath: '.' })
+    expect(result.isError).toBeFalsy()
+    expect(s.access.currentBranch).toHaveBeenCalledWith('/p/.switchboard/worktrees/x')
+    expect(s.access.createPullRequest).toHaveBeenCalledWith(APP, expect.anything())
+  })
+
+  it('rescans the folder when the card is approved, so a checkout removed meanwhile opens nothing', async () => {
+    const opts: Options = {}
+    const s = parent({
+      answer: () => {
+        opts.children = children.filter((c) => c.relPath !== 'core')
+        return { decision: 'approve', response: {} }
+      },
+    })
+    vi.mocked(s.access.projectRepos).mockImplementation(async () => projectReposFrom(null, opts.children ?? children))
+    const result = await s.call({ title: 'T', repoPath: 'core' })
+    expect(text(result)).toContain('no longer covers geoiq/geoiq-ssg-core-v1')
+    expect(s.access.projectRepos).toHaveBeenLastCalledWith('/p', { fresh: true })
+    expect(s.creates).toEqual([])
   })
 
   it('finds the one child repository whose remote "repository" names', async () => {

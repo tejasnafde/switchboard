@@ -278,7 +278,7 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     submitReview: (ref, input) => getService().submitReview(ref, input),
     chatProject: (chatId) => getConversationByThreadId(chatId)?.project_path ?? null,
     repoFor: (dir) => getService().repoFor(dir),
-    projectRepos: (projectPath) => getService().projectRepos(projectPath),
+    projectRepos: (projectPath, opts) => getService().projectRepos(projectPath, opts),
     resolveRepoDir: (projectPath, repoPath) => resolveRepoDir(projectPath, repoPath),
     currentBranch: (cwd) => currentBranch(cwd),
     remoteHasBranch: (cwd, repo, branch) => remoteHasBranch(cwd, repo, branch),
