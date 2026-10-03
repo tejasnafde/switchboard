@@ -1,0 +1,68 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "phone-image-resize",
+  "summary": "Attached images are scaled to at most 2048 px and re-encoded (JPEG 0.85, a small PNG stays PNG, EXIF orientation applied then dropped, a GIF sent as is or refused), stepping down to 1600 px and 1280 px at 0.75 until each fits what is left of the unchanged 3 MiB message limit. Refusals name the image and the reason. One rule set in src/shared/image-resize.ts, ported to Kotlin.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/image-downscale.ts",
+        "src/renderer/components/chat/ChatPanel.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/components/ImageAttachments.tsx",
+        "apps/mobile/src/lib/images.ts",
+        "apps/mobile/package.json",
+        "tests/unit/mobile-images.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/composer/ImageResizePlan.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/outbox/BitmapImageShrinker.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/outbox/PrivateComposerAttachmentStager.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/composer/ComposerDraftCoordinator.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/composer/ImageResizePlanTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/outbox/PrivateComposerAttachmentStagerTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/composer/ComposerDraftCoordinatorTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/image-resize.ts",
+        "tests/unit/image-resize.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Only the bytes written for a new attachment change; the draft and outbox schemas, and the backend limit in validateUserMessageImages, are unchanged. Drafts and queued turns staged before the update are sent as they are."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/app.json",
+        "apps/android/app/build.gradle.kts",
+        "docs/feature-parity/android-release-0.5.15.json"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "vitest: tests/unit/image-resize.test.ts (steps, PNG/JPEG choice, budget fit, GIF rule, refusal copy) and tests/unit/mobile-images.test.ts.",
+      "Android: ./gradlew testDebugUnitTest (ImageResizePlanTest, PrivateComposerAttachmentStagerTest, ComposerDraftCoordinatorTest) and lintDebug.",
+      "apps/mobile jest suite and tsc."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Attaching a real 12 MP and a 50 MP photo, a rotated photo, a screenshot and a GIF on an iPhone and an Android phone.",
+      "expo-image-manipulator needs a new Expo binary (APK lane); the fingerprint runtimeVersion keeps the OTA away from older binaries.",
+      "Pasting or dropping a large image on the desktop; the canvas path has no unit test (vitest has no canvas)."
+    ]
+  }
+}
