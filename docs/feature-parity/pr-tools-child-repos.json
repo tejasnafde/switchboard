@@ -1,0 +1,68 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "pr-tools-child-repos",
+  "summary": "A project folder that is not a GitHub or Bitbucket repository itself (often a parent of several, such as ~/Desktop/work/ssg holding three Bitbucket repositories) now covers the repositories of the git work trees up to two levels below it. One shared rule (src/shared/project-repos.ts, the scan injected and bounded: depth 2, no hidden folders, node_modules or symlinks, at most 400 directories listed, never at the home folder or a filesystem root, cached 60s per project in PullRequestService.projectRepos) decides which repositories a project covers, and every 'only the chat's own project's repository' check uses it: Reviews' list and its read/write guard, the auto-link, the history scan, pull-requests:link, and the agent PR tools. A project that is a repository covers only its own, so nothing changes for it. create_pull_request takes an optional repoPath (relative to the project folder or absolute): it is resolved with realpath and must be inside the project folder (the folder itself allowed) and a git work tree; its remote is the repository (a named repository must match it exactly) and its checked-out branch the default source, with the push check run there. Without repoPath, a parent folder plus a named repository picks the one child repository whose remote matches, and refuses zero or several with the candidates listed. The desktop card shows the local path; the phone digest is unchanged.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/HostWriteReviewParts.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No phone code changes. The local path is an optional HostWriteCreate.localPath that hostWritePreview does not read, so the RN app's create card (Branches, Title, Description, Reviewers) and its hostWriteShownDigest are unchanged and a phone's approval still matches. The repository the PR opens on, the security-relevant part, is already in the card's target and its Branches section. The phone has no Reviews link UI to update."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No Android code changes, for the same reason: HostWriteCards.kt builds its preview and shownDigest from the same fields as hostWritePreview, which do not include localPath, so the pinned cross-implementation vectors stay valid and nothing needs a new APK."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/project-repos.ts",
+        "src/shared/pull-request-links.ts",
+        "src/shared/agent-pr-create.ts",
+        "src/shared/agent-host-writes.ts",
+        "src/main/pull-requests/project-repos.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/pull-requests/auto-link.ts",
+        "src/main/pull-requests/history-scan.ts",
+        "src/main/ipc/pull-requests.ts",
+        "src/main/mcp/pr-tools.ts",
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "tests/unit/project-repos.test.ts",
+        "tests/unit/pull-request-service.test.ts",
+        "tests/unit/pull-request-links.test.ts",
+        "tests/unit/pull-request-history-scan.test.ts",
+        "tests/unit/mcp-pr-create-tool.test.ts",
+        "tests/unit/agent-pr-create.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, column or migration. Links of a child repository's PRs go into conversation_pull_requests under the parent project's chat like any other. A stored create card's plan has the same shape as before (the re-check after the card reads the project's coverage, not a stored path), and the card payload gains only the optional localPath, which an older stored card simply lacks."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, native module or update channel change. Wire changes are additive: create_pull_request's optional repoPath argument and HostWriteCreate's optional localPath. An older desktop renderer ignores localPath (the plain-text detail still names it), and an older phone renders the card exactly as before. Reviews on an upgraded backend starts listing a parent folder's child repositories, which it listed as an unsupported project before."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/project-repos.test.ts: own repository wins and children are ignored then; every child repository of a parent folder, each once; zero, one and several child checkouts (an owner/name tried as both hosts); the scan finds work trees one and two levels down, does not descend into one, skips node_modules, hidden folders and symlinks, survives an unreadable folder and stops at the listing cap; on a real temporary tree: the symlink out of the folder is not followed, isWithinFolder accepts the folder and below only, resolveRepoDir accepts relative, absolute and '.', and refuses .., an absolute path outside, a symlink escape, a missing path and a folder git says is not a work tree.",
+      "tests/unit/pull-request-service.test.ts: a parent folder's child repositories are listed under it in Reviews and are readable through the service's guard (another repository still unsupported_repo); a project that is a repository is never scanned; concurrent detect calls share one scan per 60s window; a failed scan leaves the folder unsupported.",
+      "tests/unit/pull-request-links.test.ts: canLinkToProject and the auto-link accept PRs of every child repository and of no other; a bare bbpr number stays bound to the project's own repository.",
+      "tests/unit/mcp-pr-create-tool.test.ts: repoPath opens on its remote from its branch, the push check runs there, the card carries localPath and the detail names it, the result is linked to the chat; a repoPath outside the folder, with no supported remote, with a named repository that is not its remote, or nested in a project that is a repository itself is refused; a named repository picks the one child repository, and zero, several or none named are refused with candidates; the re-check after the card uses the coverage rule.",
+      "tests/unit/agent-pr-create.test.ts: repoPath argument checks, the repoPath / repository match, owner/name read as either host.",
+      "npm run typecheck and npm test green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run against the real ~/Desktop/work/ssg folder or a live Bitbucket or GitHub create; the filesystem side was exercised on a temporary tree and git and the hosts were faked.",
+      "The desktop card's local path line was not seen in the running app, and no visual baseline covers the create card.",
+      "Not run with a live Claude, Codex or OpenCode session, so whether each model passes repoPath from the tool description alone is untested."
+    ]
+  }
+}

@@ -123,6 +123,11 @@ export function CreatePrFields({ create, draft, editable, onChange, onSubmit }: 
   }
   return (
     <div className="px-3 pb-2">
+      {create.localPath && (
+        <div data-host-write-local-path className="mb-1 text-[11px] text-[var(--text-muted)]">
+          From <span className="font-[family-name:var(--font-mono)] [overflow-wrap:anywhere] text-[var(--text-secondary)]">{create.localPath}</span> in this project
+        </div>
+      )}
       <div data-host-write-branches className="mb-2 flex flex-wrap items-center gap-1.5 font-[family-name:var(--font-mono)] text-[11.5px] text-[var(--text-primary)]">
         <span className="min-w-0 [overflow-wrap:anywhere] rounded-[4px] border border-[var(--border)] px-1.5 py-px">{create.sourceBranch}</span>
         <span aria-label="into" className="text-[var(--text-muted)]">→</span>

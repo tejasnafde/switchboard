@@ -51,7 +51,9 @@ import {
   type RepoRef,
 } from '@shared/pull-requests'
 import { repoFromRemotes } from '@shared/pull-request-remote'
+import { coveredRepos, projectReposFrom, type ChildRepo, type ProjectRepos } from '@shared/project-repos'
 import { createMainLogger } from '../logger'
+import { relativeLabel } from './project-repos'
 import { PrHostError, toPrError, type PullRequestProvider } from './provider'
 
 /** Why the fresh diff no longer takes this line comment, or null. */
@@ -67,11 +69,15 @@ const log = createMainLogger('pull-requests:service')
 
 /** Remotes rarely change; re-read them at most this often. */
 const REMOTES_TTL_MS = 5 * 60_000
+/** A new checkout under a parent folder shows up within this long. */
+const CHILD_REPOS_TTL_MS = 60_000
 
 export interface PullRequestServiceDeps {
   listProjects(): string[]
   /** `git remote -v` output for a project, or '' when it is not a repository. */
   readRemotes(projectPath: string): Promise<string>
+  /** Absolute paths of the git work trees under a project folder (`scanChildRepoDirs`); absent means none are scanned. */
+  scanChildRepos?(projectPath: string): Promise<string[]>
   github(): PullRequestProvider
   /** `null` when no Bitbucket account is usable; `bitbucketState` says why. */
   bitbucket(): PullRequestProvider | null
@@ -93,6 +99,8 @@ export function involvesViewer(pr: PrSummary): boolean {
 
 export class PullRequestService {
   private remotes = new Map<string, { at: number; repo: RepoRef | null }>()
+  /** Promises, so concurrent `detect()` calls share one scan per project. */
+  private projects = new Map<string, { at: number; repos: Promise<ProjectRepos> }>()
   private readonly now: () => number
 
   constructor(private readonly deps: PullRequestServiceDeps) {
@@ -112,20 +120,49 @@ export class PullRequestService {
     return repo
   }
 
+  /**
+   * The repositories a project covers (`shared/project-repos.ts`): its own, or
+   * the work trees under a folder that has none. `fresh` rescans instead of
+   * reusing the cached result, for a check right before a host write.
+   */
+  projectRepos(projectPath: string, opts: { fresh?: boolean } = {}): Promise<ProjectRepos> {
+    const hit = this.projects.get(projectPath)
+    if (!opts.fresh && hit && this.now() - hit.at < CHILD_REPOS_TTL_MS) return hit.repos
+    const repos = this.readProjectRepos(projectPath)
+    this.projects.set(projectPath, { at: this.now(), repos })
+    return repos
+  }
+
+  private async readProjectRepos(projectPath: string): Promise<ProjectRepos> {
+    const own = await this.repoFor(projectPath)
+    if (own || !this.deps.scanChildRepos) return projectReposFrom(own, [])
+    let dirs: string[] = []
+    try {
+      dirs = await this.deps.scanChildRepos(projectPath)
+    } catch (err) {
+      log.warn('scanning a project folder for repositories failed', { projectPath, err: String(err) })
+    }
+    const found = await Promise.all(dirs.map(async (dir) => ({ dir, repo: await this.repoFor(dir) })))
+    const children: ChildRepo[] = found.flatMap(({ dir, repo }) => (repo ? [{ path: dir, relPath: relativeLabel(projectPath, dir), repo }] : []))
+    return projectReposFrom(null, children)
+  }
+
   async detect(): Promise<DetectedRepos> {
     const repos = new Map<string, { repo: RepoRef; projectPaths: string[] }>()
     const unsupportedProjects: string[] = []
     const projects = this.deps.listProjects()
-    const found = await Promise.all(projects.map(async (path) => [path, await this.repoFor(path)] as const))
-    for (const [path, repo] of found) {
-      if (!repo) {
+    const found = await Promise.all(projects.map(async (path) => [path, coveredRepos(await this.projectRepos(path))] as const))
+    for (const [path, covered] of found) {
+      if (covered.length === 0) {
         unsupportedProjects.push(path)
         continue
       }
-      const key = repoKey(repo)
-      const entry = repos.get(key) ?? { repo, projectPaths: [] }
-      entry.projectPaths.push(path)
-      repos.set(key, entry)
+      for (const repo of covered) {
+        const key = repoKey(repo)
+        const entry = repos.get(key) ?? { repo, projectPaths: [] }
+        if (!entry.projectPaths.includes(path)) entry.projectPaths.push(path)
+        repos.set(key, entry)
+      }
     }
     return { repos, unsupportedProjects }
   }

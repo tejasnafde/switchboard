@@ -160,3 +160,77 @@ describe('PullRequestService reads', () => {
     expect(result).toEqual({ ok: false, error: { kind: 'rate_limited', host: 'github', message: 'slow down' } })
   })
 })
+
+describe('PullRequestService: a project folder that holds several repositories', () => {
+  const ssg: Record<string, string> = {
+    '/w/ssg': '',
+    '/w/ssg/core': 'origin\tgit@bitbucket.org:geoiq/geoiq-ssg-core-v1.git (fetch)',
+    '/w/ssg/apps/studio': 'origin\thttps://bitbucket.org/geoiq/geoiq-ssg-studio-v1.git (fetch)',
+    '/w/ssg/scratch': '',
+    '/p/switchboard': REMOTES['/p/switchboard'],
+  }
+  const children: Record<string, string[]> = {
+    '/w/ssg': ['/w/ssg/core', '/w/ssg/apps/studio', '/w/ssg/scratch'],
+    '/p/switchboard': ['/p/switchboard/vendor/lib'],
+  }
+  const ssgDeps = (over: Partial<PullRequestServiceDeps> = {}) => deps({
+    listProjects: () => ['/w/ssg', '/p/switchboard'],
+    readRemotes: async (path) => ssg[path] ?? '',
+    scanChildRepos: vi.fn(async (path: string) => children[path] ?? []),
+    ...over,
+  })
+
+  it('covers the child repositories that have a supported remote, under the parent project', async () => {
+    const d = ssgDeps()
+    const service = new PullRequestService(d)
+    const project = await service.projectRepos('/w/ssg')
+    expect(project.own).toBeNull()
+    expect(project.children.map((c) => [c.relPath, c.repo.name])).toEqual([['core', 'geoiq-ssg-core-v1'], ['apps/studio', 'geoiq-ssg-studio-v1']])
+    const result = await service.list()
+    if (!result.ok) throw new Error('expected ok')
+    expect(result.data.sources.map((s) => [s.repo.name, s.projectPaths])).toEqual([
+      ['switchboard', ['/p/switchboard']],
+      ['geoiq-ssg-core-v1', ['/w/ssg']],
+      ['geoiq-ssg-studio-v1', ['/w/ssg']],
+    ])
+    expect(result.data.unsupportedProjects).toEqual([])
+    // A project that is a repository is never scanned.
+    expect(d.scanChildRepos).not.toHaveBeenCalledWith('/p/switchboard')
+  })
+
+  it('reads and writes a child repository, as one of the projects', async () => {
+    const service = new PullRequestService(ssgDeps())
+    const detail = await service.detail({ host: 'bitbucket', owner: 'geoiq', name: 'geoiq-ssg-core-v1', number: 4 })
+    expect(detail.ok).toBe(true)
+    if (detail.ok) expect(detail.data.projectPaths).toEqual(['/w/ssg'])
+    const other = await service.detail({ host: 'bitbucket', owner: 'geoiq', name: 'elsewhere', number: 4 })
+    expect(other.ok === false && other.error.kind).toBe('unsupported_repo')
+  })
+
+  it('scans a folder once per window, however many reads ask at once', async () => {
+    let now = 0
+    const d = ssgDeps({ now: () => now })
+    const service = new PullRequestService(d)
+    await Promise.all([service.detect(), service.detect(), service.projectRepos('/w/ssg')])
+    expect(d.scanChildRepos).toHaveBeenCalledTimes(1)
+    now += 61_000
+    await service.detect()
+    expect(d.scanChildRepos).toHaveBeenCalledTimes(2)
+  })
+
+  it('rescans on a fresh read and caches the result for the next one', async () => {
+    const d = ssgDeps()
+    const service = new PullRequestService(d)
+    await service.projectRepos('/w/ssg')
+    await service.projectRepos('/w/ssg', { fresh: true })
+    expect(d.scanChildRepos).toHaveBeenCalledTimes(2)
+    await service.projectRepos('/w/ssg')
+    expect(d.scanChildRepos).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a folder whose scan fails, or finds nothing, as unsupported', async () => {
+    const result = await new PullRequestService(ssgDeps({ scanChildRepos: async () => { throw new Error('EACCES') } })).list()
+    if (!result.ok) throw new Error('expected ok')
+    expect(result.data.unsupportedProjects).toEqual(['/w/ssg'])
+  })
+})
