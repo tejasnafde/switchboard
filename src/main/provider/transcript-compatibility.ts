@@ -1,3 +1,4 @@
+import { perfSpan } from '../perf'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { copyFile, mkdir, open, rename, rm } from 'node:fs/promises'
@@ -127,6 +128,20 @@ export async function compareJsonlTranscripts(
   sourcePath: string,
   targetPath: string,
 ): Promise<TranscriptCompatibility> {
+  const span = perfSpan('transcript.compare')
+  let result: TranscriptCompatibility | undefined
+  try {
+    result = await compareTranscripts(sourcePath, targetPath)
+    return result
+  } finally {
+    span.end({ kind: result?.kind ?? 'error', sourceBytes: result?.source?.size, targetBytes: result?.target?.size })
+  }
+}
+
+async function compareTranscripts(
+  sourcePath: string,
+  targetPath: string,
+): Promise<TranscriptCompatibility> {
   const source = await readJsonl(sourcePath)
   if (!source.ok) {
     return { kind: 'unreadable', side: 'source', reason: source.reason, source: null, target: null }
@@ -246,7 +261,12 @@ async function synchronizeOnce(
     await mkdir(dirname(targetPath), { recursive: true })
     const temporaryPath = join(dirname(targetPath), `.${basename(targetPath)}.switchboard-${randomUUID()}`)
     try {
-      await copyFile(sourcePath, temporaryPath, constants.COPYFILE_EXCL)
+      const copySpan = perfSpan('transcript.copy', { sourceBytes: confirmed.source?.size })
+      try {
+        await copyFile(sourcePath, temporaryPath, constants.COPYFILE_EXCL)
+      } finally {
+        copySpan.end()
+      }
       const copied = await compareJsonlTranscripts(sourcePath, temporaryPath)
       if (copied.kind !== 'equal') {
         return {

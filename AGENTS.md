@@ -619,6 +619,21 @@ src/
 
 Every module that can produce observable side-effects **must** use the scoped logger, not bare `console.*`. This keeps logs filterable, readable in both DevTools and the on-disk log file, and noise-free.
 
+### Performance timing
+
+Use `perfSpan(name, fields?)` from `src/main/perf.ts` or `src/renderer/perf.ts`
+and call `end(extraFields?)` once at the measured boundary. Spans use
+`performance.now()` and the `perf` logger. Log only identifiers, counts, sizes,
+outcomes and durations, never message text, credentials or extra file paths.
+`src/shared/perf-timing.ts` owns thresholds: chat open/load 300 ms, switches
+1000 ms, IPC 200 ms. Explicit spans use info above the threshold and debug
+otherwise; generic IPC records only slow calls. Renderer perf lines reach the
+main log through Electron's console forwarding. Run `node scripts/perf-summary.mjs`
+to summarize the newest three log files, or pass explicit log filenames.
+The script prints count, nearest-rank p50/p90, max and the worst five samples.
+IPC excludes send-turn, submit-user-turn, respond-to-request, answer-question
+and deliver-peer-message because they can wait for a turn or a human answer.
+
 ### Main process - `src/main/logger.ts`
 
 ```ts

@@ -21,6 +21,7 @@ export type JsonlSource = 'claude-code' | 'codex'
  * empty in the sidebar. Pass `source: 'codex'` when loading a Codex file.
  */
 export class JsonlParser {
+  lineCount = 0
   private buffer = ''
   private onMessage: (message: ChatMessage) => void
   private source: JsonlSource
@@ -37,6 +38,7 @@ export class JsonlParser {
 
     // Last element is either empty (line ended with \n) or a partial line
     this.buffer = lines.pop() ?? ''
+    this.lineCount += lines.length
 
     for (const line of lines) {
       const trimmed = line.trim()
@@ -48,6 +50,7 @@ export class JsonlParser {
   /** Flush any remaining buffered data */
   flush(): void {
     if (this.buffer.trim()) {
+      this.lineCount += 1
       this.parseLine(this.buffer.trim())
       this.buffer = ''
     }
