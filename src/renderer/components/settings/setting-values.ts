@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { parseFollowUpDefault } from '@shared/turn-delivery'
+import { PEER_LINK_DURATION_SETTING } from '@shared/peer-links'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
 import { useLayoutStore } from '../../stores/layout-store'
 import { getStoreDefaultRuntimeMode, setStoreDefaultRuntimeMode } from '../../stores/agent-store'
@@ -71,6 +72,10 @@ const BINDINGS: Record<string, Binding> = {
   [SETTING_ROW.streaming.id]: {
     read: async () => flag(await isAssistantStreamingEnabled()),
     write: (v) => setAssistantStreamingEnabled(v === 'true'),
+  },
+  [SETTING_ROW.linkDuration.id]: {
+    read: async () => (await window.api.settings.get(PEER_LINK_DURATION_SETTING)) ?? SETTING_ROW.linkDuration.defaultValue!,
+    write: (v) => window.api.settings.set(PEER_LINK_DURATION_SETTING, v),
   },
   [SETTING_ROW.envMode.id]: {
     read: () => getDefaultSessionEnvMode(),

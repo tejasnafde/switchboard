@@ -13,6 +13,13 @@ import {
   PEER_LINK_MAX_MESSAGES,
   PEER_LINK_MESSAGE_BUDGET,
   PEER_LINK_WINDOW_MS,
+  formatPeerLinkDuration,
+  formatPeerLinkTimeLeft,
+  parsePeerLinkDuration,
+  peerLinkDefaultWindow,
+  peerLinkWindowProblem,
+  PEER_LINK_MAX_WINDOW_MS,
+  PEER_LINK_MIN_WINDOW_MS,
   PEER_UNDELIVERED_MARKER_PREFIX,
   type PeerLinkView,
 } from '../../src/shared/peer-links'
@@ -190,7 +197,7 @@ describe('edge budget', () => {
     const book = new PeerLinkBook()
     book.link('a', 'b', 'user', T0)
     book.checkSend('a', 'b', T0)
-    expect(book.linksOf('a')).toEqual([{ peerThreadId: 'b', used: 1, budget: PEER_LINK_MESSAGE_BUDGET, expiresAt: T0 + PEER_LINK_WINDOW_MS }])
+    expect(book.linksOf('a')).toEqual([{ peerThreadId: 'b', used: 1, budget: PEER_LINK_MESSAGE_BUDGET, expiresAt: T0 + PEER_LINK_WINDOW_MS, windowMs: PEER_LINK_WINDOW_MS }])
   })
 })
 
@@ -211,11 +218,11 @@ describe('the third-session hop limit', () => {
 
 describe('banner text', () => {
   const view = (title: string, used: number, expiresAt = T0 + PEER_LINK_WINDOW_MS): PeerLinkView =>
-    ({ peerThreadId: title, title, used, budget: 20, expiresAt })
+    ({ peerThreadId: title, title, used, budget: 20, expiresAt, windowMs: PEER_LINK_WINDOW_MS })
 
-  it('names each link and its count', () => {
-    expect(peerLinksBannerText([view('Worker A', 7), view('Worker B', 2)], T0))
-      .toBe('Linked with Worker A (7 of 20), Worker B (2 of 20)')
+  it('names each link, its count and the time left', () => {
+    expect(peerLinksBannerText([view('Worker A', 7), view('Worker B', 2, T0 + (3 * 60 + 12) * 60_000)], T0))
+      .toBe('Linked with Worker A · 7 of 20 · 30m left, Worker B · 2 of 20 · 3h 12m left')
   })
 
   it('collapses to a count once there are several', () => {
@@ -223,8 +230,8 @@ describe('banner text', () => {
   })
 
   it('says when a link is spent', () => {
-    expect(peerLinkLabel(view('A', 20), T0)).toBe('A (limit reached)')
-    expect(peerLinkLabel(view('A', 3, T0), T0)).toBe('A (time up)')
+    expect(peerLinkLabel(view('A', 20), T0)).toBe('A · limit reached')
+    expect(peerLinkLabel(view('A', 3, T0), T0)).toBe('A · time up')
   })
 })
 
@@ -264,6 +271,7 @@ describe('extend', () => {
     expect(book.extend('b', 'a', 'user', T0 + PEER_LINK_WINDOW_MS)).toEqual({ ok: true, created: false })
     expect(book.linksOf('a')[0]).toEqual({
       peerThreadId: 'b', used: 2, budget: 2 + PEER_LINK_EXTEND_MESSAGES, expiresAt: T0 + 2 * PEER_LINK_WINDOW_MS,
+      windowMs: PEER_LINK_WINDOW_MS,
     })
     expect(book.checkSend('a', 'b', T0 + PEER_LINK_WINDOW_MS)).toEqual({ linked: true, ok: true })
   })
@@ -299,7 +307,7 @@ describe('a hub with ten workers', () => {
 
   it('keeps the banner to one short line and names the spent ones', () => {
     const views: PeerLinkView[] = workers.map((w, i) => ({
-      peerThreadId: w, title: `Worker ${i}`, used: i === 3 ? 20 : 1, budget: 20, expiresAt: T0 + PEER_LINK_WINDOW_MS,
+      peerThreadId: w, title: `Worker ${i}`, used: i === 3 ? 20 : 1, budget: 20, expiresAt: T0 + PEER_LINK_WINDOW_MS, windowMs: PEER_LINK_WINDOW_MS,
     }))
     expect(peerLinksBannerText(views, T0)).toBe('Linked with 10 sessions · 1 used up')
   })
@@ -337,5 +345,75 @@ describe('undelivered marker', () => {
 
   it('names both sessions in the notification', () => {
     expect(peerLinkSpentText('Lead', 'Worker A')).toMatch(/"Lead" and "Worker A"/)
+  })
+})
+
+const HOUR = 60 * 60_000
+
+describe('link duration', () => {
+  it('parses minutes and hours, and nothing without a unit', () => {
+    expect(parsePeerLinkDuration('90m')).toBe(90 * 60_000)
+    expect(parsePeerLinkDuration('4h')).toBe(4 * HOUR)
+    expect(parsePeerLinkDuration('2H')).toBe(2 * HOUR)
+    for (const bad of ['30', '1.5h', '4d', 'h', '-1h', '4 hours']) expect(parsePeerLinkDuration(bad), bad).toBeNull()
+  })
+
+  it('allows 10 minutes to 24 hours', () => {
+    expect(peerLinkWindowProblem(PEER_LINK_MIN_WINDOW_MS)).toBeNull()
+    expect(peerLinkWindowProblem(PEER_LINK_MAX_WINDOW_MS)).toBeNull()
+    expect(peerLinkWindowProblem(PEER_LINK_MIN_WINDOW_MS - 60_000)).toBe('A link lasts 10 minutes to 24 hours.')
+    expect(peerLinkWindowProblem(PEER_LINK_MAX_WINDOW_MS + 60_000)).not.toBeNull()
+    expect(new PeerLinkBook().link('a', 'b', 'user', T0, 20, 5 * 60_000)).toMatchObject({ ok: false })
+  })
+
+  it('reads the Settings default, falling back to 30 minutes', () => {
+    expect(peerLinkDefaultWindow('4h')).toBe(4 * HOUR)
+    for (const bad of [null, undefined, '', '5m', '25h', 'soon']) expect(peerLinkDefaultWindow(bad)).toBe(PEER_LINK_WINDOW_MS)
+  })
+
+  it('formats a duration and the time left', () => {
+    expect(formatPeerLinkDuration(30 * 60_000)).toBe('30 minutes')
+    expect(formatPeerLinkDuration(HOUR)).toBe('1 hour')
+    expect(formatPeerLinkDuration(4 * HOUR)).toBe('4 hours')
+    expect(formatPeerLinkDuration(90 * 60_000)).toBe('1 hour 30 minutes')
+    expect(formatPeerLinkTimeLeft(30_000)).toBe('<1m')
+    expect(formatPeerLinkTimeLeft(12 * 60_000 + 59_000)).toBe('12m')
+    expect(formatPeerLinkTimeLeft(3 * HOUR + 12 * 60_000)).toBe('3h 12m')
+  })
+
+  it('expires each edge on its own window, and names it when refusing', () => {
+    const book = new PeerLinkBook()
+    book.link('hub', 'long', 'user', T0, 20, 4 * HOUR)
+    book.link('hub', 'short', 'user', T0)
+    expect(book.checkSend('hub', 'short', T0 + PEER_LINK_WINDOW_MS)).toMatchObject({ ok: false, reason: 'link-expired' })
+    expect(book.checkSend('hub', 'long', T0 + 4 * HOUR - 1)).toEqual({ linked: true, ok: true })
+    const refused = book.checkSend('hub', 'long', T0 + 4 * HOUR)
+    expect(refused).toMatchObject({ ok: false, reason: 'link-expired' })
+    expect(refused.linked && !refused.ok && refused.message).toMatch(/^This link's time \(4 hours\) is up\./)
+  })
+
+  it('restarts the edge\'s own window on Extend', () => {
+    const book = new PeerLinkBook()
+    book.link('a', 'b', 'user', T0, 20, 2 * HOUR)
+    book.extend('a', 'b', 'user', T0 + HOUR)
+    expect(book.linksOf('a')[0]).toMatchObject({ expiresAt: T0 + 3 * HOUR, windowMs: 2 * HOUR })
+  })
+
+  it('renews with the edge\'s own window on a user turn, in either session', () => {
+    for (const human of ['a', 'b']) {
+      const book = new PeerLinkBook()
+      book.link('a', 'b', 'user', T0, 20, 8 * HOUR)
+      book.humanMessage(human, T0 + 7 * HOUR)
+      expect(book.linksOf('a')[0]).toMatchObject({ expiresAt: T0 + 15 * HOUR, windowMs: 8 * HOUR })
+      book.renew('a', 'b', T0 + 14 * HOUR)
+      expect(book.linksOf('a')[0].expiresAt).toBe(T0 + 22 * HOUR)
+    }
+  })
+
+  it('takes a new window when an existing edge is linked again', () => {
+    const book = new PeerLinkBook()
+    book.link('a', 'b', 'user', T0, 20, 8 * HOUR)
+    book.link('a', 'b', 'user', T0)
+    expect(book.linksOf('a')[0].windowMs).toBe(PEER_LINK_WINDOW_MS)
   })
 })

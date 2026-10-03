@@ -5,10 +5,11 @@
  * hub thread linked to any number of workers holds one edge per worker, and
  * the workers stay unlinked from each other. Along an edge an agent send skips the hop-depth
  * limit and the per-sender budget (`peer-messaging.ts`), and is bounded by
- * this edge's own exchange budget instead: a number of agent messages the
- * user picks when linking, or a time window, whichever ends first. A message
+ * this edge's own exchange budget instead: a number of agent messages and a
+ * time window, both picked by the user when linking (the window defaults to
+ * the `PEER_LINK_DURATION_SETTING` setting), whichever ends first. A message
  * the user types in either session renews both; Extend adds messages and
- * restarts the window.
+ * restarts the window. Each edge keeps its own window length for both.
  *
  * Running out never loses work: the refused message is handed back to the
  * model to report, and stored in the sender's chat (`PEER_UNDELIVERED_MARKER_PREFIX`)
@@ -31,15 +32,68 @@ import { peerMessageId, type PeerMessageInitiator } from './peer-messaging'
 export const PEER_LINK_MESSAGE_BUDGET = 20
 /**
  * The most messages one edge may ever hold, whether set by `/link` or reached
- * by Extend. Ten default budgets: at the per-pair rate (5 a minute each way)
- * an exchange cannot even spend that inside one window, so a higher number
- * would only ever let an unattended pair run longer between the user's looks.
+ * by Extend. Ten default budgets. The window bounds how long an edge lasts and
+ * this bounds how much it says: at the per-pair rate (5 a minute each way) a
+ * busy pair can spend 200 in about 20 minutes, so a long window only keeps a
+ * sparse exchange alive, and a chatty one still stops for the user.
  */
 export const PEER_LINK_MAX_MESSAGES = 200
 /** Messages one Extend adds. */
 export const PEER_LINK_EXTEND_MESSAGES = 20
-/** How long an edge's budget lasts after the link, the last human message or an Extend. */
+/** How long an edge's budget lasts after the link, the last human message or an Extend, unless the user picks otherwise. */
 export const PEER_LINK_WINDOW_MS = 30 * 60_000
+export const PEER_LINK_MIN_WINDOW_MS = 10 * 60_000
+export const PEER_LINK_MAX_WINDOW_MS = 24 * 60 * 60_000
+/**
+ * Backend setting holding the window a `/link` without a time gets, in the
+ * `/link` form (`30m`, `4h`), so every client of the backend reads one value.
+ */
+export const PEER_LINK_DURATION_SETTING = 'chat.peerLinkDuration'
+/** The choices Settings offers for `PEER_LINK_DURATION_SETTING`. */
+export const PEER_LINK_DURATION_CHOICES = ['10m', '30m', '1h', '2h', '4h', '8h', '12h', '24h'] as const
+
+/**
+ * A link time as `/link` takes it: whole minutes (`90m`) or hours (`4h`).
+ * A unit is required, because a bare trailing number is the message budget.
+ * Null when the token is not a time at all; range is `peerLinkWindowProblem`'s.
+ */
+export function parsePeerLinkDuration(token: string): number | null {
+  const match = /^(\d+)(m|h)$/i.exec(token.trim())
+  if (!match) return null
+  return Number(match[1]) * (match[2].toLowerCase() === 'h' ? 60 * 60_000 : 60_000)
+}
+
+/** Null when `ms` is a valid link window, else what is wrong with it. */
+export function peerLinkWindowProblem(ms: number): string | null {
+  if (!Number.isFinite(ms) || ms < PEER_LINK_MIN_WINDOW_MS || ms > PEER_LINK_MAX_WINDOW_MS) {
+    return 'A link lasts 10 minutes to 24 hours.'
+  }
+  return null
+}
+
+/** The stored Settings default as a window; anything unreadable or out of range is the 30 minute default. */
+export function peerLinkDefaultWindow(stored: string | null | undefined): number {
+  const ms = stored ? parsePeerLinkDuration(stored) : null
+  return ms !== null && peerLinkWindowProblem(ms) === null ? ms : PEER_LINK_WINDOW_MS
+}
+
+/** `30 minutes`, `4 hours`, `1 hour 30 minutes`. */
+export function formatPeerLinkDuration(ms: number): string {
+  const minutes = Math.round(ms / 60_000)
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+  if (h === 0) return unit(m, 'minute')
+  return m === 0 ? unit(h, 'hour') : `${unit(h, 'hour')} ${unit(m, 'minute')}`
+}
+
+/** Compact time left for the banner: `3h 12m`, `12m`, `<1m`. */
+export function formatPeerLinkTimeLeft(ms: number): string {
+  const minutes = Math.floor(ms / 60_000)
+  if (minutes < 1) return '<1m'
+  const h = Math.floor(minutes / 60)
+  return h === 0 ? `${minutes}m` : `${h}h ${minutes % 60}m`
+}
 
 /** Null when `value` is a valid per-link budget, else what is wrong with it. */
 export function peerLinkBudgetProblem(value: number): string | null {
@@ -57,6 +111,8 @@ export interface PeerLinkSummary {
   budget: number
   /** Epoch ms the edge's window closes, unless a human message renews it first. */
   expiresAt: number
+  /** This edge's window length, which a renewal or Extend restarts. */
+  windowMs: number
 }
 
 /** A session's links plus the titles the UI shows. Payload of `LIST_PEER_LINKS`. */
@@ -92,6 +148,7 @@ interface Edge {
   since: number
   used: number
   budget: number
+  windowMs: number
   /** The user has been told this edge ran out; cleared whenever it is renewed. */
   notified: boolean
 }
@@ -124,13 +181,13 @@ export class PeerLinkBook {
 
   constructor(
     private readonly defaultBudget = PEER_LINK_MESSAGE_BUDGET,
-    private readonly windowMs = PEER_LINK_WINDOW_MS,
+    private readonly defaultWindowMs = PEER_LINK_WINDOW_MS,
   ) {}
 
   /**
-   * Link two sessions, or renew an existing edge's budget. Refused for an
-   * agent: a link is the user's consent, and a model that could grant it to
-   * itself would have no limit at all.
+   * Link two sessions, or renew an existing edge with a new budget and
+   * window. Refused for an agent: a link is the user's consent, and a model
+   * that could grant it to itself would have no limit at all.
    */
   link(
     a: string,
@@ -138,23 +195,24 @@ export class PeerLinkBook {
     initiator: PeerMessageInitiator,
     nowMs: number,
     budget = this.defaultBudget,
+    windowMs = this.defaultWindowMs,
   ): PeerLinkResult {
     if (initiator !== 'user') {
       return { ok: false, message: 'Only the user can link sessions.' }
     }
     if (a === b) return { ok: false, message: 'A session cannot be linked with itself.' }
-    const problem = peerLinkBudgetProblem(budget)
+    const problem = peerLinkBudgetProblem(budget) ?? peerLinkWindowProblem(windowMs)
     if (problem) return { ok: false, message: problem }
     const key = edgeKey(a, b)
     const created = !this.edges.has(key)
     const existing = this.edges.get(key)
-    this.edges.set(key, { id: existing?.id ?? ++this.nextEdgeId, since: nowMs, used: 0, budget, notified: false })
+    this.edges.set(key, { id: existing?.id ?? ++this.nextEdgeId, since: nowMs, used: 0, budget, windowMs, notified: false })
     return { ok: true, created }
   }
 
   /**
    * Extend: `PEER_LINK_EXTEND_MESSAGES` more messages (up to the maximum) and
-   * a fresh window. User-only, like `link`, for the same reason.
+   * a fresh run of the edge's own window. User-only, like `link`, for the same reason.
    */
   extend(a: string, b: string, initiator: PeerMessageInitiator, nowMs: number): PeerLinkResult {
     if (initiator !== 'user') return { ok: false, message: 'Only the user can extend a link.' }
@@ -199,7 +257,7 @@ export class PeerLinkBook {
     for (const [key, edge] of this.edges) {
       const peer = otherEnd(key, id)
       if (peer === null) continue
-      out.push({ peerThreadId: peer, used: edge.used, budget: edge.budget, expiresAt: edge.since + this.windowMs })
+      out.push({ peerThreadId: peer, used: edge.used, budget: edge.budget, expiresAt: edge.since + edge.windowMs, windowMs: edge.windowMs })
     }
     return out
   }
@@ -220,8 +278,8 @@ export class PeerLinkBook {
       edge.notified = true
       return { linked: true, ok: false, reason, firstRefusal, message: `${why} ${PEER_LINK_NOT_DELIVERED}` }
     }
-    if (nowMs - edge.since >= this.windowMs) {
-      return refuse('link-expired', `This link's ${Math.round(this.windowMs / 60_000)} minutes are up.`)
+    if (nowMs - edge.since >= edge.windowMs) {
+      return refuse('link-expired', `This link's time (${formatPeerLinkDuration(edge.windowMs)}) is up.`)
     }
     if (edge.used >= edge.budget) {
       return refuse('link-budget', `The two sessions have used all ${edge.budget} messages of this link.`)
@@ -280,13 +338,13 @@ function renewEdge(edge: Edge, nowMs: number): void {
 }
 
 /**
- * The banner line for one link: `Worker A (7 of 20)`, or `(time up)` /
- * `(limit reached)` once the edge is spent.
+ * The banner line for one link: `Worker A · 7 of 20 · 3h 12m left`, or
+ * `time up` / `limit reached` once the edge is spent.
  */
 export function peerLinkLabel(link: PeerLinkView, nowMs: number): string {
-  if (nowMs >= link.expiresAt) return `${link.title} (time up)`
-  if (link.used >= link.budget) return `${link.title} (limit reached)`
-  return `${link.title} (${link.used} of ${link.budget})`
+  if (nowMs >= link.expiresAt) return `${link.title} · time up`
+  if (link.used >= link.budget) return `${link.title} · limit reached`
+  return `${link.title} · ${link.used} of ${link.budget} · ${formatPeerLinkTimeLeft(link.expiresAt - nowMs)} left`
 }
 
 /** Above this many links the banner names a count and the popover lists them. */
