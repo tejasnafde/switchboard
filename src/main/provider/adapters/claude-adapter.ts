@@ -180,7 +180,7 @@ export function buildClaudeQueryEnv(
   const env = { ...base }
   applyEnvOverlay(env, instanceEnv)
   applyClaudeHome(env, instanceOauthDir)
-  return env
+  return markAgentSpawnEnv(env)
 }
 
 /**
@@ -411,6 +411,7 @@ export {
 import { decidePermission, CUSTOM_UI_TOOLS, denialMessage, notebookWriteRedirect } from '../policy'
 import { notebookManager } from '../../notebooks/manager'
 import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
+import { markAgentSpawnEnv } from '../agent-spawn-env'
 import { applyEnvOverlay } from '../env-overlay'
 import { applyClaudeHome, canonicalClaudeHome } from '../claude-home'
 import {

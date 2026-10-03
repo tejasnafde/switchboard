@@ -49,6 +49,7 @@ import { attachPullRequestAutoLink, registerPullRequestHandlers, startPullReques
 import { tryResolveProviderInstance } from './db/provider-instances'
 import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
 import { QuitCoordinator } from './quit-coordinator'
+import { backgroundByDefault } from './provider/agent-spawn-env'
 import { noteQuitSource, quitSource } from './quit-source'
 import { InstallAttempt } from './install-attempt'
 import { runShutdownSequence } from './shutdown-sequence'
@@ -393,7 +394,11 @@ function saveWindowBounds(window: BrowserWindow): void {
 // person at the machine: an accessory app gets no Dock icon and is not
 // activated, and showInactive() draws the window without making it key.
 // Not for the visual behaviour phase, which reads the real screen.
-const e2eBackground = process.platform === 'darwin' && process.env.SB_E2E_BACKGROUND === '1'
+// On by default when an agent launches the app (Claude Code's CLAUDECODE=1,
+// or the SWITCHBOARD_AGENT=1 Switchboard puts on every agent it starts): an
+// opt-in flag was forgotten often enough to keep hijacking a one-screen desk.
+// SB_E2E_BACKGROUND=0 forces the foreground.
+const e2eBackground = process.platform === 'darwin' && backgroundByDefault(process.env)
 if (e2eBackground) {
   app.setActivationPolicy('accessory')
   // The window is fully transparent (below), and Chromium stops painting a
