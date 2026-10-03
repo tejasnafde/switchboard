@@ -119,6 +119,7 @@ import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWritePreview
 import app.switchboard.mobile.domain.thread.SyntheticTone
+import app.switchboard.mobile.domain.thread.SystemMarkers
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.ProviderSkill
@@ -1345,6 +1346,11 @@ private fun ThreadRow(
 
         is ThreadRowPresentation.SpendBlocked -> SpendRow(row.source)
         is ThreadRowPresentation.Peer -> PeerRow(row.source)
+        is ThreadRowPresentation.Undelivered -> UndeliveredRow(
+            row,
+            sending = row.messageId in pendingActions.undeliveredIds,
+            onSend = { onAction(ThreadUiAction.SendUndelivered(row.messageId, row.row.to, row.row.text)) },
+        )
         is ThreadRowPresentation.Todo -> TodoRow(row.source)
         is ThreadRowPresentation.Notice -> NoticeCard(
             title = row.title,
@@ -2341,6 +2347,38 @@ private fun PeerRow(item: FeedItem.Peer) {
     }
 }
 
+/** A message a session link refused, kept for the user. Send delivers it as the user's own send. */
+@Composable
+private fun UndeliveredRow(row: ThreadRowPresentation.Undelivered, sending: Boolean, onSend: () -> Unit) {
+    var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
+    val message = row.row
+    val long = message.text.length > 200 || message.text.lines().size > UNDELIVERED_CLAMP_LINES
+    CardContainer(tint = TextDim) {
+        Text(SystemMarkers.undeliveredHeading(message), fontWeight = FontWeight.SemiBold)
+        if (!message.sent) {
+            Text(SystemMarkers.reasonText(message.reason), color = TextDim, style = MaterialTheme.typography.bodySmall)
+        }
+        Text(
+            message.text,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = if (long && !expanded) UNDELIVERED_CLAMP_LINES else Int.MAX_VALUE,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (long) {
+            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Show less" else "Show more", color = Accent) }
+        }
+        if (!message.sent) {
+            OutlinedButton(
+                onClick = onSend,
+                enabled = !sending,
+                modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.UNDELIVERED_SEND),
+            ) { Text(if (sending) "Sending…" else "Send") }
+        }
+    }
+}
+
+private const val UNDELIVERED_CLAMP_LINES = 4
+
 @Composable
 private fun TodoRow(item: FeedItem.Todo) {
     CardContainer(tint = Accent) {
@@ -2371,7 +2409,7 @@ private fun NoticeCard(
             }
             Text(title, color = tint, fontWeight = FontWeight.SemiBold)
         }
-        Text(body, style = MaterialTheme.typography.bodyMedium)
+        if (body.isNotEmpty()) Text(body, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

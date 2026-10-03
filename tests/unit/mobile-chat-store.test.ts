@@ -341,3 +341,20 @@ describe('an approval the backend refused', () => {
     expect(thread.items.at(-1)).toMatchObject({ kind: 'notice', text: 'Could not answer the approval: needs the desktop' })
   })
 })
+
+describe('a message a session link refused', () => {
+  const refused: RuntimeEvent = {
+    type: 'peer.undelivered', threadId: THREAD, messageId: 'pu_1', peerThreadId: 'agent_2', peerLabel: 'Roadmap',
+    fromLabel: 'Docs', reason: 'link-expired', text: 'Found it', sent: false, notify: true, at: 1,
+  }
+
+  it('adds one row, and the sent update replaces it on the history row id', () => {
+    ingest(refused)
+    ingest({ ...refused, sent: true, notify: false })
+    flushQueue()
+    expect(items()).toEqual([{
+      kind: 'undelivered', id: 'h-pu_1', messageId: 'pu_1',
+      row: { to: 'agent_2', toLabel: 'Roadmap', reason: 'link-expired', text: 'Found it', sent: true },
+    }])
+  })
+})

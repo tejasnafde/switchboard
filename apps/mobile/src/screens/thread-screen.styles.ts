@@ -225,6 +225,18 @@ export const styles = StyleSheet.create({
   },
   noticeRow: { alignItems: 'center', paddingVertical: space.md },
   noticeText: { color: colors.textDim, ...type.monoSm },
+  undeliveredCard: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 10,
+    gap: 4,
+  },
+  undeliveredTitle: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  undeliveredReason: { color: colors.textDim, fontSize: 12 },
+  undeliveredText: { color: colors.textDim, fontSize: 13, lineHeight: 18 },
+  undeliveredSendText: { color: colors.text, fontSize: 13, fontWeight: '600' },
   toolRow: {
     flexDirection: 'row',
     alignItems: 'center',

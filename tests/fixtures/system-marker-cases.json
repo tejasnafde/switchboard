@@ -1,0 +1,178 @@
+[
+  {
+    "id": "undelivered-expired",
+    "content": "[[sb:peer-undelivered]] {\"to\":\"agent_1\",\"toLabel\":\"Roadmap Deepdive\",\"reason\":\"link-expired\",\"text\":\"Found the bug in auth.ts\",\"sent\":false}",
+    "expected": {
+      "kind": "peer-undelivered",
+      "row": {
+        "to": "agent_1",
+        "toLabel": "Roadmap Deepdive",
+        "reason": "link-expired",
+        "text": "Found the bug in auth.ts",
+        "sent": false
+      }
+    }
+  },
+  {
+    "id": "undelivered-sent-missing-flag-is-false",
+    "content": "[[sb:peer-undelivered]] {\"to\": \"agent_2\", \"toLabel\": \"Docs\", \"reason\": \"link-budget\", \"text\": \"hi\"}",
+    "expected": {
+      "kind": "peer-undelivered",
+      "row": {
+        "to": "agent_2",
+        "toLabel": "Docs",
+        "reason": "link-budget",
+        "text": "hi",
+        "sent": false
+      }
+    }
+  },
+  {
+    "id": "undelivered-sent",
+    "content": "[[sb:peer-undelivered]] {\"to\": \"agent_2\", \"toLabel\": \"Docs\", \"reason\": \"link-removed\", \"text\": \"hi\", \"sent\": true}",
+    "expected": {
+      "kind": "peer-undelivered",
+      "row": {
+        "to": "agent_2",
+        "toLabel": "Docs",
+        "reason": "link-removed",
+        "text": "hi",
+        "sent": true
+      }
+    }
+  },
+  {
+    "id": "undelivered-bad-reason",
+    "content": "[[sb:peer-undelivered]] {\"to\": \"a\", \"toLabel\": \"B\", \"reason\": \"nope\", \"text\": \"x\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "Switchboard notice",
+      "body": ""
+    }
+  },
+  {
+    "id": "undelivered-broken-json",
+    "content": "[[sb:peer-undelivered]] {\"to\":\"a\",",
+    "expected": {
+      "kind": "notice",
+      "title": "Switchboard notice",
+      "body": ""
+    }
+  },
+  {
+    "id": "approval-done",
+    "content": "[[sb:approval-result]] {\"requestId\": \"sbmcp_1\", \"title\": \"Reply to a review conversation\", \"outcome\": \"done\", \"text\": \"Posted the reply.\", \"delivery\": \"turn\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "Reply to a review conversation · Done · Sent to the agent",
+      "body": "Posted the reply."
+    }
+  },
+  {
+    "id": "approval-dismissed-quiet",
+    "content": "[[sb:approval-result]] {\"requestId\": \"sbmcp_2\", \"title\": \"Message another session\", \"outcome\": \"dismissed\", \"text\": \"Nothing was sent.\", \"delivery\": \"none\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "Message another session · Dismissed",
+      "body": "Nothing was sent."
+    }
+  },
+  {
+    "id": "approval-bad-outcome",
+    "content": "[[sb:approval-result]] {\"requestId\": \"sbmcp_3\", \"title\": \"T\", \"outcome\": \"weird\", \"text\": \"x\", \"delivery\": \"none\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "Switchboard notice",
+      "body": ""
+    }
+  },
+  {
+    "id": "instance-rotated",
+    "content": "[[sb:instance-rotated]] Default → Tech Team",
+    "expected": {
+      "kind": "notice",
+      "title": "Switched profile: Default → Tech Team",
+      "body": ""
+    }
+  },
+  {
+    "id": "agent-switched",
+    "content": "[[sb:agent-switched]] Claude Code → Codex",
+    "expected": {
+      "kind": "notice",
+      "title": "Switched agent: Claude Code → Codex",
+      "body": ""
+    }
+  },
+  {
+    "id": "context-handoff-arrow",
+    "content": "[[sb:context-handoff]] Codex -> Claude Code",
+    "expected": {
+      "kind": "notice",
+      "title": "Context handoff: Codex → Claude Code",
+      "body": ""
+    }
+  },
+  {
+    "id": "context-handoff-restart",
+    "content": "[[sb:context-handoff]] Claude Code profile restarted with visible history",
+    "expected": {
+      "kind": "notice",
+      "title": "Context handoff",
+      "body": "Claude Code profile restarted with visible history"
+    }
+  },
+  {
+    "id": "peer-sent",
+    "content": "[[sb:peer-sent]] Docs pass → API refactor",
+    "expected": {
+      "kind": "notice",
+      "title": "Sent to API refactor",
+      "body": ""
+    }
+  },
+  {
+    "id": "peer-sent-agent",
+    "content": "[[sb:peer-sent-agent]] Docs pass → API refactor",
+    "expected": {
+      "kind": "notice",
+      "title": "The agent messaged API refactor",
+      "body": ""
+    }
+  },
+  {
+    "id": "unknown-marker",
+    "content": "[[sb:future-thing]] {\"secret\":\"payload\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "Switchboard notice",
+      "body": ""
+    }
+  },
+  {
+    "id": "rotation-without-arrow",
+    "content": "[[sb:instance-rotated]] garbled",
+    "expected": {
+      "kind": "notice",
+      "title": "Switchboard notice",
+      "body": ""
+    }
+  },
+  {
+    "id": "error-row",
+    "content": "Error: Claude Code exited with code 1",
+    "expected": {
+      "kind": "error",
+      "message": "Error: Claude Code exited with code 1"
+    }
+  },
+  {
+    "id": "plain-system",
+    "content": "Session restarted",
+    "expected": {
+      "kind": "notice",
+      "title": "Switchboard notice",
+      "body": "Session restarted"
+    }
+  }
+]
