@@ -37,12 +37,8 @@
       ]
     },
     "storageDataMigration": {
-      "status": "implemented",
-      "evidence": [
-        "src/shared/peer-links.ts",
-        "src/shared/settings-file.ts",
-        "tests/unit/settings-file.test.ts"
-      ]
+      "status": "not_applicable",
+      "reason": "No schema or migration: the Link duration default is one more key (chat.peerLinkDuration) in the existing settings key/value table, written through the existing settings:set channel, and a missing or unreadable row reads as 30 minutes. Each edge's window lives in the in-memory PeerLinkBook, which is never persisted (links do not survive a backend restart)."
     },
     "updateRelease": {
       "status": "not_applicable",
