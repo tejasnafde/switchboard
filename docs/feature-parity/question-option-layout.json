@@ -1,0 +1,54 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "question-option-layout",
+  "summary": "An AskUserQuestion option with a long description stayed readable on the phones. On native Android the option was a TextButton whose row gave the label weight but not the description, so a long description squeezed the label to one character per line and overlapped it. Each option is now one selectable row at least 48 dp tall: the label, then the description under it, in a weighted column, with a checkbox (multi-select) or radio button (single choice) at the end, and the row carries the selected state and the role. The React Native option already stacked label and description; it gets a 48 pt minimum height and the same checkbox or radio role and checked state. Neither phone offers an 'Other' option.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop QuestionCard is a separate web component and was not reported broken; this fixes the two phone layouts only."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/thread-screen.styles.ts",
+        "apps/mobile/src/screens/__tests__/question-item.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadTestTags.kt",
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Layout only; the question and answer wire format is unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        "docs/feature-parity/android-release-0.5.15.json"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "apps/mobile jest question-item.test.tsx: an option has minHeight 48, the checkbox role for multi-select and radio for single choice, and its checked state follows a tap.",
+      "Android ThreadScreenRegressionTest.questionOptionKeepsALongLabelReadableBesideALongDescription (instrumented): at 1.5x font a long label beside a long description gets more than half the row's width, the row is at least 48 dp, has the checkbox role and becomes selected on tap. Compiled with compileDebugAndroidTestKotlin; not run, since no device or emulator was attached.",
+      "./gradlew testDebugUnitTest and npm test --prefix apps/mobile green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not seen on a phone or emulator: the instrumented test was compiled but not run, and neither layout was looked at on a device."
+    ]
+  }
+}

@@ -85,6 +85,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -2105,30 +2106,44 @@ private fun QuestionRow(
             val shown = item.answers ?: selections.forRequest(item.requestId)
             question.options.forEachIndexed { optionIndex, option ->
                 val selected = option.label in shown.getOrNull(questionIndex).orEmpty()
-                TextButton(
-                    onClick = {
-                        onSelectionsChange(
-                            QuestionSelectionReducer.toggle(
-                                selections,
-                                item,
-                                questionIndex,
-                                option.label,
-                            ),
-                        )
-                    },
-                    enabled = !answered && !submitting,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = if (selected) Accent else MaterialTheme.colorScheme.onSurface,
-                    ),
+                // One tappable row: the label and description stack in the
+                // weighted column, so a long description cannot squeeze the
+                // label to one character per line.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
+                        .testTag(ThreadTestTags.questionOption(item.requestId, questionIndex, optionIndex))
                         .fillMaxWidth()
-                        .heightIn(min = 48.dp),
+                        .heightIn(min = 48.dp)
+                        .selectable(
+                            selected = selected,
+                            enabled = !answered && !submitting,
+                            role = if (question.multiSelect) Role.Checkbox else Role.RadioButton,
+                            onClick = {
+                                onSelectionsChange(
+                                    QuestionSelectionReducer.toggle(selections, item, questionIndex, option.label),
+                                )
+                            },
+                        )
+                        .padding(vertical = 6.dp),
                 ) {
-                    Text("${optionIndex + 1}. ${option.label}", modifier = Modifier.weight(1f))
-                    option.description?.takeIf { it != option.label }?.let {
-                        Text(it, color = TextDim, style = MaterialTheme.typography.labelSmall)
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "${optionIndex + 1}. ${option.label}",
+                            color = if (selected) Accent else MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.testTag(ThreadTestTags.questionOptionLabel(item.requestId, questionIndex, optionIndex)),
+                        )
+                        option.description?.takeIf { it != option.label }?.let {
+                            Text(it, color = TextDim, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
-                    if (selected) Text("  [x]", fontFamily = GeistMono)
+                    // Decorative: the row carries the selected state and the click.
+                    if (question.multiSelect) {
+                        Checkbox(checked = selected, onCheckedChange = null, enabled = !answered && !submitting)
+                    } else {
+                        RadioButton(selected = selected, onClick = null, enabled = !answered && !submitting)
+                    }
                 }
             }
         }

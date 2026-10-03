@@ -388,6 +388,7 @@ export const styles = StyleSheet.create({
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 48,
     gap: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,

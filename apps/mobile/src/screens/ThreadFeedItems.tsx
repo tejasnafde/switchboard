@@ -265,6 +265,9 @@ export const QuestionItem = memo(function QuestionItem({
                 key={`${q.id}:${opt.label}`}
                 disabled={answered}
                 onPress={() => toggle(qIdx, q, opt.label)}
+                accessibilityRole={q.multiSelect ? 'checkbox' : 'radio'}
+                accessibilityState={{ checked: selected, disabled: answered }}
+                testID={`question-option-${qIdx}-${i}`}
                 style={[
                   styles.optionRow,
                   selected && styles.optionRowSelected,

@@ -29,4 +29,7 @@ object ThreadTestTags {
     fun toolDisclosure(key: String) = "thread-tool-disclosure:$key"
     fun toolOutput(key: String) = "thread-tool-output:$key"
     fun toolOutputList(key: String) = "thread-tool-output-list:$key"
+
+    fun questionOption(requestId: String, question: Int, option: Int) = "thread-question-option:$requestId:$question:$option"
+    fun questionOptionLabel(requestId: String, question: Int, option: Int) = "thread-question-option-label:$requestId:$question:$option"
 }

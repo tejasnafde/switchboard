@@ -39,6 +39,8 @@ import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.MessagePill
+import app.switchboard.mobile.domain.thread.QuestionOption
+import app.switchboard.mobile.domain.thread.ThreadQuestion
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.ui.theme.SwitchboardTheme
@@ -562,6 +564,40 @@ class ThreadScreenRegressionTest {
             .performScrollToIndex(lastPage)
         compose.onNodeWithText("unique full-output end", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Copy full output").assertIsDisplayed()
+    }
+
+    @Test
+    fun questionOptionKeepsALongLabelReadableBesideALongDescription() {
+        val label = "Resize on the server before upload so the phone never holds the full image"
+        val question = FeedItem.Question(
+            id = "q-1",
+            requestId = "req-1",
+            questions = listOf(
+                ThreadQuestion(
+                    id = "how",
+                    header = "Images",
+                    question = "How should large images be handled?",
+                    options = listOf(
+                        QuestionOption(label, "A description long enough to take the whole row if it were laid out beside the label. ".repeat(4)),
+                        QuestionOption("Keep", null),
+                    ),
+                    multiSelect = true,
+                ),
+            ),
+        )
+        setTools(listOf(question), fontScale = 1.5f)
+
+        val option = compose.onNodeWithTag(ThreadTestTags.questionOption("req-1", 0, 0))
+        option.performScrollTo().assertHeightIsAtLeast(48.dp).assertHasClickAction()
+        val row = option.fetchSemanticsNode().boundsInRoot
+        val labelBounds = compose.onNodeWithTag(ThreadTestTags.questionOptionLabel("req-1", 0, 0), useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        // The label gets most of the row, not a sliver one character wide.
+        assertTrue(labelBounds.width > row.width / 2)
+        option.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox))
+        option.performClick()
+        option.assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+        compose.onNodeWithTag(ThreadTestTags.questionOption("req-1", 0, 1)).assertHeightIsAtLeast(48.dp)
     }
 
     private fun composer() = ThreadComposerPresentation(
