@@ -252,7 +252,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 ### Image pipeline (2026-04-20)
 
 1. User pastes/drags image in `ChatInput` → `ImageAttachment[]`
-2. `ChatPanel.handleSend` converts each `File` to data URL via `FileReader.readAsDataURL`
+2. `ChatPanel.handleSend` shrinks each `File` to a data URL with `fitImageToBudget` (canvas). Every client resizes the same way, by `src/shared/image-resize.ts` (Android port `domain/composer/ImageResizePlan.kt`): at most 2048 px on the long side, JPEG 0.85 (a PNG stays PNG while under 1 MiB), stepping down to 1600 px and then 1280 px at 0.75 until the image fits what is left of the 3 MiB message limit, which is unchanged and still enforced by `validateUserMessageImages`. A GIF is sent as is or refused (re-encoding would drop its animation). The decoder applies EXIF orientation and the output carries no EXIF. Each refusal names the image (`imageRefusalMessage`). The Expo app does it with `expo-image-manipulator` (a native module: added 2026-10-03, so it needed a new binary, not an OTA); Android with `BitmapFactory` and `inSampleSize` (`BitmapImageShrinker`) on the composer worker, when the image is staged into the draft
 3. `providerApi.sendTurn(..., messageImages)` passes through preload → `provider-registry` IPC → adapter
 4. Claude adapter strips the `data:image/png;base64,` prefix and builds `{type:'image', source:{type:'base64', media_type, data}}` content blocks alongside text
 5. Codex adapter encodes images into JSON-RPC content blocks (Phase B done - see `codex-adapter.ts` `sendTurn`)
