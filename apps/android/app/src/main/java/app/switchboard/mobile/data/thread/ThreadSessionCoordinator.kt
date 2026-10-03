@@ -125,6 +125,8 @@ data class ThreadPendingActions(
     val approvalDecisions: Map<String, ApprovalDecision> = emptyMap(),
     val questionRequestIds: Set<String> = emptySet(),
     val planIds: Set<String> = emptySet(),
+    /** Not delivered rows whose Send is in flight, by stored message id. */
+    val undeliveredIds: Set<String> = emptySet(),
     /** The backend takes this device's approval of an agent's pull request write card. */
     val backendTakesPhoneApproval: Boolean = false,
     /** The backend's agent cards wait without a time limit and take a quiet answer. */
@@ -164,6 +166,13 @@ sealed interface ThreadSessionControl {
         val fileEditId: String,
         val repoRoot: String,
         val relPath: String,
+    ) : ThreadSessionControl
+
+    /** Send a message a session link refused, as the user's own send. */
+    data class SendUndelivered(
+        val messageId: String,
+        val targetThreadId: String,
+        val text: String,
     ) : ThreadSessionControl
 }
 
@@ -260,6 +269,14 @@ interface ThreadSessionRemote {
     )
 
     fun interrupt(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit)
+
+    fun deliverPeerMessage(
+        threadId: String,
+        targetThreadId: String,
+        text: String,
+        undeliveredId: String,
+        callback: (RemoteResponse<CommandBody>) -> Unit,
+    ): Unit = throw UnsupportedOperationException("Sending a kept peer message is not supported")
 
     /** A thread's still-open approval/question/plan cards, from the backend's
      *  own bookkeeping rather than a live event a resume gap or a reload may
@@ -374,6 +391,16 @@ class SwitchboardThreadSessionRemote(
 
     override fun interrupt(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
         client.interrupt(threadId, callback)
+    }
+
+    override fun deliverPeerMessage(
+        threadId: String,
+        targetThreadId: String,
+        text: String,
+        undeliveredId: String,
+        callback: (RemoteResponse<CommandBody>) -> Unit,
+    ) {
+        client.deliverPeerMessage(threadId, targetThreadId, text, undeliveredId, callback).let { Unit }
     }
 
     override fun getPendingRequests(threadId: String, callback: (RemoteResponse<List<JsonObject>>) -> Unit) {
@@ -561,6 +588,7 @@ class ThreadSessionCoordinator(
     private val pendingControls = mutableSetOf<String>()
     private val pendingApprovalDecisions = mutableMapOf<String, ApprovalDecision>()
     private val pendingQuestionRequestIds = mutableSetOf<String>()
+    private val pendingUndeliveredIds = mutableSetOf<String>()
     private val pendingPlanOrigins = mutableMapOf<String, String>()
     private val optimisticTurns = linkedMapOf<String, app.switchboard.mobile.domain.outbox.QueuedTurn>()
 
@@ -1040,6 +1068,8 @@ class ThreadSessionCoordinator(
             }
         }
 
+        is ThreadSessionControl.SendUndelivered -> sendUndelivered(control)
+
         is ThreadSessionControl.OpenFile -> {
             val message = OPEN_FILE_UNSUPPORTED
             controlMessage = message
@@ -1384,6 +1414,32 @@ class ThreadSessionCoordinator(
         return ThreadControlOutcome.Requested
     }
 
+    /**
+     * Unlike an approval, no event closes this on success when the backend
+     * declines to mark the row (it was not this row's message), so the pending
+     * flag clears on any answer; a sent row then drops its button.
+     */
+    private fun sendUndelivered(control: ThreadSessionControl.SendUndelivered): ThreadControlOutcome {
+        if (closed || remote.scope != scope) return ThreadControlOutcome.Failed("Connection scope changed")
+        if (!pendingUndeliveredIds.add(control.messageId)) return ThreadControlOutcome.Busy
+        controlMessage = null
+        publish()
+        try {
+            remote.deliverPeerMessage(threadId, control.targetThreadId, control.text, control.messageId) { response ->
+                synchronized(this) {
+                    if (!accepts(response)) return@synchronized
+                    pendingUndeliveredIds -= control.messageId
+                    (response.outcome as? RemoteOutcome.Failure)?.let { controlMessage = it.message }
+                    publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            pendingUndeliveredIds -= control.messageId
+            return controlFailed(error.message ?: "Request failed")
+        }
+        return ThreadControlOutcome.Requested
+    }
+
     private fun implementPlan(planId: String): ThreadControlOutcome {
         if (closed || remote.scope != scope) return ThreadControlOutcome.Failed("Connection scope changed")
         if (planId in pendingPlanOrigins) return ThreadControlOutcome.Busy
@@ -1504,6 +1560,7 @@ class ThreadSessionCoordinator(
             pendingActions = ThreadPendingActions(
                 approvalDecisions = pendingApprovalDecisions.toMap(),
                 questionRequestIds = pendingQuestionRequestIds.toSet(),
+                undeliveredIds = pendingUndeliveredIds.toSet(),
                 planIds = pendingPlanOrigins.keys.toSet(),
                 backendTakesPhoneApproval = HostWriteCards.PHONE_APPROVAL_CAPABILITY in capabilities,
                 backendAsyncApproval = HostWriteCards.ASYNC_APPROVAL_CAPABILITY in capabilities,

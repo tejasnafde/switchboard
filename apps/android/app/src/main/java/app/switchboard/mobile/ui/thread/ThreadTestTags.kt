@@ -2,6 +2,7 @@ package app.switchboard.mobile.ui.thread
 
 object ThreadTestTags {
     const val FEED = "thread-feed"
+    const val UNDELIVERED_SEND = "thread-undelivered-send"
     const val COMPOSER_INPUT = "thread-composer-input"
     const val AGENT_SETTINGS_ACTION = "thread-agent-settings-action"
     const val AGENT_SETTINGS_SCREEN = "thread-agent-settings-screen"
@@ -28,4 +29,7 @@ object ThreadTestTags {
     fun toolDisclosure(key: String) = "thread-tool-disclosure:$key"
     fun toolOutput(key: String) = "thread-tool-output:$key"
     fun toolOutputList(key: String) = "thread-tool-output-list:$key"
+
+    fun questionOption(requestId: String, question: Int, option: Int) = "thread-question-option:$requestId:$question:$option"
+    fun questionOptionLabel(requestId: String, question: Int, option: Int) = "thread-question-option-label:$requestId:$question:$option"
 }

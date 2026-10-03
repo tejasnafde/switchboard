@@ -1,0 +1,49 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.15",
+  "summary": "Native Android release 0.5.15 (versionCode 17): renders Switchboard's stored system rows (a session link's Not delivered row with Send, profile and agent switches, handoffs, peer sends, approval results) instead of an 'Unsupported event' card, and lays out AskUserQuestion options so a long description no longer squeezes the label. See docs/feature-parity/phone-system-markers.json and question-option-layout.json.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android version bump; the desktop part of this change is covered by docs/feature-parity/phone-system-markers.json."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client ships over its own OTA lane; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SystemMarkers.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API or wire change: Send calls the existing provider:deliver-peer-message channel."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "mobile-release.yml runs the Android unit and lint gate and verifies package, signer fingerprint and checksum, and a version higher than the newest published APK when one exists (the monotonic check is skipped when no earlier APK asset is found), before it publishes."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Installing the update on a physical device through the in-app updater.",
+      "The verification API accepting the APK; that runs after the release publishes."
+    ]
+  }
+}
