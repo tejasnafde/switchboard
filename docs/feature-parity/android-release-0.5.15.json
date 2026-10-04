@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.15",
+  "summary": "Native Android release 0.5.15 (versionCode 17): attached photos are scaled to at most 2048 px and re-encoded on the phone so they fit the 3 MiB message limit (see phone-image-resize.json), with androidx.exifinterface declared for EXIF orientation.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android version bump only; the desktop change is covered by phone-image-resize.json."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client has its own lane; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        "apps/android/gradle/libs.versions.toml"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API or wire change."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "mobile-release.yml runs the Android unit and lint gate and verifies package, signer fingerprint and checksum, and a version higher than the newest published APK when one exists (the monotonic check is skipped when no earlier APK asset is found), before it publishes."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Installing the update on a physical device through the in-app updater."
+    ]
+  }
+}

@@ -24,18 +24,26 @@ interface ComposerDraftStore {
 }
 
 sealed interface ComposerAttachmentStageResult {
-    data class Success(val attachments: List<ComposerAttachment>) : ComposerAttachmentStageResult
+    /** [refused] names each picked image that was not attached, and why. */
+    data class Success(
+        val attachments: List<ComposerAttachment>,
+        val refused: List<String> = emptyList(),
+    ) : ComposerAttachmentStageResult
     data class Failure(val reason: String) : ComposerAttachmentStageResult
 }
 
 interface ComposerAttachmentStager {
-    fun stage(sources: List<ComposerImageSource>): ComposerAttachmentStageResult
+    /** [existing] are the draft's attachments, which count against the message's image budget. */
+    fun stage(sources: List<ComposerImageSource>, existing: List<ComposerAttachment>): ComposerAttachmentStageResult
     fun discard(attachments: List<ComposerAttachment>)
 }
 
 sealed interface ComposerDraftMutation {
     data object Success : ComposerDraftMutation
     data class Failure(val reason: String) : ComposerDraftMutation
+
+    /** The draft changed, but some picked images were not attached. */
+    data class PartlyAdded(val reason: String) : ComposerDraftMutation
 }
 
 class ComposerDraftCoordinator(
@@ -72,16 +80,23 @@ class ComposerDraftCoordinator(
     ): ComposerDraftMutation {
         val current = mutableDrafts.value[key] ?: ComposerDraft(key)
         if (sources.isEmpty()) return ComposerDraftMutation.Success
-        val staged = when (val result = stager.stage(sources)) {
-            is ComposerAttachmentStageResult.Failure -> return ComposerDraftMutation.Failure(result.reason)
-            is ComposerAttachmentStageResult.Success -> result.attachments
+        val result = when (val stagedResult = stager.stage(sources, current.attachments)) {
+            is ComposerAttachmentStageResult.Failure -> return ComposerDraftMutation.Failure(stagedResult.reason)
+            is ComposerAttachmentStageResult.Success -> stagedResult
         }
+        val staged = result.attachments
+        val refused = if (result.refused.isEmpty()) {
+            ComposerDraftMutation.Success
+        } else {
+            ComposerDraftMutation.PartlyAdded(result.refused.joinToString("\n"))
+        }
+        if (staged.isEmpty()) return refused
         val next = current.copy(attachments = current.attachments + staged)
         return when (val saved = store.save(next)) {
             ComposerDraftStorageResult.Success -> {
                 mutableDrafts.value = mutableDrafts.value + (key to next)
                 onVisible(key)
-                ComposerDraftMutation.Success
+                refused
             }
             is ComposerDraftStorageResult.Failure -> {
                 stager.discard(staged)
@@ -96,7 +111,7 @@ class ComposerDraftCoordinator(
         sources: List<ComposerImageSource>,
     ): ComposerDraftMutation {
         val previous = mutableDrafts.value[draft.key]
-        val staged = when (val result = stager.stage(sources)) {
+        val staged = when (val result = stager.stage(sources, emptyList())) {
             is ComposerAttachmentStageResult.Failure -> return ComposerDraftMutation.Failure(result.reason)
             is ComposerAttachmentStageResult.Success -> result.attachments
         }
