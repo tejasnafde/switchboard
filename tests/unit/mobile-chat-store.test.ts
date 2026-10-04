@@ -358,3 +358,14 @@ describe('a message a session link refused', () => {
     }])
   })
 })
+
+describe('question answer refused', () => {
+  it('reopens the card so the answer can be sent again', () => {
+    const question = { kind: 'question', id: 'q-1', requestId: 'req-1', questions: [] } as FeedItem
+    useChatStore.getState().seedItems(KEY, [question])
+    useChatStore.getState().markQuestionAnswered(KEY, 'req-1', [['Yes']])
+    expect(items()[0]).toMatchObject({ answers: [['Yes']] })
+    useChatStore.getState().reopenQuestion(KEY, 'req-1')
+    expect(items()[0]).toMatchObject({ kind: 'question', answers: undefined })
+  })
+})

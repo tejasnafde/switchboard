@@ -29,3 +29,34 @@ describe('QuestionItem options', () => {
     expect(v.root.findByProps({ testID: 'question-option-0-1' }).props.accessibilityRole).toBe('radio')
   })
 })
+
+describe('QuestionItem answer', () => {
+  it('sends picks in pick order, as the desktop does', () => {
+    const onSubmit = jest.fn()
+    const v = renderComponent(<QuestionItem item={item(true)} onSubmit={onSubmit} />)
+    expect(v.root.findByProps({ testID: 'question-submit' }).props.disabled).toBe(true)
+    act(() => v.root.findByProps({ testID: 'question-option-0-1' }).props.onPress())
+    act(() => v.root.findByProps({ testID: 'question-option-0-0' }).props.onPress())
+    act(() => v.root.findByProps({ testID: 'question-submit' }).props.onPress())
+    expect(onSubmit).toHaveBeenCalledWith('req-1', [['Keep', 'Resize on the server']])
+  })
+
+  it('sends typed text instead of the picks, and a pick clears the text', () => {
+    const onSubmit = jest.fn()
+    const v = renderComponent(<QuestionItem item={item(false)} onSubmit={onSubmit} />)
+    act(() => v.root.findByProps({ testID: 'question-option-0-0' }).props.onPress())
+    act(() => v.root.findByProps({ testID: 'question-other-0' }).props.onChangeText('  neither, ask me later '))
+    expect(v.root.findByProps({ testID: 'question-option-0-0' }).props.accessibilityState.checked).toBe(false)
+    act(() => v.root.findByProps({ testID: 'question-submit' }).props.onPress())
+    expect(onSubmit).toHaveBeenCalledWith('req-1', [['neither, ask me later']])
+
+    act(() => v.root.findByProps({ testID: 'question-option-0-1' }).props.onPress())
+    expect(v.root.findByProps({ testID: 'question-other-0' }).props.value).toBe('')
+  })
+
+  it('keeps Submit off for blank typed text', () => {
+    const v = renderComponent(<QuestionItem item={item(false)} onSubmit={() => {}} />)
+    act(() => v.root.findByProps({ testID: 'question-other-0' }).props.onChangeText('   '))
+    expect(v.root.findByProps({ testID: 'question-submit' }).props.disabled).toBe(true)
+  })
+})

@@ -55,6 +55,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -2085,7 +2086,7 @@ private fun HostWritePreviewBlock(preview: HostWritePreview, expanded: Boolean, 
 }
 
 @Composable
-private fun QuestionRow(
+internal fun QuestionRow(
     item: FeedItem.Question,
     selections: QuestionSelections,
     onSelectionsChange: (QuestionSelections) -> Unit,
@@ -2145,6 +2146,22 @@ private fun QuestionRow(
                         RadioButton(selected = selected, onClick = null, enabled = !answered && !submitting)
                     }
                 }
+            }
+            if (answered) {
+                // An answer that matches no option was typed.
+                shown.getOrNull(questionIndex).orEmpty()
+                    .filter { answer -> question.options.none { it.label == answer } }
+                    .forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            } else {
+                OutlinedTextField(
+                    value = selections.otherFor(item.requestId).getOrNull(questionIndex).orEmpty(),
+                    onValueChange = { onSelectionsChange(QuestionSelectionReducer.type(selections, item, questionIndex, it)) },
+                    enabled = !submitting,
+                    placeholder = { Text("None of the above - let me explain…") },
+                    modifier = Modifier
+                        .testTag(ThreadTestTags.questionOther(item.requestId, questionIndex))
+                        .fillMaxWidth(),
+                )
             }
         }
         if (!answered) {

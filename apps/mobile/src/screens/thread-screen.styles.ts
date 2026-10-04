@@ -385,6 +385,17 @@ export const styles = StyleSheet.create({
     color: colors.textFaint,
     fontSize: 11,
   },
+  questionOther: {
+    minHeight: 48,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+    color: colors.text,
+    fontSize: 13.5,
+  },
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',

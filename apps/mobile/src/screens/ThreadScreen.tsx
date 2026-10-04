@@ -639,7 +639,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const submitAnswers = useCallback(
     (requestId: string, answers: string[][]) => {
-      getClient(connectionId)?.answerQuestion(threadId, requestId, answers).catch(reportError)
+      getClient(connectionId)?.answerQuestion(threadId, requestId, answers).catch((err) => {
+        reportError(err)
+        // The card would otherwise stay Answered with no way to send it again.
+        useChatStore.getState().reopenQuestion(key, requestId)
+      })
       useChatStore.getState().markQuestionAnswered(key, requestId, answers)
     },
     [connectionId, threadId, key, reportError],

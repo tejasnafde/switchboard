@@ -1,7 +1,8 @@
 import { memo, useMemo, useState } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Question } from '@shared/provider-events'
+import { questionAnswersComplete, resolveQuestionAnswers } from '@shared/question-answers'
 import { fmtDuration } from '@shared/format'
 import { stripDigest } from '@shared/agent-digest'
 import { summarizeTool, toolIcon } from '@shared/tool-summary'
@@ -234,8 +235,17 @@ export const QuestionItem = memo(function QuestionItem({
     () => item.answers ?? item.questions.map(() => []),
   )
 
+  // Typed "None of the above" text per question, as on the desktop: it
+  // replaces the picks, and picking an option clears it.
+  const [otherTexts, setOtherTexts] = useState<string[]>(() => item.questions.map(() => ''))
+  const setOther = (qIdx: number, text: string) => {
+    setOtherTexts((prev) => prev.map((t, i) => (i === qIdx ? text : t)))
+    setSelections((prev) => prev.map((picks, i) => (i === qIdx ? [] : picks)))
+  }
+
   const toggle = (qIdx: number, q: Question, label: string) => {
     if (answered) return
+    setOtherTexts((prev) => prev.map((t, i) => (i === qIdx ? '' : t)))
     setSelections((prev) =>
       prev.map((picks, i) => {
         if (i !== qIdx) return picks
@@ -248,7 +258,7 @@ export const QuestionItem = memo(function QuestionItem({
   }
 
   const shown = item.answers ?? selections
-  const canSubmit = !answered && selections.every((picks) => picks.length > 0)
+  const canSubmit = !answered && questionAnswersComplete(selections, otherTexts, item.questions.length)
 
   return (
     <View style={[styles.itemBlock, styles.questionCard]}>
@@ -287,13 +297,29 @@ export const QuestionItem = memo(function QuestionItem({
               </Pressable>
             )
           })}
+          {answered ? (
+            (shown[qIdx] ?? []).filter((a) => !q.options.some((o) => o.label === a)).map((typed) => (
+              <Text key={typed} style={styles.optionLabel}>{typed}</Text>
+            ))
+          ) : (
+            <TextInput
+              value={otherTexts[qIdx]}
+              onChangeText={(text) => setOther(qIdx, text)}
+              placeholder="None of the above - let me explain…"
+              placeholderTextColor={colors.textFaint}
+              multiline
+              testID={`question-other-${qIdx}`}
+              style={styles.questionOther}
+            />
+          )}
         </View>
       ))}
       {!answered && (
         <Pressable
           style={[styles.actionButton, styles.submitButton, !canSubmit && styles.submitDisabled]}
           disabled={!canSubmit}
-          onPress={() => onSubmit(item.requestId, selections)}
+          testID="question-submit"
+          onPress={() => onSubmit(item.requestId, resolveQuestionAnswers(selections, otherTexts))}
         >
           <Text style={styles.actionLabel}>Submit</Text>
         </Pressable>

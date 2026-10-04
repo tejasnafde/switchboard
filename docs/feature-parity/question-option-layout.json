@@ -2,18 +2,23 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "question-option-layout",
-  "summary": "An AskUserQuestion option with a long description stayed readable on the phones. On native Android the option was a TextButton whose row gave the label weight but not the description, so a long description squeezed the label to one character per line and overlapped it. Each option is now one selectable row at least 48 dp tall: the label, then the description under it, in a weighted column, with a checkbox (multi-select) or radio button (single choice) at the end, and the row carries the selected state and the role. The React Native option already stacked label and description; it gets a 48 pt minimum height and the same checkbox or radio role and checked state. Neither phone offers an 'Other' option.",
+  "summary": "AskUserQuestion is answerable on the phones. On native Android the option was a TextButton whose row gave the label weight but not the description, so a long description squeezed the label to one character per line and overlapped it. Each option is now one selectable row at least 48 dp tall: the label, then the description under it, in a weighted column, with a checkbox (multi-select) or radio button (single choice) at the end, and the row carries the selected state and the role. The React Native option already stacked label and description; it gets a 48 pt minimum height and the same checkbox or radio role and checked state. Both phones now also offer the desktop's 'None of the above' free text per question: typed text replaces that question's picks, a pick clears it, and the answer sent is one rule shared by all three clients (src/shared/question-answers.ts, ported in Android QuestionSelectionReducer). An answered card shows a typed answer. React Native no longer leaves a card marked Answered when the backend refuses the answer: it reopens so the user can send it again.",
   "surfaces": {
     "desktop": {
-      "status": "not_applicable",
-      "reason": "The desktop QuestionCard is a separate web component and was not reported broken; this fixes the two phone layouts only."
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/QuestionCard.tsx"
+      ]
     },
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
         "apps/mobile/src/screens/ThreadFeedItems.tsx",
         "apps/mobile/src/screens/thread-screen.styles.ts",
-        "apps/mobile/src/screens/__tests__/question-item.test.tsx"
+        "apps/mobile/src/screens/__tests__/question-item.test.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/stores/chat.ts",
+        "tests/unit/mobile-chat-store.test.ts"
       ]
     },
     "nativeAndroid": {
@@ -21,12 +26,18 @@
       "evidence": [
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadTestTags.kt",
-        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt"
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/QuestionRowRenderTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadInteractionPolicyTest.kt"
       ]
     },
     "sharedBackendApi": {
-      "status": "not_applicable",
-      "reason": "Layout only; the question and answer wire format is unchanged."
+      "status": "implemented",
+      "evidence": [
+        "src/shared/question-answers.ts",
+        "tests/unit/question-answers.test.ts"
+      ]
     },
     "storageDataMigration": {
       "status": "not_applicable",
@@ -42,13 +53,18 @@
   },
   "verification": {
     "automated": [
-      "apps/mobile jest question-item.test.tsx: an option has minHeight 48, the checkbox role for multi-select and radio for single choice, and its checked state follows a tap.",
-      "Android ThreadScreenRegressionTest.questionOptionKeepsALongLabelReadableBesideALongDescription (instrumented): at 1.5x font a long label beside a long description gets more than half the row's width, the row is at least 48 dp, has the checkbox role and becomes selected on tap. Compiled with compileDebugAndroidTestKotlin; not run, since no device or emulator was attached.",
-      "./gradlew testDebugUnitTest and npm test --prefix apps/mobile green."
+      "Android QuestionRowRenderTest (JVM, Robolectric native graphics, runs in testDebugUnitTest in about 12 s): renders the real QuestionRow at 360 and 411 dp, font scale 1.0 and 1.3, for a short label, a long label, four options, multi-select, two questions and an answered card with typed text, asserts no option label wraps to fewer than 12 characters per line, and writes PNGs to apps/android/app/build/question-shots/. The same render against origin/main reproduced the reported bug: 1 character per line in 40 of the 44 label checks.",
+      "Android QuestionRowRenderTest.tappingOptionsBuildsTheAnswerTheDesktopSends: Submit stays off until every question has an answer, typed text deselects the pick, and the action carries [[typed], [iOS, Android]] in click order.",
+      "Android ThreadInteractionPolicyTest.typedTextReplacesThePicksAndAPickClearsIt.",
+      "apps/mobile jest question-item.test.tsx: 48 pt checkbox/radio options, picks sent in pick order, typed text replaces picks and a pick clears it, blank text keeps Submit off.",
+      "vitest question-answers.test.ts and mobile-chat-store.test.ts (reopenQuestion).",
+      "Android ThreadScreenRegressionTest.questionOptionKeepsALongLabelReadableBesideALongDescription (instrumented) compiled, not run."
     ],
     "hardware": [],
     "notExercised": [
-      "Not seen on a phone or emulator: the instrumented test was compiled but not run, and neither layout was looked at on a device."
+      "Not seen on a phone or emulator. The Android renders come from Robolectric's native graphics, which uses the same Compose layout and Skia text but not a device.",
+      "React Native has no image path here: jest checks props, not pixels.",
+      "The soft keyboard over the free-text field inside the inverted feed was not exercised on either phone; Android relies on the root imePadding and Compose's bring-into-view, React Native on the screen's KeyboardAvoidingView."
     ]
   }
 }

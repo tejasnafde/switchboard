@@ -843,11 +843,18 @@ sealed interface ThreadUiAction {
 
 data class QuestionSelections(
     private val byRequestId: Map<String, List<List<String>>>,
+    /** Typed "None of the above" text per question, as on the desktop QuestionCard. */
+    private val otherByRequestId: Map<String, List<String>> = emptyMap(),
 ) : Serializable {
     fun forRequest(requestId: String): List<List<String>> = byRequestId[requestId].orEmpty()
 
+    fun otherFor(requestId: String): List<String> = otherByRequestId[requestId].orEmpty()
+
     fun with(requestId: String, answers: List<List<String>>): QuestionSelections =
         copy(byRequestId = byRequestId + (requestId to answers))
+
+    fun withOther(requestId: String, texts: List<String>): QuestionSelections =
+        copy(otherByRequestId = otherByRequestId + (requestId to texts))
 
     companion object {
         fun empty(): QuestionSelections = QuestionSelections(emptyMap())
@@ -871,23 +878,48 @@ object QuestionSelectionReducer {
         } else {
             listOf(label)
         }
+        // Picking an option clears that question's typed text.
         return state.with(
             item.requestId,
             current.mapIndexed { index, answers ->
                 if (index == questionIndex) replacement else answers
             },
-        )
+        ).withOther(item.requestId, state.otherFor(item.requestId).replaced(item.questions.size, questionIndex, ""))
+    }
+
+    /** Typing replaces that question's picks, as the typed text is what gets sent. */
+    fun type(
+        state: QuestionSelections,
+        item: FeedItem.Question,
+        questionIndex: Int,
+        text: String,
+    ): QuestionSelections {
+        if (item.answers != null || questionIndex !in item.questions.indices) return state
+        val picks = state.forRequest(item.requestId).normalized(item.questions.size)
+        return state
+            .with(item.requestId, picks.mapIndexed { index, answers -> if (index == questionIndex) emptyList() else answers })
+            .withOther(item.requestId, state.otherFor(item.requestId).replaced(item.questions.size, questionIndex, text))
+    }
+
+    /** Port of `resolveQuestionAnswers` (src/shared/question-answers.ts): typed text, else the picks in pick order. */
+    fun resolved(state: QuestionSelections, item: FeedItem.Question): List<List<String>> {
+        val picks = state.forRequest(item.requestId).normalized(item.questions.size)
+        val other = state.otherFor(item.requestId)
+        return picks.mapIndexed { index, answers ->
+            other.getOrNull(index)?.trim()?.takeIf(String::isNotEmpty)?.let(::listOf) ?: answers
+        }
     }
 
     fun canSubmit(state: QuestionSelections, item: FeedItem.Question): Boolean =
         item.answers == null &&
             item.questions.isNotEmpty() &&
-            state.forRequest(item.requestId)
-                .normalized(item.questions.size)
-                .all(List<String>::isNotEmpty)
+            resolved(state, item).all(List<String>::isNotEmpty)
 
     private fun List<List<String>>.normalized(size: Int): List<List<String>> =
         List(size) { index -> getOrNull(index).orEmpty() }
+
+    private fun List<String>.replaced(size: Int, at: Int, text: String): List<String> =
+        List(size) { index -> if (index == at) text else getOrNull(index).orEmpty() }
 }
 
 object ThreadInteractionPolicy {
@@ -933,7 +965,7 @@ object ThreadInteractionPolicy {
         item: FeedItem.Question,
         selections: QuestionSelections,
     ): ThreadUiAction.AnswerQuestion? = if (QuestionSelectionReducer.canSubmit(selections, item)) {
-        ThreadUiAction.AnswerQuestion(item.requestId, selections.forRequest(item.requestId))
+        ThreadUiAction.AnswerQuestion(item.requestId, QuestionSelectionReducer.resolved(selections, item))
     } else {
         null
     }

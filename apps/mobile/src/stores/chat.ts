@@ -139,6 +139,8 @@ interface ChatState {
   /** `id` ties the bubble to its queued message so a failed send can undo it. */
   addUserMessage: (key: string, text: string, images?: string[], id?: string) => void
   markQuestionAnswered: (key: string, requestId: string, answers: string[][]) => void
+  /** Put back a question card whose answer the backend refused. */
+  reopenQuestion: (key: string, requestId: string) => void
   markApprovalResolved: (key: string, requestId: string, decision: 'approve' | 'deny') => void
   /** Put back a card whose answer the backend refused, unless its request.closed has arrived since. */
   reopenApproval: (key: string, requestId: string) => void
@@ -580,6 +582,17 @@ export const useChatStore = create<ChatState>()(
           t.items,
           (i) => i.kind === 'question' && i.requestId === requestId,
           (i) => ({ ...(i as Extract<FeedItem, { kind: 'question' }>), answers }),
+        ),
+      })),
+    })),
+
+  reopenQuestion: (key, requestId) =>
+    set((s) => ({
+      threads: patchThread(s.threads, key, (t) => ({
+        items: replaceItem(
+          t.items,
+          (i) => i.kind === 'question' && i.requestId === requestId,
+          (i) => ({ ...(i as Extract<FeedItem, { kind: 'question' }>), answers: undefined }),
         ),
       })),
     })),
