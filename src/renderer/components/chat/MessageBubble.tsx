@@ -15,7 +15,7 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { enhanceFilePills } from '../../services/message-pills'
 import { formatFilePathRef, type FilePathRef } from '@shared/file-path-ref'
 import { renderPillBody } from './render-pill-body'
-import { parseSlashCommandWrapper, splitSkillMentions } from './slash-commands'
+import { splitSkillMentions } from './slash-commands'
 import { SkillChip } from './SkillChip'
 import {
   forkAndOpenSession,
@@ -473,12 +473,10 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             ) : (() => {
               // Chipify every `/<known-skill>` mention so a multi-skill
               // prompt like `/deslop then /review` round-trips as two
-              // chips. Unwrap the SDK's `<command-message>...
-              // </command-args>` XML blob (JSONL reload) before scanning.
+              // chips. A transcript's `<command-name>` record arrives here
+              // already split to `/name args` (splitSyntheticUserText).
               if (!knownSkillNames?.size) return body
-              const wrapper = parseSlashCommandWrapper(body)
-              const unwrapped = wrapper ? `/${wrapper.name}${wrapper.rest}` : body
-              const segments = splitSkillMentions(unwrapped, knownSkillNames)
+              const segments = splitSkillMentions(body, knownSkillNames)
               if (!segments.some((s) => s.type === 'skill')) return body
               return segments.map((seg, i) =>
                 seg.type === 'skill'

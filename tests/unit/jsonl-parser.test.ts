@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { JsonlParser, normalizeCodexEvent } from '../../src/main/agent/jsonl-parser'
+import { mergeConversationMessages } from '../../src/main/agent/dedupe-messages'
+import { splitSyntheticUserText } from '../../src/shared/synthetic-message'
+import type { ChatMessage } from '../../src/shared/types'
 
 describe('JsonlParser', () => {
   it('filters a recognized synthetic user context bundle without hiding genuine mentions', () => {
@@ -28,6 +31,32 @@ describe('JsonlParser', () => {
     const parser = new JsonlParser((message) => messages.push(message))
     parser.feed(`${meta}\n${task}\n`)
     expect(messages.map((message) => message.content)).toEqual([notification])
+  })
+
+  it('folds a /compact record into the send Switchboard stored and its summary into one row', () => {
+    const at = '2026-10-01T10:00:00.000Z'
+    const lines = [
+      { type: 'user', uuid: 'u1', timestamp: at, message: { role: 'user', content: '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>' } },
+      { type: 'user', uuid: 'u2', timestamp: at, isMeta: true, message: { role: 'user', content: '<local-command-caveat>Fake caveat.</local-command-caveat>' } },
+      { type: 'user', uuid: 'u3', timestamp: at, isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { role: 'user', content: 'Fake summary of earlier work.' } },
+    ]
+    const disk: ChatMessage[] = []
+    const parser = new JsonlParser((message) => disk.push(message))
+    parser.feed(lines.map((line) => JSON.stringify(line)).join('\n') + '\n')
+    expect(disk.map((m) => m.content)[0]).toBe('/compact')
+    expect(splitSyntheticUserText(disk[1].content)?.parts).toEqual([{ kind: 'compacted', summary: 'Fake summary of earlier work.' }])
+
+    const stored: ChatMessage = { id: 'sqlite-1', role: 'user', content: '/compact', timestamp: Date.parse(at) - 500 }
+    const merged = mergeConversationMessages(disk, [stored])
+    expect(merged.filter((m) => m.content === '/compact')).toHaveLength(1)
+    expect(merged).toHaveLength(2)
+  })
+
+  it('keeps a typed message that only mentions a command tag', () => {
+    const text = 'why does <command-name>/compact</command-name> show up?'
+    const messages: ChatMessage[] = []
+    new JsonlParser((m) => messages.push(m)).feed(JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n')
+    expect(messages.map((m) => m.content)).toEqual([text])
   })
 
   it('strips Codex image wrapper blocks from user text', () => {

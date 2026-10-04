@@ -18,6 +18,7 @@ sealed interface SyntheticPart {
     ) : SyntheticPart
     data class Interrupted(val duringToolUse: Boolean) : SyntheticPart
     data class CommandOutput(val text: String, val isError: Boolean) : SyntheticPart
+    data class Compacted(val summary: String) : SyntheticPart
 }
 
 enum class SyntheticTone { OK, ERROR, WARN, MUTED }
@@ -29,6 +30,8 @@ object SyntheticUserMessage {
         val start: String,
         val end: String,
         val keepEnd: Boolean = false,
+        /** "name" or "args" of a slash-command record, which collapses to `/name args`. */
+        val command: String? = null,
         val part: ((String) -> SyntheticPart?)? = null,
     )
 
@@ -55,6 +58,9 @@ object SyntheticUserMessage {
         },
         Block("[Request interrupted by user", "]") { inner -> SyntheticPart.Interrupted(inner.contains("tool use")) },
         Block("<turn_aborted>", "</turn_aborted>") { SyntheticPart.Interrupted(false) },
+        Block("<command-name>", "</command-name>", command = "name"),
+        Block("<command-message>", "</command-message>"),
+        Block("<command-args>", "</command-args>", command = "args"),
         Block("<local-command-stdout>", "</local-command-stdout>", part = commandOutput(false)),
         Block("<local-command-stderr>", "</local-command-stderr>", part = commandOutput(true)),
         Block("[SYSTEM NOTIFICATION - NOT USER INPUT]", "<task-notification>", keepEnd = true),
@@ -65,10 +71,16 @@ object SyntheticUserMessage {
         Block("<recommended_plugins>", "</recommended_plugins>"),
         Block("# AGENTS.md instructions for ", "</INSTRUCTIONS>"),
         Block("<environment_context>", "</environment_context>"),
+        Block("<user_instructions>", "</user_instructions>"),
+        Block("<external_codex_apps_open_page>", "</external_codex_apps_open_page>"),
         Block("<codex_internal_context", "</codex_internal_context>"),
         Block("<skill>", "</skill>"),
         // A Switchboard approval result; the desktop shows its own row for it.
         Block("<switchboard-approval-result>", "</switchboard-approval-result>"),
+        // The backend wraps a transcript's compact summary by its isCompactSummary flag.
+        Block("<switchboard-compact-summary>", "</switchboard-compact-summary>") { inner ->
+            SyntheticPart.Compacted(inner.trim())
+        },
     )
 
     /** Port of `taskNotificationText`: the transcript form of a live task notification. */
@@ -111,16 +123,23 @@ object SyntheticUserMessage {
     fun split(text: String): SyntheticSplit? {
         var remaining = text.trim()
         val parts = mutableListOf<SyntheticPart>()
+        val command = mutableMapOf<String, String>()
         var matched = false
         while (true) {
             val block = blocks.firstOrNull { remaining.startsWith(it.start) } ?: break
             val end = remaining.indexOf(block.end, block.start.length)
             if (end < 0) break
             matched = true
-            block.part?.invoke(remaining.substring(block.start.length, end))?.let(parts::add)
+            val inner = remaining.substring(block.start.length, end)
+            block.part?.invoke(inner)?.let(parts::add)
+            block.command?.let { command[it] = inner.trim() }
             remaining = remaining.substring(if (block.keepEnd) end else end + block.end.length).trimStart()
         }
-        return if (matched) SyntheticSplit(parts, remaining) else null
+        if (!matched) return null
+        val name = command["name"].orEmpty().removePrefix("/")
+        val args = command["args"].orEmpty()
+        val slash = if (name.isEmpty()) "" else "/$name" + (if (args.isEmpty()) "" else " $args")
+        return SyntheticSplit(parts, listOf(slash, remaining).filter { it.isNotEmpty() }.joinToString("\n"))
     }
 
     fun label(part: SyntheticPart): String = when (part) {
@@ -133,9 +152,11 @@ object SyntheticUserMessage {
         }
         is SyntheticPart.Interrupted -> if (part.duringToolUse) "Interrupted during tool use" else "Interrupted"
         is SyntheticPart.CommandOutput -> part.text
+        is SyntheticPart.Compacted -> "Conversation compacted"
     }
 
     fun detail(part: SyntheticPart): String? {
+        if (part is SyntheticPart.Compacted) return part.summary.ifEmpty { null }
         if (part !is SyntheticPart.TaskNotification) return null
         return listOfNotNull(
             part.summary.ifEmpty { null },
@@ -152,6 +173,6 @@ object SyntheticUserMessage {
             else -> SyntheticTone.MUTED
         }
         is SyntheticPart.CommandOutput -> if (part.isError) SyntheticTone.ERROR else SyntheticTone.MUTED
-        is SyntheticPart.Interrupted -> SyntheticTone.MUTED
+        is SyntheticPart.Interrupted, is SyntheticPart.Compacted -> SyntheticTone.MUTED
     }
 }

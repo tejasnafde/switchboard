@@ -1,6 +1,7 @@
 import type { ChatMessage, ToolCall, MessageImage } from '@shared/types'
 import { createHash } from 'crypto'
 import { visibleUserMessageText } from '@shared/provider-events'
+import { compactSummaryText, slashCommandRecordText } from '@shared/synthetic-message'
 
 export type JsonlSource = 'claude-code' | 'codex'
 
@@ -103,7 +104,11 @@ export class JsonlParser {
       }
 
       case 'user': {
-        const content = extractContent(event.message)
+        const text = extractContent(event.message)
+        // The summary a /compact leaves folds into one row; a command record
+        // reads as the `/name args` the user typed, so it also merges with
+        // Switchboard's own copy of that send instead of showing twice.
+        const content = event.isCompactSummary === true ? compactSummaryText(text) : slashCommandRecordText(text) ?? text
         const images = extractImages(event.message)
         // isMeta marks text Claude Code wrote for the model only: skill bodies,
         // image size annotations, "Continue from where you left off."
