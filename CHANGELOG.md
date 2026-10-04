@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Changed
+- **Glassier corner toasts in the translucent theme.** The update-ready toast and the analytics notice now use a dark tint and a heavier blur there, so the chat and buttons behind them no longer show through clearly. Dark and light are unchanged.
+
 ### Added
 - **Agents can open a pull request from a project folder that holds several repositories.** When a chat's project folder is not a repository itself but a parent of several (say `~/work/ssg` with three Bitbucket repositories in it), `create_pull_request` used to fail with "point at neither GitHub nor Bitbucket". It now takes an optional `repoPath`, the repository the change is in (relative to the project folder or absolute); it must be a git repository inside that folder, nothing outside it (no `..` or symlink escape), and its remote is where the PR opens, from its current branch. Naming only `repository` also works when exactly one repository under the folder has that remote; otherwise the agent is told the candidates. The desktop card shows which local repository it is. The PR is linked to the chat, and the other PR tools, the auto-link, Link to chat and Reviews now treat the repositories up to two folders below such a project as its own. A project that is a repository itself is unchanged: what is nested inside it never counts. See `docs/feature-parity/pr-tools-child-repos.json`.
 - **The native Android APK carries the Android developer verification token.** Google now requires sideloaded apps to be registered to a verified developer. `app.switchboard.mobile` and its signing key are registered under the GlycoCare account, and `assets/adi-registration.properties` in a signed release APK is the proof of ownership. The token is not a secret: it proves nothing without the signing key. Android 0.5.14.

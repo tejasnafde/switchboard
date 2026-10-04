@@ -1,0 +1,26 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "glass-toasts",
+  "summary": "The update-ready toast and the analytics notice share one frosted-glass class; in the translucent theme they get a dark tint and a heavier blur, so the chat behind them no longer reads through clearly.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/styles/global.css",
+        "src/renderer/components/UpdateToast.tsx",
+        "src/renderer/components/AnalyticsNotice.tsx"
+      ]
+    },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The phone has no translucent theme and no update toast." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The phone has no translucent theme and no update toast." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "Styling only; no API change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Styling only; nothing is stored." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release." }
+  },
+  "verification": {
+    "automated": ["npm run typecheck and the pre-commit test suite."],
+    "hardware": [],
+    "notExercised": ["The toasts appear only after an update download or on first launch, so they were not rendered; dark and light keep the previous values exactly."]
+  }
+}
