@@ -424,6 +424,9 @@ function ChatPage() {
         <SettingRow def={SETTING_ROW.streaming}>
           <ToggleControl def={SETTING_ROW.streaming} />
         </SettingRow>
+        <SettingRow def={SETTING_ROW.linkDuration}>
+          <SelectControl def={SETTING_ROW.linkDuration} options={SETTING_ROW.linkDuration.options!} />
+        </SettingRow>
       </Section>
       <Section title="Defaults for new chats" card>
         <SettingRow def={SETTING_ROW.envMode}>

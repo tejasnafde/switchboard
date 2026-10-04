@@ -747,6 +747,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               threadId: sessionId,
               peerThreadId: target.id,
               ...(target.messages !== undefined ? { messages: target.messages } : {}),
+              ...(target.windowMs !== undefined ? { windowMs: target.windowMs } : {}),
             })
             return { accepted: true }
           }
