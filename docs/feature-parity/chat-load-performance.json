@@ -52,8 +52,7 @@
       "status": "implemented",
       "evidence": [
         "docs/feature-parity/chat-load-performance.json",
-        "CHANGELOG.md",
-        "AGENTS.md"
+        "CHANGELOG.md"
       ]
     }
   },
