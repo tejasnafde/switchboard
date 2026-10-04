@@ -2,13 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
 
-import { autoLinkRefs, canLinkToProject, findPullRequestUrls, isPrRef, linkedPrPhrase } from '../../src/shared/pull-request-links'
+import { autoLinkRefs, canLinkToProject, findPullRequestUrls, isPrRef, linkedPrPhrase, projectPrRefs } from '../../src/shared/pull-request-links'
+import { projectReposFrom } from '../../src/shared/project-repos'
 import { rollupChecks, type PrSummary, type RepoRef } from '../../src/shared/pull-requests'
 import { PullRequestAutoLinker, type AutoLinkDeps } from '../../src/main/pull-requests/auto-link'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
 const SB: RepoRef = { host: 'github', owner: 'tejasnafde', name: 'switchboard' }
 const BOT: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2' }
+const own = (repo: RepoRef | null) => projectReposFrom(repo, [])
 
 describe('findPullRequestUrls', () => {
   it('reads GitHub and Bitbucket PR URLs, deduplicated, owner and repo lower case', () => {
@@ -38,10 +40,26 @@ describe('findPullRequestUrls', () => {
 describe('linking rules', () => {
   it('links only PRs of the repository the chat project points at', () => {
     const text = 'https://github.com/tejasnafde/switchboard/pull/1 and https://github.com/other/switchboard/pull/2 and https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/3'
-    expect(autoLinkRefs(text, SB)).toEqual([{ ...SB, number: 1 }])
-    expect(autoLinkRefs(text, BOT)).toEqual([{ ...BOT, number: 3 }])
+    expect(autoLinkRefs(text, own(SB))).toEqual([{ ...SB, number: 1 }])
+    expect(autoLinkRefs(text, own(BOT))).toEqual([{ ...BOT, number: 3 }])
     expect(autoLinkRefs(text, null)).toEqual([])
-    expect(canLinkToProject({ ...SB, owner: 'TEJASNAFDE', number: 9 }, SB)).toBe(true)
+    expect(autoLinkRefs(text, own(null))).toEqual([])
+    expect(canLinkToProject({ ...SB, owner: 'TEJASNAFDE', number: 9 }, own(SB))).toBe(true)
+  })
+
+  it('links PRs of every child repository of a parent folder, and of no other', () => {
+    const CORE: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'geoiq-ssg-core-v1' }
+    const parent = projectReposFrom(null, [
+      { path: '/ssg/core', relPath: 'core', repo: CORE },
+      { path: '/ssg/bot', relPath: 'bot', repo: BOT },
+    ])
+    expect(canLinkToProject({ ...CORE, number: 4 }, parent)).toBe(true)
+    expect(canLinkToProject({ ...BOT, name: 'SSG-BOT-V2', number: 4 }, parent)).toBe(true)
+    expect(canLinkToProject({ ...SB, number: 4 }, parent)).toBe(false)
+    const text = 'https://bitbucket.org/geoiq/geoiq-ssg-core-v1/pull-requests/7 https://bitbucket.org/geoiq/ssg-bot-v2/pull-requests/8 https://github.com/tejasnafde/switchboard/pull/9'
+    expect(autoLinkRefs(text, parent)).toEqual([{ ...CORE, number: 7 }, { ...BOT, number: 8 }])
+    // A bare bbpr number belongs to the project's own repository only.
+    expect(projectPrRefs('', [605], parent)).toEqual([])
   })
 
   it('validates a PR reference from a client', () => {
@@ -75,6 +93,7 @@ describe('PullRequestAutoLinker', () => {
     const notified: string[] = []
     const deps: AutoLinkDeps = {
       conversationFor: (threadId) => (threadId === 'missing' ? null : { id: 'agent_1', projectPath: '/p', cwd: '/p' }),
+      projectRepos: async () => own(projectRepo),
       repoForProject: async (path) => (path.startsWith('/other') ? { host: 'bitbucket' as const, owner: 'geoiq', name: 'retailiq' } : projectRepo),
       link: (id, ref) => {
         const k = `${id}#${ref.number}`
@@ -161,6 +180,7 @@ describe('PullRequestAutoLinker', () => {
     const notified: string[] = []
     const linker = new PullRequestAutoLinker({
       conversationFor: () => ({ id: 'agent_1', projectPath: '/p', cwd: '/p' }),
+      projectRepos: async () => own(BOT),
       repoForProject: async () => BOT,
       link: () => false,
       notify: (id) => notified.push(id),

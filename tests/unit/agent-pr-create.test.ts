@@ -16,6 +16,8 @@ import {
   isBranchName,
   isUncertainCreateFailure,
   parseRepoArg,
+  repoArgCandidates,
+  repoPathRepositoryProblem,
   repositoryProblem,
 } from '../../src/shared/agent-pr-create'
 import { hostWriteDetail, hostWriteTitle, parseHostWriteResponse, type HostWriteCard } from '../../src/shared/agent-host-writes'
@@ -35,7 +37,7 @@ describe('arguments', () => {
   it('trims the title, keeps an empty description, and leaves the defaults to the tool', () => {
     expect(checkCreatePrArgs({ title: '  Add  jitter\n' })).toEqual({
       ok: true,
-      value: { title: 'Add jitter', description: '', sourceBranch: null, targetBranch: null, draft: false, repository: null, reviewers: [] },
+      value: { title: 'Add jitter', description: '', sourceBranch: null, targetBranch: null, draft: false, repository: null, reviewers: [], repoPath: null },
     })
   })
 
@@ -227,5 +229,31 @@ describe('where a bare bbpr runs', () => {
     expect(numbers).toEqual([1, 2, 6])
     expect(repoForDir).toHaveBeenCalledTimes(3)
     expect(await bbprNumbersInRepo([{ number: 1, runsIn: 'cwd' }], APP, repoForDir)).toEqual([])
+  })
+})
+
+describe('repoPath and the repository it names', () => {
+  const CORE: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'geoiq-ssg-core-v1' }
+
+  it('takes repoPath as text, trimmed, and refuses anything else', () => {
+    const ok = checkCreatePrArgs({ title: 'T', repoPath: ' core ' })
+    expect(ok.ok && ok.value.repoPath).toBe('core')
+    const empty = checkCreatePrArgs({ title: 'T', repoPath: '' })
+    expect(empty.ok && empty.value.repoPath).toBeNull()
+    for (const repoPath of [3, 'a\u0000b', 'x'.repeat(1025)]) expect(checkCreatePrArgs({ title: 'T', repoPath }).ok).toBe(false)
+  })
+
+  it('requires a named repository to be exactly the remote of repoPath', () => {
+    expect(repoPathRepositoryProblem(null, CORE, 'core')).toBeNull()
+    expect(repoPathRepositoryProblem('GEOIQ/geoiq-ssg-core-v1', CORE, 'core')).toBeNull()
+    expect(repoPathRepositoryProblem('https://bitbucket.org/geoiq/geoiq-ssg-core-v1', CORE, 'core')).toBeNull()
+    expect(repoPathRepositoryProblem('https://github.com/geoiq/geoiq-ssg-core-v1', CORE, 'core')).toContain('points at geoiq/geoiq-ssg-core-v1, not')
+    expect(repoPathRepositoryProblem('geoiq/studio', CORE, 'core')).toContain('The git remote of core points at geoiq/geoiq-ssg-core-v1, not "geoiq/studio"')
+  })
+
+  it('reads "owner/name" as either host, and a URL as its own', () => {
+    expect(repoArgCandidates('geoiq/core')).toEqual([{ host: 'github', owner: 'geoiq', name: 'core' }, { host: 'bitbucket', owner: 'geoiq', name: 'core' }])
+    expect(repoArgCandidates('git@bitbucket.org:geoiq/core.git')).toEqual([{ host: 'bitbucket', owner: 'geoiq', name: 'core' }])
+    expect(repoArgCandidates('not a repo')).toEqual([])
   })
 })

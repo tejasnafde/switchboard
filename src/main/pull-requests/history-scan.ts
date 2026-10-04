@@ -10,6 +10,7 @@
 import { projectPrRefs } from '@shared/pull-request-links'
 import { bbprPullRequestNumbers, bbprTargetsForInput, toolInputCommand, toolInputCwd } from '@shared/bbpr-command'
 import type { PrRef, RepoRef } from '@shared/pull-requests'
+import type { ProjectRepos } from '@shared/project-repos'
 import type { HistoryPartKind, HistoryVisitor } from './history-source'
 import { createMainLogger } from '../logger'
 import { bbprNumbersInRepo } from './bbpr-targets'
@@ -34,7 +35,9 @@ export interface PullRequestHistoryScanDeps {
   listUnscanned(limit: number): PullRequestHistoryScanTarget[]
   /** Feeds the chat's history to `visit` in order, stopping when it returns false. */
   readHistory(conversationId: string, visit: HistoryVisitor): Promise<void>
-  /** The repository a directory's git remotes point at: the project's, or a directory a `bbpr` command `cd`s into. */
+  /** The repositories a project covers (`PullRequestService.projectRepos`). */
+  projectRepos(projectPath: string): Promise<ProjectRepos>
+  /** The repository a directory's git remotes point at: a directory a `bbpr` command `cd`s into. */
   repoForProject(path: string): Promise<RepoRef | null>
   link(conversationId: string, ref: PrRef): boolean
   notify(conversationId: string): void
@@ -141,11 +144,11 @@ export async function scanPullRequestHistoryForConversation(
   }
   let linked = 0
   if (history.bbprCommands.length > 0 || MENTIONS_HOST.test(history.text)) {
-    const repo = await deps.repoForProject(target.projectPath)
+    const project = await deps.projectRepos(target.projectPath)
     const cwd = target.worktreePath || target.projectPath
     const targets = history.bbprCommands.flatMap((c) => bbprTargetsForInput(c.command, cwd, c.cwd))
-    const bbprNumbers = await bbprNumbersInRepo(targets, repo, (dir) => deps.repoForProject(dir))
-    for (const ref of projectPrRefs(history.text, bbprNumbers, repo)) {
+    const bbprNumbers = await bbprNumbersInRepo(targets, project.own, (dir) => deps.repoForProject(dir))
+    for (const ref of projectPrRefs(history.text, bbprNumbers, project)) {
       if (deps.link(target.id, ref)) linked++
     }
   }

@@ -66,6 +66,16 @@ export function parseRepoArg(value: string, host: PrHost): RepoRef | null {
   return parseRemoteUrl(text)
 }
 
+/** Every repository `value` may name: an "owner/name" has no host, so it is read as both. */
+export function repoArgCandidates(value: string): RepoRef[] {
+  const refs: RepoRef[] = []
+  for (const host of ['github', 'bitbucket'] as const) {
+    const ref = parseRepoArg(value, host)
+    if (ref && !refs.some((r) => repoKey(r) === repoKey(ref))) refs.push(ref)
+  }
+  return refs
+}
+
 export interface CreatePrArgs {
   title: string
   description: string
@@ -78,7 +88,11 @@ export interface CreatePrArgs {
   repository: string | null
   /** Names, logins or emails as the agent sent them, not yet matched (`resolveReviewers`). */
   reviewers: string[]
+  /** A git work tree inside the chat's project folder, relative to it or absolute; null for the project's own repository. */
+  repoPath: string | null
 }
+
+const REPO_PATH_MAX_CHARS = 1024
 
 /** The agent's arguments, before anything is read. */
 export function checkCreatePrArgs(args: Record<string, unknown>): Checked<CreatePrArgs> {
@@ -94,6 +108,10 @@ export function checkCreatePrArgs(args: Record<string, unknown>): Checked<Create
   if (args.repository !== undefined && typeof args.repository !== 'string') return { ok: false, message: '"repository" is "owner/name" or its URL.' }
   const reviewers = checkReviewerNames(args.reviewers)
   if (!reviewers.ok) return reviewers
+  if (args.repoPath !== undefined && (typeof args.repoPath !== 'string' || args.repoPath.length > REPO_PATH_MAX_CHARS || args.repoPath.includes('\u0000'))) {
+    return { ok: false, message: '"repoPath" is the path of a git repository inside this chat\'s project folder.' }
+  }
+  const repoPath = typeof args.repoPath === 'string' && args.repoPath.trim() ? args.repoPath.trim() : null
   return {
     ok: true,
     value: {
@@ -104,6 +122,7 @@ export function checkCreatePrArgs(args: Record<string, unknown>): Checked<Create
       draft: args.draft === true,
       repository: typeof args.repository === 'string' && args.repository.trim() ? args.repository.trim() : null,
       reviewers: reviewers.value,
+      repoPath,
     },
   }
 }
@@ -115,6 +134,18 @@ export function repositoryProblem(named: string | null, chatRepo: RepoRef): stri
   if (ref && repoKey(ref) === repoKey(chatRepo)) return null
   return `This chat can only open pull requests on ${chatRepo.owner}/${chatRepo.name}, the repository its project points at. ` +
     `"${named}" is not that repository. Nothing was created.`
+}
+
+/**
+ * Why the agent's named repository is refused when it also named a
+ * `repoPath`: it must be exactly the repository that work tree's remote points at.
+ */
+export function repoPathRepositoryProblem(named: string | null, found: RepoRef, relPath: string): string | null {
+  if (!named) return null
+  const ref = parseRepoArg(named, found.host)
+  if (ref && repoKey(ref) === repoKey(found)) return null
+  return `The git remote of ${relPath} points at ${found.owner}/${found.name}, not "${named}". ` +
+    'Call again with that repository, or with the repoPath of the one you meant. Nothing was created.'
 }
 
 /** A draft on Bitbucket is refused rather than silently opened ready for review. */
