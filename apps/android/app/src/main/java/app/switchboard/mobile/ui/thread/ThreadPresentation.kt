@@ -750,9 +750,8 @@ object ThreadPresenter {
             )
 
             state.refreshing || state.thread.awaitingReseed -> ThreadContentStatus(
-                label = "Refreshing history",
+                label = "Thread loaded",
                 kind = ThreadContentStatusKind.NORMAL,
-                showProgress = true,
             )
 
             else -> ThreadContentStatus(

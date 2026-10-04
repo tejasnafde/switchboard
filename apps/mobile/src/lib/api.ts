@@ -91,6 +91,8 @@ export interface LoadedSession {
   total?: number
   /** True when `messages` is only the newest window of the thread. */
   truncated?: boolean
+  nextBeforeId?: string | null
+  cursorReset?: boolean
 }
 
 export class SwitchboardClient {
@@ -195,6 +197,19 @@ export class SwitchboardClient {
   /** `limit` returns only the newest N; the result reports `total`/`truncated`. */
   loadSessionById(conversationId: string, limit?: number): Promise<LoadedSession> {
     return this.transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId, { limit })
+  }
+
+  async loadPhoneHistory(conversationId: string): Promise<LoadedSession> {
+    if (this.supportsCapability('history_window_v1') === undefined) {
+      // A legacy RPC round trip lets the preceding ready frame settle first.
+      await this.getSetting(SETTING_DEFAULT_RUNTIME_MODE)
+    }
+    return this.supportsCapability('history_window_v1') === true
+      ? this.loadSessionWindow(conversationId) : this.loadSessionById(conversationId, 200)
+  }
+
+  loadSessionWindow(conversationId: string, beforeId?: string): Promise<LoadedSession> {
+    return this.transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId, { window: true, limit: 200, beforeId })
   }
 
   forkConversation(request: ForkConversationRequest): Promise<ForkConversationOutcome> {

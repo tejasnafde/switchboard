@@ -188,6 +188,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
             backendToken: config.token,
             resume: iapResume.get(id),
           })
+          transport.onReconnectNeeded = () => get().connect(id)
           transport.onResumeGap = () => reseed(id, config.label)
           transport.onStateChange = (state) =>
             get().setStatus(id, state === 'connected' ? 'connected' : 'disconnected')
@@ -434,8 +435,7 @@ export function installLifecycleReconnect(): () => void {
         if (action === 'reconnect') transport.forceReconnect?.()
         else transport.probe?.()
       } else {
-        // IapTransport has no probe path of its own; connect() replaces it when
-        // it has died, which is the only recovery it currently has.
+        // A transport without a probe can still report that it is closed.
         useConnectionsStore.getState().connect(id)
       }
     }

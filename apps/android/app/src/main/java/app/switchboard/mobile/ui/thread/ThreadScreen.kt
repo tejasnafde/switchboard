@@ -161,6 +161,8 @@ fun ThreadScreen(
     backendLabel: String,
     loadState: ThreadLoadState,
     onRetry: () -> Unit,
+    onLoadOlder: () -> Unit = {},
+    olderCursor: String? = null,
     onAction: (ThreadUiAction) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -366,6 +368,9 @@ fun ThreadScreen(
                             feedRows,
                             key = { "feed:${it.key}" },
                         ) { row ->
+                            if (row == feedRows.lastOrNull()) {
+                                LaunchedEffect(row.key, olderCursor) { onLoadOlder() }
+                            }
                             ThreadRow(
                                 row = row,
                                 backendLabel = backendLabel,

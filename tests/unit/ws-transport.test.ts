@@ -359,6 +359,43 @@ describe('WsTransport (fake socket)', () => {
     t.close()
   })
 
+  it('accepts a pong in the same millisecond as the probe', async () => {
+    vi.useFakeTimers()
+    const { t, sock } = makeOpenTransport()
+    sock.fire('message', { data: JSON.stringify({ k: 'ping', t: 1 }) })
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    t.probe()
+    sock.fire('message', { data: JSON.stringify({ k: 'pong', t: 1 }) })
+    now.mockRestore()
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(FakeSocket.instances).toHaveLength(1)
+    t.close()
+  })
+
+  it('does not let an old probe close a new socket or inherit heartbeat proof', async () => {
+    vi.useFakeTimers()
+    const { t, sock } = makeOpenTransport()
+    sock.fire('message', { data: JSON.stringify({ k: 'ping', t: 1 }) })
+    t.probe()
+    t.forceReconnect()
+    await vi.advanceTimersByTimeAsync(1_000)
+    const next = FakeSocket.instances.at(-1)!
+    next.fire('open')
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(FakeSocket.instances).toHaveLength(2)
+    t.close()
+  })
+
+  it('does not treat ready alone as heartbeat proof', async () => {
+    vi.useFakeTimers()
+    const { t, sock } = makeOpenTransport()
+    sock.fire('message', { data: JSON.stringify({ k: 'ready', epoch: 'old', seq: 0, replayed: 0, gap: false }) })
+    t.probe()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(FakeSocket.instances).toHaveLength(1)
+    t.close()
+  })
+
   it('arms the silence watchdog once the backend proves it speaks the heartbeat', async () => {
     vi.useFakeTimers()
     const { t, sock } = makeOpenTransport()

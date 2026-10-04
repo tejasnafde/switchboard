@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Fixed
+- **Phone chats load in pages and keep live messages visible.** Android and Expo clients use 200-row history windows and fetch older rows on scroll when the backend advertises `history_window_v1`. Clean replay resumes retain the live cache, refreshes leave messages on screen, and foreground returns probe healthy connections instead of rebuilding them. Heartbeat probes require proof the backend supports them, including IAP with `heartbeat_v1`. Older phones and desktops retain the existing load contract. Native Android needs a later APK release; no version is bumped here. See `docs/feature-parity/phone-thread-load.json`.
+
 ### Changed
 - **Glassier corner toasts in the translucent theme.** The update-ready toast and the analytics notice now use a dark tint and a heavier blur there, so the chat and buttons behind them no longer show through clearly. Dark and light are unchanged.
 

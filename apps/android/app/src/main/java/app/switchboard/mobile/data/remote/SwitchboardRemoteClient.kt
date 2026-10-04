@@ -158,6 +158,19 @@ class SwitchboardRemoteClient(
         )
     }
 
+    fun loadSessionWindow(
+        conversationId: String,
+        beforeId: String?,
+        callback: (RemoteResponse<LoadedSession>) -> Unit,
+    ): RequestSubmission {
+        val options = linkedMapOf<String, JsonValue>(
+            "window" to JsonBoolean(true),
+            "limit" to JsonNumber("200"),
+        )
+        beforeId?.let { options["beforeId"] = JsonString(it) }
+        return call(BackendChannels.LoadSession, array(JsonString(conversationId), JsonObject(options)), RemoteDecoders::loadedSession, callback)
+    }
+
     fun renameConversation(
         conversationId: String,
         title: String,

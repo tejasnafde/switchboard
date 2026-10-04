@@ -26,13 +26,13 @@ vi.mock('../../src/main/conversations/history', () => ({
 const { registerAppHandlers } = await import('../../src/main/ipc/app')
 const { AppChannels } = await import('../../src/shared/ipc-channels')
 
-function loadById(turnInFlight = false): Promise<unknown> {
+function loadById(turnInFlight = false, opts?: { limit?: number; window?: boolean; beforeId?: string }): Promise<{ messages: ChatMessage[]; total: number; nextBeforeId?: string | null }> {
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
   registerAppHandlers(
     { handle: (c: string, h: (...args: unknown[]) => unknown) => handlers.set(c, h), emit: (channel: string) => { emitted.push(channel) } } as never,
     { isTurnInFlight: () => turnInFlight },
   )
-  return handlers.get(AppChannels.LOAD_SESSION_BY_ID)!('c1') as Promise<unknown>
+  return handlers.get(AppChannels.LOAD_SESSION_BY_ID)!('c1', opts) as Promise<{ messages: ChatMessage[]; total: number; nextBeforeId?: string | null }>
 }
 
 beforeEach(() => {
@@ -74,4 +74,19 @@ describe('status line backfill on history load', () => {
     expect(stored).toHaveLength(0)
     expect(emitted).toHaveLength(0)
   })
+})
+
+
+it('keeps old full-load callers compatible while a window request pages the same history', async () => {
+  rows.set('c1', { id: 'c1', project_path: '/repo', agent_type: 'claude-code', title: 'Chat' })
+  history = Array.from({ length: 400 }, (_, i) => ({ id: `m${i}`, role: 'user', content: 'message', timestamp: i }))
+  expect((await loadById()).messages).toHaveLength(400)
+  expect((await loadById(false, { limit: 250 })).messages).toHaveLength(250)
+  const tail = await loadById(false, { window: true, limit: 200 })
+  expect(tail.messages[0].id).toBe('m200')
+  expect(tail.nextBeforeId).toBe('m200')
+  const older = await loadById(false, { window: true, beforeId: tail.nextBeforeId! })
+  expect(older.messages[0].id).toBe('m0')
+  expect(older.nextBeforeId).toBeNull()
+  expect(older.total).toBe(400)
 })

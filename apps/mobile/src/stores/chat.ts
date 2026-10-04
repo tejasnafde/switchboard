@@ -6,6 +6,8 @@
  * Thread key = `${connectionId}:${threadId}` - two backends can reuse a
  * threadId without bleed (same reason preload stamps machineId on desktop).
  */
+import type { ChatMessage } from '@shared/types'
+import type { LoadedSession } from '../lib/api'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -74,9 +76,14 @@ export interface ThreadState {
   unread: number
   /** Last time any event touched this thread. Drives cache eviction. */
   updatedAt?: number
-  /** Restored from disk rather than fetched this run. The seed path is guarded
-   *  on an EMPTY feed, so without this a cached thread looks already-loaded and
-   *  the app opens on yesterday's transcript with live events appended. */
+  /** Original rows for fork anchors. Kept in memory, omitted from disk cache. */
+  historyMessages?: ChatMessage[]
+  historyMeta?: LoadedSession['meta']
+  /** This backend's gap revision; gaps on another backend leave this thread alone. */
+  reseedRevision?: number
+  historyLoaded?: boolean
+  nextBeforeId?: string | null
+  /** Restored from disk or invalidated by a gap; still visible during refresh. */
   cached?: boolean
   /** Messages the backend holds until the running turn ends, by feed row id. Not cached. */
   heldTurns?: QueuedTurnsByMessage
@@ -100,7 +107,7 @@ export function prunePersistedThreads(
     .slice(0, maxThreads)
   const out: Record<string, ThreadState> = {}
   for (const [key, thread] of keep) {
-    const { heldTurns: _held, heldRevision: _revision, ...rest } = thread
+    const { heldTurns: _held, heldRevision: _revision, historyMessages: _history, ...rest } = thread
     out[key] = {
       ...rest,
       // The tail, because a feed renders newest-last and that is what the user
@@ -160,13 +167,7 @@ interface ChatState {
    * guard.
    */
   staleGeneration: number
-  /**
-   * Drop cached feeds for one backend and ask screens to re-seed.
-   *
-   * Clearing is the point: the seed path is guarded on an empty feed, so a
-   * transcript with a hole in it would otherwise be treated as already loaded
-   * and the hole would survive for the life of the process.
-   */
+  /** Mark this backend's history stale and ask screens to refresh it. */
   invalidateConnection: (connectionId: string) => void
 }
 
@@ -621,7 +622,7 @@ export const useChatStore = create<ChatState>()(
         const keep = keepIds?.length
           ? t.items.filter((i) => keepIds.includes(i.id) && !alreadySeeded(i.id))
           : []
-        return { items: [...items, ...keep], cached: false }
+        return { items: [...items, ...keep], cached: false, historyLoaded: true }
       }),
     })),
 
@@ -633,16 +634,13 @@ export const useChatStore = create<ChatState>()(
   staleGeneration: 0,
 
   invalidateConnection: (connectionId) => {
-    // Drop the 50ms batch: flushing it after the clear leaves a mid-sentence
-    // fragment that the seed guard then treats as a loaded feed.
-    resetQueue()
+    flushQueue()
     set((s) => {
       const prefix = `${connectionId}:`
       const threads: Record<string, ThreadState> = {}
       for (const [key, thread] of Object.entries(s.threads)) {
-        // Keep the row (its runtime mode and unread count are still valid) but
-        // empty the feed, which is the part we can no longer vouch for.
-        threads[key] = key.startsWith(prefix) ? { ...thread, items: [] } : thread
+        // Keep the displayed feed while replacing its incomplete history.
+        threads[key] = key.startsWith(prefix) ? { ...thread, historyLoaded: false, cached: true, reseedRevision: (thread.reseedRevision ?? 0) + 1 } : thread
       }
       return { threads, staleGeneration: s.staleGeneration + 1 }
     })

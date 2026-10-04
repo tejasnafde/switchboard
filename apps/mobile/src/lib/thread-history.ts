@@ -76,3 +76,29 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
   }
   return items
 }
+
+function historyItemIdentity(item: FeedItem): string {
+  if (item.kind === 'text' && item.id.startsWith('h-')) return `m-${item.id.slice(2)}-${item.stream}`
+  if (item.kind === 'tool' && item.id.startsWith('h-')) return `t-${item.id.slice(item.id.lastIndexOf('-t-') + 3)}`
+  if (item.kind === 'user' && item.id.startsWith('h-remote_')) return item.id.slice(2)
+  return item.id
+}
+
+/** A history response must retain rows that arrived while it was in flight. */
+export function mergeHistoryItems(history: FeedItem[], live: FeedItem[]): FeedItem[] {
+  const result = [...history]
+  const indexes = new Map(result.map((item, index) => [historyItemIdentity(item), index]))
+  for (const item of live) {
+    const identity = historyItemIdentity(item)
+    const index = indexes.get(identity)
+    if (index === undefined) {
+      indexes.set(identity, result.length)
+      result.push(item)
+    } else {
+      const previous = result[index]
+      result[index] = previous.kind === 'text' && item.kind === 'text' && previous.text.includes(item.text)
+        ? { ...item, text: previous.text } : item
+    }
+  }
+  return result
+}

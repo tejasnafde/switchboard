@@ -105,3 +105,23 @@ describe('SwitchboardClient.getSessionDefaults - project scope', () => {
     expect((await client.getSessionDefaults('claude-code')).runtimeMode).toBe('sandbox')
   })
 })
+
+it('waits for the ready capability before choosing the initial phone history contract', async () => {
+  let known = false
+  const transport = fakeTransport({
+    'settings:get': () => { known = true; return null },
+    [AppChannels.LOAD_SESSION_BY_ID]: () => ({ messages: [], meta: null }),
+  })
+  transport.supportsCapability = () => known ? true : undefined
+  await new SwitchboardClient(transport).loadPhoneHistory('thread')
+  expect(transport.invoke).toHaveBeenCalledWith(AppChannels.LOAD_SESSION_BY_ID, 'thread', { window: true, limit: 200, beforeId: undefined })
+})
+
+it('uses the legacy tail contract on an older desktop', async () => {
+  const transport = fakeTransport({
+    [AppChannels.LOAD_SESSION_BY_ID]: () => ({ messages: [], meta: null }),
+  })
+  transport.supportsCapability = () => false
+  await new SwitchboardClient(transport).loadPhoneHistory('thread')
+  expect(transport.invoke).toHaveBeenCalledWith(AppChannels.LOAD_SESSION_BY_ID, 'thread', { limit: 200 })
+})

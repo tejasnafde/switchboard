@@ -47,6 +47,40 @@ import org.junit.Test
 
 class ThreadSessionCoordinatorTest {
     @Test
+    fun `capable backend loads tail pages and a gap reloads without hiding live content`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf("history_window_v1"))
+        coordinator.start()
+        assertEquals(listOf<String?>(null), remote.windowRequests)
+        val tail = loadedSession(message("new", "user", "newest", 2)).copy(
+            raw = JsonObject(linkedMapOf("nextBeforeId" to JsonString("new"))),
+        )
+        remote.completeLoad(success("load", tail))
+        coordinator.loadOlder()
+        coordinator.loadOlder()
+        assertEquals(listOf(null, "new"), remote.windowRequests)
+        remote.emit(scope, content("thread-1", "live", "now"))
+        remote.completeLoadAt(1, success("older", loadedSession(message("old", "user", "older", 1))))
+        assertEquals(listOf("h-old", "h-new", "m-live-assistant"), coordinator.currentThread()!!.feed.map { it.id })
+        coordinator.loadOlder()
+        assertEquals(2, remote.windowRequests.size)
+        coordinator.onReplayGap(scope)
+        assertEquals(listOf(null, "new", null), remote.windowRequests)
+        remote.emit(scope, content("thread-1", "after", "immediate"))
+        assertEquals("immediate", (coordinator.currentThread()!!.feed.last() as FeedItem.Text).text)
+        assertTrue((coordinator.state.value.load as ThreadSessionLoad.Ready).refreshing)
+    }
+
+    @Test
+    fun `a live cached thread opens without history reload`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, cached = ThreadState(historyLoaded = true))
+        coordinator.start()
+        assertTrue(remote.loadCallbacks.isEmpty())
+        assertTrue(coordinator.state.value.load is ThreadSessionLoad.Ready)
+    }
+
+    @Test
     fun `archive navigates only after backend confirmation and leaves cached state intact`() {
         val remote = FakeThreadSessionRemote(scope)
         val cached = ThreadState(
@@ -338,8 +372,8 @@ class ThreadSessionCoordinatorTest {
         )
         val coordinator = coordinator(remote, cached = cached)
 
-        val initial = coordinator.state.value.load as ThreadSessionLoad.Loading
-        assertEquals("cached", initial.cached?.feed?.single()?.id)
+        val initial = coordinator.state.value.load as ThreadSessionLoad.Ready
+        assertEquals("cached", initial.thread.feed.single().id)
 
         coordinator.start()
 
@@ -497,7 +531,7 @@ class ThreadSessionCoordinatorTest {
 
         remote.emit(scope, content("thread-1", "live", "A", append = false))
         remote.emit(scope, content("thread-1", "live", "B", append = true))
-        assertEquals(listOf("h-old"), coordinator.currentThread()?.feed?.map(FeedItem::id))
+        assertEquals(listOf("h-old", "m-live-assistant"), coordinator.currentThread()?.feed?.map(FeedItem::id))
 
         remote.completeLoadAt(1, success("load", loadedSession(message("new", "assistant", "new", 2))))
 
@@ -1516,6 +1550,12 @@ private class FakeThreadSessionRemote(
     override fun subscribe(listener: (ThreadEventScope, RuntimeEventPayload) -> Unit): Cancelable {
         this.listener = listener
         return Cancelable { if (this.listener === listener) this.listener = null }
+    }
+
+    val windowRequests = mutableListOf<String?>()
+    override fun loadSessionWindow(threadId: String, beforeId: String?, callback: (RemoteResponse<LoadedSession>) -> Unit) {
+        windowRequests += beforeId
+        loadCallbacks += callback
     }
 
     override fun loadSession(threadId: String, limit: Long, callback: (RemoteResponse<LoadedSession>) -> Unit) {

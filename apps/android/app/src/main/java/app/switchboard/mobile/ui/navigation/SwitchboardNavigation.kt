@@ -953,7 +953,9 @@ private fun ConnectedThreadRoute(
                 ?: offlineSnapshot?.let {
                     CachedThreadStateMapper.from(it, route.connectionId, route.threadId)
                 },
-            remote = ProtocolHubThreadSessionRemote(commands, bridge),
+            remote = ProtocolHubThreadSessionRemote(commands, bridge) { listener ->
+                runtime.observeProtocolEvents(lease.scope, listener)
+            },
             enqueue = object : ThreadEnqueuePort {
                 override fun enqueue(draft: app.switchboard.mobile.domain.outbox.OutgoingTurnDraft) =
                     runtime.enqueue(draft)
@@ -983,18 +985,6 @@ private fun ConnectedThreadRoute(
 
     LaunchedEffect(coordinator, savedDraft) {
         coordinator.installComposerDraft(savedDraft)
-    }
-
-    LaunchedEffect(coordinator, events, lease.scope) {
-        events.collect { event ->
-            if (
-                event is ProtocolHubEvent.ReplayGap &&
-                event.scope == lease.scope &&
-                runtime.lease(route.connectionId)?.scope == lease.scope
-            ) {
-                coordinator.onReplayGap(lease.scope.toThreadEventScope())
-            }
-        }
     }
 
     val viewingLeaseLifecycle = remember(runtime, lease.scope, route.threadId) {

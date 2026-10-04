@@ -9,6 +9,10 @@ import app.switchboard.mobile.data.local.CachedThreadEntity
 import app.switchboard.mobile.data.local.CachedThreadWithFeed
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.ThreadEventDecoder
+import app.switchboard.mobile.domain.thread.ThreadEventScope
+import app.switchboard.mobile.platform.protocol.TransportScope
+import app.switchboard.mobile.protocol.RuntimeEventPayload
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonCodec
@@ -47,11 +51,11 @@ class RoomThreadSnapshotStore(
     override fun save(connectionId: String, threadId: String, state: ThreadState) {
         val stableState = state.copy(
             eventJournal = emptyList(),
-            awaitingReseed = false,
-            bufferedEvents = emptyList(),
         )
         val shouldSchedule = synchronized(this) {
             val key = threadKey(connectionId, threadId)
+            val latest = states[key]?.lastSequence
+            if (latest != null && (state.lastSequence == null || latest > state.lastSequence)) return
             states[key] = stableState
             pending[key] = PendingSnapshot(connectionId, threadId, stableState)
             if (drainScheduled) {
@@ -76,10 +80,32 @@ class RoomThreadSnapshotStore(
         }
     }
 
+    @Synchronized
+    fun onRuntimeEvent(scope: TransportScope, payload: RuntimeEventPayload) {
+        val threadId = payload.threadId
+        val key = ThreadKey(scope.connectionId, threadId)
+        val current = get(scope.connectionId, threadId) ?: return
+        val eventScope = ThreadEventScope(scope.connectionId, scope.generation)
+        val store = ThreadStoreState(generations = mapOf(scope.connectionId to scope.generation), threads = mapOf(key to current))
+        val event = ThreadEventDecoder.decode(payload.raw)
+        val next = ThreadStoreReducer.reduce(store, ThreadAction.Runtime(
+            ScopedThreadEvent(eventScope, payload.sequence, event, nowMs = System.currentTimeMillis()),
+        )).threads.getValue(key)
+        save(scope.connectionId, threadId, next)
+    }
+
+    @Synchronized
+    fun onReplayGap(connectionId: String) {
+        states.entries.filter { it.key.startsWith("$connectionId:") }.forEach { (key, value) ->
+            states[key] = value.copy(historyLoaded = false, awaitingReseed = true, lastSequence = null, bufferedEvents = emptyList())
+        }
+    }
+
     private fun scheduleDrain() {
         try {
             writes.execute(::drain)
-        } catch (_: RuntimeException) {
+        } catch (error: RuntimeException) {
+            log.warn("thread cache scheduling failed: ${error.javaClass.simpleName}")
             synchronized(this) { drainScheduled = false }
         }
     }

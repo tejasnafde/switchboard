@@ -91,8 +91,10 @@ export class IapTransport implements Transport {
   /** Sequenced events held until `ready`, so a replay lands before newer live
    *  frames. Null once this tunnel's handshake has settled. */
   private resumeHold: Array<Extract<WsFrame, { k: 'evt' }>> | null = []
+  private probeTimer: ReturnType<typeof setTimeout> | null = null
   private readyTimer: ReturnType<typeof setTimeout> | null = null
 
+  onReconnectNeeded: (() => void) | null = null
   onStateChange: ((state: IapTransportState) => void) | null = null
   /** The host could not replay what we missed, so the owner must re-seed. */
   onResumeGap: (() => void) | null = null
@@ -150,6 +152,21 @@ export class IapTransport implements Transport {
     return !this.closed
   }
 
+  probe(timeoutMs = 3_000): void {
+    if (this.closed) {
+      this.onReconnectNeeded?.()
+      return
+    }
+    if (!this.open || !this.capabilities?.has('heartbeat_v1') || this.probeTimer) return
+    this.sendLine(encodeFrame({ k: 'ping', t: Date.now() }))
+    this.probeTimer = setTimeout(() => {
+      this.probeTimer = null
+      log.warn('heartbeat probe went unanswered, replacing tunnel')
+      this.close()
+      this.onReconnectNeeded?.()
+    }, timeoutMs)
+  }
+
   private onMessage(ev: MessageEvent): void {
     if (this.closed) return
     const data = ev.data
@@ -198,6 +215,12 @@ export class IapTransport implements Transport {
   }
 
   private dispatch(frame: WsFrame): void {
+    if (this.probeTimer) clearTimeout(this.probeTimer)
+    this.probeTimer = null
+    if (frame.k === 'ping') {
+      this.sendLine(encodeFrame({ k: 'pong', t: frame.t }))
+      return
+    }
     if (frame.k === 'res') {
       const entry = this.pending.get(frame.id)
       if (!entry) return
@@ -283,6 +306,8 @@ export class IapTransport implements Transport {
     if (this.closed) return
     this.closed = true
     this.open = false
+    if (this.probeTimer) clearTimeout(this.probeTimer)
+    this.probeTimer = null
     if (this.readyTimer) clearTimeout(this.readyTimer)
     this.readyTimer = null
     for (const { reject, timer } of this.pending.values()) {

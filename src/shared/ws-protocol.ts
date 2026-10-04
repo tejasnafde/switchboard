@@ -43,6 +43,9 @@ export const BACKEND_CAPABILITIES = [
    *  approval/question/plan cards, so a client can recover them after a
    *  resume gap instead of waiting on a card that will never re-arrive. */
   'pending_requests_v1',
+  'history_window_v1',
+  /** Both hosts answer application ping frames. WsHost also sends periodic pings. */
+  'heartbeat_v1',
   /** A queued message is announced (`turn.queued` / `turn.dequeued`), listed
    *  by `ProviderChannels.LIST_QUEUED_TURNS`, and can be sent into the running
    *  turn now (`PROMOTE_QUEUED_TURN`) or taken back (`CANCEL_QUEUED_TURN`). */

@@ -24,6 +24,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, RuntimeMode } from '@shared/provider-events'
+import { shouldLoadPhoneHistory } from '@shared/phone-history-window'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { canSteer, type QueuedTurnSummary } from '@shared/turn-delivery'
 import { providerKindFor, type ProviderInstance, type ProviderSkill } from '@shared/types'
@@ -51,6 +52,7 @@ import {
 } from '../stores/outbox'
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
+import { HistoryPageStatus } from '../components/HistoryPageStatus'
 import { ModePicker } from '../components/ModePicker'
 import { ProfilePicker } from '../components/ProfilePicker'
 import { SlashMenu } from '../components/SlashMenu'
@@ -60,7 +62,7 @@ import { rotateWithinAgent } from '../lib/profile-rotation'
 import { buildTurn, enqueueTurn, modeToRestore } from '../lib/turn-submit'
 import { resolvedAmbiguousBubbleAction } from '../lib/outbox-model'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
-import { historyToItems } from '../lib/thread-history'
+import { mergeHistoryItems, historyToItems } from '../lib/thread-history'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { VoiceNoteBar } from '../components/MicButton'
@@ -78,9 +80,6 @@ import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PlanItem, Quest
 import { styles } from './thread-screen.styles'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
 import { collapseFileEdits, type FeedRow } from '../lib/file-groups'
-
-/** How much of a long thread to pull on open. The feed says when it is a window. */
-const HISTORY_WINDOW = 250
 
 const log = createLogger('screen:thread')
 
@@ -125,13 +124,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const swipeBack = useEdgeSwipeBack(useCallback(() => navigation.goBack(), [navigation]))
   // Which provider drives this thread. Only OpenCode needs the client-side
   // queue below; Claude queues in its adapter and Codex steers into the turn.
-  const [provider, setProvider] = useState<ProviderKind>('claude')
+  const [provider, setProvider] = useState<ProviderKind>(providerKindFor(thread.provider ?? thread.historyMeta?.agentType))
   const [instances, setInstances] = useState<ProviderInstance[]>([])
   const [instanceId, setInstanceId] = useState<string | undefined>(undefined)
   const [profilePickerOpen, setProfilePickerOpen] = useState(false)
   const [rotating, setRotating] = useState(false)
-  const [forkMetadata, setForkMetadata] = useState<ForkLineageMetadata | null>(null)
+  const [forkMetadata, setForkMetadata] = useState<ForkLineageMetadata | null>(thread.historyMeta?.forkMetadata ?? null)
+  const olderLoadingRef = useRef(false)
+  const [olderLoading, setOlderLoading] = useState(false)
   const forkMessagesRef = useRef(new Map<string, ChatMessage>())
+  forkMessagesRef.current = useMemo(() => new Map((thread.historyMessages ?? []).flatMap((message) =>
+    message.role === 'user' || (message.role === 'assistant' && message.content.trim())
+      ? [[`h-${message.id}`, message] as const] : [],
+  )), [thread.historyMessages])
 
   // The accessory subscribes to the store itself, so this runs once per thread.
   useEffect(() => {
@@ -188,11 +193,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const startedKeyRef = useRef<string | null>(null)
   // A re-seed request has to defeat the once-per-mount guard, or a feed that
   // lost events while the phone was away stays holed until the app restarts.
-  const staleGeneration = useChatStore((s) => s.staleGeneration)
-  const mountGenerationRef = useRef(staleGeneration)
+  const staleGeneration = thread.reseedRevision ?? 0
   // True once this backend has reported that it could not replay what we
-  // missed, so the cached feed was dropped.
-  const invalidated = staleGeneration !== mountGenerationRef.current
+  // missed, so the displayed feed needs a refresh.
+  const invalidated = thread.cached === true
   useEffect(() => {
     startedKeyRef.current = null
   }, [staleGeneration])
@@ -212,29 +216,24 @@ export default function ThreadScreen({ route, navigation }: Props) {
       return
     }
     void (async () => {
-      let provider: ProviderKind = 'claude'
-      let loadedMeta: Awaited<ReturnType<typeof client.loadSessionById>>['meta'] = null
+      let provider: ProviderKind = providerKindFor(thread.provider ?? thread.historyMeta?.agentType)
+      let loadedMeta: Awaited<ReturnType<typeof client.loadSessionById>>['meta'] = thread.historyMeta ?? null
+      const beforeItems = useChatStore.getState().threads[key]?.items ?? []
       try {
-        const loaded = await client.loadSessionById(threadId, HISTORY_WINDOW)
-        loadedMeta = loaded.meta
-        setForkMetadata(loaded.meta?.forkMetadata ?? null)
-        forkMessagesRef.current = new Map(loaded.messages.flatMap((message) => {
-          if (message.role === 'user' || (message.role === 'assistant' && message.content.trim())) {
-            return [[`h-${message.id}`, message] as const]
-          }
-          return []
-        }))
-        provider = providerKindFor(loaded.meta?.agentType)
-        setProvider(provider)
-        const store = useChatStore.getState()
-        // The chat's real mode, not the store's default: the picker shows it.
-        if (isRuntimeMode(loaded.meta?.runtimeMode)) store.setRuntimeMode(key, loaded.meta.runtimeMode)
-        const current = store.threads[key]
-        const replaceable = (current?.items.length ?? 0) === 0 || current?.cached === true
-        if (replaceable && loaded.messages.length > 0) {
+        if (shouldLoadPhoneHistory(thread.historyLoaded === true && thread.cached !== true, invalidated)) {
+          const loaded = await client.loadPhoneHistory(threadId)
+          if ((useChatStore.getState().threads[key]?.reseedRevision ?? 0) !== staleGeneration) return
+          loadedMeta = loaded.meta
+          setForkMetadata(loaded.meta?.forkMetadata ?? null)
+          provider = providerKindFor(loaded.meta?.agentType)
+          setProvider(provider)
+          const store = useChatStore.getState()
+          // The chat's real mode, not the store's default: the picker shows it.
+          if (isRuntimeMode(loaded.meta?.runtimeMode)) store.setRuntimeMode(key, loaded.meta.runtimeMode)
+          const current = store.threads[key]
           const seeded = historyToItems(loaded.messages)
           // A thread silently starting mid-conversation reads as lost history.
-          if (loaded.truncated && loaded.total) {
+          if (loaded.truncated && loaded.total && loaded.nextBeforeId === undefined) {
             seeded.unshift({
               kind: 'notice',
               id: 'history-window',
@@ -244,7 +243,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
           // Anything still queued is newer than this history and invisible to
           // it, so it has to survive the replace.
           const pending = queuedFor(connectionId, threadId).map((m) => echoMessageId(m.messageId))
-          store.seedItems(key, seeded, pending)
+          const live = (current?.items ?? []).filter((item) => !beforeItems.includes(item))
+          store.seedItems(key, mergeHistoryItems(seeded, live), pending)
+          useChatStore.setState((state) => ({
+            threads: { ...state.threads, [key]: {
+              ...state.threads[key], nextBeforeId: loaded.nextBeforeId,
+              historyMeta: loaded.meta, historyMessages: loaded.messages,
+            } },
+          }))
         }
       } catch (err) {
         reportError(err)
@@ -313,6 +319,35 @@ export default function ThreadScreen({ route, navigation }: Props) {
       }
     })()
   }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated, thread.cached])
+
+  const loadOlder = useCallback(() => {
+    const client = getClient(connectionId)
+    const before = useChatStore.getState().threads[key]?.nextBeforeId
+    if (useChatStore.getState().threads[key]?.cached) return
+    if (!client || client.supportsCapability('history_window_v1') !== true || !before || olderLoadingRef.current) return
+    olderLoadingRef.current = true
+    setOlderLoading(true)
+    const generation = useChatStore.getState().threads[key]?.reseedRevision ?? 0
+    void client.loadSessionWindow(threadId, before).then((loaded) => {
+      if ((useChatStore.getState().threads[key]?.reseedRevision ?? 0) !== generation) return
+      if (loaded.cursorReset) {
+        useChatStore.getState().invalidateConnection(connectionId)
+        return
+      }
+      const store = useChatStore.getState()
+      const current = store.threads[key]?.items ?? []
+      store.seedItems(key, mergeHistoryItems(historyToItems(loaded.messages), current))
+      useChatStore.setState((state) => ({
+        threads: { ...state.threads, [key]: {
+          ...state.threads[key], nextBeforeId: loaded.nextBeforeId,
+          historyMessages: [...loaded.messages, ...(state.threads[key].historyMessages ?? [])],
+        } },
+      }))
+    }).catch(reportError).finally(() => {
+      olderLoadingRef.current = false
+      setOlderLoading(false)
+    })
+  }, [connectionId, threadId, key, reportError])
 
   // Restore the user's last choices. A new chat's mode is pushed to the backend
   // too, so the adapter and the chip agree.
@@ -1048,6 +1083,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
       ) : (
         <FlatList
           inverted
+          onEndReached={loadOlder}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={<HistoryPageStatus loading={olderLoading} />}
           data={reversedItems}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}

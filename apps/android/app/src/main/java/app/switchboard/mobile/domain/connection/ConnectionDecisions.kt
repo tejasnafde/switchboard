@@ -61,14 +61,9 @@ enum class ForegroundAction {
 }
 
 object ConnectionLifecycle {
-    const val ReconnectAfterMs = 10_000L
-
+    /** A heartbeat probe, rather than elapsed background time, proves socket death. */
     fun foregroundAction(backgroundedAtMs: Long?, activeAtMs: Long): ForegroundAction =
-        if (backgroundedAtMs != null && activeAtMs - backgroundedAtMs >= ReconnectAfterMs) {
-            ForegroundAction.Reconnect
-        } else {
-            ForegroundAction.Probe
-        }
+        ForegroundAction.Probe
 
     /** LAN backends remain reachable without platform-validated internet. */
     fun canReachLocalBackend(isConnected: Boolean?): Boolean = isConnected != false

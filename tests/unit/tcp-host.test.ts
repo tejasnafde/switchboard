@@ -292,3 +292,14 @@ describe('TcpHost resume', () => {
     expect(await r.next()).toMatchObject({ k: 'ready', seq: 1 })
   })
 })
+
+it('answers a heartbeat probe after authenticating', async () => {
+  const { port } = await boot('secret')
+  const { socket, r } = await dial(port)
+  socket.write(JSON.stringify({ k: 'auth', token: 'secret' }) + '\n')
+  expect(await r.next()).toMatchObject({ k: 'res', id: 0, ok: true, result: 'authed' })
+  const ready = await r.next() as { capabilities: string[] }
+  expect(ready.capabilities).toContain('heartbeat_v1')
+  socket.write(JSON.stringify({ k: 'ping', t: 7 }) + '\n')
+  expect(await r.next()).toEqual({ k: 'pong', t: 7 })
+})

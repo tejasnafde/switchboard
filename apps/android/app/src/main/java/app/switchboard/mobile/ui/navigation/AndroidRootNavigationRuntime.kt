@@ -26,6 +26,7 @@ import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.runtime.DurableComposerRuntime
 import app.switchboard.mobile.platform.protocol.ProtocolEventHub
 import app.switchboard.mobile.platform.protocol.ProtocolHubEvent
+import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.ui.browse.BrowseThreadActivity
 import java.io.Closeable
@@ -132,6 +133,9 @@ class AndroidRootNavigationRuntime(
     }
 
     override fun dismissQueued(origin: String) = composer.dismiss(origin)
+
+    override fun observeProtocolEvents(scope: TransportScope, listener: (ProtocolHubEvent) -> Unit): Cancelable =
+        protocolEvents.observe { if (it.scope == scope) listener(it) }
 
     override fun eventsFor(scope: TransportScope): Flow<ProtocolHubEvent> =
         protocolEvents.eventsFor(scope)

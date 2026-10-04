@@ -24,6 +24,7 @@ import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.ProviderKind
 import app.switchboard.mobile.domain.remote.StartSession
+import app.switchboard.mobile.domain.remote.SessionMeta
 import app.switchboard.mobile.domain.remote.StartedSession
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
@@ -38,6 +39,7 @@ import app.switchboard.mobile.domain.thread.ThreadSnapshot
 import app.switchboard.mobile.domain.thread.UserMessageVisibility
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.protocol.JsonCodec
+import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
@@ -203,7 +205,12 @@ interface ThreadSessionRemote {
 
     fun subscribe(listener: (ThreadEventScope, RuntimeEventPayload) -> Unit): Cancelable
 
+    fun subscribeGaps(listener: (ThreadEventScope) -> Unit): Cancelable = Cancelable {}
+
     fun loadSession(threadId: String, limit: Long, callback: (RemoteResponse<LoadedSession>) -> Unit)
+
+    fun loadSessionWindow(threadId: String, beforeId: String?, callback: (RemoteResponse<LoadedSession>) -> Unit): Unit =
+        throw UnsupportedOperationException("History windows are not supported")
 
     fun startSession(input: StartSession, callback: (RemoteResponse<StartedSession>) -> Unit)
 
@@ -294,6 +301,10 @@ class SwitchboardThreadSessionRemote(
 
     override fun loadSession(threadId: String, limit: Long, callback: (RemoteResponse<LoadedSession>) -> Unit) {
         client.loadSession(threadId, limit, callback)
+    }
+
+    override fun loadSessionWindow(threadId: String, beforeId: String?, callback: (RemoteResponse<LoadedSession>) -> Unit) {
+        client.loadSessionWindow(threadId, beforeId, callback)
     }
 
     override fun startSession(input: StartSession, callback: (RemoteResponse<StartedSession>) -> Unit) {
@@ -456,7 +467,7 @@ object LoadedSessionSnapshotMapper {
                 )
             }
         }.toMutableList<FeedItem>()
-        if (loaded.truncated == true && loaded.total != null) {
+        if (loaded.truncated == true && loaded.total != null && "nextBeforeId" !in loaded.raw.values) {
             feed.add(
                 0,
                 FeedItem.RawNotice(
@@ -511,7 +522,9 @@ class ThreadSessionCoordinator(
         ),
         ThreadAction.Activate(scope.connectionId, scope.generation),
     )
-    private var load: ThreadSessionLoad = ThreadSessionLoad.Loading(initialCached)
+    private var load: ThreadSessionLoad = initialCached?.let {
+        ThreadSessionLoad.Ready(it, refreshing = !it.historyLoaded)
+    } ?: ThreadSessionLoad.Loading(null)
 
     /**
      * A mode picked on this phone that has not reached the backend yet (an
@@ -536,7 +549,7 @@ class ThreadSessionCoordinator(
     private var models = ThreadModelState(selectedModelId = initialCached?.resolvedModel)
     private var profiles = ThreadProfileState(selectedInstanceId = initialCached?.instanceId)
     private var archive = ThreadArchiveState()
-    private var forkMetadata: ForkLineageMetadata? = null
+    private var forkMetadata: ForkLineageMetadata? = initialCached?.historyMeta?.forkMetadata
     private var allProfiles: List<ProviderInstance> = emptyList()
     private val mutableState = MutableStateFlow(
         ThreadSessionState(load, composer, models = models, profiles = profiles),
@@ -544,6 +557,7 @@ class ThreadSessionCoordinator(
     val state = mutableState.asStateFlow()
 
     private var subscription: Cancelable? = null
+    private var gapSubscription: Cancelable? = null
     private var started = false
     private var closed = false
     private var loadRequest = 0L
@@ -575,8 +589,17 @@ class ThreadSessionCoordinator(
         }
         reduce(ThreadAction.SetViewing(scope.connectionId, threadId, true))
         subscription = remote.subscribe(::onRuntimeEvent)
-        reattach(providerHint)
-        refresh()
+        gapSubscription = remote.subscribeGaps(::onReplayGap)
+        snapshotStore.get(scope.connectionId, threadId)?.takeIf { it.historyLoaded }?.let {
+            store = store.copy(threads = store.threads + (key to it.copy(unread = 0)))
+        }
+        currentThread()?.historyMeta?.let(::reattach) ?: reattach(providerHint)
+        if (currentThread()?.historyLoaded == true && currentThread()?.awaitingReseed != true) {
+            load = ThreadSessionLoad.Ready(requireNotNull(currentThread()))
+            recoverPendingRequests()
+            recoverHeldTurns()
+            publish()
+        } else refresh()
         loadSkills()
         refreshModels()
         refreshProfiles()
@@ -590,9 +613,49 @@ class ThreadSessionCoordinator(
             reduce(ThreadAction.ReplayGap(scope))
         }
         val request = ++loadRequest
-        load = ThreadSessionLoad.Loading(currentThread())
+        load = currentThread()?.takeIf { it.feed.isNotEmpty() }?.let {
+            ThreadSessionLoad.Ready(it, refreshing = true)
+        } ?: ThreadSessionLoad.Loading(null)
         publish()
-        remote.loadSession(threadId, HISTORY_LIMIT) { response -> acceptLoad(request, response) }
+        if ("history_window_v1" in capabilities) {
+            remote.loadSessionWindow(threadId, null) { response -> acceptLoad(request, response) }
+        } else remote.loadSession(threadId, HISTORY_LIMIT) { response -> acceptLoad(request, response) }
+    }
+
+    private var olderLoading = false
+
+    @Synchronized
+    fun loadOlder() {
+        val before = currentThread()?.nextBeforeId ?: return
+        if (closed || olderLoading || currentThread()?.awaitingReseed == true || "history_window_v1" !in capabilities) return
+        olderLoading = true
+        val request = loadRequest
+        remote.loadSessionWindow(threadId, before) { response ->
+            synchronized(this) {
+                olderLoading = false
+                if (!accepts(response, request, loadRequest)) return@synchronized
+                when (val outcome = response.outcome) {
+                    is RemoteOutcome.Failure -> controlMessage = outcome.message
+                    is RemoteOutcome.Success -> {
+                        if ((outcome.value.raw.values["cursorReset"] as? JsonBoolean)?.value == true) {
+                            refresh()
+                            return@synchronized
+                        }
+                        val current = currentThread() ?: return@synchronized
+                        val older = LoadedSessionSnapshotMapper.map(threadId, outcome.value).feed.filterNot { it.id == "history-window" }
+                        val ids = current.feed.map { it.id }.toSet()
+                        val next = current.copy(
+                            feed = older.filterNot { it.id in ids } + current.feed,
+                            nextBeforeId = (outcome.value.raw.values["nextBeforeId"] as? JsonString)?.value,
+                        )
+                        store = store.copy(threads = store.threads + (key to next))
+                        load = ThreadSessionLoad.Ready(next)
+                        persistSnapshot()
+                    }
+                }
+                publish()
+            }
+        }
     }
 
     @Synchronized
@@ -1062,6 +1125,8 @@ class ThreadSessionCoordinator(
         archiveRequest += 1
         reattachRequest += 1
         subscription?.cancel()
+        gapSubscription?.cancel()
+        gapSubscription = null
         subscription = null
         reduce(ThreadAction.SetViewing(scope.connectionId, threadId, false))
     }
@@ -1078,6 +1143,13 @@ class ThreadSessionCoordinator(
                             LoadedSessionSnapshotMapper.map(threadId, outcome.value),
                         ),
                     )
+                    currentThread()?.let {
+                        store = store.copy(threads = store.threads + (key to it.copy(
+                            historyLoaded = true,
+                            historyMeta = outcome.value.meta,
+                            nextBeforeId = (outcome.value.raw.values["nextBeforeId"] as? JsonString)?.value,
+                        )))
+                    }
                     reconcileOptimisticHistory()
                     optimisticTurns.values.forEach(::addOptimistic)
                     reduce(ThreadAction.CompleteReseed(scope))
@@ -1209,7 +1281,10 @@ class ThreadSessionCoordinator(
     }
 
     private fun reattach(loaded: LoadedSession) {
-        val meta = loaded.meta ?: return
+        loaded.meta?.let(::reattach)
+    }
+
+    private fun reattach(meta: SessionMeta) {
         reattach(
             agentType = meta.agentType,
             cwdOverride = meta.worktreePath ?: worktreePath ?: meta.projectPath,

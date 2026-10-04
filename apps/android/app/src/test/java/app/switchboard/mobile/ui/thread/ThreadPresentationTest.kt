@@ -19,6 +19,14 @@ import org.junit.Test
 
 class ThreadPresentationTest {
     @Test
+    fun `a connected background refresh does not show a saved messages banner`() {
+        val thread = ThreadState(feed = listOf(FeedItem.User("u", "visible", 1)), awaitingReseed = true)
+        val content = ThreadPresenter.present(ThreadLoadState.Ready(thread, refreshing = true)) as ThreadPresentation.Content
+        assertEquals(ThreadContentStatusKind.NORMAL, content.contentStatus.kind)
+        assertFalse(content.contentStatus.showProgress)
+    }
+
+    @Test
     fun everyFeedVariantHasAnHonestStablePresentationRow() {
         val feed = everyFeedVariant()
 

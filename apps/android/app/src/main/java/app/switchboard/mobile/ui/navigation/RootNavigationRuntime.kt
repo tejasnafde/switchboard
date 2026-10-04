@@ -95,6 +95,8 @@ interface RootNavigationRuntime {
 
     fun dismissQueued(origin: String) = Unit
 
+    fun observeProtocolEvents(scope: TransportScope, listener: (ProtocolHubEvent) -> Unit): Cancelable? = null
+
     fun eventsFor(scope: TransportScope): Flow<ProtocolHubEvent>
 
     fun browseActivity(scope: TransportScope): StateFlow<Map<String, BrowseThreadActivity>> =
@@ -155,6 +157,17 @@ class ProtocolRuntimeEventBridge(
     private val events: Flow<ProtocolHubEvent>,
     private val isLeaseCurrent: () -> Boolean,
 ) {
+    fun subscribeGaps(listener: (ThreadEventScope) -> Unit): Cancelable {
+        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            events.collect { event ->
+                if (event is ProtocolHubEvent.ReplayGap && event.scope == expectedScope && isLeaseCurrent()) {
+                    listener(expectedScope.toThreadEventScope())
+                }
+            }
+        }
+        return Cancelable(job::cancel)
+    }
+
     fun subscribe(listener: (ThreadEventScope, RuntimeEventPayload) -> Unit): Cancelable {
         val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             events.collect { event ->
@@ -177,8 +190,16 @@ fun TransportScope.toThreadEventScope(): ThreadEventScope =
 class ProtocolHubThreadSessionRemote(
     commands: ThreadSessionRemote,
     private val bridge: ProtocolRuntimeEventBridge,
+    private val observe: (((ProtocolHubEvent) -> Unit) -> Cancelable?)? = null,
 ) : ThreadSessionRemote by commands {
     override fun subscribe(
         listener: (ThreadEventScope, RuntimeEventPayload) -> Unit,
-    ): Cancelable = bridge.subscribe(listener)
+    ): Cancelable = observe?.invoke { event ->
+        if (event is ProtocolHubEvent.Runtime) listener(event.scope.toThreadEventScope(), event.event)
+    } ?: bridge.subscribe(listener)
+
+    override fun subscribeGaps(listener: (ThreadEventScope) -> Unit): Cancelable =
+        observe?.invoke { event ->
+            if (event is ProtocolHubEvent.ReplayGap) listener(event.scope.toThreadEventScope())
+        } ?: bridge.subscribeGaps(listener)
 }

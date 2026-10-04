@@ -50,8 +50,8 @@ class ConnectionDecisionsTest {
     fun `foreground decision probes short absences and reconnects at threshold`() {
         assertEquals(ForegroundAction.Probe, ConnectionLifecycle.foregroundAction(null, 50_000))
         assertEquals(ForegroundAction.Probe, ConnectionLifecycle.foregroundAction(1_000, 10_999))
-        assertEquals(ForegroundAction.Reconnect, ConnectionLifecycle.foregroundAction(1_000, 11_000))
-        assertEquals(ForegroundAction.Reconnect, ConnectionLifecycle.foregroundAction(1_000, 61_000))
+        assertEquals(ForegroundAction.Probe, ConnectionLifecycle.foregroundAction(1_000, 11_000))
+        assertEquals(ForegroundAction.Probe, ConnectionLifecycle.foregroundAction(1_000, 61_000))
     }
 
     @Test
