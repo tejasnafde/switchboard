@@ -717,6 +717,95 @@ async function captureThemeScreens(win, theme) {
   await settle(win)
 }
 
+// A deterministic IPC latch exercises the production UI while the demo
+// backend is waiting. Restored before releasing, including on test failure.
+async function holdChatCall(channel) {
+  await app.evaluate(({ ipcMain }, name) => {
+    const original = ipcMain._invokeHandlers.get(name)
+    if (!original) throw new Error(`No IPC handler for ${name}`)
+    let release
+    const wait = new Promise((resolve) => { release = resolve })
+    ipcMain.removeHandler(name)
+    ipcMain.handle(name, async (event, ...args) => {
+      const failure = await wait
+      if (failure) throw new Error(failure)
+      return original(event, ...args)
+    })
+    globalThis.__chatWaitRelease = (failure) => {
+      ipcMain.removeHandler(name)
+      ipcMain.handle(name, original)
+      release(failure)
+      delete globalThis.__chatWaitRelease
+    }
+  }, channel)
+  return (failure) => app.evaluate((_electron, message) => globalThis.__chatWaitRelease?.(message), failure)
+}
+
+async function captureChatWaitScreens(win, theme) {
+  await win.evaluate(() => window.api.providerInstances.upsert({
+    id: 'claude-code-work', agentType: 'claude-code', displayName: 'akshaya',
+    accentColor: '#b0833a', authMode: 'env', env: null, oauthDir: null, enabled: true,
+  }))
+  await win.reload()
+  await win.locator('.sidebar-recent-row').filter({ hasText: 'Prepare release notes' }).waitFor({ state: 'visible' })
+  await win.addStyleTag({ content: `${FREEZE_CSS} .turn-timestamp { visibility: hidden !important; }` })
+  const panel = win.locator('[data-chat-slot="primary"]')
+  let release = await holdChatCall('app:load-session-by-id')
+  try {
+    await openConversation(win, 'Prepare release notes')
+    await panel.getByRole('status').filter({ hasText: 'Loading conversation...' }).waitFor({ state: 'visible', timeout: 100 })
+    if (await panel.locator('.message-list').count()) throw new Error('Previous messages remained during chat open')
+    const input = panel.locator('[contenteditable="true"]')
+    await input.click()
+    await win.keyboard.type('Keep this draft while loading.')
+    await win.keyboard.press('Enter')
+    if (!(await input.textContent()).includes('Keep this draft')) throw new Error('Loading cleared the composer draft')
+    await snapScreen(win, 'chat-loading', theme, panel)
+  } finally { await release() }
+  await panel.getByRole('status').filter({ hasText: 'Loading conversation...' }).waitFor({ state: 'hidden' })
+  const input = panel.locator('[contenteditable="true"]')
+  await input.click()
+  await win.keyboard.press('Meta+A')
+  await win.keyboard.press('Backspace')
+
+  await panel.locator('.chat-composer button[title*="OpenCode"]').first().click()
+  const picker = win.getByRole('dialog', { name: 'Provider, instance, and model picker' })
+  release = await holdChatCall('app:set-conversation-provider-selection')
+  try {
+    await picker.getByRole('button', { name: 'Claude Code', exact: true }).click()
+    await panel.getByRole('status').filter({ hasText: 'Switching to Claude Code...' }).waitFor({ state: 'visible' })
+    await snapScreen(win, 'chat-provider-switch', theme, panel)
+  } finally { await release() }
+  await panel.getByRole('status').filter({ hasText: 'Switching to Claude Code...' }).waitFor({ state: 'hidden' })
+  await picker.getByRole('radio', { name: /akshaya/ }).waitFor({ state: 'visible' })
+  release = await holdChatCall('provider:switch-instance')
+  try {
+    await picker.getByRole('radio', { name: /akshaya/ }).click()
+    await panel.getByRole('status').filter({ hasText: 'Switching to akshaya...' }).waitFor({ state: 'visible' })
+    await snapScreen(win, 'chat-profile-switch', theme, panel)
+    await snapScreen(win, 'provider-picker-switch', theme, picker)
+  } finally { await release() }
+  await panel.getByRole('status').filter({ hasText: 'Switching to akshaya...' }).waitFor({ state: 'hidden' })
+  release = await holdChatCall('provider:switch-instance')
+  try {
+    await picker.getByRole('radio', { name: 'Default', exact: true }).click()
+    await panel.getByRole('status').filter({ hasText: 'Switching to Default...' }).waitFor({ state: 'visible' })
+    await release('Synthetic profile switch failure')
+    await panel.getByRole('alert').filter({ hasText: 'Could not switch profile:' }).waitFor({ state: 'visible' })
+    await snapScreen(win, 'chat-switch-error', theme, panel)
+  } finally { await release() }
+  await win.keyboard.press('Escape')
+
+  release = await holdChatCall('provider:start-session')
+  try {
+    await input.click()
+    await win.keyboard.type('Prepare a release summary.')
+    await win.keyboard.press('Enter')
+    await panel.getByRole('status').filter({ hasText: 'Starting Claude Code...' }).waitFor({ state: 'visible' })
+    await snapScreen(win, 'chat-starting', theme, panel)
+  } finally { await release() }
+}
+
 async function runThemeScreens() {
   const fixture = await prepareScreensFixture()
   for (const theme of THEMES) {
@@ -733,6 +822,7 @@ async function runThemeScreens() {
     await win.waitForFunction((now) => !!window.api?.settings && Date.now() === now, FROZEN_NOW, { timeout: 20_000 })
     await win.addStyleTag({ content: FREEZE_CSS })
     await captureThemeScreens(win, theme)
+    await captureChatWaitScreens(win, theme)
     await closeApp()
   }
 }

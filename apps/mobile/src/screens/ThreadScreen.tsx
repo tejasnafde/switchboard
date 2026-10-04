@@ -1,3 +1,4 @@
+import { ThreadWaitStatus } from '../components/ThreadWaitStatus'
 /**
  * One chat thread: inverted feed over the chat store's FeedItems, a status
  * header (dot + context meter + cost), and a pinned composer with a runtime
@@ -130,6 +131,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const [instanceId, setInstanceId] = useState<string | undefined>(undefined)
   const [profilePickerOpen, setProfilePickerOpen] = useState(false)
   const [rotating, setRotating] = useState(false)
+  const [switchLabel, setSwitchLabel] = useState<string | null>(null)
+  const [loadLabel, setLoadLabel] = useState<string | null>(isNew ? null : 'Loading conversation...')
+  const [waitError, setWaitError] = useState<string | null>(null)
+  const rotatingRef = useRef(false)
   const [forkMetadata, setForkMetadata] = useState<ForkLineageMetadata | null>(null)
   const forkMessagesRef = useRef(new Map<string, ChatMessage>())
 
@@ -211,6 +216,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
       startedKeyRef.current = null
       return
     }
+    setLoadLabel('Loading conversation...')
+    setWaitError(null)
     void (async () => {
       let provider: ProviderKind = 'claude'
       let loadedMeta: Awaited<ReturnType<typeof client.loadSessionById>>['meta'] = null
@@ -247,8 +254,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
           store.seedItems(key, seeded, pending)
         }
       } catch (err) {
+        log.warn('conversation load failed', err)
+        setWaitError('Could not load conversation. Reopen this chat to retry.')
+        setLoadLabel(null)
+        startedKeyRef.current = null
         reportError(err)
+        return
       }
+      setLoadLabel(`Starting ${provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : 'OpenCode'}...`)
       try {
         // Mirrors the desktop resume path: the conversation id doubles as the
         // resumeSessionId so the Claude adapter can --resume the JSONL chain.
@@ -272,9 +285,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
         // none, so a cached chat kept 'connecting' until its next turn.
         useChatStore.getState().ingest(connectionId, { type: 'status', threadId, status: started.status })
       } catch (err) {
+        log.warn('session start failed', err)
         startedKeyRef.current = null
+        setWaitError(err instanceof Error ? err.message : String(err))
         reportError(err)
         return
+      } finally {
+        setLoadLabel(null)
       }
       // Recover any approval/question/plan card a resume gap or a reload
       // dropped - this effect re-runs on both (staleGeneration), so it also
@@ -365,7 +382,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
         reportError(new Error('Backend not connected.'))
         return
       }
-      setProfilePickerOpen(false)
+      if (rotatingRef.current || loadLabel) return
+      rotatingRef.current = true
+      setWaitError(null)
+      setSwitchLabel(`Switching to ${instances.find((i) => i.id === nextInstanceId)?.displayName ?? nextProvider}...`)
       setRotating(true)
       void (async () => {
         try {
@@ -400,14 +420,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
           }
           setProvider(nextProvider)
           setInstanceId(nextInstanceId)
+          setProfilePickerOpen(false)
         } catch (err) {
+          log.warn('profile switch failed', err)
+          setWaitError(err instanceof Error ? err.message : String(err))
           reportError(err)
         } finally {
+          rotatingRef.current = false
+          setSwitchLabel(null)
           setRotating(false)
         }
       })()
     },
-    [connectionId, threadId, projectPath, worktreePath, provider, instanceId, reportError],
+    [connectionId, threadId, projectPath, worktreePath, provider, instanceId, reportError, instances, loadLabel],
   )
 
   useEffect(() => {
@@ -519,6 +544,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // `textOverride` is for one-tap actions like the Compact banner: it sends
   // that text alone and leaves the user's draft and attachments untouched.
   const send = (textOverride?: string) => {
+    if (rotatingRef.current || loadLabel) {
+      return
+    }
     const text = (textOverride ?? draft).trim()
     // An image with no caption is a legitimate turn.
     if (!text && attachments.length === 0) return
@@ -1036,13 +1064,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {(switchLabel || loadLabel) && <ThreadWaitStatus label={`${switchLabel ?? loadLabel} Send is held; you can keep typing.`} />}
+      {waitError && <ThreadWaitStatus label={waitError} error />}
+
       {/* Outside the list: ListEmptyComponent gets no counter-transform from an
           inverted FlatList, so anything placed there renders mirrored. */}
       {itemCount === 0 ? (
         <View style={styles.emptyWrap}>
-          {!isNew && <ActivityIndicator size="small" color={colors.textDim} />}
           <Text style={styles.emptyText}>
-            {isNew ? 'Session started. Say something below.' : 'Loading conversation'}
+            {loadLabel ? '' : 'Say something below.'}
           </Text>
         </View>
       ) : (
@@ -1098,6 +1128,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
         provider={effectiveProvider}
         instanceId={effectiveInstanceId ?? undefined}
         busy={rotating}
+        waitLabel={switchLabel}
+        error={waitError}
         onPick={rotateProfile}
         onClose={() => setProfilePickerOpen(false)}
       />
@@ -1144,7 +1176,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
                 style={({ pressed }) => [styles.modelChip, (pressed || rotating) && styles.pressed]}
               >
                 <Text style={styles.modelChipText} numberOfLines={1}>
-                  {rotating ? 'Switching…' : profileLabel}
+                  {rotating ? switchLabel : profileLabel}
                 </Text>
               </Pressable>
             )}

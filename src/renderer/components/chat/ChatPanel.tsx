@@ -1,3 +1,5 @@
+import { useChatWaitStore } from '../../stores/chat-wait-store'
+import { LoadingStatus } from '../ui/loading-status'
 import { perfSpan } from '../../perf'
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
@@ -121,10 +123,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const slotSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).own)
   const focusedChatSlot = useLayoutStore((state) => state.focusedChatSlot)
   const focusChatSlot = useLayoutStore((state) => state.focusChatSlot)
+  const opening = useChatWaitStore((s) => chatSlot && !landing ? s.opening[chatSlot] : undefined)
   const activeSession = useAgentStore((s) => {
     // The landing screen names its draft itself, and null there means none:
     // the draft in the slot may be for a project no longer listed.
-    const resolvedId = landing ? sessionIdOverride : sessionIdOverride ?? (chatSlot ? slotSessionId : s.activeSessionId)
+    const resolvedId = opening?.id ?? (landing ? sessionIdOverride : sessionIdOverride ?? (chatSlot ? slotSessionId : s.activeSessionId))
     return s.sessions.find((sess) => sess.id === resolvedId)
   })
   // Per-action selectors (stable identities) instead of a bare useAgentStore(),
@@ -145,7 +148,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const [slashHelpOpen, setSlashHelpOpen] = useState(false)
 
 
-  const messages = activeSession?.messages ?? []
+  const messages = opening ? [] : activeSession?.messages ?? []
   const status = activeSession?.status ?? 'idle'
 
   // Compaction nudge. A one-minute tick is what lets the banner appear on a
@@ -171,12 +174,13 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     }
     return undefined
   }, [messages])
-  const hasSession = activeSession !== undefined
-  const sessionId = activeSession?.id ?? null
+  const hasSession = activeSession !== undefined || opening !== undefined
+  const sessionId = opening?.id ?? activeSession?.id ?? null
+  const wait = useChatWaitStore((s) => sessionId ? s.waits[sessionId] : undefined)
   const followUpDefault = useFollowUpDefault(sessionId)
-  const projectPath = activeSession?.projectPath
+  const projectPath = opening?.projectPath ?? activeSession?.projectPath
   const resumeSessionId = activeSession?.resumeSessionId
-  const chatTitle = activeSession?.title ?? 'New conversation'
+  const chatTitle = opening?.title ?? activeSession?.title ?? 'New conversation'
   const otherSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).other)
   const hasDraftPayload = useDraftStore((state) => Boolean(sessionId && (
     state.drafts[sessionId]
@@ -275,10 +279,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
    * first turn because the ref never clears.
    */
   const handleAgentTypeChange = useCallback(async (t: AgentType) => {
-    if (t === 'terminal') return
+    if (opening || t === 'terminal' || (sessionId && useChatWaitStore.getState().waits[sessionId]?.pending)) return
     const prevType = agentType
     setAgentType(t)
     if (!sessionId) return
+    useChatWaitStore.getState().begin(sessionId, `Switching to ${agentLabel(t)}...`)
     const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'agent', from: prevType, to: t })
     try {
     // Persist first so a failed write cannot leave the picker and DB on
@@ -288,6 +293,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     } catch (err) {
       setAgentType(prevType)
       log.warn('failed to persist provider selection', err)
+      useChatWaitStore.getState().fail(sessionId, `Could not switch provider: ${err instanceof Error ? err.message : String(err)}`)
       return
     }
     // Persisted in-chat marker: an agent swap silently drops all context
@@ -340,17 +346,20 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     })
     messageLifecycle.settleThread(sessionId)
     } finally {
+      useChatWaitStore.getState().finish(sessionId)
       switchSpan.end()
     }
-  }, [sessionId, storeSetAgentType, agentType, activeSession?.messages?.length, appendMessage])
+  }, [opening, sessionId, storeSetAgentType, agentType, activeSession?.messages?.length, appendMessage])
 
   // Existing sessions rotate atomically on the backend: it owns stop/start,
   // native-context migration, persistence, and rollback. A conversation that
   // has never started can still save its initial profile locally.
   const handleInstanceChange = useCallback(async (nextInstanceId: string | undefined) => {
-    if (!sessionId || !nextInstanceId) return
+    if (opening || !sessionId || !nextInstanceId || useChatWaitStore.getState().waits[sessionId]?.pending) return
     const prevInstanceId = instanceId
     if (prevInstanceId === nextInstanceId) return
+    const account = useProviderInstanceStore.getState().instances.find((i) => i.id === nextInstanceId)?.displayName ?? nextInstanceId
+    useChatWaitStore.getState().begin(sessionId, `Switching to ${account}...`)
     const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'profile' })
     try {
     let result
@@ -373,6 +382,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         })
       }
     } catch (err) {
+      log.warn('profile switch failed', err)
+      useChatWaitStore.getState().fail(sessionId, `Could not switch profile: ${err instanceof Error ? err.message : String(err)}`)
       appendMessage(sessionId, {
         id: `profile_error_${Date.now()}`,
         role: 'system',
@@ -386,6 +397,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         storeSetInstanceId(sessionId, result.currentInstanceId ?? undefined)
       }
       if (result.code !== 'context-unavailable') {
+        useChatWaitStore.getState().fail(sessionId, `Could not switch profile: ${result.message}`)
         appendMessage(sessionId, {
           id: `profile_error_${Date.now()}`,
           role: 'system',
@@ -401,6 +413,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         await window.api.app.setConversationProviderInstanceId(sessionId, nextInstanceId)
       } catch (err) {
         log.warn('could not save the initial profile', err)
+        useChatWaitStore.getState().fail(sessionId, 'Could not save the selected profile.')
         return
       }
     }
@@ -445,9 +458,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     const machineForSession = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId
     if (machineForSession && machineForSession !== 'local') invalidateRemoteAuthCache(machineForSession)
     } finally {
+      useChatWaitStore.getState().finish(sessionId)
       switchSpan.end()
     }
-  }, [sessionId, storeSetInstanceId, instanceId, activeSession?.messages?.length, appendMessage, agentType])
+  }, [opening, sessionId, storeSetInstanceId, instanceId, activeSession?.messages?.length, appendMessage, agentType])
 
   // ── Provider event listener (new SDK bridge) ──────────────────
 
@@ -700,6 +714,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       },
     ): Promise<ChatSendResult> => {
       if (!sessionId) return { accepted: false, error: 'This chat is no longer available.' }
+      const pendingWait = useChatWaitStore.getState().waits[sessionId]
+      if (opening || pendingWait?.pending) return { accepted: false, error: `${pendingWait?.label ?? 'Loading conversation...'} Your draft is held. Send when ready.` }
       // A draft has no conversation yet: the first send creates one and the
       // message follows it there (services/draftChat).
       if (isDraftSessionId(sessionId)) {
@@ -915,6 +931,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         startSession: async () => {
           if (providerStartedRef.current.has(sessionId)) return
           providerStartedRef.current.add(sessionId)
+          useChatWaitStore.getState().begin(sessionId, `Starting ${agentLabel(agentType)}...`)
           try {
             const sessionForCwd = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
             const linkedCard = useKanbanStore.getState().findByConversationId(sessionId)
@@ -932,9 +949,13 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             })
             adoptStartedRuntimeMode(sessionId, started)
           } catch (error) {
+            log.warn('session start failed', error)
             providerStartedRef.current.delete(sessionId)
             updateStatus(sessionId, 'idle')
+            useChatWaitStore.getState().fail(sessionId, `Could not start ${agentLabel(agentType)}: ${error instanceof Error ? error.message : String(error)}`)
             throw error
+          } finally {
+            useChatWaitStore.getState().finish(sessionId)
           }
         },
         submit: (submission) => providerApi.submitUserTurn(submission),
@@ -1071,7 +1092,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     // these in the deps, the captured closure stays on the prior values and
     // the new session boots under the old credentials - visible as "instance
     // switch had no effect" in the registry log.
-    [sessionId, agentType, projectPath, runtimeMode, appendMessage, updateMessage, messages.length, resumeSessionId, setTitle, instanceId, model, reasoningEffort],
+    [opening, sessionId, agentType, projectPath, runtimeMode, appendMessage, updateMessage, messages.length, resumeSessionId, setTitle, instanceId, model, reasoningEffort],
   )
   handleSendRef.current = handleSend
 
@@ -1412,7 +1433,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           )}
 
           {/* Messages */}
-          <MessageList
+          {wait && <LoadingStatus label={wait.pending ? `${wait.label} Send is held; you can keep typing.` : wait.label} error={wait.error} />}
+          {opening ? <LoadingStatus label="Loading conversation..." fill /> : <MessageList
             messages={messages}
             sessionId={sessionId}
             visible={visible}
@@ -1422,7 +1444,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             onAnswerQuestion={handleAnswerQuestion}
             onPlanAction={handlePlanAction}
             onFileDiffResolve={handleFileDiffResolve}
-          />
+          />}
 
           {composer}
         </>

@@ -4,6 +4,8 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+- Speed up long-chat opens and account switches with streamed JSONL parsing, retained-memory history caching and validated transcript evidence reuse. Show loading, switching and startup states on desktop and phones while keeping drafts editable.
+
 - Add performance timing for desktop chat opens, provider/profile switches, session startup, first content, transcript comparisons/copies, handoff construction and slow backend IPC, plus a log summary script. Measurement only.
 
 ### Added

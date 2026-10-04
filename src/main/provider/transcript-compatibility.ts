@@ -4,6 +4,9 @@ import { constants } from 'node:fs'
 import { copyFile, mkdir, open, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('provider:transcript')
 
 export interface TranscriptSnapshot {
   path: string
@@ -61,6 +64,30 @@ type ReadResult =
   | { ok: true; snapshot: TranscriptSnapshot; records: string[] }
   | { ok: false; reason: string }
 
+interface ValidatedEvidence {
+  state: { size: number; mtimeMs: number; ctimeMs: number; ino: number; dev: number }
+  result: Extract<ReadResult, { ok: true }>
+}
+
+// Retain record digests, not large tool results or image bodies.
+const evidenceCache = new Map<string, ValidatedEvidence>()
+const MAX_EVIDENCE_RECORDS = 100_000
+let evidenceRecords = 0
+
+function cacheEvidence(path: string, entry: ValidatedEvidence): void {
+  const previous = evidenceCache.get(path)
+  evidenceRecords -= previous?.result.records.length ?? 0
+  evidenceCache.delete(path)
+  evidenceCache.set(path, entry)
+  evidenceRecords += entry.result.records.length
+  while (evidenceCache.size > 24 || evidenceRecords > MAX_EVIDENCE_RECORDS) {
+    const oldest = evidenceCache.entries().next().value
+    if (!oldest) break
+    evidenceRecords -= oldest[1].result.records.length
+    evidenceCache.delete(oldest[0])
+  }
+}
+
 const CHANGED_WHILE_READ = 'Transcript changed while it was being read'
 
 async function readJsonl(path: string): Promise<ReadResult> {
@@ -68,11 +95,18 @@ async function readJsonl(path: string): Promise<ReadResult> {
   try {
     handle = await open(path, 'r')
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('transcript open failed', { error })
     return { ok: false, reason: fsError(error) }
   }
 
   try {
     const before = await handle.stat()
+    const cached = evidenceCache.get(path)
+    if (cached && sameFileState(cached.state, before)) {
+      evidenceCache.delete(path)
+      evidenceCache.set(path, cached)
+      return cached.result
+    }
     const hash = createHash('sha256')
     const decoder = new StringDecoder('utf8')
     const records: string[] = []
@@ -90,10 +124,11 @@ async function readJsonl(path: string): Promise<ReadResult> {
         const recordNumber = records.length + 1
         try {
           JSON.parse(record)
-        } catch {
+        } catch (error) {
+          log.warn('invalid transcript record', { recordNumber, error: error instanceof Error ? error.name : 'unknown' })
           return { ok: false, reason: `Invalid JSON at record ${recordNumber}` }
         }
-        records.push(record)
+        records.push(createHash('sha256').update(record).digest('hex'))
         newline = carry.indexOf('\n')
       }
     }
@@ -106,7 +141,7 @@ async function readJsonl(path: string): Promise<ReadResult> {
     if (!sameFileState(before, after)) {
       return { ok: false, reason: CHANGED_WHILE_READ }
     }
-    return {
+    const result: Extract<ReadResult, { ok: true }> = {
       ok: true,
       snapshot: {
         path,
@@ -119,6 +154,8 @@ async function readJsonl(path: string): Promise<ReadResult> {
       },
       records,
     }
+    cacheEvidence(path, { state: before, result })
+    return result
   } finally {
     await handle.close()
   }
@@ -307,6 +344,7 @@ async function synchronizeOnce(
       await rm(temporaryPath, { force: true })
     }
   } catch (error) {
+    log.warn('transcript synchronization failed', { error })
     return {
       ok: false,
       reason: 'io-error',
@@ -338,11 +376,12 @@ function conflict(sourcePath: string, targetPath: string, detail: string): Trans
 }
 
 function sameFileState(
-  before: { size: number; mtimeMs: number; ino: bigint | number; dev: bigint | number },
-  after: { size: number; mtimeMs: number; ino: bigint | number; dev: bigint | number },
+  before: { size: number; mtimeMs: number; ctimeMs: number; ino: bigint | number; dev: bigint | number },
+  after: { size: number; mtimeMs: number; ctimeMs: number; ino: bigint | number; dev: bigint | number },
 ): boolean {
   return before.size === after.size &&
     before.mtimeMs === after.mtimeMs &&
+    before.ctimeMs === after.ctimeMs &&
     before.ino === after.ino &&
     before.dev === after.dev
 }

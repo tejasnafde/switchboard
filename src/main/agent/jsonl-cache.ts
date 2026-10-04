@@ -1,9 +1,10 @@
 /**
- * (mtime, size)-keyed cache of parsed JSONL session files.
+ * File-state-keyed cache of parsed JSONL session files.
  *
  * Session JSONLs are append-only (Claude/Codex rotate to NEW files instead
- * of rewriting), so `(mtimeMs, size)` identifies a snapshot; size is cheap
- * insurance against coarse mtime granularity. Every session open used to
+ * of rewriting), but replacements and rewrites are possible. Size, mtime,
+ * ctime, device and inode identify a snapshot; a changing read is never cached.
+ * Every session open used to
  * re-read and re-parse the full transcript from scratch - tens of MB for
  * long compaction-rotated threads - on every sidebar click.
  *
@@ -13,23 +14,27 @@
  * Callers MUST NOT mutate the returned array - it is shared across hits.
  */
 import type { ChatLoadTiming } from '@shared/perf-chat'
-import { stat, readFile } from 'node:fs/promises'
+import { stat } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
 import type { ChatMessage } from '@shared/types'
 import { createMainLogger } from '../logger'
+import { retainedJsonBytes } from './jsonl-memory'
 import { JsonlParser } from './jsonl-parser'
 
 const log = createMainLogger('agent:jsonl-cache')
 
 const MAX_ENTRIES = 24
-// Entries carry base64 image bodies, so a count cap alone can pin hundreds
-// of MB. File size is a good proxy for parsed footprint (base64 dominates
-// both), and it's already statted.
+// Count retained messages, not ignored tool-result records in the raw file.
 const MAX_TOTAL_BYTES = 128 * 1024 * 1024
 
 interface CacheEntry {
   mtimeMs: number
   size: number
+  ctimeMs: number
+  ino: number
+  dev: number
   messages: ChatMessage[]
+  retainedBytes: number
 }
 
 const cache = new Map<string, CacheEntry>() // Map insertion order = LRU order
@@ -40,7 +45,7 @@ function evict(): void {
     const oldest = cache.entries().next().value
     if (!oldest) break
     cache.delete(oldest[0])
-    totalBytes -= oldest[1].size
+    totalBytes -= oldest[1].retainedBytes
   }
 }
 
@@ -70,7 +75,7 @@ export async function loadJsonlCached(
 
   const key = `${source}\0${filePath}`
   const hit = cache.get(key)
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size && hit.ctimeMs === st.ctimeMs && hit.ino === st.ino && hit.dev === st.dev) {
     // LRU bump: re-insert to move to the back of the eviction order.
     cache.delete(key)
     cache.set(key, hit)
@@ -81,19 +86,26 @@ export async function loadJsonlCached(
   let messages: ChatMessage[]
   try {
     const readStart = performance.now()
-    const raw = await readFile(filePath, 'utf-8')
-    if (timing) {
-      timing.readMs += performance.now() - readStart
-      timing.diskBytes += st.size
-    }
-    const parseStart = performance.now()
+    let parseMs = 0
     messages = []
     const parser = new JsonlParser((msg) => messages.push(msg), source)
-    parser.feed(raw)
+    for await (const chunk of createReadStream(filePath, { encoding: 'utf8', highWaterMark: 64 * 1024 })) {
+      const parseStart = performance.now()
+      parser.feed(chunk as string)
+      parseMs += performance.now() - parseStart
+    }
+    const flushStart = performance.now()
     parser.flush()
+    parseMs += performance.now() - flushStart
     if (timing) {
-      timing.parseMs += performance.now() - parseStart
+      timing.readMs += performance.now() - readStart - parseMs
+      timing.parseMs += parseMs
+      timing.diskBytes += st.size
       timing.diskLines += parser.lineCount
+    }
+    const after = await stat(filePath)
+    if (st.size !== after.size || st.mtimeMs !== after.mtimeMs || st.ctimeMs !== after.ctimeMs || st.ino !== after.ino || st.dev !== after.dev) {
+      return messages
     }
   } catch (err) {
     // A fragment that stats OK but fails to read (EACCES, deleted in the
@@ -106,10 +118,11 @@ export async function loadJsonlCached(
   const prev = cache.get(key)
   if (prev) {
     cache.delete(key)
-    totalBytes -= prev.size
+    totalBytes -= prev.retainedBytes
   }
-  cache.set(key, { mtimeMs: st.mtimeMs, size: st.size, messages })
-  totalBytes += st.size
+  const retainedBytes = retainedJsonBytes(messages)
+  cache.set(key, { retainedBytes, mtimeMs: st.mtimeMs, size: st.size, ctimeMs: st.ctimeMs, ino: st.ino, dev: st.dev, messages })
+  totalBytes += retainedBytes
   evict()
   return messages
 }
