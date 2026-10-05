@@ -254,16 +254,6 @@ class NewSessionCoordinatorTest {
         assertEquals("Repo", started.single().title)
     }
 
-    @Test
-    fun titleGenerationMatchesSharedReactNativeRules() {
-        assertEquals("New conversation", NewSessionTitle.generate("```kotlin\ncode\n```"))
-        assertEquals("Please fix this now", NewSessionTitle.generate("Please `ignore` fix\nthis  now"))
-        assertEquals(
-            "A comfortably long request that should stop at a…",
-            NewSessionTitle.generate("A comfortably long request that should stop at a useful word boundary please"),
-        )
-    }
-
     private fun coordinator(
         remote: FakeNewSessionRemote,
         enqueue: NewSessionEnqueue = NewSessionEnqueue { durable("mob-id") },

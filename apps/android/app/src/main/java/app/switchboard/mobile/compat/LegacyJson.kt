@@ -192,3 +192,12 @@ internal fun LegacyJson.longOrNull(): Long? = (this as? LegacyJson.NumberValue)?
 internal fun LegacyJson.intOrNull(): Int? = longOrNull()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }?.toInt()
 internal fun LegacyJson.doubleOrNull(): Double? = (this as? LegacyJson.NumberValue)?.source?.toDoubleOrNull()
 internal fun LegacyJson.booleanOrNull(): Boolean? = (this as? LegacyJson.BooleanValue)?.value
+
+internal fun LegacyJson.Object.requiredString(name: String): String =
+    values[name]?.stringOrNull()?.takeIf { it.isNotEmpty() }
+        ?: throw LegacyJsonException("missing non-empty string $name")
+
+internal fun LegacyJson.Object.optionalString(name: String): String? = when (val value = values[name]) {
+    null, LegacyJson.NullValue -> null
+    else -> value.stringOrNull() ?: throw LegacyJsonException("$name must be a string or null")
+}

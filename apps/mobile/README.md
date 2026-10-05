@@ -116,9 +116,9 @@ dev build and fail in the released APK.
 
 An `iap` connection reaches a work VM through `tunnel.cloudproxy.app`, and the
 relay only forwards for a signed-in Google identity. `src/lib/google-auth.ts`
-runs a PKCE authorization-code flow against **accounts.google.com directly** (no
-broker: a broker's session JWT cannot call googleapis.com) and stores the refresh
-token in the device keychain via `expo-secure-store`.
+imports a refresh token minted on the desktop, refreshes it against Google's
+token endpoint directly (no broker: a broker's session JWT cannot call
+googleapis.com) and stores it in the device keychain via `expo-secure-store`.
 
 - Screen: Connections -> "Account" in the header.
 - Getting credentials onto the phone: run `node scripts/google-mint-token.mjs`
@@ -139,9 +139,6 @@ token in the device keychain via `expo-secure-store`.
   in `scripts/iap-probe.mjs` only; on device Google rejects custom-scheme
   redirects, so an Android-type client (package `app.switchboard.mobile` + the
   signing SHA-1) is required.
-- Because of that, sign-in needs a development build, not Expo Go: Expo Go's
-  redirect is `exp://…`, which Google will not accept. Everything else in the app
-  still runs in Expo Go.
 
 ## Voice input
 
@@ -158,9 +155,8 @@ everything else works.
 - `src/lib/ota-update.ts` - expo-updates OTA check on mount and on foreground
 - `src/components/UpdateBanner.tsx` - bottom banner for both update lanes,
   mounted once in `App.tsx` over the navigator
-- `src/lib/google-auth.ts` - direct Google PKCE sign-in, keychain-backed token
-  cache with single-flight silent refresh; `selfCheck()` asserts the
-  expiry/refresh decisions offline
+- `src/lib/google-auth.ts` - imported Google credentials, keychain-backed token
+  cache with single-flight silent refresh
 - `src/lib/voice.ts` - dictation wrapper over expo-speech-recognition; the
   require is guarded so Expo Go (no native module) reports "unavailable"
   instead of crashing, and `src/components/MicButton.tsx` hides itself

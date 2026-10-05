@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "dead-code-phones",
+  "summary": "Removes dead code from both phone apps. The Expo app drops the unused browser Google sign-in and its three native packages (expo-auth-session, expo-web-browser, expo-linking) plus the reversed-client URL scheme; the desktop credential import and token refresh are unchanged. The Android app drops unused policies, models, helpers, a colour and a duplicate icon; test-only helpers move to test sources. No user-visible behaviour changes.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "No desktop or backend code changed."
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/google-auth.ts",
+        "apps/mobile/src/lib/markdown.ts",
+        "apps/mobile/src/lib/outbox-model.ts",
+        "apps/mobile/package.json",
+        "apps/mobile/app.json",
+        "tests/unit/mobile-markdown.test.ts",
+        "tests/unit/mobile-outbox.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/deeplink/SwitchboardDeepLinkContract.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/outbox/OutboxModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/composer/ComposerModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/protocol/JsonValue.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/protocol/JsonTestHelpers.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/compat/LegacyAsyncStorageDecoder.kt",
+        "apps/android/contract-tests/scaffold_contract_test.sh"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No desktop or backend code changed."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data, keys or migrations change. The secure-store keys for imported Google credentials are unchanged."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["apps/mobile/package.json"],
+      "reason": "Removing three native Expo packages and a URL scheme changes the native fingerprint, so the Expo app needs a new APK through mobile-release.yml, not an OTA. The Android app ships in its next ordinary release."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck, npm test and npm run lint pass.",
+      "npm test --prefix apps/mobile and npx tsc --noEmit in apps/mobile pass.",
+      "Android :app:testDebugUnitTest, :app:compileDebugKotlin and the scaffold contract test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No device run. The desktop credential import on a phone built without the removed packages is not exercised on hardware."
+    ]
+  }
+}
