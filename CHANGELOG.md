@@ -5,7 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Removed
-- **Stale files and an unused package.** Finished one-off plans and mock-ups, two e2e probes no script runs, an unused icon, the duplicate `lint:deslop` and broken `test:coverage` scripts, the unused `@xterm/addon-webgl` dependency, and the repository copy of the deslop skill (every agent profile already has it). The worktree glossary moved from the root `CONTEXT.md` into its design doc.
+- **Stale files and an unused package.** Finished one-off plans and mock-ups, two e2e probes that no npm script invokes, an unused icon, the duplicate `lint:deslop` and broken `test:coverage` scripts, the unused `@xterm/addon-webgl` dependency, and the repository copy of the deslop skill (every agent profile already has it). The worktree glossary moved from the root `CONTEXT.md` into its design doc.
 
 - Correct performance diagnostics for concurrent send failures, failed history loads and message replacements before paint. Discover desktop and headless logs across platforms, honor data-directory overrides, and handle absent log directories.
 
