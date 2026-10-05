@@ -1,3 +1,4 @@
+import { ThreadWaitStatus } from './ThreadWaitStatus'
 /**
  * Switch the agent, or the OAuth profile within an agent, on a LIVE thread.
  *
@@ -18,9 +19,13 @@ export const ProfilePicker = memo(function ProfilePicker({
   provider,
   instanceId,
   busy,
+  waitLabel,
+  error,
   onPick,
   onClose,
 }: {
+  waitLabel?: string | null
+  error?: string | null
   visible: boolean
   instances: ProviderInstance[]
   provider: ProviderKind
@@ -43,6 +48,8 @@ export const ProfilePicker = memo(function ProfilePicker({
             Switching restarts this session on the new credentials. The conversation is kept.
           </Text>
 
+          {busy && waitLabel && <ThreadWaitStatus label={waitLabel} />}
+          {error && <ThreadWaitStatus label={error} error />}
           <ScrollView style={styles.list}>
             {byAgent.map((agent) => (
               <View key={agent.kind} style={styles.group}>

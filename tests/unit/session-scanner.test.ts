@@ -6,7 +6,6 @@ import { readFileSync } from 'fs'
 import { tmpdir } from 'os'
 import {
   encodeClaudeProjectPath,
-  isClaudeDirForProject,
   scanClaudeCodeSessions,
   scanCodexSessionCopies,
   scanCodexSessions,
@@ -115,53 +114,6 @@ describe('session scanner - Claude Code paths', () => {
   it('stats indexed Claude copies concurrently instead of serializing large recovery inventories', async () => {
     const source = readFileSync(new URL('../../src/main/projects/session-scanner.ts', import.meta.url), 'utf8')
     expect(source).toMatch(/await Promise\.all\(index\.map\(async \(entry/)
-  })
-})
-
-/**
- * Regression tests for the parent/child project bleed bug.
- *
- * Historical bug (pre-fix): session-scanner used `dir.includes(encoded)` so
- * parent project `/Users/foo/ssg` would match the Claude dir for child
- * `/Users/foo/ssg/submodule` (because the child's encoded string starts with
- * the parent's). Sessions bled across projects in the sidebar and archive
- * state couldn't reliably hide them.
- *
- * The matching predicate `isClaudeDirForProject` now enforces exact equality.
- */
-describe('session scanner - exact dir matching (no parent/child bleed)', () => {
-  const parentPath = '/Users/foo/ssg'
-  const childPath = '/Users/foo/ssg/submodule'
-  const parentDir = '-Users-foo-ssg'
-  const childDir = '-Users-foo-ssg-submodule'
-  const unrelatedDir = '-Users-foo-other'
-
-  it('matches a project to its exact encoded dir', () => {
-    expect(isClaudeDirForProject(parentDir, parentPath)).toBe(true)
-    expect(isClaudeDirForProject(childDir, childPath)).toBe(true)
-  })
-
-  it('does NOT match parent project against child dir (the real bug)', () => {
-    // The child dir name begins with the parent's encoded string.
-    // A substring-based match would incorrectly return true here.
-    expect(isClaudeDirForProject(childDir, parentPath)).toBe(false)
-  })
-
-  it('does NOT match child project against parent dir', () => {
-    expect(isClaudeDirForProject(parentDir, childPath)).toBe(false)
-  })
-
-  it('does NOT match unrelated dirs', () => {
-    expect(isClaudeDirForProject(unrelatedDir, parentPath)).toBe(false)
-    expect(isClaudeDirForProject(unrelatedDir, childPath)).toBe(false)
-  })
-
-  it('documents why the old substring match was wrong (prefix collision)', () => {
-    // This is the exact condition that would have caused the bleed.
-    // Kept as a captured artifact so nobody reintroduces `dir.includes(...)`.
-    const encoded = encodeClaudeProjectPath(parentPath)
-    expect(childDir.startsWith(encoded)).toBe(true) // bleed-trigger
-    expect(childDir === encoded).toBe(false)        // correct behavior
   })
 })
 

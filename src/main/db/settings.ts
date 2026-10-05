@@ -43,10 +43,6 @@ export function getSessionLayout(sessionId: string): StoredSessionLayout | null 
   return { layoutJson: row.layout_json, launchConfigName: row.launch_config_name }
 }
 
-export function removeSessionLayout(sessionId: string): void {
-  getDb().prepare('DELETE FROM session_layouts WHERE session_id = ?').run(sessionId)
-}
-
 /** Every row whose key starts with `prefix`, for families of keys such as project overrides. */
 export function listSettingsWithPrefix(prefix: string): Array<{ key: string; value: string }> {
   const escaped = prefix.replace(/[\\%_]/g, (c) => `\\${c}`)

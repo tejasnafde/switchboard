@@ -10,11 +10,9 @@
         "src/main/git/dependency-clone.ts",
         "src/main/worktree.ts",
         "src/main/worktree-creation/git-adapter.ts",
-        "src/main/git/legacy-session-worktree-lease.ts",
         "tests/unit/dependency-clone.test.ts",
         "tests/unit/worktree.test.ts",
-        "tests/unit/worktree-creation-git-adapter.test.ts",
-        "tests/unit/legacy-session-worktree-lease.test.ts"
+        "tests/unit/worktree-creation-git-adapter.test.ts"
       ]
     },
     "reactNativeIos": {
@@ -30,7 +28,6 @@
       "evidence": [
         "src/main/git/dependency-clone.ts",
         "src/main/worktree-creation/git-adapter.ts",
-        "src/main/git/legacy-session-worktree-lease.ts",
         "tests/unit/dependency-clone.test.ts"
       ]
     },

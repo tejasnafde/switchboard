@@ -8,7 +8,6 @@ export const TerminalChannels = {
   DATA: 'terminal:data',
   RESIZE: 'terminal:resize',
   KILL: 'terminal:kill',
-  CREATED: 'terminal:created',
   OUTPUT: 'terminal:output',
   EXIT: 'terminal:exit',
 } as const
@@ -36,8 +35,6 @@ export const AppChannels = {
   EXPORT_MARKDOWN: 'app:export-markdown',
   LOAD_SESSION_BY_ID: 'app:load-session-by-id',
   ATTACH_TO_THREAD: 'app:attach-to-thread',
-  DETACH_SESSION: 'app:detach-session',
-  LIST_ANCESTRY: 'app:list-ancestry',
   GET_CONVERSATION_RUNTIME_MODE: 'app:get-conversation-runtime-mode',
   SET_CONVERSATION_RUNTIME_MODE: 'app:set-conversation-runtime-mode',
   /** Per-conversation Follow-chip setting (`FollowSuggestionMode`). */
@@ -49,7 +46,6 @@ export const AppChannels = {
   SET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:set-conversation-provider-instance-id',
   GET_CONVERSATION_MODEL: 'app:get-conversation-model',
   SET_CONVERSATION_MODEL: 'app:set-conversation-model',
-  GET_CONVERSATION_REASONING_EFFORT: 'app:get-conversation-reasoning-effort',
   SET_CONVERSATION_REASONING_EFFORT: 'app:set-conversation-reasoning-effort',
   SET_CONVERSATION_PROVIDER_SELECTION: 'app:set-conversation-provider-selection',
   GET_CONVERSATION_PENDING_HANDOFF: 'app:get-conversation-pending-handoff',
@@ -70,7 +66,6 @@ export const AppChannels = {
   WORKSPACE_RECOLOR: 'app:workspace-recolor',
   WORKSPACE_DELETE: 'app:workspace-delete',
   WORKSPACE_REORDER: 'app:workspace-reorder',
-  ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
   PROJECT_ORGANIZE: 'app:project-organize',
   FORK_CONVERSATION: 'app:fork-conversation',
   GET_CONVERSATION_FORK: 'app:get-conversation-fork',
@@ -92,7 +87,6 @@ export const AppChannels = {
   /** (Re)start the mobile pairing endpoint from saved settings; returns status. */
   MOBILE_PAIRING_APPLY: 'mobile-pairing:apply',
   /** Current mobile pairing endpoint status without changing anything. */
-  MOBILE_PAIRING_STATUS: 'mobile-pairing:status',
   /** Mint a one-time pairing code for the QR. Replaces any unused one. */
   MOBILE_PAIRING_CODE: 'mobile-pairing:code',
   /** Paired devices, with the credential itself omitted. */
@@ -187,14 +181,6 @@ export const KanbanChannels = {
   DELETE: 'kanban:delete',
   CREATE_WORKTREE: 'kanban:create-worktree',
   REMOVE_WORKTREE: 'kanban:remove-worktree',
-  LIST_WORKTREES: 'kanban:list-worktrees',
-  LIST_STALE_WORKTREES: 'kanban:list-stale-worktrees',
-  /**
-   * Remove a worktree by absolute path (not card id). Used by the stale
-   * cleanup flow where the worktree may not be linked to any card. Caller
-   * passes the project root so we know which repo to operate on.
-   */
-  REMOVE_STALE_WORKTREE: 'kanban:remove-stale-worktree',
 } as const
 
 /**
@@ -248,7 +234,6 @@ export const GitChannels = {
    * created. Caller stamps the result onto the session's `worktreePath`
    * so START_SESSION uses it as cwd.
    */
-  CREATE_SESSION_WORKTREE: 'git:create-session-worktree',
 } as const
 
 export const WorktreeCreationChannels = {
@@ -334,7 +319,6 @@ export const PushChannels = {
   REGISTER: 'push:register',
   UNREGISTER: 'push:unregister',
   VIEWING: 'push:viewing',
-  LIST: 'push:list',
 } as const
 
 export const IdeChannels = {
@@ -396,7 +380,6 @@ export const ProviderChannels = {
   RELOCATE_EXECUTION_ROOT: 'provider:relocate-execution-root',
   SET_RUNTIME_MODE: 'provider:set-runtime-mode',
   SET_MODEL: 'provider:set-model',
-  OPENCODE_LIST_MODELS: 'provider:opencode-list-models',
   LIST_MODELS: 'provider:list-models',
   /** Live catalog of an instance without a chat; `threadId` only routes it to a machine. */
   LIST_CATALOG: 'provider:list-catalog',

@@ -50,7 +50,6 @@ const SCOPE_REQUIRED_CHANNELS: Partial<Record<DeviceScope, readonly string[]>> =
   admin: [
     'worktree-manager:remove',
     'worktree-manager:set-protection',
-    'kanban:remove-stale-worktree',
     ...Object.values(PullRequestWriteChannels),
     // A session link lets two agents message each other past the hop limit,
     // without a card in auto mode. Creating or extending one is consent a

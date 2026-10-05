@@ -130,6 +130,23 @@ class ThreadInteractionPolicyTest {
     }
 
     @Test
+    fun typedTextReplacesThePicksAndAPickClearsIt() {
+        val item = question("request-1", multiSelect = true)
+        var selections = QuestionSelectionReducer.toggle(QuestionSelections.empty(), item, 0, "A")
+
+        selections = QuestionSelectionReducer.type(selections, item, 0, "   ")
+        assertEquals(listOf(emptyList<String>()), selections.forRequest("request-1"))
+        assertFalse(QuestionSelectionReducer.canSubmit(selections, item))
+
+        selections = QuestionSelectionReducer.type(selections, item, 0, " neither ")
+        assertEquals(ThreadUiAction.AnswerQuestion("request-1", listOf(listOf("neither"))), ThreadInteractionPolicy.answer(item, selections))
+
+        selections = QuestionSelectionReducer.toggle(selections, item, 0, "B")
+        assertEquals(listOf(""), selections.otherFor("request-1"))
+        assertEquals(ThreadUiAction.AnswerQuestion("request-1", listOf(listOf("B"))), ThreadInteractionPolicy.answer(item, selections))
+    }
+
+    @Test
     fun incompleteOrAlreadyAnsweredQuestionCannotSubmit() {
         val pending = question("pending", multiSelect = false)
         val answered = pending.copy(answers = listOf(listOf("A")))

@@ -26,12 +26,21 @@
     "reactNativeIos": {
       "status": "staged",
       "flag": "mobile_peer_link_banner",
-      "followUpRelease": "mobile-v0.6.0. The phone neither creates nor extends links (refused for its chat scope in device-auth.ts, by design) and shows no banner or Not delivered row yet. Nothing unfinished is reachable: the React Native client calls none of the new channels, ignores provider:peer-links-changed and the new peer.undelivered event (its reducer has a default branch), and does not render system rows, so the stored Not delivered marker never appears raw. What it already gets: the link-spent push (kind 'link', routed by threadId like every other push) and the ordinary peer-message rows for linked exchanges. The follow-up adds the banner with Unlink, which the phone scope already allows."
+      "followUpRelease": "mobile-v0.6.0, for the link banner with Unlink only. The phone neither creates nor extends links (refused for its chat scope in device-auth.ts, by design). The Not delivered row and its Send now ship on the phone (see docs/feature-parity/phone-system-markers.json): it renders the stored row and the live peer.undelivered event, and Send calls provider:deliver-peer-message, which the chat scope allows. Still missing, and unreachable: the banner, so the client calls no link channel and ignores provider:peer-links-changed. The link-spent push (kind 'link') already arrives.",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/lib/thread-history.ts",
+        "apps/mobile/src/stores/chat.ts"
+      ]
     },
     "nativeAndroid": {
       "status": "staged",
       "flag": "native_peer_link_banner",
-      "followUpRelease": "Native Android 0.6.0. Same as the React Native client: no linking or extending (refused for the phone scope), no banner or Not delivered row yet, and peer.undelivered decodes as an Extension event that nothing renders. The link-spent push carries kind 'link'; RemotePushNotificationPolicy only builds its own completion notification for 'done', so whether the system shows this one in the Android app is unverified (see notExercised)."
+      "followUpRelease": "Native Android 0.6.0, for the link banner with Unlink only. No linking or extending (refused for the phone scope). The Not delivered row and its Send ship in Android 0.5.15 (see docs/feature-parity/phone-system-markers.json), from history and from the live peer.undelivered event. The link-spent push carries kind 'link'; RemotePushNotificationPolicy only builds its own completion notification for 'done', so whether the system shows this one in the Android app is unverified (see notExercised).",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SystemMarkers.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt"
+      ]
     },
     "sharedBackendApi": {
       "status": "implemented",

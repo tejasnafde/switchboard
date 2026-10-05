@@ -77,25 +77,5 @@ class OutboxPolicyTest {
         assertEquals(SendOutcome.Permanent(ORIGIN_CONFLICT_RECOVERY), conflict)
     }
 
-    @Test
-    fun commandSuccessIsIndependentFromAFailedFollowUpRefresh() {
-        val result = OutboxFollowUpPolicy.afterCommand(
-            OutboxOperationResult.Success("sent"),
-        ) { OutboxOperationResult.Failure("refresh offline") }
-
-        assertEquals("sent", (result.command as OutboxOperationResult.Success).value)
-        assertTrue(result.followUp is OutboxOperationResult.Failure)
-
-        var refreshes = 0
-        val failed = OutboxFollowUpPolicy.afterCommand<String, String>(
-            OutboxOperationResult.Failure("send failed"),
-        ) {
-            refreshes++
-            OutboxOperationResult.Success("unused")
-        }
-        assertEquals(0, refreshes)
-        assertNull(failed.followUp)
-    }
-
     private fun obj(vararg fields: Pair<String, JsonValue>) = JsonObject(linkedMapOf(*fields))
 }

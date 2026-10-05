@@ -1,3 +1,4 @@
+import { ThreadWaitStatus } from '../components/ThreadWaitStatus'
 /**
  * One chat thread: inverted feed over the chat store's FeedItems, a status
  * header (dot + context meter + cost), and a pinned composer with a runtime
@@ -76,8 +77,9 @@ import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
 import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '@shared/agent-approval-cards'
-import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
+import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PeerUndeliveredItem, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
 import { styles } from './thread-screen.styles'
+import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
 import { collapseFileEdits, type FeedRow } from '../lib/file-groups'
 
@@ -129,6 +131,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const [instanceId, setInstanceId] = useState<string | undefined>(undefined)
   const [profilePickerOpen, setProfilePickerOpen] = useState(false)
   const [rotating, setRotating] = useState(false)
+  const [switchLabel, setSwitchLabel] = useState<string | null>(null)
+  const [loadLabel, setLoadLabel] = useState<string | null>(isNew ? null : 'Loading conversation...')
+  const [waitError, setWaitError] = useState<string | null>(null)
+  const rotatingRef = useRef(false)
   const [forkMetadata, setForkMetadata] = useState<ForkLineageMetadata | null>(thread.historyMeta?.forkMetadata ?? null)
   const olderLoadingRef = useRef(false)
   const [olderLoading, setOlderLoading] = useState(false)
@@ -191,6 +197,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // idempotent server-side, this just avoids a redundant round-trip). The ref
   // guards double-run within one mount; a fresh mount re-attaches harmlessly.
   const startedKeyRef = useRef<string | null>(null)
+  // Each load gets an id, so a load superseded by a re-seed cannot clear the
+  // newer load's state or apply its late history.
+  const loadSeqRef = useRef(0)
+  // A thread opened while its backend has no client loads once one appears.
+  const connectionStatus = useConnectionsStore((s) => s.status[connectionId])
   // A re-seed request has to defeat the once-per-mount guard, or a feed that
   // lost events while the phone was away stays holed until the app restarts.
   const staleGeneration = thread.reseedRevision ?? 0
@@ -212,9 +223,16 @@ export default function ThreadScreen({ route, navigation }: Props) {
     startedKeyRef.current = key
     const client = getClient(connectionId)
     if (!client) {
+      // Supersede a load still running on the client that just went away.
+      loadSeqRef.current++
       startedKeyRef.current = null
+      setLoadLabel(null)
       return
     }
+    const seq = ++loadSeqRef.current
+    const isCurrent = () => loadSeqRef.current === seq
+    setLoadLabel('Loading conversation...')
+    setWaitError(null)
     void (async () => {
       let provider: ProviderKind = providerKindFor(thread.provider ?? thread.historyMeta?.agentType)
       let loadedMeta: Awaited<ReturnType<typeof client.loadSessionById>>['meta'] = thread.historyMeta ?? null
@@ -222,7 +240,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       try {
         if (shouldLoadPhoneHistory(thread.historyLoaded === true && thread.cached !== true, invalidated)) {
           const loaded = await client.loadPhoneHistory(threadId)
-          if ((useChatStore.getState().threads[key]?.reseedRevision ?? 0) !== staleGeneration) return
+          if (!isCurrent() || (useChatStore.getState().threads[key]?.reseedRevision ?? 0) !== staleGeneration) return
           loadedMeta = loaded.meta
           setForkMetadata(loaded.meta?.forkMetadata ?? null)
           provider = providerKindFor(loaded.meta?.agentType)
@@ -253,8 +271,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
           }))
         }
       } catch (err) {
+        log.warn('conversation load failed', err)
+        if (!isCurrent()) return
+        setWaitError('Could not load conversation. Reopen this chat to retry.')
+        setLoadLabel(null)
+        startedKeyRef.current = null
         reportError(err)
+        return
       }
+      setLoadLabel(`Starting ${provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : 'OpenCode'}...`)
       try {
         // Mirrors the desktop resume path: the conversation id doubles as the
         // resumeSessionId so the Claude adapter can --resume the JSONL chain.
@@ -276,12 +301,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
         })
         // A reattach to a live session answers with its status and emits
         // none, so a cached chat kept 'connecting' until its next turn.
+        if (!isCurrent()) return
         useChatStore.getState().ingest(connectionId, { type: 'status', threadId, status: started.status })
       } catch (err) {
+        log.warn('session start failed', err)
+        if (!isCurrent()) return
         startedKeyRef.current = null
+        setWaitError(err instanceof Error ? err.message : String(err))
         reportError(err)
         return
+      } finally {
+        if (isCurrent()) setLoadLabel(null)
       }
+      if (!isCurrent()) return
       // Recover any approval/question/plan card a resume gap or a reload
       // dropped - this effect re-runs on both (staleGeneration), so it also
       // covers an ordinary reconnect. Older backends have no handler for the
@@ -318,7 +350,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         }
       }
     })()
-  }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated, thread.cached])
+  }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated, thread.cached, connectionStatus])
 
   const loadOlder = useCallback(() => {
     const client = getClient(connectionId)
@@ -400,7 +432,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
         reportError(new Error('Backend not connected.'))
         return
       }
-      setProfilePickerOpen(false)
+      if (rotatingRef.current || loadLabel) return
+      rotatingRef.current = true
+      setWaitError(null)
+      setSwitchLabel(`Switching to ${instances.find((i) => i.id === nextInstanceId)?.displayName ?? nextProvider}...`)
       setRotating(true)
       void (async () => {
         try {
@@ -435,14 +470,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
           }
           setProvider(nextProvider)
           setInstanceId(nextInstanceId)
+          setProfilePickerOpen(false)
         } catch (err) {
+          log.warn('profile switch failed', err)
+          setWaitError(err instanceof Error ? err.message : String(err))
           reportError(err)
         } finally {
+          rotatingRef.current = false
+          setSwitchLabel(null)
           setRotating(false)
         }
       })()
     },
-    [connectionId, threadId, projectPath, worktreePath, provider, instanceId, reportError],
+    [connectionId, threadId, projectPath, worktreePath, provider, instanceId, reportError, instances, loadLabel],
   )
 
   useEffect(() => {
@@ -554,6 +594,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // `textOverride` is for one-tap actions like the Compact banner: it sends
   // that text alone and leaves the user's draft and attachments untouched.
   const send = (textOverride?: string) => {
+    const blocked = blockedSendReason(loadLabel, rotatingRef.current)
+    if (blocked) {
+      log.info('send blocked by conversation wait', { threadId, reason: blocked })
+      reportError(new Error(blocked))
+      return
+    }
     const text = (textOverride ?? draft).trim()
     // An image with no caption is a legitimate turn.
     if (!text && attachments.length === 0) return
@@ -624,6 +670,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
   }
 
   const implementPlan = useCallback(() => {
+    const blocked = blockedSendReason(loadLabel, rotatingRef.current)
+    if (blocked) {
+      log.info('plan implementation blocked by conversation wait', { threadId, reason: blocked })
+      reportError(new Error(blocked))
+      return
+    }
     const client = getClient(connectionId)
     if (!client) {
       reportError(new Error('Backend not connected.'))
@@ -645,7 +697,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       useChatStore.getState().removeUserMessage(key, turn.bubbleId)
       reportError(err)
     })
-  }, [connectionId, threadId, key, reportError, settlePick])
+  }, [connectionId, threadId, key, reportError, settlePick, loadLabel])
 
   const decideApproval = useCallback(
     (requestId: string, decision: 'approve' | 'deny', response?: HostWriteResponse) => {
@@ -674,7 +726,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const submitAnswers = useCallback(
     (requestId: string, answers: string[][]) => {
-      getClient(connectionId)?.answerQuestion(threadId, requestId, answers).catch(reportError)
+      getClient(connectionId)?.answerQuestion(threadId, requestId, answers).catch((err) => {
+        reportError(err)
+        // The card would otherwise stay Answered with no way to send it again.
+        useChatStore.getState().reopenQuestion(key, requestId)
+      })
       useChatStore.getState().markQuestionAnswered(key, requestId, answers)
     },
     [connectionId, threadId, key, reportError],
@@ -826,6 +882,30 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
   }, [connectionId, threadId])
 
+  // Same for a kept Not delivered row: a refusal shows on the row.
+  const [undeliveredSending, setUndeliveredSending] = useState<ReadonlySet<string>>(new Set())
+  const [undeliveredErrors, setUndeliveredErrors] = useState<Record<string, string | undefined>>({})
+  const sendUndelivered = useCallback(async (item: Extract<FeedItem, { kind: 'undelivered' }>) => {
+    const client = getClient(connectionId)
+    if (!client) return
+    const id = item.messageId
+    setUndeliveredErrors((current) => ({ ...current, [id]: undefined }))
+    setUndeliveredSending((current) => new Set(current).add(id))
+    try {
+      // The row turns sent on the backend's peer.undelivered event.
+      await client.deliverPeerMessage({ fromThreadId: threadId, targetThreadId: item.row.to, text: item.row.text, undeliveredId: id })
+    } catch (err) {
+      log.warn(`sending undelivered peer message ${id} failed`, err)
+      setUndeliveredErrors((current) => ({ ...current, [id]: err instanceof Error ? err.message : String(err) }))
+    } finally {
+      setUndeliveredSending((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+    }
+  }, [connectionId, threadId])
+
   const renderItem = useCallback(
     ({ item }: { item: FeedRow }) => {
       switch (item.kind) {
@@ -914,6 +994,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
           )
         case 'synthetic':
           return <SyntheticRow part={item.part} />
+        case 'undelivered':
+          return (
+            <PeerUndeliveredItem
+              item={item}
+              sending={undeliveredSending.has(item.messageId)}
+              error={undeliveredErrors[item.messageId]}
+              onSend={() => void sendUndelivered(item)}
+            />
+          )
         case 'error':
           return <Text style={styles.errorText}>{item.message}</Text>
       }
@@ -938,6 +1027,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
       actOnHeld,
       heldErrors,
       toggleFileGroup,
+      undeliveredSending,
+      undeliveredErrors,
+      sendUndelivered,
     ],
   )
 
@@ -1071,13 +1163,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {(switchLabel || loadLabel) && <ThreadWaitStatus label={`${switchLabel ?? loadLabel} Your draft is kept; tap Send when ready.`} />}
+      {waitError && <ThreadWaitStatus label={waitError} error />}
+
       {/* Outside the list: ListEmptyComponent gets no counter-transform from an
           inverted FlatList, so anything placed there renders mirrored. */}
       {itemCount === 0 ? (
         <View style={styles.emptyWrap}>
-          {!isNew && <ActivityIndicator size="small" color={colors.textDim} />}
           <Text style={styles.emptyText}>
-            {isNew ? 'Session started. Say something below.' : 'Loading conversation'}
+            {loadLabel ? '' : 'Say something below.'}
           </Text>
         </View>
       ) : (
@@ -1136,6 +1230,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
         provider={effectiveProvider}
         instanceId={effectiveInstanceId ?? undefined}
         busy={rotating}
+        waitLabel={switchLabel}
+        error={waitError}
         onPick={rotateProfile}
         onClose={() => setProfilePickerOpen(false)}
       />
@@ -1182,7 +1278,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
                 style={({ pressed }) => [styles.modelChip, (pressed || rotating) && styles.pressed]}
               >
                 <Text style={styles.modelChipText} numberOfLines={1}>
-                  {rotating ? 'Switching…' : profileLabel}
+                  {rotating ? switchLabel : profileLabel}
                 </Text>
               </Pressable>
             )}

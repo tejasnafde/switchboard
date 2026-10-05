@@ -1,0 +1,70 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "perf-timing",
+  "summary": "Measure slow chat and provider paths without changing their behavior. Main and renderer share monotonic timing thresholds; chat history responses add optional diagnostic timing fields, and a local script summarizes persisted spans. Review fixes preserve span ownership across concurrent sends, distinguish failed history loads from empty chats, validate the committed array at paint, and discover desktop/headless logs across platforms.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/perf.ts",
+        "src/renderer/perf.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/services/perf-chat-open.ts",
+        "tests/unit/perf-chat-open.test.ts",
+        "src/main/perf-log-paths.ts",
+        "tests/unit/perf-log-paths.test.ts",
+        "tests/unit/perf-summary-cli.test.ts",
+        "tests/unit/provider-registry-runtime-mode-sync.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No phone UI or chat-open instrumentation is added. Optional timing and loadStatus history fields are ignored by existing phone clients; server-side request measurements apply to phone calls."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No Android UI or native code changes. Optional timing and loadStatus history fields are ignored by existing Android clients; server-side request measurements apply to phone calls."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/perf-timing.ts",
+        "src/shared/perf-chat.ts",
+        "src/shared/perf-summary.ts",
+        "src/main/ipc/app.ts",
+        "src/main/backend/perf-handler.ts",
+        "src/main/backend/host.ts",
+        "src/main/backend/ws-host.ts",
+        "src/main/backend/tcp-host.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/perf-timing.test.ts",
+        "tests/unit/perf-handler.test.ts",
+        "tests/unit/status-line-backfill.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Timing is diagnostic metadata in existing rotating log files and optional response fields. No persisted conversation setting, database schema, migration or transcript content changes."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, native dependency, signing, deep link, OTA runtime, release channel or packaging changes. Optional timing and loadStatus metadata is backward compatible with existing desktop and phone clients; older backends without loadStatus remain supported."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Vitest fake-clock threshold and span tests, summary parser/percentile tests, slow IPC behavior tests, and chat commit/frame lifecycle tests.",
+      "Root typecheck and full vitest gate.",
+      "Round 2 regression tests cover rejected/throwing concurrent submissions, originless send retries, failed/empty history responses, pre-paint replacements, platform log paths, missing directories, other filesystem failures, explicit filenames and aliased log directories."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No real provider accounts, phone hardware, production timing session or network deployment exercised.",
+      "React commit duration logging skipped: production Profiler is unavailable and component-function timers do not measure full React commits.",
+      "No visual baselines changed: no markup, styling or visible behavior changes.",
+      "Summary CLI exercised on macOS with private fixtures. Windows/Linux data-path rules are unit-tested; no desktop binaries or hardware on those platforms were exercised."
+    ]
+  }
+}

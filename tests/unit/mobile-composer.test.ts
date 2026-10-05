@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   composerMode,
+  blockedSendReason,
   gestureOutcome,
   holdHint,
   LOCK_DISTANCE,
@@ -79,5 +80,13 @@ describe('holdHint', () => {
     expect(holdHint('none')).toMatch(/slide up/i)
     expect(holdHint('locked')).toMatch(/keep recording/i)
     expect(holdHint('cancelled')).toMatch(/cancel/i)
+  })
+})
+
+describe('blockedSendReason', () => {
+  it('explains a blocked tap while keeping the composer available for retry', () => {
+    expect(blockedSendReason('Loading conversation...', false)).toBe('Loading conversation... Message not sent. Your draft and attachments are kept; tap Send when ready.')
+    expect(blockedSendReason(null, true)).toBe('Switching provider... Message not sent. Your draft and attachments are kept; tap Send when ready.')
+    expect(blockedSendReason(null, false)).toBeNull()
   })
 })

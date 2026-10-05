@@ -50,7 +50,6 @@ vi.mock('../../src/main/db/database', () => ({
   recordConversationSegment: vi.fn(),
   updateConversationSessionId: vi.fn(),
   saveMessageIfAbsent: () => true,
-  getMessageForConversationById: () => undefined,
   getConversationRuntimeMode: () => null,
   getConversationModel: () => null,
   getConversationAgentType: () => null,

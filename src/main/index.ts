@@ -1,4 +1,5 @@
 // Crash paths go to the on-disk log, not just stdout.
+const rendererPerfLog = createMainLogger('perf')
 const crashLog = createMainLogger('main:crash')
 
 // Prevent EPIPE crashes from killing the app
@@ -61,7 +62,7 @@ import { ProviderRegistry } from './provider/provider-registry'
 import { disposeUsageProbes } from './provider/usage'
 import { getDb, closeDb, getSetting, setSetting, getProjects, reopenDbAfterAbortedQuit } from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
-import { getLogDir, getLogFilePath, createMainLogger } from './logger'
+import { createMainLogger } from './logger'
 import { warmShellEnv } from './shell-env'
 import {
   createDefaultWorktreeCreationRuntime,
@@ -554,23 +555,16 @@ function createWindow(): BrowserWindow {
     if (started) reportInstallStatus(window, { kind: 'installing' })
   })
 
-  // Expose log paths for Settings/About
-  try {
-    ipcMain.removeHandler('app:get-log-paths')
-  } catch (err) {
-    // Expected on first registration - there is no handler to remove yet.
-    log.debug('removeHandler(app:get-log-paths) - no prior handler', err)
-  }
-  ipcMain.handle('app:get-log-paths', () => ({
-    dir: getLogDir(),
-    file: getLogFilePath(),
-  }))
-
   // Forward renderer console to main process stdout for debugging
   window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     try {
       const levels = ['debug', 'info', 'warn', 'error']
       const src = sourceId ? sourceId.split('/').pop() : ''
+      if (message.startsWith('[SB:perf] ')) {
+        const perfLine = message.slice('[SB:perf] '.length)
+        if (level === 0) rendererPerfLog.debug(perfLine)
+        else rendererPerfLog.info(perfLine)
+      }
       console.log(`[renderer:${levels[level] ?? level}] ${message} (${src}:${line})`)
       // EPIPE if stdout is closed; the scoped logger also writes to console,
       // so logging here risks the same throw.
@@ -777,7 +771,6 @@ app.whenReady().then(() => {
   mobileEndpoint = new MobileEndpoint()
   const backendHost: BackendHost = new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
   backendHost.handle(AppChannels.MOBILE_PAIRING_APPLY, () => mobileEndpoint!.apply())
-  backendHost.handle(AppChannels.MOBILE_PAIRING_STATUS, () => mobileEndpoint!.status())
   // These sit behind the `admin` scope (see device-auth): a paired phone must
   // not be able to mint itself another session or revoke the devices that
   // could remove it.

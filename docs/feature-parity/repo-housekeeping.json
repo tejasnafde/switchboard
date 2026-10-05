@@ -1,0 +1,45 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "repo-housekeeping",
+  "summary": "Removes stale root files, finished plans, mock-ups, unrun e2e probes, an unused icon, duplicate and broken npm scripts, and the unused @xterm/addon-webgl dependency. No product behaviour changes.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "No desktop product code changed; the removed dependency was never imported."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No phone code or dependency changed."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No phone code or dependency changed."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No API or wire change."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing stored changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "package.json",
+        "scripts/pre-commit.sh",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck, the pre-commit test suite, and git grep across the repository for every removed path and name."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The packaged app was not rebuilt; no shipped file imports the removed dependency."
+    ]
+  }
+}

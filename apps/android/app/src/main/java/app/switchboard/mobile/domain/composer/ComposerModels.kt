@@ -51,26 +51,6 @@ data class ComposerDraft(
     val editingOrigin: String? = null,
 )
 
-data class ComposerAttachmentSelection(
-    val attachments: List<ComposerAttachment>,
-    val rejected: List<ComposerAttachment>,
-)
-
-object ComposerAttachmentPolicy {
-    fun select(
-        existing: List<ComposerAttachment>,
-        candidates: List<ComposerAttachment>,
-    ): ComposerAttachmentSelection = ComposerAttachmentSelection(
-        attachments = existing + candidates,
-        rejected = emptyList(),
-    )
-}
-
-object ComposerDraftPolicy {
-    fun canSend(draft: ComposerDraft): Boolean =
-        draft.text.isNotBlank() || draft.attachments.isNotEmpty()
-}
-
 enum class OutboxUiAction {
     Retry,
     Abandon,

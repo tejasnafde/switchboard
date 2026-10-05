@@ -1,6 +1,8 @@
 package app.switchboard.mobile.data.thread
 
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.PeerUndelivered
+import app.switchboard.mobile.domain.thread.SystemMarkers
 import app.switchboard.mobile.domain.thread.SyntheticUserMessage
 import app.switchboard.mobile.domain.thread.ThreadEventDecoder
 import app.switchboard.mobile.domain.thread.ThreadEventScope
@@ -685,6 +687,27 @@ class ThreadStoreReducerTest {
         val feed = state.thread("mac-a", "thread-1")!!.feed
         assertEquals(2, feed.filterIsInstance<FeedItem.Error>().size)
         assertEquals(feed.size, feed.map { it.id }.toSet().size)
+    }
+
+    @Test
+    fun liveSystemRowEventsLandOnTheHistoryRowAndASentUpdateReplacesIt() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val refused = arrayOf(
+            "messageId" to s("pu_1"), "peerThreadId" to s("agent_2"), "peerLabel" to s("Roadmap"),
+            "fromLabel" to s("Docs"), "reason" to s("link-expired"), "text" to s("Found it"),
+            "notify" to b(true), "at" to n(1),
+        )
+        state = ingest(state, "mac-a", 1, 1, event("peer.undelivered", *refused, "sent" to b(false)))
+        state = ingest(state, "mac-a", 1, 2, event("peer.undelivered", *refused, "sent" to b(true)))
+        state = ingest(
+            state, "mac-a", 1, 3,
+            event("approval.result", "messageId" to s("apr_1"), "requestId" to s("sbmcp_1"), "content" to s("[[sb:approval-result]] {}"), "at" to n(2)),
+        )
+
+        val rows = state.thread("mac-a", "thread-1")!!.feed.filterIsInstance<FeedItem.RawNotice>()
+        assertEquals(listOf("h-pu_1", "h-apr_1"), rows.map { it.id })
+        assertTrue(rows.all { it.eventType == SystemMarkers.ROW_EVENT_TYPE })
+        assertEquals(PeerUndelivered("agent_2", "Roadmap", "link-expired", "Found it", true), SystemMarkers.undelivered(rows[0].text))
     }
 
     private fun ingestUnsequenced(state: ThreadStoreState, connectionId: String, generation: Long, raw: JsonObject) =

@@ -5,7 +5,7 @@
 import { PushChannels } from '@shared/ipc-channels'
 import type { BackendHost } from '../backend/host'
 import { createMainLogger } from '../logger'
-import { listDevices, registerDevice, setViewing, unregisterDevice, type PushDevice } from '../push/registry'
+import { registerDevice, setViewing, unregisterDevice } from '../push/registry'
 
 const log = createMainLogger('ipc:push')
 
@@ -27,9 +27,4 @@ export function registerPushHandlers(host: BackendHost): void {
     setViewing(ref, threadId)
     return { ok: true }
   })
-
-  // Tokens are omitted: the caller only needs to see what is registered.
-  host.handle(PushChannels.LIST, () =>
-    listDevices().map((d: PushDevice) => ({ label: d.label, registeredAt: d.registeredAt })),
-  )
 }

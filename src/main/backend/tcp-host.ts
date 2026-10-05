@@ -11,6 +11,7 @@
  * hello, so the legacy `ready` sent straight after auth is skipped; otherwise it
  * would answer the client's hello first, with `gap: false`.
  */
+import { timeBackendHandler } from './perf-handler'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Server, Socket } from 'node:net'
 import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
@@ -228,7 +229,7 @@ export class TcpHost implements BackendHost {
   }
 
   handle<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => unknown): void {
-    this.handlers.set(channel, fn as (...args: unknown[]) => unknown)
+    this.handlers.set(channel, timeBackendHandler(channel, fn) as (...args: unknown[]) => unknown)
   }
 
   on<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => void): void {

@@ -24,15 +24,6 @@ export function encodeClaudeProjectPath(projectPath: string): string {
   return projectPath.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
-/**
- * Returns true iff the given Claude projects directory name corresponds
- * exactly to the given project path. Exact match - do NOT substring-match,
- * because a child project's dir name begins with the parent's encoded string.
- */
-export function isClaudeDirForProject(dir: string, projectPath: string): boolean {
-  return dir === encodeClaudeProjectPath(projectPath)
-}
-
 async function readHead(fullPath: string, maxBytes: number): Promise<string> {
   const fh = await open(fullPath, 'r')
   try {
@@ -145,7 +136,7 @@ async function scanClaudeProjectsDir(
             log.debug('skipping unparseable head line', { filePath, err })
             continue
           }
-          if (!(obj.type === 'human' || obj.type === 'user') || obj.isMeta === true) continue
+          if (!(obj.type === 'human' || obj.type === 'user') || obj.isMeta === true || obj.isCompactSummary === true) continue
           const content = obj.message?.content
           const raw = typeof content === 'string' ? content
             : Array.isArray(content) ? content

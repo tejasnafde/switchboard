@@ -1,6 +1,7 @@
 import { visibleUserMessageText } from '@shared/provider-events'
 import { pillBodyText } from '@shared/pill-body-text'
 import { splitSyntheticUserText } from '@shared/synthetic-message'
+import { systemRowView } from '@shared/system-markers'
 import type { ChatMessage } from '@shared/types'
 import type { FeedItem } from '../stores/chat'
 
@@ -51,6 +52,14 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
       // starts with a marker such as "[Request interrupted by user]" is the
       // user's own words and stays a bubble.
       items.push(...(message.displayBody === undefined ? splitTranscriptUserItem(item) : [item]))
+      continue
+    }
+    if (message.role === 'system') {
+      const view = systemRowView(message.content)
+      const id = `h-${message.id}`
+      if (view.kind === 'peer-undelivered') items.push({ kind: 'undelivered', id, messageId: message.id, row: view.row })
+      else if (view.kind === 'error') items.push({ kind: 'error', id, message: view.message })
+      else items.push({ kind: 'notice', id, text: view.body ? `${view.title}: ${view.body}` : view.title })
       continue
     }
     if (message.content.trim()) {

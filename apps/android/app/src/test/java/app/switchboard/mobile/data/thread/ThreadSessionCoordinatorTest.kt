@@ -301,6 +301,10 @@ class ThreadSessionCoordinatorTest {
             remote.profileSwitches,
         )
         assertTrue(coordinator.state.value.profiles.changing)
+        assertEquals("Switching to Tejas...", coordinator.state.value.controlMessage)
+        coordinator.updateDraft("Keep my draft")
+        assertEquals(ComposerSubmitResult.Busy, coordinator.submit())
+        assertEquals("Keep my draft", coordinator.state.value.composer.draft)
 
         remote.completeProfileSwitch(
             success(

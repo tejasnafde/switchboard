@@ -11,6 +11,7 @@
  *  - an application-level heartbeat, because a mobile socket dies without a
  *    FIN and both ends otherwise stay "connected" until a request times out.
  */
+import { timeBackendHandler } from './perf-handler'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
@@ -374,7 +375,7 @@ export class WsHost implements BackendHost {
   }
 
   handle<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => unknown): void {
-    this.handlers.set(channel, fn as (...args: unknown[]) => unknown)
+    this.handlers.set(channel, timeBackendHandler(channel, fn) as (...args: unknown[]) => unknown)
   }
 
   on<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => void): void {

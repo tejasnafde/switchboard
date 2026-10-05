@@ -29,7 +29,3 @@ export function commitIdeWorkspaceBinding(binding: IdeWorkspaceBinding): void {
 export function getCommittedIdeWorkspaceBinding(): IdeWorkspaceBinding | null {
   return committedBinding
 }
-
-export function clearIdeWorkspaceBinding(): void {
-  committedBinding = null
-}

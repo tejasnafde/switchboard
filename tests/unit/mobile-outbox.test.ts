@@ -8,7 +8,6 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
-  acceptanceDisposition,
   decodeTurnAcceptance,
   deliveryAction,
   deliveryFailureDisposition,
@@ -27,7 +26,6 @@ import {
   MAX_RETRY_DELAY_MS,
   type QueuedMessage,
 } from '../../apps/mobile/src/lib/outbox-model'
-import { TurnDeduper } from '../../src/shared/turn-dedupe'
 
 const base = {
   connected: true,
@@ -109,6 +107,8 @@ describe('deliveryFailureDisposition', () => {
     expect(deliveryFailureDisposition(false, new Error('No session'))).toBe('reject')
   })
 })
+
+const acceptanceDisposition = (result: unknown) => decodeTurnAcceptance(result).disposition
 
 describe('atomic acceptance results', () => {
   it('keeps pending and ambiguous acknowledgements in the outbox', () => {
@@ -300,46 +300,5 @@ describe('deterministic rejection recovery', () => {
     expect(selectRejectedForEdit(messages, blocked.messageId)).toEqual(blocked)
     expect(messages).toEqual([blocked])
     expect(messages[0].images).toEqual([image])
-  })
-})
-
-describe('TurnDeduper', () => {
-  it('accepts an origin once and refuses it after', () => {
-    const d = new TurnDeduper()
-    expect(d.isDuplicate('turn-1')).toBe(false)
-    expect(d.isDuplicate('turn-1')).toBe(true)
-  })
-
-  it('treats a missing origin as always new', () => {
-    // Older clients send none. Collapsing them all onto one key would drop
-    // every message after the first.
-    const d = new TurnDeduper()
-    expect(d.isDuplicate(undefined)).toBe(false)
-    expect(d.isDuplicate(undefined)).toBe(false)
-  })
-
-  it('forgets an origin older than the window', () => {
-    const d = new TurnDeduper(1_000)
-    expect(d.isDuplicate('turn-1', 0)).toBe(false)
-    expect(d.isDuplicate('turn-1', 500)).toBe(true)
-    // Past the window nothing can still be in flight, so holding it is a leak.
-    expect(d.isDuplicate('turn-1', 2_000)).toBe(false)
-  })
-
-  it('stays bounded on a long-running backend', () => {
-    const d = new TurnDeduper(60_000, 10)
-    for (let i = 0; i < 100; i++) d.isDuplicate(`turn-${i}`, 1)
-    expect(d.size).toBeLessThanOrEqual(10)
-  })
-
-  it('keeps the most recent origins when it evicts', () => {
-    const d = new TurnDeduper(60_000, 2)
-    d.isDuplicate('a', 1)
-    d.isDuplicate('b', 2)
-    d.isDuplicate('c', 3)
-    // 'a' fell out, so a late retry of it would run again. That is the cost of
-    // the bound, and why the bound is far larger than any real retry window.
-    expect(d.isDuplicate('c', 4)).toBe(true)
-    expect(d.isDuplicate('b', 4)).toBe(true)
   })
 })

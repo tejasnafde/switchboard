@@ -58,9 +58,7 @@ require_text app/src/main/java/app/switchboard/mobile/AppContract.kt 'NOTIFICATI
 require_text app/src/main/java/app/switchboard/mobile/MainActivity.kt 'enableEdgeToEdge'
 require_text app/src/main/java/app/switchboard/mobile/ui/SwitchboardApp.kt 'Switchboard'
 
-require_file app/src/main/res/drawable-nodpi/switchboard_icon.png
 require_file app/src/main/res/drawable-nodpi/switchboard_adaptive_icon.png
-cmp "$mobile/assets/icon.png" "$root/app/src/main/res/drawable-nodpi/switchboard_icon.png"
 cmp "$mobile/assets/adaptive-icon.png" "$root/app/src/main/res/drawable-nodpi/switchboard_adaptive_icon.png"
 
 while IFS='|' read -r source target; do

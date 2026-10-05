@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   detectSlashTrigger,
   filterSlashCommands,
-  parseLeadingSlashCommand,
-  parseSlashCommandWrapper,
   splitSkillMentions,
   commandInsertion,
   SLASH_COMMANDS,
@@ -100,82 +98,6 @@ describe('detectSlashTrigger', () => {
     // `/foo/bar` looks like a path, not a command. Our regex [^\s/]* forbids
     // subsequent slashes, so this correctly doesn't fire.
     expect(detectSlashTrigger('/foo/bar', 8)).toBeNull()
-  })
-})
-
-describe('parseLeadingSlashCommand', () => {
-  it('parses a bare leading slash command', () => {
-    const m = parseLeadingSlashCommand('/plan')
-    expect(m).not.toBeNull()
-    expect(m!.name).toBe('plan')
-    expect(m!.rest).toBe('')
-  })
-
-  it('parses leading slash command with args', () => {
-    const m = parseLeadingSlashCommand('/commit fix the bug')
-    expect(m).not.toBeNull()
-    expect(m!.name).toBe('commit')
-    expect(m!.rest).toBe(' fix the bug')
-  })
-
-  it('tolerates leading whitespace before the slash', () => {
-    const m = parseLeadingSlashCommand('  /plan')
-    expect(m).not.toBeNull()
-    expect(m!.name).toBe('plan')
-  })
-
-  it('returns null for path-like leading tokens', () => {
-    expect(parseLeadingSlashCommand('/etc/hosts')).toBeNull()
-    expect(parseLeadingSlashCommand('/foo/bar baz')).toBeNull()
-  })
-
-  it('returns null when message starts with regular text', () => {
-    expect(parseLeadingSlashCommand('hi there')).toBeNull()
-    expect(parseLeadingSlashCommand('see /plan later')).toBeNull()
-  })
-
-  it('rejects names that start with a digit or dash', () => {
-    expect(parseLeadingSlashCommand('/9plan')).toBeNull()
-    expect(parseLeadingSlashCommand('/-plan')).toBeNull()
-  })
-})
-
-describe('parseSlashCommandWrapper', () => {
-  it('extracts name + args from the SDK XML blob', () => {
-    const blob = [
-      '<command-message>deslop</command-message>',
-      '<command-name>/deslop</command-name>',
-      '<command-args>then /review</command-args>',
-    ].join('\n')
-    expect(parseSlashCommandWrapper(blob)).toEqual({ name: 'deslop', rest: ' then /review' })
-  })
-
-  it('handles empty args', () => {
-    const blob = [
-      '<command-message>plan</command-message>',
-      '<command-name>/plan</command-name>',
-      '<command-args></command-args>',
-    ].join('\n')
-    expect(parseSlashCommandWrapper(blob)).toEqual({ name: 'plan', rest: '' })
-  })
-
-  it('handles missing args block (older SDK builds)', () => {
-    const blob = [
-      '<command-message>help</command-message>',
-      '<command-name>/help</command-name>',
-    ].join('\n')
-    expect(parseSlashCommandWrapper(blob)).toEqual({ name: 'help', rest: '' })
-  })
-
-  it('returns null for plain text', () => {
-    expect(parseSlashCommandWrapper('just a message')).toBeNull()
-    expect(parseSlashCommandWrapper('/plan inline')).toBeNull()
-    expect(parseSlashCommandWrapper('')).toBeNull()
-  })
-
-  it('returns null when command-name is malformed', () => {
-    const blob = '<command-message>x</command-message>\n<command-name></command-name>'
-    expect(parseSlashCommandWrapper(blob)).toBeNull()
   })
 })
 

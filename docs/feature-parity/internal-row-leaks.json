@@ -1,0 +1,65 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "internal-row-leaks",
+  "summary": "Provider-internal records stored with the user role no longer show as user bubbles. A Claude slash-command record (<command-name>/<command-message>/<command-args>) reads as the `/name args` the user typed (any local-command output it carries as a note) and merges with Switchboard's own copy of the send, so `/compact` and `/model x` show once. Only a record made entirely of command tags folds; tags pasted ahead of the user's own prose stay as typed. The transcript content is not rewritten (the merge matches on the folded text), so fork anchors digest it as before; a compact summary row also accepts an anchor digested over its unwrapped text. The summary a /compact leaves (flagged isCompactSummary in the transcript) is one collapsed 'Conversation compacted' row that expands to the summary. Codex <user_instructions> and <external_codex_apps_open_page> bootstraps are dropped like the other injected context. Only blocks at the start of a message count; a message that mentions a tag mid-text is untouched.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/SyntheticUserRow.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/chat/slash-commands.ts",
+        "tests/unit/slash-commands.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/components/SyntheticRow.tsx",
+        "apps/mobile/src/components/__tests__/SyntheticRow.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SyntheticUserMessage.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/SyntheticUserMessageFixturesTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/synthetic-message.ts",
+        "src/main/agent/jsonl-parser.ts",
+        "src/main/projects/session-scanner.ts",
+        "tests/fixtures/synthetic-user-message-cases.json",
+        "tests/unit/synthetic-user-message-fixtures.test.ts",
+        "tests/unit/jsonl-parser.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing stored is rewritten: the transcript parser normalizes rows at load time and every surface splits at render time. A phone cache holding an old raw row is split by the phone's own splitter, which now knows the new blocks."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/fixtures/synthetic-user-message-cases.json holds hand-written vectors (command records in both tag orders, with and without args, followed by stdout; command tags followed by typed prose, which stay a real message; empty stdout; stderr; caveat; compact summary; system-reminder; Codex AGENTS.md, user_instructions, environment_context, apps page, turn_aborted) plus real messages that mention a tag mid-text, an unterminated tag and typed continuation prose. tests/unit/synthetic-user-message-fixtures.test.ts and SyntheticUserMessageFixturesTest.kt run the same file against the TypeScript and Kotlin splits.",
+      "tests/unit/jsonl-parser.test.ts: a /compact record and a /model record carrying its stdout each merge with the SQLite echo into one row, pasted command tags plus prose stay as typed and merge with their echo, tests/unit/conversation-fork-anchor.test.ts accepts an anchor digested over an unwrapped compact summary, the isCompactSummary record becomes one compacted part, and a typed message mentioning <command-name> is kept as typed.",
+      "apps/mobile jest: SyntheticRow shows 'Conversation compacted' collapsed and the summary on tap."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No surface was driven by hand. The shapes were surveyed read-only from local Claude and Codex transcripts; the fixtures are fake.",
+      "Live path: the Claude adapter never renders SDK user messages, so the compact summary appears only once the transcript is reloaded, as before.",
+      "Codex compaction writes a `compacted` line, not a user message, so it neither leaked nor gets a row."
+    ]
+  }
+}

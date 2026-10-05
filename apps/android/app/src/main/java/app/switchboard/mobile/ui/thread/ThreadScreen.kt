@@ -55,6 +55,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -85,6 +86,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -119,6 +121,7 @@ import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWritePreview
 import app.switchboard.mobile.domain.thread.SyntheticTone
+import app.switchboard.mobile.domain.thread.SystemMarkers
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.ProviderSkill
@@ -330,6 +333,17 @@ fun ThreadScreen(
                 .padding(scaffoldPadding),
         ) {
             metadata?.let { ThreadMetricStrip(it) }
+            if (profiles.changing) {
+                InlineStatus(
+                    message = "Switching to ${profiles.switchingTo}...",
+                    detail = "Send is held; you can keep typing.",
+                    tone = StatusTone.INFO,
+                    progress = InlineStatusProgress.Indeterminate,
+                )
+            }
+            profiles.error?.let { error ->
+                InlineStatus(message = "Could not switch profile", detail = error, tone = StatusTone.ERROR)
+            }
             if (offerCompaction && metadata?.usedTokens != null) {
                 CompactionOfferBanner(
                     usedTokens = metadata.usedTokens,
@@ -860,6 +874,13 @@ private fun ThreadAgentSettingsScreen(
                     )
                 }
             }
+            if (profiles.changing) {
+                InlineStatus(
+                    message = "Switching to ${profiles.switchingTo}...",
+                    tone = StatusTone.INFO,
+                    progress = InlineStatusProgress.Indeterminate,
+                )
+            }
             if (profiles.loading) {
                 InlineStatus(
                     message = "Loading profiles",
@@ -1350,6 +1371,11 @@ private fun ThreadRow(
 
         is ThreadRowPresentation.SpendBlocked -> SpendRow(row.source)
         is ThreadRowPresentation.Peer -> PeerRow(row.source)
+        is ThreadRowPresentation.Undelivered -> UndeliveredRow(
+            row,
+            sending = row.messageId in pendingActions.undeliveredIds,
+            onSend = { onAction(ThreadUiAction.SendUndelivered(row.messageId, row.row.to, row.row.text)) },
+        )
         is ThreadRowPresentation.Todo -> TodoRow(row.source)
         is ThreadRowPresentation.Notice -> NoticeCard(
             title = row.title,
@@ -2083,7 +2109,7 @@ private fun HostWritePreviewBlock(preview: HostWritePreview, expanded: Boolean, 
 }
 
 @Composable
-private fun QuestionRow(
+internal fun QuestionRow(
     item: FeedItem.Question,
     selections: QuestionSelections,
     onSelectionsChange: (QuestionSelections) -> Unit,
@@ -2104,31 +2130,61 @@ private fun QuestionRow(
             val shown = item.answers ?: selections.forRequest(item.requestId)
             question.options.forEachIndexed { optionIndex, option ->
                 val selected = option.label in shown.getOrNull(questionIndex).orEmpty()
-                TextButton(
-                    onClick = {
-                        onSelectionsChange(
-                            QuestionSelectionReducer.toggle(
-                                selections,
-                                item,
-                                questionIndex,
-                                option.label,
-                            ),
-                        )
-                    },
-                    enabled = !answered && !submitting,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = if (selected) Accent else MaterialTheme.colorScheme.onSurface,
-                    ),
+                // One tappable row: the label and description stack in the
+                // weighted column, so a long description cannot squeeze the
+                // label to one character per line.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
+                        .testTag(ThreadTestTags.questionOption(item.requestId, questionIndex, optionIndex))
                         .fillMaxWidth()
-                        .heightIn(min = 48.dp),
+                        .heightIn(min = 48.dp)
+                        .selectable(
+                            selected = selected,
+                            enabled = !answered && !submitting,
+                            role = if (question.multiSelect) Role.Checkbox else Role.RadioButton,
+                            onClick = {
+                                onSelectionsChange(
+                                    QuestionSelectionReducer.toggle(selections, item, questionIndex, option.label),
+                                )
+                            },
+                        )
+                        .padding(vertical = 6.dp),
                 ) {
-                    Text("${optionIndex + 1}. ${option.label}", modifier = Modifier.weight(1f))
-                    option.description?.takeIf { it != option.label }?.let {
-                        Text(it, color = TextDim, style = MaterialTheme.typography.labelSmall)
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "${optionIndex + 1}. ${option.label}",
+                            color = if (selected) Accent else MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.testTag(ThreadTestTags.questionOptionLabel(item.requestId, questionIndex, optionIndex)),
+                        )
+                        option.description?.takeIf { it != option.label }?.let {
+                            Text(it, color = TextDim, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
-                    if (selected) Text("  [x]", fontFamily = GeistMono)
+                    // Decorative: the row carries the selected state and the click.
+                    if (question.multiSelect) {
+                        Checkbox(checked = selected, onCheckedChange = null, enabled = !answered && !submitting)
+                    } else {
+                        RadioButton(selected = selected, onClick = null, enabled = !answered && !submitting)
+                    }
                 }
+            }
+            if (answered) {
+                // An answer that matches no option was typed.
+                shown.getOrNull(questionIndex).orEmpty()
+                    .filter { answer -> question.options.none { it.label == answer } }
+                    .forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            } else {
+                OutlinedTextField(
+                    value = selections.otherFor(item.requestId).getOrNull(questionIndex).orEmpty(),
+                    onValueChange = { onSelectionsChange(QuestionSelectionReducer.type(selections, item, questionIndex, it)) },
+                    enabled = !submitting,
+                    placeholder = { Text("None of the above - let me explain…") },
+                    modifier = Modifier
+                        .testTag(ThreadTestTags.questionOther(item.requestId, questionIndex))
+                        .fillMaxWidth(),
+                )
             }
         }
         if (!answered) {
@@ -2346,6 +2402,38 @@ private fun PeerRow(item: FeedItem.Peer) {
     }
 }
 
+/** A message a session link refused, kept for the user. Send delivers it as the user's own send. */
+@Composable
+private fun UndeliveredRow(row: ThreadRowPresentation.Undelivered, sending: Boolean, onSend: () -> Unit) {
+    var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
+    val message = row.row
+    val long = message.text.length > 200 || message.text.lines().size > UNDELIVERED_CLAMP_LINES
+    CardContainer(tint = TextDim) {
+        Text(SystemMarkers.undeliveredHeading(message), fontWeight = FontWeight.SemiBold)
+        if (!message.sent) {
+            Text(SystemMarkers.reasonText(message.reason), color = TextDim, style = MaterialTheme.typography.bodySmall)
+        }
+        Text(
+            message.text,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = if (long && !expanded) UNDELIVERED_CLAMP_LINES else Int.MAX_VALUE,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (long) {
+            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Show less" else "Show more", color = Accent) }
+        }
+        if (!message.sent) {
+            OutlinedButton(
+                onClick = onSend,
+                enabled = !sending,
+                modifier = Modifier.heightIn(min = 48.dp).testTag(ThreadTestTags.UNDELIVERED_SEND),
+            ) { Text(if (sending) "Sending…" else "Send") }
+        }
+    }
+}
+
+private const val UNDELIVERED_CLAMP_LINES = 4
+
 @Composable
 private fun TodoRow(item: FeedItem.Todo) {
     CardContainer(tint = Accent) {
@@ -2376,7 +2464,7 @@ private fun NoticeCard(
             }
             Text(title, color = tint, fontWeight = FontWeight.SemiBold)
         }
-        Text(body, style = MaterialTheme.typography.bodyMedium)
+        if (body.isNotEmpty()) Text(body, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

@@ -276,12 +276,6 @@ export function fitTerminal(id: string): void {
   }
 }
 
-export function fitAllTerminals(): void {
-  for (const [id] of registry) {
-    fitTerminal(id)
-  }
-}
-
 export function destroyTerminal(id: string): void {
   const inst = registry.get(id)
   if (!inst) return
@@ -326,12 +320,6 @@ export function focusTerminal(id: string): void {
   const inst = registry.get(id)
   if (!inst || !inst.opened) return
   inst.terminal.focus()
-}
-
-export function searchTerminal(id: string, query: string): boolean {
-  const inst = registry.get(id)
-  if (!inst) return false
-  return inst.searchAddon.findNext(query, { regex: false, caseSensitive: false })
 }
 
 const SEARCH_OPTS = {

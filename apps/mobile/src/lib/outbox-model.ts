@@ -123,10 +123,6 @@ export function decodeTurnAcceptance(result: unknown): DecodedTurnAcceptance {
   return { disposition: 'ambiguous', retryable: true, reason }
 }
 
-export function acceptanceDisposition(result: unknown): AcceptanceDisposition {
-  return decodeTurnAcceptance(result).disposition
-}
-
 export function resolvedAmbiguousBubbleAction(
   status: 'abandoned' | 'completed',
 ): 'remove' | 'keep' {

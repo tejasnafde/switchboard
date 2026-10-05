@@ -8,9 +8,6 @@
  */
 
 import { execSync } from 'child_process'
-import { join as joinPath } from 'path'
-import { readFileSync, existsSync } from 'fs'
-import { homedir } from 'os'
 import { createMainLogger as createLogger } from '../../../logger'
 import { getSetting } from '../../../db/database'
 import { _resetShellEnvCacheForTests, peekShellEnv } from '../../../shell-env'
@@ -110,76 +107,6 @@ export function buildOpencodeEnv(extra?: Record<string, string>): Record<string,
   return merged
 }
 
-let cachedUserProviders: Set<string> | undefined
-
-/**
- * Read the user's opencode config to extract user-configured provider keys
- * (e.g. ["nvidia-nim", "google"]). Used to dedupe model lists where the
- * same model appears under multiple provider IDs. Cached for the lifetime
- * of the process.
- */
-export function getUserConfiguredProviders(): Set<string> {
-  if (cachedUserProviders) return cachedUserProviders
-  const result = new Set<string>()
-  const candidates = [
-    process.env.XDG_CONFIG_HOME
-      ? joinPath(process.env.XDG_CONFIG_HOME, 'opencode', 'opencode.json')
-      : null,
-    joinPath(homedir(), '.config', 'opencode', 'opencode.json'),
-  ].filter(Boolean) as string[]
-
-  for (const p of candidates) {
-    if (!existsSync(p)) continue
-    try {
-      const parsed = JSON.parse(readFileSync(p, 'utf-8'))
-      const providers = parsed?.provider
-      if (providers && typeof providers === 'object') {
-        for (const key of Object.keys(providers)) result.add(key)
-        log.info(`user-configured opencode providers: ${Array.from(result).join(', ') || '(none)'}`)
-        break
-      }
-    } catch (err) {
-      log.warn(`failed to read opencode config at ${p}: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-  cachedUserProviders = result
-  return result
-}
-
-/**
- * Dedupe model IDs that appear under multiple provider prefixes, preferring
- * user-configured providers (those have working API keys). Stable order:
- * preserves the input ordering.
- */
-export function dedupeModelIds(ids: string[]): string[] {
-  const userProviders = getUserConfiguredProviders()
-  const groups = new Map<string, string[]>()
-  for (const id of ids) {
-    const slash = id.indexOf('/')
-    if (slash === -1) continue
-    const suffix = id.slice(slash + 1)
-    const arr = groups.get(suffix) ?? []
-    arr.push(id)
-    groups.set(suffix, arr)
-  }
-  const picked: string[] = []
-  for (const [, candidates] of groups) {
-    if (candidates.length === 1) {
-      picked.push(candidates[0])
-      continue
-    }
-    const user = candidates.filter((c) => userProviders.has(c.split('/')[0]))
-    if (user.length > 0) {
-      picked.push(user.sort((a, b) => b.length - a.length)[0])
-    } else {
-      picked.push(candidates.sort()[0])
-    }
-  }
-  const order = new Map(ids.map((id, i) => [id, i]))
-  picked.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0))
-  return picked
-}
-
 /**
  * Test-only: reset all caches. Lets unit tests probe behavior under
  * different `process.env`, settings DB, or filesystem states without
@@ -188,5 +115,4 @@ export function dedupeModelIds(ids: string[]): string[] {
 export function _resetOpencodeEnvCachesForTests(): void {
   cachedPath = undefined
   _resetShellEnvCacheForTests()
-  cachedUserProviders = undefined
 }

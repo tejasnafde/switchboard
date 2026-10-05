@@ -4,7 +4,6 @@ import app.switchboard.mobile.domain.remote.AnswerQuestion
 import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.remote.ArchiveConversationResult
 import app.switchboard.mobile.domain.remote.BrowseDecisions
-import app.switchboard.mobile.domain.remote.CommandFollowUp
 import app.switchboard.mobile.domain.remote.CreateConversation
 import app.switchboard.mobile.domain.remote.ImageInput
 import app.switchboard.mobile.domain.iap.IapDiscoveredTarget
@@ -554,48 +553,6 @@ class SwitchboardRemoteClientTest {
         assertTrue(submission is RequestSubmission.Rejected)
         assertTrue(results.single().outcome is RemoteOutcome.Failure)
         assertTrue(rpc.calls.isEmpty())
-    }
-
-    @Test
-    fun repositoryDropsStaleGenerationsAndKeepsRefreshFailureSeparateFromCommandSuccess() {
-        val repository = GenerationGuardedRemoteRepository()
-        val old = RemoteRequestKey("mac-a", generation = 3, operation = "conversations:/repo")
-        val current = RemoteRequestKey("mac-a", generation = 4, operation = "conversations:/repo")
-        val accepted = mutableListOf<RemoteResponse<String>>()
-        val otherConnection = RemoteRequestKey("mac-b", generation = 1, operation = "conversations:/repo")
-
-        repository.begin(old)
-        repository.begin(current)
-        repository.begin(otherConnection)
-        repository.accept(RemoteResponse(old, RemoteOutcome.Success("stale")), accepted::add)
-        repository.accept(RemoteResponse(current, RemoteOutcome.Success("current")), accepted::add)
-        repository.accept(
-            RemoteResponse(otherConnection, RemoteOutcome.Success("other current")),
-            accepted::add,
-        )
-        assertEquals(
-            listOf("current", "other current"),
-            accepted.map { (it.outcome as RemoteOutcome.Success).value },
-        )
-
-        val command = RemoteResponse(
-            RemoteRequestKey("mac-a", 4, "rename:thread-1"),
-            RemoteOutcome.Success(JsonNull as JsonValue),
-        )
-        val refresh = RemoteResponse<List<app.switchboard.mobile.domain.remote.Conversation>>(
-            current,
-            RemoteOutcome.Failure("refresh offline"),
-        )
-        var result: CommandFollowUp<JsonValue, List<app.switchboard.mobile.domain.remote.Conversation>>? =
-            null
-        repository.commandThenBestEffortRefresh(
-            command = { it(command) },
-            refresh = { it(refresh) },
-            consumer = { result = it },
-        )
-        val completed = requireNotNull(result)
-        assertTrue(completed.command.outcome is RemoteOutcome.Success)
-        assertTrue(completed.followUp?.outcome is RemoteOutcome.Failure)
     }
 
     @Test

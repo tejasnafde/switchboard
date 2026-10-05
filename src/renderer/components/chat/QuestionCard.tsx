@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { QuestionAttachment } from '@shared/types'
 import { createRendererLogger } from '../../logger'
 import { matchShortcut } from '@shared/shortcuts'
+import { resolveQuestionAnswers } from '@shared/question-answers'
 
 const log = createRendererLogger('chat:question-card')
 
@@ -49,14 +50,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
     if (submitRef.current) return
     submitRef.current = true
     setSubmitting(true)
-    // If a question has a non-empty free-text answer, use that as the
-    // sole "selection" - agent sees the typed string instead of the
-    // picked option(s). Lets users escape out of fixed-choice questions.
-    const resolved = all.map((picks, i) => {
-      const text = (otherTexts[i] ?? '').trim()
-      if (text) return [text]
-      return picks
-    })
+    const resolved = resolveQuestionAnswers(all, otherTexts)
     Promise.resolve(onAnswer?.(resolved)).catch((err) => {
       // Parent surfaced the failure in chat; re-enable so the user can retry.
       log.warn('answer submit failed, re-enabling card', err)

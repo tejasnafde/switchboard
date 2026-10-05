@@ -217,52 +217,6 @@ export function detectSlashTrigger(text: string, cursorInput: number): SlashTrig
 }
 
 /**
- * If `text` begins with a slash-command-shaped token (e.g. `/plan`,
- * `/commit foo`), return its parts. Used by `MessageBubble` to render
- * a leading `/cmd` as a `SkillChip` once the caller has confirmed the
- * name against the session's known-skill set.
- *
- * Pure regex with no membership check - callers gate chip rendering on
- * a registry lookup so typos like `/halp` don't masquerade as skills.
- */
-export interface LeadingSlash {
-  /** Just the command name, no slash. */
-  name: string
-  /** Everything after the command name (may include leading whitespace or args). */
-  rest: string
-}
-
-const LEADING_SLASH_RE = /^\s*\/([a-zA-Z][\w-]*)(?=$|\s)/
-
-export function parseLeadingSlashCommand(text: string): LeadingSlash | null {
-  const m = text ? LEADING_SLASH_RE.exec(text) : null
-  if (!m) return null
-  return { name: m[1], rest: text.slice(m.index + m[0].length) }
-}
-
-/**
- * Claude Code's SDK wraps a slash-command invocation into an XML-tagged
- * blob when persisting to JSONL:
- *
- *   <command-message>deslop</command-message>
- *   <command-name>/deslop</command-name>
- *   <command-args>then /review</command-args>
- *
- * We never see this at compose time (the renderer ships a plain
- * `/cmd args` string), but it's what comes back when a session is
- * reloaded from disk. Extract the name + args so `MessageBubble` can
- * render the same SkillChip + rest UI it does for a fresh send.
- */
-export function parseSlashCommandWrapper(text: string): LeadingSlash | null {
-  if (!text || !text.startsWith('<command-message>')) return null
-  const nameMatch = /<command-name>\s*\/?([a-zA-Z][\w-]*)\s*<\/command-name>/.exec(text)
-  if (!nameMatch) return null
-  const argsMatch = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)
-  const args = argsMatch ? argsMatch[1] : ''
-  return { name: nameMatch[1], rest: args ? ` ${args}` : '' }
-}
-
-/**
  * Tokenize a string into alternating text + skill-mention segments.
  * Used by MessageBubble to chipify every `/<known-skill>` reference in
  * a sent message body, not just the leading one - so something like

@@ -1,6 +1,7 @@
 import type { ChatMessage, ToolCall, MessageImage } from '@shared/types'
 import { createHash } from 'crypto'
 import { visibleUserMessageText } from '@shared/provider-events'
+import { compactSummaryText } from '@shared/synthetic-message'
 
 export type JsonlSource = 'claude-code' | 'codex'
 
@@ -21,6 +22,7 @@ export type JsonlSource = 'claude-code' | 'codex'
  * empty in the sidebar. Pass `source: 'codex'` when loading a Codex file.
  */
 export class JsonlParser {
+  lineCount = 0
   private buffer = ''
   private onMessage: (message: ChatMessage) => void
   private source: JsonlSource
@@ -37,6 +39,7 @@ export class JsonlParser {
 
     // Last element is either empty (line ended with \n) or a partial line
     this.buffer = lines.pop() ?? ''
+    this.lineCount += lines.length
 
     for (const line of lines) {
       const trimmed = line.trim()
@@ -48,6 +51,7 @@ export class JsonlParser {
   /** Flush any remaining buffered data */
   flush(): void {
     if (this.buffer.trim()) {
+      this.lineCount += 1
       this.parseLine(this.buffer.trim())
       this.buffer = ''
     }
@@ -103,7 +107,9 @@ export class JsonlParser {
       }
 
       case 'user': {
-        const content = extractContent(event.message)
+        const text = extractContent(event.message)
+        // The summary a /compact leaves folds into one row.
+        const content = event.isCompactSummary === true ? compactSummaryText(text) : text
         const images = extractImages(event.message)
         // isMeta marks text Claude Code wrote for the model only: skill bodies,
         // image size annotations, "Continue from where you left off."

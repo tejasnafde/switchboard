@@ -1,0 +1,82 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chat-load-performance",
+  "summary": "Keep full conversation history and native profile continuity while streaming cold JSONL parsing, retaining parsed histories by estimated message memory, and caching validated record digests with file-state invalidation. Show chat-open, account/provider switch and session-start waits; preserve editable drafts and hold send during a switch. Round 2 guards stale load failures by open ticket, clears current successful load failures, retries changed JSONL reads once, and explains blocked Expo sends while retaining the composer for an explicit retry.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/stores/chat-wait-store.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/UnifiedProviderPicker.tsx",
+        "src/renderer/components/ui/loading-status.tsx",
+        "e2e/visual-regressions.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/components/ProfilePicker.tsx",
+        "apps/mobile/src/components/ThreadWaitStatus.tsx",
+        "apps/mobile/src/components/__tests__/ThreadWaitStatus.test.tsx",
+        "apps/mobile/src/lib/composer.ts",
+        "tests/unit/mobile-composer.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/agent/jsonl-cache.ts",
+        "src/main/agent/jsonl-memory.ts",
+        "src/main/provider/transcript-compatibility.ts",
+        "tests/unit/chat-performance-benchmark.test.ts",
+        "tests/unit/jsonl-cache.test.ts",
+        "tests/unit/transcript-compatibility.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Both caches are bounded and process-local. No schema, stored transcript, paging cursor, persisted setting, or payload changes. Full histories remain available to search and fork. File size, mtime, ctime, inode and device are checked before reuse; changing reads are not cached."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "docs/feature-parity/chat-load-performance.json",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Synthetic 83,950,584-byte Claude JSONL with 1,126 turns, 3,379 records, large tool outputs, images and a compact boundary. Direct history and transcript/profile preparation benchmarks use the real SQLite schema with synthetic rows; no real transcript or account CLI.",
+      "JSONL cache tests cover append, rewrite/replacement with restored mtime, truncation, deletion, source/path separation, a changing read, count eviction, large ignored tool results, and event-loop yielding. Transcript tests retain divergence, invalid/incomplete records, concurrent modifications and source-only settle retries.",
+      "RN component tests assert wait/error rendering; the RN Jest suite and TypeScript check pass. Android coordinator tests assert the destination account, held sends and retained draft; 53 tests pass.",
+      "Desktop wait store tests cover overlapping opens and error retention. Screens-only background visual checks exercise loading, profile switch in chat/picker and startup on a delayed demo IPC handler, including a retained draft and a 100 ms loader visibility assertion.",
+      "Final foreground root gate: npm run typecheck and npm test -- --maxWorkers=2 passed (534 files, 5,807 tests, four skipped); build:fast and deslop lint passed.",
+      "Eighteen new Darwin wait screenshots were inspected across dark, light and translucent themes. Existing PNG changes were restored. Both final SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens comparison runs passed without snapshot updates.",
+      "Round 2 failing-first regressions: A/B/A stale rejection, current-success failure clearing with pending-switch preservation, blocked Expo send reasons, stable JSONL retry and bounded retry exhaustion.",
+      "Round 2 Expo Jest: 11 suites and 64 tests passed. Background build:fast and root typecheck passed. Both final screens-only comparisons passed without snapshot updates after inspecting and restoring all 14 changed PNGs from a timed-out update run; no intentional desktop visual change."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live account rotation, sign-in, provider CLI or SDK startup against credentials. Stop/restart continuity and source-settle retries are covered by fake-adapter and filesystem tests; real provider startup latency remains outside the benchmark.",
+      "No physical phone/iOS simulator visual verification. RN spinners are native ActivityIndicator; Android uses existing InlineStatus and its platform animation behavior. Native Android has no cross-provider switch control, so its existing account switch is the affected wait.",
+      "No release publication. Desktop/headless changes use the existing build lane; RN changes are JS-only and eligible for the existing fingerprint-compatible OTA lane; Android ships in its existing APK lane. No identity, signing, deep-link, channel or API compatibility changes.",
+      "No paging or incremental append parsing was introduced. Very large individual JSON records still parse atomically; directory discovery and the SDK resume migration retain their existing synchronous metadata/copy behavior.",
+      "The synthetic database has a single conversation family. Per-family message/enrichment query fan-out and large rotated families remain unmeasured; all measured lookup plans use indexes.",
+      "Round 2 Expo typecheck is blocked by incoming origin/main ImageAttachments.tsx: installed dependencies lack expo-image-manipulator, and an isolated view of its locked 57.0.20 package exposes two ImageRef.release type errors at lines 64 and 70. No unrelated dependency or image-attachment source changes were made."
+    ]
+  }
+}

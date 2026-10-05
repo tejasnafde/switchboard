@@ -131,4 +131,5 @@ fun ThreadUiAction.toSessionControl(): ThreadSessionControl = when (this) {
         },
     )
     is ThreadUiAction.OpenFile -> ThreadSessionControl.OpenFile(fileEditId, repoRoot, relPath)
+    is ThreadUiAction.SendUndelivered -> ThreadSessionControl.SendUndelivered(messageId, targetThreadId, text)
 }

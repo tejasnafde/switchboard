@@ -29,6 +29,7 @@ import { applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { HostWriteCard } from '@shared/agent-host-writes'
 import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-approval-cards'
+import type { PeerUndelivered } from '@shared/peer-links'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -51,6 +52,8 @@ export type FeedItem =
   | { kind: 'notice'; id: string; text: string }
   /** Provider-generated user-role block, e.g. a background-task notification. */
   | { kind: 'synthetic'; id: string; part: SyntheticUserPart; at?: number }
+  /** A message a session link refused, kept for the user to send. `messageId` is its stored row. */
+  | { kind: 'undelivered'; id: string; messageId: string; row: PeerUndelivered }
 
 export interface ThreadState {
   items: FeedItem[]
@@ -143,6 +146,8 @@ interface ChatState {
   /** `id` ties the bubble to its queued message so a failed send can undo it. */
   addUserMessage: (key: string, text: string, images?: string[], id?: string) => void
   markQuestionAnswered: (key: string, requestId: string, answers: string[][]) => void
+  /** Put back a question card whose answer the backend refused. */
+  reopenQuestion: (key: string, requestId: string) => void
   markApprovalResolved: (key: string, requestId: string, decision: 'approve' | 'deny') => void
   /** Put back a card whose answer the backend refused, unless its request.closed has arrived since. */
   reopenApproval: (key: string, requestId: string) => void
@@ -501,6 +506,16 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           if (!row) return {}
           return { items: [...t.items, { kind: 'notice', id: event.messageId, text: `${approvalResultLabel(row)}: ${row.text}` }] }
         }
+        // A link refused a message, or the user sent a kept one: same id as the
+        // history row, so a reload and a live event land on one row.
+        case 'peer.undelivered': {
+          const item: FeedItem = {
+            kind: 'undelivered', id: `h-${event.messageId}`, messageId: event.messageId,
+            row: { to: event.peerThreadId, toLabel: event.peerLabel, reason: event.reason, text: event.text, sent: event.sent },
+          }
+          const at = t.items.findIndex((i) => i.id === item.id)
+          return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
+        }
         // Read on another client. applyEvent already resolved the connection's
         // thread key, so this only has to drop the count.
         case 'thread.read':
@@ -568,6 +583,17 @@ export const useChatStore = create<ChatState>()(
           t.items,
           (i) => i.kind === 'question' && i.requestId === requestId,
           (i) => ({ ...(i as Extract<FeedItem, { kind: 'question' }>), answers }),
+        ),
+      })),
+    })),
+
+  reopenQuestion: (key, requestId) =>
+    set((s) => ({
+      threads: patchThread(s.threads, key, (t) => ({
+        items: replaceItem(
+          t.items,
+          (i) => i.kind === 'question' && i.requestId === requestId,
+          (i) => ({ ...(i as Extract<FeedItem, { kind: 'question' }>), answers: undefined }),
         ),
       })),
     })),

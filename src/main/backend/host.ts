@@ -4,6 +4,7 @@
  * Electron process (ElectronIpcHost) or a future remote server. Handlers get
  * only the channel args - never the Electron event - to stay transport-agnostic.
  */
+import { timeBackendHandler } from './perf-handler'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { hashClientScope, withBackendRequestContext } from './request-context'
 import { prepareIpcEmit } from './ipc-wire'
@@ -25,9 +26,10 @@ export class ElectronIpcHost implements BackendHost {
   constructor(private readonly window: BrowserWindow | null) {}
 
   handle<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => unknown): void {
+    const timed = timeBackendHandler(channel, fn)
     ipcMain.removeHandler(channel) // idempotent re-registration (StrictMode / reloads)
     ipcMain.handle(channel, (_event, ...args) =>
-      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE, transport: 'electron' }, () => fn(...(args as A))))
+      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE, transport: 'electron' }, () => timed(...(args as A))))
   }
 
   on<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => void): void {

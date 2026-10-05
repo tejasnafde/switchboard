@@ -72,6 +72,7 @@ object BackendChannels {
     const val CancelQueuedTurn = "provider:cancel-queued-turn"
     const val ResolveUserTurn = "provider:resolve-user-turn"
     const val Interrupt = "provider:interrupt"
+    const val DeliverPeerMessage = "provider:deliver-peer-message"
     const val StopSession = "provider:stop-session"
     const val SwitchInstance = "provider:switch-instance"
     const val ListSkills = "provider:list-skills"
@@ -485,6 +486,26 @@ class SwitchboardRemoteClient(
 
     fun interrupt(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) =
         command(BackendChannels.Interrupt, array(JsonString(threadId)), callback)
+
+    /** Send a kept Not delivered row as the user's own message; the backend marks the row sent. */
+    fun deliverPeerMessage(
+        fromThreadId: String,
+        targetThreadId: String,
+        text: String,
+        undeliveredId: String,
+        callback: (RemoteResponse<CommandBody>) -> Unit,
+    ) = command(
+        BackendChannels.DeliverPeerMessage,
+        array(
+            obj(
+                "fromThreadId" to JsonString(fromThreadId),
+                "targetThreadId" to JsonString(targetThreadId),
+                "text" to JsonString(text),
+                "undeliveredId" to JsonString(undeliveredId),
+            ),
+        ),
+        callback,
+    )
 
     fun switchInstance(
         threadId: String,
