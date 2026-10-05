@@ -1,3 +1,4 @@
+import { useChatWaitStore } from '../../stores/chat-wait-store'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useAgentStore } from '../../stores/agent-store'
@@ -20,6 +21,8 @@ export function ChatWorkspacePanels({
 }) {
   const chatSplitRatio = useLayoutStore((s) => s.chatSplitRatio)
   const setChatSplitRatio = useLayoutStore((s) => s.setChatSplitRatio)
+  const openingPrimary = useChatWaitStore((s) => s.opening.primary)
+  const openingSecondary = useChatWaitStore((s) => s.opening.secondary)
   const primarySessionId = useLayoutStore((s) => s.primarySessionId)
   const secondarySessionId = useLayoutStore((s) => s.secondarySessionId)
   const focusedSlot = useLayoutStore((s) => s.focusedChatSlot)
@@ -57,7 +60,7 @@ export function ChatWorkspacePanels({
     )
   }, [workspaceWidth, dataScienceMode, splitDragging])
 
-  const dual = secondarySessionId !== null
+  const dual = secondarySessionId !== null || openingSecondary !== undefined
   const tabbed = dual && chatPresentation === 'tabs'
   const showFocusIndicator = shouldShowChatFocusIndicator(dual, chatPresentation)
 
@@ -99,7 +102,7 @@ export function ChatWorkspacePanels({
           overflow: 'hidden',
         }}
       >
-        {primaryShowsLanding(primarySessionId) ? (
+        {primaryShowsLanding(primarySessionId) && !openingPrimary ? (
           <ChatLanding ensureDraftSession={ensureDraftSession} onOpenChat={onOpenChat} />
         ) : (
           <ChatPanel

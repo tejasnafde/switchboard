@@ -1,4 +1,5 @@
 import type { ChatLoadDiagnostics } from '@shared/perf-chat'
+import { useChatWaitStore } from './stores/chat-wait-store'
 import { beginChatOpen } from './services/perf-chat-open'
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth, selectCompanionSessionId } from './stores/layout-store'
@@ -961,234 +962,264 @@ export function App() {
 
       // Callers that don't track the machine (e.g. bookmarks) default to 'local';
       // prefer the machine the store already knows so we don't clobber a remote binding.
-      const storeState = useAgentStore.getState()
-      const existing = storeState.sessions.find((s) => s.id === session.id)
-      const effectiveMachineId = existing?.machineId ?? machineId
-
-      // Route every backend call for this session (load, createConversation,
-      // startSession, sendTurn) to its machine before the first one fires.
-      // Keyed by session.id, which is arg0 of all those calls.
-      window.api.routing.bind(session.id, effectiveMachineId)
-
-      const currentId = useLayoutStore.getState().focusedChatSessionId()
-      const current = storeState.sessions.find((s) => s.id === currentId)
-      const placeAndEvict = (sessionId: string) => {
-        placeSession(sessionId)
-        if (
-          current
-          && shouldEvictMessages(current)
-          && shouldEvictReplacedSession(
-            current.id,
-            useLayoutStore.getState().displayedChatSessionIds(),
-          )
-        ) {
-          clearMessages(current.id)
-        }
-      }
-
-      if (existing) {
-        let loadDiagnostics: ChatLoadDiagnostics | null = {}
-        placeAndEvict(session.id)
-        setTitle(session.id, resolveSessionDisplayTitle(session.title, existing.title))
-        // Messages may have been evicted - reload from disk if so.
-        if (needsMessageReload(existing)) {
-          try {
-            const resp = await window.api.app.loadSessionById(session.id) as ChatLoadDiagnostics & {
-              messages: ChatMessage[]
-              meta: { id: string; title: string; projectPath: string; agentType: string } | null
-            }
-            loadDiagnostics = resp ?? null
-            if (resp?.messages?.length) {
-              setLoadedMessages(session.id, resp.messages)
-            } else if (effectiveMachineId !== 'local') {
-              // Empty reload for a remote chat means routing/scan failure, not
-              // an empty conversation.
-              log.warn('remote history reload returned no messages', { sessionId: session.id, machineId: effectiveMachineId })
-            }
-          } catch (err) {
-            loadDiagnostics = null
-            log.warn('session history reload failed', { sessionId: session.id, machineId: effectiveMachineId, err })
-          }
-        }
-        // Thread (re)open: recover any approval/question/plan card a resume
-        // gap or a reload dropped. Cards are never persisted to history, so
-        // this runs whether or not the reload above ran.
-        if (session.agentType !== 'terminal') void recoverPendingRequests(session.id)
-        readyTiming(session.id, loadDiagnostics)
-        return
-      }
-
-      // Terminal sessions have no JSONL - PTY is gone after restart, just activate.
-      if (session.agentType === 'terminal') {
-        openTiming.cancel('terminal')
-        addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title, machineId: effectiveMachineId })
-        placeAndEvict(session.id)
-        return
-      }
-
-      // Load before creating anything: the response carries `rootThreadId`, so
-      // a click on a rotated id can activate the live thread instead of
-      // building a twin next to it.
-      type LoadedSession = ChatLoadDiagnostics & {
-        messages: ChatMessage[]
-        meta: {
-          id: string
-          title: string
-          projectPath: string
-          agentType: string
-          rootThreadId?: string
-          worktreePath?: string | null
-          worktreeBranch?: string | null
-          executionRootRevision?: number
-          worktreeId?: string | null
-          providerInstanceId?: string | null
-          runtimeMode?: RuntimeMode | null
-          model?: string | null
-          reasoningEffort?: 'low' | 'medium' | 'high' | null
-          launchConfigName?: string | null
-          forkMetadata?: import('@shared/conversation-fork').ForkLineageMetadata | null
-        } | null
-      }
-      let loaded: LoadedSession | null = null
-      try {
-        loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
-      } catch (err) {
-        log.warn('session history load failed', { sessionId: session.id, machineId: effectiveMachineId, err })
-      }
-
-      let loadDiagnostics: ChatLoadDiagnostics | null = loaded
-
-      const targetId = resolveSessionSelectTarget(
-        session.id,
-        loaded?.meta?.rootThreadId,
-        useAgentStore.getState().sessions.map((s) => s.id),
+      const openingSlot = placeSession === openChatBeside ? 'secondary' : useLayoutStore.getState().focusedChatSlot
+      const waits = useChatWaitStore.getState()
+      const openingTicket = waits.open(openingSlot, { id: session.id, title: session.title, projectPath })
+      // A focus change while the load runs would place the chat in the other
+      // slot, so the open stops instead.
+      const isCurrentOpen = () => (
+        useChatWaitStore.getState().opening[openingSlot]?.ticket === openingTicket
+        && (placeSession === openChatBeside || useLayoutStore.getState().focusedChatSlot === openingSlot)
       )
-      if (targetId !== session.id) {
-        const live = useAgentStore.getState().sessions.find((s) => s.id === targetId)
-        window.api.routing.bind(targetId, live?.machineId ?? effectiveMachineId)
-        // A session adopted at startup was created without a revision, and
-        // this branch returns before the hydration below. Leaving it at 0
-        // makes the next Follow fail as stale on any conversation that has
-        // been relocated before. The setter only ever raises it.
-        if (loaded?.meta?.executionRootRevision) {
-          useAgentStore.getState().syncExecutionRootRevision(targetId, loaded.meta.executionRootRevision)
-        }
-        placeAndEvict(targetId)
-        void recoverPendingRequests(targetId)
-        readyTiming(targetId, loadDiagnostics)
-        return
-      }
+      try {
+        const storeState = useAgentStore.getState()
+        const existing = storeState.sessions.find((s) => s.id === session.id)
+        const effectiveMachineId = existing?.machineId ?? machineId
 
-      // First open: create session in store - pass session.id as resumeSessionId
-      // so Claude CLI can --resume the conversation. Hydrate the
-      // worktree pointer so a session that was created in worktree
-      // mode resumes in its worktree, not the parent repo.
-      let creationSnapshot: WorktreeCreationSnapshot | null = null
-      if (session.worktreeCreationId) {
-        try {
-          creationSnapshot = await window.api.worktreeCreation.get({
-            creationId: session.worktreeCreationId,
-            machineId: effectiveMachineId,
-          })
-          if (creationSnapshot.startupReceipt?.terminalIds.length && creationSnapshot.worktreePath) {
-            useTerminalStore.getState().adoptManagedTerminals(
-              session.id,
-              creationSnapshot.startupReceipt.terminalIds,
-              creationSnapshot.worktreePath,
+        // Route every backend call for this session (load, createConversation,
+        // startSession, sendTurn) to its machine before the first one fires.
+        // Keyed by session.id, which is arg0 of all those calls.
+        window.api.routing.bind(session.id, effectiveMachineId)
+
+        const currentId = useLayoutStore.getState().focusedChatSessionId()
+        const current = storeState.sessions.find((s) => s.id === currentId)
+        const placeAndEvict = (sessionId: string) => {
+          if (!isCurrentOpen()) return
+          placeSession(sessionId)
+          if (
+            current
+            && shouldEvictMessages(current)
+            && shouldEvictReplacedSession(
+              current.id,
+              useLayoutStore.getState().displayedChatSessionIds(),
             )
+          ) {
+            clearMessages(current.id)
           }
-        } catch (error) {
-          log.warn('worktree startup receipt recovery failed', { sessionId: session.id, error })
         }
-      }
-      addSession({
-        id: session.id,
-        type: resolveSessionOpenAgentType(toAgentProvider(session.source), loaded?.meta?.agentType),
-        status: 'idle',
-        projectPath: loaded?.meta?.projectPath ?? projectPath,
-        machineId: effectiveMachineId,
-        worktreeId: loaded?.meta?.worktreeId ?? creationSnapshot?.worktreeId ?? null,
-        worktreePath: loaded?.meta?.worktreePath ?? session.worktreePath ?? null,
-        worktreeBranch: loaded?.meta?.worktreeBranch ?? session.worktreeBranch ?? null,
-        executionRootRevision: loaded?.meta?.executionRootRevision ?? 0,
-        managedTerminalIds: creationSnapshot?.startupReceipt?.terminalIds,
-        resumeSessionId: loaded?.meta?.forkMetadata?.resumeMode === 'transcript-handoff'
-          ? undefined
-          : resolveSessionResumeId(session.source, session.id),
-        title: session.title,
-        runtimeMode: loaded?.meta?.runtimeMode ?? undefined,
-        model: loaded?.meta?.model ?? undefined,
-        reasoningEffort: loaded?.meta?.reasoningEffort ?? undefined,
-        instanceId: loaded?.meta?.providerInstanceId ?? undefined,
-        forkMetadata: loaded?.meta?.forkMetadata ?? session.forkMetadata,
-      })
-      placeAndEvict(session.id)
 
-      // Ensure conversation row exists in DB so subsequent saveMessage /
-      // bulkSaveMessages calls don't skip due to missing FK.
-      await window.api.app.createConversation({
-        id: session.id,
-        projectPath,
-        agentType: toAgentProvider(session.source),
-        title: session.title,
-      }).catch((err) => {
-        log.debug(`createConversation failed for ${session.id} - row may already exist`, err)
-      })
+        if (existing) {
+          let loadDiagnostics: ChatLoadDiagnostics | null = {}
+          placeAndEvict(session.id)
+          setTitle(session.id, resolveSessionDisplayTitle(session.title, existing.title))
+          // Messages may have been evicted - reload from disk if so.
+          if (needsMessageReload(existing)) {
+            try {
+              const resp = await window.api.app.loadSessionById(session.id) as ChatLoadDiagnostics & {
+                messages: ChatMessage[]
+                meta: { id: string; title: string; projectPath: string; agentType: string } | null
+              }
+              if (!isCurrentOpen()) return
+              waits.settleLoad(openingSlot, openingTicket, session.id)
+              loadDiagnostics = resp ?? null
+              if (resp?.messages?.length) {
+                setLoadedMessages(session.id, resp.messages)
+              } else if (effectiveMachineId !== 'local') {
+                // Empty reload for a remote chat means routing/scan failure, not
+                // an empty conversation.
+                log.warn('remote history reload returned no messages', { sessionId: session.id, machineId: effectiveMachineId })
+              }
+            } catch (err) {
+              loadDiagnostics = null
+              log.warn('session history reload failed', { sessionId: session.id, machineId: effectiveMachineId, err })
+              waits.settleLoad(openingSlot, openingTicket, session.id, 'Could not load conversation. Select this chat to retry.')
+            }
+          }
+          if (!isCurrentOpen()) return
+          // Thread (re)open: recover any approval/question/plan card a resume
+          // gap or a reload dropped. Cards are never persisted to history, so
+          // this runs whether or not the reload above ran.
+          if (session.agentType !== 'terminal') void recoverPendingRequests(session.id)
+          readyTiming(session.id, loadDiagnostics)
+          return
+        }
 
-      if (shouldRetrySessionLoadAfterCreate(Boolean(loaded?.meta), session.filePath)) {
+        // Terminal sessions have no JSONL - PTY is gone after restart, just activate.
+        if (session.agentType === 'terminal') {
+          openTiming.cancel('terminal')
+          addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title, machineId: effectiveMachineId })
+          placeAndEvict(session.id)
+          return
+        }
+
+        // Load before creating anything: the response carries `rootThreadId`, so
+        // a click on a rotated id can activate the live thread instead of
+        // building a twin next to it.
+        type LoadedSession = ChatLoadDiagnostics & {
+          messages: ChatMessage[]
+          meta: {
+            id: string
+            title: string
+            projectPath: string
+            agentType: string
+            rootThreadId?: string
+            worktreePath?: string | null
+            worktreeBranch?: string | null
+            executionRootRevision?: number
+            worktreeId?: string | null
+            providerInstanceId?: string | null
+            runtimeMode?: RuntimeMode | null
+            model?: string | null
+            reasoningEffort?: 'low' | 'medium' | 'high' | null
+            launchConfigName?: string | null
+            forkMetadata?: import('@shared/conversation-fork').ForkLineageMetadata | null
+          } | null
+        }
+        let loaded: LoadedSession | null = null
         try {
           loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
-          loadDiagnostics = loaded
+          waits.settleLoad(openingSlot, openingTicket, session.id)
         } catch (err) {
-          loadDiagnostics = null
-          log.warn('session history reload after create failed', { sessionId: session.id, err })
+          log.warn('session history load failed', { sessionId: session.id, machineId: effectiveMachineId, err })
+          waits.settleLoad(openingSlot, openingTicket, session.id, 'Could not load conversation. Select this chat to retry.')
         }
-      }
+        let loadDiagnostics: ChatLoadDiagnostics | null = loaded
 
-      // Hydrate the persisted runtime mode, provider instance, and pinned
-      // model (if the user previously picked one for this conversation).
-      // Without this, the pickers show the module default until the user
-      // re-toggles, which feels like "the value is hardcoded on chat load."
-      // Fired concurrently - the three reads are independent and each has
-      // its own failure handling, so there's no reason to pay three
-      // sequential round trips (real latency over a remote/WS backend).
-      // Each entry is wrapped in an async IIFE, not called bare: the old
-      // code gave each call its own try/catch, so a synchronous throw (e.g.
-      // a missing method on a degraded transport) only dropped that one
-      // field. A bare call here would throw while building this array,
-      // before Promise.allSettled exists to catch anything, taking down
-      // the rest of handleSessionSelect - including loadSessionById below.
-      const [runtimeModeResult, instanceResult, modelResult] = await Promise.allSettled([
-        (async () => window.api.app.getConversationRuntimeMode?.(session.id))(),
-        (async () => window.api.app.getConversationProviderInstanceId(session.id))(),
-        (async () => window.api.app.getConversationModel?.(session.id))(),
-      ])
-      if (runtimeModeResult.status === 'fulfilled') {
-        const persisted = runtimeModeResult.value?.mode
-        if (isRuntimeMode(persisted)) {
-          useAgentStore.getState().setRuntimeMode(session.id, persisted)
+        if (!isCurrentOpen()) return
+        const targetId = resolveSessionSelectTarget(
+          session.id,
+          loaded?.meta?.rootThreadId,
+          useAgentStore.getState().sessions.map((s) => s.id),
+        )
+        if (targetId !== session.id) {
+          const drafts = useDraftStore.getState()
+          const held = drafts.detachDraftPayload(session.id)
+          if (held && !drafts.restoreDraftPayloadIfEmpty(targetId, held)) {
+            drafts.restoreDraftPayloadIfEmpty(session.id, held)
+            setAppToast('Your draft is kept under the original chat id because the live chat already has a draft.')
+          }
+          const live = useAgentStore.getState().sessions.find((s) => s.id === targetId)
+          window.api.routing.bind(targetId, live?.machineId ?? effectiveMachineId)
+          // A session adopted at startup was created without a revision, and
+          // this branch returns before the hydration below. Leaving it at 0
+          // makes the next Follow fail as stale on any conversation that has
+          // been relocated before. The setter only ever raises it.
+          if (loaded?.meta?.executionRootRevision) {
+            useAgentStore.getState().syncExecutionRootRevision(targetId, loaded.meta.executionRootRevision)
+          }
+          placeAndEvict(targetId)
+          void recoverPendingRequests(targetId)
+          readyTiming(targetId, loadDiagnostics)
+          return
         }
-      } else {
-        log.warn('restore runtime mode failed', { sessionId: session.id, err: runtimeModeResult.reason })
-      }
-      if (instanceResult.status === 'fulfilled') {
-        if (instanceResult.value?.instanceId) {
-          useAgentStore.getState().setInstanceId(session.id, instanceResult.value.instanceId)
-        }
-      } else {
-        log.warn('restore provider instance failed', { sessionId: session.id, err: instanceResult.reason })
-      }
-      if (modelResult.status === 'fulfilled') {
-        if (modelResult.value?.model) {
-          useAgentStore.getState().setModel(session.id, modelResult.value.model)
-        }
-      } else {
-        log.warn('restore pinned model failed', { sessionId: session.id, err: modelResult.reason })
-      }
 
-      if (loaded?.messages?.length) setLoadedMessages(session.id, loaded.messages)
-      readyTiming(session.id, loadDiagnostics)
-      void recoverPendingRequests(session.id)
+        // First open: create session in store - pass session.id as resumeSessionId
+        // so Claude CLI can --resume the conversation. Hydrate the
+        // worktree pointer so a session that was created in worktree
+        // mode resumes in its worktree, not the parent repo.
+        let creationSnapshot: WorktreeCreationSnapshot | null = null
+        if (session.worktreeCreationId) {
+          try {
+            creationSnapshot = await window.api.worktreeCreation.get({
+              creationId: session.worktreeCreationId,
+              machineId: effectiveMachineId,
+            })
+            if (creationSnapshot.startupReceipt?.terminalIds.length && creationSnapshot.worktreePath) {
+              useTerminalStore.getState().adoptManagedTerminals(
+                session.id,
+                creationSnapshot.startupReceipt.terminalIds,
+                creationSnapshot.worktreePath,
+              )
+            }
+          } catch (error) {
+            log.warn('worktree startup receipt recovery failed', { sessionId: session.id, error })
+          }
+        }
+        addSession({
+          id: session.id,
+          type: resolveSessionOpenAgentType(toAgentProvider(session.source), loaded?.meta?.agentType),
+          status: 'idle',
+          projectPath: loaded?.meta?.projectPath ?? projectPath,
+          machineId: effectiveMachineId,
+          worktreeId: loaded?.meta?.worktreeId ?? creationSnapshot?.worktreeId ?? null,
+          worktreePath: loaded?.meta?.worktreePath ?? session.worktreePath ?? null,
+          worktreeBranch: loaded?.meta?.worktreeBranch ?? session.worktreeBranch ?? null,
+          executionRootRevision: loaded?.meta?.executionRootRevision ?? 0,
+          managedTerminalIds: creationSnapshot?.startupReceipt?.terminalIds,
+          resumeSessionId: loaded?.meta?.forkMetadata?.resumeMode === 'transcript-handoff'
+            ? undefined
+            : resolveSessionResumeId(session.source, session.id),
+          title: session.title,
+          runtimeMode: loaded?.meta?.runtimeMode ?? undefined,
+          model: loaded?.meta?.model ?? undefined,
+          reasoningEffort: loaded?.meta?.reasoningEffort ?? undefined,
+          instanceId: loaded?.meta?.providerInstanceId ?? undefined,
+          forkMetadata: loaded?.meta?.forkMetadata ?? session.forkMetadata,
+        })
+        placeAndEvict(session.id)
+
+        // Ensure conversation row exists in DB so subsequent saveMessage /
+        // bulkSaveMessages calls don't skip due to missing FK.
+        await window.api.app.createConversation({
+          id: session.id,
+          projectPath,
+          agentType: toAgentProvider(session.source),
+          title: session.title,
+        }).catch((err) => {
+          log.debug(`createConversation failed for ${session.id} - row may already exist`, err)
+        })
+
+        if (shouldRetrySessionLoadAfterCreate(Boolean(loaded?.meta), session.filePath)) {
+          try {
+            loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
+            loadDiagnostics = loaded
+            waits.settleLoad(openingSlot, openingTicket, session.id)
+          } catch (err) {
+            loadDiagnostics = null
+            log.warn('session history reload after create failed', { sessionId: session.id, err })
+            waits.settleLoad(openingSlot, openingTicket, session.id, 'Could not load conversation. Select this chat to retry.')
+          }
+        }
+
+        // Hydrate the persisted runtime mode, provider instance, and pinned
+        // model (if the user previously picked one for this conversation).
+        // Without this, the pickers show the module default until the user
+        // re-toggles, which feels like "the value is hardcoded on chat load."
+        // Fired concurrently - the three reads are independent and each has
+        // its own failure handling, so there's no reason to pay three
+        // sequential round trips (real latency over a remote/WS backend).
+        // Each entry is wrapped in an async IIFE, not called bare: the old
+        // code gave each call its own try/catch, so a synchronous throw (e.g.
+        // a missing method on a degraded transport) only dropped that one
+        // field. A bare call here would throw while building this array,
+        // before Promise.allSettled exists to catch anything, taking down
+        // the rest of handleSessionSelect - including loadSessionById below.
+        const [runtimeModeResult, instanceResult, modelResult] = await Promise.allSettled([
+          (async () => window.api.app.getConversationRuntimeMode?.(session.id))(),
+          (async () => window.api.app.getConversationProviderInstanceId(session.id))(),
+          (async () => window.api.app.getConversationModel?.(session.id))(),
+        ])
+        // A newer open or a focus change superseded this one while it waited.
+        if (!isCurrentOpen()) return
+        if (runtimeModeResult.status === 'fulfilled') {
+          const persisted = runtimeModeResult.value?.mode
+          if (isRuntimeMode(persisted)) {
+            useAgentStore.getState().setRuntimeMode(session.id, persisted)
+          }
+        } else {
+          log.warn('restore runtime mode failed', { sessionId: session.id, err: runtimeModeResult.reason })
+        }
+        if (instanceResult.status === 'fulfilled') {
+          if (instanceResult.value?.instanceId) {
+            useAgentStore.getState().setInstanceId(session.id, instanceResult.value.instanceId)
+          }
+        } else {
+          log.warn('restore provider instance failed', { sessionId: session.id, err: instanceResult.reason })
+        }
+        if (modelResult.status === 'fulfilled') {
+          if (modelResult.value?.model) {
+            useAgentStore.getState().setModel(session.id, modelResult.value.model)
+          }
+        } else {
+          log.warn('restore pinned model failed', { sessionId: session.id, err: modelResult.reason })
+        }
+
+        if (loaded?.messages?.length) setLoadedMessages(session.id, loaded.messages)
+        readyTiming(session.id, loadDiagnostics)
+        void recoverPendingRequests(session.id)
+      } finally {
+        waits.finishOpen(openingSlot, openingTicket)
+      }
     },
     [addSession, selectChatSession, openChatBeside, setMessages, clearMessages],
   )

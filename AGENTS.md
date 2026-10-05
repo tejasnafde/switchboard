@@ -70,6 +70,8 @@ Any pull request that changes behavior-bearing product paths must add or update 
 
 ## Known gotchas
 
+- **Transcript caches**: `jsonl-cache.ts` keys by parser source and path plus size, mtime, ctime, inode and device; changed reads are not cached. Its 24-entry/128 MiB LRU budgets estimated retained message memory, not raw JSONL bytes (large discarded tool results must not evict both account copies). `transcript-compatibility.ts` caches only validated whole-file evidence and per-record SHA-256 digests, bounded to 24 paths/100,000 records, with the same file-state checks. Metadata alone never proves two different files equal. Preserve every copy/replacement validation and the source-only settle retries. No paging: search/fork still receive full histories.
+
 - `ELECTRON_RUN_AS_NODE=1` is set by Claude Code's shell - `dev` script unsets it explicitly
 - `electron` MUST be in `devDependencies`, not `dependencies`
 - After `npm install`, run `npm run rebuild` for `node-pty` + `better-sqlite3`

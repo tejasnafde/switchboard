@@ -1,3 +1,5 @@
+import type { ChatWait } from '../../stores/chat-wait-store'
+import { LoadingStatus } from '../ui/loading-status'
 /**
  * UnifiedProviderPicker - single drop-up popover that consolidates the
  * three previously-separate footer controls into one trigger:
@@ -54,6 +56,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { filterModels, groupModelsByProvider } from './provider-picker-models'
 
 interface UnifiedProviderPickerProps {
+  wait?: ChatWait
   agentType: AgentType
   onAgentTypeChange: (type: AgentType) => void
   canChangeAgent: boolean
@@ -84,6 +87,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
     onModelChange,
     dynamicModels,
     resolvedModel,
+    wait,
   } = props
 
   const [open, setOpen] = useState(false)
@@ -174,6 +178,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           style={accentVar(accent)}
           className="inline-flex max-w-[280px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] py-[3px] pr-[8px] pl-[4px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] data-[state=open]:border-[var(--pick-accent)]"
         >
+          {wait?.pending && <span aria-hidden className="size-3 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none" />}
           <span
             aria-hidden
             className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--pick-accent)] text-[8px] font-[700] tracking-[0.02em] text-[#fff]"
@@ -186,7 +191,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           </span>
           <span className="whitespace-nowrap text-[var(--text-muted)]">·</span>
           <span className="truncate [font-family:var(--font-mono)] text-[var(--text-secondary)]">
-            {modelLabel}
+            {wait?.pending ? wait.label : modelLabel}
           </span>
           <span className="ml-[2px] text-[9px] text-[var(--text-muted)]">▾</span>
         </button>
@@ -213,6 +218,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
         }}
         className="sb-provider-picker z-[1200] flex max-h-[360px] w-[480px] flex-col overflow-hidden rounded-[8px] border border-[var(--border)]"
       >
+        {wait && <LoadingStatus label={wait.label} error={wait.error} />}
         <UnifiedPickerPopover
           searchRef={searchRef}
           showCustom={showCustom}
@@ -224,10 +230,11 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           instances={instances}
           effectiveInstanceId={effectiveInstance?.id}
           showRail={showRail}
-          onInstanceChange={onInstanceChange}
+          onInstanceChange={(id) => { if (!wait?.pending) onInstanceChange(id) }}
           model={model}
           models={models}
           onModelChange={(m) => {
+            if (wait?.pending) return
             onModelChange(m)
             setOpen(false)
           }}

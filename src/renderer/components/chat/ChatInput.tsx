@@ -1,3 +1,4 @@
+import { useChatWaitStore } from '../../stores/chat-wait-store'
 import { USER_MESSAGE_IMAGE_TYPES } from '@shared/provider-events'
 import { useState, useCallback, useMemo, useRef, useEffect, type DragEvent, type ReactNode } from 'react'
 import { createRendererLogger } from '../../logger'
@@ -329,6 +330,7 @@ export function ChatInput({
   // is the plain-text-with-pill-tokens representation that flows through
   // draft persistence, slash detection, and Send.
   const [value, setValue] = useState(draft)
+  const providerWait = useChatWaitStore((s) => sessionId ? s.waits[sessionId] : undefined)
   const [sendError, setSendError] = useState<string | null>(null)
   const [recoveries, setRecoveries] = useState<Record<string, ComposerRecovery>>({})
   const recoveriesRef = useRef<Record<string, ComposerRecovery>>({})
@@ -1649,9 +1651,10 @@ export function ChatInput({
             consolidating what used to be three separate footer controls. */}
         {onModelChange && onInstanceChange && (
           <UnifiedProviderPicker
+            wait={providerWait}
             agentType={agentType}
             onAgentTypeChange={onAgentTypeChange}
-            canChangeAgent={canChangeAgent}
+            canChangeAgent={canChangeAgent && !providerWait?.pending}
             instanceId={instanceId}
             onInstanceChange={onInstanceChange}
             model={model ?? ''}
