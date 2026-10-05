@@ -80,38 +80,6 @@ The connection kind is fixed once saved. Editing a saved backend shows the kind
 as text instead of the tab control; to switch kinds, remove the backend and add
 it again.
 
-## Android OAuth client (one-time, console only)
-
-There is NO gcloud/API path for this. `gcloud iap oauth-clients create` only
-creates web clients locked to IAP usage; Android/iOS/Desktop client types are
-Cloud Console only. So this is a manual step by necessity.
-
-EAS account `tejasnafde`, project `switchboard-mobile`
-(id `efbb89d9-210f-4584-bf62-8186cd5fb476`).
-
-| Field | Value |
-|---|---|
-| Client type | Android |
-| Package name | `app.switchboard.mobile` |
-| SHA-1 (EAS-managed **development** keystore) | `4A:A2:A4:44:8C:80:9C:93:29:11:0D:52:6A:A5:23:F0:E3:EC:F3:46` |
-
-A SHA-1 fingerprint is not a secret - it is extractable from any APK - so it is
-recorded here deliberately. The client SECRET is the sensitive one and lives only
-in Secret Manager.
-
-Steps in GCP project `teejayproject`: APIs & Services -> Credentials -> Create
-credentials -> OAuth client ID -> Android -> paste the package name and SHA-1.
-Then put the client id into `app.json` -> `extra.googleClientId` and leave
-`googleClientSecret` empty (Android clients have no secret).
-
-Also add `tejas@geoiq.io` under OAuth consent screen -> Test users, or sign-in
-fails with `access_denied` while the app is in External + Testing.
-
-**When you later ship a production APK**, its keystore differs from the
-development one, so its SHA-1 differs too. Add the production fingerprint to the
-SAME OAuth client (Google allows several per client) or sign-in will work in the
-dev build and fail in the released APK.
-
 ## Google sign-in (needed for IAP connections)
 
 An `iap` connection reaches a work VM through `tunnel.cloudproxy.app`, and the
@@ -135,10 +103,11 @@ googleapis.com) and stores it in the device keychain via `expo-secure-store`.
   `extra.googleClientSecret`. Real values live in Secret Manager secret
   `switchboard-oauth-client` (project `teejayproject`, needs
   `--configuration=personal`) and must never be committed here.
-- The client TYPE matters. The Desktop-type client works for the loopback probe
-  in `scripts/iap-probe.mjs` only; on device Google rejects custom-scheme
-  redirects, so an Android-type client (package `app.switchboard.mobile` + the
-  signing SHA-1) is required.
+- The blob carries the client id and secret it was minted with, and the app
+  refreshes with those. `extra.googleClientId` / `googleClientSecret` are only
+  the fallback for a bare pasted refresh token, so they must be the same
+  Desktop-type client the desktop mint used: a refresh token renews only against
+  the client that issued it.
 
 ## Voice input
 
@@ -212,7 +181,7 @@ return a desktop release with no APK attached.
 
 | Profile | Purpose |
 |---|---|
-| `development` | `developmentClient: true`. **This is the profile that can test Google sign-in.** Sign-in cannot work in Expo Go at all: it needs an Android-type OAuth client bound to the package (`app.switchboard.mobile`) AND the build's signing SHA-1, and Expo Go's redirect is `exp://`, which Google rejects. Install this build, then register its SHA-1 (`eas credentials`) on the Android OAuth client. |
+| `development` | `developmentClient: true`. A dev client with native modules (voice, secure storage) that Expo Go lacks. |
 | `preview` | Release-mode build for testing off-CI. Same artifact shape as production, so it also exercises the self-update path. |
 | `production` | What `mobile-release.yml` builds and attaches to the GitHub Release. `autoIncrement` is off on purpose: `expo.version` in `app.json` is the single source of truth, and both the tag and the OTA `runtimeVersion` derive from it. Auto-incrementing would desync the tag from the binary. |
 
@@ -241,11 +210,6 @@ There are no `submit` profiles for the same reason.
    <https://expo.dev/settings/access-tokens> and add it under Settings ->
    Secrets and variables -> Actions. Both workflows need it. `GITHUB_TOKEN` is
    automatic and needs no setup.
-
-3. **Android OAuth client** if you want Google sign-in in the build: register
-   the build's signing SHA-1 (`npx eas credentials`) against an Android-type
-   OAuth client for package `app.switchboard.mobile`. See the sign-in section
-   above.
 
 ### The first install is manual
 

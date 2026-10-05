@@ -50,7 +50,7 @@
     "automated": [
       "npm run typecheck, npm test and npm run lint pass.",
       "npm test --prefix apps/mobile and npx tsc --noEmit in apps/mobile pass.",
-      "Android :app:testDebugUnitTest, :app:compileDebugKotlin and the scaffold contract test pass."
+      "Android :app:testDebugUnitTest and :app:compileDebugKotlin pass. The scaffold contract test fails on this branch and on main because it still pins versionCode 7 / 0.5.5; it passes only with those pins changed, and CI does not run it."
     ],
     "hardware": [],
     "notExercised": [
