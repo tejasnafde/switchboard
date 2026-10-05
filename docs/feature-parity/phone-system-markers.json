@@ -1,0 +1,77 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "phone-system-markers",
+  "summary": "Every stored Switchboard system row (role 'system': the [[sb:<kind>]] markers instance-rotated, agent-switched, context-handoff, peer-sent, peer-sent-agent, peer-undelivered and approval-result, plus persisted 'Error:' rows) renders as a proper row on both phones instead of raw text or Android's 'Unsupported event · history.system' card. A session link's Not delivered row shows the target, the reason in plain words and the message (clamped with Show more), with Send, which delivers it as the user's own send exactly like the desktop and is turned into 'Sent by you' by the backend's peer.undelivered event. Other markers show as short notices in the desktop's words. A marker a client does not know shows as a neutral 'Switchboard notice', never its payload, on both phones and the desktop. One rule, src/shared/system-markers.ts, ported to Android as SystemMarkers.kt and checked against the same fixture.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/thread-history.ts",
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/thread-screen.styles.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/screens/__tests__/peer-undelivered-item.test.tsx",
+        "tests/unit/mobile-thread-history.test.ts",
+        "tests/unit/mobile-chat-store.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SystemMarkers.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/SystemMarkersFixturesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadPresentationTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/system-markers.ts",
+        "src/shared/rotation-marker.ts",
+        "tests/fixtures/system-marker-cases.json",
+        "tests/unit/system-markers.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes: the rows are the same system messages the backend already stores and getSystemMarkerMessages already returns; only how clients read them changed. The phones' cached feeds keep working: an RN cache from before holds the old text item until the next history load reseeds it, and Android caches RawNotice rows whose presentation is now decided at render time."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        "docs/feature-parity/android-release-0.5.15.json"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/system-markers.test.ts runs tests/fixtures/system-marker-cases.json (every marker kind, sent and unsent Not delivered rows, a bad reason, broken JSON, a bad approval outcome, an unknown marker with a JSON payload, a rotation without an arrow, the profile-restart handoff, an error row, a plain system row) and the reason wording; SystemMarkersFixturesTest.kt runs the same file against the Android port.",
+      "tests/unit/mobile-thread-history.test.ts: stored system rows become an undelivered row, a notice, a neutral notice for an unknown marker and an error, never the raw marker. tests/unit/mobile-chat-store.test.ts: a live peer.undelivered event adds one row on the history row id and its sent update replaces it.",
+      "apps/mobile jest peer-undelivered-item.test.tsx: the row shows target, reason, message and Send, calls onSend on tap, drops Send once sent, clamps a long message until Show more, and shows a refusal.",
+      "Android ThreadStoreReducerTest: live peer.undelivered and approval.result land on the h-<messageId> history row id as stored system rows, and the sent update replaces the row. ThreadPresentationTest: a stored Not delivered row presents with its message id, an unknown marker as 'Switchboard notice' with no body, an error row as an error.",
+      "npm run typecheck, npm test, apps/mobile tsc and jest, and ./gradlew testDebugUnitTest green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run on a phone or emulator: neither the React Native row nor the Compose row was seen rendered, and Send was not tried against a live backend with a spent link.",
+      "The desktop fallback pill for an unknown marker was not seen in the running app; the visual screens contain no system marker rows."
+    ]
+  }
+}
