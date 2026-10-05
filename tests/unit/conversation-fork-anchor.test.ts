@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '../../src/shared/types'
 import { digestForkMessage, type ForkAnchor } from '../../src/shared/conversation-fork'
+import { compactSummaryText } from '../../src/shared/synthetic-message'
 import {
   isForkableCanonicalMessage,
   resolveCanonicalForkAnchor,
@@ -50,6 +51,15 @@ describe('canonical conversation fork anchor', () => {
     expect(isForkableCanonicalMessage(message('approval', 'assistant', '', 5, {
       approval: { requestId: 'r', toolName: 'Bash', input: {}, status: 'pending' },
     }))).toBe(false)
+  })
+
+  it('accepts an anchor an older build digested before the compact summary row was wrapped', () => {
+    const summary = 'Fake summary of earlier work.'
+    const wrapped = message('u3', 'user', compactSummaryText(summary), 10)
+    const legacy = anchor(message('u3', 'user', summary, 10))
+    const result = resolveCanonicalForkAnchor([canonical(wrapped)], legacy)
+    expect(result.ok && result.resolved.contentDigest).toBe(digestForkMessage(wrapped, sha256))
+    expect(resolveCanonicalForkAnchor([canonical(wrapped)], { ...legacy, messageId: 'gone' }).ok).toBe(true)
   })
 
   it('resolves an exact durable id and validates the full fingerprint', () => {

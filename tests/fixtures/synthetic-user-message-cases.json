@@ -135,5 +135,15 @@
     "id": "unterminated-command-tag",
     "text": "<command-name>/compact without a close tag",
     "expected": null
+  },
+  {
+    "id": "command-tags-then-typed-prose",
+    "text": "<command-name>/compact</command-name><command-message>compact</command-message><command-args></command-args>\nwhat does that do?",
+    "expected": null
+  },
+  {
+    "id": "command-args-then-typed-prose",
+    "text": "<command-name>/model</command-name>\n<command-args>x</command-args> and then <command-args>y</command-args>",
+    "expected": null
   }
 ]

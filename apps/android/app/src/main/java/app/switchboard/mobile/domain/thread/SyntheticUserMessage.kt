@@ -30,7 +30,7 @@ object SyntheticUserMessage {
         val start: String,
         val end: String,
         val keepEnd: Boolean = false,
-        /** "name" or "args" of a slash-command record, which collapses to `/name args`. */
+        /** "name", "message" or "args" of a slash-command record, which collapses to `/name args`. */
         val command: String? = null,
         val part: ((String) -> SyntheticPart?)? = null,
     )
@@ -47,6 +47,21 @@ object SyntheticUserMessage {
         inner.trim().takeIf { it.isNotEmpty() }?.let { SyntheticPart.CommandOutput(it, isError) }
     }
 
+    private val commandRecordTags =
+        listOf("command-name", "command-message", "command-args", "local-command-stdout", "local-command-stderr")
+
+    /** A slash-command record is ONLY these tags, so tags pasted ahead of the user's prose stay their text. */
+    private fun isCommandRecord(text: String): Boolean {
+        var rest = text.trim()
+        while (rest.isNotEmpty()) {
+            val name = commandRecordTags.firstOrNull { rest.startsWith("<$it>") } ?: return false
+            val end = rest.indexOf("</$name>")
+            if (end < 0) return false
+            rest = rest.substring(end + name.length + 3).trimStart()
+        }
+        return true
+    }
+
     private val blocks = listOf(
         Block("<task-notification>", "</task-notification>") { inner ->
             SyntheticPart.TaskNotification(
@@ -59,7 +74,7 @@ object SyntheticUserMessage {
         Block("[Request interrupted by user", "]") { inner -> SyntheticPart.Interrupted(inner.contains("tool use")) },
         Block("<turn_aborted>", "</turn_aborted>") { SyntheticPart.Interrupted(false) },
         Block("<command-name>", "</command-name>", command = "name"),
-        Block("<command-message>", "</command-message>"),
+        Block("<command-message>", "</command-message>", command = "message"),
         Block("<command-args>", "</command-args>", command = "args"),
         Block("<local-command-stdout>", "</local-command-stdout>", part = commandOutput(false)),
         Block("<local-command-stderr>", "</local-command-stderr>", part = commandOutput(true)),
@@ -127,6 +142,7 @@ object SyntheticUserMessage {
         var matched = false
         while (true) {
             val block = blocks.firstOrNull { remaining.startsWith(it.start) } ?: break
+            if (block.command != null && !isCommandRecord(remaining)) break
             val end = remaining.indexOf(block.end, block.start.length)
             if (end < 0) break
             matched = true

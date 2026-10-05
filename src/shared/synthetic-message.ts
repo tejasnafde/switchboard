@@ -38,7 +38,21 @@ interface Block {
   keepEnd?: boolean
   part?: (inner: string) => SyntheticUserPart | null
   /** Part of a slash-command record, which collapses to the `/name args` the user typed. */
-  command?: 'name' | 'args'
+  command?: 'name' | 'args' | 'message'
+}
+
+const COMMAND_RECORD_TAGS = ['command-name', 'command-message', 'command-args', 'local-command-stdout', 'local-command-stderr']
+
+/** A slash-command record is ONLY these tags, so tags pasted ahead of the user's own prose stay their text. */
+function isCommandRecord(text: string): boolean {
+  let rest = text.trim()
+  while (rest) {
+    const name = COMMAND_RECORD_TAGS.find((t) => rest.startsWith(`<${t}>`))
+    const end = name ? rest.indexOf(`</${name}>`) : -1
+    if (!name || end < 0) return false
+    rest = rest.slice(end + name.length + 3).trimStart()
+  }
+  return true
 }
 
 function tag(inner: string, name: string): string | undefined {
@@ -79,7 +93,7 @@ const BLOCKS: readonly Block[] = [
   // Claude Code's record of a slash command: `/compact`, `/model x`, a skill
   // with its arguments. The tags come in either order.
   { start: '<command-name>', end: '</command-name>', command: 'name' },
-  { start: '<command-message>', end: '</command-message>' },
+  { start: '<command-message>', end: '</command-message>', command: 'message' },
   { start: '<command-args>', end: '</command-args>', command: 'args' },
   {
     start: '<local-command-stdout>',
@@ -187,11 +201,11 @@ function taskNoticeKey(n: { taskId?: string; status: string; summary: string }):
 export function splitSyntheticUserText(text: string): SyntheticUserSplit | null {
   let remaining = text.trim()
   const parts: SyntheticUserPart[] = []
-  const command = { name: '', args: '' }
+  const command = { name: '', args: '', message: '' }
   let matched = false
   for (;;) {
     const block = BLOCKS.find(({ start }) => remaining.startsWith(start))
-    if (!block) break
+    if (!block || (block.command && !isCommandRecord(remaining))) break
     const end = remaining.indexOf(block.end, block.start.length)
     if (end < 0) break
     matched = true
@@ -207,14 +221,20 @@ export function splitSyntheticUserText(text: string): SyntheticUserSplit | null 
 }
 
 /**
- * `/name args` for a transcript row that is only a slash-command record, so
- * it reads, and merges with Switchboard's own copy of the send, like the
- * command the user typed. Null for anything else.
+ * `/name args` for a transcript row that is only a slash-command record (its
+ * output included), the text Switchboard stored for that send. Null for
+ * anything else.
  */
 export function slashCommandRecordText(text: string): string | null {
-  const split = splitSyntheticUserText(text)
-  return split && split.parts.length === 0 && split.userText.startsWith('/') && text.trimStart().startsWith('<command-')
-    ? split.userText
+  if (!isCommandRecord(text)) return null
+  const userText = splitSyntheticUserText(text)?.userText
+  return userText?.startsWith('/') ? userText : null
+}
+
+/** The summary inside `compactSummaryText`, i.e. the row as builds before the wrap stored it. Null for anything else. */
+export function unwrapCompactSummaryText(text: string): string | null {
+  return text.startsWith(`${COMPACT_SUMMARY_OPEN}\n`) && text.endsWith(`\n${COMPACT_SUMMARY_CLOSE}`)
+    ? text.slice(COMPACT_SUMMARY_OPEN.length + 1, -COMPACT_SUMMARY_CLOSE.length - 1)
     : null
 }
 

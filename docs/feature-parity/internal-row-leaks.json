@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "internal-row-leaks",
-  "summary": "Provider-internal records stored with the user role no longer show as user bubbles. A Claude slash-command record (<command-name>/<command-message>/<command-args>) reads as the `/name args` the user typed and merges with Switchboard's own copy of the send, so `/compact` shows once. The summary a /compact leaves (flagged isCompactSummary in the transcript) is one collapsed 'Conversation compacted' row that expands to the summary. Codex <user_instructions> and <external_codex_apps_open_page> bootstraps are dropped like the other injected context. Only blocks at the start of a message count; a message that mentions a tag mid-text is untouched.",
+  "summary": "Provider-internal records stored with the user role no longer show as user bubbles. A Claude slash-command record (<command-name>/<command-message>/<command-args>) reads as the `/name args` the user typed (any local-command output it carries as a note) and merges with Switchboard's own copy of the send, so `/compact` and `/model x` show once. Only a record made entirely of command tags folds; tags pasted ahead of the user's own prose stay as typed. The transcript content is not rewritten (the merge matches on the folded text), so fork anchors digest it as before; a compact summary row also accepts an anchor digested over its unwrapped text. The summary a /compact leaves (flagged isCompactSummary in the transcript) is one collapsed 'Conversation compacted' row that expands to the summary. Codex <user_instructions> and <external_codex_apps_open_page> bootstraps are dropped like the other injected context. Only blocks at the start of a message count; a message that mentions a tag mid-text is untouched.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -51,8 +51,8 @@
   },
   "verification": {
     "automated": [
-      "tests/fixtures/synthetic-user-message-cases.json holds hand-written vectors (command records in both tag orders, with and without args, followed by stdout; empty stdout; stderr; caveat; compact summary; system-reminder; Codex AGENTS.md, user_instructions, environment_context, apps page, turn_aborted) plus real messages that mention a tag mid-text, an unterminated tag and typed continuation prose. tests/unit/synthetic-user-message-fixtures.test.ts and SyntheticUserMessageFixturesTest.kt run the same file against the TypeScript and Kotlin splits.",
-      "tests/unit/jsonl-parser.test.ts: a /compact record parses to '/compact' and merges with the SQLite copy into one row, the isCompactSummary record becomes one compacted part, and a typed message mentioning <command-name> is kept as typed.",
+      "tests/fixtures/synthetic-user-message-cases.json holds hand-written vectors (command records in both tag orders, with and without args, followed by stdout; command tags followed by typed prose, which stay a real message; empty stdout; stderr; caveat; compact summary; system-reminder; Codex AGENTS.md, user_instructions, environment_context, apps page, turn_aborted) plus real messages that mention a tag mid-text, an unterminated tag and typed continuation prose. tests/unit/synthetic-user-message-fixtures.test.ts and SyntheticUserMessageFixturesTest.kt run the same file against the TypeScript and Kotlin splits.",
+      "tests/unit/jsonl-parser.test.ts: a /compact record and a /model record carrying its stdout each merge with the SQLite echo into one row, pasted command tags plus prose stay as typed and merge with their echo, tests/unit/conversation-fork-anchor.test.ts accepts an anchor digested over an unwrapped compact summary, the isCompactSummary record becomes one compacted part, and a typed message mentioning <command-name> is kept as typed.",
       "apps/mobile jest: SyntheticRow shows 'Conversation compacted' collapsed and the summary on tap."
     ],
     "hardware": [],
