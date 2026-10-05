@@ -6,6 +6,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ### Removed
 - **Stale files and an unused package.** Finished one-off plans and mock-ups, two e2e probes that no npm script invokes, an unused icon, the duplicate `lint:deslop` and broken `test:coverage` scripts, the unused `@xterm/addon-webgl` dependency, and the repository copy of the deslop skill (every agent profile already has it). The worktree glossary moved from the root `CONTEXT.md` into its design doc.
+- **Dead phone code.** The Expo app drops its unused browser Google sign-in, the expo-auth-session, expo-web-browser and expo-linking packages and the reversed-client URL scheme (importing credentials from the desktop is unchanged; this needs a new APK, not an OTA). The Android app drops unused policies, models, helpers, a colour and a duplicate icon. No behaviour changes. See `docs/feature-parity/dead-code-phones.json`.
 
 - Correct performance diagnostics for concurrent send failures, failed history loads and message replacements before paint. Discover desktop and headless logs across platforms, honor data-directory overrides, and handle absent log directories.
 
@@ -124,9 +125,6 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - **The composer no longer says "Queue" for a message that steers.** A mid-turn message on Claude or Codex has always been read in the running turn, measured against the Claude SDK and Codex's `turn/steer`, but the button and placeholder promised it would wait.
 - **Sends are no longer refused after a worktree Follow has already happened.** A Follow queued behind a running turn stayed queued even when another Follow committed the move first, and every send was refused with "Session queue full while the working directory is moving" until the next turn ended. The stale request is dropped the moment a move commits. When the refusal is real, it now says whether the move is waiting for the current turn or running right now, and when to send again.
 - **A usage window no longer turns red because another window hit its limit.** Codex reports "limit reached" for the whole account without naming the window, and the parser reddened every window, so a weekly window at 16% showed red next to a 5-hour window at 100%. Only the full window (or the fullest one) is marked critical now.
-
-### Removed
-- **Dead phone code.** The Expo app drops its unused browser Google sign-in, the expo-auth-session, expo-web-browser and expo-linking packages and the reversed-client URL scheme (importing credentials from the desktop is unchanged; this needs a new APK, not an OTA). The Android app drops unused policies, models, helpers, a colour and a duplicate icon. No behaviour changes. See `docs/feature-parity/dead-code-phones.json`.
 
 ## 0.8.63 - Retired models say so, new models show up without a release, drafts can join a worktree
 

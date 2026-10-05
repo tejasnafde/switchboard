@@ -13,7 +13,7 @@ function fixture() {
 }
 function run(dir: string, files: string[] = []) {
   return execFileSync(process.execPath, [resolve('scripts/perf-summary.mjs'), ...files], {
-    encoding: 'utf8', env: { ...process.env, SB_USER_DATA: dir },
+    encoding: 'utf8', env: { ...process.env, SB_USER_DATA: dir, SWITCHBOARD_DATA_DIR: '' },
   })
 }
 
