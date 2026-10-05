@@ -391,6 +391,27 @@ class ThreadPresentationTest {
     }
 
     @Test
+    fun `stored system rows never show as an unsupported event`() {
+        fun present(id: String, text: String) = ThreadPresenter.row(
+            FeedItem.RawNotice(id, "history.system", text, JsonObject(linkedMapOf())),
+        )
+
+        val undelivered = present(
+            "h-pu_1",
+            "[[sb:peer-undelivered]] {\"to\":\"agent_2\",\"toLabel\":\"Roadmap Deepdive\",\"reason\":\"link-expired\",\"text\":\"hi\"}",
+        ) as ThreadRowPresentation.Undelivered
+        assertEquals("pu_1", undelivered.messageId)
+        assertEquals("Roadmap Deepdive", undelivered.row.toLabel)
+
+        val future = present("h-x", "[[sb:future-kind]] {\"secret\":1}") as ThreadRowPresentation.Notice
+        assertEquals("Switchboard notice", future.title)
+        assertEquals("", future.body)
+
+        val error = present("h-e", "Error: boom") as ThreadRowPresentation.Error
+        assertEquals("Error: boom", error.source.message)
+    }
+
+    @Test
     fun `history window is presented as a product notice without diagnostics`() {
         val row = ThreadPresenter.row(
             FeedItem.RawNotice(

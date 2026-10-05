@@ -7,9 +7,12 @@ import app.switchboard.mobile.domain.thread.HostWriteCard
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWritePreview
 import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.domain.thread.PeerUndelivered
 import app.switchboard.mobile.domain.thread.SyntheticPart
 import app.switchboard.mobile.domain.thread.SyntheticTone
 import app.switchboard.mobile.domain.thread.SyntheticUserMessage
+import app.switchboard.mobile.domain.thread.SystemMarkers
+import app.switchboard.mobile.domain.thread.SystemRowView
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonNumber
@@ -129,6 +132,7 @@ enum class ThreadRowKind {
     DRIFT,
     SPEND_BLOCKED,
     PEER,
+    PEER_UNDELIVERED,
     TODO,
     RAW_NOTICE,
     SYNTHETIC,
@@ -249,6 +253,15 @@ sealed interface ThreadRowPresentation {
     data class Peer(val source: FeedItem.Peer) : ThreadRowPresentation {
         override val key = source.id
         override val kind = ThreadRowKind.PEER
+    }
+
+    /** A message a session link refused; `messageId` is its stored row, which Send names. */
+    data class Undelivered(
+        override val key: String,
+        val messageId: String,
+        val row: PeerUndelivered,
+    ) : ThreadRowPresentation {
+        override val kind = ThreadRowKind.PEER_UNDELIVERED
     }
 
     data class Todo(val source: FeedItem.Todo) : ThreadRowPresentation {
@@ -429,7 +442,14 @@ object ThreadPresenter {
         is FeedItem.SpendBlocked -> ThreadRowPresentation.SpendBlocked(item)
         is FeedItem.Peer -> ThreadRowPresentation.Peer(item)
         is FeedItem.Todo -> ThreadRowPresentation.Todo(item)
-        is FeedItem.RawNotice -> if (item.eventType == "history.window") {
+        is FeedItem.RawNotice -> if (item.eventType == SystemMarkers.ROW_EVENT_TYPE) {
+            when (val view = SystemMarkers.view(item.text)) {
+                is SystemRowView.Undelivered ->
+                    ThreadRowPresentation.Undelivered(item.id, item.id.removePrefix("h-"), view.row)
+                is SystemRowView.Error -> ThreadRowPresentation.Error(FeedItem.Error(item.id, view.message, null))
+                is SystemRowView.Notice -> ThreadRowPresentation.Notice(item.id, view.title, view.body)
+            }
+        } else if (item.eventType == "history.window") {
             ThreadRowPresentation.Notice(
                 key = item.id,
                 title = "Earlier messages are not shown",
@@ -813,15 +833,28 @@ sealed interface ThreadUiAction {
         val repoRoot: String,
         val relPath: String,
     ) : ThreadUiAction
+
+    data class SendUndelivered(
+        val messageId: String,
+        val targetThreadId: String,
+        val text: String,
+    ) : ThreadUiAction
 }
 
 data class QuestionSelections(
     private val byRequestId: Map<String, List<List<String>>>,
+    /** Typed "None of the above" text per question, as on the desktop QuestionCard. */
+    private val otherByRequestId: Map<String, List<String>> = emptyMap(),
 ) : Serializable {
     fun forRequest(requestId: String): List<List<String>> = byRequestId[requestId].orEmpty()
 
+    fun otherFor(requestId: String): List<String> = otherByRequestId[requestId].orEmpty()
+
     fun with(requestId: String, answers: List<List<String>>): QuestionSelections =
         copy(byRequestId = byRequestId + (requestId to answers))
+
+    fun withOther(requestId: String, texts: List<String>): QuestionSelections =
+        copy(otherByRequestId = otherByRequestId + (requestId to texts))
 
     companion object {
         fun empty(): QuestionSelections = QuestionSelections(emptyMap())
@@ -845,23 +878,48 @@ object QuestionSelectionReducer {
         } else {
             listOf(label)
         }
+        // Picking an option clears that question's typed text.
         return state.with(
             item.requestId,
             current.mapIndexed { index, answers ->
                 if (index == questionIndex) replacement else answers
             },
-        )
+        ).withOther(item.requestId, state.otherFor(item.requestId).replaced(item.questions.size, questionIndex, ""))
+    }
+
+    /** Typing replaces that question's picks, as the typed text is what gets sent. */
+    fun type(
+        state: QuestionSelections,
+        item: FeedItem.Question,
+        questionIndex: Int,
+        text: String,
+    ): QuestionSelections {
+        if (item.answers != null || questionIndex !in item.questions.indices) return state
+        val picks = state.forRequest(item.requestId).normalized(item.questions.size)
+        return state
+            .with(item.requestId, picks.mapIndexed { index, answers -> if (index == questionIndex) emptyList() else answers })
+            .withOther(item.requestId, state.otherFor(item.requestId).replaced(item.questions.size, questionIndex, text))
+    }
+
+    /** Port of `resolveQuestionAnswers` (src/shared/question-answers.ts): typed text, else the picks in pick order. */
+    fun resolved(state: QuestionSelections, item: FeedItem.Question): List<List<String>> {
+        val picks = state.forRequest(item.requestId).normalized(item.questions.size)
+        val other = state.otherFor(item.requestId)
+        return picks.mapIndexed { index, answers ->
+            other.getOrNull(index)?.trim()?.takeIf(String::isNotEmpty)?.let(::listOf) ?: answers
+        }
     }
 
     fun canSubmit(state: QuestionSelections, item: FeedItem.Question): Boolean =
         item.answers == null &&
             item.questions.isNotEmpty() &&
-            state.forRequest(item.requestId)
-                .normalized(item.questions.size)
-                .all(List<String>::isNotEmpty)
+            resolved(state, item).all(List<String>::isNotEmpty)
 
     private fun List<List<String>>.normalized(size: Int): List<List<String>> =
         List(size) { index -> getOrNull(index).orEmpty() }
+
+    private fun List<String>.replaced(size: Int, at: Int, text: String): List<String> =
+        List(size) { index -> if (index == at) text else getOrNull(index).orEmpty() }
 }
 
 object ThreadInteractionPolicy {
@@ -907,7 +965,7 @@ object ThreadInteractionPolicy {
         item: FeedItem.Question,
         selections: QuestionSelections,
     ): ThreadUiAction.AnswerQuestion? = if (QuestionSelectionReducer.canSubmit(selections, item)) {
-        ThreadUiAction.AnswerQuestion(item.requestId, selections.forRequest(item.requestId))
+        ThreadUiAction.AnswerQuestion(item.requestId, QuestionSelectionReducer.resolved(selections, item))
     } else {
         null
     }

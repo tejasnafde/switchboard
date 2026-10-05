@@ -95,3 +95,20 @@ describe('mobile thread history', () => {
     ])
   })
 })
+
+describe('stored system rows', () => {
+  it('render as their own rows, never as the raw marker', () => {
+    const items = historyToItems([
+      message({ id: 'pu_1', role: 'system', content: '[[sb:peer-undelivered]] {"to":"agent_2","toLabel":"Roadmap","reason":"link-budget","text":"hi"}' }),
+      message({ id: 'r1', role: 'system', content: '[[sb:instance-rotated]] Default → Work' }),
+      message({ id: 'x1', role: 'system', content: '[[sb:from-the-future]] {"a":1}' }),
+      message({ id: 'e1', role: 'system', content: 'Error: boom' }),
+    ])
+    expect(items).toEqual([
+      { kind: 'undelivered', id: 'h-pu_1', messageId: 'pu_1', row: { to: 'agent_2', toLabel: 'Roadmap', reason: 'link-budget', text: 'hi', sent: false } },
+      { kind: 'notice', id: 'h-r1', text: 'Switched profile: Default → Work' },
+      { kind: 'notice', id: 'h-x1', text: 'Switchboard notice' },
+      { kind: 'error', id: 'h-e1', message: 'Error: boom' },
+    ])
+  })
+})

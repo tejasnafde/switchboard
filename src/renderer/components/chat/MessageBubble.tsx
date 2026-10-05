@@ -21,11 +21,12 @@ import {
   forkAndOpenSession,
 } from '../../services/fork-session'
 import { isForkableForkMessage } from '@shared/conversation-fork'
-import { parseRotationMarker } from './rotation-marker'
+import { parseRotationMarker } from '@shared/rotation-marker'
 import { parseUndeliveredMarker } from '@shared/peer-links'
 import { PeerUndeliveredRow } from './PeerUndeliveredRow'
 import { ApprovalResultRow } from './ApprovalResultRow'
 import { parseApprovalResultMarker } from '@shared/agent-approval-cards'
+import { SYSTEM_MARKER_PREFIX, systemRowView } from '@shared/system-markers'
 import { SyntheticUserRow } from './SyntheticUserRow'
 import { splitSyntheticUserText } from '@shared/synthetic-message'
 import { stripDigest } from '@shared/agent-digest'
@@ -229,10 +230,16 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   const approvalResult = isSystem ? parseApprovalResultMarker(message.content) : null
   if (approvalResult) return <ApprovalResultRow row={approvalResult} messageId={message.id} />
 
+  // A marker without its own row (a newer kind, the profile-restart handoff,
+  // a payload that did not parse) gets the same pill, never its raw payload.
+  const markerNotice = isSystem && !rotation && message.content.startsWith(SYSTEM_MARKER_PREFIX)
+    ? systemRowView(message.content)
+    : null
+
   // Compact, persistent indicator that the conversation's provider instance
   // changed mid-flight. Renders inline with surrounding bubbles so the
   // user can correlate which credential set produced the next turn.
-  if (rotation) {
+  if (rotation || markerNotice?.kind === 'notice') {
     return (
       <div style={{
         display: 'flex',
@@ -253,16 +260,18 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           fontFamily: '-apple-system, system-ui, sans-serif',
         }}>
           <span aria-hidden style={{ fontSize: 10 }}>⇄</span>
-          {rotation.kind === 'agent' ? (
+          {markerNotice?.kind === 'notice' ? (
+            <span>{markerNotice.body ? `${markerNotice.title} · ${markerNotice.body}` : markerNotice.title}</span>
+          ) : rotation?.kind === 'agent' ? (
             <span>Switched agent: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · conversation replays as context on your next message</span>
-          ) : rotation.kind === 'handoff' ? (
+          ) : rotation?.kind === 'handoff' ? (
             <span>Context handoff: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · earlier conversation replayed to the new agent</span>
-          ) : rotation.kind === 'peer' ? (
+          ) : rotation?.kind === 'peer' ? (
             <span>Sent to <strong>{rotation.toName}</strong></span>
-          ) : rotation.kind === 'peer-agent' ? (
+          ) : rotation?.kind === 'peer-agent' ? (
             <span>The agent messaged <strong>{rotation.toName}</strong></span>
           ) : (
-            <span>Switched profile: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong></span>
+            <span>Switched profile: <strong>{rotation?.fromName}</strong> → <strong>{rotation?.toName}</strong></span>
           )}
         </div>
       </div>

@@ -2,14 +2,18 @@ package app.switchboard.mobile.data.thread
 
 import app.switchboard.mobile.domain.thread.DriftSuggestion
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.PeerUndelivered
 import app.switchboard.mobile.domain.thread.SpendBlock
 import app.switchboard.mobile.domain.thread.SyntheticUserMessage
+import app.switchboard.mobile.domain.thread.SystemMarkers
 import app.switchboard.mobile.domain.thread.ThreadEventPayload
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadRuntimeEvent
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
 import app.switchboard.mobile.domain.thread.UserMessageVisibility
+import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonObject
+import app.switchboard.mobile.protocol.JsonString
 
 data class ThreadKey(
     val connectionId: String,
@@ -509,6 +513,9 @@ object ThreadStoreReducer {
 
     private fun appendRawNotice(thread: ThreadState, scoped: ScopedThreadEvent): ThreadState {
         val event = scoped.event
+        if (event is ThreadRuntimeEvent.Extension) systemRow(event)?.let { row ->
+            return thread.copy(feed = upsert(thread.feed, row))
+        }
         val text = when (event) {
             is ThreadRuntimeEvent.Malformed -> "Malformed ${event.type}: ${event.error}"
             is ThreadRuntimeEvent.Extension -> "Unsupported runtime event: ${event.type}"
@@ -520,6 +527,31 @@ object ThreadStoreReducer {
                 FeedItem.RawNotice(eventId(scoped, "raw", thread.eventJournal.size), event.type, text, event.raw),
             ),
         )
+    }
+
+    /**
+     * The two events that carry a stored system row, as that row: same id and
+     * shape as the history load, so a reload and a live event land on one row
+     * and a Not delivered row turns sent in place.
+     */
+    private fun systemRow(event: ThreadRuntimeEvent.Extension): FeedItem.RawNotice? {
+        val raw = event.raw
+        fun str(key: String) = (raw.values[key] as? JsonString)?.value
+        val messageId = str("messageId") ?: return null
+        val content = when (event.type) {
+            "approval.result" -> str("content")
+            "peer.undelivered" -> SystemMarkers.undeliveredMarker(
+                PeerUndelivered(
+                    to = str("peerThreadId") ?: return null,
+                    toLabel = str("peerLabel") ?: return null,
+                    reason = str("reason") ?: return null,
+                    text = str("text") ?: return null,
+                    sent = (raw.values["sent"] as? JsonBoolean)?.value == true,
+                ),
+            )
+            else -> null
+        } ?: return null
+        return FeedItem.RawNotice("h-$messageId", SystemMarkers.ROW_EVENT_TYPE, content, raw)
     }
 
     private fun stopRetries(feed: List<FeedItem>): List<FeedItem> = feed.map {
