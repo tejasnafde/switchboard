@@ -67,7 +67,8 @@
       "Final foreground root gate: npm run typecheck and npm test -- --maxWorkers=2 passed (534 files, 5,807 tests, four skipped); build:fast and deslop lint passed.",
       "Eighteen new Darwin wait screenshots were inspected across dark, light and translucent themes. Existing PNG changes were restored. Both final SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens comparison runs passed without snapshot updates.",
       "Round 2 failing-first regressions: A/B/A stale rejection, current-success failure clearing with pending-switch preservation, blocked Expo send reasons, stable JSONL retry and bounded retry exhaustion.",
-      "Round 2 Expo Jest: 11 suites and 64 tests passed. Background build:fast and root typecheck passed. Both final screens-only comparisons passed without snapshot updates after inspecting and restoring all 14 changed PNGs from a timed-out update run; no intentional desktop visual change."
+      "Round 2 Expo Jest: 11 suites and 64 tests passed. Background build:fast and root typecheck passed. Both final screens-only comparisons passed without snapshot updates after inspecting and restoring all 14 changed PNGs from a timed-out update run; no intentional desktop visual change.",
+      "tests/unit/jsonl-cache.test.ts: a same-size rewrite whose stat fields all still match is read again (content hash on every hit; about 60 ms for an 83 MB transcript, measured on an M-series Mac)."
     ],
     "hardware": [],
     "notExercised": [

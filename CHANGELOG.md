@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Fixed
+- **A reopened chat can no longer show an old copy of its transcript.** The chat history cache trusted file size and times, which miss a same-size rewrite that keeps the old modification time (the Windows release build caught it). A cache hit now also checks a hash of the file, which costs about 60 ms for an 80 MB transcript and still skips the parse.
+
 - Fix stale chat-load failure banners after rapid switching, retain and explain blocked Expo sends, and retry transcripts changed during a read once before falling back.
 
 - Speed up long-chat opens and account switches with streamed JSONL parsing, retained-memory history caching and validated transcript evidence reuse. Show loading, switching and startup states on desktop and phones while keeping drafts editable.
