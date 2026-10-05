@@ -43,6 +43,19 @@ describe('chat open through first committed message list', () => {
     frames[1](0)
     expect(end).toHaveBeenCalledExactlyOnceWith({ messages: 1, outcome: 'rendered' })
   })
+  it('finishes on a replacement that commits before the loaded array did', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
+    const open = beginChatOpen('t')
+    const first = { id: 'a', role: 'assistant' as const, content: 'one', timestamp: 1 }
+    const loaded = [first]
+    open.ready('t', loaded)
+    chatMessagesCommitted('t', [])
+    expect(frames).toHaveLength(0)
+    chatMessagesCommitted('t', [first, { id: 'b', role: 'assistant' as const, content: 'two', timestamp: 2 }])
+    frames[0](0)
+    expect(end).toHaveBeenCalledExactlyOnceWith({ messages: 2, outcome: 'rendered' })
+  })
   it.each([null, { messages: [], loadStatus: 'error' as const }])('ends a failed load without awaiting an empty-list paint (%j)', (response) => {
     const open = beginChatOpen('t')
     open.ready('t', [], {}, response)

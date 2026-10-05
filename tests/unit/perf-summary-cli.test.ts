@@ -24,6 +24,19 @@ describe('performance summary CLI discovery', () => {
     writeFileSync(join(dir, 'logs', 'switchboard-test.log'), '[perf] chat.open 450ms {}')
     expect(run(dir)).toContain('chat.open: count=1 p50=450ms')
   })
+  it('discovers both desktop and headless data-directory overrides', () => {
+    const desktop = fixture()
+    const headless = fixture()
+    mkdirSync(join(desktop, 'logs'))
+    mkdirSync(join(headless, 'logs'))
+    writeFileSync(join(desktop, 'logs', 'switchboard-desktop.log'), '[perf] desktop.span 450ms {}')
+    writeFileSync(join(headless, 'logs', 'switchboard-headless.log'), '[perf] headless.span 600ms {}')
+    const output = execFileSync(process.execPath, [resolve('scripts/perf-summary.mjs')], {
+      encoding: 'utf8', env: { ...process.env, SB_USER_DATA: desktop, SWITCHBOARD_DATA_DIR: headless },
+    })
+    expect(output).toContain('desktop.span: count=1 p50=450ms')
+    expect(output).toContain('headless.span: count=1 p50=600ms')
+  })
   it('treats a missing log directory as empty input', () => {
     expect(run(fixture())).toBe('No performance spans found.\n')
   })
