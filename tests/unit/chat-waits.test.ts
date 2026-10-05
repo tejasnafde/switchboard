@@ -32,3 +32,27 @@ describe('chat waits', () => {
     expect(useChatWaitStore.getState().waits.one).toBeUndefined()
   })
 })
+
+it('ignores a stale failure after A is reopened and loaded successfully', () => {
+  const store = useChatWaitStore.getState()
+  const chat = { id: 'race-a', title: 'A', projectPath: '/a' }
+  const stale = store.open('primary', chat)
+  store.open('primary', { ...chat, id: 'race-b' })
+  const current = store.open('primary', chat)
+  store.settleLoad('primary', current, chat.id)
+  store.finishOpen('primary', current)
+  store.settleLoad('primary', stale, chat.id, 'Could not load conversation')
+  expect(useChatWaitStore.getState().waits[chat.id]).toBeUndefined()
+})
+
+it('clears a load failure on current success without clearing an active switch', () => {
+  const store = useChatWaitStore.getState()
+  const current = store.open('primary', { id: 'clear-a', title: 'A', projectPath: '/a' })
+  store.settleLoad('primary', current, 'clear-a', 'Failed')
+  expect(useChatWaitStore.getState().waits['clear-a']?.error).toBe(true)
+  store.settleLoad('primary', current, 'clear-a')
+  expect(useChatWaitStore.getState().waits['clear-a']).toBeUndefined()
+  store.begin('clear-a', 'Switching')
+  store.settleLoad('primary', current, 'clear-a')
+  expect(useChatWaitStore.getState().waits['clear-a']?.pending).toBe(true)
+})

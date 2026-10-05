@@ -77,6 +77,7 @@ import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
 import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '@shared/agent-approval-cards'
 import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
 import { styles } from './thread-screen.styles'
+import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
 import { collapseFileEdits, type FeedRow } from '../lib/file-groups'
 
@@ -544,7 +545,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // `textOverride` is for one-tap actions like the Compact banner: it sends
   // that text alone and leaves the user's draft and attachments untouched.
   const send = (textOverride?: string) => {
-    if (rotatingRef.current || loadLabel) {
+    const blocked = blockedSendReason(loadLabel, rotatingRef.current)
+    if (blocked) {
+      log.info('send blocked by conversation wait', { threadId, reason: blocked })
+      reportError(new Error(blocked))
       return
     }
     const text = (textOverride ?? draft).trim()
@@ -1064,7 +1068,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {(switchLabel || loadLabel) && <ThreadWaitStatus label={`${switchLabel ?? loadLabel} Send is held; you can keep typing.`} />}
+      {(switchLabel || loadLabel) && <ThreadWaitStatus label={`${switchLabel ?? loadLabel} Your draft is kept; tap Send when ready.`} />}
       {waitError && <ThreadWaitStatus label={waitError} error />}
 
       {/* Outside the list: ListEmptyComponent gets no counter-transform from an

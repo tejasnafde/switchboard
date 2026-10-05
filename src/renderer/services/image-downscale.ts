@@ -9,6 +9,15 @@
  * Returned `dataUrl` is ready to drop into a markdown `![](...)` embed.
  */
 
+import {
+  fitWithin,
+  mimeTypeOf,
+  resizeAttempts,
+  sendAsIs,
+  shrinkToBudget,
+  type ImageRefusal,
+} from '@shared/image-resize'
+
 export interface DownscaleResult {
   dataUrl: string
   width: number
@@ -86,4 +95,42 @@ export async function downscaleImage(
   const outQuality = keepAlpha ? undefined : jpegQuality
   const dataUrl = canvas.toDataURL(outType, outQuality)
   return { dataUrl, width: target.width, height: target.height, passthrough: false }
+}
+
+/**
+ * Shrink a chat attachment to fit `remaining` bytes of the message's 3 MiB
+ * image budget, with the same steps the phones use (`@shared/image-resize`).
+ * Chromium applies EXIF orientation when it decodes, and the canvas output
+ * carries no EXIF.
+ */
+export async function fitImageToBudget(
+  file: File,
+  remaining: number,
+): Promise<{ ok: true; dataUrl: string } | { ok: false; reason: ImageRefusal }> {
+  const sourceUrl = await readAsDataUrl(file)
+  const attempts = resizeAttempts(file.type)
+  if (!attempts) {
+    const fit = sendAsIs(sourceUrl.length, remaining)
+    return fit === 'ok' ? { ok: true, dataUrl: sourceUrl } : { ok: false, reason: fit }
+  }
+  const img = await loadImage(sourceUrl)
+  const outcome = await shrinkToBudget(attempts, remaining, async (attempt) => {
+    const size = fitWithin(img.naturalWidth, img.naturalHeight, attempt.maxSide)
+    const canvas = document.createElement('canvas')
+    canvas.width = size.width
+    canvas.height = size.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('canvas 2d context unavailable')
+    if (attempt.format === 'jpeg') {
+      // JPEG has no alpha: a transparent pixel would otherwise turn black.
+      ctx.fillStyle = '#fff'
+      ctx.fillRect(0, 0, size.width, size.height)
+    }
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, 0, 0, size.width, size.height)
+    const dataUrl = canvas.toDataURL(mimeTypeOf(attempt.format), attempt.quality)
+    return { result: dataUrl, wireBytes: dataUrl.length }
+  })
+  return outcome.ok ? { ok: true, dataUrl: outcome.result } : outcome
 }

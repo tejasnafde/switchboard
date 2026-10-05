@@ -6,10 +6,12 @@
  * A link is made by hand (Reviews > Link to chat), by an agent that opened
  * the PR (`create_pull_request`), or automatically, once, when the chat's
  * assistant text, a tool's input or its output names a PR URL (or a bbpr
- * command a PR number) of the chat's own project repository. A PR of another
- * repository is never linked.
+ * command a PR number) of a repository the chat's project covers
+ * (`project-repos.ts`: its own, or for a parent folder of several
+ * repositories, theirs). A PR of any other repository is never linked.
  */
-import { prKey, repoKey, type PrHost, type PrRef, type PrSummary, type RepoRef } from './pull-requests'
+import { prKey, type PrHost, type PrRef, type PrSummary } from './pull-requests'
+import { coveredRepos, projectCoversRepo, type ProjectRepos } from './project-repos'
 
 export type PrLinkSource = 'manual' | 'auto'
 
@@ -63,9 +65,9 @@ export function isPrRef(value: unknown): value is PrRef {
     && Number.isInteger(r.number) && (r.number as number) > 0
 }
 
-/** A chat may link only PRs of the repository its project points at. */
-export function canLinkToProject(ref: PrRef, projectRepo: RepoRef | null): boolean {
-  return projectRepo !== null && repoKey(ref) === repoKey(projectRepo)
+/** A chat may link only PRs of a repository its project covers. */
+export function canLinkToProject(ref: PrRef, project: ProjectRepos | null): boolean {
+  return projectCoversRepo(project, ref)
 }
 
 // https://github.com/<owner>/<repo>/pull/<n>
@@ -94,19 +96,21 @@ export function findPullRequestUrls(text: string): PrRef[] {
   return out
 }
 
-/** The PR URLs in `text` a chat of a project on `projectRepo` should link. */
-export function autoLinkRefs(text: string, projectRepo: RepoRef | null): PrRef[] {
-  if (!projectRepo) return []
-  return findPullRequestUrls(text).filter((ref) => canLinkToProject(ref, projectRepo))
+/** The PR URLs in `text` a chat of `project` should link. */
+export function autoLinkRefs(text: string, project: ProjectRepos | null): PrRef[] {
+  if (coveredRepos(project).length === 0) return []
+  return findPullRequestUrls(text).filter((ref) => canLinkToProject(ref, project))
 }
 
 /**
- * The PRs a chat of a project on `projectRepo` should link: the URLs in
- * `text`, plus the numbers a `bbpr <n>` command named, which bbpr resolves
- * against the current git remote, the project's (Bitbucket only).
+ * The PRs a chat of `project` should link: the URLs in `text`, plus the
+ * numbers a `bbpr <n>` command named, which bbpr resolves against the current
+ * git remote, the project's own (Bitbucket only; a parent folder's child
+ * repositories link by URL).
  */
-export function projectPrRefs(text: string, bbprNumbers: readonly number[], projectRepo: RepoRef | null): PrRef[] {
-  const refs = autoLinkRefs(text, projectRepo)
+export function projectPrRefs(text: string, bbprNumbers: readonly number[], project: ProjectRepos | null): PrRef[] {
+  const refs = autoLinkRefs(text, project)
+  const projectRepo = project?.own ?? null
   if (projectRepo?.host !== 'bitbucket') return refs
   for (const number of bbprNumbers) {
     if (!refs.some((ref) => ref.number === number)) refs.push(normalizePrRef({ ...projectRepo, number }))

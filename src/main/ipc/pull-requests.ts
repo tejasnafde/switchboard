@@ -53,6 +53,7 @@ import { PullRequestService } from '../pull-requests/service'
 import { createDemoPullRequestService } from '../pull-requests/demo'
 import { setAgentPullRequestAccess } from '../mcp/pr-tools'
 import { currentBranch, remoteHasBranch } from '../pull-requests/branch-check'
+import { resolveRepoDir, scanChildRepoDirs } from '../pull-requests/project-repos'
 
 const log = createMainLogger('ipc:pull-requests')
 const DEMO = process.env.SB_DEMO_ADAPTER === '1'
@@ -89,6 +90,7 @@ function getService(): PullRequestService {
     : new PullRequestService({
       listProjects: () => getProjects().map((p) => p.path),
       readRemotes,
+      scanChildRepos: scanChildRepoDirs,
       github: () => github,
       bitbucket: bitbucketProvider,
       bitbucketState: () => credentials.status(),
@@ -128,6 +130,7 @@ export function attachPullRequestAutoLink(bus: RuntimeEventBus, host: BackendHos
       const row = getConversationByThreadId(threadId)
       return row ? { id: row.id, projectPath: row.project_path, cwd: row.worktree_path || row.project_path } : null
     },
+    projectRepos: (projectPath) => getService().projectRepos(projectPath),
     repoForProject: (projectPath) => getService().repoFor(projectPath),
     link: (conversationId, ref) => linkConversationPullRequest(conversationId, ref, 'auto'),
     notify: (conversationId) => notifyLinks(conversationId),
@@ -143,13 +146,13 @@ function registerLinkHandlers(host: BackendHost): void {
   host.handle(PullRequestChannels.LINKABLE_CHATS, async (ref: unknown): Promise<PrLinkChat[]> =>
     isPrRef(ref) ? listLinkableChats(await getService().projectPathsFor(ref)) : [])
 
-  // Same rule as the auto-link: only a PR of the repository the chat's project points at.
+  // Same rule as the auto-link: only a PR of a repository the chat's project covers.
   host.handle(PullRequestChannels.LINK, async (threadId: unknown, ref: unknown): Promise<PrLinkResult> => {
     if (typeof threadId !== 'string' || !isPrRef(ref)) return { ok: false, message: 'Not a chat and a pull request.' }
     const chat = getConversationByThreadId(threadId)
     if (!chat) return { ok: false, message: 'That chat no longer exists.' }
-    if (!canLinkToProject(ref, await getService().repoFor(chat.project_path))) {
-      return { ok: false, message: "This pull request is not on the repository of that chat's project." }
+    if (!canLinkToProject(ref, await getService().projectRepos(chat.project_path))) {
+      return { ok: false, message: "This pull request is not on a repository of that chat's project." }
     }
     if (linkConversationPullRequest(chat.id, ref, 'manual')) notifyLinks(chat.id)
     return { ok: true }
@@ -180,6 +183,7 @@ function historyScanDeps(): PullRequestHistoryScanDeps {
   return {
     listUnscanned: listUnscannedPullRequestHistoryScanTargets,
     readHistory: readConversationHistory,
+    projectRepos: (projectPath) => getService().projectRepos(projectPath),
     repoForProject: (projectPath) => getService().repoFor(projectPath),
     link: (conversationId, ref) => linkConversationPullRequest(conversationId, ref, 'auto'),
     notify: (conversationId) => notifyLinks(conversationId),
@@ -273,7 +277,9 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     inlineComment: (ref, input) => getService().inlineComment(ref, input),
     submitReview: (ref, input) => getService().submitReview(ref, input),
     chatProject: (chatId) => getConversationByThreadId(chatId)?.project_path ?? null,
-    repoFor: (projectPath) => getService().repoFor(projectPath),
+    repoFor: (dir) => getService().repoFor(dir),
+    projectRepos: (projectPath, opts) => getService().projectRepos(projectPath, opts),
+    resolveRepoDir: (projectPath, repoPath) => resolveRepoDir(projectPath, repoPath),
     currentBranch: (cwd) => currentBranch(cwd),
     remoteHasBranch: (cwd, repo, branch) => remoteHasBranch(cwd, repo, branch),
     defaultBranch: (repo) => getService().defaultBranch(repo),

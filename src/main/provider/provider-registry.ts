@@ -35,7 +35,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
-import { commitConversationProviderSwitch, getConversationRuntimeMode, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
+import { commitConversationProviderSwitch, getConversationRuntimeMode, getSetting, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope, describeRequestClient, remoteDeviceHasScope } from '../backend/request-context'
 import {
@@ -68,6 +68,8 @@ import {
   formatUndeliveredMarker,
   parseUndeliveredMarker,
   PeerLinkBook,
+  PEER_LINK_DURATION_SETTING,
+  peerLinkDefaultWindow,
   PEER_LINK_NOT_DELIVERED,
   PEER_UNDELIVERED_MARKER_PREFIX,
   peerUndeliveredId,
@@ -657,17 +659,19 @@ export class ProviderRegistry implements PeerToolHost {
 
   /**
    * Link two live sessions on this backend, or renew an existing link with a
-   * fresh budget of `messages`. Reached only from the LINK_PEER handler, which
-   * is user-directed and admin-scoped: no agent tool calls this.
+   * fresh budget of `messages` and a window of `windowMs` (the Link duration
+   * setting when omitted). Reached only from the LINK_PEER handler, which is
+   * user-directed and admin-scoped: no agent tool calls this.
    */
-  linkPeers(threadId: string, peerThreadId: string, messages?: number): PeerLinkView[] {
+  linkPeers(threadId: string, peerThreadId: string, messages?: number, windowMs?: number): PeerLinkView[] {
     const a = resolveRootThreadId(threadId)
     const b = resolveRootThreadId(peerThreadId)
     if (!this.isLiveSession(threadId)) throw new Error('This chat is not running. Send it a message first, then link it.')
     if (!this.isLiveSession(peerThreadId)) {
       throw new Error(`"${this.sessionTitle(peerThreadId)}" is not running. Open it, then link again.`)
     }
-    const result = this.peerLinks.link(a, b, 'user', Date.now(), messages)
+    const windowLength = windowMs ?? peerLinkDefaultWindow(getSetting(PEER_LINK_DURATION_SETTING))
+    const result = this.peerLinks.link(a, b, 'user', Date.now(), messages, windowLength)
     if (!result.ok) throw new Error(result.message)
     log.info(`peer link ${result.created ? 'created' : 'renewed'}: ${a} <-> ${b}`)
     this.announcePeerLinks([a, b])
@@ -2512,8 +2516,8 @@ export class ProviderRegistry implements PeerToolHost {
     // path's budget while skipping the approval canUseTool gives it.
     this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) =>
       this.deliverPeerMessage({ ...input, initiator: 'user' }))
-    this.host.handle(ProviderChannels.LINK_PEER, async (input: { threadId: string; peerThreadId: string; messages?: number }) =>
-      this.linkPeers(input.threadId, input.peerThreadId, input.messages))
+    this.host.handle(ProviderChannels.LINK_PEER, async (input: { threadId: string; peerThreadId: string; messages?: number; windowMs?: number }) =>
+      this.linkPeers(input.threadId, input.peerThreadId, input.messages, input.windowMs))
     this.host.handle(ProviderChannels.EXTEND_PEER_LINK, async (input: { threadId: string; peerThreadId: string }) =>
       this.extendPeerLink(input.threadId, input.peerThreadId))
     this.host.handle(ProviderChannels.UNLINK_PEER, async (input: { threadId: string; peerThreadId?: string }) =>

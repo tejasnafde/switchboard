@@ -11,14 +11,17 @@ class AndroidComposerAttachmentStager(context: Context) : ComposerAttachmentStag
     private val delegate = PrivateComposerAttachmentStager(
         rootDirectory = File(context.filesDir, DRAFT_ATTACHMENT_DIRECTORY),
         contentUris = AndroidContentUriSource(context.contentResolver),
+        shrinker = BitmapImageShrinker(),
         ownedSourceRootDirectory = File(
             context.filesDir,
             AndroidPrivateFilesAttachmentStager.ATTACHMENT_DIRECTORY,
         ),
     )
 
-    override fun stage(sources: List<ComposerImageSource>): ComposerAttachmentStageResult =
-        delegate.stage(sources)
+    override fun stage(
+        sources: List<ComposerImageSource>,
+        existing: List<ComposerAttachment>,
+    ): ComposerAttachmentStageResult = delegate.stage(sources, existing)
 
     override fun discard(attachments: List<ComposerAttachment>) = delegate.discard(attachments)
 

@@ -1004,6 +1004,8 @@ export function App() {
                 timing?: import('@shared/perf-chat').ChatLoadTiming
                 meta: { id: string; title: string; projectPath: string; agentType: string } | null
               }
+              if (!isCurrentOpen()) return
+              waits.settleLoad(openingSlot, openingTicket, session.id)
               loadTiming = resp?.timing
               if (resp?.messages?.length) {
                 setLoadedMessages(session.id, resp.messages)
@@ -1014,9 +1016,10 @@ export function App() {
               }
             } catch (err) {
               log.warn('session history reload failed', { sessionId: session.id, machineId: effectiveMachineId, err })
-              waits.fail(session.id, 'Could not load conversation. Select this chat to retry.')
+              waits.settleLoad(openingSlot, openingTicket, session.id, 'Could not load conversation. Select this chat to retry.')
             }
           }
+          if (!isCurrentOpen()) return
           // Thread (re)open: recover any approval/question/plan card a resume
           // gap or a reload dropped. Cards are never persisted to history, so
           // this runs whether or not the reload above ran.
@@ -1060,9 +1063,10 @@ export function App() {
         let loaded: LoadedSession | null = null
         try {
           loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
+          waits.settleLoad(openingSlot, openingTicket, session.id)
         } catch (err) {
           log.warn('session history load failed', { sessionId: session.id, machineId: effectiveMachineId, err })
-          waits.fail(session.id, 'Could not load conversation. Select this chat to retry.')
+          waits.settleLoad(openingSlot, openingTicket, session.id, 'Could not load conversation. Select this chat to retry.')
         }
 
         if (!isCurrentOpen()) return
@@ -1152,6 +1156,7 @@ export function App() {
         if (shouldRetrySessionLoadAfterCreate(Boolean(loaded?.meta), session.filePath)) {
           try {
             loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
+            waits.settleLoad(openingSlot, openingTicket, session.id)
           } catch (err) {
             log.warn('session history reload after create failed', { sessionId: session.id, err })
           }

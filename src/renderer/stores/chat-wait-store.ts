@@ -7,6 +7,7 @@ interface ChatWaitStore {
   opening: Partial<Record<ChatSlot, OpeningChat>>
   waits: Record<string, ChatWait | undefined>
   open: (slot: ChatSlot, chat: Omit<OpeningChat, 'ticket'>) => number
+  settleLoad: (slot: ChatSlot, ticket: number, id: string, error?: string) => void
   finishOpen: (slot: ChatSlot, ticket: number) => void
   begin: (id: string, label: string) => void
   fail: (id: string, label: string) => void
@@ -25,6 +26,14 @@ export const useChatWaitStore = create<ChatWaitStore>((set) => ({
     })
     return next
   },
+  settleLoad: (slot, completed, id, error) => set((state) => {
+    if (state.opening[slot]?.ticket !== completed) return state
+    if (error) return { waits: { ...state.waits, [id]: { label: error, pending: false, error: true } } }
+    if (!state.waits[id]?.error) return state
+    const waits = { ...state.waits }
+    delete waits[id]
+    return { waits }
+  }),
   finishOpen: (slot, completed) => set((state) => {
     if (state.opening[slot]?.ticket !== completed) return state
     const opening = { ...state.opening }

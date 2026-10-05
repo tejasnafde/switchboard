@@ -30,6 +30,7 @@ const titles = new Map<string, string>([
   ['w3', 'Worker C'],
   ['outsider', 'Unrelated'],
 ])
+const settings = new Map<string, string>()
 const saved: Array<{ id: string; conversationId: string; role: string; content: string }> = []
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
@@ -52,7 +53,7 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationAgentType: () => null,
   getConversationExecutionRoot: () => null,
   getConversationProviderInstanceId: () => null,
-  getSetting: () => null,
+  getSetting: (key: string) => settings.get(key) ?? null,
 }))
 
 import { WsHost } from '../../src/main/backend/ws-host'
@@ -66,6 +67,8 @@ import {
   PEER_LINK_EXTEND_MESSAGES,
   PEER_LINK_MAX_MESSAGES,
   PEER_LINK_MESSAGE_BUDGET,
+  PEER_LINK_DURATION_SETTING,
+  PEER_LINK_WINDOW_MS,
   type PeerLinkView,
 } from '../../src/shared/peer-links'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
@@ -180,6 +183,20 @@ describe('linking', () => {
     expect(await linksOf('w1')).toMatchObject([{ peerThreadId: 'hub', title: 'Lead' }])
     await flush()
     expect(linkChanges.at(-1)?.threadIds.sort()).toEqual(['hub', 'w1'])
+  })
+
+  it('gives a link without a time the Link duration setting, and one with a time its own', async () => {
+    const { cwd } = await setup()
+    await startAll(cwd)
+    settings.set(PEER_LINK_DURATION_SETTING, '4h')
+    try {
+      expect((await link('hub', 'w1'))[0].windowMs).toBe(4 * 60 * 60_000)
+      const own = await client!.invoke(ProviderChannels.LINK_PEER, { threadId: 'hub', peerThreadId: 'w2', windowMs: 2 * 60 * 60_000 }) as PeerLinkView[]
+      expect(own.find((l) => l.peerThreadId === 'w2')?.windowMs).toBe(2 * 60 * 60_000)
+    } finally {
+      settings.clear()
+    }
+    expect((await link('hub', 'w3')).find((l) => l.peerThreadId === 'w3')?.windowMs).toBe(PEER_LINK_WINDOW_MS)
   })
 
   it('refuses a session that is not running', async () => {

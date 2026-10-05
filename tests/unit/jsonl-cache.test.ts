@@ -110,22 +110,39 @@ it('retains small parsed histories from two large tool-output transcripts', asyn
   } finally { await rm(dir, { recursive: true, force: true }) }
 }, 20_000)
 
-it('does not cache a file changed during parsing', async () => {
+it('re-reads a file changed after parsing before returning a transcript', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
   try {
     const path = join(dir, 'changed.jsonl')
     await writeFile(path, line('one', '2026-01-01T00:00:00Z'))
-    const original = JsonlParser.prototype.feed
-    const feed = vi.spyOn(JsonlParser.prototype, 'feed').mockImplementationOnce(function (this: JsonlParser, chunk) {
+    const original = JsonlParser.prototype.flush
+    const flush = vi.spyOn(JsonlParser.prototype, 'flush').mockImplementationOnce(function (this: JsonlParser) {
+      original.call(this)
       appendFileSync(path, line('two', '2026-01-01T00:00:01Z'))
-      original.call(this, chunk)
     })
     let first
     try { first = await loadJsonlCached(path, 'claude-code') }
-    finally { feed.mockRestore() }
-    const second = await loadJsonlCached(path, 'claude-code')
-    expect(second).not.toBe(first)
-    expect(second?.map((m) => m.content)).toEqual(['one', 'two'])
+    finally { flush.mockRestore() }
+    expect(first?.map((m) => m.content)).toEqual(['one', 'two'])
+    expect(await loadJsonlCached(path, 'claude-code')).toBe(first)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+it('stops after one retry and returns null if the file keeps changing', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
+  try {
+    const path = join(dir, 'changing.jsonl')
+    await writeFile(path, line('one', '2026-01-01T00:00:00Z'))
+    const original = JsonlParser.prototype.flush
+    const flush = vi.spyOn(JsonlParser.prototype, 'flush').mockImplementation(function (this: JsonlParser) {
+      original.call(this)
+      appendFileSync(path, line('two', '2026-01-01T00:00:01Z'))
+    })
+    try {
+      expect(await loadJsonlCached(path, 'claude-code')).toBeNull()
+      expect(flush).toHaveBeenCalledTimes(2)
+    } finally { flush.mockRestore() }
+    expect((await loadJsonlCached(path, 'claude-code'))?.length).toBe(3)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
 

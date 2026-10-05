@@ -60,6 +60,15 @@ export async function loadJsonlCached(
   source: 'claude-code' | 'codex',
   timing?: ChatLoadTiming,
 ): Promise<ChatMessage[] | null> {
+  return loadJsonlSnapshot(filePath, source, timing, true)
+}
+
+async function loadJsonlSnapshot(
+  filePath: string,
+  source: 'claude-code' | 'codex',
+  timing: ChatLoadTiming | undefined,
+  retry: boolean,
+): Promise<ChatMessage[] | null> {
   let st
   try {
     st = await stat(filePath)
@@ -105,7 +114,8 @@ export async function loadJsonlCached(
     }
     const after = await stat(filePath)
     if (st.size !== after.size || st.mtimeMs !== after.mtimeMs || st.ctimeMs !== after.ctimeMs || st.ino !== after.ino || st.dev !== after.dev) {
-      return messages
+      log.warn('session jsonl changed during read', { filePath, retry })
+      return retry ? loadJsonlSnapshot(filePath, source, timing, false) : null
     }
   } catch (err) {
     // A fragment that stats OK but fails to read (EACCES, deleted in the
