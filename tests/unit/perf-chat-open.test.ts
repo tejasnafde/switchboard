@@ -11,8 +11,8 @@ describe('chat open through first committed message list', () => {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
     const open = beginChatOpen('t')
     const messages = []
-    chatMessagesCommitted('t', [])
     open.ready('t', messages, { readMs: 44 })
+    chatMessagesCommitted('t', [])
     expect(frames).toHaveLength(0)
     chatMessagesCommitted('t', messages)
     expect(end).not.toHaveBeenCalled()
@@ -28,6 +28,25 @@ describe('chat open through first committed message list', () => {
     open.ready('t', messages)
     frames[0](0)
     expect(end).toHaveBeenCalledOnce()
+  })
+  it('does not count an array replaced before paint and finishes on the replacement', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
+    const open = beginChatOpen('t')
+    const messages = []
+    const replacement = [{ id: 'a', role: 'assistant' as const, content: 'reply', timestamp: 1 }]
+    open.ready('t', messages)
+    chatMessagesCommitted('t', messages)
+    chatMessagesCommitted('t', replacement)
+    frames[0](0)
+    expect(end).not.toHaveBeenCalled()
+    frames[1](0)
+    expect(end).toHaveBeenCalledExactlyOnceWith({ messages: 1, outcome: 'rendered' })
+  })
+  it.each([null, { messages: [], loadStatus: 'error' as const }])('ends a failed load without awaiting an empty-list paint (%j)', (response) => {
+    const open = beginChatOpen('t')
+    open.ready('t', [], {}, response)
+    expect(end).toHaveBeenCalledExactlyOnceWith({ outcome: 'load-error' })
   })
   it('does not count an abandoned frame as a rendered chat', () => {
     const frames: FrameRequestCallback[] = []

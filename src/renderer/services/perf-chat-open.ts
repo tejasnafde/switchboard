@@ -1,3 +1,4 @@
+import type { ChatLoadDiagnostics } from '@shared/perf-chat'
 import type { ChatMessage } from '@shared/types'
 import type { PerfFields, PerfSpan } from '@shared/perf-timing'
 import { perfSpan } from '../perf'
@@ -10,8 +11,13 @@ export function beginChatOpen(thread: string) {
   const span = perfSpan('chat.open', { thread })
   pending = { span, thread }
   return {
-    ready(target: string, messages: ChatMessage[], fields: PerfFields = {}) {
+    ready(target: string, messages: ChatMessage[], fields: PerfFields = {}, load: ChatLoadDiagnostics | null = {}) {
       if (pending?.span !== span) return
+      if (!load || load.loadStatus === 'error' || load.loadStatus === 'missing') {
+        span.end({ outcome: load?.loadStatus === 'missing' ? 'load-missing' : 'load-error' })
+        pending = undefined
+        return
+      }
       pending = { span, thread: target, messages, fields }
       if (committed.get(target) === messages) finishChatOpen(target, messages)
     },
@@ -26,7 +32,7 @@ function finishChatOpen(thread: string, messages: ChatMessage[]) {
   const open = pending
   if (!open || open.thread !== thread || open.messages !== messages) return
   requestAnimationFrame(() => {
-    if (pending !== open || !committed.has(thread)) return
+    if (pending !== open || committed.get(thread) !== messages) return
     open.span.end({ ...open.fields, messages: messages.length, outcome: 'rendered' })
     pending = undefined
   })
@@ -37,7 +43,11 @@ export function chatMessagesCommitted(thread: string, messages: ChatMessage[], v
     committed.delete(thread)
     return
   }
+  const previous = committed.get(thread)
   committed.set(thread, messages)
+  if (pending?.thread === thread && pending.messages && previous === pending.messages && pending.messages !== messages) {
+    pending = { ...pending, messages }
+  }
   finishChatOpen(thread, messages)
 }
 

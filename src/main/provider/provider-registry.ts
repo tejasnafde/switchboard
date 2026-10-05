@@ -35,7 +35,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
-import { commitConversationProviderSwitch, getConversationRuntimeMode, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
+import { commitConversationProviderSwitch, getConversationRuntimeMode, getSetting, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope, describeRequestClient, remoteDeviceHasScope } from '../backend/request-context'
 import {
@@ -68,6 +68,8 @@ import {
   formatUndeliveredMarker,
   parseUndeliveredMarker,
   PeerLinkBook,
+  PEER_LINK_DURATION_SETTING,
+  peerLinkDefaultWindow,
   PEER_LINK_NOT_DELIVERED,
   PEER_UNDELIVERED_MARKER_PREFIX,
   peerUndeliveredId,
@@ -657,17 +659,19 @@ export class ProviderRegistry implements PeerToolHost {
 
   /**
    * Link two live sessions on this backend, or renew an existing link with a
-   * fresh budget of `messages`. Reached only from the LINK_PEER handler, which
-   * is user-directed and admin-scoped: no agent tool calls this.
+   * fresh budget of `messages` and a window of `windowMs` (the Link duration
+   * setting when omitted). Reached only from the LINK_PEER handler, which is
+   * user-directed and admin-scoped: no agent tool calls this.
    */
-  linkPeers(threadId: string, peerThreadId: string, messages?: number): PeerLinkView[] {
+  linkPeers(threadId: string, peerThreadId: string, messages?: number, windowMs?: number): PeerLinkView[] {
     const a = resolveRootThreadId(threadId)
     const b = resolveRootThreadId(peerThreadId)
     if (!this.isLiveSession(threadId)) throw new Error('This chat is not running. Send it a message first, then link it.')
     if (!this.isLiveSession(peerThreadId)) {
       throw new Error(`"${this.sessionTitle(peerThreadId)}" is not running. Open it, then link again.`)
     }
-    const result = this.peerLinks.link(a, b, 'user', Date.now(), messages)
+    const windowLength = windowMs ?? peerLinkDefaultWindow(getSetting(PEER_LINK_DURATION_SETTING))
+    const result = this.peerLinks.link(a, b, 'user', Date.now(), messages, windowLength)
     if (!result.ok) throw new Error(result.message)
     log.info(`peer link ${result.created ? 'created' : 'renewed'}: ${a} <-> ${b}`)
     this.announcePeerLinks([a, b])
@@ -1402,15 +1406,16 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly firstContentSpans = new Map<string, PerfSpan>()
   private readonly firstTurnSent = new Set<string>()
 
-  private beginFirstTurnTiming(threadId: string): void {
+  private beginFirstTurnTiming(threadId: string): PerfSpan | undefined {
     if (this.firstTurnSent.has(threadId)) return
     this.firstTurnSent.add(threadId)
-    this.firstContentSpans.set(threadId, perfSpan('turn.first-content', { thread: threadId }))
+    const span = perfSpan('turn.first-content', { thread: threadId })
+    this.firstContentSpans.set(threadId, span)
+    return span
   }
 
-  private cancelFirstTurnTiming(threadId: string, outcome: string): void {
-    const span = this.firstContentSpans.get(threadId)
-    if (!span) return
+  private cancelFirstTurnTiming(threadId: string, span: PerfSpan | undefined, outcome: string): void {
+    if (!span || this.firstContentSpans.get(threadId) !== span) return
     span.end({ outcome })
     this.firstContentSpans.delete(threadId)
     this.firstTurnSent.delete(threadId)
@@ -1620,7 +1625,7 @@ export class ProviderRegistry implements PeerToolHost {
       return rejectedAtomicTurn('Conversation is not durably available yet. Retry this exact turn.')
     }
 
-    this.beginFirstTurnTiming(threadId)
+    const firstContentSpan = this.beginFirstTurnTiming(threadId)
     this.beginPreparingTurn(threadId)
     let preparationPending = true
     const releasePreparation = (): void => {
@@ -1686,10 +1691,10 @@ export class ProviderRegistry implements PeerToolHost {
           this.announceTurnRuntimeMode(adapter, threadId, modeBefore, input.runtimeMode, queuedId)
         },
       })
-      if (result.state === 'rejected') this.cancelFirstTurnTiming(threadId, 'rejected')
+      if (result.state === 'rejected') this.cancelFirstTurnTiming(threadId, firstContentSpan, 'rejected')
       return result
     } catch (error) {
-      this.cancelFirstTurnTiming(threadId, 'submission-error')
+      this.cancelFirstTurnTiming(threadId, firstContentSpan, 'submission-error')
       throw error
     } finally {
       releasePreparation()
@@ -2429,6 +2434,7 @@ export class ProviderRegistry implements PeerToolHost {
         preparationPending = false
         this.finishPreparingTurn(threadId)
       }
+      let firstContentSpan: PerfSpan | undefined
       try {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) {
@@ -2436,7 +2442,7 @@ export class ProviderRegistry implements PeerToolHost {
         throw new Error(`No session: ${threadId}`)
       }
       const acceptedImages = validateUserMessageImages(images)
-      this.beginFirstTurnTiming(threadId)
+      firstContentSpan = this.beginFirstTurnTiming(threadId)
       log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${acceptedImages?.length ?? 0}`)
       if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId)) {
         throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
@@ -2500,7 +2506,7 @@ export class ProviderRegistry implements PeerToolHost {
       })
       return undefined
       } catch (error) {
-        this.cancelFirstTurnTiming(threadId, 'submission-error')
+        this.cancelFirstTurnTiming(threadId, firstContentSpan, 'submission-error')
         throw error
       } finally {
         releasePreparation()
@@ -2512,8 +2518,8 @@ export class ProviderRegistry implements PeerToolHost {
     // path's budget while skipping the approval canUseTool gives it.
     this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) =>
       this.deliverPeerMessage({ ...input, initiator: 'user' }))
-    this.host.handle(ProviderChannels.LINK_PEER, async (input: { threadId: string; peerThreadId: string; messages?: number }) =>
-      this.linkPeers(input.threadId, input.peerThreadId, input.messages))
+    this.host.handle(ProviderChannels.LINK_PEER, async (input: { threadId: string; peerThreadId: string; messages?: number; windowMs?: number }) =>
+      this.linkPeers(input.threadId, input.peerThreadId, input.messages, input.windowMs))
     this.host.handle(ProviderChannels.EXTEND_PEER_LINK, async (input: { threadId: string; peerThreadId: string }) =>
       this.extendPeerLink(input.threadId, input.peerThreadId))
     this.host.handle(ProviderChannels.UNLINK_PEER, async (input: { threadId: string; peerThreadId?: string }) =>

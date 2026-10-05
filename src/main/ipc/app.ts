@@ -463,12 +463,13 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     total: number
     truncated: boolean
     timing?: import('@shared/perf-chat').ChatLoadTiming
+    loadStatus?: import('@shared/perf-chat').ChatLoadDiagnostics['loadStatus']
   }> => {
     const span = perfSpan('chat.load', { thread: conversationId })
     const row = getConversationById(conversationId)
     if (!row) {
       span.end({ outcome: 'missing' })
-      return capTail({ messages: [], meta: null }, opts)
+      return { ...capTail({ messages: [], meta: null }, opts), loadStatus: 'missing' }
     }
     const rootThreadId = resolveRootThreadId(row.id)
     const rootRow = getConversationById(rootThreadId)
@@ -522,11 +523,11 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       )
       const response = capTail({ messages: history.messages, meta }, opts)
       span.end({ ...history.timing, messages: history.messages.length, diskMessages: history.diskMessageCount, dbMessages: history.databaseMessageCount })
-      return { ...response, timing: history.timing }
+      return { ...response, timing: history.timing, loadStatus: 'loaded' }
     } catch (err) {
       span.end({ outcome: 'error' })
       log.warn(`load-by-id failed for ${conversationId}: ${err}`)
-      return capTail({ messages: [], meta }, opts)
+      return { ...capTail({ messages: [], meta }, opts), loadStatus: 'error' }
     }
   })
 

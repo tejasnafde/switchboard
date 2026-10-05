@@ -59,7 +59,8 @@ import {
   submitDesktopUserTurn,
   type DesktopTurnSubmissionDependencies,
 } from '../../services/desktop-turn-submission'
-import { downscaleImage } from '../../services/image-downscale'
+import { fitImageToBudget } from '../../services/image-downscale'
+import { imageRefusalMessage, MESSAGE_IMAGE_WIRE_BUDGET } from '@shared/image-resize'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type ChatMessage } from '@shared/types'
 import { defaultInstanceSettingKey } from '@shared/session-defaults'
@@ -757,6 +758,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               threadId: sessionId,
               peerThreadId: target.id,
               ...(target.messages !== undefined ? { messages: target.messages } : {}),
+              ...(target.windowMs !== undefined ? { windowMs: target.windowMs } : {}),
             })
             return { accepted: true }
           }
@@ -787,20 +789,19 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       let messageImages: import('@shared/types').MessageImage[] | undefined
       if (images && images.length > 0) {
         const prepared: import('@shared/types').MessageImage[] = []
+        let remaining = MESSAGE_IMAGE_WIRE_BUDGET
         try {
           for (const img of images) {
-            let dataUrl: string
+            let fitted: Awaited<ReturnType<typeof fitImageToBudget>>
             try {
-              dataUrl = (await downscaleImage(img.file)).dataUrl
+              fitted = await fitImageToBudget(img.file, remaining)
             } catch (err) {
-              log.warn('image downscale failed, sending original bytes', err)
-              dataUrl = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader()
-                reader.onload = () => resolve(reader.result as string)
-                reader.onerror = () => reject(reader.error)
-                reader.readAsDataURL(img.file)
-              })
+              log.warn('image resize failed', { name: img.file.name, err })
+              fitted = { ok: false, reason: 'unreadable' }
             }
+            if (!fitted.ok) throw new Error(imageRefusalMessage(img.file.name || 'An image', fitted.reason))
+            const dataUrl = fitted.dataUrl
+            remaining -= dataUrl.length
             const mimeType = dataUrl.slice(5, dataUrl.indexOf(';')) || img.file.type
             prepared.push({ url: dataUrl, mimeType, name: img.file.name })
             validateUserMessageImages(prepared)

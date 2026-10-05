@@ -1,3 +1,4 @@
+import type { ChatLoadDiagnostics } from '@shared/perf-chat'
 import { beginChatOpen } from './services/perf-chat-open'
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth, selectCompanionSessionId } from './stores/layout-store'
@@ -933,9 +934,9 @@ export function App() {
         setMessages(id, messages)
         storeMs += performance.now() - start
       }
-      const readyTiming = (id: string, timing?: import('@shared/perf-chat').ChatLoadTiming) => {
+      const readyTiming = (id: string, load: ChatLoadDiagnostics | null) => {
         const messages = useAgentStore.getState().sessions.find((s) => s.id === id)?.messages
-        if (messages) openTiming.ready(id, messages, { ...timing, storeMs })
+        if (messages) openTiming.ready(id, messages, { ...load?.timing, storeMs }, load)
         else openTiming.cancel('no-session')
       }
       useLayoutStore.getState().setAppView('chats')
@@ -986,18 +987,17 @@ export function App() {
       }
 
       if (existing) {
-        let loadTiming: import('@shared/perf-chat').ChatLoadTiming | undefined
+        let loadDiagnostics: ChatLoadDiagnostics | null = {}
         placeAndEvict(session.id)
         setTitle(session.id, resolveSessionDisplayTitle(session.title, existing.title))
         // Messages may have been evicted - reload from disk if so.
         if (needsMessageReload(existing)) {
           try {
-            const resp = await window.api.app.loadSessionById(session.id) as {
+            const resp = await window.api.app.loadSessionById(session.id) as ChatLoadDiagnostics & {
               messages: ChatMessage[]
-              timing?: import('@shared/perf-chat').ChatLoadTiming
               meta: { id: string; title: string; projectPath: string; agentType: string } | null
             }
-            loadTiming = resp?.timing
+            loadDiagnostics = resp ?? null
             if (resp?.messages?.length) {
               setLoadedMessages(session.id, resp.messages)
             } else if (effectiveMachineId !== 'local') {
@@ -1006,6 +1006,7 @@ export function App() {
               log.warn('remote history reload returned no messages', { sessionId: session.id, machineId: effectiveMachineId })
             }
           } catch (err) {
+            loadDiagnostics = null
             log.warn('session history reload failed', { sessionId: session.id, machineId: effectiveMachineId, err })
           }
         }
@@ -1013,7 +1014,7 @@ export function App() {
         // gap or a reload dropped. Cards are never persisted to history, so
         // this runs whether or not the reload above ran.
         if (session.agentType !== 'terminal') void recoverPendingRequests(session.id)
-        readyTiming(session.id, loadTiming)
+        readyTiming(session.id, loadDiagnostics)
         return
       }
 
@@ -1028,8 +1029,7 @@ export function App() {
       // Load before creating anything: the response carries `rootThreadId`, so
       // a click on a rotated id can activate the live thread instead of
       // building a twin next to it.
-      type LoadedSession = {
-        timing?: import('@shared/perf-chat').ChatLoadTiming
+      type LoadedSession = ChatLoadDiagnostics & {
         messages: ChatMessage[]
         meta: {
           id: string
@@ -1056,6 +1056,8 @@ export function App() {
         log.warn('session history load failed', { sessionId: session.id, machineId: effectiveMachineId, err })
       }
 
+      let loadDiagnostics: ChatLoadDiagnostics | null = loaded
+
       const targetId = resolveSessionSelectTarget(
         session.id,
         loaded?.meta?.rootThreadId,
@@ -1073,7 +1075,7 @@ export function App() {
         }
         placeAndEvict(targetId)
         void recoverPendingRequests(targetId)
-        readyTiming(targetId, loaded?.timing)
+        readyTiming(targetId, loadDiagnostics)
         return
       }
 
@@ -1136,7 +1138,9 @@ export function App() {
       if (shouldRetrySessionLoadAfterCreate(Boolean(loaded?.meta), session.filePath)) {
         try {
           loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
+          loadDiagnostics = loaded
         } catch (err) {
+          loadDiagnostics = null
           log.warn('session history reload after create failed', { sessionId: session.id, err })
         }
       }
@@ -1183,7 +1187,7 @@ export function App() {
       }
 
       if (loaded?.messages?.length) setLoadedMessages(session.id, loaded.messages)
-      readyTiming(session.id, loaded?.timing)
+      readyTiming(session.id, loadDiagnostics)
       void recoverPendingRequests(session.id)
     },
     [addSession, selectChatSession, openChatBeside, setMessages, clearMessages],
