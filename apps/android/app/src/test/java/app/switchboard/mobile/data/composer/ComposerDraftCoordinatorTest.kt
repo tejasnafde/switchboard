@@ -41,6 +41,23 @@ class ComposerDraftCoordinatorTest {
     }
 
     @Test
+    fun `images the stager refused are named while the rest are attached`() {
+        val fixture = Fixture()
+        fixture.coordinator.hydrate()
+
+        val result = fixture.coordinator.addImages(
+            key(),
+            listOf(
+                ComposerImageSource("content://kept", "image/jpeg", "kept.jpg"),
+                ComposerImageSource("content://refused", "image/jpeg", "huge.jpg"),
+            ),
+        )
+
+        assertEquals(ComposerDraftMutation.PartlyAdded("huge.jpg did not fit"), result)
+        assertEquals("/private/drafts/kept", fixture.coordinator.drafts.value.getValue(key()).attachments.single().privateUri)
+    }
+
+    @Test
     fun `failed draft persistence discards only newly staged files and preserves prior state`() {
         val existing = draft(attachments = listOf(attachment("existing")))
         val fixture = Fixture(initial = listOf(existing))
@@ -170,10 +187,15 @@ private class FakeStore(
 private class FakeStager(
     private val log: MutableList<String>,
 ) : ComposerAttachmentStager {
-    override fun stage(sources: List<ComposerImageSource>): ComposerAttachmentStageResult {
+    override fun stage(
+        sources: List<ComposerImageSource>,
+        existing: List<ComposerAttachment>,
+    ): ComposerAttachmentStageResult {
         sources.forEach { log += "stage:${it.privateSourcePath ?: it.contentUri}" }
+        val (refused, accepted) = sources.partition { it.contentUri.contains("refused") }
         return ComposerAttachmentStageResult.Success(
-            sources.map { source ->
+            refused = refused.map { "${it.displayName} did not fit" },
+            attachments = accepted.map { source ->
                 val sourceId = (source.privateSourcePath ?: source.contentUri).substringAfterLast('/')
                 ComposerAttachment(
                     id = sourceId,

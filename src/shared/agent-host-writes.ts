@@ -40,6 +40,14 @@ export type HostWriteAction = 'create' | 'reply' | 'resolve' | 'rerun' | 'commen
 export interface HostWriteCreate {
   /** "acme/app". */
   repoLabel: string
+  /**
+   * The work tree inside a parent project folder it is opened from, relative
+   * to that folder ("core-v1"). Absent for the project's own repository.
+   * Shown on the desktop and in the plain-text detail only, not in
+   * `hostWritePreview`, so the phone digest is unchanged: the repository it
+   * opens on is already in `target`.
+   */
+  localPath?: string
   sourceBranch: string
   targetBranch: string
   title: string
@@ -196,7 +204,9 @@ export function hostWriteDetail(card: HostWriteCard): string {
   const lines: string[] = []
   if (card.action === 'create' && card.create) {
     const c = card.create
-    lines.push(`Open a${c.draft ? ' draft' : ''} pull request on ${c.repoLabel}: ${c.sourceBranch} -> ${c.targetBranch}`, '', c.title)
+    lines.push(`Open a${c.draft ? ' draft' : ''} pull request on ${c.repoLabel}: ${c.sourceBranch} -> ${c.targetBranch}`)
+    if (c.localPath) lines.push(`From the local repository ${c.localPath}`)
+    lines.push('', c.title)
     if (c.reviewers && c.reviewers.length > 0) lines.push('', `Reviewers: ${c.reviewers.map(reviewerLabel).join(', ')}`)
     if (c.description) lines.push('', capDetail(c.description))
   }

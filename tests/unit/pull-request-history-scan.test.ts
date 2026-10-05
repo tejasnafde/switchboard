@@ -10,6 +10,7 @@ import {
 } from '../../src/main/pull-requests/history-scan'
 import type { HistoryPartKind } from '../../src/main/pull-requests/history-source'
 import { historyScanSummary } from '../../src/shared/pull-request-links'
+import { projectReposFrom } from '../../src/shared/project-repos'
 
 vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
 
@@ -24,7 +25,7 @@ type TestDeps = PullRequestHistoryScanDeps & { linked: PrRef[]; visited: Part[] 
 function deps(parts: Part[], repo: RepoRef | null = BOT): TestDeps {
   const linked: PrRef[] = []
   const visited: Part[] = []
-  return {
+  const d = {
     listUnscanned: vi.fn(() => [TARGET]),
     readHistory: vi.fn(async (_id, visit) => {
       for (const part of parts) {
@@ -42,20 +43,27 @@ function deps(parts: Part[], repo: RepoRef | null = BOT): TestDeps {
     linked,
     visited,
   }
+  return { ...d, projectRepos: ownRepoOf(d) }
+}
+
+/** The project's own repository through the `repoForProject` mock, so a test that re-mocks it drives both. */
+function ownRepoOf(d: Pick<PullRequestHistoryScanDeps, 'repoForProject'>): PullRequestHistoryScanDeps['projectRepos'] {
+  return vi.fn(async (path: string) => projectReposFrom(await d.repoForProject(path), []))
 }
 
 function pendingDeps(ids: string[], overrides: Partial<PullRequestHistoryScanDeps> = {}): PullRequestHistoryScanDeps & { scanned: Set<string> } {
   const scanned = new Set<string>()
-  return {
+  const d = {
     scanned,
     listUnscanned: vi.fn((limit) => ids.filter((id) => !scanned.has(id)).slice(0, limit).map((id) => ({ id, projectPath: '/repo' }))),
     readHistory: vi.fn(async () => {}),
     repoForProject: vi.fn(async () => BOT),
     link: vi.fn(() => true),
     notify: vi.fn(),
-    markScanned: vi.fn((id) => { scanned.add(id) }),
+    markScanned: vi.fn((id: string) => { scanned.add(id) }),
     ...overrides,
   }
+  return { ...d, projectRepos: overrides.projectRepos ?? ownRepoOf(d) }
 }
 
 describe('pull request history scan', () => {

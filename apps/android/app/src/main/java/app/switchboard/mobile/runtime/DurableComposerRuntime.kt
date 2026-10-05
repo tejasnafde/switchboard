@@ -151,6 +151,7 @@ class DurableComposerRuntime(
         when (result) {
             ComposerDraftMutation.Success -> mutableErrors.value = mutableErrors.value - key
             is ComposerDraftMutation.Failure -> recordError(key, result.reason)
+            is ComposerDraftMutation.PartlyAdded -> recordError(key, result.reason)
         }
     }
 

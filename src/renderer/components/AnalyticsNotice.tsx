@@ -31,6 +31,7 @@ export function AnalyticsNotice() {
 
   return (
     <div
+      className="sb-glass-toast"
       style={{
         position: 'fixed',
         bottom: 36,
@@ -38,13 +39,8 @@ export function AnalyticsNotice() {
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        background: 'color-mix(in srgb, var(--bg-surface) 62%, transparent)',
-        backdropFilter: 'blur(22px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(22px) saturate(180%)',
-        border: '1px solid color-mix(in srgb, var(--border) 65%, transparent)',
         borderRadius: '12px',
         padding: '10px 14px',
-        boxShadow: '0 8px 28px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
         zIndex: 2000,
         maxWidth: '460px',
       }}

@@ -33,6 +33,7 @@ const ROW_KEYS: Record<string, string> = {
   [SETTING_ROW.theme.id]: 'theme',
   [SETTING_ROW.followUp.id]: 'chat.followUpDefault',
   [SETTING_ROW.streaming.id]: 'assistantStreamingEnabled',
+  [SETTING_ROW.linkDuration.id]: 'chat.peerLinkDuration',
   [SETTING_ROW.envMode.id]: 'defaultSessionEnvMode',
   [SETTING_ROW.runtimeMode.id]: 'chat.defaultRuntimeMode',
   [SETTING_ROW.fileDiffs.id]: 'chat.showFileDiffs',
