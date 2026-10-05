@@ -6,8 +6,8 @@
 // useless try/catch, etc.) live here.
 //
 // Run via:
-//   npm run lint:deslop          all of src/ (surfaces deslop-debt)
-//   npm run lint:deslop:staged   only staged files (used by pre-commit)
+//   npm run lint                 all of src/ (surfaces deslop-debt)
+//   lint-staged                  only staged files (run by scripts/pre-commit.sh)
 //
 // To skip a specific occurrence with a reason:
 //   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- shape unknown at this boundary
