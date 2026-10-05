@@ -962,7 +962,7 @@ export function App() {
 
       // Callers that don't track the machine (e.g. bookmarks) default to 'local';
       // prefer the machine the store already knows so we don't clobber a remote binding.
-      const openingSlot = placement === 'beside' ? 'secondary' : useLayoutStore.getState().focusedChatSlot
+      const openingSlot = placeSession === openChatBeside ? 'secondary' : useLayoutStore.getState().focusedChatSlot
       const waits = useChatWaitStore.getState()
       const openingTicket = waits.open(openingSlot, { id: session.id, title: session.title, projectPath })
       const isCurrentOpen = () => useChatWaitStore.getState().opening[openingSlot]?.ticket === openingTicket

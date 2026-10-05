@@ -192,6 +192,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // idempotent server-side, this just avoids a redundant round-trip). The ref
   // guards double-run within one mount; a fresh mount re-attaches harmlessly.
   const startedKeyRef = useRef<string | null>(null)
+  // Each load gets an id, so a load superseded by a re-seed cannot clear the
+  // newer load's state or apply its late history.
+  const loadSeqRef = useRef(0)
+  // A thread opened while its backend has no client loads once one appears.
+  const connectionStatus = useConnectionsStore((s) => s.status[connectionId])
   // A re-seed request has to defeat the once-per-mount guard, or a feed that
   // lost events while the phone was away stays holed until the app restarts.
   const staleGeneration = useChatStore((s) => s.staleGeneration)
@@ -215,8 +220,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
     const client = getClient(connectionId)
     if (!client) {
       startedKeyRef.current = null
+      setLoadLabel(null)
       return
     }
+    const seq = ++loadSeqRef.current
+    const isCurrent = () => loadSeqRef.current === seq
     setLoadLabel('Loading conversation...')
     setWaitError(null)
     void (async () => {
@@ -224,6 +232,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       let loadedMeta: Awaited<ReturnType<typeof client.loadSessionById>>['meta'] = null
       try {
         const loaded = await client.loadSessionById(threadId, HISTORY_WINDOW)
+        if (!isCurrent()) return
         loadedMeta = loaded.meta
         setForkMetadata(loaded.meta?.forkMetadata ?? null)
         forkMessagesRef.current = new Map(loaded.messages.flatMap((message) => {
@@ -256,6 +265,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         }
       } catch (err) {
         log.warn('conversation load failed', err)
+        if (!isCurrent()) return
         setWaitError('Could not load conversation. Reopen this chat to retry.')
         setLoadLabel(null)
         startedKeyRef.current = null
@@ -284,16 +294,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
         })
         // A reattach to a live session answers with its status and emits
         // none, so a cached chat kept 'connecting' until its next turn.
+        if (!isCurrent()) return
         useChatStore.getState().ingest(connectionId, { type: 'status', threadId, status: started.status })
       } catch (err) {
         log.warn('session start failed', err)
+        if (!isCurrent()) return
         startedKeyRef.current = null
         setWaitError(err instanceof Error ? err.message : String(err))
         reportError(err)
         return
       } finally {
-        setLoadLabel(null)
+        if (isCurrent()) setLoadLabel(null)
       }
+      if (!isCurrent()) return
       // Recover any approval/question/plan card a resume gap or a reload
       // dropped - this effect re-runs on both (staleGeneration), so it also
       // covers an ordinary reconnect. Older backends have no handler for the
@@ -330,7 +343,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         }
       }
     })()
-  }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated, thread.cached])
+  }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated, thread.cached, connectionStatus])
 
   // Restore the user's last choices. A new chat's mode is pushed to the backend
   // too, so the adapter and the chip agree.

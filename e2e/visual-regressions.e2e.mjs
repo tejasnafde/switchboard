@@ -753,7 +753,7 @@ async function captureChatWaitScreens(win, theme) {
   let release = await holdChatCall('app:load-session-by-id')
   try {
     await openConversation(win, 'Prepare release notes')
-    await panel.getByRole('status').filter({ hasText: 'Loading conversation...' }).waitFor({ state: 'visible', timeout: 100 })
+    await panel.getByRole('status').filter({ hasText: 'Loading conversation...' }).waitFor({ state: 'visible', timeout: 5_000 })
     if (await panel.locator('.message-list').count()) throw new Error('Previous messages remained during chat open')
     const input = panel.locator('[contenteditable="true"]')
     await input.click()
@@ -765,7 +765,7 @@ async function captureChatWaitScreens(win, theme) {
   await panel.getByRole('status').filter({ hasText: 'Loading conversation...' }).waitFor({ state: 'hidden' })
   const input = panel.locator('[contenteditable="true"]')
   await input.click()
-  await win.keyboard.press('Meta+A')
+  await win.keyboard.press('ControlOrMeta+A')
   await win.keyboard.press('Backspace')
 
   await panel.locator('.chat-composer button[title*="OpenCode"]').first().click()
