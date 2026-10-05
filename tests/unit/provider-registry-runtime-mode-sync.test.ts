@@ -6,6 +6,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
+const { spans } = vi.hoisted(() => ({ spans: [] as Array<{ name: string; end: ReturnType<typeof vi.fn> }> }))
+vi.mock('../../src/main/perf', () => ({ perfSpan: (name: string) => {
+  const span = { name, end: vi.fn() }
+  spans.push(span)
+  return span
+} }))
+
 vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({
     id: id ?? 'work', agentType, displayName: 'Work', enabled: true, env: {}, oauthDir: null,
@@ -50,7 +57,7 @@ import type { BackendHost } from '../../src/main/backend/host'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent, RuntimeMode, UserTurnSubmissionV1 } from '../../src/shared/provider-events'
 import type { TurnDelivery } from '../../src/shared/turn-delivery'
-import type { AtomicUserTurnContext } from '../../src/main/provider/durable-turn-acceptance'
+import type { AtomicUserTurnContext, AtomicUserTurnSubmission } from '../../src/main/provider/durable-turn-acceptance'
 
 class FakeHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
@@ -75,6 +82,7 @@ class ModeAdapter implements ProviderAdapter {
   readonly provider = 'claude' as const
   mode: RuntimeMode = 'full-access'
   running = false
+  sendError: Error | undefined
   private held: Array<{ id: string; mode?: RuntimeMode }> = []
   private onEvent: (e: RuntimeEvent) => void = () => {}
   async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
@@ -82,6 +90,7 @@ class ModeAdapter implements ProviderAdapter {
     return { threadId: opts.threadId, provider: 'claude', status: 'idle', runtimeMode: this.mode, cwd: opts.cwd, createdAt: 0 }
   }
   async sendTurn(threadId: string, _message: string, runtimeMode?: RuntimeMode, _images?: unknown, delivery?: TurnDelivery, queuedId?: string): Promise<void> {
+    if (this.sendError) throw this.sendError
     if (delivery === 'queue' && this.running && queuedId) {
       this.held.push({ id: queuedId, mode: runtimeMode })
       this.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
@@ -100,6 +109,9 @@ class ModeAdapter implements ProviderAdapter {
     if (!next) return
     this.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'started' })
     if (next.mode) this.mode = next.mode
+  }
+  emitContent(threadId: string): void {
+    this.onEvent({ type: 'content', threadId, streamKind: 'assistant', text: 'reply', append: true })
   }
   runtimeModeOf(): RuntimeMode {
     return this.mode
@@ -123,11 +135,12 @@ const passThroughSubmission = {
   },
 }
 
-async function setup() {
+async function setup(submission: Pick<AtomicUserTurnSubmission, 'submit'> = passThroughSubmission) {
+  spans.length = 0
   savedModes.length = 0
   const host = new FakeHost()
   const adapter = new ModeAdapter()
-  const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, passThroughSubmission)
+  const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, submission)
   registry.registerIpcHandlers()
   await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
   const published: RuntimeEvent[] = []
@@ -200,5 +213,47 @@ describe('runtime mode sync across clients', () => {
   it('refuses a mode that is not one', async () => {
     const t = await setup()
     await expect(t.host.invoke(ProviderChannels.SET_RUNTIME_MODE, 't1', 'yolo')).rejects.toThrow('Unknown runtime mode')
+  })
+})
+
+describe('first-content timing ownership', () => {
+  it.each(['rejected', 'throw'] as const)('keeps the first span when a second atomic submission fails (%s)', async (failure) => {
+    let calls = 0
+    const t = await setup({
+      async submit(input, context) {
+        if (++calls === 1) return passThroughSubmission.submit(input, context)
+        if (failure === 'throw') throw new Error('second submission failed')
+        return { status: 'rejected', accepted: false, state: 'rejected', duplicate: false, retryable: false, reason: 'second submission rejected' }
+      },
+    })
+    await t.submit('first')
+    const span = spans.find((s) => s.name === 'turn.first-content')!
+    if (failure === 'throw') await expect(t.submit('second')).rejects.toThrow('second submission failed')
+    else await t.submit('second')
+    expect(span.end).not.toHaveBeenCalled()
+    t.adapter.emitContent('t1')
+    expect(span.end).toHaveBeenCalledExactlyOnceWith({ outcome: 'content' })
+  })
+  it('keeps the first span when a second originless send throws', async () => {
+    const t = await setup()
+    await t.host.invoke(ProviderChannels.SEND_TURN, 't1', 'first')
+    const span = spans.find((s) => s.name === 'turn.first-content')!
+    t.adapter.sendError = new Error('second send failed')
+    await expect(t.host.invoke(ProviderChannels.SEND_TURN, 't1', 'second')).rejects.toThrow('second send failed')
+    expect(span.end).not.toHaveBeenCalled()
+    t.adapter.emitContent('t1')
+    expect(span.end).toHaveBeenCalledExactlyOnceWith({ outcome: 'content' })
+  })
+  it('cancels its own failed send and measures a retry', async () => {
+    const t = await setup()
+    t.adapter.sendError = new Error('first send failed')
+    await expect(t.host.invoke(ProviderChannels.SEND_TURN, 't1', 'first')).rejects.toThrow('first send failed')
+    const first = spans.filter((s) => s.name === 'turn.first-content')[0]
+    expect(first.end).toHaveBeenCalledExactlyOnceWith({ outcome: 'submission-error' })
+    t.adapter.sendError = undefined
+    await t.host.invoke(ProviderChannels.SEND_TURN, 't1', 'retry')
+    t.adapter.emitContent('t1')
+    const retry = spans.filter((s) => s.name === 'turn.first-content')[1]
+    expect(retry.end).toHaveBeenCalledExactlyOnceWith({ outcome: 'content' })
   })
 })

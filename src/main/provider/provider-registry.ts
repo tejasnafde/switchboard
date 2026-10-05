@@ -2,6 +2,8 @@
  * Provider registry - manages adapter instances and routes operations.
  */
 
+import type { PerfSpan } from '@shared/perf-timing'
+import { perfSpan } from '../perf'
 import type { BackendHost } from '../backend/host'
 import { AppChannels, ProviderChannels } from '@shared/ipc-channels'
 import { applyContentText } from '@shared/content-stream'
@@ -1399,11 +1401,35 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  private readonly switchFirstEventSpans = new Map<string, { span: PerfSpan; startAt: number }>()
+  private readonly firstEventSpans = new Map<string, PerfSpan>()
+  private readonly firstContentSpans = new Map<string, PerfSpan>()
+  private readonly firstTurnSent = new Set<string>()
+
+  private beginFirstTurnTiming(threadId: string): PerfSpan | undefined {
+    if (this.firstTurnSent.has(threadId)) return
+    this.firstTurnSent.add(threadId)
+    const span = perfSpan('turn.first-content', { thread: threadId })
+    this.firstContentSpans.set(threadId, span)
+    return span
+  }
+
+  private cancelFirstTurnTiming(threadId: string, span: PerfSpan | undefined, outcome: string): void {
+    if (!span || this.firstContentSpans.get(threadId) !== span) return
+    span.end({ outcome })
+    this.firstContentSpans.delete(threadId)
+    this.firstTurnSent.delete(threadId)
+  }
+
   private publishAdapterEvent(
     event: RuntimeEvent,
     agentType: Exclude<AgentType, 'terminal'>,
     providerInstanceId: string | null,
   ): void {
+    if (event.type === 'content' || event.type === 'error' || event.type === 'turn.completed') {
+      this.firstContentSpans.get(event.threadId)?.end({ outcome: event.type })
+      this.firstContentSpans.delete(event.threadId)
+    }
     if (event.type === 'session') {
       try {
         recordConversationSegment({
@@ -1599,6 +1625,7 @@ export class ProviderRegistry implements PeerToolHost {
       return rejectedAtomicTurn('Conversation is not durably available yet. Retry this exact turn.')
     }
 
+    const firstContentSpan = this.beginFirstTurnTiming(threadId)
     this.beginPreparingTurn(threadId)
     let preparationPending = true
     const releasePreparation = (): void => {
@@ -1610,7 +1637,7 @@ export class ProviderRegistry implements PeerToolHost {
       log.info(`submitUserTurn ${threadId} chars=${input.providerText.length} mode=${input.runtimeMode ?? 'sandbox'} images=${input.images?.length ?? 0}`)
       const clientScope = currentBackendRequestContext()?.clientScope
         ?? hashClientScope('unscoped-local', 'backend-host-without-request-context')
-      return await this.atomicTurnSubmission.submit(input, {
+      const result = await this.atomicTurnSubmission.submit(input, {
         clientScope,
         conversationId,
         prepare: async () => {
@@ -1664,6 +1691,11 @@ export class ProviderRegistry implements PeerToolHost {
           this.announceTurnRuntimeMode(adapter, threadId, modeBefore, input.runtimeMode, queuedId)
         },
       })
+      if (result.state === 'rejected') this.cancelFirstTurnTiming(threadId, firstContentSpan, 'rejected')
+      return result
+    } catch (error) {
+      this.cancelFirstTurnTiming(threadId, firstContentSpan, 'submission-error')
+      throw error
     } finally {
       releasePreparation()
     }
@@ -1708,7 +1740,19 @@ export class ProviderRegistry implements PeerToolHost {
     const stopSession = async (threadId: string): Promise<StoppedSessionSnapshot | null> => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return null
-      await adapter.stopSession(threadId)
+      const stopSpan = perfSpan('provider.stop', { thread: threadId })
+      try {
+        await adapter.stopSession(threadId)
+      } finally {
+        stopSpan.end()
+      }
+      this.switchFirstEventSpans.get(threadId)?.span.end({ outcome: 'stopped-before-event' })
+      this.switchFirstEventSpans.delete(threadId)
+      this.firstEventSpans.get(threadId)?.end({ outcome: 'stopped-before-event' })
+      this.firstEventSpans.delete(threadId)
+      this.firstContentSpans.get(threadId)?.end({ outcome: 'stopped-before-content' })
+      this.firstContentSpans.delete(threadId)
+      this.firstTurnSent.delete(threadId)
       // stopSession is the adapter's drain boundary. Session-rotation events
       // remain valid through it, so snapshot only after it resolves.
       const descriptor = this.sessionDescriptors.get(threadId)
@@ -1920,6 +1964,8 @@ export class ProviderRegistry implements PeerToolHost {
       eventGate?: ProviderEventGate,
       credentialSnapshot?: ProviderCredentialSnapshot,
     ): Promise<ProviderSession> => {
+      const startSpan = perfSpan('provider.start', { thread: initialOpts.threadId, provider: initialOpts.provider })
+      try {
       let opts = { ...initialOpts }
       const adapter = this.getAdapter(opts.provider)
       if (!adapter) throw new Error(`Unknown provider: ${opts.provider}`)
@@ -1954,7 +2000,7 @@ export class ProviderRegistry implements PeerToolHost {
       const existingStart = this.startingSessions.get(opts.threadId)
       if (existingStart) {
         log.info(`startSession ${opts.threadId} already starting - waiting`)
-        return existingStart
+        return await existingStart
       }
       let resolveStart!: (session: ProviderSession) => void
       let rejectStart!: (reason: unknown) => void
@@ -1970,6 +2016,7 @@ export class ProviderRegistry implements PeerToolHost {
       })
       this.startingSessions.set(opts.threadId, startPromise)
       let allocatedEpoch: number | null = null
+      this.firstEventSpans.set(opts.threadId, perfSpan('provider.first-event', { thread: opts.threadId, provider: opts.provider, switching: !!eventGate }))
       try {
 
       // Remote backends support Claude Code and Codex. Reject maintenance-only
@@ -2056,6 +2103,11 @@ export class ProviderRegistry implements PeerToolHost {
       if (switchboardMcp) enrichedOpts.switchboardMcp = switchboardMcp
       const session = await adapter.startSession(enrichedOpts, (event) => {
         if (this.sessionEpochs.get(opts.threadId) !== executionEpoch) return
+        const switchTiming = this.switchFirstEventSpans.get(opts.threadId)
+        switchTiming?.span.end({ event: event.type, startMs: performance.now() - switchTiming.startAt })
+        this.switchFirstEventSpans.delete(opts.threadId)
+        this.firstEventSpans.get(opts.threadId)?.end({ event: event.type })
+        this.firstEventSpans.delete(opts.threadId)
         if (event.type === 'session') latestSessionId = event.sessionId
         if (eventGate?.state === 'staging' || eventGate?.state === 'flushing') {
           eventGate.events.push(event)
@@ -2099,6 +2151,10 @@ export class ProviderRegistry implements PeerToolHost {
       resolveStart(session)
       return session
       } catch (err) {
+        this.switchFirstEventSpans.get(initialOpts.threadId)?.span.end({ outcome: 'start-error' })
+        this.switchFirstEventSpans.delete(initialOpts.threadId)
+        this.firstEventSpans.get(initialOpts.threadId)?.end({ outcome: 'start-error' })
+        this.firstEventSpans.delete(initialOpts.threadId)
         if (allocatedEpoch !== null && this.sessionEpochs.get(initialOpts.threadId) === allocatedEpoch) {
           this.sessionEpochs.delete(initialOpts.threadId)
         }
@@ -2110,6 +2166,9 @@ export class ProviderRegistry implements PeerToolHost {
       } finally {
         this.startingSessions.delete(opts.threadId)
       }
+      } finally {
+        startSpan.end()
+      }
     }
 
     this.managedSessionStarter = (opts) => startSession(opts)
@@ -2120,6 +2179,11 @@ export class ProviderRegistry implements PeerToolHost {
       threadId: string,
       input: ProviderInstanceSwitchRequest,
     ) => {
+      const switchSpan = perfSpan('provider.switch', { thread: threadId })
+      const switchTiming = { thread: threadId, stopMs: 0, compatibilityMs: 0, startMs: 0 }
+      const firstEventSpan = perfSpan('provider.switch.first-event', switchTiming)
+      let switched = false
+      try {
       const descriptor = this.sessionDescriptors.get(threadId)
       const currentInstanceId = descriptor?.instanceId ?? null
       const failure = (
@@ -2199,7 +2263,9 @@ export class ProviderRegistry implements PeerToolHost {
       const codexDefaultDir = remoteProviderConfigDir('codex', undefined)
       const startFresh = input.onContextConflict === 'start-fresh'
         try {
+          const stopStart = performance.now()
           const stopped = await stopSession(threadId)
+          switchTiming.stopMs = performance.now() - stopStart
           if (!stopped) throw new Error('The source provider session disappeared during the switch')
           oldOpts = {
             ...oldOpts,
@@ -2218,6 +2284,7 @@ export class ProviderRegistry implements PeerToolHost {
         }
 
         if (!startFresh && oldOpts.resumeSessionId) {
+          const compatibilityStart = performance.now()
           const preparation = descriptor.provider === 'claude'
             ? await prepareClaudeProfileSwitch({
                 sessionId: oldOpts.resumeSessionId,
@@ -2230,6 +2297,7 @@ export class ProviderRegistry implements PeerToolHost {
                 fromDir: oldRemoteConfig ?? oldCredentials.resolvedOauthDir ?? codexDefaultDir,
                 toDir: remoteTargetConfig ?? target?.oauthDir ?? codexDefaultDir,
               })
+          switchTiming.compatibilityMs = performance.now() - compatibilityStart
           if (!preparation.ok) {
             try {
               await startSession(oldOpts, true, undefined, oldCredentials)
@@ -2255,7 +2323,10 @@ export class ProviderRegistry implements PeerToolHost {
           ? 'degraded' as const
           : oldOpts.resumeSessionId ? 'preserved' as const : 'not-needed' as const
         try {
+          const startStart = performance.now()
+          this.switchFirstEventSpans.set(threadId, { span: firstEventSpan, startAt: startStart })
           const targetSession = await startSession(targetOpts, false, targetEventGate)
+          switchTiming.startMs = performance.now() - startStart
           commitConversationProviderSwitch({
             conversationId: threadId,
             provider: agentType,
@@ -2300,6 +2371,7 @@ export class ProviderRegistry implements PeerToolHost {
           if (event) this.publishAdapterEvent(event, agentType, targetInstanceId)
         }
         targetEventGate.state = 'committed'
+        switched = true
 
         this.publish({
           type: 'session.provider',
@@ -2321,6 +2393,13 @@ export class ProviderRegistry implements PeerToolHost {
         this.switchingSessions.delete(threadId)
         // Committed or rolled back, results answered during the switch go out now.
         this.flushHeldApprovalResultsLater(threadId)
+      }
+      } finally {
+        switchSpan.end(switchTiming)
+        if (!switched) {
+          firstEventSpan.end({ outcome: 'not-switched' })
+          if (this.switchFirstEventSpans.get(threadId)?.span === firstEventSpan) this.switchFirstEventSpans.delete(threadId)
+        }
       }
     })
 
@@ -2355,6 +2434,7 @@ export class ProviderRegistry implements PeerToolHost {
         preparationPending = false
         this.finishPreparingTurn(threadId)
       }
+      let firstContentSpan: PerfSpan | undefined
       try {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) {
@@ -2362,6 +2442,7 @@ export class ProviderRegistry implements PeerToolHost {
         throw new Error(`No session: ${threadId}`)
       }
       const acceptedImages = validateUserMessageImages(images)
+      firstContentSpan = this.beginFirstTurnTiming(threadId)
       log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${acceptedImages?.length ?? 0}`)
       if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId)) {
         throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
@@ -2424,6 +2505,9 @@ export class ProviderRegistry implements PeerToolHost {
         at: Date.now(),
       })
       return undefined
+      } catch (error) {
+        this.cancelFirstTurnTiming(threadId, firstContentSpan, 'submission-error')
+        throw error
       } finally {
         releasePreparation()
       }
@@ -2553,6 +2637,13 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   async stopAll(): Promise<void> {
+    for (const { span } of this.switchFirstEventSpans.values()) span.end({ outcome: 'shutdown' })
+    this.switchFirstEventSpans.clear()
+    for (const span of this.firstEventSpans.values()) span.end({ outcome: 'shutdown' })
+    for (const span of this.firstContentSpans.values()) span.end({ outcome: 'shutdown' })
+    this.firstEventSpans.clear()
+    this.firstContentSpans.clear()
+    this.firstTurnSent.clear()
     // Open approval cards stay in the store: a quit or a closed window is not an answer.
     for (const threadId of this.sessionAdapters.keys()) this.switchboardMcp?.close(threadId)
     for (const [threadId, adapter] of this.sessionAdapters) {
