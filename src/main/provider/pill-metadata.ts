@@ -1,4 +1,7 @@
 import type { UserMessagePillKind, UserMessagePillsMeta } from '@shared/provider-events'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('provider:pill-metadata')
 
 const PILL_ID = /^[A-Za-z0-9_-]+$/
 const PILL_KINDS = new Set(['file', 'terminal', 'chat-message', 'review'])
@@ -13,7 +16,9 @@ export function parsePersistedPillsMeta(raw: unknown): UserMessagePillsMeta | un
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
-  } catch {
+  } catch (error) {
+    // The stored value is the user's text: log its size, never its content.
+    log.warn('stored pill metadata is not JSON', { bytes: raw.length, error: error instanceof Error ? error.name : 'unknown' })
     return undefined
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
