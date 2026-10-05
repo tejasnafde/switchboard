@@ -124,8 +124,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   },
   {
     name: 'link',
-    description: 'Link this chat with another open session so the two agents can message each other (default 20 messages)',
-    argumentHint: '<session> [messages]',
+    description: 'Link this chat with another open session so the two agents can message each other (default 20 messages; the time, such as 4h, defaults to Settings > Link duration)',
+    argumentHint: '<session> [messages] [time]',
     takesArgs: true,
   },
   {

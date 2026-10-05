@@ -1,0 +1,62 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "peer-link-duration",
+  "summary": "The user picks how long a session link lasts. /link <session> [messages] [time] takes Nm or Nh (10 minutes to 24 hours, unit required because a bare number is the budget; options are peeled off only until an exact chat title matches). Without a time the backend reads the chat.peerLinkDuration setting (Settings > Chat > Link duration, 30m default, stored in the /link form). Each edge stores its own window: a user message in either session, a user send along the edge and Extend restart that edge's window, not the default. The expired refusal names the edge's length, and the desktop banner shows the time left per link. The 200 message cap stays; its rationale is reworded for long windows.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/link-command.ts",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/slash-commands.ts",
+        "src/renderer/components/settings/settings-rows.ts",
+        "src/renderer/components/settings/setting-values.ts",
+        "src/renderer/components/SettingsPage.tsx",
+        "src/preload/index.ts",
+        "tests/unit/link-command.test.ts",
+        "tests/unit/settings-file.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Links cannot be created or extended from a phone (provider:link-peer and provider:extend-peer-link are admin-scoped in src/shared/device-auth.ts), and the React Native client renders no link banner, link text or Not delivered row, so there is no duration to pick or show. The link-spent push text (peerLinkSpentText) does not mention a duration and is unchanged."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as the React Native client: the phone scope cannot link or extend, and the Android app shows no link banner or link text. The link-spent push text is unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/peer-links.ts",
+        "src/shared/settings-file.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/peer-links.test.ts",
+        "tests/unit/peer-links-registry-ws.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or migration: the Link duration default is one more key (chat.peerLinkDuration) in the existing settings key/value table, written through the existing settings:set channel, and a missing or unreadable row reads as 30 minutes. Each edge's window lives in the in-memory PeerLinkBook, which is never persisted (links do not survive a backend restart)."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link, update channel or wire-frame change. LINK_PEER gains an optional windowMs field; an older backend ignores it and keeps its fixed 30 minutes. PeerLinkView gains windowMs, which an older desktop ignores. The new setting is an ordinary row in the existing settings table (absent means the 30 minute default), and links are in memory only, so nothing migrates."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/peer-links.test.ts: duration parsing (minutes, hours, case, no unit, decimals, other units refused); the 10 minute and 24 hour bounds in the book; the Settings default with fallback for missing, unreadable or out-of-range values; duration and time-left formatting; each edge expiring on its own window, with the refusal naming it; Extend restarting the edge's own window; a user turn in either session and a user send renewing with the edge's window; relinking replacing the window; banner text with time left.",
+      "tests/unit/link-command.test.ts: /link with a time, with budget and time, out-of-range times refused with the range, titles ending in a number or a time ('Issue 172', 'Sprint 2h') kept, pinning a picked title with its options.",
+      "tests/unit/peer-links-registry-ws.test.ts: over WsHost, a link without a time gets the chat.peerLinkDuration setting, one with windowMs keeps its own, and with no setting it is 30 minutes.",
+      "tests/unit/settings-file.test.ts: the Link duration row and settings.json allow-list agree on key, default and choices.",
+      "npm run typecheck and npm test green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The Settings select and the banner's time left were not exercised in the running app or by an e2e; the visual screens include neither the Chat settings page nor a linked chat.",
+      "Not run against live agents over a multi-hour link."
+    ]
+  }
+}

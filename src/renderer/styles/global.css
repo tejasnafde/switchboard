@@ -190,6 +190,24 @@ html[data-fullscreen="true"].theme-translucent .titlebar-drag {
   background: rgba(255, 255, 255, 0.96);
 }
 
+/* Corner toasts (update ready, analytics notice): frosted glass. saturate()
+   keeps colours behind lively instead of grey; the inset line is the lit top
+   edge. Translucent's --bg-surface is nearly clear, so that theme gets its
+   own tint and a heavier blur, or the chat behind reads straight through. */
+.sb-glass-toast {
+  background: color-mix(in srgb, var(--bg-surface) 62%, transparent);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.theme-translucent .sb-glass-toast {
+  background: rgba(24, 22, 30, 0.6);
+  backdrop-filter: blur(48px) saturate(170%);
+  -webkit-backdrop-filter: blur(48px) saturate(170%);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
 /* Translucent mode: bump blur + opacity so popovers don't show the
    wallpaper through themselves. */
 .theme-translucent .palette-modal-content,

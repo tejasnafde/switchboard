@@ -33,6 +33,7 @@
 import { FOLLOW_UP_DEFAULT_KEY } from './turn-delivery'
 import { SETTING_DEFAULT_RUNTIME_MODE } from './session-defaults'
 import { RUNTIME_MODES } from './provider-events'
+import { PEER_LINK_DURATION_CHOICES, PEER_LINK_DURATION_SETTING } from './peer-links'
 import {
   SCOPABLE_SETTINGS,
   SETTING_SESSION_ENV_MODE,
@@ -110,6 +111,7 @@ export const FILE_SETTINGS: readonly FileSetting[] = [
   choiceSetting('theme', 'Theme', 'dark', THEMES),
   choiceSetting(FOLLOW_UP_DEFAULT_KEY, 'Follow-up while the agent works', scopable(FOLLOW_UP_DEFAULT_KEY), ['steer', 'queue']),
   flagSetting('assistantStreamingEnabled', 'Stream assistant messages', 'true'),
+  choiceSetting(PEER_LINK_DURATION_SETTING, 'Link duration', '30m', PEER_LINK_DURATION_CHOICES),
   choiceSetting(SETTING_SESSION_ENV_MODE, 'Recommended workspace', scopable(SETTING_SESSION_ENV_MODE), ['local', 'worktree']),
   choiceSetting(SETTING_DEFAULT_RUNTIME_MODE, 'Runtime mode for new chats', scopable(SETTING_DEFAULT_RUNTIME_MODE), RUNTIME_MODES),
   flagSetting(SETTING_SHOW_FILE_DIFFS, 'Show file diff cards in chat', scopable(SETTING_SHOW_FILE_DIFFS) as 'true' | 'false'),

@@ -37,8 +37,8 @@ android {
         applicationId = canonicalApplicationId
         minSdk = 24
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.5.14"
+        versionCode = 17
+        versionName = "0.5.15"
         buildConfigField("String", "EXPO_PROJECT_ID", "\"$easProjectId\"")
         buildConfigField("String", "PUSH_APPLICATION_ID", "\"$canonicalApplicationId\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -117,6 +117,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)

@@ -12,6 +12,7 @@ import { FOLLOW_UP_DEFAULT_KEY } from '@shared/turn-delivery'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
 import { SETTING_SESSION_ENV_MODE, SETTING_SHOW_FILE_DIFFS, type ScopableSettingKey } from '@shared/project-settings'
 import { RUNTIME_MODE_OPTIONS } from '../chat/runtime-mode-options'
+import { formatPeerLinkDuration, parsePeerLinkDuration, PEER_LINK_DURATION_CHOICES } from '@shared/peer-links'
 
 export type SettingsPageId =
   | 'general'
@@ -122,6 +123,14 @@ const ROWS = {
     label: 'Stream assistant messages',
     description: 'Show token-by-token output while a response is in progress. Off renders the final reply in one shot when the turn completes.',
     defaultValue: 'true',
+  },
+  linkDuration: {
+    id: 'chat.linkDuration', page: 'chat', section: 'While the agent works',
+    label: 'Link duration',
+    description: 'How long a /link lasts when you do not give a time, renewed whenever you type in either chat. /link <session> 4h picks one for a single link.',
+    defaultValue: '30m',
+    defaultLabel: '30 minutes',
+    options: PEER_LINK_DURATION_CHOICES.map((value) => ({ value, label: formatPeerLinkDuration(parsePeerLinkDuration(value)!) })),
   },
   envMode: {
     id: 'chat.envMode', page: 'chat', section: 'Defaults for new chats',
