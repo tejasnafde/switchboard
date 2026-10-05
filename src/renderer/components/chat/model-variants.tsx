@@ -1,38 +1,5 @@
 import { useAgentStore } from '../../stores/agent-store'
 
-/**
- * Split a flat model list into provider-prefix groups.
- * IDs without a `/` go into `ungrouped` (Claude/Codex static lists). Order
- * is stable: groups appear in the order their first member shows up in the
- * input array.
- *
- * Exported for unit tests.
- */
-export function groupModelsByProvider<T extends { id: string }>(
-  models: T[],
-): { ungrouped: T[]; groups: Array<{ provider: string; models: T[] }> } {
-  const ungrouped: T[] = []
-  const groupMap = new Map<string, T[]>()
-  const order: string[] = []
-  for (const m of models) {
-    const slash = m.id.indexOf('/')
-    if (slash === -1) {
-      ungrouped.push(m)
-      continue
-    }
-    const provider = m.id.slice(0, slash)
-    if (!groupMap.has(provider)) {
-      groupMap.set(provider, [])
-      order.push(provider)
-    }
-    groupMap.get(provider)!.push(m)
-  }
-  return {
-    ungrouped,
-    groups: order.map((p) => ({ provider: p, models: groupMap.get(p)! })),
-  }
-}
-
 // ─── Variant chips (OpenCode ACP) ───────────────────────────────
 
 /**

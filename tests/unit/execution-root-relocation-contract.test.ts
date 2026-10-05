@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { resolveExecutionRoot } from '../../src/shared/execution-root'
 import {
   classifyRelocationPreconditions,
-  isRelocationRetryable,
   type RelocationPreconditionState,
 } from '../../src/shared/execution-root-relocation'
 
@@ -143,19 +142,5 @@ describe('classifyRelocationPreconditions', () => {
   it('does not gate a detached opencode thread on continuity', () => {
     expect(classifyRelocationPreconditions(state({ provider: 'opencode', threadIsLive: false })))
       .toEqual({ verdict: 'proceed-detached' })
-  })
-})
-
-describe('isRelocationRetryable', () => {
-  it('marks contention and staleness retryable', () => {
-    expect(isRelocationRetryable('busy')).toBe(true)
-    expect(isRelocationRetryable('stale-revision')).toBe(true)
-  })
-
-  it('marks a bad target and a failed rollback not retryable', () => {
-    expect(isRelocationRetryable('target-missing')).toBe(false)
-    expect(isRelocationRetryable('different-repository')).toBe(false)
-    expect(isRelocationRetryable('rollback-failed')).toBe(false)
-    expect(isRelocationRetryable('invalid-target')).toBe(false)
   })
 })

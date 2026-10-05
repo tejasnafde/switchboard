@@ -15,7 +15,6 @@
         "src/renderer/components/ide/IdePane.tsx",
         "tests/unit/chat-workspace.test.ts",
         "tests/unit/chat-workspace-store.test.ts",
-        "tests/unit/chat-workspace-routing.test.ts",
         "tests/unit/dual-chat-component-contract.test.ts"
       ]
     },

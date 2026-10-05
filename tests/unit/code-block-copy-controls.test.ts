@@ -7,12 +7,15 @@ import { PlanCard } from '../../src/renderer/components/chat/PlanCard'
 import {
   copyCodeFromTarget,
   focusedCopyIndexBeforeReplacement,
-  renderMarkdownWithCopyControls,
+  renderMarkdownDocument,
   restoreCopyButtonFocus,
   scheduleCopyFeedback,
   wrapRenderedCodeBlock,
 } from '../../src/renderer/components/chat/MarkdownWithCopyControls'
 import * as codeCopyModule from '../../src/renderer/components/chat/MarkdownWithCopyControls'
+
+const renderMarkdownWithCopyControls = (markdown: string, options?: { mutable?: boolean }): string =>
+  renderMarkdownDocument(markdown, options).html
 
 const css = readFileSync(new URL('../../src/renderer/styles/global.css', import.meta.url), 'utf8')
 

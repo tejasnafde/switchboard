@@ -1,31 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import {
-  classifyLegacyConversationSidebarRole,
   logicalImportConversationId,
   recoveryCandidateTitle,
 } from '../../src/main/db/conversation-sidebar-role'
 const conversationsSource = readFileSync(new URL('../../src/main/db/conversations.ts', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../../src/main/ipc/app.ts', import.meta.url), 'utf8')
-
-describe('classifyLegacyConversationSidebarRole', () => {
-  it('keeps app-owned and referenced conversations managed', () => {
-    expect(classifyLegacyConversationSidebarRole({ id: 'agent_1' })).toBe('managed')
-    expect(classifyLegacyConversationSidebarRole({ id: 'uuid', messageCount: 1 })).toBe('managed')
-    expect(classifyLegacyConversationSidebarRole({ id: 'uuid', segmentCount: 1 })).toBe('managed')
-    expect(classifyLegacyConversationSidebarRole({ id: 'uuid', forkedAtMessageId: 'm1' })).toBe('managed')
-    expect(classifyLegacyConversationSidebarRole({ id: 'uuid', referenceCount: 1 })).toBe('managed')
-    expect(classifyLegacyConversationSidebarRole({ id: 'uuid', threadChildCount: 1 })).toBe('managed')
-  })
-
-  it('moves evidence-free native rows to recovery instead of deleting them', () => {
-    expect(classifyLegacyConversationSidebarRole({ id: '019ff606-raw-worker' })).toBe('recovery')
-    expect(classifyLegacyConversationSidebarRole({
-      id: '019ff606-clicked-worker',
-      layoutCount: 1,
-    })).toBe('recovery')
-  })
-})
 
 describe('logicalImportConversationId', () => {
   it('reuses the canonical root for a foreground fragment', () => {

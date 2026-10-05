@@ -80,11 +80,6 @@ export type RelocationFailureCode =
   /** The provider failed to start AND could not be restored. Needs the user. */
   | 'rollback-failed'
 
-/** Whether trying the same request again could plausibly succeed. */
-export function isRelocationRetryable(code: RelocationFailureCode): boolean {
-  return code === 'busy' || code === 'stale-revision'
-}
-
 /** How much of the conversation survived the move. */
 export type RelocationContinuity =
   /** The provider resumed its native thread in the new directory. */

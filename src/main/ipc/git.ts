@@ -17,28 +17,13 @@ import { promisify } from 'node:util'
 import { GitChannels } from '@shared/ipc-channels'
 import { listRefs, switchRef, getCurrentBranch, type Ref } from '../git/refs'
 import { watchHead, unwatchHead } from '../git/head-watcher'
-import {
-  createLegacySessionWorktree,
-  type LegacySessionWorktreeInput,
-} from '../git/legacy-session-worktree-lease'
 import { createMainLogger } from '../logger'
 
 const execFileP = promisify(execFile)
 
 const log = createMainLogger('ipc:git')
 
-export interface GitHandlerDependencies {
-  createLegacySessionWorktree(
-    input: LegacySessionWorktreeInput,
-  ): Promise<{ path: string; branch: string }>
-}
-
-const defaultDependencies: GitHandlerDependencies = { createLegacySessionWorktree }
-
-export function registerGitHandlers(
-  host: BackendHost,
-  dependencies: GitHandlerDependencies = defaultDependencies,
-): void {
+export function registerGitHandlers(host: BackendHost): void {
   host.handle(
     GitChannels.LIST_REFS,
     async (cwd: string): Promise<{ ok: true; refs: Ref[] } | { ok: false; error: string }> => {
@@ -93,21 +78,6 @@ export function registerGitHandlers(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         log.warn(`current-branch failed: ${msg}`)
-        return { ok: false, error: msg }
-      }
-    },
-  )
-
-  host.handle(
-    GitChannels.CREATE_SESSION_WORKTREE,
-    async (args: { projectPath: string; branchSlug: string; baseRef?: string },
-    ): Promise<{ ok: true; path: string; branch: string } | { ok: false; error: string }> => {
-      try {
-        const out = await dependencies.createLegacySessionWorktree(args)
-        return { ok: true, ...out }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        log.warn(`create-session-worktree failed: ${msg}`)
         return { ok: false, error: msg }
       }
     },

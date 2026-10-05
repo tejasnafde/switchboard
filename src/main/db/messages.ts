@@ -132,15 +132,6 @@ export function iterateMessageTextForConversation(
   ).iterate(conversationId) as IterableIterator<{ content: string; tool_calls: string | null }>
 }
 
-export function getMessageForConversationById(
-  conversationId: string,
-  id: string,
-): MessageRow | undefined {
-  return getDb().prepare(
-    'SELECT * FROM messages WHERE conversation_id = ? AND id = ?'
-  ).get(conversationId, id) as MessageRow | undefined
-}
-
 function tryParseJson<T>(s: string): T | undefined {
   try {
     return JSON.parse(s) as T

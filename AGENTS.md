@@ -364,13 +364,13 @@ One MCP server per backend process gives Claude, Codex and OpenCode the same too
 - `resources/sb-bridge/`: zero-dependency extension seeded into code-server's extensions dir. `protocol.js` is pure (message build/parse/validate + reconnect backoff, unit-tested); `extension.js` is thin vscode glue (open-at-line, cmd+l selection capture, cmd+k quick edit, live config apply, the Switchboard Charcoal color theme (app palette), terminal-intent keybindings (ctrl+backtick / cmd+j / cmd+shift+e route to Switchboard's terminal pane; task/debug terminals untouched)). Ships via electron-builder `extraResources`.
 - IPC (`IdeChannels`): `ENSURE` (boot + serve folder, TCC pre-flight per call) / `STATUS` (push: stopped | starting | downloading | ready | error) / `OPEN` (pill click → open-at-line in workbench) / `SELECTION` (cmd+l in workbench → chat draft pill) / `STOP` (idle shutdown).
 - Security ADR: `--auth none` on `127.0.0.1` - same-user trust boundary as PTYs and the embedded SDK. Design doc: `docs/plans/2026-07-10-embedded-ide-design.md`.
-- Surviving file IPC (`FilesChannels`): `list-dir` (lean name/isDir - remote add-project autocomplete), `list-all` (@-mentions, 10k cap), `write-file`/`delete-file` (FileDiffCard accept/reject - atomic temp-then-rename, mtime conflict detection, 8 MB cap), `resolve` (FileChip pill existence). `resolveWithinRepo` rejects `..`-escapes.
+- Surviving file IPC (`FilesChannels`): `list-dir` (lean name/isDir - remote add-project autocomplete), `list-all` (@-mentions, 10k cap), `write-file`/`delete-file` (FileDiffCard accept/reject - atomic temp-then-rename, mtime conflict detection, 8 MB cap), `resolve` (inline file pill existence). `resolveWithinRepo` rejects `..`-escapes.
 
 ### Git tooling + worktrees
 
-- `ipc/git.ts` (`GitChannels`): `list-refs` (locals + remotes, annotated with current/sha/worktreePath), `switch-ref` (validated, rejects `-`/`..`/control chars), `current-branch`, `file-diff` (parses `git diff HEAD` into add/del/mod gutter hunks - `git/diffHunks.ts`), `create-session-worktree`.
-- Worktree **creation** lives in two places, not in `worktree.ts`: `worktree-creation/git-adapter.ts` drives the transactional flow behind `KanbanChannels.CREATE_WORKTREE` (kanban card, `<repo>/.switchboard/worktrees/<slug>-<id>`, branch `kanban/<slug>-<id>`) and behind conversation forking (fork-to-worktree, `fork/<name>`); `git/legacy-session-worktree-lease.ts` drives `GitChannels.CREATE_SESSION_WORKTREE` (session worktrees, `$userData/worktrees/<repoSlug>-<hash>/<branchSlug>`, branch `sb/<slug>`). `worktree.ts` itself only lists, finds-stale, and removes worktrees now (`removeWorktree`, `listWorktrees`, `findStaleWorktrees`) - its own creation functions were dead code with no production caller and were deleted.
-- **Worktree manager** (Settings > Archive & data > Worktrees, `WorktreeManagerChannels`): rules in `shared/worktree-manager.ts` (`classifyWorktree`, `removalVerdict`), backend in `main/worktree-manager.ts` + `main/worktree-inspect.ts`. Every removal, including the legacy `kanban:remove-stale-worktree`, goes through `removeManagedWorktree`, which re-reads ownership, protection and git state and refuses when the losses exceed what the client acknowledged. Owned worktrees (chat, card, catalog, in-flight creation) are never removed there. Protection is the backend settings row `worktrees.protection` (`{ projects, worktrees }`), honoured by `findStaleWorktrees` too.
+- `ipc/git.ts` (`GitChannels`): `list-refs` (locals + remotes, annotated with current/sha/worktreePath), `switch-ref` (validated, rejects `-`/`..`/control chars), `current-branch`, `file-diff` (parses `git diff HEAD` into add/del/mod gutter hunks - `git/diffHunks.ts`).
+- Worktree **creation** lives in one place, not in `worktree.ts`: `worktree-creation/git-adapter.ts` drives the transactional flow behind `KanbanChannels.CREATE_WORKTREE` (kanban card, `<repo>/.switchboard/worktrees/<slug>-<id>`, branch `kanban/<slug>-<id>`) and behind conversation forking (fork-to-worktree, `fork/<name>`). `worktree.ts` itself only lists, finds-stale, and removes worktrees now (`removeWorktree`, `listWorktrees`, `findStaleWorktrees`) - its own creation functions were dead code with no production caller and were deleted.
+- **Worktree manager** (Settings > Archive & data > Worktrees, `WorktreeManagerChannels`): rules in `shared/worktree-manager.ts` (`classifyWorktree`, `removalVerdict`), backend in `main/worktree-manager.ts` + `main/worktree-inspect.ts`. Every removal goes through `removeManagedWorktree`, which re-reads ownership, protection and git state and refuses when the losses exceed what the client acknowledged. Owned worktrees (chat, card, catalog, in-flight creation) are never removed there. Protection is the backend settings row `worktrees.protection` (`{ projects, worktrees }`), honoured by `findStaleWorktrees` too.
 - Worktrees live under `.switchboard/worktrees/` deliberately - avoids re-tripping the macOS TCC trap on `~/Desktop`-rooted repos and centralizes cleanup.
 - **Agents needing another branch**: the main checkout is shared by many sessions and is often on someone else's branch, so don't switch it. Use `git worktree add .switchboard/worktrees/<name> -b <branch> origin/main`, never `/tmp` - each one is ~1.5GB after `npm install` and nothing reaps `/tmp` (leaked worktrees there have filled the disk). Once the PR merges, `git worktree remove .switchboard/worktrees/<name>`.
 
@@ -403,7 +403,7 @@ One MCP server per backend process gives Claude, Codex and OpenCode the same too
 
 - Top-level view (not a right-pane mode) swapping the chat area for a workspace-scoped board; sidebar stays mounted. `layout-store.appView: 'chats' | 'kanban'`.
 - `kanban_cards` table: `(id, project_path, title, description, tags JSON, status, cost_cap_usd, cost_used_usd, runtime_mode, conversation_id, worktree_path, worktree_branch, created_at, updated_at, completed_at)`. Statuses: `backlog | in_progress | needs_input | done`.
-- IPC (`KanbanChannels`): `list / create / update / delete / create-worktree / remove-worktree / list-worktrees / list-stale-worktrees / remove-stale-worktree`. Moving a card to `done` auto-archives its linked conversation (`applyKanbanArchiveSideEffect`); moving back unarchives.
+- IPC (`KanbanChannels`): `list / create / update / delete / create-worktree / remove-worktree / list-worktrees`. Moving a card to `done` auto-archives its linked conversation (`applyKanbanArchiveSideEffect`); moving back unarchives.
 - `card-launch.ts` `launchCardChat`: reuses the linked conversation if live, else spins up a new session rooted at `worktree_path ?? project_path`, links card→conversation, seeds + auto-sends the first turn (title + description). `WorktreeManagerModal` is the Settings worktree manager (`settings/WorktreesPanel.tsx`) scoped to the card's project - one list, one removal path.
 
 ### Lexical chat input (pill chips + @-mentions)
@@ -547,14 +547,14 @@ src/
 │   ├── machines/                      # sshTunnel · connectionManager · provisioner · reconnectBackoff (remote-over-SSH)
 │   ├── agent/
 │   │   ├── jsonl-parser.ts            # Source-aware (claude-code | codex) + image extraction
-│   │   └── jsonl-truncate.ts          # Pure fork truncation (assembleClaudeFork, truncate*Jsonl)
+│   │   └── jsonl-truncate.ts          # Pure fork truncation (assembleClaudeForkAtEvent)
 │   ├── conversations/fork.ts          # Fork-from-message orchestration (per-provider resume)
 │   ├── db/
 │   │   ├── database.ts                # getDb + migrate(); re-exports the domain modules below, so import from here
 │   │   ├── projects.ts · conversations.ts (+ thread ancestry, archive) · messages.ts · settings.ts (+ session layouts) · kanban.ts · bookmarks.ts
 │   │   └── provider-instances.ts       # provider_instances CRUD (safeStorage-encrypted env)
 │   ├── files/                         # listing (gitignore-annotated) · writing (atomic+conflict) · gitignore matcher
-│   ├── git/                           # diffHunks (gutter) · refs · worktreePaths · checkpoint (diff review) · legacy-session-worktree-lease (session worktree creation)
+│   ├── git/                           # diffHunks (gutter) · refs · worktreePaths · checkpoint (diff review)
 │   ├── ide/                           # code-server-manager · binary (download) · bridge-server (ws)
 │   ├── worktree-creation/             # git-adapter.ts - transactional kanban/fork worktree creation
 │   ├── worktree.ts                    # worktree list / find-stale / remove (creation lives elsewhere, see above)
@@ -602,7 +602,7 @@ src/
 │   │   │   ├── picker-keydown.ts (send-to/@/slash picker keys) · model-variants.tsx (VariantChips, model id helpers)
 │   │   │   ├── ApprovalCard · PlanCard · QuestionCard · FileDiffCard · SlashCommandMenu · slash-commands.ts
 │   │   │   ├── UnifiedProviderPicker.tsx # agent tabs → instance rail → model search
-│   │   │   ├── BranchPicker.tsx + branch-picker-policy.ts · SkillChip · FileChip
+│   │   │   ├── BranchPicker.tsx + branch-picker-policy.ts · SkillChip
 │   │   │   ├── AtMentionMenu.tsx + at-mention.ts · render-pill-body.tsx
 │   │   │   └── lexical/               # RichChatTextarea · PillNode · PillChipVisual
 │   │   ├── layout/                    # ResizeHandle · ViewToggle (Chats/Board title-bar toggle)

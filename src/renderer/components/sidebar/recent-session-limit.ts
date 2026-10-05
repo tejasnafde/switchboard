@@ -9,10 +9,3 @@ export function parseRecentSessionLimit(value: string | null): RecentSessionLimi
   const parsed = Number(value)
   return RECENT_SESSION_LIMITS.find((limit) => limit === parsed) ?? DEFAULT_RECENT_SESSION_LIMIT
 }
-
-export function resolveLoadedRecentSessionLimit(
-  value: string | null,
-  selectedSinceLoadStarted: boolean,
-): RecentSessionLimit | null {
-  return selectedSinceLoadStarted ? null : parseRecentSessionLimit(value)
-}

@@ -5,8 +5,7 @@
  * Claude's CLI/SDK rotates a chat's on-disk session id mid-conversation
  * (compaction, first-turn UUID assignment, etc.). Switchboard records that
  * rotation in `thread_sessions` (claude_session_id -> synthetic parent
- * thread_id) so title/worktree lookups can fall back to the parent - see
- * `getSyntheticParentMap` usage in `src/main/ipc/app.ts`. Provider instance
+ * thread_id) so title/worktree lookups can fall back to the parent. Provider instance
  * and runtime mode never got the same fallback: `getConversationProviderInstanceId`
  * queried `conversations WHERE id = ?` with the raw (possibly rotated) id, found
  * no row, and returned null - so the caller fell back to the default provider
@@ -226,7 +225,6 @@ const {
   setConversationRuntimeMode,
   getConversationModel,
   setConversationModel,
-  getConversationReasoningEffort,
   setConversationReasoningEffort,
   getConversationByThreadId,
   archiveConversation,
@@ -345,11 +343,10 @@ describe('model pin survives Claude session-id rotation', () => {
 })
 
 describe('reasoning effort survives provider session-id rotation', () => {
-  it('reads and writes through the durable root conversation', () => {
+  it('writes through the durable root conversation', () => {
     conversations.set('agent_123', { reasoning_effort: 'low' })
     threadSessions.set('uuid-abc', 'agent_123')
 
-    expect(getConversationReasoningEffort('uuid-abc')).toBe('low')
     setConversationReasoningEffort('uuid-abc', 'high')
 
     expect(conversations.get('agent_123')?.reasoning_effort).toBe('high')

@@ -8,7 +8,7 @@ import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChan
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { PeerLinkView } from '@shared/peer-links'
-import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent, WorktreeInfo } from '@shared/kanban'
+import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
   BitbucketCredentialInput,
@@ -173,9 +173,6 @@ const api = {
     /** (Re)start the pairing endpoint from saved settings; resolves to its status. */
     mobilePairingApply: (): Promise<MobilePairingStatus> =>
       transport.invoke(AppChannels.MOBILE_PAIRING_APPLY),
-    /** Current pairing endpoint status, without restarting it. */
-    mobilePairingStatus: (): Promise<MobilePairingStatus> =>
-      transport.invoke(AppChannels.MOBILE_PAIRING_STATUS),
     /** One-time code for the QR. Short-lived and consumed on first use. */
     mobilePairingCode: (): Promise<PairingCode> =>
       transport.invoke(AppChannels.MOBILE_PAIRING_CODE),
@@ -214,9 +211,6 @@ const api = {
       transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId),
     attachToThread: (fragmentId: string, rootThreadId: string) =>
       transport.invoke(AppChannels.ATTACH_TO_THREAD, fragmentId, rootThreadId),
-    detachSession: (claudeSessionId: string) =>
-      transport.invoke(AppChannels.DETACH_SESSION, claudeSessionId),
-    listAncestry: () => transport.invoke(AppChannels.LIST_ANCESTRY),
     relaunch: () => transport.invoke(AppChannels.RELAUNCH),
     saveMessage: (params: SaveMessageParams) =>
       transport.invoke(AppChannels.SAVE_MESSAGE, params),
@@ -242,8 +236,6 @@ const api = {
       transport.invoke(AppChannels.GET_CONVERSATION_MODEL, id),
     setConversationModel: (id: string, model: string): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_MODEL, id, model),
-    getConversationReasoningEffort: (id: string): Promise<{ reasoningEffort: 'low' | 'medium' | 'high' | null }> =>
-      transport.invoke(AppChannels.GET_CONVERSATION_REASONING_EFFORT, id),
     setConversationReasoningEffort: (id: string, effort: 'low' | 'medium' | 'high'): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_REASONING_EFFORT, id, effort),
     setConversationProviderSelection: (
@@ -328,8 +320,6 @@ const api = {
       reorder: (ids: string[]) =>
         transport.invoke(AppChannels.WORKSPACE_REORDER, ids),
     },
-    assignProjectWorkspace: (projectPath: string, workspaceId: string | null) =>
-      transport.invoke(AppChannels.ASSIGN_PROJECT_WORKSPACE, projectPath, workspaceId),
     organizeProjects: (items: import('@shared/types').ProjectOrganizationItem[]) =>
       transport.invoke(AppChannels.PROJECT_ORGANIZE, items),
 
@@ -422,15 +412,6 @@ const api = {
       transport.invoke(GitChannels.UNWATCH_HEAD, cwd),
     onHeadChanged: (callback: (cwd: string) => void) =>
       transport.on<[string]>(GitChannels.HEAD_CHANGED, (cwd) => callback(cwd)),
-    createSessionWorktree: (args: {
-      projectPath: string
-      branchSlug: string
-      baseRef?: string
-      /** Routes the call to this machine's backend (default local). */
-      machineId?: string
-    }): Promise<
-      { ok: true; path: string; branch: string } | { ok: false; error: string }
-    > => transport.invoke(GitChannels.CREATE_SESSION_WORKTREE, args),
   },
 
   // ─── Machines (local + remote SSH hosts) ─────────────────────
@@ -596,8 +577,6 @@ const api = {
       transport.invoke(KanbanChannels.CREATE_WORKTREE, id, intent),
     removeWorktree: (id: string, opts?: { force?: boolean }): Promise<KanbanCard | null> =>
       transport.invoke(KanbanChannels.REMOVE_WORKTREE, id, opts),
-    listWorktrees: (projectPath: string): Promise<WorktreeInfo[]> =>
-      transport.invoke(KanbanChannels.LIST_WORKTREES, projectPath),
   },
 
   // ─── Anonymous usage counts ────────────────────────────────────
@@ -912,8 +891,6 @@ const api = {
 
   onOpenChatBeside: (callback: () => void) =>
     transport.on('app:open-chat-beside', () => callback()),
-
-  getLogPaths: () => transport.invoke('app:get-log-paths'),
 
   onClosePaneOrWindow: (callback: (opts: { shift?: boolean }) => void) =>
     transport.on<[{ shift?: boolean }]>('app:close-pane-or-window', (opts) => callback(opts ?? {})),

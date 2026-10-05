@@ -1,5 +1,4 @@
-/** Pure sidebar projections. Managed SQLite roots are authoritative; the
- * older scan-merging helpers remain below for migration tests and rollback. */
+/** Pure sidebar projections. Managed SQLite roots are authoritative. */
 import type { ConversationRow } from '../db/database'
 import type { SessionSummary, SessionSource } from '@shared/types'
 
@@ -38,63 +37,6 @@ export function projectManagedRootSessions(
       statusLine: conversation.status_line ?? null,
     }))
     .sort((a, b) => b.startedAt - a.startedAt)
-}
-
-/**
- * Build SessionSummary entries for DB conversations the file scanner missed.
- *
- * A conversation is considered "already on disk" (and skipped) when either its
- * own id or its recorded `session_id` appears in `scannedIds`. That second
- * check matters for live Claude conversations: their conversation id is
- * `agent_<ts>` while the scanned JSONL is named after the session UUID, so
- * without matching on `session_id` every healthy conversation would be
- * duplicated - once from the scan, once synthesized here.
- */
-export function synthesizeDbOnlySessions(
-  dbConversations: ConversationRow[],
-  archivedSet: Set<string>,
-  scannedIds: Set<string>,
-  childSet: Set<string> = new Set(),
-): SessionSummary[] {
-  return dbConversations
-    .filter(
-      (c) =>
-        !archivedSet.has(c.id) &&
-        // Own id scanned: either shown already, or hidden on purpose by a merge.
-        !scannedIds.has(c.id) &&
-        // Transcript scanned: that entry represents this row - UNLESS childSet
-        // hid it, in which case this row is the only thing left to render.
-        !(c.session_id !== null && scannedIds.has(c.session_id) && !childSet.has(c.session_id)),
-    )
-    .map((c) => ({
-      id: c.id,
-      // agent_type is 'claude-code' | 'codex' | 'opencode' | 'terminal'; the
-      // first three are valid SessionSource values, terminal maps to switchboard.
-      source: (c.agent_type === 'terminal' ? 'switchboard' : c.agent_type) as SessionSource,
-      title: c.title,
-      // updated_at, not created_at: the sidebar sorts and labels by this as
-      // "last activity" (see session-activity.ts), and saveMessage bumps it.
-      // A worktree-run chat only ever renders through this path, so it sat in
-      // the sidebar stamped with its creation time - measured 2 days stale.
-      startedAt: c.updated_at,
-      messageCount: 0,
-      filePath: '',
-      agentType: c.agent_type,
-      worktreePath: c.worktree_path ?? null,
-      worktreeBranch: c.worktree_branch ?? null,
-      worktreeCreationId: c.worktree_creation_id ?? null,
-      worktreeRecovery: retainedWorktreeRecovery(c),
-    }))
-}
-
-/** Stamp `agentType` from the DB map onto file-scanned sessions. */
-export function stampAgentTypes(
-  sessions: SessionSummary[],
-  agentTypeMap: Map<string, string>,
-): SessionSummary[] {
-  return sessions.map((s) =>
-    agentTypeMap.has(s.id) ? { ...s, agentType: agentTypeMap.get(s.id) } : s,
-  )
 }
 
 /**

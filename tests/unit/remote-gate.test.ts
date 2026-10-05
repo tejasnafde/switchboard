@@ -50,9 +50,7 @@ import {
   remoteBlockedProviderLabel,
   formatRemoteClaudeLoginPrompt,
   remoteClaudeLoginPrompt,
-  checkRemoteClaudeAuth,
   sanitizeConfigSegment,
-  remoteClaudeConfigDir,
   listRemoteClaudeConfigDirs,
   checkRemoteProviderAuth,
   remoteProviderConfigDir,
@@ -208,7 +206,7 @@ describe('remoteClaudeLoginPrompt', () => {
   })
 })
 
-describe('checkRemoteClaudeAuth', () => {
+describe('checkRemoteProviderAuth for Claude', () => {
   const dirs: string[] = []
   const savedKey = process.env.ANTHROPIC_API_KEY
 
@@ -227,7 +225,7 @@ describe('checkRemoteClaudeAuth', () => {
   it('reports not logged in with the interactive login command when the dir has no credentials', async () => {
     delete process.env.ANTHROPIC_API_KEY
     const dir = tmpDir()
-    const res = await checkRemoteClaudeAuth(dir)
+    const res = await checkRemoteProviderAuth('claude-code', dir)
     expect(res.loggedIn).toBe(false)
     expect(res.configDir).toBe(dir)
     expect(res.loginCommand).toContain('CLAUDE_CONFIG_DIR=')
@@ -239,7 +237,7 @@ describe('checkRemoteClaudeAuth', () => {
     delete process.env.ANTHROPIC_API_KEY
     const dir = tmpDir()
     writeFileSync(join(dir, '.credentials.json'), '{"t":1}')
-    const res = await checkRemoteClaudeAuth(dir)
+    const res = await checkRemoteProviderAuth('claude-code', dir)
     expect(res.loggedIn).toBe(true)
     expect(res.configDir).toBe(dir)
   })
@@ -248,22 +246,22 @@ describe('checkRemoteClaudeAuth', () => {
     delete process.env.ANTHROPIC_API_KEY
     const dir = tmpDir()
     writeFileSync(join(dir, '.credentials.json'), '')
-    expect((await checkRemoteClaudeAuth(dir)).loggedIn).toBe(false)
+    expect((await checkRemoteProviderAuth('claude-code', dir)).loggedIn).toBe(false)
   })
 
   it('reports logged in when ANTHROPIC_API_KEY overrides missing credentials', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-test'
-    expect((await checkRemoteClaudeAuth(tmpDir())).loggedIn).toBe(true)
+    expect((await checkRemoteProviderAuth('claude-code', tmpDir())).loggedIn).toBe(true)
   })
 
   it('agrees with remoteClaudeLoginPrompt on both verdicts', async () => {
     delete process.env.ANTHROPIC_API_KEY
     const bare = tmpDir()
-    expect((await checkRemoteClaudeAuth(bare)).loggedIn).toBe(false)
+    expect((await checkRemoteProviderAuth('claude-code', bare)).loggedIn).toBe(false)
     expect(await remoteClaudeLoginPrompt(bare)).not.toBeNull()
     const authed = tmpDir()
     writeFileSync(join(authed, '.credentials.json'), '{"t":1}')
-    expect((await checkRemoteClaudeAuth(authed)).loggedIn).toBe(true)
+    expect((await checkRemoteProviderAuth('claude-code', authed)).loggedIn).toBe(true)
     expect(await remoteClaudeLoginPrompt(authed)).toBeNull()
   })
 })
@@ -331,18 +329,18 @@ describe('listRemoteClaudeConfigDirs', () => {
   })
 })
 
-describe('remoteClaudeConfigDir', () => {
+describe('remoteProviderConfigDir for Claude', () => {
   it('joins the sanitized name under the home dir', () => {
-    expect(remoteClaudeConfigDir('.claude-akshaya')).toBe(join(homedir(), '.claude-akshaya'))
+    expect(remoteProviderConfigDir('claude-code', '.claude-akshaya')).toBe(join(homedir(), '.claude-akshaya'))
   })
 
   it('falls back to ~/.claude when the name is falsy', () => {
-    expect(remoteClaudeConfigDir(undefined)).toBe(join(homedir(), '.claude'))
-    expect(remoteClaudeConfigDir('')).toBe(join(homedir(), '.claude'))
+    expect(remoteProviderConfigDir('claude-code', undefined)).toBe(join(homedir(), '.claude'))
+    expect(remoteProviderConfigDir('claude-code', '')).toBe(join(homedir(), '.claude'))
   })
 
   it('never escapes the home dir for a traversal payload', () => {
-    const resolved = remoteClaudeConfigDir('../../etc')
+    const resolved = remoteProviderConfigDir('claude-code', '../../etc')
     expect(resolved.startsWith(homedir())).toBe(true)
     expect(resolved).toBe(join(homedir(), '....etc'))
   })
