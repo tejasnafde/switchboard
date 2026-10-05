@@ -369,6 +369,7 @@ One MCP server per backend process gives Claude, Codex and OpenCode the same too
 - Worktree **creation** lives in two places, not in `worktree.ts`: `worktree-creation/git-adapter.ts` drives the transactional flow behind `KanbanChannels.CREATE_WORKTREE` (kanban card, `<repo>/.switchboard/worktrees/<slug>-<id>`, branch `kanban/<slug>-<id>`) and behind conversation forking (fork-to-worktree, `fork/<name>`); `git/legacy-session-worktree-lease.ts` drives `GitChannels.CREATE_SESSION_WORKTREE` (session worktrees, `$userData/worktrees/<repoSlug>-<hash>/<branchSlug>`, branch `sb/<slug>`). `worktree.ts` itself only lists, finds-stale, and removes worktrees now (`removeWorktree`, `listWorktrees`, `findStaleWorktrees`) - its own creation functions were dead code with no production caller and were deleted.
 - **Worktree manager** (Settings > Archive & data > Worktrees, `WorktreeManagerChannels`): rules in `shared/worktree-manager.ts` (`classifyWorktree`, `removalVerdict`), backend in `main/worktree-manager.ts` + `main/worktree-inspect.ts`. Every removal, including the legacy `kanban:remove-stale-worktree`, goes through `removeManagedWorktree`, which re-reads ownership, protection and git state and refuses when the losses exceed what the client acknowledged. Owned worktrees (chat, card, catalog, in-flight creation) are never removed there. Protection is the backend settings row `worktrees.protection` (`{ projects, worktrees }`), honoured by `findStaleWorktrees` too.
 - Worktrees live under `.switchboard/worktrees/` deliberately - avoids re-tripping the macOS TCC trap on `~/Desktop`-rooted repos and centralizes cleanup.
+- **Agents needing another branch**: the main checkout is shared by many sessions and is often on someone else's branch, so don't switch it. Use `git worktree add .switchboard/worktrees/<name> -b <branch> origin/main`, never `/tmp` - each one is ~1.5GB after `npm install` and nothing reaps `/tmp` (leaked worktrees there have filled the disk). Once the PR merges, `git worktree remove .switchboard/worktrees/<name>`.
 
 ### Conversation forking (`conversations/fork.ts`, `shared/conversation-fork.ts`)
 
@@ -525,8 +526,10 @@ diff PNGs are in the `visual-regressions` artifact (locally:
 The e2e scripts (`e2e/ide.e2e.mjs`, `e2e/ide-workflow.e2e.mjs`, etc.) create ~600MB temp dirs per run via `mkdtempSync` (`sb-ide-e2e-*`, `sb-ide-wf-*`, `sb-ide-proj-*`, `sb-update*`, `sb-ide-probe*`) and do NOT clean up after themselves - this has filled the entire disk before (600+ leaked dirs, ~18GB). You are welcome to run e2e tests, but after every e2e run (pass, fail, or crash) you MUST delete the leftovers:
 
 ```sh
-rm -rf "$TMPDIR"sb-* /tmp/sb-*
+for p in sb-ide-e2e- sb-ide-wf- sb-ide-proj- sb-update sb-ide-probe; do rm -rf "$TMPDIR$p"* /tmp/"$p"*; done
 ```
+
+Only these prefixes: never `rm -rf /tmp/sb-*`, which also deletes other sessions' live worktrees.
 
 If you touch the e2e scripts themselves, prefer fixing the leak at the source: register a `process.on('exit')` handler that `rmSync`s every `mkdtempSync` dir the script created.
 
