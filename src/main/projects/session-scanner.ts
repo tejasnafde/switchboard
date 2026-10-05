@@ -145,7 +145,7 @@ async function scanClaudeProjectsDir(
             log.debug('skipping unparseable head line', { filePath, err })
             continue
           }
-          if (!(obj.type === 'human' || obj.type === 'user') || obj.isMeta === true) continue
+          if (!(obj.type === 'human' || obj.type === 'user') || obj.isMeta === true || obj.isCompactSummary === true) continue
           const content = obj.message?.content
           const raw = typeof content === 'string' ? content
             : Array.isArray(content) ? content

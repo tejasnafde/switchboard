@@ -22,6 +22,7 @@ export type SyntheticUserPart =
     }
   | { kind: 'interrupted'; duringToolUse: boolean }
   | { kind: 'command-output'; text: string; isError: boolean }
+  | { kind: 'compacted'; summary: string }
 
 export interface SyntheticUserSplit {
   /** Parts worth a row. Pure context blocks (env, caveats, reminders) are dropped. */
@@ -36,6 +37,22 @@ interface Block {
   /** Leave `end` in place for the next block (a preamble that introduces one). */
   keepEnd?: boolean
   part?: (inner: string) => SyntheticUserPart | null
+  /** Part of a slash-command record, which collapses to the `/name args` the user typed. */
+  command?: 'name' | 'args' | 'message'
+}
+
+const COMMAND_RECORD_TAGS = ['command-name', 'command-message', 'command-args', 'local-command-stdout', 'local-command-stderr']
+
+/** A slash-command record is ONLY these tags, so tags pasted ahead of the user's own prose stay their text. */
+function isCommandRecord(text: string): boolean {
+  let rest = text.trim()
+  while (rest) {
+    const name = COMMAND_RECORD_TAGS.find((t) => rest.startsWith(`<${t}>`))
+    const end = name ? rest.indexOf(`</${name}>`) : -1
+    if (!name || end < 0) return false
+    rest = rest.slice(end + name.length + 3).trimStart()
+  }
+  return true
 }
 
 function tag(inner: string, name: string): string | undefined {
@@ -45,6 +62,14 @@ function tag(inner: string, name: string): string | undefined {
   const to = inner.indexOf(`</${name}>`, from)
   if (to < 0) return undefined
   return inner.slice(from + open.length, to).trim() || undefined
+}
+
+const COMPACT_SUMMARY_OPEN = '<switchboard-compact-summary>'
+const COMPACT_SUMMARY_CLOSE = '</switchboard-compact-summary>'
+
+/** The form a transcript's compact summary takes, so every surface folds it into one row. */
+export function compactSummaryText(summary: string): string {
+  return `${COMPACT_SUMMARY_OPEN}\n${summary}\n${COMPACT_SUMMARY_CLOSE}`
 }
 
 const BLOCKS: readonly Block[] = [
@@ -65,6 +90,11 @@ const BLOCKS: readonly Block[] = [
     part: (inner) => ({ kind: 'interrupted', duringToolUse: inner.includes('tool use') }),
   },
   { start: '<turn_aborted>', end: '</turn_aborted>', part: () => ({ kind: 'interrupted', duringToolUse: false }) },
+  // Claude Code's record of a slash command: `/compact`, `/model x`, a skill
+  // with its arguments. The tags come in either order.
+  { start: '<command-name>', end: '</command-name>', command: 'name' },
+  { start: '<command-message>', end: '</command-message>', command: 'message' },
+  { start: '<command-args>', end: '</command-args>', command: 'args' },
   {
     start: '<local-command-stdout>',
     end: '</local-command-stdout>',
@@ -84,11 +114,20 @@ const BLOCKS: readonly Block[] = [
   { start: '<recommended_plugins>', end: '</recommended_plugins>' },
   { start: '# AGENTS.md instructions for ', end: '</INSTRUCTIONS>' },
   { start: '<environment_context>', end: '</environment_context>' },
+  { start: '<user_instructions>', end: '</user_instructions>' },
+  { start: '<external_codex_apps_open_page>', end: '</external_codex_apps_open_page>' },
   { start: '<codex_internal_context', end: '</codex_internal_context>' },
   { start: '<skill>', end: '</skill>' },
   // A Switchboard approval result (shared/agent-approval-cards.ts). The chat
   // shows its own system row for it, so the turn the agent got renders nothing.
   { start: '<switchboard-approval-result>', end: '</switchboard-approval-result>' },
+  // A context summary, wrapped by the transcript parser from the record's own
+  // `isCompactSummary` flag (`compactSummaryText`), never from its prose.
+  {
+    start: COMPACT_SUMMARY_OPEN,
+    end: COMPACT_SUMMARY_CLOSE,
+    part: (inner) => ({ kind: 'compacted', summary: inner.trim() }),
+  },
 ]
 
 /**
@@ -162,18 +201,41 @@ function taskNoticeKey(n: { taskId?: string; status: string; summary: string }):
 export function splitSyntheticUserText(text: string): SyntheticUserSplit | null {
   let remaining = text.trim()
   const parts: SyntheticUserPart[] = []
+  const command = { name: '', args: '', message: '' }
   let matched = false
   for (;;) {
     const block = BLOCKS.find(({ start }) => remaining.startsWith(start))
-    if (!block) break
+    if (!block || (block.command && !isCommandRecord(remaining))) break
     const end = remaining.indexOf(block.end, block.start.length)
     if (end < 0) break
     matched = true
-    const part = block.part?.(remaining.slice(block.start.length, end))
+    const inner = remaining.slice(block.start.length, end)
+    const part = block.part?.(inner)
     if (part) parts.push(part)
+    if (block.command) command[block.command] = inner.trim()
     remaining = remaining.slice(block.keepEnd ? end : end + block.end.length).trimStart()
   }
-  return matched ? { parts, userText: remaining } : null
+  if (!matched) return null
+  const slash = command.name ? `/${command.name.replace(/^\//, '')}${command.args ? ` ${command.args}` : ''}` : ''
+  return { parts, userText: [slash, remaining].filter(Boolean).join('\n') }
+}
+
+/**
+ * `/name args` for a transcript row that is only a slash-command record (its
+ * output included), the text Switchboard stored for that send. Null for
+ * anything else.
+ */
+export function slashCommandRecordText(text: string): string | null {
+  if (!isCommandRecord(text)) return null
+  const userText = splitSyntheticUserText(text)?.userText
+  return userText?.startsWith('/') ? userText : null
+}
+
+/** The summary inside `compactSummaryText`, i.e. the row as builds before the wrap stored it. Null for anything else. */
+export function unwrapCompactSummaryText(text: string): string | null {
+  return text.startsWith(`${COMPACT_SUMMARY_OPEN}\n`) && text.endsWith(`\n${COMPACT_SUMMARY_CLOSE}`)
+    ? text.slice(COMPACT_SUMMARY_OPEN.length + 1, -COMPACT_SUMMARY_CLOSE.length - 1)
+    : null
 }
 
 /** True when nothing in `text` was typed by the user. */
@@ -200,11 +262,14 @@ export function syntheticPartLabel(part: SyntheticUserPart): string {
       return part.duringToolUse ? 'Interrupted during tool use' : 'Interrupted'
     case 'command-output':
       return part.text
+    case 'compacted':
+      return 'Conversation compacted'
   }
 }
 
 /** Expanded detail for a row: the raw summary plus ids and paths. */
 export function syntheticPartDetail(part: SyntheticUserPart): string | undefined {
+  if (part.kind === 'compacted') return part.summary || undefined
   if (part.kind !== 'task-notification') return undefined
   const lines = [
     part.summary,
