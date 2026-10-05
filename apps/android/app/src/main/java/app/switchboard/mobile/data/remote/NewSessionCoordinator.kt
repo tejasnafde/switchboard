@@ -918,23 +918,3 @@ class SwitchboardNewSessionRemote(
         callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
     ) = client.listCatalog(agentType, instanceId, callback).let { Unit }
 }
-
-object NewSessionTitle {
-    fun generate(firstMessage: String, maxLength: Int = 50): String {
-        val cleaned = firstMessage
-            .replace(Regex("```[\\s\\S]*?```"), "")
-            .replace(Regex("`[^`]+`"), "")
-            .replace(Regex("\\n+"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        if (cleaned.isEmpty()) return "New conversation"
-        if (cleaned.length <= maxLength) return cleaned
-        val truncated = cleaned.take(maxLength)
-        val lastSpace = truncated.lastIndexOf(' ')
-        return if (lastSpace > maxLength * 0.5) {
-            truncated.take(lastSpace) + "…"
-        } else {
-            "$truncated…"
-        }
-    }
-}

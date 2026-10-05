@@ -8,7 +8,6 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
-  acceptanceDisposition,
   decodeTurnAcceptance,
   deliveryAction,
   deliveryFailureDisposition,
@@ -108,6 +107,8 @@ describe('deliveryFailureDisposition', () => {
     expect(deliveryFailureDisposition(false, new Error('No session'))).toBe('reject')
   })
 })
+
+const acceptanceDisposition = (result: unknown) => decodeTurnAcceptance(result).disposition
 
 describe('atomic acceptance results', () => {
   it('keeps pending and ambiguous acknowledgements in the outbox', () => {

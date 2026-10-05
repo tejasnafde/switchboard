@@ -3,7 +3,14 @@
  * being rendered raw, so `**bold**` and fenced code showed their own syntax.
  */
 import { describe, it, expect } from 'vitest'
-import { parseMarkdown, parseInline, inlinesToText } from '../../apps/mobile/src/lib/markdown'
+import { parseMarkdown, parseInline, type Inline } from '../../apps/mobile/src/lib/markdown'
+
+/** Plain-text projection, so a test can assert no text was lost. */
+function inlinesToText(inlines: Inline[]): string {
+  return inlines
+    .map((n) => (n.kind === 'text' || n.kind === 'code' ? n.text : inlinesToText(n.children)))
+    .join('')
+}
 
 describe('parseInline', () => {
   it('reads bold, italic, strike and code', () => {

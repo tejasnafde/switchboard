@@ -1,5 +1,13 @@
 package app.switchboard.mobile.compat
 
+data class LegacyStorageLayout(val database: String, val table: String)
+
+data class LegacyStorageDump(
+    val layout: LegacyStorageLayout,
+    val rows: LinkedHashMap<String, String>,
+)
+
+/** Test fixture: decodes an AsyncStorage dump the way the React Native app laid it out. */
 object LegacyAsyncStorageDecoder {
     private val supportedLayouts = setOf(
         LegacyStorageLayout("RKStorage", "catalystLocalStorage"),
@@ -30,13 +38,4 @@ object LegacyAsyncStorageDecoder {
         }
         return LegacyStorageDump(layout, rows)
     }
-}
-
-internal fun LegacyJson.Object.requiredString(name: String): String =
-    values[name]?.stringOrNull()?.takeIf { it.isNotEmpty() }
-        ?: throw LegacyJsonException("missing non-empty string $name")
-
-internal fun LegacyJson.Object.optionalString(name: String): String? = when (val value = values[name]) {
-    null, LegacyJson.NullValue -> null
-    else -> value.stringOrNull() ?: throw LegacyJsonException("$name must be a string or null")
 }

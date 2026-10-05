@@ -1,12 +1,5 @@
 package app.switchboard.mobile.compat
 
-data class LegacyStorageLayout(val database: String, val table: String)
-
-data class LegacyStorageDump(
-    val layout: LegacyStorageLayout,
-    val rows: LinkedHashMap<String, String>,
-)
-
 sealed interface LegacyConnection {
     val id: String
     val label: String

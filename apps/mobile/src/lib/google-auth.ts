@@ -1,50 +1,22 @@
 /**
- * Google sign-in yielding a cloud-platform access token for the IAP relay.
- * Talks to accounts.google.com directly: a broker hands back its own session
- * JWT, which cannot call googleapis.com. Endpoints are inline to keep a
- * discovery round trip off cold start; tokens live in expo-secure-store.
+ * Google credentials yielding a cloud-platform access token for the IAP relay.
+ * The phone never runs a browser sign-in: it imports a refresh token minted on
+ * the desktop and refreshes it against the token endpoint directly. Endpoints
+ * are inline to keep a discovery round trip off cold start; tokens live in
+ * expo-secure-store.
  */
 import Constants from 'expo-constants'
-import * as AuthSession from 'expo-auth-session'
-import * as Linking from 'expo-linking'
 import * as SecureStore from 'expo-secure-store'
-import * as WebBrowser from 'expo-web-browser'
 import { createLogger } from '@shared/logger'
 import { isBareRefreshToken, parseCredentialJson } from '@shared/google-oauth'
 
 const log = createLogger('google-auth')
 
-// Settles a redirect left pending on web/Expo Go. Must run at module scope.
-WebBrowser.maybeCompleteAuthSession()
-
-export const AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
 export const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
 export const REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke'
 
-/** cloud-platform is what IAP needs; openid + email only name the account. */
-export const SCOPES = ['https://www.googleapis.com/auth/cloud-platform', 'openid', 'email']
-
-/**
- * Google rejects arbitrary custom schemes for installed apps: `switchboard://`
- * fails with invalid_request before consent renders. It must be the REVERSED
- * client id. Derived rather than hardcoded so rotating the client cannot leave
- * a stale scheme; app.json duplicates it natively, so a change needs a rebuild.
- */
-const REDIRECT_PATH = 'oauth2redirect'
-
-export function reversedClientScheme(clientId: string): string {
-  const bare = clientId.replace(/\.apps\.googleusercontent\.com$/, '')
-  return `com.googleusercontent.apps.${bare}`
-}
-
 /** Treat a token as stale this long before its real expiry. */
 export const EXPIRY_SKEW_MS = 60_000
-/**
- * Android closes the Chrome Custom Tab before the deep link is delivered, so
- * openAuthSessionAsync can resolve "dismiss" while the callback is still in
- * flight. Wait this long for the Linking listener before giving up.
- */
-const CALLBACK_GRACE_MS = 4_000
 
 const KEY_REFRESH_TOKEN = 'sb.google.refresh_token'
 const KEY_ACCESS_TOKEN = 'sb.google.access_token'
@@ -82,7 +54,7 @@ function readClientConfig(): GoogleClientConfig | null {
 }
 
 // ---------------------------------------------------------------------------
-// Pure helpers (no native modules, no network) - covered by selfCheck() below.
+// Pure helpers (no native modules, no network).
 // ---------------------------------------------------------------------------
 
 /**
@@ -96,22 +68,6 @@ export function isStale(expiresAt: number, now: number = Date.now()): boolean {
 /** `expires_in` (seconds, relative) to an absolute epoch-ms deadline. */
 export function expiresAtFrom(expiresInSeconds: number, now: number = Date.now()): number {
   return now + expiresInSeconds * 1000
-}
-
-/** Google auth codes contain `/` and `-`, so match everything up to a delimiter. */
-export function extractAuthCode(url: string): string | null {
-  const match = url.match(/[?&]code=([^&#]+)/)
-  return match ? decodeURIComponent(match[1]) : null
-}
-
-export function extractAuthError(url: string): string | null {
-  const match = url.match(/[?&]error=([^&#]+)/)
-  return match ? decodeURIComponent(match[1]) : null
-}
-
-export function extractState(url: string): string | null {
-  const match = url.match(/[?&]state=([^&#]+)/)
-  return match ? decodeURIComponent(match[1]) : null
 }
 
 function formEncode(fields: Record<string, string>): string {
@@ -380,98 +336,6 @@ export async function getSignedInEmail(): Promise<string | null> {
 }
 
 /**
- * The redirect the OAuth client must have registered. Logged on sign-in because
- * a redirect_uri_mismatch is the single most common first-run failure.
- */
-export function getRedirectUri(): string {
-  const config = readClientConfig()
-  if (!config) return ''
-  return AuthSession.makeRedirectUri({
-    scheme: reversedClientScheme(config.clientId),
-    path: REDIRECT_PATH,
-  })
-}
-
-/**
- * Open Google's consent screen and exchange the resulting code for tokens.
- * Resolves to the signed-in email, or throws with a message fit for the UI.
- */
-export async function signIn(): Promise<string | null> {
-  const config = readClientConfig()
-  if (!config) {
-    throw new Error('Google client id is not configured (app.json extra.googleClientId).')
-  }
-
-  const redirectUri = getRedirectUri()
-  const request = new AuthSession.AuthRequest({
-    clientId: config.clientId,
-    clientSecret: config.clientSecret,
-    redirectUri,
-    scopes: SCOPES,
-    responseType: AuthSession.ResponseType.Code,
-    usePKCE: true,
-    codeChallengeMethod: AuthSession.CodeChallengeMethod.S256,
-    extraParams: {
-      // Both are needed for Google to issue a refresh token at all: offline
-      // access asks for one, and consent forces the screen even on a repeat
-      // sign-in (Google silently omits the refresh token otherwise).
-      access_type: 'offline',
-      prompt: 'consent',
-      include_granted_scopes: 'true',
-    },
-  })
-
-  const authUrl = await request.makeAuthUrlAsync({ authorizationEndpoint: AUTHORIZATION_ENDPOINT })
-  log.info('starting google sign-in', redirectUri)
-
-  const callbackUrl = await promptForCallback(authUrl, reversedClientScheme(config.clientId))
-  if (!callbackUrl) return null // user cancelled
-
-  const error = extractAuthError(callbackUrl)
-  if (error) throw new Error(`Google declined the sign-in: ${error}`)
-
-  const returnedState = extractState(callbackUrl)
-  if (returnedState && returnedState !== request.state) {
-    log.error('state mismatch on the oauth callback')
-    throw new Error('Sign-in could not be verified. Please try again.')
-  }
-
-  const code = extractAuthCode(callbackUrl)
-  if (!code) throw new Error('Google did not return an authorization code.')
-  if (!request.codeVerifier) throw new Error('PKCE verifier missing; retry the sign-in.')
-
-  const fields: Record<string, string> = {
-    client_id: config.clientId,
-    code,
-    code_verifier: request.codeVerifier,
-    grant_type: 'authorization_code',
-    redirect_uri: redirectUri,
-  }
-  if (config.clientSecret) fields.client_secret = config.clientSecret
-
-  const body = await postToken(fields)
-  if (!body.access_token || typeof body.expires_in !== 'number') {
-    throw new Error('Google returned no access token.')
-  }
-  if (!body.refresh_token) {
-    // Not fatal: this session works until the access token expires, then the
-    // user has to sign in again. Usually means an earlier grant is being reused.
-    log.warn('no refresh_token in the token response; session will not survive expiry')
-  }
-
-  const email = body.id_token ? emailFromIdToken(body.id_token) : null
-  await persist({
-    accessToken: body.access_token,
-    expiresAt: expiresAtFrom(body.expires_in),
-    refreshToken: body.refresh_token,
-    email,
-  })
-  log.info('signed in', email ?? '(email claim unavailable)')
-  return email
-}
-
-/** Revoke at Google (best effort) and wipe local credentials unconditionally. */
-/**
  * Shape of the blob the desktop minting script prints. Parsed leniently so a
  * stray newline or wrapping whitespace from a copy-paste does not fail.
  */
@@ -542,6 +406,7 @@ export async function importCredentials(creds: ImportedCredentials): Promise<str
   return signedInEmail
 }
 
+/** Revoke at Google (best effort) and wipe local credentials unconditionally. */
 export async function signOut(): Promise<void> {
   const token = refreshTokenValue ?? cached?.accessToken
   if (token) {
@@ -558,116 +423,4 @@ export async function signOut(): Promise<void> {
   }
   await clearStoredCredentials()
   log.info('signed out')
-}
-
-/**
- * Race the two ways the callback can arrive.
- *
- * On iOS, openAuthSessionAsync resolves with the redirect URL. On Android the
- * Custom Tab closes and the URL is delivered through the Linking system
- * instead, so BOTH paths are wired and a handled-codes set makes whichever
- * loses a no-op - the authorization code is single use, and exchanging it twice
- * fails the second time.
- */
-const handledCodes = new Set<string>()
-
-function promptForCallback(authUrl: string, callbackScheme: string): Promise<string | null> {
-  return new Promise<string | null>((resolve) => {
-    let settled = false
-    let graceTimer: ReturnType<typeof setTimeout> | null = null
-
-    const finish = (url: string | null) => {
-      if (settled) return
-      settled = true
-      if (graceTimer) {
-        clearTimeout(graceTimer)
-        graceTimer = null
-      }
-      subscription.remove()
-      resolve(url)
-    }
-
-    const accept = (url: string) => {
-      const code = extractAuthCode(url)
-      if (code) {
-        if (handledCodes.has(code)) return
-        handledCodes.add(code)
-      }
-      finish(url)
-    }
-
-    // callbackScheme is the reversed client id, not the app's own scheme,
-    // because that is the only redirect Google accepts for an installed client.
-    // app.json registers both.
-    const subscription = Linking.addEventListener('url', (event) => {
-      if (event.url.startsWith(`${callbackScheme}:`)) accept(event.url)
-    })
-
-    // Pass the bare "<scheme>:" rather than the full redirect URI: Android
-    // strips the slashes off the return scheme, so the longer form never
-    // matches there.
-    WebBrowser.openAuthSessionAsync(authUrl, `${callbackScheme}:`)
-      .then((result) => {
-        if (result.type === 'success') {
-          accept(result.url)
-          return
-        }
-        // dismiss / cancel: on Android the Linking listener is probably still
-        // in flight, so wait briefly before calling it a cancellation.
-        graceTimer = setTimeout(() => {
-          log.info('auth session closed with no callback')
-          finish(null)
-        }, CALLBACK_GRACE_MS)
-      })
-      .catch((err) => {
-        log.error('opening the auth session failed', err)
-        finish(null)
-      })
-  })
-}
-
-/**
- * Offline assertion of the refresh-decision logic - no network, no keychain.
- * There is no test runner in apps/mobile yet, so run it from the app when
- * touching this file: add `void selfCheck()` next to the warmUpGoogleAuth()
- * call in App.tsx, reload, and read the console. Returns true when all
- * assertions hold and logs each failure.
- */
-export function selfCheck(): boolean {
-  const now = 1_700_000_000_000
-  const failures: string[] = []
-  const expect = (label: string, actual: unknown, wanted: unknown) => {
-    if (actual !== wanted) failures.push(`${label}: expected ${String(wanted)}, got ${String(actual)}`)
-  }
-
-  expect('expires in 30s is stale', isStale(now + 30_000, now), true)
-  expect('expires in 300s is fresh', isStale(now + 300_000, now), false)
-  expect('expires exactly at the skew boundary is stale', isStale(now + EXPIRY_SKEW_MS, now), true)
-  expect('one ms past the skew boundary is fresh', isStale(now + EXPIRY_SKEW_MS + 1, now), false)
-  expect('already expired is stale', isStale(now - 1, now), true)
-  expect('expires_in 3600 becomes an absolute deadline', expiresAtFrom(3600, now), now + 3_600_000)
-
-  expect(
-    'auth code with slashes survives extraction',
-    extractAuthCode('switchboard://oauth2redirect?state=xy&code=4%2F0Ab_c-d&scope=email'),
-    '4/0Ab_c-d',
-  )
-  expect('no code means null', extractAuthCode('switchboard://oauth2redirect?error=access_denied'), null)
-  expect(
-    'error is extracted',
-    extractAuthError('switchboard://oauth2redirect?error=access_denied'),
-    'access_denied',
-  )
-  expect(
-    'state is extracted',
-    extractState('switchboard://oauth2redirect?code=abc&state=s-1'),
-    's-1',
-  )
-
-  if (failures.length > 0) {
-    for (const failure of failures) log.error(`selfCheck: ${failure}`)
-    return false
-  }
-  log.info('selfCheck: all refresh-decision assertions hold')
-  return true
 }

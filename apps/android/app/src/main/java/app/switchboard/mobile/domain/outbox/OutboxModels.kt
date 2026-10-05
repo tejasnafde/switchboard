@@ -113,25 +113,3 @@ object OutboxRetry {
         return (1_000L shl exponent).coerceAtMost(MaxDelayMs)
     }
 }
-
-sealed interface OutboxOperationResult<out T> {
-    data class Success<T>(val value: T) : OutboxOperationResult<T>
-    data class Failure(val message: String) : OutboxOperationResult<Nothing>
-}
-
-data class OutboxFollowUpResult<C, F>(
-    val command: OutboxOperationResult<C>,
-    val followUp: OutboxOperationResult<F>?,
-)
-
-object OutboxFollowUpPolicy {
-    fun <C, F> afterCommand(
-        command: OutboxOperationResult<C>,
-        followUp: () -> OutboxOperationResult<F>,
-    ): OutboxFollowUpResult<C, F> =
-        if (command is OutboxOperationResult.Failure) {
-            OutboxFollowUpResult(command, null)
-        } else {
-            OutboxFollowUpResult(command, followUp())
-        }
-}
