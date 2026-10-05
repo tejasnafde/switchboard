@@ -219,6 +219,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
     startedKeyRef.current = key
     const client = getClient(connectionId)
     if (!client) {
+      // Supersede a load still running on the client that just went away.
+      loadSeqRef.current++
       startedKeyRef.current = null
       setLoadLabel(null)
       return

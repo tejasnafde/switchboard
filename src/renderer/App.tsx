@@ -965,7 +965,12 @@ export function App() {
       const openingSlot = placeSession === openChatBeside ? 'secondary' : useLayoutStore.getState().focusedChatSlot
       const waits = useChatWaitStore.getState()
       const openingTicket = waits.open(openingSlot, { id: session.id, title: session.title, projectPath })
-      const isCurrentOpen = () => useChatWaitStore.getState().opening[openingSlot]?.ticket === openingTicket
+      // A focus change while the load runs would place the chat in the other
+      // slot, so the open stops instead.
+      const isCurrentOpen = () => (
+        useChatWaitStore.getState().opening[openingSlot]?.ticket === openingTicket
+        && (placeSession === openChatBeside || useLayoutStore.getState().focusedChatSlot === openingSlot)
+      )
       try {
         const storeState = useAgentStore.getState()
         const existing = storeState.sessions.find((s) => s.id === session.id)
