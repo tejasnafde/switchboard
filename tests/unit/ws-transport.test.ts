@@ -386,13 +386,15 @@ describe('WsTransport (fake socket)', () => {
     t.close()
   })
 
-  it('does not treat ready alone as heartbeat proof', async () => {
+  it('treats ready as heartbeat proof, so a dead socket to an older backend still redials', async () => {
+    // Every backend that sends ready also answers pings; gating on heartbeat_v1
+    // left a phone on an older desktop with no dead-socket recovery at all.
     vi.useFakeTimers()
     const { t, sock } = makeOpenTransport()
     sock.fire('message', { data: JSON.stringify({ k: 'ready', epoch: 'old', seq: 0, replayed: 0, gap: false }) })
     t.probe()
     await vi.advanceTimersByTimeAsync(120_000)
-    expect(FakeSocket.instances).toHaveLength(1)
+    expect(FakeSocket.instances.length).toBeGreaterThan(1)
     t.close()
   })
 

@@ -136,7 +136,7 @@ export class WsTransport implements Transport {
   private resumeHold: Array<Extract<WsFrame, { k: 'evt' }>> | null = null
   private lastFrameAt = 0
   private receivedFrames = 0
-  /** Set once the backend sends a `ping` or advertises `heartbeat_v1`. Until then the liveness
+  /** Set once the backend sends a `ping` or `ready`. Until then the liveness
    *  checks stay disarmed: an older backend's silence is normal, not fatal. */
   private peerSendsHeartbeat = false
   /** The socket already routed through onSocketDead. forceReconnect drives that
@@ -449,7 +449,7 @@ export class WsTransport implements Transport {
     }
     if (frame.k === 'pong') return
     if (frame.k === 'ready') {
-      if (frame.capabilities?.includes('heartbeat_v1')) this.peerSendsHeartbeat = true
+      this.peerSendsHeartbeat = true
       this.onReady(frame)
       return
     }

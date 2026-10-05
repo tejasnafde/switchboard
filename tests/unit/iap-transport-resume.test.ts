@@ -150,12 +150,15 @@ describe('IapTransport resume', () => {
     expect(reconnect).toHaveBeenCalledOnce()
   })
 
-  it('does not kill an older TCP host that cannot answer probes', () => {
+  it('hands an older TCP host that cannot answer probes to connect() instead of killing it', () => {
     const a = tunnel()
+    const reconnect = vi.fn()
+    a.transport.onReconnectNeeded = reconnect
     a.relay.line(ready('e1', 0, false, NEW_HOST_CAPS.filter((capability) => capability !== 'heartbeat_v1')))
     a.transport.probe()
     vi.advanceTimersByTime(3_000)
     expect(a.transport.isAlive()).toBe(true)
+    expect(reconnect).toHaveBeenCalledOnce()
   })
 
   it('re-seeds when the host reports a gap', () => {

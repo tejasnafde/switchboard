@@ -44,7 +44,7 @@ class LifecycleResilienceCoordinatorTest {
         coordinator.onForeground()
         coordinator.onForeground()
 
-        assertEquals(listOf("viewing", "outbox", ForegroundAction.Probe.name), calls)
+        assertEquals(listOf("viewing", "outbox", ForegroundAction.Reconnect.name), calls)
     }
 
     @Test

@@ -431,13 +431,11 @@ export function installLifecycleReconnect(): () => void {
     void drainOutbox()
     for (const [id, client] of clients) {
       const { transport } = client
-      if (transport.forceReconnect || transport.probe) {
-        if (action === 'reconnect') transport.forceReconnect?.()
-        else transport.probe?.()
-      } else {
-        // A transport without a probe can still report that it is closed.
-        useConnectionsStore.getState().connect(id)
-      }
+      // An IAP tunnel has a probe but no forced reconnect, so a long absence
+      // probes it rather than doing nothing.
+      if (action === 'reconnect' && transport.forceReconnect) transport.forceReconnect()
+      else if (transport.probe) transport.probe()
+      else useConnectionsStore.getState().connect(id)
     }
   })
   return () => sub.remove()

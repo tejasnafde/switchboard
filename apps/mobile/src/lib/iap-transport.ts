@@ -157,7 +157,13 @@ export class IapTransport implements Transport {
       this.onReconnectNeeded?.()
       return
     }
-    if (!this.open || !this.capabilities?.has('heartbeat_v1') || this.probeTimer) return
+    if (!this.open || this.probeTimer) return
+    // An older backend cannot answer a ping, so it gets the old recovery: replace
+    // the tunnel when it has died, which connect() does.
+    if (!this.capabilities?.has('heartbeat_v1')) {
+      this.onReconnectNeeded?.()
+      return
+    }
     this.sendLine(encodeFrame({ k: 'ping', t: Date.now() }))
     this.probeTimer = setTimeout(() => {
       this.probeTimer = null
