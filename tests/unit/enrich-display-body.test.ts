@@ -21,6 +21,21 @@ const samplePillsMeta = JSON.stringify({
 })
 
 describe('enrichMessagesWithDisplayBody', () => {
+  it('drops stored pills the live submission check would refuse', () => {
+    const stored = JSON.stringify({
+      ok: { label: 'a.ts', kind: 'file' },
+      long: { label: 'x'.repeat(121), kind: 'file' },
+      odd: { label: 'b', kind: 'unknown-kind' },
+      'bad id!': { label: 'c', kind: 'file' },
+    })
+    const [out] = enrichMessagesWithDisplayBody(
+      [userMsg('1', 'body')],
+      new Map([['body', { displayBody: 'see [[pill:ok]]', pillsMeta: stored }]]),
+    )
+    expect(out.displayBody).toBe('see [[pill:ok]]')
+    expect(out.pillsMeta).toEqual({ ok: { label: 'a.ts', kind: 'file' } })
+  })
+
   it('returns input unchanged when enrichments map is empty', () => {
     const messages = [userMsg('1', 'hi')]
     expect(enrichMessagesWithDisplayBody(messages, new Map())).toBe(messages)
