@@ -238,6 +238,30 @@ describe('validated transcript evidence cache', () => {
     } finally { spy.mockImplementation(realOpen) }
   })
 
+  it('parses again when the file changes while a cache hit is being hashed', async () => {
+    const paths = await fixture('{"text":"one"}\n', '{"text":"one"}\n')
+    await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)
+    const real = await stat(paths.targetPath)
+    const moved = { ...real, mtimeMs: real.mtimeMs + 1 }
+    const realOpen = vi.mocked(open).getMockImplementation()!
+    vi.mocked(open).mockImplementation(async (...args: Parameters<typeof open>) => {
+      const handle = await realOpen(...args)
+      if (args[0] === paths.targetPath) {
+        let calls = 0
+        handle.stat = (async () => (calls++ === 0 ? real : moved)) as typeof handle.stat
+      }
+      return handle
+    })
+    const parse = vi.spyOn(JSON, 'parse')
+    try {
+      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'equal' })
+      expect(parse).toHaveBeenCalled()
+    } finally {
+      parse.mockRestore()
+      vi.mocked(open).mockImplementation(realOpen)
+    }
+  })
+
   it('does not parse unchanged transcripts again', async () => {
     const paths = await fixture('{"text":"one"}\n', '{"text":"one"}\n')
     await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)

@@ -100,14 +100,19 @@ async function readJsonl(path: string): Promise<ReadResult> {
   }
 
   try {
-    const before = await handle.stat()
+    let before = await handle.stat()
     const cached = evidenceCache.get(path)
     // Metadata alone never proves the bytes are the same, so a hit re-hashes
     // the file. That still skips the per-record parse, which is most of the cost.
     if (cached && sameFileState(cached.state, before) && await fileDigest(handle) === cached.result.snapshot.digest) {
-      evidenceCache.delete(path)
-      evidenceCache.set(path, cached)
-      return cached.result
+      // A read stream is not a snapshot: a write during the hash shows up here.
+      const after = await handle.stat()
+      if (sameFileState(before, after)) {
+        evidenceCache.delete(path)
+        evidenceCache.set(path, cached)
+        return cached.result
+      }
+      before = after
     }
     const hash = createHash('sha256')
     const decoder = new StringDecoder('utf8')
