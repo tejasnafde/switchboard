@@ -331,6 +331,17 @@ fun ThreadScreen(
                 .padding(scaffoldPadding),
         ) {
             metadata?.let { ThreadMetricStrip(it) }
+            if (profiles.changing) {
+                InlineStatus(
+                    message = "Switching to ${profiles.switchingTo}...",
+                    detail = "Send is held; you can keep typing.",
+                    tone = StatusTone.INFO,
+                    progress = InlineStatusProgress.Indeterminate,
+                )
+            }
+            profiles.error?.let { error ->
+                InlineStatus(message = "Could not switch profile", detail = error, tone = StatusTone.ERROR)
+            }
             if (offerCompaction && metadata?.usedTokens != null) {
                 CompactionOfferBanner(
                     usedTokens = metadata.usedTokens,
@@ -857,6 +868,13 @@ private fun ThreadAgentSettingsScreen(
                         ),
                     )
                 }
+            }
+            if (profiles.changing) {
+                InlineStatus(
+                    message = "Switching to ${profiles.switchingTo}...",
+                    tone = StatusTone.INFO,
+                    progress = InlineStatusProgress.Indeterminate,
+                )
             }
             if (profiles.loading) {
                 InlineStatus(

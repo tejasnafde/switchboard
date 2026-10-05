@@ -1,5 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm, writeFile, stat, utimes, rename, open } from 'node:fs/promises'
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, open: vi.fn(actual.open) }
+})
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -212,5 +216,77 @@ describe('synchronizeCompatibleTranscript', () => {
     expect(result).toMatchObject({ ok: false, reason: 'concurrent-modification' })
     expect(calls).toBe(1)
     await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'target-prefix' })
+  })
+})
+
+
+describe('validated transcript evidence cache', () => {
+  it('reads a same-size rewrite again even when every stat field matches', async () => {
+    const paths = await fixture('{"text":"one"}\n', '{"text":"one"}\n')
+    await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)
+    const before = await stat(paths.targetPath)
+    await writeFile(paths.targetPath, '{"text":"two"}\n')
+    // Simulate a coarse filesystem where the rewrite left every stat field equal.
+    const realOpen = vi.mocked(open).getMockImplementation()!
+    const spy = vi.mocked(open).mockImplementation(async (...args: Parameters<typeof open>) => {
+      const handle = await realOpen(...args)
+      if (args[0] === paths.targetPath) handle.stat = (async () => before) as typeof handle.stat
+      return handle
+    })
+    try {
+      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'divergent' })
+    } finally { spy.mockImplementation(realOpen) }
+  })
+
+  it('parses again when the file changes while a cache hit is being hashed', async () => {
+    const paths = await fixture('{"text":"one"}\n', '{"text":"one"}\n')
+    await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)
+    const real = await stat(paths.targetPath)
+    const moved = { ...real, mtimeMs: real.mtimeMs + 1 }
+    const realOpen = vi.mocked(open).getMockImplementation()!
+    vi.mocked(open).mockImplementation(async (...args: Parameters<typeof open>) => {
+      const handle = await realOpen(...args)
+      if (args[0] === paths.targetPath) {
+        let calls = 0
+        handle.stat = (async () => (calls++ === 0 ? real : moved)) as typeof handle.stat
+      }
+      return handle
+    })
+    const parse = vi.spyOn(JSON, 'parse')
+    try {
+      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'equal' })
+      expect(parse).toHaveBeenCalled()
+    } finally {
+      parse.mockRestore()
+      vi.mocked(open).mockImplementation(realOpen)
+    }
+  })
+
+  it('does not parse unchanged transcripts again', async () => {
+    const paths = await fixture('{"text":"one"}\n', '{"text":"one"}\n')
+    await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)
+    const parse = vi.spyOn(JSON, 'parse')
+    try {
+      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'equal' })
+      expect(parse).not.toHaveBeenCalled()
+    } finally { parse.mockRestore() }
+  })
+
+  it.each(['append', 'truncate', 'rewrite', 'replace', 'delete'] as const)('invalidates on %s, even with restored mtime', async (change) => {
+    const first = '{"text":"one"}\n'
+    const paths = await fixture(first, first)
+    await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)
+    const before = await stat(paths.targetPath)
+    if (change === 'append') await writeFile(paths.targetPath, first + '{"text":"two"}\n')
+    if (change === 'truncate') await writeFile(paths.targetPath, '')
+    if (change === 'rewrite') await writeFile(paths.targetPath, '{"text":"two"}\n')
+    if (change === 'replace') {
+      await writeFile(paths.targetPath + '.new', '{"text":"two"}\n')
+      await rename(paths.targetPath + '.new', paths.targetPath)
+    }
+    if (change === 'delete') await rm(paths.targetPath)
+    else await utimes(paths.targetPath, before.atime, before.mtime)
+    const expected = change === 'append' ? 'source-prefix' : change === 'truncate' ? 'target-prefix' : change === 'delete' ? 'target-missing' : 'divergent'
+    await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: expected })
   })
 })

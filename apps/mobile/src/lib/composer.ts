@@ -65,3 +65,8 @@ export function holdHint(outcome: GestureOutcome): string {
       return 'Slide up to lock, sideways to cancel'
   }
 }
+
+export function blockedSendReason(loadLabel: string | null, rotating: boolean): string | null {
+  const reason = loadLabel ?? (rotating ? 'Switching provider...' : null)
+  return reason ? `${reason} Message not sent. Your draft and attachments are kept; tap Send when ready.` : null
+}

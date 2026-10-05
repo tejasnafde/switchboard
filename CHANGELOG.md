@@ -7,6 +7,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ### Fixed
 - **Stored pills are checked on reload, and an account edit refreshes the model list.** A user message's stored pill metadata now passes the same checks as a live send (valid ids, known kinds, labels of at most 120 characters) when a chat loads; before, the checker existed but nothing called it. Editing or deleting a provider account now clears the cached model list, so the picker no longer shows models from the old credentials until a restart.
 
+- Fix stale chat-load failure banners after rapid switching, retain and explain blocked Expo sends, and retry transcripts changed during a read once before falling back.
+
+- Speed up long-chat opens and account switches with streamed JSONL parsing, retained-memory history caching and validated transcript evidence reuse. Show loading, switching and startup states on desktop and phones while keeping drafts editable.
 ### Removed
 - **Stale files and an unused package.** Finished one-off plans and mock-ups, two e2e probes that no npm script invokes, an unused icon, the duplicate `lint:deslop` and broken `test:coverage` scripts, the unused `@xterm/addon-webgl` dependency, and the repository copy of the deslop skill (every agent profile already has it). The worktree glossary moved from the root `CONTEXT.md` into its design doc.
 - **Dead phone code.** The Expo app drops its unused browser Google sign-in, the expo-auth-session, expo-web-browser and expo-linking packages and the reversed-client URL scheme (importing credentials from the desktop is unchanged; this needs a new APK, not an OTA). The Android app drops unused policies, models, helpers, a colour and a duplicate icon. No behaviour changes. See `docs/feature-parity/dead-code-phones.json`.

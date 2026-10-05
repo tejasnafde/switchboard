@@ -110,6 +110,7 @@ data class ThreadProfileState(
     val selectedInstanceId: String? = null,
     val loading: Boolean = false,
     val changing: Boolean = false,
+    val switchingTo: String? = null,
     val error: String? = null,
 )
 
@@ -655,7 +656,7 @@ class ThreadSessionCoordinator(
 
     @Synchronized
     fun submit(): ComposerSubmitResult {
-        if (composer.submitting) return ComposerSubmitResult.Busy
+        if (composer.submitting || profiles.changing) return ComposerSubmitResult.Busy
         val text = composer.draft.trim()
         if (text.isEmpty() && composer.attachments.isEmpty()) return ComposerSubmitResult.Empty
         composer = composer.copy(submitting = true, error = null)
@@ -714,7 +715,7 @@ class ThreadSessionCoordinator(
         // Same reentrancy guard as submit(): a second tap (e.g. the compaction-offer
         // banner's Compact button) while one of these is already in flight must not
         // enqueue a second turn.
-        if (composer.submitting) return ComposerSubmitResult.Busy
+        if (composer.submitting || profiles.changing) return ComposerSubmitResult.Busy
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return ComposerSubmitResult.Empty
         composer = composer.copy(submitting = true, error = null)
@@ -903,7 +904,7 @@ class ThreadSessionCoordinator(
         if (profiles.selectedInstanceId == instanceId) return
 
         val request = ++profileChangeRequest
-        profiles = profiles.copy(changing = true, error = null)
+        profiles = profiles.copy(changing = true, switchingTo = target.displayName.ifBlank { target.id }, error = null)
         publish()
         remote.switchInstance(
             threadId,
@@ -1271,6 +1272,7 @@ class ThreadSessionCoordinator(
         ) return
         val request = ++reattachRequest
         reattachInFlight = provider
+        publish()
         try {
             remote.startSession(
                 StartSession(
@@ -1552,7 +1554,11 @@ class ThreadSessionCoordinator(
         mutableState.value = ThreadSessionState(
             load = load,
             composer = composer,
-            controlMessage = controlMessage,
+            controlMessage = when {
+                profiles.changing -> "Switching to ${profiles.switchingTo}..."
+                reattachInFlight != null -> "Starting ${reattachInFlight}..."
+                else -> controlMessage
+            },
             skills = skills,
             models = models,
             profiles = profiles,
