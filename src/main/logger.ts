@@ -188,12 +188,6 @@ export function createMainLogger(scope: string) {
   }
 }
 
-/** Get the path to the current log file (for display in Settings/About) */
-export function getLogFilePath(): string {
-  init()
-  return logFilePath ?? ''
-}
-
 /** Get the log directory */
 export function getLogDir(): string {
   init()

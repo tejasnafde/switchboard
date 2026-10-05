@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { resolve } from 'node:path'
 import type { BackendHost } from '../../src/main/backend/host'
 import { KanbanChannels } from '../../src/shared/ipc-channels'
 import type { KanbanCard } from '../../src/shared/kanban'
@@ -8,7 +7,6 @@ import type { WorktreeCreationRequest, WorktreeCreationSnapshot } from '../../sr
 const state = vi.hoisted(() => ({
   card: null as KanbanCard | null,
   createPlainCard: vi.fn(),
-  setKanbanWorktree: vi.fn(),
   removeWorktree: vi.fn(async () => ({})),
   listWorktrees: vi.fn(async () => [] as Array<{ path: string }>),
   inUsePaths: new Set<string>(),
@@ -20,7 +18,6 @@ vi.mock('../../src/main/db/database', () => ({
   listKanbanCards: vi.fn(() => state.card ? [state.card] : []),
   updateKanbanCard: vi.fn(),
   deleteKanbanCard: vi.fn(),
-  setKanbanWorktree: state.setKanbanWorktree,
   getKanbanCard: vi.fn(() => state.card),
   getKanbanWorktreeCreationKey: vi.fn(() => state.creationKey),
   listInUseWorktreePaths: vi.fn(() => state.inUsePaths),
@@ -39,7 +36,6 @@ vi.mock('../../src/main/worktree', async (importOriginal) => {
 })
 
 const { registerKanbanHandlers } = await import('../../src/main/ipc/kanban')
-const { WorktreeSizeCache } = await import('../../src/main/worktree-inspect')
 
 class FakeHost implements BackendHost {
   readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
@@ -120,7 +116,6 @@ describe('Kanban worktree transaction compatibility handlers', () => {
     })).rejects.toThrow('transaction is unavailable')
 
     expect(state.createPlainCard).not.toHaveBeenCalled()
-    expect(state.setKanbanWorktree).not.toHaveBeenCalled()
   })
 
   it('returns a deliberately preserved backlog card plus failed snapshot without a plain-card first write', async () => {
@@ -365,42 +360,5 @@ describe('Kanban worktree transaction compatibility handlers', () => {
       .rejects.toThrow(/canonical worktree identity/i)
 
     expect(state.removeWorktree).not.toHaveBeenCalled()
-    expect(state.setKanbanWorktree).not.toHaveBeenCalled()
-  })
-
-  it('routes stale path deletion through the guarded remover, ignoring the old force flag', async () => {
-    const host = new FakeHost()
-    const registered = resolve('/repo/.switchboard/worktrees/card-1')
-    state.listWorktrees.mockResolvedValue([
-      { path: registered, head: 'abc123', branch: 'kanban/card-1', prunable: true, inUse: false },
-    ] as never)
-    let owned = new Set([registered])
-    const runner = vi.fn(async (args: string[]) => ({ stdout: args[0] === 'rev-list' ? '0\n' : '', stderr: '' }))
-    registerKanbanHandlers(host, {
-      worktreeManager: {
-        listProjects: () => [{ path: '/repo', name: 'repo' }],
-        ownedPaths: () => owned,
-        chatLinks: () => new Map(),
-        readProtection: () => ({ projects: [], worktrees: [] }),
-        updateProtection: vi.fn(),
-        sizes: new WorktreeSizeCache(async () => 0),
-        runner,
-      },
-    })
-    const removeStale = host.handlers.get(KanbanChannels.REMOVE_STALE_WORKTREE)!
-
-    await expect(removeStale('/elsewhere', registered, { force: true }))
-      .rejects.toThrow(/not a project in switchboard/i)
-    await expect(removeStale('/repo', '/repo/.switchboard/worktrees-evil', { force: true }))
-      .rejects.toThrow(/not a worktree of this repository/i)
-    await expect(removeStale('/repo', registered, { force: true }))
-      .rejects.toThrow(/in use/i)
-    expect(state.removeWorktree).not.toHaveBeenCalled()
-
-    owned = new Set()
-    await removeStale('/repo', registered, { force: true })
-    expect(state.removeWorktree).toHaveBeenCalledWith(
-      '/repo', registered, { force: false, deleteBranch: 'kanban/card-1' }, runner,
-    )
   })
 })

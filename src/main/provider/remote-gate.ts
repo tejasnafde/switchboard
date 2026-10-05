@@ -182,25 +182,6 @@ export async function remoteProviderLoginPrompt(
 }
 
 /**
- * Structured result of the proactive remote-auth preflight. Unlike
- * `remoteClaudeLoginPrompt` (a prose backstop thrown at START_SESSION), this
- * feeds the renderer's chat-open banner, so it carries the raw pieces - the
- * verdict, the copyable login command, and the dir that was checked.
- */
-export type RemoteClaudeAuthCheck = RemoteProviderAuthCheck
-
-/**
- * Is a remote Claude session rooted at `configDir` able to authenticate?
- * Same signals as `remoteClaudeLoginPrompt` (non-empty `.credentials.json`,
- * or `ANTHROPIC_API_KEY` in the env), but returns structured data instead of
- * a prose prompt. Async only to share one shape with the Codex branch; the
- * Claude path spawns nothing.
- */
-export function checkRemoteClaudeAuth(configDir: string): Promise<RemoteClaudeAuthCheck> {
-  return checkRemoteProviderAuth('claude-code', configDir)
-}
-
-/**
  * Decide whether a remote Claude session can authenticate from `configDir`.
  * Returns null when it's logged in (a non-empty `.credentials.json` exists in
  * the dir, or `ANTHROPIC_API_KEY` is set); otherwise returns the actionable
@@ -230,11 +211,6 @@ export function sanitizeConfigSegment(name: string | undefined): string {
 
 let remoteDirsCache: { at: number; dirs: string[] } | null = null
 const REMOTE_DIRS_TTL_MS = 10_000
-
-/** Test-only: drop the memoized dir list between cases. */
-export function __resetRemoteClaudeConfigDirCacheForTests(): void {
-  remoteDirsCache = null
-}
 
 /**
  * List every Claude config dir on a remote VM. Sessions run under forwarded
@@ -271,16 +247,6 @@ export function listRemoteClaudeConfigDirs(home: string = homedir()): string[] {
   }
   if (cacheable) remoteDirsCache = { at: Date.now(), dirs }
   return dirs
-}
-
-/**
- * Resolve the absolute Claude config dir for a remote session from the
- * forwarded dir name, always under the VM's own `$HOME`. Falsy input (no
- * instance / env-mode instance) returns `~/.claude`. The name is sanitized to
- * a single segment first so a hostile payload can't traverse out of `$HOME`.
- */
-export function remoteClaudeConfigDir(remoteConfigDir: string | undefined): string {
-  return remoteProviderConfigDir('claude-code', remoteConfigDir)
 }
 
 export function remoteProviderConfigDir(

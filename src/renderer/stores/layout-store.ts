@@ -496,8 +496,6 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 registerChatWorkspaceController({
   selectSession: (sessionId) => applyChatWorkspaceEvent({ type: 'select', sessionId }),
   removeSession: (sessionId) => applyChatWorkspaceEvent({ type: 'remove', sessionId }),
-  rotateSession: (fromSessionId, toSessionId) =>
-    applyChatWorkspaceEvent({ type: 'rotate', fromSessionId, toSessionId }),
 })
 
 /**

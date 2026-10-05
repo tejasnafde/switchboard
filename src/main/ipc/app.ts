@@ -48,7 +48,6 @@ import {
   setConversationProviderInstanceId,
   getConversationModel,
   setConversationModel,
-  getConversationReasoningEffort,
   setConversationReasoningEffort,
   setConversationProviderSelection,
   getConversationPendingHandoff,
@@ -56,15 +55,12 @@ import {
   listSessionIdsForThread,
   resolveRootThreadId,
   recordThreadSession,
-  detachSession,
-  listAllThreadSessions,
   listWorkspaces,
   createWorkspace,
   renameWorkspace,
   recolorWorkspace,
   deleteWorkspace,
   reorderWorkspaces,
-  setProjectWorkspace,
   organizeProjects,
   getMessagesForConversation,
   messageRowsToChatMessages,
@@ -348,9 +344,6 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   host.handle(AppChannels.WORKSPACE_REORDER, (ids: string[]) => {
     reorderWorkspaces(ids); return { ok: true }
   })
-  host.handle(AppChannels.ASSIGN_PROJECT_WORKSPACE, (projectPath: string, workspaceId: string | null) => {
-    setProjectWorkspace(projectPath, workspaceId); return { ok: true }
-  })
   host.handle(AppChannels.PROJECT_ORGANIZE, (items: import('@shared/types').ProjectOrganizationItem[]) => {
     organizeProjects(items); return { ok: true }
   })
@@ -612,9 +605,6 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     setConversationModel(id, model)
     return { ok: true }
   })
-  host.handle(AppChannels.GET_CONVERSATION_REASONING_EFFORT, (id: string) => {
-    return { reasoningEffort: getConversationReasoningEffort(id) }
-  })
   host.handle(AppChannels.SET_CONVERSATION_REASONING_EFFORT, (id: string, effort: string) => {
     setConversationReasoningEffort(id, effort)
     return { ok: true }
@@ -696,18 +686,6 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   host.handle(AppChannels.GET_ARCHIVED_CONVERSATIONS, () => {
     return getArchivedConversations()
   })
-
-  // Remove a row from thread_sessions - un-hides a session from the
-  // sidebar. Used when an automatic ancestry record was wrong, or when
-  // the user wants to unmerge.
-  host.handle(AppChannels.DETACH_SESSION, (claudeSessionId: string) => {
-    const ok = detachSession(claudeSessionId)
-    log.info(`detach: ${claudeSessionId} ${ok ? 'removed' : 'no-op (no row found)'}`)
-    return { ok }
-  })
-
-  // Debug: dump all ancestry rows so a user can inspect via devtools.
-  host.handle(AppChannels.LIST_ANCESTRY, () => listAllThreadSessions())
 
   // Manually attach a conversation row as a child of another thread -
   // lets users stitch pre-ancestry fragments together. After this runs,

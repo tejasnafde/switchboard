@@ -60,10 +60,8 @@
       "evidence": [
         "src/main/db/conversation-fork.ts",
         "src/main/conversations/fork-message-codec.ts",
-        "src/main/conversations/fork-diagnostics.ts",
         "tests/unit/conversation-fork-store.test.ts",
         "tests/unit/conversation-fork-message-copy.test.ts",
-        "tests/unit/conversation-fork-diagnostics.test.ts",
         "tests/unit/worktree-creation-fork-store.test.ts"
       ]
     },

@@ -19,8 +19,6 @@ export const PEER_TOOL_SERVER_NAME = 'switchboard'
 export const PEER_LIST_TOOL_NAME = 'list_agent_sessions'
 export const PEER_SEND_TOOL_NAME = 'send_agent_message'
 
-/** Fully-qualified names. The permission layer only ever sees these. */
-export const PEER_LIST_TOOL = `mcp__${PEER_TOOL_SERVER_NAME}__${PEER_LIST_TOOL_NAME}`
 export const PEER_SEND_TOOL = `mcp__${PEER_TOOL_SERVER_NAME}__${PEER_SEND_TOOL_NAME}`
 
 /**

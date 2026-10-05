@@ -72,8 +72,3 @@ export function getConversationForkCoordinator(): ConversationForkCoordinator {
   })
   return coordinator
 }
-
-export function resetConversationForkCoordinatorForTests(): void {
-  coordinator = null
-  worktreePort = null
-}

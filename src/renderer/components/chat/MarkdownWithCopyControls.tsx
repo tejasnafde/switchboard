@@ -338,13 +338,6 @@ export function renderMarkdownDocument(
   return { html: marked.parser(tokens, { async: false, renderer }), tables }
 }
 
-export function renderMarkdownWithCopyControls(
-  markdown: string,
-  options: RenderMarkdownOptions = {},
-): string {
-  return renderMarkdownDocument(markdown, options).html
-}
-
 interface AtomicMarkdownRootProps {
   html: string
   className: string

@@ -274,7 +274,6 @@ interface AgentStore {
   setQueuedTurns: (sessionId: string, turns: readonly QueuedTurnSummary[]) => void
   trackQueuedTurnEvent: (event: RuntimeEvent) => void
   getActiveSession: () => AgentSession | undefined
-  getUnreadCount: (sessionId: string) => number
   setTitle: (sessionId: string, title: string) => void
   setRuntimeMode: (sessionId: string, mode: RuntimeMode) => void
   setModel: (sessionId: string, model: string) => void
@@ -283,7 +282,6 @@ interface AgentStore {
   setReasoningEffort: (sessionId: string, effort: ReasoningEffort) => void
   setCostUsd: (sessionId: string, costUsd: number) => void
   setVariants: (sessionId: string, available: string[], current: string) => void
-  setCurrentVariant: (sessionId: string, variant: string) => void
   setTokenUsage: (sessionId: string, usage: { usedTokens: number; maxTokens: number | null }) => void
   /**
    * Switch the agent backend (claude-code / codex / opencode) for a
@@ -567,10 +565,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     return sessions.find((s) => s.id === activeSessionId)
   },
 
-  getUnreadCount: (sessionId) => {
-    return get().sessions.find((s) => s.id === sessionId)?.unreadCount ?? 0
-  },
-
   setTitle: (sessionId, title) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
@@ -619,13 +613,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         s.id === sessionId
           ? { ...s, availableVariants: available, currentVariant: current }
           : s
-      ),
-    })),
-
-  setCurrentVariant: (sessionId, variant) =>
-    set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, currentVariant: variant } : s
       ),
     })),
 

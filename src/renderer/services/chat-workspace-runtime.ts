@@ -1,13 +1,11 @@
 import {
   displayedChatSessionIds,
-  focusedChatSessionId,
   type ChatWorkspaceState,
 } from './chat-workspace'
 
 type WorkspaceController = {
   selectSession?: (sessionId: string) => void
   removeSession?: (sessionId: string) => void
-  rotateSession?: (fromSessionId: string, toSessionId: string) => void
 }
 
 let workspace: ChatWorkspaceState = {
@@ -30,10 +28,6 @@ export function isChatSessionDisplayed(sessionId: string): boolean {
   return displayedChatSessions().includes(sessionId)
 }
 
-export function focusedRuntimeChatSession(): string | null {
-  return focusedChatSessionId(workspace)
-}
-
 export function registerChatWorkspaceController(next: WorkspaceController): void {
   controller = next
 }
@@ -46,10 +40,6 @@ export function selectRuntimeChatSession(sessionId: string): boolean {
 
 export function removeRuntimeChatSession(sessionId: string): void {
   controller.removeSession?.(sessionId)
-}
-
-export function rotateRuntimeChatSession(fromSessionId: string, toSessionId: string): void {
-  controller.rotateSession?.(fromSessionId, toSessionId)
 }
 
 export function resetChatWorkspaceRuntimeForTests(): void {

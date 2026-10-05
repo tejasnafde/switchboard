@@ -55,8 +55,7 @@
  *
  * This function never throws and never blocks its caller on failure -
  * callers are expected to fire it in the background right after the
- * worktree exists (see `worktree.ts`, `git-adapter.ts`,
- * `legacy-session-worktree-lease.ts`) so a clone that fails, or simply
+ * worktree exists (see `git-adapter.ts`) so a clone that fails, or simply
  * takes a while on a big `node_modules`, never delays or fails worktree
  * creation itself.
  */
