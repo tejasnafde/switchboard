@@ -126,13 +126,6 @@ export function updateKanbanCard(id: string, patch: KanbanCardUpdate): KanbanCar
   return getKanbanCard(id)
 }
 
-export function setKanbanWorktree(id: string, path: string | null, branch: string | null): KanbanCard | null {
-  getDb().prepare(`
-    UPDATE kanban_cards SET worktree_path = ?, worktree_branch = ?, updated_at = ? WHERE id = ?
-  `).run(path, branch, Date.now(), id)
-  return getKanbanCard(id)
-}
-
 export function deleteKanbanCard(id: string): void {
   getDb().prepare('DELETE FROM kanban_cards WHERE id = ?').run(id)
 }

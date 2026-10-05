@@ -89,9 +89,6 @@ export interface KanbanWorktreeCreationIntent {
   initialAgent?: WorktreeInitialAgentIntent
 }
 
-/** Additive response metadata. Older clients continue reading ordinary card fields. */
-export type KanbanCardWorktreeResult = KanbanCard
-
 export interface KanbanCardUpdate {
   title?: string
   description?: string

@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   detectSlashTrigger,
   filterSlashCommands,
-  parseLeadingSlashCommand,
   splitSkillMentions,
   commandInsertion,
   SLASH_COMMANDS,
@@ -99,43 +98,6 @@ describe('detectSlashTrigger', () => {
     // `/foo/bar` looks like a path, not a command. Our regex [^\s/]* forbids
     // subsequent slashes, so this correctly doesn't fire.
     expect(detectSlashTrigger('/foo/bar', 8)).toBeNull()
-  })
-})
-
-describe('parseLeadingSlashCommand', () => {
-  it('parses a bare leading slash command', () => {
-    const m = parseLeadingSlashCommand('/plan')
-    expect(m).not.toBeNull()
-    expect(m!.name).toBe('plan')
-    expect(m!.rest).toBe('')
-  })
-
-  it('parses leading slash command with args', () => {
-    const m = parseLeadingSlashCommand('/commit fix the bug')
-    expect(m).not.toBeNull()
-    expect(m!.name).toBe('commit')
-    expect(m!.rest).toBe(' fix the bug')
-  })
-
-  it('tolerates leading whitespace before the slash', () => {
-    const m = parseLeadingSlashCommand('  /plan')
-    expect(m).not.toBeNull()
-    expect(m!.name).toBe('plan')
-  })
-
-  it('returns null for path-like leading tokens', () => {
-    expect(parseLeadingSlashCommand('/etc/hosts')).toBeNull()
-    expect(parseLeadingSlashCommand('/foo/bar baz')).toBeNull()
-  })
-
-  it('returns null when message starts with regular text', () => {
-    expect(parseLeadingSlashCommand('hi there')).toBeNull()
-    expect(parseLeadingSlashCommand('see /plan later')).toBeNull()
-  })
-
-  it('rejects names that start with a digit or dash', () => {
-    expect(parseLeadingSlashCommand('/9plan')).toBeNull()
-    expect(parseLeadingSlashCommand('/-plan')).toBeNull()
   })
 })
 

@@ -14,8 +14,6 @@
  *   - capped at 40 chars (slice happens before the final trim so we
  *     don't end on a stray dash)
  *   - empty input → `fork`
- *   - `fork/` prefix added unconditionally (callers that don't want the
- *     prefix can use `slugifyForBranch` directly)
  *
  * Branches inside `fork/<slug>` are easy to grep, easy to delete in
  * bulk (`git branch -D fork/*`), and visually distinct from kanban-card
@@ -32,8 +30,4 @@ export function slugifyForBranch(input: string): string {
     .slice(0, MAX_SLUG_LEN)
     .replace(/(^-|-$)/g, '')
   return cleaned || 'fork'
-}
-
-export function makeBranchSlug(summary: string): string {
-  return `fork/${slugifyForBranch(summary)}`
 }

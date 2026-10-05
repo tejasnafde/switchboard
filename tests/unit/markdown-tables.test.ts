@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { renderMarkdownWithCopyControls } from '../../src/renderer/components/chat/MarkdownWithCopyControls'
+import { renderMarkdownDocument } from '../../src/renderer/components/chat/MarkdownWithCopyControls'
+
+const renderMarkdownWithCopyControls = (markdown: string, options?: { mutable?: boolean }): string =>
+  renderMarkdownDocument(markdown, options).html
 
 const table = [
   'Your bot-v2 PRs since 15 Sep:',

@@ -7,7 +7,7 @@
  */
 
 import { create } from 'zustand'
-import { defaultInstanceId, type ProviderInstance, type AgentType } from '@shared/types'
+import type { ProviderInstance } from '@shared/types'
 import type { ProviderUsage } from '@shared/provider-usage'
 import type { ProviderInstanceUpsertInput } from '../../preload'
 
@@ -38,10 +38,6 @@ interface ProviderInstanceStore {
    *  password prompt per keychain item. */
   beginUsageVisit: () => void
   clearError: () => void
-  /** Helper: instances filtered to a given agent kind, in a stable order
-   *  (default first, then alpha). Used by both the picker and the
-   *  Settings tab. */
-  forAgent: (agentType: AgentType) => ProviderInstance[]
 }
 
 type UsageOpts = { force?: boolean; refreshWithTurn?: boolean }
@@ -167,15 +163,4 @@ export const useProviderInstanceStore = create<ProviderInstanceStore>((set, get)
   },
 
   clearError: () => set({ error: null }),
-
-  forAgent: (agentType) =>
-    get().instances
-      .filter((i) => i.agentType === agentType && i.enabled)
-      .sort((a, b) => {
-        // Default rows first; then alpha by display name.
-        const aDef = a.id === defaultInstanceId(agentType) ? 0 : 1
-        const bDef = b.id === defaultInstanceId(agentType) ? 0 : 1
-        if (aDef !== bDef) return aDef - bDef
-        return a.displayName.localeCompare(b.displayName)
-      }),
 }))

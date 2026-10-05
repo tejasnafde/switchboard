@@ -23,7 +23,6 @@ const LOCAL_CHANNELS = new Set<string>([
   // AppChannels entry because they're not part of the ProviderAdapter-facing API.
   'app:close-window',
   'app:quit-and-install',
-  'app:get-log-paths',
   // The app menu to silence is this desktop's.
   'app:shortcut-capture',
   // settings.json is beside this desktop's DB; the row is disabled while remote, so this is a backstop.
@@ -35,7 +34,6 @@ const LOCAL_CHANNELS = new Set<string>([
   // routed to a remote backend it would try to open a browser on a headless VM
   // and store the client in the VM's database.
   AppChannels.MOBILE_PAIRING_APPLY,
-  AppChannels.MOBILE_PAIRING_STATUS,
   AppChannels.MOBILE_PAIRING_CODE,
   AppChannels.MOBILE_DEVICES,
   AppChannels.MOBILE_DEVICE_REVOKE,

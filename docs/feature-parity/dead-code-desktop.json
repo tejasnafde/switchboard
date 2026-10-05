@@ -1,0 +1,39 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "dead-code-desktop",
+  "summary": "Delete desktop and shared code that no production path calls: unused exports, test-only helpers, preload methods and IPC channels no client invokes, dead CSS, and the modules only tests imported.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/agent/jsonl-truncate.ts",
+        "src/main/db/conversations.ts",
+        "src/main/provider/codex-session-migrate.ts",
+        "src/main/ipc/terminal-sessions.ts",
+        "src/preload/index.ts",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/styles/global.css"
+      ]
+    },
+    "reactNativeIos": { "status": "not_applicable", "reason": "No phone code changed." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "No phone code changed." },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "reason": "Breaking: removed channels no client calls; the owner confirmed no outside users.",
+      "evidence": [
+        "src/shared/ipc-channels.ts",
+        "src/shared/device-auth.ts",
+        "src/preload/hybrid-transport.ts",
+        "src/main/ipc/app.ts"
+      ]
+    },
+    "storageDataMigration": { "status": "not_applicable", "reason": "No table, column or stored format changed." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release." }
+  },
+  "verification": {
+    "automated": ["npm run typecheck, npm test (529 files, 5775 passed, 3 skipped) and npm run lint, all green."],
+    "hardware": [],
+    "notExercised": ["The app was not launched; every removal was checked with a repo-wide git grep for callers, including apps/mobile and apps/android."]
+  }
+}

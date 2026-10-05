@@ -137,7 +137,6 @@ User clicks archive button on a sidebar thread
        ├─ optimistic: remove from UI
        └─ window.api.app.archiveConversation(session.id, projectPath, session.title)
             └─ ARCHIVE_CONVERSATION IPC
-                 ├─ ensureConversation(id, projectPath, 'claude-code', title)  // INSERT OR IGNORE
                  └─ archiveConversation(id)                                    // UPDATE ... SET archived = 1
                  └─ verify via isConversationArchived(id)  // returns boolean
 ```

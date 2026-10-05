@@ -121,41 +121,6 @@ export function samePath(a: string, b: string): boolean {
   return comparable(a, windows) === comparable(b, windows)
 }
 
-export interface RebasedPath {
-  /** The same logical location inside `toRoot`. */
-  path: string
-  /** Segment below the root, `''` when the path WAS the root. Empty means no subdirectory to preserve. */
-  relative: string
-}
-
-/**
- * Map a path from one execution root to the equivalent place in another, so a
- * shell sitting in `<old>/packages/app` lands in `<new>/packages/app` instead
- * of being dumped at the top of the new tree.
- *
- * Returns null when `candidate` is not inside `fromRoot`. That is the guard
- * that keeps a pane deliberately rooted elsewhere from being moved at all.
- *
- * Whether the mapped directory EXISTS is a filesystem question, so it is the
- * caller's: check it, and fall back to `toRoot` if the subdirectory is absent.
- */
-export function rebaseWithinRoot(
-  fromRoot: string,
-  toRoot: string,
-  candidate: string,
-): RebasedPath | null {
-  if (!isPathWithinRoot(fromRoot, candidate)) return null
-  const normalizedFrom = normalizeRootPath(fromRoot)
-  const normalizedTo = normalizeRootPath(toRoot)
-  const remainder = normalizeRootPath(candidate).slice(normalizedFrom.length)
-  const relative = remainder.replace(/^[\\/]+/, '')
-  if (!relative) return { path: normalizedTo, relative: '' }
-  const separator = isWindowsStyle(normalizedTo) ? '\\' : '/'
-  const rebasedTail = relative.replace(/[\\/]/g, separator)
-  const joiner = normalizedTo.endsWith(separator) ? '' : separator
-  return { path: `${normalizedTo}${joiner}${rebasedTail}`, relative }
-}
-
 /**
  * Build the canonical execution root for a conversation or session row.
  *
@@ -196,16 +161,4 @@ function sameLocation(a: string, b: string): boolean {
 export function sameExecutionRoot(a: ExecutionRoot, b: ExecutionRoot): boolean {
   if (a.machineId !== b.machineId) return false
   return sameLocation(a.path, b.path)
-}
-
-function basename(path: string): string {
-  const normalized = normalizeRootPath(path)
-  const cut = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'))
-  return cut >= 0 ? normalized.slice(cut + 1) : normalized
-}
-
-/** Short human label, for a status line or a toast. */
-export function describeExecutionRoot(root: ExecutionRoot): string {
-  const project = basename(root.projectPath)
-  return root.isWorktree && root.branch ? `${project} · ${root.branch}` : project
 }

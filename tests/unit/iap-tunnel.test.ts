@@ -12,7 +12,6 @@ import {
   encodeIapAck,
   chunkForIap,
   iapConnectUrl,
-  iapReconnectUrl,
   IAP_MAX_DATA_FRAME,
   IAP_TAG,
 } from '../../src/shared/iap-tunnel'
@@ -34,13 +33,6 @@ describe('IAP url building', () => {
     expect(url).toContain('zone=asia-south1-b')
     expect(url).toContain('interface=nic0')
     expect(url).toContain('newWebsocket=True')
-  })
-
-  it('reconnect url carries sid and ack', () => {
-    const url = iapReconnectUrl(target, 'sid-abc', 4096)
-    expect(url).toContain('/v4/reconnect?')
-    expect(url).toContain('sid=sid-abc')
-    expect(url).toContain('ack=4096')
   })
 })
 

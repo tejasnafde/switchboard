@@ -2540,15 +2540,6 @@ export class ProviderRegistry implements PeerToolHost {
     this.host.handle(ProviderChannels.CANCEL_QUEUED_TURN, (threadId: string, messageId: string) =>
       this.actOnQueuedTurn('cancel', threadId, messageId))
 
-    this.host.handle(ProviderChannels.OPENCODE_LIST_MODELS, async () => {
-      try {
-        // Alias for desktops older than 0.8.62, which still ask for bare ids.
-        return (await this.opencodeAcp.listModels('')).map((m) => m.id)
-      } catch {
-        return []
-      }
-    })
-
     // A user stop is deliberate: a relocation waiting for a turn that will
     // never arrive must not fire against the next session on this thread.
     this.host.handle(ProviderChannels.STOP_SESSION, async (threadId: string) => {

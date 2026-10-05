@@ -3,7 +3,6 @@ import Database from 'better-sqlite3'
 import {
   DurableTurnAcceptance,
   TurnNotAcceptedError,
-  turnPayloadHash,
 } from '../../src/main/provider/durable-turn-acceptance'
 import {
   SqliteTurnAcceptanceStore,
@@ -105,13 +104,6 @@ describe('DurableTurnAcceptance', () => {
     })
     expect(dispatches).toBe(1)
     close()
-  })
-
-  it('hashes every dispatch-affecting payload field deterministically', () => {
-    const base = turnPayloadHash('hello', 'sandbox', [{ url: 'data:image/png;base64,AA', mimeType: 'image/png' }])
-    expect(base).toBe(turnPayloadHash('hello', 'sandbox', [{ url: 'data:image/png;base64,AA', mimeType: 'image/png' }]))
-    expect(base).not.toBe(turnPayloadHash('changed', 'sandbox', [{ url: 'data:image/png;base64,AA', mimeType: 'image/png' }]))
-    expect(base).not.toBe(turnPayloadHash('hello', 'plan', [{ url: 'data:image/png;base64,AA', mimeType: 'image/png' }]))
   })
 })
 
