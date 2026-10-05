@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, writeFile, stat, utimes, rename } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, stat, utimes, rename, open } from 'node:fs/promises'
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, open: vi.fn(actual.open) }
+})
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   compareJsonlTranscripts,
-  evidenceStillValid,
   synchronizeCompatibleTranscript,
 } from '../../src/main/provider/transcript-compatibility'
 
@@ -218,20 +221,25 @@ describe('synchronizeCompatibleTranscript', () => {
 
 
 describe('validated transcript evidence cache', () => {
-  const state = { size: 10, mtimeMs: 1_000, ctimeMs: 1_000, ino: 1, dev: 1 }
-  it('trusts matching metadata only for a file modified well before it was read', () => {
-    expect(evidenceStillValid({ state, readAtMs: 10_000 }, state)).toBe(true)
-    // Same tuple, but written within the racy window of the read: a same-size
-    // rewrite on a coarse-timestamp filesystem could look identical.
-    expect(evidenceStillValid({ state, readAtMs: 2_500 }, state)).toBe(false)
-    expect(evidenceStillValid({ state, readAtMs: 10_000 }, { ...state, ctimeMs: 1_001 })).toBe(false)
+  it('reads a same-size rewrite again even when every stat field matches', async () => {
+    const paths = await fixture('{"text":"one"}\n', '{"text":"one"}\n')
+    await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)
+    const before = await stat(paths.targetPath)
+    await writeFile(paths.targetPath, '{"text":"two"}\n')
+    // Simulate a coarse filesystem where the rewrite left every stat field equal.
+    const realOpen = vi.mocked(open).getMockImplementation()!
+    const spy = vi.mocked(open).mockImplementation(async (...args: Parameters<typeof open>) => {
+      const handle = await realOpen(...args)
+      if (args[0] === paths.targetPath) handle.stat = (async () => before) as typeof handle.stat
+      return handle
+    })
+    try {
+      await expect(compareJsonlTranscripts(paths.sourcePath, paths.targetPath)).resolves.toMatchObject({ kind: 'divergent' })
+    } finally { spy.mockImplementation(realOpen) }
   })
 
   it('does not parse unchanged transcripts again', async () => {
     const paths = await fixture('{"text":"one"}\n', '{"text":"one"}\n')
-    const past = new Date(Date.now() - 60_000)
-    await utimes(paths.sourcePath, past, past)
-    await utimes(paths.targetPath, past, past)
     await compareJsonlTranscripts(paths.sourcePath, paths.targetPath)
     const parse = vi.spyOn(JSON, 'parse')
     try {

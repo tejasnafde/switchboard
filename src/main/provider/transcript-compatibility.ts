@@ -1,7 +1,7 @@
 import { perfSpan } from '../perf'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { copyFile, mkdir, open, rename, rm } from 'node:fs/promises'
+import { copyFile, mkdir, open, rename, rm, type FileHandle } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { createMainLogger } from '../logger'
@@ -67,22 +67,6 @@ type ReadResult =
 interface ValidatedEvidence {
   state: { size: number; mtimeMs: number; ctimeMs: number; ino: number; dev: number }
   result: Extract<ReadResult, { ok: true }>
-  readAtMs: number
-}
-
-/** Coarse filesystem timestamps can hide a same-size rewrite within this window. */
-const RACY_WINDOW_MS = 2_000
-
-/**
- * Metadata alone never proves two reads saw the same bytes. It is trusted only
- * when the file was last modified well before it was read (git's racy-clean
- * rule): a rewrite after that read must move mtime past the cached value.
- */
-export function evidenceStillValid(
-  cached: Pick<ValidatedEvidence, 'state' | 'readAtMs'>,
-  current: Parameters<typeof sameFileState>[1],
-): boolean {
-  return sameFileState(cached.state, current) && cached.state.mtimeMs < cached.readAtMs - RACY_WINDOW_MS
 }
 
 // Retain record digests, not large tool results or image bodies.
@@ -118,7 +102,9 @@ async function readJsonl(path: string): Promise<ReadResult> {
   try {
     const before = await handle.stat()
     const cached = evidenceCache.get(path)
-    if (cached && evidenceStillValid(cached, before)) {
+    // Metadata alone never proves the bytes are the same, so a hit re-hashes
+    // the file. That still skips the per-record parse, which is most of the cost.
+    if (cached && sameFileState(cached.state, before) && await fileDigest(handle) === cached.result.snapshot.digest) {
       evidenceCache.delete(path)
       evidenceCache.set(path, cached)
       return cached.result
@@ -128,7 +114,7 @@ async function readJsonl(path: string): Promise<ReadResult> {
     const records: string[] = []
     let carry = ''
 
-    for await (const chunk of handle.createReadStream({ autoClose: false })) {
+    for await (const chunk of handle.createReadStream({ autoClose: false, start: 0 })) {
       const bytes = chunk as Buffer
       hash.update(bytes)
       carry += decoder.write(bytes)
@@ -170,7 +156,7 @@ async function readJsonl(path: string): Promise<ReadResult> {
       },
       records,
     }
-    cacheEvidence(path, { state: before, result, readAtMs: Date.now() })
+    cacheEvidence(path, { state: before, result })
     return result
   } finally {
     await handle.close()
@@ -389,6 +375,12 @@ function conflict(sourcePath: string, targetPath: string, detail: string): Trans
     sourcePath,
     targetPath,
   }
+}
+
+async function fileDigest(handle: FileHandle): Promise<string> {
+  const hash = createHash('sha256')
+  for await (const chunk of handle.createReadStream({ autoClose: false, start: 0 })) hash.update(chunk as Buffer)
+  return hash.digest('hex')
 }
 
 function sameFileState(
