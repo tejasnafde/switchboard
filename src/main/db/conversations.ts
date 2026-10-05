@@ -288,29 +288,6 @@ export function getManagedRootConversationsForProjects(projectPaths: string[]): 
   return result
 }
 
-/**
- * Batched variant of getConversationsForProject: one IN query for all
- * projects instead of one query per project (GET_PROJECTS runs on every
- * sidebar / settings / kanban refresh). Every requested path is present in
- * the result, mapped to [] when it has no conversations. Per-project row
- * order matches getConversationsForProject (updated_at DESC).
- */
-export function getConversationsForProjects(projectPaths: string[]): Map<string, ConversationRow[]> {
-  const result = new Map<string, ConversationRow[]>()
-  for (const p of projectPaths) result.set(p, [])
-  const db = getDb()
-  const CHUNK = 500 // stay well under SQLite's bound-parameter cap
-  for (let i = 0; i < projectPaths.length; i += CHUNK) {
-    const chunk = projectPaths.slice(i, i + CHUNK)
-    const placeholders = chunk.map(() => '?').join(',')
-    const rows = db.prepare(
-      `SELECT * FROM conversations WHERE project_path IN (${placeholders}) ORDER BY updated_at DESC`
-    ).all(...chunk) as ConversationRow[]
-    for (const row of rows) result.get(row.project_path)?.push(row)
-  }
-  return result
-}
-
 export interface ConversationRow {
   id: string
   project_path: string
@@ -356,42 +333,6 @@ export interface ConversationRow {
   fork_omitted_change_summary?: string | null
   /** Last finished turn's preview line - see `setConversationStatusLine`. */
   status_line?: string | null
-}
-
-/**
- * Insert a conversation row that records its fork lineage. Mirrors
- * `createConversation` but writes the parent + anchor columns added in
- * the fork-from-message migration. Used by `forkConversation` in
- * Legacy callers only; reliable forks use the atomic conversation-fork store.
- */
-export function createForkedConversation(args: {
-  id: string
-  projectPath: string
-  agentType: string
-  title: string
-  parentConversationId: string
-  forkedAtMessageId: string
-  sessionId?: string | null
-  /** Set together with `worktreeBranch` when the fork was created with
-   *  `withWorktree: true`. Both null otherwise. */
-  worktreePath?: string | null
-  worktreeBranch?: string | null
-}): void {
-  const now = Date.now()
-  getDb().prepare(
-    `INSERT INTO conversations (
-       id, project_path, agent_type, session_id, title,
-       created_at, updated_at,
-       parent_conversation_id, forked_at_message_id,
-       worktree_path, worktree_branch, sidebar_role
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed')`
-  ).run(
-    args.id, args.projectPath, args.agentType,
-    args.sessionId ?? null, args.title,
-    now, now,
-    args.parentConversationId, args.forkedAtMessageId,
-    args.worktreePath ?? null, args.worktreeBranch ?? null,
-  )
 }
 
 /** Look up a single conversation by id. Used by search navigation to
@@ -640,68 +581,6 @@ export function selectResumeSegment(
 }
 
 /**
- * Returns the set of claude_session_ids that are CHILDREN of some other
- * thread - used to hide fragmented .jsonl files from the sidebar scanner.
- *
- * IMPORTANT: Only hide UUIDs whose parent is ALSO a real UUID (i.e. has
- * its own .jsonl on disk). If the parent is a synthetic `agent_<ts>` ID
- * (Switchboard-native, never written to disk), hiding the UUID would make
- * the whole chat invisible - the synthetic parent has no scanner entry to
- * stand in for it. So we keep those UUIDs visible and inherit the title
- * from the synthetic parent via `getThreadParentMap()`.
- */
-export function getChildSessionIds(): Set<string> {
-  const rows = getDb().prepare(
-    "SELECT claude_session_id FROM thread_sessions " +
-    "WHERE thread_id != claude_session_id " +
-    "AND thread_id NOT LIKE 'agent\\_%' ESCAPE '\\'"
-  ).all() as Array<{ claude_session_id: string }>
-  return new Set(rows.map((r) => r.claude_session_id))
-}
-
-/**
- * Returns a map of claude_session_id → synthetic parent thread_id (only for
- * rows where thread_id is a Switchboard-native `agent_<ts>` ID). Used by
- * the sidebar to inherit the parent conversation's title for child UUIDs
- * whose synthetic parent has no .jsonl on disk.
- */
-export function getSyntheticParentMap(): Map<string, string> {
-  const rows = getDb().prepare(
-    "SELECT claude_session_id, thread_id FROM thread_sessions " +
-    "WHERE thread_id LIKE 'agent\\_%' ESCAPE '\\' " +
-    "AND thread_id != claude_session_id"
-  ).all() as Array<{ claude_session_id: string; thread_id: string }>
-  return new Map(rows.map((r) => [r.claude_session_id, r.thread_id]))
-}
-
-/**
- * Remove a row from thread_sessions, detaching a hidden child back to the
- * sidebar as its own conversation. Used when an automatic ancestry record
- * was wrong (e.g. we captured a session_id from an unrelated attach).
- */
-export function detachSession(claudeSessionId: string): boolean {
-  const result = getDb().prepare(
-    'DELETE FROM thread_sessions WHERE claude_session_id = ?'
-  ).run(claudeSessionId)
-  return result.changes > 0
-}
-
-/**
- * Dump all ancestry rows - used for debugging via the devtools console.
- * Not called by any UI path; exposed through the `app:list-ancestry` IPC
- * so you can run `window.api.app.listAncestry()` to see the full state.
- */
-export function listAllThreadSessions(): Array<{
-  claude_session_id: string
-  thread_id: string
-  recorded_at: number
-}> {
-  return getDb().prepare(
-    'SELECT claude_session_id, thread_id, recorded_at FROM thread_sessions ORDER BY recorded_at DESC'
-  ).all() as Array<{ claude_session_id: string; thread_id: string; recorded_at: number }>
-}
-
-/**
  * Per-conversation runtime mode (plan/sandbox/accept-edits/full-access).
  * Returns null if never set. Callers should fall back to a user default.
  *
@@ -929,13 +808,6 @@ export function setConversationModel(id: string, model: string): void {
   ).run(model, Date.now(), resolveRootThreadId(id))
 }
 
-export function getConversationReasoningEffort(id: string): string | null {
-  const row = getDb().prepare(
-    'SELECT reasoning_effort FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as { reasoning_effort: string | null } | undefined
-  return row?.reasoning_effort ?? null
-}
-
 export function setConversationReasoningEffort(id: string, effort: string): void {
   getDb().prepare(
     'UPDATE conversations SET reasoning_effort = ?, updated_at = ? WHERE id = ?'
@@ -1034,17 +906,6 @@ export function getArchivedConversationIds(): Set<string> {
     'SELECT id FROM conversations WHERE archived = 1'
   ).all() as Array<{ id: string }>
   return new Set(rows.map((r) => r.id))
-}
-
-/**
- * Ensure a row exists in conversations (so archive/title ops have something to update).
- * Used when a session comes from scanning JSONL (not yet in DB).
- */
-export function ensureConversation(id: string, projectPath: string, agentType: string, title: string): void {
-  getDb().prepare(
-    `INSERT OR IGNORE INTO conversations (id, project_path, agent_type, title, sidebar_role)
-     VALUES (?, ?, ?, ?, 'managed')`
-  ).run(id, projectPath, agentType, title)
 }
 
 /**

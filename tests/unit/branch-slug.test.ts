@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { makeBranchSlug, slugifyForBranch } from '@shared/branch-slug'
+import { slugifyForBranch } from '@shared/branch-slug'
 
 describe('slugifyForBranch', () => {
   it.each([
@@ -24,15 +24,5 @@ describe('slugifyForBranch', () => {
     expect(slugifyForBranch('')).toBe('fork')
     expect(slugifyForBranch('!!!')).toBe('fork')
     expect(slugifyForBranch('   ')).toBe('fork')
-  })
-})
-
-describe('makeBranchSlug', () => {
-  it('prefixes with `fork/`', () => {
-    expect(makeBranchSlug('Fix Redis timeout')).toBe('fork/fix-redis-timeout')
-  })
-
-  it('handles empty input gracefully', () => {
-    expect(makeBranchSlug('')).toBe('fork/fork')
   })
 })

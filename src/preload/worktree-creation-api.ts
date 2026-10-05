@@ -23,5 +23,3 @@ export function createWorktreeCreationApi(transport: Transport) {
       ),
   }
 }
-
-export type WorktreeCreationPreloadApi = ReturnType<typeof createWorktreeCreationApi>

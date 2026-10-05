@@ -70,7 +70,6 @@
         "tests/unit/worktree-creation-store.test.ts",
         "tests/unit/worktree-creation-database-migration.test.ts",
         "tests/unit/worktree-creation-liveness.test.ts",
-        "tests/unit/legacy-session-worktree-lease.test.ts",
         "apps/android/schemas/app.switchboard.mobile.data.local.SwitchboardDatabase/5.json"
       ]
     },

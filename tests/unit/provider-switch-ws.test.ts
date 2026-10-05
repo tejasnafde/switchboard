@@ -44,7 +44,6 @@ const saved: Array<{ id: string; conversationId: string; role: string; content: 
 let allowUserTurnPersistence = true
 let conversationExists = true
 let resolvedRootThreadId: string | null = null
-const persistedRows = new Map<string, { display_body: string | null; pills_meta?: string | null }>()
 const recordedSegments: Array<{
   conversationId: string
   provider: string
@@ -80,7 +79,6 @@ vi.mock('../../src/main/db/database', () => ({
     saved.push({ id, conversationId, role, content, images, displayBody })
     return true
   },
-  getMessageForConversationById: (_conversationId: string, id: string) => persistedRows.get(id),
   // Read by the session-defaults chain on every start. Null throughout, so
   // these tests keep asserting that the REQUEST wins, which is the tier they
   // exercise.

@@ -40,21 +40,7 @@ export interface TerminalDataPayload {
   data: string
 }
 
-export interface TerminalExitPayload {
-  id: string
-  exitCode: number
-  signal?: number
-}
-
 export type TerminalStatus = 'running' | 'exited' | 'error'
-
-export interface TerminalInfo {
-  id: string
-  label: string
-  status: TerminalStatus
-  cwd: string
-  command?: string
-}
 
 // ─── Agent ───────────────────────────────────────────────────────────
 
@@ -318,21 +304,6 @@ export interface ChatMessage {
    * ordinary transcript path; the accepted echo clears this field in place.
    */
   deliveryState?: 'pending'
-}
-
-export interface AgentMessagePayload {
-  agentId: string
-  message: ChatMessage
-}
-
-export interface AgentStatusPayload {
-  agentId: string
-  status: AgentStatus
-}
-
-export interface AgentErrorPayload {
-  agentId: string
-  error: string
 }
 
 // ─── Projects & Sessions ─────────────────────────────────────────

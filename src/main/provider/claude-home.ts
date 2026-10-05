@@ -7,17 +7,11 @@
 import {
   applyCredentialHome,
   canonicalCredentialHome,
-  effectiveCredentialHome,
 } from './credential-home'
 
 /** Claude's own default credential dir: `~/.claude`, absolute, always. */
 export function canonicalClaudeHome(): string {
   return canonicalCredentialHome('claude-code')
-}
-
-/** The absolute CLAUDE_CONFIG_DIR for a given oauth_dir. */
-export function effectiveClaudeHome(oauthDir: string | null | undefined): string {
-  return effectiveCredentialHome('claude-code', oauthDir)
 }
 
 /** Pin `CLAUDE_CONFIG_DIR` on a spawn env. `oauthDir` wins; otherwise the

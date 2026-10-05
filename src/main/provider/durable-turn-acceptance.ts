@@ -395,15 +395,3 @@ function duplicateResult(state: TurnAcceptanceState): TurnAcceptanceResult {
   if (state === 'reserved') return { accepted: false, duplicate: true, state: 'pending' }
   return { accepted: false, duplicate: true, state: 'ambiguous' }
 }
-
-export function turnPayloadHash(
-  message: string,
-  runtimeMode?: string,
-  images?: Array<{ url: string; mimeType?: string }>,
-): string {
-  return createHash('sha256').update(JSON.stringify({
-    message,
-    runtimeMode: runtimeMode ?? null,
-    images: images?.map((image) => ({ url: image.url, mimeType: image.mimeType ?? null })) ?? null,
-  })).digest('hex')
-}

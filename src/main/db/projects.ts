@@ -116,22 +116,6 @@ export function reorderWorkspaces(orderedIds: string[]): void {
   })()
 }
 
-export function setProjectWorkspace(projectPath: string, workspaceId: string | null): void {
-  const db = getDb()
-  db.transaction(() => {
-    const current = db.prepare('SELECT workspace_id FROM projects WHERE path = ?')
-      .get(projectPath) as { workspace_id: string | null } | undefined
-    if (!current || current.workspace_id === workspaceId) return
-    const max = db.prepare(
-      'SELECT COALESCE(MAX(sort_order), -1) AS value FROM projects WHERE workspace_id IS ?'
-    ).get(workspaceId) as { value: number }
-    db.prepare('UPDATE projects SET workspace_id = ?, sort_order = ? WHERE path = ?')
-      .run(workspaceId, max.value + 1, projectPath)
-    normalizeProjectGroup(db, current.workspace_id)
-    normalizeProjectGroup(db, workspaceId)
-  })()
-}
-
 function normalizeProjectGroup(database: Database.Database, workspaceId: string | null): void {
   const rows = database.prepare(
     'SELECT path FROM projects WHERE workspace_id IS ? ORDER BY sort_order, added_at DESC, path'

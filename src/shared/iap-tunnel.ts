@@ -47,21 +47,6 @@ export function iapConnectUrl(target: IapTarget): string {
   return `wss://${IAP_URL_HOST}/v4/connect?${q.toString()}`
 }
 
-/** wss URL that resumes a dropped tunnel from `ackBytes` (sid from CONNECT_SUCCESS_SID). */
-export function iapReconnectUrl(target: IapTarget, sid: string, ackBytes: number): string {
-  const q = new URLSearchParams({
-    project: target.project,
-    port: String(target.port),
-    newWebsocket: 'True',
-    zone: target.zone,
-    instance: target.instance,
-    interface: target.networkInterface ?? 'nic0',
-    sid,
-    ack: String(ackBytes),
-  })
-  return `wss://${IAP_URL_HOST}/v4/reconnect?${q.toString()}`
-}
-
 function writeUint16(view: DataView, offset: number, value: number): void {
   view.setUint16(offset, value, false)
 }

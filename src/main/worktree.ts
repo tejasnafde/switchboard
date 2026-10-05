@@ -4,8 +4,7 @@
  *
  * Worktree *creation* used to live here too, but that path is dead:
  * kanban cards create worktrees through the transactional flow in
- * `src/main/worktree-creation/git-adapter.ts`, and session worktrees
- * through `src/main/git/legacy-session-worktree-lease.ts`. See AGENTS.md
+ * `src/main/worktree-creation/git-adapter.ts`. See AGENTS.md
  * "Git tooling + worktrees" for the map. This module now only lists,
  * finds stale, and removes worktrees - callers that still need the
  * underlying `git worktree` CLI semantics (locked worktrees, prunable

@@ -20,7 +20,7 @@ import {
   PAIRING_CODE_TTL_MS,
   type DeviceSession,
 } from '../../src/shared/device-auth'
-import { AppChannels, KanbanChannels, ProviderChannels, PullRequestChannels, PullRequestWriteChannels, SourceControlChannels, WorktreeManagerChannels } from '../../src/shared/ipc-channels'
+import { AppChannels, ProviderChannels, PullRequestChannels, PullRequestWriteChannels, SourceControlChannels, WorktreeManagerChannels } from '../../src/shared/ipc-channels'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '../../src/shared/session-defaults'
 
 describe('isChannelAllowed', () => {
@@ -34,7 +34,6 @@ describe('isChannelAllowed', () => {
 
   it('keeps a phone from removing or unprotecting worktrees, while it may still read them', () => {
     expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.REMOVE)).toBe(false)
-    expect(isChannelAllowed(PHONE_SCOPES, KanbanChannels.REMOVE_STALE_WORKTREE)).toBe(false)
     expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.SET_PROTECTION)).toBe(false)
     expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.GET_PROTECTION)).toBe(true)
     expect(isChannelAllowed(PHONE_SCOPES, WorktreeManagerChannels.INVENTORY)).toBe(true)

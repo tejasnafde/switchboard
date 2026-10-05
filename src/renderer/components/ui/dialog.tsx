@@ -6,7 +6,6 @@ import { focusReturnTarget } from './focus-return'
 export const Dialog = DialogPrimitive.Root
 export const DialogTitle = DialogPrimitive.Title
 export const DialogDescription = DialogPrimitive.Description
-export const DialogClose = DialogPrimitive.Close
 
 interface DialogContentProps extends ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
   /** Classes for the backdrop: its z-index and tint differ per dialog. */

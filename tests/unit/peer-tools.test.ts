@@ -10,7 +10,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   createPeerToolHandlers,
-  PEER_LIST_TOOL,
   PEER_LIST_TOOL_DESCRIPTION,
   PEER_LIST_TOOL_NAME,
   PEER_SEND_TOOL,
@@ -50,7 +49,6 @@ const text = (result: { content: Array<{ text: string }> }) =>
 
 describe('peer tool identity', () => {
   it('names the tools as the model and canUseTool see them', () => {
-    expect(PEER_LIST_TOOL).toBe(`mcp__${PEER_TOOL_SERVER_NAME}__${PEER_LIST_TOOL_NAME}`)
     expect(PEER_SEND_TOOL).toBe(`mcp__${PEER_TOOL_SERVER_NAME}__${PEER_SEND_TOOL_NAME}`)
     expect(PEER_LIST_TOOL_NAME).toBe('list_agent_sessions')
     expect(PEER_SEND_TOOL_NAME).toBe('send_agent_message')
