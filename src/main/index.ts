@@ -1,4 +1,5 @@
 // Crash paths go to the on-disk log, not just stdout.
+const rendererPerfLog = createMainLogger('perf')
 const crashLog = createMainLogger('main:crash')
 
 // Prevent EPIPE crashes from killing the app
@@ -571,6 +572,11 @@ function createWindow(): BrowserWindow {
     try {
       const levels = ['debug', 'info', 'warn', 'error']
       const src = sourceId ? sourceId.split('/').pop() : ''
+      if (message.startsWith('[SB:perf] ')) {
+        const perfLine = message.slice('[SB:perf] '.length)
+        if (level === 0) rendererPerfLog.debug(perfLine)
+        else rendererPerfLog.info(perfLine)
+      }
       console.log(`[renderer:${levels[level] ?? level}] ${message} (${src}:${line})`)
       // EPIPE if stdout is closed; the scoped logger also writes to console,
       // so logging here risks the same throw.

@@ -1,3 +1,4 @@
+import { chatMessagesCommitted, chatMessagesUnmounted } from '../../services/perf-chat-open'
 import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types'
@@ -143,6 +144,13 @@ export function roleLabel(role: ChatMessage['role'], agentType: AgentType = 'cla
  * still pass since the grouping is the same.
  */
 export function MessageList({ messages, sessionId, visible = true, busy = false, agentType = 'claude-code', onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageListProps) {
+  useLayoutEffect(() => {
+    if (sessionId) chatMessagesCommitted(sessionId, messages, visible)
+  })
+  useLayoutEffect(() => () => {
+    if (sessionId) chatMessagesUnmounted(sessionId)
+  }, [sessionId])
+
   const containerRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const busyRef = useRef(busy)
