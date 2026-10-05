@@ -1,6 +1,6 @@
 import type { ChatMessage, ToolCall } from '@shared/types'
 import { isActivityRow } from '@shared/turn-activity'
-import { STORED_TASK_NOTICE_PREFIX, TRANSCRIPT_NOTICE_SKEW_MS, sameTaskNotice, splitSyntheticUserText, type SyntheticUserPart } from '@shared/synthetic-message'
+import { STORED_TASK_NOTICE_PREFIX, TRANSCRIPT_NOTICE_SKEW_MS, sameTaskNotice, slashCommandRecordText, splitSyntheticUserText, type SyntheticUserPart } from '@shared/synthetic-message'
 
 /**
  * Collapse the same message arriving from more than one source. `load-by-id`
@@ -299,7 +299,9 @@ function mergeImages(diskImages: ChatMessage['images'], databaseImages: ChatMess
 }
 
 function semanticMessageKey(message: ChatMessage): string {
-  return JSON.stringify([message.role, message.content])
+  // A transcript's slash-command record pairs with the `/name args` Switchboard stored.
+  const content = message.role === 'user' ? slashCommandRecordText(message.content) ?? message.content : message.content
+  return JSON.stringify([message.role, content])
 }
 
 /** Fields that decide whether two copies of one id are the same message. */

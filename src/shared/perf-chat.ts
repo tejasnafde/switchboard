@@ -9,3 +9,8 @@ export interface ChatLoadTiming {
   diskLines: number
   cacheHits: number
 }
+
+export interface ChatLoadDiagnostics {
+  timing?: ChatLoadTiming
+  loadStatus?: 'loaded' | 'missing' | 'error'
+}

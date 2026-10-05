@@ -31,3 +31,12 @@ describe('SyntheticRow command output', () => {
     expect(shown().props.numberOfLines).toBeUndefined()
   })
 })
+
+describe('SyntheticRow compact summary', () => {
+  it('stays one collapsed row until tapped', () => {
+    const v = renderComponent(<SyntheticRow part={{ kind: 'compacted', summary: 'Fake summary.' }} />)
+    expect(v.texts()).toEqual(['Conversation compacted'])
+    act(() => v.byLabel('Conversation compacted').props.onPress())
+    expect(v.texts()).toContain('Fake summary.')
+  })
+})

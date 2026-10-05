@@ -61,8 +61,9 @@ export function SyntheticUserRow({ part }: { part: SyntheticUserPart }) {
   }
   return (
     <details data-synthetic-kind={part.kind} style={style}>
-      <summary style={{ ...line, cursor: 'pointer', listStyle: 'none' }} title={detail}>{dot}{label}</summary>
-      <div style={{ padding: '4px 0 0 12px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'var(--font-mono)' }}>
+      {/* A compact summary runs to pages, too long for a tooltip. */}
+      <summary style={{ ...line, cursor: 'pointer', listStyle: 'none' }} title={part.kind === 'compacted' ? undefined : detail}>{dot}{label}</summary>
+      <div style={{ padding: '4px 0 0 12px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'var(--font-mono)', maxHeight: 400, overflowY: 'auto' }}>
         {detail}
       </div>
     </details>

@@ -1,0 +1,149 @@
+[
+  {
+    "id": "command-name-first",
+    "text": "<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>",
+    "expected": {
+      "rows": [],
+      "userText": "/compact"
+    }
+  },
+  {
+    "id": "command-message-first-with-args",
+    "text": "<command-message>deslop</command-message>\n<command-name>/deslop</command-name>\n<command-args>then /review</command-args>",
+    "expected": {
+      "rows": [],
+      "userText": "/deslop then /review"
+    }
+  },
+  {
+    "id": "command-without-args-block",
+    "text": "<command-message>help</command-message>\n<command-name>/help</command-name>",
+    "expected": {
+      "rows": [],
+      "userText": "/help"
+    }
+  },
+  {
+    "id": "command-then-stdout",
+    "text": "<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>fake-model</command-args>\n<local-command-stdout>Set model to fake-model</local-command-stdout>",
+    "expected": {
+      "rows": [
+        {
+          "label": "Set model to fake-model",
+          "tone": "muted"
+        }
+      ],
+      "userText": "/model fake-model"
+    }
+  },
+  {
+    "id": "stdout-empty",
+    "text": "<local-command-stdout></local-command-stdout>",
+    "expected": {
+      "rows": [],
+      "userText": ""
+    }
+  },
+  {
+    "id": "stderr",
+    "text": "<local-command-stderr>Unknown command</local-command-stderr>",
+    "expected": {
+      "rows": [
+        {
+          "label": "Unknown command",
+          "tone": "error"
+        }
+      ],
+      "userText": ""
+    }
+  },
+  {
+    "id": "caveat-only",
+    "text": "<local-command-caveat>Caveat: generated while running local commands.</local-command-caveat>",
+    "expected": {
+      "rows": [],
+      "userText": ""
+    }
+  },
+  {
+    "id": "compact-summary",
+    "text": "<switchboard-compact-summary>\nSummary:\n1. Fixed the fake widget.\n</switchboard-compact-summary>",
+    "expected": {
+      "rows": [
+        {
+          "label": "Conversation compacted",
+          "tone": "muted",
+          "detail": "Summary:\n1. Fixed the fake widget."
+        }
+      ],
+      "userText": ""
+    }
+  },
+  {
+    "id": "system-reminder-then-text",
+    "text": "<system-reminder>\nFake reminder.\n</system-reminder>\nship it",
+    "expected": {
+      "rows": [],
+      "userText": "ship it"
+    }
+  },
+  {
+    "id": "codex-injected-context",
+    "text": "# AGENTS.md instructions for /fake/repo\n\n<INSTRUCTIONS>\nBe nice.\n</INSTRUCTIONS>\n<user_instructions>\nFake rules.\n</user_instructions>\n<environment_context>\n  <cwd>/fake/repo</cwd>\n</environment_context>\nfix it",
+    "expected": {
+      "rows": [],
+      "userText": "fix it"
+    }
+  },
+  {
+    "id": "codex-apps-page",
+    "text": "<external_codex_apps_open_page>{\"page_id\":null}</external_codex_apps_open_page>",
+    "expected": {
+      "rows": [],
+      "userText": ""
+    }
+  },
+  {
+    "id": "codex-turn-aborted",
+    "text": "<turn_aborted>\nThe user interrupted the previous turn.\n</turn_aborted>",
+    "expected": {
+      "rows": [
+        {
+          "label": "Interrupted",
+          "tone": "muted"
+        }
+      ],
+      "userText": ""
+    }
+  },
+  {
+    "id": "mid-text-command-mention",
+    "text": "Why does <command-name>/compact</command-name> show up in my chat?",
+    "expected": null
+  },
+  {
+    "id": "mid-text-stdout-mention",
+    "text": "please explain <local-command-stdout>x</local-command-stdout>",
+    "expected": null
+  },
+  {
+    "id": "typed-continuation-prose",
+    "text": "This session is being continued from a previous conversation that ran out of context.",
+    "expected": null
+  },
+  {
+    "id": "unterminated-command-tag",
+    "text": "<command-name>/compact without a close tag",
+    "expected": null
+  },
+  {
+    "id": "command-tags-then-typed-prose",
+    "text": "<command-name>/compact</command-name><command-message>compact</command-message><command-args></command-args>\nwhat does that do?",
+    "expected": null
+  },
+  {
+    "id": "command-args-then-typed-prose",
+    "text": "<command-name>/model</command-name>\n<command-args>x</command-args> and then <command-args>y</command-args>",
+    "expected": null
+  }
+]

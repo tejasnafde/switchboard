@@ -75,7 +75,7 @@ import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
 import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '@shared/agent-approval-cards'
-import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
+import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PeerUndeliveredItem, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
 import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
@@ -671,7 +671,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const submitAnswers = useCallback(
     (requestId: string, answers: string[][]) => {
-      getClient(connectionId)?.answerQuestion(threadId, requestId, answers).catch(reportError)
+      getClient(connectionId)?.answerQuestion(threadId, requestId, answers).catch((err) => {
+        reportError(err)
+        // The card would otherwise stay Answered with no way to send it again.
+        useChatStore.getState().reopenQuestion(key, requestId)
+      })
       useChatStore.getState().markQuestionAnswered(key, requestId, answers)
     },
     [connectionId, threadId, key, reportError],
@@ -823,6 +827,30 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
   }, [connectionId, threadId])
 
+  // Same for a kept Not delivered row: a refusal shows on the row.
+  const [undeliveredSending, setUndeliveredSending] = useState<ReadonlySet<string>>(new Set())
+  const [undeliveredErrors, setUndeliveredErrors] = useState<Record<string, string | undefined>>({})
+  const sendUndelivered = useCallback(async (item: Extract<FeedItem, { kind: 'undelivered' }>) => {
+    const client = getClient(connectionId)
+    if (!client) return
+    const id = item.messageId
+    setUndeliveredErrors((current) => ({ ...current, [id]: undefined }))
+    setUndeliveredSending((current) => new Set(current).add(id))
+    try {
+      // The row turns sent on the backend's peer.undelivered event.
+      await client.deliverPeerMessage({ fromThreadId: threadId, targetThreadId: item.row.to, text: item.row.text, undeliveredId: id })
+    } catch (err) {
+      log.warn(`sending undelivered peer message ${id} failed`, err)
+      setUndeliveredErrors((current) => ({ ...current, [id]: err instanceof Error ? err.message : String(err) }))
+    } finally {
+      setUndeliveredSending((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+    }
+  }, [connectionId, threadId])
+
   const renderItem = useCallback(
     ({ item }: { item: FeedRow }) => {
       switch (item.kind) {
@@ -911,6 +939,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
           )
         case 'synthetic':
           return <SyntheticRow part={item.part} />
+        case 'undelivered':
+          return (
+            <PeerUndeliveredItem
+              item={item}
+              sending={undeliveredSending.has(item.messageId)}
+              error={undeliveredErrors[item.messageId]}
+              onSend={() => void sendUndelivered(item)}
+            />
+          )
         case 'error':
           return <Text style={styles.errorText}>{item.message}</Text>
       }
@@ -935,6 +972,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
       actOnHeld,
       heldErrors,
       toggleFileGroup,
+      undeliveredSending,
+      undeliveredErrors,
+      sendUndelivered,
     ],
   )
 

@@ -1406,15 +1406,16 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly firstContentSpans = new Map<string, PerfSpan>()
   private readonly firstTurnSent = new Set<string>()
 
-  private beginFirstTurnTiming(threadId: string): void {
+  private beginFirstTurnTiming(threadId: string): PerfSpan | undefined {
     if (this.firstTurnSent.has(threadId)) return
     this.firstTurnSent.add(threadId)
-    this.firstContentSpans.set(threadId, perfSpan('turn.first-content', { thread: threadId }))
+    const span = perfSpan('turn.first-content', { thread: threadId })
+    this.firstContentSpans.set(threadId, span)
+    return span
   }
 
-  private cancelFirstTurnTiming(threadId: string, outcome: string): void {
-    const span = this.firstContentSpans.get(threadId)
-    if (!span) return
+  private cancelFirstTurnTiming(threadId: string, span: PerfSpan | undefined, outcome: string): void {
+    if (!span || this.firstContentSpans.get(threadId) !== span) return
     span.end({ outcome })
     this.firstContentSpans.delete(threadId)
     this.firstTurnSent.delete(threadId)
@@ -1624,7 +1625,7 @@ export class ProviderRegistry implements PeerToolHost {
       return rejectedAtomicTurn('Conversation is not durably available yet. Retry this exact turn.')
     }
 
-    this.beginFirstTurnTiming(threadId)
+    const firstContentSpan = this.beginFirstTurnTiming(threadId)
     this.beginPreparingTurn(threadId)
     let preparationPending = true
     const releasePreparation = (): void => {
@@ -1690,10 +1691,10 @@ export class ProviderRegistry implements PeerToolHost {
           this.announceTurnRuntimeMode(adapter, threadId, modeBefore, input.runtimeMode, queuedId)
         },
       })
-      if (result.state === 'rejected') this.cancelFirstTurnTiming(threadId, 'rejected')
+      if (result.state === 'rejected') this.cancelFirstTurnTiming(threadId, firstContentSpan, 'rejected')
       return result
     } catch (error) {
-      this.cancelFirstTurnTiming(threadId, 'submission-error')
+      this.cancelFirstTurnTiming(threadId, firstContentSpan, 'submission-error')
       throw error
     } finally {
       releasePreparation()
@@ -2433,6 +2434,7 @@ export class ProviderRegistry implements PeerToolHost {
         preparationPending = false
         this.finishPreparingTurn(threadId)
       }
+      let firstContentSpan: PerfSpan | undefined
       try {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) {
@@ -2440,7 +2442,7 @@ export class ProviderRegistry implements PeerToolHost {
         throw new Error(`No session: ${threadId}`)
       }
       const acceptedImages = validateUserMessageImages(images)
-      this.beginFirstTurnTiming(threadId)
+      firstContentSpan = this.beginFirstTurnTiming(threadId)
       log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${acceptedImages?.length ?? 0}`)
       if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId)) {
         throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
@@ -2504,7 +2506,7 @@ export class ProviderRegistry implements PeerToolHost {
       })
       return undefined
       } catch (error) {
-        this.cancelFirstTurnTiming(threadId, 'submission-error')
+        this.cancelFirstTurnTiming(threadId, firstContentSpan, 'submission-error')
         throw error
       } finally {
         releasePreparation()
