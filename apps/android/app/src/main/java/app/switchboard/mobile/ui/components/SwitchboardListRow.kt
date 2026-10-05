@@ -67,30 +67,3 @@ fun SwitchboardListRow(
         }
     }
 }
-
-@Composable
-fun SwitchboardSettingsRow(
-    title: String,
-    value: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    supportingText: String? = null,
-    showDivider: Boolean = true,
-) {
-    SwitchboardListRow(
-        title = title,
-        supportingText = supportingText,
-        onClick = onClick,
-        showDivider = showDivider,
-        trailingContent = {
-            Text(
-                text = value,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        },
-        modifier = modifier,
-    )
-}

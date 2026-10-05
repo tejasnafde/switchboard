@@ -254,11 +254,6 @@ data class RemoteResponse<T>(
     val outcome: RemoteOutcome<T>,
 )
 
-data class CommandFollowUp<C, F>(
-    val command: RemoteResponse<C>,
-    val followUp: RemoteResponse<F>?,
-)
-
 data class CommandBody(
     val body: JsonValue?,
 )

@@ -259,18 +259,3 @@ export function parseMarkdown(src: string): Block[] {
   flushParagraph()
   return blocks
 }
-
-/** Plain-text projection. Used for previews and for accessibility labels. */
-export function inlinesToText(inlines: Inline[]): string {
-  return inlines
-    .map((n) => {
-      switch (n.kind) {
-        case 'text':
-        case 'code':
-          return n.text
-        default:
-          return inlinesToText(n.children)
-      }
-    })
-    .join('')
-}

@@ -71,30 +71,3 @@ object IapTargetDiscovery {
         target.instance,
     ).joinToString("\u0000") { it.trim().lowercase() }
 }
-
-sealed interface IapManualTargetResult {
-    data class Valid(val target: IapTarget) : IapManualTargetResult
-    data class Invalid(val field: String) : IapManualTargetResult
-}
-
-object IapManualTargetPolicy {
-    fun validate(
-        project: String,
-        zone: String,
-        instance: String,
-        port: String,
-    ): IapManualTargetResult {
-        val normalizedProject = project.trim()
-        if (normalizedProject.isEmpty()) return IapManualTargetResult.Invalid("project")
-        val normalizedZone = zone.trim()
-        if (normalizedZone.isEmpty()) return IapManualTargetResult.Invalid("zone")
-        val normalizedInstance = instance.trim()
-        if (normalizedInstance.isEmpty()) return IapManualTargetResult.Invalid("instance")
-        val normalizedPort = port.trim().toIntOrNull()
-            ?.takeIf { it in 1..65_535 }
-            ?: return IapManualTargetResult.Invalid("port")
-        return IapManualTargetResult.Valid(
-            IapTarget(normalizedProject, normalizedZone, normalizedInstance, normalizedPort),
-        )
-    }
-}
