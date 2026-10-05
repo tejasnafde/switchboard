@@ -6,6 +6,7 @@ import {
   type ResolvedForkAnchor,
 } from '../../shared/conversation-fork'
 import type { ChatMessage } from '../../shared/types'
+import { unwrapCompactSummaryText } from '../../shared/synthetic-message'
 import type { AgentProvider } from '../../shared/types'
 
 export interface ForkMessageProvenance {
@@ -48,9 +49,12 @@ function sha256(value: string): string {
 }
 
 function matchesFingerprint(candidate: ChatMessage, anchor: ForkAnchor): boolean {
-  return candidate.role === anchor.role
-    && candidate.timestamp === anchor.timestamp
-    && digestForkMessage(candidate, sha256) === anchor.contentDigest.toLowerCase()
+  if (candidate.role !== anchor.role || candidate.timestamp !== anchor.timestamp) return false
+  const digest = anchor.contentDigest.toLowerCase()
+  if (digestForkMessage(candidate, sha256) === digest) return true
+  // A history loaded from an older backend holds a compact summary unwrapped.
+  const legacy = unwrapCompactSummaryText(candidate.content)
+  return legacy !== null && digestForkMessage({ ...candidate, content: legacy }, sha256) === digest
 }
 
 function conflict(

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { JsonlParser, normalizeCodexEvent } from '../../src/main/agent/jsonl-parser'
+import { mergeConversationMessages } from '../../src/main/agent/dedupe-messages'
+import { splitSyntheticUserText } from '../../src/shared/synthetic-message'
+import type { ChatMessage } from '../../src/shared/types'
 
 describe('JsonlParser', () => {
   it('filters a recognized synthetic user context bundle without hiding genuine mentions', () => {
@@ -28,6 +31,56 @@ describe('JsonlParser', () => {
     const parser = new JsonlParser((message) => messages.push(message))
     parser.feed(`${meta}\n${task}\n`)
     expect(messages.map((message) => message.content)).toEqual([notification])
+  })
+
+  it('merges a /compact record with the send Switchboard stored and folds its summary into one row', () => {
+    const at = '2026-10-01T10:00:00.000Z'
+    const record = '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>'
+    const lines = [
+      { type: 'user', uuid: 'u1', timestamp: at, message: { role: 'user', content: record } },
+      { type: 'user', uuid: 'u2', timestamp: at, isMeta: true, message: { role: 'user', content: '<local-command-caveat>Fake caveat.</local-command-caveat>' } },
+      { type: 'user', uuid: 'u3', timestamp: at, isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { role: 'user', content: 'Fake summary of earlier work.' } },
+    ]
+    const disk: ChatMessage[] = []
+    const parser = new JsonlParser((message) => disk.push(message))
+    parser.feed(lines.map((line) => JSON.stringify(line)).join('\n') + '\n')
+    expect(disk[0].content).toBe(record)
+    expect(splitSyntheticUserText(disk[1].content)?.parts).toEqual([{ kind: 'compacted', summary: 'Fake summary of earlier work.' }])
+
+    const stored: ChatMessage = { id: 'sqlite-1', role: 'user', content: '/compact', timestamp: Date.parse(at) - 500 }
+    const merged = mergeConversationMessages(disk, [stored])
+    expect(merged.map((m) => m.id)).toEqual(['u1', 'u3'])
+  })
+
+  it('merges a command record that carries its output with the send Switchboard stored', () => {
+    const at = '2026-10-01T10:00:00.000Z'
+    const record = '<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>fake-model</command-args>\n<local-command-stdout>Set model to fake-model</local-command-stdout>'
+    const disk: ChatMessage[] = []
+    new JsonlParser((m) => disk.push(m)).feed(JSON.stringify({ type: 'user', uuid: 'u1', timestamp: at, message: { role: 'user', content: record } }) + '\n')
+    const stored: ChatMessage = { id: 'sqlite-1', role: 'user', content: '/model fake-model', timestamp: Date.parse(at) - 500 }
+    const merged = mergeConversationMessages(disk, [stored])
+    expect(merged.map((m) => m.id)).toEqual(['u1'])
+    expect(splitSyntheticUserText(merged[0].content)).toEqual({
+      parts: [{ kind: 'command-output', text: 'Set model to fake-model', isError: false }],
+      userText: '/model fake-model',
+    })
+  })
+
+  it('keeps pasted command tags followed by prose as the user typed them, and merges with its echo', () => {
+    const at = '2026-10-01T10:00:00.000Z'
+    const text = '<command-name>/compact</command-name><command-message>compact</command-message><command-args></command-args>\nwhat does that do?'
+    const disk: ChatMessage[] = []
+    new JsonlParser((m) => disk.push(m)).feed(JSON.stringify({ type: 'user', uuid: 'u1', timestamp: at, message: { role: 'user', content: text } }) + '\n')
+    expect(disk.map((m) => m.content)).toEqual([text])
+    const stored: ChatMessage = { id: 'sqlite-1', role: 'user', content: text, timestamp: Date.parse(at) - 500 }
+    expect(mergeConversationMessages(disk, [stored]).map((m) => m.id)).toEqual(['u1'])
+  })
+
+  it('keeps a typed message that only mentions a command tag', () => {
+    const text = 'why does <command-name>/compact</command-name> show up?'
+    const messages: ChatMessage[] = []
+    new JsonlParser((m) => messages.push(m)).feed(JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n')
+    expect(messages.map((m) => m.content)).toEqual([text])
   })
 
   it('strips Codex image wrapper blocks from user text', () => {

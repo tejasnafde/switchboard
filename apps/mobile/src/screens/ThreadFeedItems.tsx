@@ -1,7 +1,8 @@
 import { memo, useMemo, useState } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Question } from '@shared/provider-events'
+import { questionAnswersComplete, resolveQuestionAnswers } from '@shared/question-answers'
 import { fmtDuration } from '@shared/format'
 import { stripDigest } from '@shared/agent-digest'
 import { summarizeTool, toolIcon } from '@shared/tool-summary'
@@ -14,6 +15,8 @@ import { fileEditCounts, type FileGroupRow } from '../lib/file-groups'
 import { approvalActions, offersQuiet, quietLabel, quietly } from '../lib/approval-actions'
 import { hostWriteTitle, type HostWriteResponse } from '@shared/agent-host-writes'
 import { PR_HOST_LABEL } from '@shared/pull-requests'
+import { peerUndeliveredHeading } from '@shared/peer-links'
+import { peerUndeliveredReasonText } from '@shared/system-markers'
 
 // ─── Item renderers ────────────────────────────────────────────
 
@@ -232,8 +235,17 @@ export const QuestionItem = memo(function QuestionItem({
     () => item.answers ?? item.questions.map(() => []),
   )
 
+  // Typed "None of the above" text per question, as on the desktop: it
+  // replaces the picks, and picking an option clears it.
+  const [otherTexts, setOtherTexts] = useState<string[]>(() => item.questions.map(() => ''))
+  const setOther = (qIdx: number, text: string) => {
+    setOtherTexts((prev) => prev.map((t, i) => (i === qIdx ? text : t)))
+    setSelections((prev) => prev.map((picks, i) => (i === qIdx ? [] : picks)))
+  }
+
   const toggle = (qIdx: number, q: Question, label: string) => {
     if (answered) return
+    setOtherTexts((prev) => prev.map((t, i) => (i === qIdx ? '' : t)))
     setSelections((prev) =>
       prev.map((picks, i) => {
         if (i !== qIdx) return picks
@@ -246,7 +258,7 @@ export const QuestionItem = memo(function QuestionItem({
   }
 
   const shown = item.answers ?? selections
-  const canSubmit = !answered && selections.every((picks) => picks.length > 0)
+  const canSubmit = !answered && questionAnswersComplete(selections, otherTexts, item.questions.length)
 
   return (
     <View style={[styles.itemBlock, styles.questionCard]}>
@@ -263,6 +275,9 @@ export const QuestionItem = memo(function QuestionItem({
                 key={`${q.id}:${opt.label}`}
                 disabled={answered}
                 onPress={() => toggle(qIdx, q, opt.label)}
+                accessibilityRole={q.multiSelect ? 'checkbox' : 'radio'}
+                accessibilityState={{ checked: selected, disabled: answered }}
+                testID={`question-option-${qIdx}-${i}`}
                 style={[
                   styles.optionRow,
                   selected && styles.optionRowSelected,
@@ -282,13 +297,29 @@ export const QuestionItem = memo(function QuestionItem({
               </Pressable>
             )
           })}
+          {answered ? (
+            (shown[qIdx] ?? []).filter((a) => !q.options.some((o) => o.label === a)).map((typed) => (
+              <Text key={typed} style={styles.optionLabel}>{typed}</Text>
+            ))
+          ) : (
+            <TextInput
+              value={otherTexts[qIdx]}
+              onChangeText={(text) => setOther(qIdx, text)}
+              placeholder="None of the above - let me explain…"
+              placeholderTextColor={colors.textFaint}
+              multiline
+              testID={`question-other-${qIdx}`}
+              style={styles.questionOther}
+            />
+          )}
         </View>
       ))}
       {!answered && (
         <Pressable
           style={[styles.actionButton, styles.submitButton, !canSubmit && styles.submitDisabled]}
           disabled={!canSubmit}
-          onPress={() => onSubmit(item.requestId, selections)}
+          testID="question-submit"
+          onPress={() => onSubmit(item.requestId, resolveQuestionAnswers(selections, otherTexts))}
         >
           <Text style={styles.actionLabel}>Submit</Text>
         </Pressable>
@@ -375,6 +406,61 @@ export const FileGroupItem = memo(function FileGroupItem({
  * The foot of a user bubble the backend holds until the running turn ends:
  * a Queued chip, Send now (steer it in) and Cancel (text back to the composer).
  */
+/** Past this the message starts clamped, with Show more. */
+const UNDELIVERED_CLAMP_LINES = 4
+
+/**
+ * A message a session link refused. Send delivers it as the user's own send
+ * (which renews the link); the backend then marks the row sent on every client.
+ */
+export function PeerUndeliveredItem({
+  item,
+  sending,
+  error,
+  onSend,
+}: {
+  item: Extract<FeedItem, { kind: 'undelivered' }>
+  sending: boolean
+  error?: string
+  onSend: () => void
+}) {
+  const { row } = item
+  const [expanded, setExpanded] = useState(false)
+  const long = row.text.length > 200 || row.text.split('\n').length > UNDELIVERED_CLAMP_LINES
+  return (
+    <View style={styles.undeliveredCard} testID="peer-undelivered-row">
+      <Text style={styles.undeliveredTitle}>
+        {row.sent ? peerUndeliveredHeading(row) : `Not delivered to ${row.toLabel}`}
+      </Text>
+      {!row.sent && <Text style={styles.undeliveredReason}>{peerUndeliveredReasonText(row)}</Text>}
+      <Text style={styles.undeliveredText} numberOfLines={long && !expanded ? UNDELIVERED_CLAMP_LINES : undefined} selectable>
+        {row.text}
+      </Text>
+      {long && (
+        <Pressable onPress={() => setExpanded((v) => !v)} accessibilityRole="button">
+          <Text style={styles.toggleText}>{expanded ? 'Show less' : 'Show more'}</Text>
+        </Pressable>
+      )}
+      {error !== undefined && <Text style={[styles.undeliveredReason, styles.deliveryFailed]} accessibilityLiveRegion="polite">{error}</Text>}
+      {!row.sent && (
+        <View style={styles.buttonRow}>
+          <Pressable
+            onPress={onSend}
+            disabled={sending}
+            accessibilityRole="button"
+            accessibilityLabel={`Send to ${row.toLabel}`}
+            accessibilityState={{ disabled: sending }}
+            testID="peer-undelivered-send"
+            style={[styles.actionButton, styles.secondaryButton, sending && styles.buttonDisabled]}
+          >
+            <Text style={styles.undeliveredSendText}>{sending ? 'Sending…' : 'Send'}</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  )
+}
+
 export function HeldTurnBar({
   actions,
   error,

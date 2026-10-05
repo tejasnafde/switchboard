@@ -2,11 +2,11 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "android-release-0.5.15",
-  "summary": "Native Android release 0.5.15 (versionCode 17): attached photos are scaled to at most 2048 px and re-encoded on the phone so they fit the 3 MiB message limit (see phone-image-resize.json), with androidx.exifinterface declared for EXIF orientation.",
+  "summary": "Native Android release 0.5.15 (versionCode 17): attached photos are scaled and re-encoded on the phone to fit the 3 MiB message limit (phone-image-resize.json); Switchboard's stored system rows render instead of an 'Unsupported event' card, and AskUserQuestion options keep a readable label beside a long description (phone-system-markers.json, question-option-layout.json).",
   "surfaces": {
     "desktop": {
       "status": "not_applicable",
-      "reason": "Android version bump only; the desktop change is covered by phone-image-resize.json."
+      "reason": "Android version bump only; the desktop parts are covered by phone-image-resize.json and phone-system-markers.json."
     },
     "reactNativeIos": {
       "status": "not_applicable",
@@ -16,12 +16,14 @@
       "status": "implemented",
       "evidence": [
         "apps/android/app/build.gradle.kts",
-        "apps/android/gradle/libs.versions.toml"
+        "apps/android/gradle/libs.versions.toml",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SystemMarkers.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt"
       ]
     },
     "sharedBackendApi": {
       "status": "not_applicable",
-      "reason": "No API or wire change."
+      "reason": "No API or wire change: Send on a Not delivered row calls the existing provider:deliver-peer-message channel."
     },
     "storageDataMigration": {
       "status": "not_applicable",
@@ -41,7 +43,8 @@
     ],
     "hardware": [],
     "notExercised": [
-      "Installing the update on a physical device through the in-app updater."
+      "Installing the update on a physical device through the in-app updater.",
+      "The verification API accepting the APK; that runs after the release publishes."
     ]
   }
 }

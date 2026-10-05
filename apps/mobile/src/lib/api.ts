@@ -26,6 +26,7 @@ import type { QueuedTurnActionResult, QueuedTurnSummary } from '@shared/turn-del
 import type { AgentType, Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
+import type { PeerMessageInput } from '@shared/peer-messaging'
 import type {
   ForkConversationOutcome,
   ForkConversationRequest,
@@ -350,6 +351,11 @@ export class SwitchboardClient {
 
   cancelQueuedTurn(threadId: string, messageId: string): Promise<QueuedTurnActionResult> {
     return this.transport.invoke(ProviderChannels.CANCEL_QUEUED_TURN, threadId, messageId)
+  }
+
+  /** A user send to another session; with `undeliveredId` it sends a kept Not delivered row. */
+  deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string }> {
+    return this.transport.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, input)
   }
 
   interrupt(threadId: string): Promise<void> {

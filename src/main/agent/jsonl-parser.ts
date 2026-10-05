@@ -1,6 +1,7 @@
 import type { ChatMessage, ToolCall, MessageImage } from '@shared/types'
 import { createHash } from 'crypto'
 import { visibleUserMessageText } from '@shared/provider-events'
+import { compactSummaryText } from '@shared/synthetic-message'
 
 export type JsonlSource = 'claude-code' | 'codex'
 
@@ -106,7 +107,9 @@ export class JsonlParser {
       }
 
       case 'user': {
-        const content = extractContent(event.message)
+        const text = extractContent(event.message)
+        // The summary a /compact leaves folds into one row.
+        const content = event.isCompactSummary === true ? compactSummaryText(text) : text
         const images = extractImages(event.message)
         // isMeta marks text Claude Code wrote for the model only: skill bodies,
         // image size annotations, "Continue from where you left off."

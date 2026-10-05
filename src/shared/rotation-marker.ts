@@ -1,4 +1,4 @@
-import { PEER_AGENT_SENT_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX } from '@shared/peer-messaging'
+import { PEER_AGENT_SENT_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX } from './peer-messaging'
 
 /**
  * In-band marker for "user switched provider instance mid-conversation".
@@ -34,8 +34,8 @@ export const CONTEXT_HANDOFF_MARKER_PREFIX = '[[sb:context-handoff]]'
  * backend when one session sends a message to another, so the SENDER's
  * transcript records where it went. The `-agent` variant records that the
  * MODEL chose to send rather than the user typing `/send-to`. Both live in
- * shared/peer-messaging because main writes them; re-exported so every marker
- * prefix is reachable from here.
+ * peer-messaging next to the code that writes them; re-exported so every
+ * marker prefix is reachable from here.
  */
 export { PEER_SENT_MARKER_PREFIX, PEER_AGENT_SENT_MARKER_PREFIX }
 
