@@ -8,6 +8,7 @@ import type { ChatMessage } from '../../src/shared/types'
 const rows = new Map<string, { id: string; project_path: string; agent_type: string; title: string; status_line?: string | null }>()
 const stored: Array<{ id: string; line: string }> = []
 let history: ChatMessage[] = []
+let historyError = false
 let writeTakes = true
 const emitted: string[] = []
 
@@ -20,7 +21,10 @@ vi.mock('../../src/main/db/database', async (importOriginal) => ({
   setConversationStatusLineIfMissing: (id: string, line: string) => { stored.push({ id, line }); return writeTakes },
 }))
 vi.mock('../../src/main/conversations/history', () => ({
-  loadConversationHistory: async () => ({ messages: history, diskMessageCount: history.length, databaseMessageCount: 0, familyIds: ['c1'] }),
+  loadConversationHistory: async () => {
+    if (historyError) throw new Error('history read failed')
+    return { messages: history, diskMessageCount: history.length, databaseMessageCount: 0, familyIds: ['c1'] }
+  },
 }))
 
 const { registerAppHandlers } = await import('../../src/main/ipc/app')
@@ -39,6 +43,7 @@ beforeEach(() => {
   rows.clear()
   stored.length = 0
   emitted.length = 0
+  historyError = false
   writeTakes = true
   history = [
     { id: 'u1', role: 'user', content: 'fix it', timestamp: 1 },
@@ -73,5 +78,18 @@ describe('status line backfill on history load', () => {
     await loadById()
     expect(stored).toHaveLength(0)
     expect(emitted).toHaveLength(0)
+  })
+})
+
+describe('history load diagnostics', () => {
+  it('marks the backend empty fallback as an error', async () => {
+    rows.set('c1', { id: 'c1', project_path: '/repo', agent_type: 'claude-code', title: 'Chat' })
+    historyError = true
+    await expect(loadById()).resolves.toMatchObject({ messages: [], loadStatus: 'error' })
+  })
+  it('distinguishes a successful empty history from a failure', async () => {
+    rows.set('c1', { id: 'c1', project_path: '/repo', agent_type: 'claude-code', title: 'Chat' })
+    history = []
+    await expect(loadById()).resolves.toMatchObject({ messages: [], loadStatus: 'loaded' })
   })
 })

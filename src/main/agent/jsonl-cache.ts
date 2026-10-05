@@ -12,6 +12,7 @@
  *
  * Callers MUST NOT mutate the returned array - it is shared across hits.
  */
+import type { ChatLoadTiming } from '@shared/perf-chat'
 import { stat, readFile } from 'node:fs/promises'
 import type { ChatMessage } from '@shared/types'
 import { createMainLogger } from '../logger'
@@ -52,6 +53,7 @@ function evict(): void {
 export async function loadJsonlCached(
   filePath: string,
   source: 'claude-code' | 'codex',
+  timing?: ChatLoadTiming,
 ): Promise<ChatMessage[] | null> {
   let st
   try {
@@ -72,16 +74,27 @@ export async function loadJsonlCached(
     // LRU bump: re-insert to move to the back of the eviction order.
     cache.delete(key)
     cache.set(key, hit)
+    if (timing) timing.cacheHits += 1
     return hit.messages
   }
 
   let messages: ChatMessage[]
   try {
+    const readStart = performance.now()
     const raw = await readFile(filePath, 'utf-8')
+    if (timing) {
+      timing.readMs += performance.now() - readStart
+      timing.diskBytes += st.size
+    }
+    const parseStart = performance.now()
     messages = []
     const parser = new JsonlParser((msg) => messages.push(msg), source)
     parser.feed(raw)
     parser.flush()
+    if (timing) {
+      timing.parseMs += performance.now() - parseStart
+      timing.diskLines += parser.lineCount
+    }
   } catch (err) {
     // A fragment that stats OK but fails to read (EACCES, deleted in the
     // stat→read window, EISDIR) must not reject a whole multi-fragment

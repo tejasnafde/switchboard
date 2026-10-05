@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+- Correct performance diagnostics for concurrent send failures, failed history loads and message replacements before paint. Discover desktop and headless logs across platforms, honor data-directory overrides, and handle absent log directories.
+
+- Add performance timing for desktop chat opens, provider/profile switches, session startup, first content, transcript comparisons/copies, handoff construction and slow backend IPC, plus a log summary script. Measurement only.
 ### Changed
 - **Glassier corner toasts in the translucent theme.** The update-ready toast and the analytics notice now use a dark tint and a heavier blur there, so the chat and buttons behind them no longer show through clearly. Dark and light are unchanged.
 
