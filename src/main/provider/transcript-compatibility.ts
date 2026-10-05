@@ -67,6 +67,22 @@ type ReadResult =
 interface ValidatedEvidence {
   state: { size: number; mtimeMs: number; ctimeMs: number; ino: number; dev: number }
   result: Extract<ReadResult, { ok: true }>
+  readAtMs: number
+}
+
+/** Coarse filesystem timestamps can hide a same-size rewrite within this window. */
+const RACY_WINDOW_MS = 2_000
+
+/**
+ * Metadata alone never proves two reads saw the same bytes. It is trusted only
+ * when the file was last modified well before it was read (git's racy-clean
+ * rule): a rewrite after that read must move mtime past the cached value.
+ */
+export function evidenceStillValid(
+  cached: Pick<ValidatedEvidence, 'state' | 'readAtMs'>,
+  current: Parameters<typeof sameFileState>[1],
+): boolean {
+  return sameFileState(cached.state, current) && cached.state.mtimeMs < cached.readAtMs - RACY_WINDOW_MS
 }
 
 // Retain record digests, not large tool results or image bodies.
@@ -102,7 +118,7 @@ async function readJsonl(path: string): Promise<ReadResult> {
   try {
     const before = await handle.stat()
     const cached = evidenceCache.get(path)
-    if (cached && sameFileState(cached.state, before)) {
+    if (cached && evidenceStillValid(cached, before)) {
       evidenceCache.delete(path)
       evidenceCache.set(path, cached)
       return cached.result
@@ -154,7 +170,7 @@ async function readJsonl(path: string): Promise<ReadResult> {
       },
       records,
     }
-    cacheEvidence(path, { state: before, result })
+    cacheEvidence(path, { state: before, result, readAtMs: Date.now() })
     return result
   } finally {
     await handle.close()

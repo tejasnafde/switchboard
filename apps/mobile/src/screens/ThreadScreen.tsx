@@ -636,6 +636,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
   }
 
   const implementPlan = useCallback(() => {
+    const blocked = blockedSendReason(loadLabel, rotatingRef.current)
+    if (blocked) {
+      log.info('plan implementation blocked by conversation wait', { threadId, reason: blocked })
+      reportError(new Error(blocked))
+      return
+    }
     const client = getClient(connectionId)
     if (!client) {
       reportError(new Error('Backend not connected.'))
@@ -657,7 +663,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       useChatStore.getState().removeUserMessage(key, turn.bubbleId)
       reportError(err)
     })
-  }, [connectionId, threadId, key, reportError, settlePick])
+  }, [connectionId, threadId, key, reportError, settlePick, loadLabel])
 
   const decideApproval = useCallback(
     (requestId: string, decision: 'approve' | 'deny', response?: HostWriteResponse) => {

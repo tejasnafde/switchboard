@@ -1167,6 +1167,7 @@ export function App() {
           } catch (err) {
             loadDiagnostics = null
             log.warn('session history reload after create failed', { sessionId: session.id, err })
+            waits.settleLoad(openingSlot, openingTicket, session.id, 'Could not load conversation. Select this chat to retry.')
           }
         }
 
@@ -1188,6 +1189,8 @@ export function App() {
           (async () => window.api.app.getConversationProviderInstanceId(session.id))(),
           (async () => window.api.app.getConversationModel?.(session.id))(),
         ])
+        // A newer open or a focus change superseded this one while it waited.
+        if (!isCurrentOpen()) return
         if (runtimeModeResult.status === 'fulfilled') {
           const persisted = runtimeModeResult.value?.mode
           if (isRuntimeMode(persisted)) {
