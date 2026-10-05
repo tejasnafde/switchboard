@@ -10,14 +10,14 @@ describe('chat open through first committed message list', () => {
     const frames: FrameRequestCallback[] = []
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
     const open = beginChatOpen('t')
-    const messages = []
+    const messages = [{ id: 'a', role: 'assistant' as const, content: 'one', timestamp: 1 }]
     open.ready('t', messages, { readMs: 44 })
     chatMessagesCommitted('t', [])
     expect(frames).toHaveLength(0)
     chatMessagesCommitted('t', messages)
     expect(end).not.toHaveBeenCalled()
     frames[0](0)
-    expect(end).toHaveBeenCalledWith({ readMs: 44, messages: 0, outcome: 'rendered' })
+    expect(end).toHaveBeenCalledWith({ readMs: 44, messages: 1, outcome: 'rendered' })
   })
   it('handles cached lists that already committed before load finishes', () => {
     const frames: FrameRequestCallback[] = []
@@ -55,6 +55,24 @@ describe('chat open through first committed message list', () => {
     chatMessagesCommitted('t', [first, { id: 'b', role: 'assistant' as const, content: 'two', timestamp: 2 }])
     frames[0](0)
     expect(end).toHaveBeenCalledExactlyOnceWith({ messages: 2, outcome: 'rendered' })
+  })
+  it('finishes an empty load on the first list that commits', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
+    beginChatOpen('t').ready('t', [])
+    chatMessagesCommitted('t', [{ id: 'x', role: 'assistant' as const, content: 'new', timestamp: 1 }])
+    frames[0](0)
+    expect(end).toHaveBeenCalledExactlyOnceWith({ messages: 1, outcome: 'rendered' })
+  })
+  it('does not report a list cleared before paint as rendered', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
+    const loaded = [{ id: 'a', role: 'assistant' as const, content: 'one', timestamp: 1 }]
+    beginChatOpen('t').ready('t', loaded)
+    chatMessagesCommitted('t', loaded)
+    chatMessagesCommitted('t', [])
+    for (const frame of frames) frame(0)
+    expect(end).not.toHaveBeenCalled()
   })
   it.each([null, { messages: [], loadStatus: 'error' as const }])('ends a failed load without awaiting an empty-list paint (%j)', (response) => {
     const open = beginChatOpen('t')

@@ -43,20 +43,18 @@ export function chatMessagesCommitted(thread: string, messages: ChatMessage[], v
     committed.delete(thread)
     return
   }
-  const previous = committed.get(thread)
   committed.set(thread, messages)
   const loaded = pending?.thread === thread ? pending.messages : undefined
-  if (loaded && loaded !== messages && (previous === loaded || extendsLoaded(loaded, messages))) {
+  if (loaded && loaded !== messages && extendsLoaded(loaded, messages)) {
     pending = { ...pending!, messages }
   }
   finishChatOpen(thread, messages)
 }
 
-/** A store replacement that landed before the loaded array committed still starts
- *  with the loaded messages. ponytail: an empty load has nothing to match, so its
- *  span waits for cancel or the next open; this is timing only. */
+/** A replacement counts as the loaded chat on screen only while it still starts with
+ *  the loaded messages, so a cleared list is never reported as rendered. */
 function extendsLoaded(loaded: ChatMessage[], messages: ChatMessage[]): boolean {
-  return loaded.length > 0 && messages.length >= loaded.length && loaded.every((m, i) => messages[i]?.id === m.id)
+  return messages.length >= loaded.length && loaded.every((m, i) => messages[i]?.id === m.id)
 }
 
 export function chatMessagesUnmounted(thread: string) {
