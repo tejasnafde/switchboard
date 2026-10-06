@@ -197,6 +197,8 @@ export class TcpHost implements BackendHost {
           () => fn(...frame.args),
         )
       }
+    } else if (frame.k === 'ping') {
+      this.write(client, { k: 'pong', t: frame.t })
     } else if (frame.k === 'hello') {
       const result = resumeFrom(this.replay, this.epoch, frame)
       if (result.frames.length > 0 || result.gap) {

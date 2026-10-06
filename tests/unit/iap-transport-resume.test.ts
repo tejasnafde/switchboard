@@ -129,6 +129,38 @@ describe('IapTransport resume', () => {
     expect(idle.transport.resumeState()).toEqual({ since: 50, epoch: 'e1' })
   })
 
+  it('probes a capable host and keeps an answered tunnel alive', () => {
+    const a = tunnel()
+    a.relay.line(ready('e1', 0))
+    a.transport.probe()
+    expect(a.relay.sent.some((frame) => (frame as { k?: string }).k === 'ping')).toBe(true)
+    a.relay.line({ k: 'pong', t: 1 })
+    vi.advanceTimersByTime(3_000)
+    expect(a.transport.isAlive()).toBe(true)
+  })
+
+  it('reconnects only after a proven heartbeat probe fails', () => {
+    const a = tunnel()
+    a.relay.line(ready('e1', 0))
+    const reconnect = vi.fn()
+    a.transport.onReconnectNeeded = reconnect
+    a.transport.probe()
+    vi.advanceTimersByTime(3_000)
+    expect(a.transport.isAlive()).toBe(false)
+    expect(reconnect).toHaveBeenCalledOnce()
+  })
+
+  it('hands an older TCP host that cannot answer probes to connect() instead of killing it', () => {
+    const a = tunnel()
+    const reconnect = vi.fn()
+    a.transport.onReconnectNeeded = reconnect
+    a.relay.line(ready('e1', 0, false, NEW_HOST_CAPS.filter((capability) => capability !== 'heartbeat_v1')))
+    a.transport.probe()
+    vi.advanceTimersByTime(3_000)
+    expect(a.transport.isAlive()).toBe(true)
+    expect(reconnect).toHaveBeenCalledOnce()
+  })
+
   it('re-seeds when the host reports a gap', () => {
     const b = tunnel({ since: 2, epoch: 'e1' })
     b.relay.line(ready('e1', 900, true))

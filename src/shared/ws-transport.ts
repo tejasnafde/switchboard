@@ -135,6 +135,7 @@ export class WsTransport implements Transport {
    *  the listener never sees a newer event before an older one. */
   private resumeHold: Array<Extract<WsFrame, { k: 'evt' }>> | null = null
   private lastFrameAt = 0
+  private receivedFrames = 0
   /** Set once the backend sends a `ping` or `ready`. Until then the liveness
    *  checks stay disarmed: an older backend's silence is normal, not fatal. */
   private peerSendsHeartbeat = false
@@ -220,11 +221,12 @@ export class WsTransport implements Transport {
     // An older backend does not answer a ping, so acting on the silence would
     // reconnect on every foreground rather than only on a dead socket.
     if (!this.peerSendsHeartbeat) return
-    const before = this.lastFrameAt
+    const before = this.receivedFrames
+    const socket = this.ws
     this.rawSend(encodeFrame({ k: 'ping', t: Date.now() }))
     setTimeout(() => {
-      if (this.closed || !this.open) return
-      if (this.lastFrameAt === before) {
+      if (this.closed || !this.open || this.ws !== socket) return
+      if (this.receivedFrames === before) {
         log.warn('probe went unanswered, reconnecting', this.url)
         this.forceReconnect()
       }
@@ -242,6 +244,7 @@ export class WsTransport implements Transport {
   private dial(): void {
     const sock = new WebSocket(this.url)
     this.ws = sock
+    this.peerSendsHeartbeat = false
     // Every handler guards on `sock === this.ws` so a superseded socket's late
     // events (a slow close from an abandoned dial) can't corrupt current state.
     sock.addEventListener('open', () => {
@@ -276,7 +279,10 @@ export class WsTransport implements Transport {
       if (sock !== this.ws) return
       this.lastFrameAt = Date.now()
       const frame = decodeFrame(typeof ev.data === 'string' ? ev.data : String(ev.data))
-      if (frame) this.dispatch(frame)
+      if (frame) {
+        this.receivedFrames++
+        this.dispatch(frame)
+      }
     })
     // 'close' and 'error' both funnel here. A refused connect fires only
     // 'error' on some WebSocket impls (Node 22's undici) - without this, the

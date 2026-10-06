@@ -3,6 +3,7 @@ import type { BackendHost } from '../backend/host'
 import { stat } from 'fs/promises'
 import { notifyConversationArchived, notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
+import { historyWindow, type HistoryWindowRequest } from '@shared/phone-history-window'
 import { historyTail } from '@shared/turn-activity'
 import { parseFollowSuggestionMode } from '@shared/follow-suggestions'
 import { createMainLogger as createLogger } from '../logger'
@@ -104,8 +105,9 @@ const log = createLogger('ipc:app')
  */
 function capTail<T extends { messages: ChatMessage[] }>(
   result: T,
-  opts?: { limit?: number },
+  opts?: HistoryWindowRequest & { window?: boolean },
 ): T & { total: number; truncated: boolean } {
+  if (opts?.window) return { ...result, ...historyWindow(result.messages, opts) }
   const total = result.messages.length
   const limit = opts?.limit
   if (!limit || limit <= 0 || total <= limit) return { ...result, total, truncated: false }
@@ -432,7 +434,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   // in chronological order. One click in the sidebar → one coherent
   // conversation, regardless of how many .jsonl files it actually spans.
   host.handle(AppChannels.LOAD_SESSION_BY_ID, async (conversationId: string,
-    opts?: { limit?: number },
+    opts?: HistoryWindowRequest & { window?: boolean },
   ): Promise<{
     messages: ChatMessage[]
     meta: {
@@ -455,6 +457,8 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     } | null
     total: number
     truncated: boolean
+    nextBeforeId?: string | null
+    cursorReset?: boolean
     timing?: import('@shared/perf-chat').ChatLoadTiming
     loadStatus?: import('@shared/perf-chat').ChatLoadDiagnostics['loadStatus']
   }> => {

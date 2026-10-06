@@ -17,6 +17,42 @@ import org.junit.Test
 
 class RoomThreadSnapshotStoreTest {
     @Test
+    fun `late screen snapshots cannot roll back newer replayed messages`() {
+        val store = RoomThreadSnapshotStore(FakeCacheDao(), QueuedExecutor())
+        store.save("mac", "thread-1", thread("new").copy(lastSequence = 12))
+        store.save("mac", "thread-1", thread("old").copy(lastSequence = 11))
+        assertEquals("new", userText(store.get("mac", "thread-1")))
+        store.onReplayGap("mac")
+        store.save("mac", "thread-1", thread("new epoch").copy(lastSequence = 1))
+        assertEquals("new epoch", userText(store.get("mac", "thread-1")))
+    }
+
+    @Test
+    fun `unsequenced notices remain distinct when the cache trims its event journal`() {
+        val store = RoomThreadSnapshotStore(FakeCacheDao(), QueuedExecutor())
+        store.save("mac", "thread-1", thread("saved"))
+        val raw = app.switchboard.mobile.protocol.JsonCodec.parse("""{"type":"provider.future","threadId":"thread-1"}""") as app.switchboard.mobile.protocol.JsonObject
+        val scope = app.switchboard.mobile.platform.protocol.TransportScope("device", "mac", 1)
+        val payload = app.switchboard.mobile.protocol.RuntimeEventPayload("provider.future", "thread-1", app.switchboard.mobile.protocol.RuntimeEventKind.Extension, raw)
+        store.onRuntimeEvent(scope, payload)
+        store.onRuntimeEvent(scope, payload)
+        assertEquals(2, store.get("mac", "thread-1")!!.feed.filterIsInstance<FeedItem.RawNotice>().size)
+    }
+
+    @Test
+    fun `replay updates memory before the thread screen subscribes and gap invalidates freshness`() {
+        val store = RoomThreadSnapshotStore(FakeCacheDao(), QueuedExecutor())
+        store.save("mac", "thread-1", thread("saved").copy(historyLoaded = true))
+        val raw = app.switchboard.mobile.protocol.JsonCodec.parse("""{"type":"content","threadId":"thread-1","messageId":"live","streamKind":"assistant","text":"new"}""") as app.switchboard.mobile.protocol.JsonObject
+        store.onRuntimeEvent(app.switchboard.mobile.platform.protocol.TransportScope("device", "mac", 1), app.switchboard.mobile.protocol.RuntimeEventPayload("content", "thread-1", app.switchboard.mobile.protocol.RuntimeEventKind.Known, raw, 1))
+        assertEquals("new", (store.get("mac", "thread-1")!!.feed.last() as FeedItem.Text).text)
+        assertTrue(store.get("mac", "thread-1")!!.historyLoaded)
+        store.onReplayGap("mac")
+        assertEquals(false, store.get("mac", "thread-1")!!.historyLoaded)
+        assertTrue(store.get("mac", "thread-1")!!.awaitingReseed)
+    }
+
+    @Test
     fun `save updates memory immediately and coalesces Room work to the latest state`() {
         val dao = FakeCacheDao()
         val writes = QueuedExecutor()
@@ -26,7 +62,7 @@ class RoomThreadSnapshotStoreTest {
         store.save("mac", "thread-1", thread("latest").copy(awaitingReseed = true))
 
         assertEquals("latest", userText(store.get("mac", "thread-1")))
-        assertEquals(false, store.get("mac", "thread-1")?.awaitingReseed)
+        assertEquals(true, store.get("mac", "thread-1")?.awaitingReseed)
         assertEquals(1, writes.tasks.size)
         assertNull(dao.findThread("mac:thread-1"))
 

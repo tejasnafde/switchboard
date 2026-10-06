@@ -64,6 +64,7 @@ data class ProtocolEventHubHealth(
 
 class ProtocolEventHub(
     bufferCapacity: Int,
+    private val onEvent: (ProtocolHubEvent) -> Unit = {},
 ) : ScopedProtocolObserver, Closeable {
     private val mutableEvents = MutableSharedFlow<ProtocolHubEvent>(
         replay = 0,
@@ -76,6 +77,7 @@ class ProtocolEventHub(
     val health = mutableHealth.asStateFlow()
 
     private var closed = false
+    private val observers = linkedSetOf<(ProtocolHubEvent) -> Unit>()
 
     init {
         require(bufferCapacity > 0) { "bufferCapacity must be positive" }
@@ -86,6 +88,13 @@ class ProtocolEventHub(
 
     fun eventsFor(scope: TransportScope): Flow<ProtocolHubEvent> =
         events.filter { it.scope == scope }
+
+    @Synchronized
+    fun observe(listener: (ProtocolHubEvent) -> Unit): Cancelable {
+        if (closed) return Cancelable {}
+        observers += listener
+        return Cancelable { synchronized(this) { observers -= listener } }
+    }
 
     override fun onRuntimeEvent(scope: TransportScope, event: RuntimeEventPayload) {
         publish(ProtocolHubEvent.Runtime(scope, event))
@@ -115,28 +124,36 @@ class ProtocolEventHub(
     override fun close() {
         if (closed) return
         closed = true
+        observers.clear()
         mutableHealth.value = mutableHealth.value.copy(closed = true)
     }
 
-    @Synchronized
     private fun publish(event: ProtocolHubEvent) {
-        if (closed) return
-        if (
-            event.category == ProtocolHubEventCategory.ProtocolError ||
-            event.category == ProtocolHubEventCategory.TransportFailure
-        ) {
-            mutableHealth.value = mutableHealth.value.copy(
-                lastErrorConnectionId = event.connectionId,
-                lastErrorCategory = event.category,
-            )
+        val listeners = synchronized(this) {
+            if (closed) return
+            observers.toList()
         }
-        if (!mutableEvents.tryEmit(event)) {
-            val current = mutableHealth.value
-            mutableHealth.value = current.copy(
-                droppedEventCount = current.droppedEventCount + 1,
-                lastOverflowConnectionId = event.connectionId,
-                lastOverflowCategory = event.category,
-            )
+        onEvent(event)
+        listeners.forEach { it(event) }
+        synchronized(this) {
+            if (closed) return
+            if (
+                event.category == ProtocolHubEventCategory.ProtocolError ||
+                event.category == ProtocolHubEventCategory.TransportFailure
+            ) {
+                mutableHealth.value = mutableHealth.value.copy(
+                    lastErrorConnectionId = event.connectionId,
+                    lastErrorCategory = event.category,
+                )
+            }
+            if (!mutableEvents.tryEmit(event)) {
+                val current = mutableHealth.value
+                mutableHealth.value = current.copy(
+                    droppedEventCount = current.droppedEventCount + 1,
+                    lastOverflowConnectionId = event.connectionId,
+                    lastOverflowCategory = event.category,
+                )
+            }
         }
     }
 }

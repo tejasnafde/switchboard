@@ -69,6 +69,7 @@ class AuthenticatedWsCoordinator(
     private var target: LineTarget? = null
     private var socket: LineConnection? = null
     private var retryTask: Cancelable? = null
+    private var peerSpeaksHeartbeat = false
     private var probeTask: Cancelable? = null
     private var handshakeTask: Cancelable? = null
     private var retryAttempts = 0
@@ -202,6 +203,7 @@ class AuthenticatedWsCoordinator(
             reconnectAfterFailedProbe(generation, connection)
             return
         }
+        if (!peerSpeaksHeartbeat && state?.supports("heartbeat_v1") != true) return
         probeTask = scheduler.schedule(timeoutMs) {
             synchronized(this) {
                 probeTask = null
@@ -436,6 +438,7 @@ class AuthenticatedWsCoordinator(
             return
         }
         socket = connection
+        peerSpeaksHeartbeat = false
         applyTransition(
             ConnectionStateMachine.reduce(
                 currentState,
@@ -469,6 +472,7 @@ class AuthenticatedWsCoordinator(
             defer { observer.onProtocolError(connectionId, wire) }
             return
         }
+        if (frame is WsFrame.Ping || frame is WsFrame.Pong) peerSpeaksHeartbeat = true
         val wasReady = currentState.outboxEligible
         val authenticationRejected = frame is WsFrame.Authed.Failure
         applyTransition(

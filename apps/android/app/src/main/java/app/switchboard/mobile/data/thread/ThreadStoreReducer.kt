@@ -1,5 +1,6 @@
 package app.switchboard.mobile.data.thread
 
+import app.switchboard.mobile.domain.remote.SessionMeta
 import app.switchboard.mobile.domain.thread.DriftSuggestion
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.PeerUndelivered
@@ -57,7 +58,12 @@ data class ThreadState(
     /** Message ids (their user row ids) the backend holds until the running turn ends. */
     val heldTurns: Set<String> = emptySet(),
     val eventJournal: List<ScopedThreadEvent> = emptyList(),
+    val eventArrival: Long = 0,
+    val lastSequence: Long? = null,
     val awaitingReseed: Boolean = false,
+    val historyLoaded: Boolean = false,
+    val historyMeta: SessionMeta? = null,
+    val nextBeforeId: String? = null,
     val bufferedEvents: List<ScopedThreadEvent> = emptyList(),
 )
 
@@ -159,11 +165,12 @@ object ThreadStoreReducer {
         if (state.generations[scoped.scope.connectionId] != scoped.scope.generation) return state
         val key = ThreadKey(scoped.scope.connectionId, scoped.event.threadId)
         val current = state.threads[key]
+        if (scoped.sequence != null && current?.lastSequence != null && scoped.sequence <= current.lastSequence) return state
         val mustWaitForSnapshot = current?.awaitingReseed == true ||
             (current == null && scoped.scope in state.reseedingConnections)
         val base = current ?: ThreadState(awaitingReseed = mustWaitForSnapshot)
         val next = if (mustWaitForSnapshot) {
-            base.copy(
+            applyEvent(base, scoped, key in state.viewingThreads).copy(
                 bufferedEvents = ThreadEventCoalescer.coalesce(base.bufferedEvents + scoped),
             )
         } else {
@@ -177,7 +184,7 @@ object ThreadStoreReducer {
         return state.copy(
             threads = state.threads.mapValues { (key, thread) ->
                 if (key.connectionId == scope.connectionId) {
-                    thread.copy(awaitingReseed = true, bufferedEvents = emptyList())
+                    thread.copy(awaitingReseed = true, historyLoaded = false, lastSequence = null, bufferedEvents = emptyList())
                 } else {
                     thread
                 }
@@ -215,8 +222,16 @@ object ThreadStoreReducer {
             awaitingReseed = false,
             bufferedEvents = emptyList(),
         )
-        current.bufferedEvents.forEach {
-            reseeded = applyEvent(reseeded, it, key in state.viewingThreads)
+        current.bufferedEvents.forEach { buffered ->
+            val contentEvent = (buffered.event as? ThreadRuntimeEvent.Known)?.payload as? ThreadEventPayload.Content
+            val live = contentEvent?.let { event -> current.feed.filterIsInstance<FeedItem.Text>()
+                .firstOrNull { it.messageId == event.messageId && it.stream == event.streamKind } }
+            val history = contentEvent?.let { event -> snapshot.feed.filterIsInstance<FeedItem.Text>()
+                .firstOrNull { it.messageId == event.messageId && it.stream == event.streamKind } }
+            if (live != null) {
+                val text = if (history?.text?.contains(live.text) == true) history.text else live.text
+                reseeded = content(reseeded, contentEvent.copy(text = text, append = false), key in state.viewingThreads)
+            } else reseeded = applyEvent(reseeded, buffered, key in state.viewingThreads)
         }
         return state.copy(threads = state.threads + (key to reseeded))
     }
@@ -253,7 +268,7 @@ object ThreadStoreReducer {
         scoped: ScopedThreadEvent,
         isViewing: Boolean,
     ): ThreadState {
-        val withJournal = thread.copy(eventJournal = thread.eventJournal + scoped)
+        val withJournal = thread.copy(eventJournal = thread.eventJournal + scoped, eventArrival = thread.eventArrival + scoped.rawPayloads.size, lastSequence = scoped.sequence ?: thread.lastSequence)
         val known = scoped.event as? ThreadRuntimeEvent.Known
             ?: return appendRawNotice(withJournal, scoped)
         return when (val event = known.payload) {
@@ -299,7 +314,7 @@ object ThreadStoreReducer {
                 feed = upsert(
                     withJournal.feed,
                     FeedItem.Denial(
-                        eventId(scoped, "denial", withJournal.eventJournal.size), event.toolName, event.reason, event.mode,
+                        eventId(scoped, "denial", withJournal.eventArrival), event.toolName, event.reason, event.mode,
                     ),
                 ),
             )
@@ -333,7 +348,7 @@ object ThreadStoreReducer {
             is ThreadEventPayload.Error -> withJournal.copy(
                 feed = upsert(
                     withJournal.feed,
-                    FeedItem.Error(eventId(scoped, "error", withJournal.eventJournal.size), event.message, event.turnId),
+                    FeedItem.Error(eventId(scoped, "error", withJournal.eventArrival), event.message, event.turnId),
                 ),
                 status = "error",
             )
@@ -365,7 +380,7 @@ object ThreadStoreReducer {
                 feed = upsert(
                     withJournal.feed,
                     FeedItem.RawNotice(
-                        eventId(scoped, "model-unavailable", withJournal.eventJournal.size),
+                        eventId(scoped, "model-unavailable", withJournal.eventArrival),
                         "model.unavailable",
                         "${event.model} is not available on this account any more. This chat now uses the default model.",
                         scoped.event.raw,
@@ -466,7 +481,8 @@ object ThreadStoreReducer {
         isViewing: Boolean,
     ): ThreadState {
         val id = "m-${event.messageId}-${event.streamKind}"
-        val existing = thread.feed.firstOrNull { it.id == id } as? FeedItem.Text
+        val existing = thread.feed.filterIsInstance<FeedItem.Text>()
+            .firstOrNull { it.messageId == event.messageId && it.stream == event.streamKind }
         val text = if (event.append) (existing?.text ?: "") + event.text else event.text
         return thread.copy(
             feed = upsert(
@@ -524,7 +540,7 @@ object ThreadStoreReducer {
         return thread.copy(
             feed = upsert(
                 thread.feed,
-                FeedItem.RawNotice(eventId(scoped, "raw", thread.eventJournal.size), event.type, text, event.raw),
+                FeedItem.RawNotice(eventId(scoped, "raw", thread.eventArrival), event.type, text, event.raw),
             ),
         )
     }
@@ -588,7 +604,7 @@ object ThreadStoreReducer {
      * stamps no seq) get a per-arrival id: byte-identical events, like repeated
      * plan-mode denials, must stay distinct rows.
      */
-    private fun eventId(scoped: ScopedThreadEvent, prefix: String, arrival: Int): String =
+    private fun eventId(scoped: ScopedThreadEvent, prefix: String, arrival: Long): String =
         scoped.sequence?.let { "$prefix:seq:$it" }
             ?: "$prefix:${scoped.event.type}:${scoped.event.raw.hashCode()}:$arrival"
 }

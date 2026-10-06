@@ -109,6 +109,26 @@ Three things beyond plain RPC, all driven by the phone case:
 
 **Remote machines / SSH** (`src/main/machines/`): `ssh-tunnel.ts` builds `ssh -L localPort:127.0.0.1:remotePort … <bootstrap>` (uses the system `ssh` binary - no `ssh2`/native deps; `BatchMode`, `accept-new`), `connection-manager.ts` owns connect/provision/health-probe/auto-reconnect, plus `provisioner.ts`/`remote-exec.ts`/`reconnectBackoff.ts`/`ssh-config.ts`. The renderer then connects to `ws://127.0.0.1:<localPort>` as if local. Docs: `docs/notes/ssh-remote-plan.md`, `docs/notes/remote-machines-handoff.md`. No mobile client and no cloud relay - the "remote client" is the desktop app pointed at a tunneled remote backend.
 
+### Phone history windows (`history_window_v1`)
+
+`app:load-session-by-id(id, { window: true, limit: 200, beforeId? })`
+returns at most 200 chronological rows, `total`, `truncated`,
+`nextBeforeId` (the oldest returned id when more older rows exist, else null),
+and `cursorReset` (a removed cursor returns a fresh tail). Phones feature-detect
+`history_window_v1`; an older backend still gets the legacy `{ limit }` call.
+Desktop and older phone callers without `window` keep the original contract.
+This bounds wire rows, not JSONL parsing. Keep parse caching separate.
+
+Clean replay resumes reuse the in-memory history cache; disk restores and real
+gaps reload it. Android's ProtocolEventHub updates the cache synchronously
+before publishing replay events, so an absent screen cannot lose the replay.
+Live events render during a refresh and are reconciled when its snapshot lands.
+Never hide a connected thread behind the saved-messages banner for a background
+refresh. A foreground return after under 10 s probes; a longer absence reconnects.
+On the WebSocket host `ready` and ping answers shipped together (74dcf945), so a
+`ready` frame is heartbeat proof there. The IAP TCP host needs `heartbeat_v1`; without
+it the phone hands the tunnel to connect() instead of probing.
+
 ### Mobile app (`apps/mobile/`)
 
 Expo SDK 57 React Native client for the same backends. Talks to a desktop app

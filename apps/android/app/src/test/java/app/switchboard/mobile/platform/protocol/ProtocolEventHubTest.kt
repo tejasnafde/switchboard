@@ -23,6 +23,22 @@ class ProtocolEventHubTest {
     private val scopeB = TransportScope("device", "b", 8)
 
     @Test
+    fun `thread observers receive a replay larger than the flow buffer synchronously`() {
+        val hub = ProtocolEventHub(bufferCapacity = 2)
+        var seen = 0
+        val subscription = hub.observe { if (it is ProtocolHubEvent.Runtime) seen += 1 }
+        val scope = TransportScope("device", "mac", 1)
+        val raw = app.switchboard.mobile.protocol.JsonCodec.parse("""{"type":"status","threadId":"thread","status":"idle"}""") as app.switchboard.mobile.protocol.JsonObject
+        repeat(716) {
+            hub.onRuntimeEvent(scope, app.switchboard.mobile.protocol.RuntimeEventPayload("status", "thread", app.switchboard.mobile.protocol.RuntimeEventKind.Known, raw, it.toLong()))
+        }
+        assertEquals(716, seen)
+        subscription.cancel()
+        hub.onRuntimeEvent(scope, app.switchboard.mobile.protocol.RuntimeEventPayload("status", "thread", app.switchboard.mobile.protocol.RuntimeEventKind.Known, raw, 717))
+        assertEquals(716, seen)
+    }
+
+    @Test
     fun scopedEventsPreserveConnectionRuntimePayloadAndExactReplayCursors() = runBlocking {
         val hub = ProtocolEventHub(bufferCapacity = 4)
         val received = mutableListOf<ProtocolHubEvent>()

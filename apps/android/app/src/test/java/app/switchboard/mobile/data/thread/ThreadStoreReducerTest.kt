@@ -26,6 +26,27 @@ import org.junit.Test
 
 class ThreadStoreReducerTest {
     @Test
+    fun `snapshot and buffered live content share one row without repeating text`() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = reduce(state, ThreadAction.ReplayGap(ThreadEventScope("mac-a", 1)))
+        val raw = event("content", "messageId" to s("live"), "text" to s("now"), "streamKind" to s("assistant"), "append" to JsonBoolean(true))
+        state = ingest(state, "mac-a", 1, 1, raw)
+        state = ingest(state, "mac-a", 1, 1, raw)
+        assertEquals("now", (state.thread("mac-a", "thread-1")!!.feed.single() as FeedItem.Text).text)
+        state = reduce(state, ThreadAction.InstallSnapshot(ThreadEventScope("mac-a", 1),
+            ThreadSnapshot("thread-1", listOf(FeedItem.Text("h-live", "live", "before now", "assistant", done = true)))))
+        assertEquals("before now", (state.thread("mac-a", "thread-1")!!.feed.single() as FeedItem.Text).text)
+    }
+
+    @Test
+    fun `live content renders while a snapshot is pending`() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = reduce(state, ThreadAction.ReplayGap(ThreadEventScope("mac-a", 1)))
+        state = ingest(state, "mac-a", 1, 1, event("content", "messageId" to s("live"), "text" to s("now"), "streamKind" to s("assistant")))
+        assertEquals("now", (state.thread("mac-a", "thread-1")!!.feed.single() as FeedItem.Text).text)
+    }
+
+    @Test
     fun userMessageUsesDisplayBodyAndImagesAndKeepsOriginDedupe() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         val raw = event(
@@ -311,7 +332,7 @@ class ThreadStoreReducerTest {
 
         val waiting = state.thread("mac-a", "thread-1")!!
         assertTrue(waiting.awaitingReseed)
-        assertEquals(listOf("history-old"), waiting.feed.map { it.id })
+        assertEquals(listOf("history-old", "m-live-assistant", "t-live-tool"), waiting.feed.map { it.id })
         assertEquals(3, waiting.bufferedEvents.sumOf { it.rawPayloads.size })
 
         state = reduce(
@@ -517,7 +538,7 @@ class ThreadStoreReducerTest {
 
         val waiting = state.thread("mac-a", "thread-new")!!
         assertTrue(waiting.awaitingReseed)
-        assertTrue(waiting.feed.isEmpty())
+        assertEquals("after-gap", (waiting.feed.single() as FeedItem.Text).text)
         assertEquals(1, waiting.bufferedEvents.size)
         assertTrue(ThreadEventScope("mac-a", 8) in state.reseedingConnections)
 

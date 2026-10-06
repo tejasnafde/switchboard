@@ -298,7 +298,13 @@ class NativeAndroidRuntime private constructor(
             val transportScheduler = ExecutorTransportScheduler()
             val outboxScheduler = ExecutorTransportScheduler()
             val retryScheduler = TransportOutboxRetryScheduler(outboxScheduler)
-            val protocolEvents = ProtocolEventHub(bufferCapacity = PROTOCOL_EVENT_BUFFER)
+            val protocolEvents = ProtocolEventHub(bufferCapacity = PROTOCOL_EVENT_BUFFER) { event ->
+                when (event) {
+                    is ProtocolHubEvent.Runtime -> threadSnapshots.onRuntimeEvent(event.scope, event.event)
+                    is ProtocolHubEvent.ReplayGap -> threadSnapshots.onReplayGap(event.connectionId)
+                    else -> Unit
+                }
+            }
             val httpClient = OkHttpClient()
             val googleTokenExchange = OkHttpGoogleTokenExchange(
                 httpClient,

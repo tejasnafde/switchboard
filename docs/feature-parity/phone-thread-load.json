@@ -1,0 +1,76 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "phone-thread-load",
+  "summary": "Capability-gated 200-row history pages, clean-resume cache retention, immediate live messages during refresh, and proven heartbeat probes on foreground return for native Android and Expo. Existing full and legacy tail history callers stay compatible; backend parse caching is unchanged.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/ipc/app.ts",
+        "src/main/backend/tcp-host.ts",
+        "tests/unit/status-line-backfill.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/lib/iap-transport.ts",
+        "apps/mobile/src/screens/__tests__/history-page-status.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSnapshotStore.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/WsCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/ProtocolEventHubTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/phone-history-window.ts",
+        "src/shared/ws-protocol.ts",
+        "src/shared/ws-transport.ts",
+        "tests/unit/tcp-host.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSnapshotStore.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/RoomThreadSnapshotStoreTest.kt"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "docs/notes/phone-thread-load-rollout.md",
+        "CHANGELOG.md",
+        "src/shared/ws-protocol.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test -- --maxWorkers=2",
+      "npm test --prefix apps/mobile -- --runInBand",
+      "cd apps/mobile && npx tsc --noEmit",
+      "cd apps/android && ./gradlew :app:testDebugUnitTest :app:assembleDebug",
+      "tests/unit/phone-history-window.test.ts measures a synthetic 6800-row history and tests paging, cursor resets, limits and resume decisions"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No device or emulator exists here. Native Android and iOS scrolling, background/foreground, push taps and radio stalls need hardware verification.",
+      "Signed APK publication and Expo OTA publication are deferred to their existing release workflows. Native Android requires a new APK; its version is bumped to 0.5.16 (versionCode 18).",
+      "No live Google IAP tunnel or user's 78 MB transcript was accessed. IAP framing, replay and probes use fixtures; payload measurement is synthetic."
+    ]
+  }
+}

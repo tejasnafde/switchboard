@@ -67,6 +67,8 @@ fun ThreadSessionScreen(
         backendLabel = backendLabel,
         loadState = session.load.toUiLoadState(),
         onRetry = coordinator::refresh,
+        onLoadOlder = coordinator::loadOlder,
+        olderCursor = coordinator.currentThread()?.nextBeforeId,
         onAction = router::perform,
         onBack = onBack,
         modifier = modifier,

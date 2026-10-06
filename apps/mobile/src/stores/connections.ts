@@ -188,6 +188,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
             backendToken: config.token,
             resume: iapResume.get(id),
           })
+          transport.onReconnectNeeded = () => get().connect(id)
           transport.onResumeGap = () => reseed(id, config.label)
           transport.onStateChange = (state) =>
             get().setStatus(id, state === 'connected' ? 'connected' : 'disconnected')
@@ -430,14 +431,11 @@ export function installLifecycleReconnect(): () => void {
     void drainOutbox()
     for (const [id, client] of clients) {
       const { transport } = client
-      if (transport.forceReconnect || transport.probe) {
-        if (action === 'reconnect') transport.forceReconnect?.()
-        else transport.probe?.()
-      } else {
-        // IapTransport has no probe path of its own; connect() replaces it when
-        // it has died, which is the only recovery it currently has.
-        useConnectionsStore.getState().connect(id)
-      }
+      // An IAP tunnel has a probe but no forced reconnect, so a long absence
+      // probes it rather than doing nothing.
+      if (action === 'reconnect' && transport.forceReconnect) transport.forceReconnect()
+      else if (transport.probe) transport.probe()
+      else useConnectionsStore.getState().connect(id)
     }
   })
   return () => sub.remove()

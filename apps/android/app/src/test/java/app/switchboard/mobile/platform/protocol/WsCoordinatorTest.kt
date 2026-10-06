@@ -18,6 +18,14 @@ import org.junit.Test
 
 class WsCoordinatorTest {
     @Test
+    fun `ready without heartbeat proof does not redial on foreground probe`() {
+        val fixture = Fixture()
+        fixture.connectReady()
+        fixture.coordinator.probe()
+        assertTrue(fixture.scheduler.activeTasks().none { it.delayMs == 3_000L })
+    }
+
+    @Test
     fun typedChannelListenersReceiveReplayableNonProviderEventsAndCanUnsubscribe() {
         val fixture = Fixture()
         val call = fixture.connectReady()
@@ -665,7 +673,8 @@ class WsCoordinatorTest {
     @Test
     fun probeTimeoutDeliversPendingFailuresInsteadOfStrandingThem() {
         val fixture = Fixture()
-        fixture.connectReady()
+        val connection = fixture.connectReady()
+        connection.listener.onText(WsProtocol.encode(WsFrame.Ping(1)))
         val outcomes = mutableListOf<RpcOutcome>()
         fixture.coordinator.invoke("one", JsonArray(emptyList()), outcomes::add)
 
