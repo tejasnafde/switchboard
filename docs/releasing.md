@@ -51,73 +51,56 @@ post-upgrade data checks separately from automated results.
 
 ## TL;DR
 
-`main` is protected and admins are NOT exempt, so the old
-`npm version patch && git push --follow-tags` no longer works: it pushes the
-version-bump commit straight to `main` and GitHub rejects it. The bump goes
-through a pull request like everything else, and the tag is applied to `main`
-afterwards so it never points at a commit that only exists on a branch.
+A desktop release is a tag on `main`. There is no version-bump pull request:
+`release-build.yml` sets `package.json` to the tag's version on the runner
+before it builds, so the artifacts, the update manifests and `app.getVersion()`
+all carry the tag's version while `main` keeps whatever it had.
 
 ```bash
 set -euo pipefail                          # or the tag outlives a failed step
-
-git switch -c chore/release-<version>
-npm version patch --no-git-tag-version    # or minor / major
-git commit -am "chore(release): cut v<version>"
-git push -u origin chore/release-<version>
-gh pr create --base main --title "chore(release): cut v<version>"
-# merge once the four required checks are green, then:
-git switch main && git pull --ff-only
-git tag v<version> && git push origin v<version>
+git fetch origin
+gh run list --branch main --workflow ci.yml --limit 1   # must be success on origin/main
+git tag v<version> origin/main && git push origin v<version>
 ```
 
-**`main` is protected with `enforce_admins: true`**, so the old
-`npm version patch && git push --follow-tags` no longer works: the push is
-rejected with `protected branch hook declined`. Every release before 0.8.59
-predates that protection, which is why the history up to `v0.8.58` is linear.
+Tag only a commit on `main`. `release.yml` fires on any `v*` tag and builds it,
+so a tag on a branch commit ships that branch. If it happens: cancel the run,
+then `git push origin :refs/tags/<tag>` before anything publishes.
 
-Two things follow, and both cost a release cycle to learn:
+`set -euo pipefail` is there because the block is meant to be pasted whole: a
+failed check must stop the `git tag` at the bottom.
 
-- **Tag AFTER the merge, never before.** That is what `--no-git-tag-version` is
-  for above: plain `npm version` creates the tag locally, `--follow-tags`
-  pushes it even when the branch push is rejected, and the later `git tag`
-  then fails because the name is already taken by the unmerged commit. A tag
-  that points off `main` is not cosmetic either - `release.yml` fires on it
-  and builds it. If it happens: cancel the run, then
-  `git push origin :refs/tags/<tag>` before anything publishes.
-- **The version bump alone must pass `Cross-surface feature policy`**, which is
-  one of the four required checks. `package.json` is a product file, so a bump
-  would normally demand a feature-parity manifest for a commit that changes no
-  behaviour. `isVersionOnlyBump` in `scripts/validate-feature-parity.mjs`
-  exempts it, but only when every changed file is `package.json` or
-  `package-lock.json` AND every edited line is a `"version":` line. A release
-  branch carrying anything else fails the check, by design - split it.
+Write the CHANGELOG entry on the FEATURE branch, with the change itself.
 
-`set -euo pipefail` is there because the block is meant to be pasted whole.
-Without `errexit` a non-zero exit from any line, and a red required check is
-exactly that, does not stop the `git tag` at the bottom. The tag then lands on
-the previous `main` commit, which is the same failure the first bullet above
-describes reaching by a different route. CodeRabbit found this on PR 78.
-
-Write the CHANGELOG entry on the FEATURE branch, not the release branch, so the
-release PR stays a pure bump and keeps the exemption.
-
-The rest of the procedure is unchanged. Everything the operator used to verify by hand
-is a job in `release.yml`, so a green run means it was checked:
+Everything the operator used to verify by hand is a job in `release.yml`, so a
+green run means it was checked:
 
 | Job | Enforces |
 |---|---|
-| `gate` | Calls `ci.yml`. A tag cannot publish a tree that fails typecheck, tests or build on ubuntu + macOS + Windows. |
-| `build` | Packages and publishes macOS arm64 + Windows x64 in parallel to the one Release. |
-| `verify` | Fails the run unless all six install / auto-update assets exist AND both `latest*.yml` declare the version being released. |
+| `ci_status` | Looks up a successful `ci.yml` run on the tagged commit. |
+| `gate` | Calls `ci.yml` only when `ci_status` found none (a tag on a commit whose CI never ran or failed). Main CI already passed on a normal release commit, and running it again proves nothing. |
+| `prepare_release` | Creates one hidden draft for both builds to upload into. |
+| `build_mac`, `build_win` | `release-build.yml` once per OS, in parallel. Each sets the version from the tag, runs `build:ci` (build plus the packaged-app smoke test; typecheck and tests already passed on this commit) and publishes into the draft. |
+| `publish` | As soon as the macOS build ends: asserts the macOS assets and `latest-mac.yml` (`scripts/verify-release-assets.sh mac`), then publishes the release. It does not wait for Windows. |
+| `verify_windows` | When the slower Windows build ends: asserts its assets and `latest.yml` on the already published release. Until `latest.yml` lands, Windows clients see no update yet. |
 
-The only judgment left to a human is the bump itself: **`patch` for iterative
-work including feature batches** (0.6.3 shipped the SSH day-2 batch); reserve
-`minor` for headline surface changes (0.7.0 = the embedded IDE replaced the
-editor). Write the CHANGELOG entry before tagging.
+The only judgment left to a human is the version: **a patch bump for iterative
+work including feature batches**; reserve a minor bump for headline surface
+changes (0.7.0 = the embedded IDE replaced the editor).
 
-If `verify` fails, the Release is partial and clients will not see the version.
-Re-run the failed matrix job from the Actions UI; it is safe to re-run because
-electron-builder dedups uploads by name.
+If `publish` or `verify_windows` fails, re-run the failed build job from the
+Actions UI. It is safe: electron-builder dedups uploads by name.
+
+### Pull request sizing
+
+CodeRabbit gives this repository one review per hour, and every pull request it
+sees, a release one included, spends that slot. So:
+
+- **Batch small related fixes** into one pull request (one review, one release).
+- **Keep each large feature in its own pull request**, so a finding on one does
+  not hold the others.
+- Self-review against the review checklist and run `coderabbit review --agent`
+  locally before pushing, so the hosted review usually passes in one round.
 
 ### Signing modes
 
@@ -180,27 +163,29 @@ listed here as rationale, not as steps to perform.
 
 - **`--follow-tags`.** `release.yml` triggers only on a `v*` tag push. Pushing
   the commit without the tag builds nothing, which reads as a hung release.
-- **The version must match the tag** (sans `v`). `npm version` guarantees it by
-  bumping, committing and tagging atomically; electron-builder refuses to
-  publish on a mismatch.
-- **CI must pass the tagged tree.** The `gate` job calls `ci.yml`, so this is
-  now an ordering property of the pipeline. A tag pushed from a branch whose CI
-  never ran cannot publish.
+- **The version must match the tag** (sans `v`). `release-build.yml` sets it
+  from the tag on the runner (`npm version <tag> --no-git-tag-version`), so the
+  two cannot differ and `main` needs no bump commit.
+- **CI must pass the tagged tree.** `ci_status` finds a successful `ci.yml` run
+  on the exact commit, or the `gate` job runs `ci.yml` itself. A tag pushed from
+  a branch whose CI never ran cannot publish.
 - **No screen changed by accident.** `ci.yml`'s `visual` job compares eight
   screens in all three themes with committed baselines, and the `gate` job
-  runs `ci.yml`, so a release cannot ship a tree whose screens drifted. The
+  runs `ci.yml` (or `ci_status` found it passed), so a release cannot ship a
+  tree whose screens drifted. The
   native translucency check is not in it (it cannot run on the runner): run
   `SB_VISUAL_SCOPE=behaviour npm run test:e2e:visual` on a Mac before tagging
   a release that touched a theme.
-- **All six assets must land.** The `verify` job asserts them by name. Two
-  parallel build jobs mean one platform can fail while the other publishes, and
-  a Release missing a `latest*.yml` makes every client report "up to date" with
-  no error anywhere. That silence is why this is a job and not a checklist.
+- **Each platform's assets must land.** `publish` asserts the three macOS ones
+  before the release becomes visible, and `verify_windows` the three Windows
+  ones after. A Release missing a `latest*.yml` makes every client report "up
+  to date" with no error anywhere. That silence is why this is a job and not a
+  checklist.
 - **Both manifests must declare the released version.** A `latest*.yml` naming
   the wrong version is indistinguishable from no release at all to a client:
   the version compare finds nothing newer and the check succeeds.
 
-Asset names in `verify` are asserted against electron-builder's real output.
+Asset names in `scripts/verify-release-assets.sh` are asserted against electron-builder's real output.
 Until 0.7.29 this doc claimed `Switchboard Setup X.Y.Z.exe`; the real name is
 `Switchboard-Setup-X.Y.Z.exe`. A prose checklist cannot notice its own drift.
 
@@ -288,9 +273,11 @@ within minutes.
 
 ## Adding new platforms
 
-The matrix is intentionally minimal. To add Linux:
+The platform list is intentionally minimal. To add Linux:
 
-1. Append `ubuntu-latest` to `strategy.matrix.os` in `release.yml`.
+1. Add a `build_linux` job to `release.yml` that calls `release-build.yml`
+   with `os: ubuntu-latest`, and a `verify_linux` job like `verify_windows`
+   (plus a `linux` case in `scripts/verify-release-assets.sh`).
 2. Add a `linux:` block to `electron-builder.yml`:
    ```yaml
    linux:
