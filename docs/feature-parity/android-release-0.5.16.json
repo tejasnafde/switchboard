@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-release-0.5.16",
+  "summary": "Native Android release 0.5.16 (versionCode 18): phone chats load history in pages and keep their saved copy after a clean reconnect, live messages show during a refresh, a long background absence reconnects again and an IAP tunnel to an older host is handed to connect() (phone-thread-load.json); the dead phone code removed in #248 also ships here.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Android version bump; desktop parts are covered by phone-thread-load.json."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo client has its own lane; this bump touches only apps/android."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The windowed history request is covered by phone-thread-load.json."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/mobile-release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "./gradlew :app:testDebugUnitTest passes on the merged branch."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Installing the update on a physical device through the in-app updater."
+    ]
+  }
+}
