@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Fixed
+- **Stored pills are checked on reload, and an account edit refreshes the model list.** A user message's stored pill metadata now passes the same checks as a live send (valid ids, known kinds, labels of at most 120 characters) when a chat loads; before, the checker existed but nothing called it. Editing or deleting a provider account now clears the cached model list, so the picker no longer shows models from the old credentials until a restart.
+
 - Fix stale chat-load failure banners after rapid switching, retain and explain blocked Expo sends, and retry transcripts changed during a read once before falling back.
 
 - Speed up long-chat opens and account switches with streamed JSONL parsing, retained-memory history caching and validated transcript evidence reuse. Show loading, switching and startup states on desktop and phones while keeping drafts editable.
