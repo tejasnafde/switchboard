@@ -91,12 +91,16 @@ async function loadJsonlSnapshot(
   // Metadata alone misses a same-size rewrite that keeps the old mtime (seen
   // on Windows), so a hit also re-hashes the bytes. That skips the parse,
   // which is most of the cost.
-  if (hit && sameState(hit, st) && await fileDigest(filePath) === hit.digest && sameState(hit, await stat(filePath))) {
-    // LRU bump: re-insert to move to the back of the eviction order.
-    cache.delete(key)
-    cache.set(key, hit)
-    if (timing) timing.cacheHits += 1
-    return hit.messages
+  if (hit && sameState(hit, st) && await fileDigest(filePath) === hit.digest) {
+    const now = await statOrNull(filePath)
+    if (!now) return null
+    if (sameState(hit, now)) {
+      // LRU bump: re-insert to move to the back of the eviction order.
+      cache.delete(key)
+      cache.set(key, hit)
+      if (timing) timing.cacheHits += 1
+      return hit.messages
+    }
   }
 
   let messages: ChatMessage[]
@@ -154,6 +158,16 @@ type FileState = Pick<CacheEntry, 'mtimeMs' | 'size' | 'ctimeMs' | 'ino' | 'dev'
 
 function sameState(a: FileState, b: FileState): boolean {
   return a.mtimeMs === b.mtimeMs && a.size === b.size && a.ctimeMs === b.ctimeMs && a.ino === b.ino && a.dev === b.dev
+}
+
+/** A file that vanished after its hash is a miss, not a rejected load. */
+async function statOrNull(filePath: string): Promise<FileState | null> {
+  try {
+    return await stat(filePath)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('stat failed for session jsonl', { filePath, err })
+    return null
+  }
 }
 
 async function fileDigest(filePath: string): Promise<string | null> {

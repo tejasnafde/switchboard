@@ -96,6 +96,23 @@ it('re-reads a same-size rewrite even when every stat field still matches', asyn
   }
 })
 
+it('returns null instead of rejecting when the file vanishes after a cache hit is hashed', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
+  const realStat = vi.mocked(stat).getMockImplementation()!
+  try {
+    const path = join(dir, 'session.jsonl')
+    await writeFile(path, line('one', '2026-01-01T00:00:00Z'))
+    await loadJsonlCached(path, 'claude-code')
+    vi.mocked(stat)
+      .mockImplementationOnce(realStat)
+      .mockImplementationOnce((async () => { throw Object.assign(new Error('gone'), { code: 'ENOENT' }) }) as unknown as typeof stat)
+    await expect(loadJsonlCached(path, 'claude-code')).resolves.toBeNull()
+  } finally {
+    vi.mocked(stat).mockImplementation(realStat)
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 it('yields to the event loop while parsing a large cold history', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
   try {
