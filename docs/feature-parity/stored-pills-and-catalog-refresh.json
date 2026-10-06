@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "stored-pills-and-catalog-refresh",
+  "summary": "Stored pill metadata is checked on reload by the same rules as a live submission (ids, kinds, the 120-character label limit), and editing or deleting a provider instance clears the cached model catalog so the picker does not show a list from the old credentials.",
+  "surfaces": {
+    "desktop": { "status": "implemented", "evidence": ["src/main/ipc/enrich-display-body.ts", "src/main/db/messages.ts", "src/main/ipc/provider-instances.ts"] },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The phone receives the checked metadata from the same backend history load; no phone code changed." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The phone receives the checked metadata from the same backend history load; no phone code changed." },
+    "sharedBackendApi": { "status": "implemented", "evidence": ["src/main/ipc/enrich-display-body.ts", "src/main/ipc/provider-instances.ts"] },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Rows are filtered on read; nothing stored is rewritten." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release." }
+  },
+  "verification": {
+    "automated": ["tests/unit/enrich-display-body.test.ts and tests/unit/provider-instance-catalog-invalidate.test.ts fail without the fix and pass with it; the full suite and typecheck pass."],
+    "hardware": [],
+    "notExercised": ["Not tried in the running app."]
+  }
+}

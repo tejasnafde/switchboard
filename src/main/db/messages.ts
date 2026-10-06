@@ -4,6 +4,7 @@ import Database from 'better-sqlite3'
 import type { ChatMessage, FileDiffAttachment, ToolCall } from '@shared/types'
 import { getDb } from './database'
 import { threadFamilyIds } from './conversations'
+import { parsePersistedPillsMeta } from '../provider/pill-metadata'
 
 const log = createLogger('db')
 
@@ -156,7 +157,7 @@ export function messageRowsToChatMessages(rows: MessageRow[]): ChatMessage[] {
     toolCalls: row.tool_calls ? tryParseJson(row.tool_calls) : undefined,
     images: row.images ? tryParseJson(row.images) : undefined,
     displayBody: row.display_body ?? undefined,
-    pillsMeta: row.pills_meta ? tryParseJson(row.pills_meta) : undefined,
+    pillsMeta: parsePersistedPillsMeta(row.pills_meta),
     ...fileDiffFromAttachments(row.attachments_json),
   }))
 }
