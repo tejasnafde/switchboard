@@ -242,7 +242,9 @@ const api = {
       id: string,
       agentType: AgentProvider,
       instanceId: string,
-    ): Promise<{ ok: boolean }> =>
+      // `model` / `reasoningEffort` are what the chat last used on this
+      // provider; absent from a backend older than per-provider memory.
+    ): Promise<{ ok: boolean; model?: string | null; reasoningEffort?: 'low' | 'medium' | 'high' | null }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, id, agentType, instanceId),
     getConversationPendingHandoff: (id: string): Promise<{ from: string | null }> =>
       transport.invoke(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, id),
@@ -674,6 +676,9 @@ const api = {
 
     setModel: (threadId: string, model: string) =>
       transport.invoke(ProviderChannels.SET_MODEL, threadId, model),
+
+    setReasoningEffort: (threadId: string, effort: 'low' | 'medium' | 'high') =>
+      transport.invoke(ProviderChannels.SET_REASONING_EFFORT, threadId, effort),
 
     /** Dynamically fetch `opencode models` output. Returns provider/model IDs. */
 

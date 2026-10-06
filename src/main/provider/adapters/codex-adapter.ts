@@ -1172,6 +1172,12 @@ export class CodexAdapter implements ProviderAdapter {
     active.session.model = model
   }
 
+  async setReasoningEffort(threadId: string, effort: 'low' | 'medium' | 'high'): Promise<void> {
+    const active = this.sessions.get(threadId)
+    if (!active) return
+    active.session.reasoningEffort = effort
+  }
+
   async interruptTurn(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.child || !active.threadId) return

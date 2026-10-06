@@ -48,6 +48,7 @@ import { sessionDefaultsFor } from './session-defaults'
 import { QueuedTurnLedger } from './queued-turn-ledger'
 import { queuedTurnComposerText } from '@shared/queued-turns'
 import { echoMessageId, isRuntimeMode } from '@shared/provider-events'
+import { isReasoningEffort } from '@shared/provider-option-memory'
 import { promoteUnavailableReason, startsOwnProviderTurn, type QueuedTurnActionResult, type QueuedTurnSummary } from '@shared/turn-delivery'
 import {
   errorMessage,
@@ -2544,6 +2545,11 @@ export class ProviderRegistry implements PeerToolHost {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return
       if (adapter.setModel) await adapter.setModel(threadId, model)
+    })
+
+    this.host.handle(ProviderChannels.SET_REASONING_EFFORT, async (threadId: string, effort: string) => {
+      if (!isReasoningEffort(effort)) throw new Error(`Unknown reasoning effort: ${String(effort)}`)
+      await this.sessionAdapters.get(threadId)?.setReasoningEffort?.(threadId, effort)
     })
 
     this.host.handle(ProviderChannels.ANSWER_QUESTION, async (threadId: string, requestId: string, answers: string[][]) => {

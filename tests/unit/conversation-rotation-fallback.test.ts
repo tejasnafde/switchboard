@@ -35,6 +35,7 @@ const conversations = new Map<string, {
   follow_notice_dismissed?: number | null
   worked_worktrees?: string | null
   status_line?: string | null
+  provider_options_json?: string | null
 }>()
 
 vi.mock('better-sqlite3', () => {
@@ -86,6 +87,17 @@ vi.mock('better-sqlite3', () => {
                   follow_suggestions: row.follow_suggestions ?? null,
                   follow_notice_dismissed: row.follow_notice_dismissed ?? null,
                   worked_worktrees: row.worked_worktrees ?? null,
+                }
+              : undefined
+          }
+          if (/SELECT agent_type, model, reasoning_effort, provider_options_json FROM conversations WHERE id = \?/.test(sql)) {
+            const row = conversations.get(args[0] as string)
+            return row
+              ? {
+                  agent_type: row.agent_type ?? null,
+                  model: row.model ?? null,
+                  reasoning_effort: row.reasoning_effort ?? null,
+                  provider_options_json: row.provider_options_json ?? null,
                 }
               : undefined
           }
@@ -190,13 +202,15 @@ vi.mock('better-sqlite3', () => {
             row.pending_handoff_from = from
             return { changes: 1 }
           }
-          if (sql.includes('UPDATE conversations SET agent_type = ?, model = NULL, provider_instance_id = ?')) {
-            const [agentType, instanceId, , id] = args as [string, string, number, string]
+          if (sql.includes('UPDATE conversations SET agent_type = ?, model = ?, reasoning_effort = ?, provider_options_json = ?, provider_instance_id = ?')) {
+            const [agentType, model, effort, options, instanceId, , id] = args as [string, string | null, string | null, string, string, number, string]
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
             Object.assign(row, {
               agent_type: agentType,
-              model: null,
+              model,
+              reasoning_effort: effort,
+              provider_options_json: options,
               provider_instance_id: instanceId,
               session_id: null,
             })
@@ -292,6 +306,23 @@ describe('atomic conversation provider selection', () => {
       provider_instance_id: 'codex-default',
       session_id: null,
     })
+  })
+
+  it('restores the model and effort the chat last used on a provider when switching back', () => {
+    conversations.set('agent_123', {
+      agent_type: 'codex',
+      model: 'gpt-5.5',
+      reasoning_effort: 'high',
+      provider_instance_id: 'codex-default',
+    })
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    expect(setConversationProviderSelection('uuid-abc', 'claude-code', 'claude-work')).toEqual({ model: null, reasoningEffort: 'high' })
+    setConversationModel('agent_123', 'claude-opus-4')
+    setConversationReasoningEffort('agent_123', 'low')
+    expect(setConversationProviderSelection('agent_123', 'codex', 'codex-default')).toEqual({ model: 'gpt-5.5', reasoningEffort: 'high' })
+    expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'codex', model: 'gpt-5.5', reasoning_effort: 'high' })
+    expect(setConversationProviderSelection('agent_123', 'claude-code', 'claude-work')).toEqual({ model: 'claude-opus-4', reasoningEffort: 'low' })
   })
 })
 

@@ -182,6 +182,8 @@ export interface ProviderAdapter {
    * they don't support mid-session model changes.
    */
   setModel?(threadId: string, model: string): Promise<void>
+  /** Applies to the next turn of a live session (Codex reads it per turn). */
+  setReasoningEffort?(threadId: string, effort: 'low' | 'medium' | 'high'): Promise<void>
 
   /**
    * Answer an AskUserQuestion request (unblocks the agent).

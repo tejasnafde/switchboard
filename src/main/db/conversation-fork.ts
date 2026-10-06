@@ -130,6 +130,7 @@ export function ensureConversationForkSchema(db: Database.Database): void {
   addColumn(db, 'conversations', conversationColumns, 'fork_source_dirty INTEGER')
   addColumn(db, 'conversations', conversationColumns, 'fork_omitted_change_summary TEXT')
   addColumn(db, 'conversations', conversationColumns, 'reasoning_effort TEXT')
+  addColumn(db, 'conversations', conversationColumns, 'provider_options_json TEXT')
   addColumn(db, 'conversations', conversationColumns, 'worktree_creation_id TEXT')
 
   const messageColumns = columns(db, 'messages')

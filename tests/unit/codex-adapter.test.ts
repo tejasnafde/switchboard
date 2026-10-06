@@ -574,6 +574,24 @@ describe('CodexAdapter', () => {
     expect(turnStart.params).not.toHaveProperty('reasoningEffort')
   })
 
+  it('applies a reasoning effort changed mid-thread to the next turn', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      runtimeMode: 'sandbox',
+      reasoningEffort: 'medium',
+    }, vi.fn())
+
+    await adapter.setReasoningEffort('thread-1', 'high')
+    await adapter.sendTurn('thread-1', 'think harder')
+
+    const turnStart = writes.map((line) => JSON.parse(line)).find((message) => message.method === 'turn/start')
+    expect(turnStart.params.effort).toBe('high')
+  })
+
   it('routes approvals to codex auto_review in auto mode', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

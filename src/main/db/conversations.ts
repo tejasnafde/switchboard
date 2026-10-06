@@ -8,6 +8,8 @@ import { SqliteConversationForkStore } from './conversation-fork'
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
 import type { AgentProvider } from '@shared/types'
 import { getDb } from './database'
+import type { ReasoningEffort } from '@shared/models'
+import { isReasoningEffort, normalizeProviderOptionMemory, switchProviderOptions } from '@shared/provider-option-memory'
 import { parseFollowSuggestionMode, recordWorkedWorktree, type FollowSuggestionMode } from '@shared/follow-suggestions'
 
 const log = createLogger('db')
@@ -815,19 +817,47 @@ export function setConversationReasoningEffort(id: string, effort: string): void
 }
 
 /**
- * Persist a provider switch as one SQLite statement. Provider, credential
+ * Persist a provider switch as one SQLite write. Provider, credential
  * profile, model pin, and native resume id must never describe different
- * providers after a reload.
+ * providers after a reload. The model and effort in use are remembered under
+ * the old agent type, and the new one gets back what this chat last used on
+ * it (null model = provider default). Returns what was restored.
  */
 export function setConversationProviderSelection(
   id: string,
   agentType: string,
   instanceId: string,
-): void {
-  getDb().prepare(
-    `UPDATE conversations SET agent_type = ?, model = NULL, provider_instance_id = ?,
+): { model: string | null; reasoningEffort: ReasoningEffort | null } {
+  const db = getDb()
+  const rootId = resolveRootThreadId(id)
+  // ponytail: read then write with no transaction - better-sqlite3 is
+  // synchronous on one connection, so nothing can run between the two.
+  const row = db.prepare(
+    'SELECT agent_type, model, reasoning_effort, provider_options_json FROM conversations WHERE id = ?'
+  ).get(rootId) as {
+    agent_type: string | null
+    model: string | null
+    reasoning_effort: string | null
+    provider_options_json: string | null
+  } | undefined
+  let stored: unknown = null
+  if (row?.provider_options_json) {
+    try {
+      stored = JSON.parse(row.provider_options_json)
+    } catch (err) {
+      log.warn(`provider options for ${rootId} are not valid JSON, starting over`, err)
+    }
+  }
+  const next = switchProviderOptions(
+    normalizeProviderOptionMemory(stored),
+    { agentType: row?.agent_type ?? null, model: row?.model ?? null, reasoningEffort: isReasoningEffort(row?.reasoning_effort) ? row.reasoning_effort : null },
+    agentType,
+  )
+  db.prepare(
+    `UPDATE conversations SET agent_type = ?, model = ?, reasoning_effort = ?, provider_options_json = ?, provider_instance_id = ?,
      session_id = NULL, updated_at = ? WHERE id = ?`
-  ).run(agentType, instanceId, Date.now(), resolveRootThreadId(id))
+  ).run(agentType, next.model, next.reasoningEffort, JSON.stringify(next.memory), instanceId, Date.now(), rootId)
+  return { model: next.model, reasoningEffort: next.reasoningEffort }
 }
 
 /**

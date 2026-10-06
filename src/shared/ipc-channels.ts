@@ -380,6 +380,7 @@ export const ProviderChannels = {
   RELOCATE_EXECUTION_ROOT: 'provider:relocate-execution-root',
   SET_RUNTIME_MODE: 'provider:set-runtime-mode',
   SET_MODEL: 'provider:set-model',
+  SET_REASONING_EFFORT: 'provider:set-reasoning-effort',
   LIST_MODELS: 'provider:list-models',
   /** Live catalog of an instance without a chat; `threadId` only routes it to a machine. */
   LIST_CATALOG: 'provider:list-catalog',

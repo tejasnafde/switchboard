@@ -50,7 +50,28 @@ export function changeModel(sessionId: string, agentType: AgentType, m: string):
 
 export function changeReasoningEffort(sessionId: string, effort: ReasoningEffort): void {
   useAgentStore.getState().setReasoningEffort(sessionId, effort)
+  // Codex reads effort per turn, so the live session must hear it too.
+  window.api.provider.setReasoningEffort?.(sessionId, effort).catch((err: unknown) => {
+    log.warn(`setReasoningEffort failed for ${sessionId} - live provider session may not have applied it`, err)
+  })
   window.api.app.setConversationReasoningEffort(sessionId, effort).catch((err: unknown) => {
     log.warn(`setConversationReasoningEffort failed for ${sessionId}`, err)
   })
+}
+
+/**
+ * Write a persisted provider switch through to the store: the new agent type,
+ * then the model and effort the backend restored for it (what this chat last
+ * used on that provider). An older backend returns neither, which leaves the
+ * provider default.
+ */
+export function applyProviderSelection(
+  sessionId: string,
+  agentType: AgentType,
+  restored: { model?: string | null; reasoningEffort?: ReasoningEffort | null },
+): void {
+  const store = useAgentStore.getState()
+  store.setAgentType(sessionId, agentType)
+  if (restored.model) store.setModel(sessionId, restored.model)
+  if (restored.reasoningEffort) store.setReasoningEffort(sessionId, restored.reasoningEffort)
 }

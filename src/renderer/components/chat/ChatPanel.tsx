@@ -15,7 +15,7 @@ import { parseSendTo, resolveSendToTarget } from './send-to-command'
 import { parseLinkCommand, resolveLinkTarget } from './link-command'
 import { reduceProviderEvent, upsertAssistantContent } from './provider-event-reducer'
 import { MessageList } from './MessageList'
-import { changeModel, changeReasoningEffort, changeRuntimeMode } from './chat-session-settings'
+import { applyProviderSelection, changeModel, changeReasoningEffort, changeRuntimeMode } from './chat-session-settings'
 import { useChatSearch } from './useChatSearch'
 import { SlashHelpOverlay } from './SlashHelpOverlay'
 import { ChatInput, type ChatSendResult } from './ChatInput'
@@ -139,7 +139,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const updateStatus = useAgentStore((s) => s.updateStatus)
   const setTitle = useAgentStore((s) => s.setTitle)
   const storeSetRuntimeMode = useAgentStore((s) => s.setRuntimeMode)
-  const storeSetAgentType = useAgentStore((s) => s.setAgentType)
   const storeSetInstanceId = useAgentStore((s) => s.setInstanceId)
   const clearMessages = useAgentStore((s) => s.clearMessages)
   const removeSession = useAgentStore((s) => s.removeSession)
@@ -289,8 +288,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     try {
     // Persist first so a failed write cannot leave the picker and DB on
     // different providers.
+    let restored: Awaited<ReturnType<typeof window.api.app.setConversationProviderSelection>>
     try {
-      await window.api.app.setConversationProviderSelection(sessionId, t, defaultInstanceId(t))
+      restored = await window.api.app.setConversationProviderSelection(sessionId, t, defaultInstanceId(t))
     } catch (err) {
       setAgentType(prevType)
       log.warn('failed to persist provider selection', err)
@@ -338,8 +338,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     // id from one provider almost never round-trips to another (e.g.
     // OpenCode's `nvidia-nim/z-ai/glm-5.1` is meaningless on Codex), and
     // leaving the orphan id in place caused ModelPicker to fall into
-    // its "custom" branch on the new agent.
-    storeSetAgentType(sessionId, t)
+    // its "custom" branch on the new agent. The backend then hands back the
+    // model this chat last used on `t`, if any.
+    applyProviderSelection(sessionId, t, restored)
     providerStartedRef.current.delete(sessionId)
     agentStartedRef.current.delete(sessionId)
     await window.api.provider?.stopSession?.(sessionId).catch((err) => {
@@ -350,7 +351,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       useChatWaitStore.getState().finish(sessionId)
       switchSpan.end()
     }
-  }, [opening, sessionId, storeSetAgentType, agentType, activeSession?.messages?.length, appendMessage])
+  }, [opening, sessionId, agentType, activeSession?.messages?.length, appendMessage])
 
   // Existing sessions rotate atomically on the backend: it owns stop/start,
   // native-context migration, persistence, and rollback. A conversation that

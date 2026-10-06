@@ -618,8 +618,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     agentType: string,
     instanceId: string,
   ) => {
-    setConversationProviderSelection(id, agentType, instanceId)
-    return { ok: true }
+    return { ok: true, ...setConversationProviderSelection(id, agentType, instanceId) }
   })
 
   // Pending cross-provider context handoff. Scheduled by an agent switch
