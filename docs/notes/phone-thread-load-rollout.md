@@ -13,7 +13,8 @@ No transcript, conversation id, package identity, signing, deep link, database
 schema, or existing update channel changes.
 
 Android code changes require a later native APK release through the existing
-Android release workflow. No version or versionCode is bumped in this job.
+Android release workflow. This change bumps the Android version to 0.5.16
+(versionCode 18).
 Expo changes are JS-only and can use the existing compatible OTA lane. Publishing
 and hardware verification are separate release tasks. Test direct WebSocket and
 IAP on hardware, including push taps, background return, clean resume, backend

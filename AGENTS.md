@@ -124,9 +124,10 @@ gaps reload it. Android's ProtocolEventHub updates the cache synchronously
 before publishing replay events, so an absent screen cannot lose the replay.
 Live events render during a refresh and are reconciled when its snapshot lands.
 Never hide a connected thread behind the saved-messages banner for a background
-refresh. A foreground return probes rather than replacing a healthy connection.
-`heartbeat_v1` advertises that both backend hosts answer ping frames; a received
-ping/pong also proves support. A bare `ready` frame is not heartbeat proof.
+refresh. A foreground return after under 10 s probes; a longer absence reconnects.
+On the WebSocket host `ready` and ping answers shipped together (74dcf945), so a
+`ready` frame is heartbeat proof there. The IAP TCP host needs `heartbeat_v1`; without
+it the phone hands the tunnel to connect() instead of probing.
 
 ### Mobile app (`apps/mobile/`)
 

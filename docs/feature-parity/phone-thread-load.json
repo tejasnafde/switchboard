@@ -69,7 +69,7 @@
     "hardware": [],
     "notExercised": [
       "No device or emulator exists here. Native Android and iOS scrolling, background/foreground, push taps and radio stalls need hardware verification.",
-      "Signed APK publication and Expo OTA publication are deferred to their existing release workflows. Native Android requires a new APK; versions are unchanged.",
+      "Signed APK publication and Expo OTA publication are deferred to their existing release workflows. Native Android requires a new APK; its version is bumped to 0.5.16 (versionCode 18).",
       "No live Google IAP tunnel or user's 78 MB transcript was accessed. IAP framing, replay and probes use fixtures; payload measurement is synthetic."
     ]
   }
