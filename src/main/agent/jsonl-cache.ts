@@ -165,7 +165,8 @@ async function statOrNull(filePath: string): Promise<FileState | null> {
   try {
     return await stat(filePath)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('stat failed for session jsonl', { filePath, err })
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') log.info('session jsonl removed after its cache check', { filePath })
+    else log.warn('stat failed for session jsonl', { filePath, err })
     return null
   }
 }

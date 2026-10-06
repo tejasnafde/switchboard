@@ -7,6 +7,7 @@
 import type { ChatMessage } from '@shared/types'
 import type { DisplayBodyEnrichment } from '../db/database'
 import { createMainLogger } from '../logger'
+import { parsePersistedPillsMeta } from '../provider/pill-metadata'
 
 const log = createMainLogger('ipc:enrich-display-body')
 
@@ -33,7 +34,9 @@ export function enrichMessagesWithDisplayBody(
       }
       if (parsed) {
         updates.displayBody = hit.displayBody
-        updates.pillsMeta = parsed
+        // Drop entries a stored row should never hold (bad ids, unknown kinds,
+        // labels over the 120-char limit), as the live submission check does.
+        updates.pillsMeta = parsePersistedPillsMeta(hit.pillsMeta) ?? {}
       }
     }
 

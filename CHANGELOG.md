@@ -6,6 +6,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ### Fixed
 - **A reopened chat can no longer show an old copy of its transcript.** The chat history cache trusted file size and times, which miss a same-size rewrite that keeps the old modification time (the Windows release build caught it). A cache hit now also checks a hash of the file, which costs about 60 ms for an 80 MB transcript and still skips the parse.
+- **Stored pills are checked on reload, and an account edit refreshes the model list.** A user message's stored pill metadata now passes the same checks as a live send (valid ids, known kinds, labels of at most 120 characters) when a chat loads; before, the checker existed but nothing called it. Editing or deleting a provider account now clears the cached model list, so the picker no longer shows models from the old credentials until a restart.
 
 - Fix stale chat-load failure banners after rapid switching, retain and explain blocked Expo sends, and retry transcripts changed during a read once before falling back.
 

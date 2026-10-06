@@ -28,6 +28,7 @@ import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencode/env'
 import { assertSupportedOpencode } from '../provider/adapters/opencode/version'
 import { applyEnvOverlay } from '../provider/env-overlay'
+import { invalidateCatalog } from '../provider/catalog-probe'
 import { resolveInstanceEnv } from '../provider/instance-env'
 import { resolveOauthDirForCreate } from '../provider/oauth-path'
 import { demoUsage } from '../provider/adapters/demo-adapter'
@@ -51,12 +52,14 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
     const saved = upsertProviderInstance(input)
     // An edited oauth dir or env overlay points at a different credential.
     invalidateUsage(saved.id)
+    invalidateCatalog()
     return withResolvedEffectiveHomes([saved])[0]
   })
 
   host.handle(ProviderInstanceChannels.DELETE, (id: string) => {
     log.info(`delete ${id}`)
     invalidateUsage(id)
+    invalidateCatalog()
     return deleteProviderInstance(id)
   })
 
