@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Changed
+- **Clearer loading states.** A chat that is still loading shows shimmering message shapes instead of a small "Loading conversation..." line. Switching provider or account closes the picker at once; the picker button shows a spinner and "Switching to <name>...", and the composer says you can keep typing. Extend on a session link now shows a spinner, then "Extended", and the link text flashes so you see the new count.
+
 ### Fixed
 - **The loading spinner moves, and a new chat keeps the profile you picked.** The "Loading conversation..." spinner was frozen because Tailwind's `animate-spin` had no animation defined (the app uses no default Tailwind theme); a test now fails for any `animate-*` utility without one. A profile chosen in a new chat's composer was dropped when the chat was created, because the picker tried to save it to a conversation that did not exist yet; a draft now keeps the choice until the chat is made.
 

@@ -15,6 +15,7 @@ const log = createRendererLogger('chat:peer-links')
 
 /** Re-render this often while linked, so a link whose window closes reads "time up". */
 const CLOCK_TICK_MS = 30_000
+const EXTENDED_FEEDBACK_MS = 2_000
 
 function usePeerLinks(sessionId: string): PeerLinkView[] {
   const [links, setLinks] = useState<PeerLinkView[]>([])
@@ -38,6 +39,15 @@ export function PeerLinkBanner({ sessionId }: { sessionId: string }) {
   const [now, setNow] = useState(() => Date.now())
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Extend changes only a number in the text, so it says it worked: a spinner
+  // while the call runs, then "Extended" and an accent flash on the text.
+  const [extending, setExtending] = useState<string | null>(null)
+  const [extended, setExtended] = useState<string | null>(null)
+  useEffect(() => {
+    if (!extended) return
+    const timer = setTimeout(() => setExtended(null), EXTENDED_FEEDBACK_MS)
+    return () => clearTimeout(timer)
+  }, [extended])
   const hasLinks = links.length > 0
 
   useEffect(() => {
@@ -60,9 +70,19 @@ export function PeerLinkBanner({ sessionId }: { sessionId: string }) {
     if (!peerThreadId) setOpen(false)
     act('unlinking sessions', () => window.api.provider.unlinkPeer({ threadId: sessionId, ...(peerThreadId ? { peerThreadId } : {}) }))
   }
-  const extend = (peerThreadId: string) =>
-    act('extending a session link', () => window.api.provider.extendPeerLink({ threadId: sessionId, peerThreadId }))
-  const extendLabel = `Extend (+${PEER_LINK_EXTEND_MESSAGES})`
+  const extend = (peerThreadId: string) => {
+    setExtending(peerThreadId)
+    act('extending a session link', () => window.api.provider.extendPeerLink({ threadId: sessionId, peerThreadId })
+      .then(() => setExtended(peerThreadId))
+      .finally(() => setExtending((current) => (current === peerThreadId ? null : current))))
+  }
+  const extendButton = (peerThreadId: string, className?: string) => (
+    <Button variant="ghost" size="sm" className={className} disabled={extending === peerThreadId} onClick={() => extend(peerThreadId)}>
+      {extending === peerThreadId
+        ? <><span aria-hidden className="mr-1 inline-block size-3 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none" />Extending</>
+        : extended === peerThreadId ? 'Extended' : `Extend (+${PEER_LINK_EXTEND_MESSAGES})`}
+    </Button>
+  )
   const only = links.length === 1 ? links[0] : null
 
   return (
@@ -72,13 +92,13 @@ export function PeerLinkBanner({ sessionId }: { sessionId: string }) {
       className="flex min-h-[32px] shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-[3px] text-[11px] text-[var(--text-muted)]"
     >
       <span aria-hidden="true">⇄</span>
-      <span className="min-w-0 truncate" title={links.map((link) => peerLinkLabel(link, now)).join(', ')}>
+      <span className={`min-w-0 truncate transition-colors duration-500 ${extended ? 'text-[var(--accent)]' : ''}`} title={links.map((link) => peerLinkLabel(link, now)).join(', ')}>
         {peerLinksBannerText(links, now)}
       </span>
       {error && <span role="alert" className="min-w-0 truncate text-[var(--error)]" title={error}>{error}</span>}
       {only ? (
         <span className="ml-auto flex shrink-0 items-center">
-          <Button variant="ghost" size="sm" className="text-[var(--accent)]" onClick={() => extend(only.peerThreadId)}>{extendLabel}</Button>
+          {extendButton(only.peerThreadId, 'text-[var(--accent)]')}
           <Button variant="ghost" size="sm" className="text-[var(--accent)]" onClick={() => unlink(only.peerThreadId)}>Unlink</Button>
         </span>
       ) : (
@@ -92,7 +112,7 @@ export function PeerLinkBanner({ sessionId }: { sessionId: string }) {
               {links.map((link) => (
                 <div key={link.peerThreadId} className="flex items-center gap-1 rounded-[6px] px-2 py-[2px]">
                   <span className="min-w-0 flex-1 truncate" title={peerLinkLabel(link, now)}>{peerLinkLabel(link, now)}</span>
-                  <Button variant="ghost" size="sm" onClick={() => extend(link.peerThreadId)}>{extendLabel}</Button>
+                  {extendButton(link.peerThreadId)}
                   <Button variant="ghost" size="sm" onClick={() => unlink(link.peerThreadId)}>Unlink</Button>
                 </div>
               ))}
