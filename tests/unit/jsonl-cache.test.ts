@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mkdtemp, writeFile, appendFile, rm, utimes, rename, copyFile } from 'node:fs/promises'
+import { mkdtemp, writeFile, appendFile, rm, utimes, rename, copyFile, stat } from 'node:fs/promises'
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, stat: vi.fn(actual.stat) }
+})
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { JsonlParser } from '../../src/main/agent/jsonl-parser'
@@ -72,6 +76,41 @@ it.each(['rewrite', 'replace'])('invalidates a same-size %s with the original mt
     if (change === 'replace') await rename(replacement, path)
     expect((await loadJsonlCached(path, 'claude-code'))?.[0].content).toBe('two')
   } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+it('re-reads a same-size rewrite even when every stat field still matches', async () => {
+  // Windows can report the old state after an in-place rewrite that restores mtime.
+  const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
+  const realStat = vi.mocked(stat).getMockImplementation()!
+  try {
+    const path = join(dir, 'session.jsonl')
+    await writeFile(path, line('one', '2026-01-01T00:00:00Z'))
+    const before = await realStat(path)
+    await loadJsonlCached(path, 'claude-code')
+    await writeFile(path, line('two', '2026-01-01T00:00:00Z'))
+    vi.mocked(stat).mockImplementation((async () => before) as unknown as typeof stat)
+    expect((await loadJsonlCached(path, 'claude-code'))?.[0].content).toBe('two')
+  } finally {
+    vi.mocked(stat).mockImplementation(realStat)
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+it('returns null instead of rejecting when the file vanishes after a cache hit is hashed', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'sb-jsonl-cache-'))
+  const realStat = vi.mocked(stat).getMockImplementation()!
+  try {
+    const path = join(dir, 'session.jsonl')
+    await writeFile(path, line('one', '2026-01-01T00:00:00Z'))
+    await loadJsonlCached(path, 'claude-code')
+    vi.mocked(stat)
+      .mockImplementationOnce(realStat)
+      .mockImplementationOnce((async () => { throw Object.assign(new Error('gone'), { code: 'ENOENT' }) }) as unknown as typeof stat)
+    await expect(loadJsonlCached(path, 'claude-code')).resolves.toBeNull()
+  } finally {
+    vi.mocked(stat).mockImplementation(realStat)
+    await rm(dir, { recursive: true, force: true })
+  }
 })
 
 it('yields to the event loop while parsing a large cold history', async () => {

@@ -3,7 +3,8 @@
  *
  * Session JSONLs are append-only (Claude/Codex rotate to NEW files instead
  * of rewriting), but replacements and rewrites are possible. Size, mtime,
- * ctime, device and inode identify a snapshot; a changing read is never cached.
+ * ctime, device and inode find a candidate, and a content hash confirms it
+ * (metadata alone misses a same-size rewrite); a changing read is never cached.
  * Every session open used to
  * re-read and re-parse the full transcript from scratch - tens of MB for
  * long compaction-rotated threads - on every sidebar click.
@@ -16,6 +17,8 @@
 import type { ChatLoadTiming } from '@shared/perf-chat'
 import { stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { StringDecoder } from 'node:string_decoder'
 import type { ChatMessage } from '@shared/types'
 import { createMainLogger } from '../logger'
 import { retainedJsonBytes } from './jsonl-memory'
@@ -33,6 +36,7 @@ interface CacheEntry {
   ctimeMs: number
   ino: number
   dev: number
+  digest: string
   messages: ChatMessage[]
   retainedBytes: number
 }
@@ -84,26 +88,39 @@ async function loadJsonlSnapshot(
 
   const key = `${source}\0${filePath}`
   const hit = cache.get(key)
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size && hit.ctimeMs === st.ctimeMs && hit.ino === st.ino && hit.dev === st.dev) {
-    // LRU bump: re-insert to move to the back of the eviction order.
-    cache.delete(key)
-    cache.set(key, hit)
-    if (timing) timing.cacheHits += 1
-    return hit.messages
+  // Metadata alone misses a same-size rewrite that keeps the old mtime (seen
+  // on Windows), so a hit also re-hashes the bytes. That skips the parse,
+  // which is most of the cost.
+  if (hit && sameState(hit, st) && await fileDigest(filePath) === hit.digest) {
+    const now = await statOrNull(filePath)
+    if (!now) return null
+    if (sameState(hit, now)) {
+      // LRU bump: re-insert to move to the back of the eviction order.
+      cache.delete(key)
+      cache.set(key, hit)
+      if (timing) timing.cacheHits += 1
+      return hit.messages
+    }
   }
 
   let messages: ChatMessage[]
+  let digest: string
   try {
     const readStart = performance.now()
     let parseMs = 0
     messages = []
     const parser = new JsonlParser((msg) => messages.push(msg), source)
-    for await (const chunk of createReadStream(filePath, { encoding: 'utf8', highWaterMark: 64 * 1024 })) {
+    const hash = createHash('sha256')
+    const decoder = new StringDecoder('utf8')
+    for await (const chunk of createReadStream(filePath, { highWaterMark: 64 * 1024 })) {
+      hash.update(chunk as Buffer)
       const parseStart = performance.now()
-      parser.feed(chunk as string)
+      parser.feed(decoder.write(chunk as Buffer))
       parseMs += performance.now() - parseStart
     }
+    digest = hash.digest('hex')
     const flushStart = performance.now()
+    parser.feed(decoder.end())
     parser.flush()
     parseMs += performance.now() - flushStart
     if (timing) {
@@ -113,7 +130,7 @@ async function loadJsonlSnapshot(
       timing.diskLines += parser.lineCount
     }
     const after = await stat(filePath)
-    if (st.size !== after.size || st.mtimeMs !== after.mtimeMs || st.ctimeMs !== after.ctimeMs || st.ino !== after.ino || st.dev !== after.dev) {
+    if (!sameState(st, after)) {
       log.warn('session jsonl changed during read', { filePath, retry })
       return retry ? loadJsonlSnapshot(filePath, source, timing, false) : null
     }
@@ -131,10 +148,38 @@ async function loadJsonlSnapshot(
     totalBytes -= prev.retainedBytes
   }
   const retainedBytes = retainedJsonBytes(messages)
-  cache.set(key, { retainedBytes, mtimeMs: st.mtimeMs, size: st.size, ctimeMs: st.ctimeMs, ino: st.ino, dev: st.dev, messages })
+  cache.set(key, { retainedBytes, mtimeMs: st.mtimeMs, size: st.size, ctimeMs: st.ctimeMs, ino: st.ino, dev: st.dev, digest, messages })
   totalBytes += retainedBytes
   evict()
   return messages
+}
+
+type FileState = Pick<CacheEntry, 'mtimeMs' | 'size' | 'ctimeMs' | 'ino' | 'dev'>
+
+function sameState(a: FileState, b: FileState): boolean {
+  return a.mtimeMs === b.mtimeMs && a.size === b.size && a.ctimeMs === b.ctimeMs && a.ino === b.ino && a.dev === b.dev
+}
+
+/** A file that vanished after its hash is a miss, not a rejected load. */
+async function statOrNull(filePath: string): Promise<FileState | null> {
+  try {
+    return await stat(filePath)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') log.info('session jsonl removed after its cache check', { filePath })
+    else log.warn('stat failed for session jsonl', { filePath, err })
+    return null
+  }
+}
+
+async function fileDigest(filePath: string): Promise<string | null> {
+  const hash = createHash('sha256')
+  try {
+    for await (const chunk of createReadStream(filePath, { highWaterMark: 64 * 1024 })) hash.update(chunk as Buffer)
+  } catch (err) {
+    log.warn('session jsonl hash failed', { filePath, err })
+    return null
+  }
+  return hash.digest('hex')
 }
 
 /** Test seam. */
