@@ -23,13 +23,13 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          # 22 (not 20) — `@electron/rebuild@4` and `node-abi@4` both
+          # 22 (not 20) - `@electron/rebuild@4` and `node-abi@4` both
           # require >=22.12.0. Node 20 emits EBADENGINE warnings and
           # the CDN binary fetch flakes more often on the older runtime.
           node-version: '22'
           cache: 'npm'
 
-      # `npm ci` (NOT `npm install`) — deterministic, faster, and it
+      # `npm ci` (NOT `npm install`) - deterministic, faster, and it
       # honors optionalDependencies for the host platform automatically.
       # Do NOT pass `--no-optional`; that's what makes the per-platform
       # claude-agent-sdk binary install correctly.

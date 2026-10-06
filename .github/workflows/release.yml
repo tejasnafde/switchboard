@@ -5,7 +5,7 @@
 # hidden draft first, both builders upload into it, and verification publishes
 # the release only after every installer and update manifest is present.
 #
-# We do NOT run on every push — release-only avoids burning CI minutes
+# We do NOT run on every push - release-only avoids burning CI minutes
 # on every commit while still catching regressions when a tag goes out.
 # A separate `ci.yml` (not in this commit) covers per-PR typecheck/test.
 #
