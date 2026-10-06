@@ -5,7 +5,7 @@
 # hidden draft first, both builders upload into it, and verification publishes
 # the release only after every installer and update manifest is present.
 #
-# We do NOT run on every push — release-only avoids burning CI minutes
+# We do NOT run on every push - release-only avoids burning CI minutes
 # on every commit while still catching regressions when a tag goes out.
 # A separate `ci.yml` (not in this commit) covers per-PR typecheck/test.
 #
@@ -42,8 +42,28 @@ jobs:
   # whose CI never ran, so the ordering has to be a property of the pipeline
   # rather than of whoever cut the release. Costs a few minutes and re-covers
   # the ubuntu leg that the build matrix (macos + windows) does not.
+  ci_status:
+    name: Main CI on this commit
+    runs-on: ubuntu-latest
+    outputs:
+      green: ${{ steps.check.outputs.green }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          n=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&status=success&per_page=1" --jq '.total_count')
+          echo "green=$([ "$n" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "successful ci.yml runs on $SHA: $n"
+
   gate:
     name: Gate
+    needs: ci_status
+    # Main CI already passed on this exact commit: running it again proves nothing.
+    if: needs.ci_status.outputs.green != 'true'
     uses: ./.github/workflows/ci.yml
 
   # electron-builder starts several uploads concurrently inside each platform
@@ -53,7 +73,8 @@ jobs:
   # update feeds invisible to installed clients.
   prepare_release:
     name: Prepare draft release
-    needs: gate
+    needs: [ci_status, gate]
+    if: always() && needs.ci_status.result == 'success' && (needs.gate.result == 'success' || needs.gate.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - name: Create one hidden release target
@@ -74,208 +95,64 @@ jobs:
           Windows: if SmartScreen warns, choose More info, then Run anyway."
           fi
 
-  build:
-    name: Build & publish (${{ matrix.os }})
+  build_mac:
     needs: prepare_release
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # macos-14 = Apple Silicon runner. Required so npm installs the
-        # `claude-agent-sdk-darwin-arm64` optional dependency natively;
-        # cross-installing for arm64 from an Intel runner is unreliable
-        # and the SDK won't load in the packaged app.
-        # windows-2022 (not windows-latest): the windows-latest image moved to
-        # windows-2025, which no longer ships the VC++ build toolchain node-gyp
-        # needs, so native rebuilds (node-pty) fail with "Could not find any
-        # Visual Studio installation to use". 2022 has the full toolchain.
-        os: [macos-14, windows-2022]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    if: always() && needs.prepare_release.result == 'success'
+    uses: ./.github/workflows/release-build.yml
+    with:
+      os: macos-14
+    secrets: inherit
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          # 22 (not 20) — `@electron/rebuild@4` and `node-abi@4` both
-          # require >=22.12.0. Node 20 emits EBADENGINE warnings and
-          # the CDN binary fetch flakes more often on the older runtime.
-          node-version: '22'
-          cache: 'npm'
-
-      # `npm ci` (NOT `npm install`) — deterministic, faster, and it
-      # honors optionalDependencies for the host platform automatically.
-      # Do NOT pass `--no-optional`; that's what makes the per-platform
-      # claude-agent-sdk binary install correctly.
-      #
-      # Retry on transient failures: the Electron download CDN (and the
-      # Claude SDK's per-platform tarball) occasionally 502s on the
-      # windows-latest runner. Three attempts with a short backoff is
-      # enough to ride out the typical hiccup without masking a real
-      # dependency error.
-      - name: Install dependencies
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 10
-          max_attempts: 3
-          retry_wait_seconds: 15
-          command: npm ci
-
-      # `npm run build` runs the test gate first, and the root vitest suite
-      # imports pure logic out of apps/mobile, whose tsconfig extends
-      # `expo/tsconfig.base`. Same reason ci.yml installs it - the build cannot
-      # transform those files without it.
-      - name: Install mobile dependencies
-        run: npm ci --prefix apps/mobile
-
-      - name: Build renderer + main
-        run: npm run build
-        env:
-          SB_SMOKE_CRASH_DIR: ${{ runner.temp }}/smoke-dumps
-
-      - name: Upload smoke-test minidumps
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-dumps-${{ matrix.os }}
-          path: ${{ runner.temp }}/smoke-dumps
-          if-no-files-found: ignore
-
-      - name: Select macOS signing mode
-        if: runner.os == 'macOS'
-        id: signing_mac
-        run: node scripts/signing-mode.mjs mac
-        env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Select Windows signing mode
-        if: runner.os == 'Windows'
-        id: signing_windows
-        run: node scripts/signing-mode.mjs windows
-        env:
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-
-      # `--publish always` makes electron-builder upload artifacts to the
-      # prepared GitHub draft matching the current tag. The matrix jobs can
-      # upload to that stable target concurrently with name-based dedup.
-      # GH_TOKEN is needed to write to the Release.
-      # Tag push publishes to the Release; a manual dispatch only builds
-      # (validation), so it never uploads assets to any Release.
-      - name: Build & publish
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "$SB_SIGNING_MODE" = "signed" ]; then
-            npx electron-builder --config electron-builder.signed.yml --publish "$PUBLISH_MODE"
-          else
-            npx electron-builder --publish "$PUBLISH_MODE"
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PUBLISH_MODE: ${{ github.event_name == 'workflow_dispatch' && 'never' || 'always' }}
-          SB_SIGNING_MODE: ${{ steps.signing_mac.outputs.mode || steps.signing_windows.outputs.mode }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ (steps.signing_mac.outputs.mode == 'signed' || steps.signing_windows.outputs.mode == 'signed') && 'true' || 'false' }}
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+  # windows-2022, not windows-latest: windows-2025 ships no VC++ build toolchain,
+  # so node-gyp cannot rebuild node-pty there.
+  build_win:
+    needs: prepare_release
+    if: always() && needs.prepare_release.result == 'success'
+    uses: ./.github/workflows/release-build.yml
+    with:
+      os: windows-2022
+    secrets: inherit
 
   # A partial Release is the worst outcome this pipeline can produce: the
   # install artifacts are useless without their `latest*.yml`, and a missing
-  # one makes every client's update check quietly report "up to date". That
-  # used to be a "verify the Release page" bullet in docs/releasing.md, which
-  # is a check nobody performs on a green build. It fails the run instead.
+  # one makes every client's update check quietly report "up to date". So each
+  # platform's assets and manifest are asserted before clients can see them.
+  # Asset names match what electron-builder produces (the Windows installer
+  # name is hyphenated).
   #
-  # Asset names are asserted against what electron-builder actually produces,
-  # not against the doc - the doc said `Switchboard Setup X.Y.Z.exe` while the
-  # real name is hyphenated, so a check copied from the prose would have failed
-  # a healthy release.
-  verify:
-    name: Verify published assets
-    needs: build
+  # macOS publishes the release as soon as its own assets check out. Windows
+  # uploads into the same release when its slower build finishes, and its
+  # manifest is checked then; until latest.yml lands, Windows clients simply
+  # see no update yet.
+  publish:
+    name: Verify macOS assets and publish
+    needs: build_mac
     # A manual dispatch builds without publishing, so there is nothing to check.
-    if: github.event_name == 'push'
+    if: always() && github.event_name == 'push' && needs.build_mac.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Assert every install + auto-update asset is present
+      - uses: actions/checkout@v4
+      - name: Assert the macOS assets and manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          V="${TAG#v}"
-          REQUIRED="Switchboard-${V}-arm64-mac.zip
-          Switchboard-${V}-arm64-mac.zip.blockmap
-          latest-mac.yml
-          Switchboard-Setup-${V}.exe
-          Switchboard-${V}-win.zip
-          latest.yml"
-
-          # Both build jobs have finished by now, but the Releases API reads
-          # through a cache, so retry briefly rather than fail a good release.
-          missing=""
-          for attempt in 1 2 3; do
-            names="$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')"
-            missing=""
-            while read -r want; do
-              want="$(echo "$want" | xargs)"
-              [ -z "$want" ] && continue
-              grep -Fxq "$want" <<< "$names" || missing="$missing $want"
-            done <<< "$REQUIRED"
-            [ -z "$missing" ] && break
-            echo "attempt $attempt: not yet present:$missing"
-            sleep 15
-          done
-
-          if [ -n "$missing" ]; then
-            echo "::error::Release $TAG is missing:$missing"
-            echo "Clients will not see this version. Re-run the failed matrix job."
-            exit 1
-          fi
-          echo "All required assets present:"
-          echo "$names"
-
-      - name: Assert the update manifests name this version
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          V="${TAG#v}"
-          tmp="$(mktemp -d)"
-          gh release download "$TAG" --repo "$REPO" --dir "$tmp" --pattern 'latest*.yml' --clobber
-          # A manifest that names the wrong version is indistinguishable from
-          # a broken release to a client: the version compare finds nothing
-          # newer and the update check reports success.
-          for y in "$tmp"/latest*.yml; do
-            if ! grep -q "^version: ${V}$" "$y"; then
-              echo "::error::$(basename "$y") does not declare version ${V}"
-              cat "$y"
-              exit 1
-            fi
-            if [[ "$(basename "$y")" == "latest-mac.yml" ]] && \
-               ! grep -q "^minimumSystemVersion: 21.0.0$" "$y"; then
-              echo "::error::latest-mac.yml does not protect macOS 11 clients from the Electron 43 runtime floor"
-              cat "$y"
-              exit 1
-            fi
-            echo "$(basename "$y") declares version ${V}"
-          done
-
+        run: bash scripts/verify-release-assets.sh "${{ github.ref_name }}" "${{ github.repository }}" mac
       - name: Publish the verified release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: gh release edit "$TAG" --repo "$REPO" --draft=false --latest
+
+  verify_windows:
+    name: Verify Windows assets
+    needs: [build_win, publish]
+    if: always() && github.event_name == 'push' && needs.build_win.result == 'success' && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert the Windows assets and manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/verify-release-assets.sh "${{ github.ref_name }}" "${{ github.repository }}" win

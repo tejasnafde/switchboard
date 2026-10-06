@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Changed
+- **Faster desktop releases.** A release is a tag on `main`; the build takes its version from the tag, so there is no version-bump pull request (which also spent CodeRabbit's hourly review). The release skips its test Gate when main CI already passed on that commit, does not run the test suite a third time inside the build, and publishes as soon as the macOS build is verified; Windows follows on its own. About 10 to 12 minutes from merge to a published release instead of about 30. `docs/releasing.md` describes the new flow and adds a note on pull request sizing.
+
 ### Fixed
 - **The loading spinner moves, and a new chat keeps the profile you picked.** The "Loading conversation..." spinner was frozen because Tailwind's `animate-spin` had no animation defined (the app uses no default Tailwind theme); a test now fails for any `animate-*` utility without one. A profile chosen in a new chat's composer was dropped when the chat was created, because the picker tried to save it to a conversation that did not exist yet; a draft now keeps the choice until the chat is made.
 

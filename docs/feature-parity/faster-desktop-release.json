@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "faster-desktop-release",
+  "summary": "A desktop release is now a tag on main with no version-bump pull request: the build sets the version from the tag, the release Gate is skipped when main CI already passed on the tagged commit, the release build runs build:ci (build plus smoke test) instead of repeating the test suite, and the macOS build publishes the release as soon as its assets verify while Windows uploads and verifies on its own.",
+  "surfaces": {
+    "desktop": { "status": "not_applicable", "reason": "No app code changes; the packaged app is built from the same sources with the same version." },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The Expo OTA lane is unchanged." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The native Android APK lane (mobile-release.yml) is unchanged." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "No API change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Nothing stored changes." },
+    "updateRelease": { "status": "implemented", "evidence": [".github/workflows/release.yml", ".github/workflows/release-build.yml", "scripts/verify-release-assets.sh", "docs/releasing.md"] }
+  },
+  "verification": {
+    "automated": ["tests/unit/release-upgrade-gate.test.ts and tests/unit/signing-mode.test.ts assert the new job order, the Gate skip, the version-from-tag step and the per-platform verification; both workflows parse as YAML."],
+    "hardware": [],
+    "notExercised": ["The first real tag on this pipeline is the end-to-end test; until it runs, the old flow (bump PR) remains documented in git history."]
+  }
+}
