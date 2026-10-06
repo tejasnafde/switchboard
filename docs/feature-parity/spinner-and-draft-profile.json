@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "spinner-and-draft-profile",
+  "summary": "The desktop loading spinner animates again (Tailwind's animate-spin had no theme entry because the app uses no default theme), and a profile picked in a new chat's composer is kept for the chat it creates instead of failing to save to a conversation row that does not exist yet.",
+  "surfaces": {
+    "desktop": { "status": "implemented", "evidence": ["src/renderer/styles/tailwind.css", "src/renderer/components/chat/ChatPanel.tsx", "tests/unit/tailwind-sources.test.ts"] },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The phone uses native activity indicators and creates chats through NewSessionScreen, which passes its own profile." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The phone uses native progress indicators and its own new-session flow." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "No API change; a draft now skips the switch call instead of failing it." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Nothing stored changes." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release." }
+  },
+  "verification": {
+    "automated": ["tests/unit/tailwind-sources.test.ts fails without the theme entry; the built CSS contains .animate-spin { animation: 1s linear infinite sb-spin }."],
+    "hardware": [],
+    "notExercised": ["Not clicked through in the running app."]
+  }
+}

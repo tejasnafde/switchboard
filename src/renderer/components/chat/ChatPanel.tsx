@@ -359,6 +359,12 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     if (opening || !sessionId || !nextInstanceId || useChatWaitStore.getState().waits[sessionId]?.pending) return
     const prevInstanceId = instanceId
     if (prevInstanceId === nextInstanceId) return
+    // A draft has no conversation row and no session yet: the materializer
+    // reads the choice from the store when it creates the chat.
+    if (isDraftSessionId(sessionId)) {
+      storeSetInstanceId(sessionId, nextInstanceId)
+      return
+    }
     const account = useProviderInstanceStore.getState().instances.find((i) => i.id === nextInstanceId)?.displayName ?? nextInstanceId
     useChatWaitStore.getState().begin(sessionId, `Switching to ${account}...`)
     const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'profile' })
