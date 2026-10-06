@@ -1445,7 +1445,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           {/* Messages */}
           {/* A pending switch shows in the picker button and the composer; only a failure needs a row here. */}
           {wait?.error && <LoadingStatus label={wait.label} error />}
-          {wait?.pending && <span role="status" aria-live="polite" className="sr-only">{wait.label}</span>}
+          {/* Always mounted, only its text changes: a live region inserted already filled is often not announced. */}
+          <span role="status" aria-live="polite" className="sr-only">{wait?.pending ? wait.label : ''}</span>
           {opening ? <ChatSkeleton label="Loading conversation..." /> : <MessageList
             messages={messages}
             sessionId={sessionId}

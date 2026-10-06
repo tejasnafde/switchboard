@@ -5,7 +5,7 @@
  * popover with Extend and Unlink per link plus Unlink all. The backend holds
  * the links; this follows its broadcast.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { peerLinkLabel, peerLinksBannerText, PEER_LINK_EXTEND_MESSAGES, type PeerLinkView } from '@shared/peer-links'
 import { createRendererLogger } from '../../logger'
 import { Button } from '../ui/button'
@@ -16,6 +16,14 @@ const log = createRendererLogger('chat:peer-links')
 /** Re-render this often while linked, so a link whose window closes reads "time up". */
 const CLOCK_TICK_MS = 30_000
 const EXTENDED_FEEDBACK_MS = 2_000
+
+function withItem(set: ReadonlySet<string>, id: string, present: boolean): ReadonlySet<string> {
+  if (set.has(id) === present) return set
+  const next = new Set(set)
+  if (present) next.add(id)
+  else next.delete(id)
+  return next
+}
 
 function usePeerLinks(sessionId: string): PeerLinkView[] {
   const [links, setLinks] = useState<PeerLinkView[]>([])
@@ -41,13 +49,11 @@ export function PeerLinkBanner({ sessionId }: { sessionId: string }) {
   const [error, setError] = useState<string | null>(null)
   // Extend changes only a number in the text, so it says it worked: a spinner
   // while the call runs, then "Extended" and an accent flash on the text.
-  const [extending, setExtending] = useState<string | null>(null)
-  const [extended, setExtended] = useState<string | null>(null)
-  useEffect(() => {
-    if (!extended) return
-    const timer = setTimeout(() => setExtended(null), EXTENDED_FEEDBACK_MS)
-    return () => clearTimeout(timer)
-  }, [extended])
+  // Per link, so extending one link never resets another's state.
+  const [extending, setExtending] = useState<ReadonlySet<string>>(() => new Set())
+  const [extended, setExtended] = useState<ReadonlySet<string>>(() => new Set())
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  useEffect(() => () => timers.current.forEach(clearTimeout), [])
   const hasLinks = links.length > 0
 
   useEffect(() => {
@@ -71,16 +77,23 @@ export function PeerLinkBanner({ sessionId }: { sessionId: string }) {
     act('unlinking sessions', () => window.api.provider.unlinkPeer({ threadId: sessionId, ...(peerThreadId ? { peerThreadId } : {}) }))
   }
   const extend = (peerThreadId: string) => {
-    setExtending(peerThreadId)
+    setExtending((set) => withItem(set, peerThreadId, true))
     act('extending a session link', () => window.api.provider.extendPeerLink({ threadId: sessionId, peerThreadId })
-      .then(() => setExtended(peerThreadId))
-      .finally(() => setExtending((current) => (current === peerThreadId ? null : current))))
+      .then(() => {
+        setExtended((set) => withItem(set, peerThreadId, true))
+        clearTimeout(timers.current.get(peerThreadId))
+        timers.current.set(peerThreadId, setTimeout(() => {
+          timers.current.delete(peerThreadId)
+          setExtended((set) => withItem(set, peerThreadId, false))
+        }, EXTENDED_FEEDBACK_MS))
+      })
+      .finally(() => setExtending((set) => withItem(set, peerThreadId, false))))
   }
   const extendButton = (peerThreadId: string, className?: string) => (
-    <Button variant="ghost" size="sm" className={className} disabled={extending === peerThreadId} onClick={() => extend(peerThreadId)}>
-      {extending === peerThreadId
+    <Button variant="ghost" size="sm" className={className} disabled={extending.has(peerThreadId)} onClick={() => extend(peerThreadId)}>
+      {extending.has(peerThreadId)
         ? <><span aria-hidden className="mr-1 inline-block size-3 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none" />Extending</>
-        : extended === peerThreadId ? 'Extended' : `Extend (+${PEER_LINK_EXTEND_MESSAGES})`}
+        : extended.has(peerThreadId) ? 'Extended' : `Extend (+${PEER_LINK_EXTEND_MESSAGES})`}
     </Button>
   )
   const only = links.length === 1 ? links[0] : null
@@ -92,7 +105,7 @@ export function PeerLinkBanner({ sessionId }: { sessionId: string }) {
       className="flex min-h-[32px] shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-[3px] text-[11px] text-[var(--text-muted)]"
     >
       <span aria-hidden="true">⇄</span>
-      <span className={`min-w-0 truncate transition-colors duration-500 ${extended ? 'text-[var(--accent)]' : ''}`} title={links.map((link) => peerLinkLabel(link, now)).join(', ')}>
+      <span className={`min-w-0 truncate transition-colors duration-500 motion-reduce:transition-none ${extended.size > 0 ? 'text-[var(--accent)]' : ''}`} title={links.map((link) => peerLinkLabel(link, now)).join(', ')}>
         {peerLinksBannerText(links, now)}
       </span>
       {error && <span role="alert" className="min-w-0 truncate text-[var(--error)]" title={error}>{error}</span>}
