@@ -61,3 +61,14 @@ describe('tailwind @source list', () => {
     expect(missing).toEqual([])
   })
 })
+
+describe('animation utilities', () => {
+  it('defines a theme animation for every animate-* utility the renderer uses', () => {
+    // With no default theme, animate-spin compiles to nothing unless --animate-spin exists,
+    // which left the loading spinner frozen.
+    const used = new Set(walk(renderer).flatMap((file) => [...readFileSync(file, 'utf8').matchAll(/\banimate-([a-z][a-z-]*)\b/g)].map((m) => m[1])))
+    used.delete('none')
+    const missing = [...used].filter((name) => !tailwindCss.includes(`--animate-${name}:`))
+    expect(missing).toEqual([])
+  })
+})
