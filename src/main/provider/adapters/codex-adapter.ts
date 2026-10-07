@@ -216,6 +216,8 @@ interface McpElicitationField {
 
 interface ActiveSession extends VisibleHistoryState {
   session: ProviderSession
+  /** `thread/resume` succeeded: the agent holds this chat's earlier thread. */
+  resumed?: boolean
   child: ChildProcessWithoutNullStreams | null
   onEvent: (event: RuntimeEvent) => void
   nextRpcId: number
@@ -787,6 +789,7 @@ export class CodexAdapter implements ProviderAdapter {
           const result = resumed as { thread?: { id?: string } } | null
           const resumedId = result?.thread?.id ?? resumeThreadId
           active.threadId = resumedId
+          active.resumed = true
           session.sessionId = resumedId
           onEvent({ type: 'session', threadId: opts.threadId, sessionId: resumedId })
         } catch (err) {
@@ -1286,7 +1289,7 @@ export class CodexAdapter implements ProviderAdapter {
   }
 
   resumedNativeSession(threadId: string): boolean {
-    return Boolean(this.sessions.get(threadId)?.threadId)
+    return this.sessions.get(threadId)?.resumed === true
   }
 
   async setRuntimeMode(threadId: string, mode: import('../types').RuntimeMode): Promise<void> {

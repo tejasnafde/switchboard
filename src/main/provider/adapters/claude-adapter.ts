@@ -675,6 +675,8 @@ interface ActiveSession {
   resumeAlternateIoErrorStreak: number
   /** The visible conversation, for a session whose resume failed (see SessionStartOpts). */
   portableHistory?: () => Promise<string | null>
+  /** Started on this chat's earlier native session; false once a resume falls back to a fresh one. */
+  resumedNative: boolean
 }
 
 /** Put `preamble` in front of the text of a user message the CLI has not read yet. */
@@ -711,7 +713,7 @@ export class ClaudeAdapter implements ProviderAdapter {
   }
 
   resumedNativeSession(threadId: string): boolean {
-    return Boolean(this.sessions.get(threadId)?.session.sessionId)
+    return this.sessions.get(threadId)?.resumedNative === true
   }
 
   /** The resume failed and the CLI starts fresh: `message` carries the visible conversation. */
@@ -803,6 +805,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       stderrTail,
       resumeAlternateIoErrorStreak: 0,
       portableHistory: opts.portableHistory,
+      resumedNative: Boolean(resumeId),
     }
 
     this.sessions.set(opts.threadId, active)
@@ -1112,6 +1115,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         // io-error is transient (ENOSPC, TCC); clearing the id is permanent.
         if (placed.reason === 'source-missing') {
           active.session.sessionId = undefined
+          active.resumedNative = false
           await this.handOverVisibleHistory(threadId, active, active.prompt.pendingMessages()[0])
         }
       }
@@ -1225,6 +1229,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         // that never had a Claude transcript) - retry without --resume.
         log.warn(`retrying without --resume for ${threadId}`)
         active.session.sessionId = undefined
+        active.resumedNative = false
         const retryOptions: Record<string, unknown> = { ...queryOptions }
         delete retryOptions.resume
 
