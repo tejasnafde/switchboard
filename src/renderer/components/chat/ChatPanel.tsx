@@ -153,7 +153,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const [slashHelpOpen, setSlashHelpOpen] = useState(false)
   // The fork the merge-back dialog was opened for; a session change closes it.
   const [mergeBackFor, setMergeBackFor] = useState<string | null>(null)
-  useEffect(() => { setMergeBackFor(null) }, [sessionId])
 
 
   const messages = opening ? [] : activeSession?.messages ?? []
@@ -184,6 +183,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   }, [messages])
   const hasSession = activeSession !== undefined || opening !== undefined
   const sessionId = opening?.id ?? activeSession?.id ?? null
+  useEffect(() => { setMergeBackFor(null) }, [sessionId])
   const wait = useChatWaitStore((s) => sessionId ? s.waits[sessionId] : undefined)
   const followUpDefault = useFollowUpDefault(sessionId)
   const projectPath = opening?.projectPath ?? activeSession?.projectPath
