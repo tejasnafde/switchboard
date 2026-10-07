@@ -51,14 +51,20 @@ export function linkHeaderState(
 }
 
 /**
- * One line for a phone's link list: "#612 owner/name · merged · Opened by the
- * agent". Ported to Android as `PrLinkRows.text`.
+ * One line for a phone's link list: "#612 · merged · Opened by the agent ·
+ * owner/name". The repository goes last, so a long name is what a one-line
+ * row cuts off, never the state or source. Ported to Android as `PrLinkRows.text`.
  */
 export function phoneLinkRowText(link: Pick<PrLink, 'ref' | 'source' | 'state'>): string {
-  const parts = [`#${link.ref.number} ${link.ref.owner}/${link.ref.name}`]
+  const parts = [`#${link.ref.number}`]
   if (link.state && link.state !== 'open') parts.push(link.state)
-  parts.push(linkSourceLabel(link.source))
+  parts.push(linkSourceLabel(link.source), `${link.ref.owner}/${link.ref.name}`)
   return parts.join(' · ')
+}
+
+/** Accessible name of a link's Unlink button. It names the repository, since two repositories can share a number. */
+export function unlinkPrLabel(ref: PrRef): string {
+  return `Unlink pull request ${ref.owner}/${ref.name} #${ref.number}`
 }
 
 /** A shell command that merges or closes a PR, after which the chat's links re-read their state. */

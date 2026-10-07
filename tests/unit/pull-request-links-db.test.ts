@@ -50,7 +50,9 @@ vi.mock('better-sqlite3', () => {
               return { changes: 1 }
             }
             if (row.unlinked_at === null && !(row.source === 'auto' && source !== 'auto')) return { changes: 0 }
-            Object.assign(row, { source, linked_at: row.unlinked_at !== null ? at : row.linked_at, unlinked_at: null })
+            const revived = row.unlinked_at !== null
+            const clearsState = revived && /state = CASE WHEN unlinked_at IS NOT NULL THEN NULL/.test(sql) && /state_at = CASE WHEN unlinked_at IS NOT NULL THEN NULL/.test(sql)
+            Object.assign(row, { source, linked_at: revived ? at : row.linked_at, unlinked_at: null, ...(clearsState ? { state: null, state_at: null } : {}) })
             return { changes: 1 }
           }
           if (sql.includes('UPDATE conversation_pull_requests SET state = ?, state_at = ?')) {
@@ -93,6 +95,9 @@ vi.mock('better-sqlite3', () => {
               .filter((l) => l.host === host && l.owner === owner && l.repo === repo && l.number === number && l.unlinked_at === null && l.state !== state)
               .map((l) => ({ conversation_id: l.conversation_id }))
           }
+          if (sql.includes('SELECT DISTINCT host, owner, repo, number FROM conversation_pull_requests WHERE unlinked_at IS NULL')) {
+            return [...links.values()].filter((l) => l.unlinked_at === null)
+          }
           if (sql.includes('FROM conversation_pull_requests WHERE conversation_id = ?')) {
             return [...links.values()]
               .filter((l) => l.conversation_id === args[0] && l.unlinked_at === null)
@@ -117,6 +122,7 @@ vi.mock('better-sqlite3', () => {
 
 const {
   setPullRequestLinkState,
+  linkedPullRequestKeys,
   linkConversationPullRequest,
   unlinkConversationPullRequest,
   listConversationPullRequests,
@@ -209,6 +215,28 @@ describe('link state', () => {
     expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: 'merged', stateAt: 50 })
     expect(setPullRequestLinkState(PR, 'merged', 60)).toEqual([])
     expect(listConversationPullRequests('agent_2')[0].stateAt).toBe(60)
+  })
+})
+
+describe('link state on relink', () => {
+  it('a revived link drops the state cached before the unlink, a live one keeps it', () => {
+    linkConversationPullRequest('agent_1', PR, 'auto', 10)
+    setPullRequestLinkState(PR, 'closed', 20)
+    expect(linkConversationPullRequest('agent_1', PR, 'manual', 25)).toBe(true)
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: 'closed', stateAt: 20 })
+    unlinkConversationPullRequest('agent_1', PR, 30)
+    expect(linkConversationPullRequest('agent_1', PR, 'manual', 40)).toBe(true)
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: null, stateAt: null })
+  })
+})
+
+describe('linked pull request keys', () => {
+  it('names each PR with a live link once', () => {
+    const other = { ...PR, number: 613 }
+    linkConversationPullRequest('agent_1', PR, 'manual', 10)
+    linkConversationPullRequest('agent_2', other, 'manual', 10)
+    unlinkConversationPullRequest('agent_2', other, 11)
+    expect([...linkedPullRequestKeys()]).toEqual(['github:tejasnafde/switchboard#612'])
   })
 })
 

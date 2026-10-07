@@ -11,7 +11,7 @@
 import { execFile } from 'node:child_process'
 import type { BackendHost } from '../backend/host'
 import { PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
-import type { GithubAccountState, PrListData, PrRef, PrResult, PrState, SourceControlStatus, SourceControlTestResult } from '@shared/pull-requests'
+import { prKey, type GithubAccountState, type PrListData, type PrRef, type PrResult, type PrState, type SourceControlStatus, type SourceControlTestResult } from '@shared/pull-requests'
 import { applyHidden } from '@shared/pull-request-groups'
 import { parseRepoRefs } from '@shared/pull-request-hidden-repos'
 import { canLinkToProject, isPrRef, type PrHistoryScanResult, type PrLink, type PrLinkChat, type PrLinkResult } from '@shared/pull-request-links'
@@ -21,6 +21,7 @@ import {
   hidePullRequest,
   hidePullRequestRepos,
   linkConversationPullRequest,
+  linkedPullRequestKeys,
   listHiddenPullRequestRepos,
   listHiddenPullRequests,
   listUnscannedPullRequestHistoryScanTargets,
@@ -138,6 +139,16 @@ function storeLinkState(ref: PrRef, state: PrState): string[] {
   } catch (err) {
     log.warn('storing a linked pull request state failed', { number: ref.number, err: String(err) })
     return []
+  }
+}
+
+/** Keys of every linked PR, so a list read writes state only for those. */
+function readLinkedPrKeys(): Set<string> {
+  try {
+    return linkedPullRequestKeys()
+  } catch (err) {
+    log.warn('reading linked pull request keys failed', { err: String(err) })
+    return new Set()
   }
 }
 
@@ -369,7 +380,8 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     const result = withHidden(await getService().list())
     // The list is a free state read for every linked PR in it.
     if (result.ok) {
-      const changed = new Set(result.data.prs.flatMap((pr) => storeLinkState(pr.ref, pr.state)))
+      const linked = readLinkedPrKeys()
+      const changed = new Set(result.data.prs.filter((pr) => linked.has(prKey(pr.ref))).flatMap((pr) => storeLinkState(pr.ref, pr.state)))
       for (const chatId of changed) notifyLinks(chatId)
     }
     return result

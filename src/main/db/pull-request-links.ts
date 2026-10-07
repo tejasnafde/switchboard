@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { normalizePrRef, type PrLink, type PrLinkChat, type PrLinkSource } from '@shared/pull-request-links'
-import type { PrHost, PrRef, PrState } from '@shared/pull-requests'
+import { prKey, type PrHost, type PrRef, type PrState } from '@shared/pull-requests'
 import { getDb } from './database'
 import { resolveRootThreadId, threadFamilyIds } from './conversations'
 
@@ -74,6 +74,8 @@ export function listConversationPullRequests(threadId: string): PrLink[] {
  * Returns whether a link was added or changed. An automatic link never
  * revives one the user removed; an explicit one does, and replaces an
  * automatic link's source with its own (the agent opened it, the user confirmed it).
+ * A revived link drops the state cached before the unlink: the PR may have
+ * been reopened since, and link sync never re-reads a merged or closed state.
  */
 export function linkConversationPullRequest(threadId: string, ref: PrRef, source: PrLinkSource, now = Date.now()): boolean {
   const args = [resolveRootThreadId(threadId), ...keyArgs(ref), source, now]
@@ -83,9 +85,19 @@ export function linkConversationPullRequest(threadId: string, ref: PrRef, source
        ON CONFLICT(conversation_id, host, owner, repo, number) DO UPDATE SET
          source = excluded.source,
          linked_at = CASE WHEN unlinked_at IS NOT NULL THEN excluded.linked_at ELSE linked_at END,
+         state = CASE WHEN unlinked_at IS NOT NULL THEN NULL ELSE state END,
+         state_at = CASE WHEN unlinked_at IS NOT NULL THEN NULL ELSE state_at END,
          unlinked_at = NULL
        WHERE unlinked_at IS NOT NULL OR (source = 'auto' AND excluded.source != 'auto')`
   return getDb().prepare(sql).run(...args).changes > 0
+}
+
+/** `prKey` of every PR at least one chat links (live links only). */
+export function linkedPullRequestKeys(): Set<string> {
+  const rows = getDb().prepare(
+    'SELECT DISTINCT host, owner, repo, number FROM conversation_pull_requests WHERE unlinked_at IS NULL',
+  ).all() as Pick<LinkRow, 'host' | 'owner' | 'repo' | 'number'>[]
+  return new Set(rows.map((r) => prKey({ host: r.host, owner: r.owner, name: r.repo, number: r.number })))
 }
 
 /**

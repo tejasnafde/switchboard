@@ -8,7 +8,7 @@ const merged: PrLink = { ref: { host: 'github', owner: 'acme', name: 'app', numb
 
 it('shows each link with its state and how it was linked', () => {
   const root = renderComponent(<PrLinksBanner links={[merged]} onUnlink={() => {}} />)
-  expect(root.texts()).toContain('#612 acme/app · merged · Opened by the agent')
+  expect(root.texts()).toContain('#612 · merged · Opened by the agent · acme/app')
 })
 
 it('renders nothing without links', () => {
@@ -19,6 +19,14 @@ it('renders nothing without links', () => {
 it('unlinks the row tapped', () => {
   const onUnlink = jest.fn()
   const root = renderComponent(<PrLinksBanner links={[merged]} onUnlink={onUnlink} />)
-  act(() => root.byLabel('Unlink pull request 612').props.onPress())
+  act(() => root.byLabel('Unlink pull request acme/app #612').props.onPress())
   expect(onUnlink).toHaveBeenCalledWith(merged)
+})
+
+it('names the repository on each Unlink, so two PRs with one number differ', () => {
+  const other: PrLink = { ...merged, ref: { ...merged.ref, owner: 'acme', name: 'lib' } }
+  const onUnlink = jest.fn()
+  const root = renderComponent(<PrLinksBanner links={[merged, other]} onUnlink={onUnlink} />)
+  act(() => root.byLabel('Unlink pull request acme/lib #612').props.onPress())
+  expect(onUnlink).toHaveBeenCalledWith(other)
 })

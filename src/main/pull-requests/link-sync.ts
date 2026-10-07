@@ -63,6 +63,8 @@ export class PullRequestLinkSync {
   /** Threads that started a merge or close command; their links are re-read when a tool completes. */
   private merging = new Set<string>()
   private running = new Set<string>()
+  /** Chats whose merge or close command completed during a sync; a forced re-read runs once that sync ends. */
+  private forcedAfterRun = new Set<string>()
   private readonly now: () => number
 
   constructor(private readonly deps: LinkSyncDeps) {
@@ -84,7 +86,12 @@ export class PullRequestLinkSync {
       return
     }
     if (event.type === 'tool.completed' && this.merging.delete(event.threadId)) {
-      await this.run(event.threadId, (chat, changed) => this.refreshStates(chat, true, changed))
+      const chat = this.deps.conversationFor(event.threadId)
+      if (chat && this.running.has(chat.id)) {
+        this.forcedAfterRun.add(chat.id)
+        return
+      }
+      await this.run(event.threadId, this.forcedRefresh)
       return
     }
     if (event.type === 'session.provider' || event.type === 'turn.completed') {
@@ -95,7 +102,13 @@ export class PullRequestLinkSync {
     }
   }
 
-  /** One sync per chat at a time; an event that arrives during one is dropped (the next turn end repeats it). */
+  private readonly forcedRefresh = (chat: Chat, changed: Set<string>) => this.refreshStates(chat, true, changed)
+
+  /**
+   * One sync per chat at a time; an event that arrives during one is dropped
+   * (the next turn end repeats it), except a forced re-read after a merge or
+   * close command, which runs once the sync ends.
+   */
   private async run(threadId: string, work: (chat: Chat, changed: Set<string>) => Promise<void>): Promise<void> {
     const chat = this.deps.conversationFor(threadId)
     if (!chat || this.running.has(chat.id)) return
@@ -110,6 +123,7 @@ export class PullRequestLinkSync {
       this.running.delete(chat.id)
       for (const id of changed) this.deps.notify(id)
     }
+    if (this.forcedAfterRun.delete(chat.id)) await this.run(threadId, this.forcedRefresh)
   }
 
   private async detectBranchPr(chat: Chat, changed: Set<string>): Promise<void> {

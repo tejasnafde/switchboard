@@ -126,6 +126,23 @@ describe('link state', () => {
     expect(notified).toEqual(['root'])
   })
 
+  it('a merge that completes during a running sync is re-read once that sync ends', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const { sync, deps, links, states, notified } = setup({ currentBranch: vi.fn(async () => { await gate; return null }) })
+    links.push({ ref: { ...APP, number: 9 }, source: 'manual', linkedAt: 0, state: 'open', stateAt: 999_999 })
+    const turnSync = sync.onEvent(turnDone)
+    await sync.onEvent(tool('gh pr merge 9 --merge'))
+    states.set(9, 'merged')
+    await sync.onEvent(toolDone)
+    expect(deps.prState).not.toHaveBeenCalled()
+    release()
+    await turnSync
+    expect(deps.prState).toHaveBeenCalledTimes(1)
+    expect(links[0].state).toBe('merged')
+    expect(notified).toEqual(['root'])
+  })
+
   it('refreshes an old state at turn end, and leaves a fresh or finished one alone', async () => {
     const { sync, deps, links, tick } = setup({ currentBranch: vi.fn(async () => null) })
     links.push({ ref: { ...APP, number: 1 }, source: 'auto', linkedAt: 0 })

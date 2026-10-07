@@ -67,6 +67,7 @@ import { mergeHistoryItems, historyToItems } from '../lib/thread-history'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { PrLinksBanner } from '../components/PrLinksBanner'
+import { unlinkPrLink } from '../lib/pr-link-unlink'
 import type { PrLink } from '@shared/pull-request-links'
 import { VoiceNoteBar } from '../components/MicButton'
 import { SendMicButton } from '../components/SendMicButton'
@@ -212,9 +213,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
         text: 'Unlink',
         style: 'destructive',
         onPress: () => {
-          getClient(connectionId)?.unlinkPullRequest(threadId, link.ref)
-            .then((result) => { if (!result.ok) Alert.alert('Could not unlink', result.message) })
-            .catch((err) => log.warn('unlinking a pull request failed', err))
+          void unlinkPrLink(getClient(connectionId), threadId, link.ref)
+            .then((problem) => { if (problem) Alert.alert('Could not unlink', problem) })
         },
       },
     ])

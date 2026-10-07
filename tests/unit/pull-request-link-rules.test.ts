@@ -12,6 +12,7 @@ import {
   linkSourceLabel,
   mergesOrClosesPr,
   phoneLinkRowText,
+  unlinkPrLabel,
   type PrLink,
 } from '../../src/shared/pull-request-links'
 import { coveredRepos, projectReposFrom } from '../../src/shared/project-repos'
@@ -33,13 +34,14 @@ describe('link provenance labels', () => {
   })
 })
 
-const rowCases: Array<{ id: string; link: PrLink; text: string }> = JSON.parse(
+const rowCases: Array<{ id: string; link: PrLink; text: string; unlinkLabel: string }> = JSON.parse(
   readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../fixtures/pr-link-rows.json'), 'utf8'),
 )
 
 describe('phoneLinkRowText (tests/fixtures/pr-link-rows.json, shared with Android)', () => {
   it.each(rowCases.map((c) => [c.id, c] as const))('%s', (_id, c) => {
     expect(phoneLinkRowText(c.link)).toBe(c.text)
+    expect(unlinkPrLabel(c.link.ref)).toBe(c.unlinkLabel)
   })
 })
 

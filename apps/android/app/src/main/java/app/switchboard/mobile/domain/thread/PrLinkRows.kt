@@ -30,8 +30,9 @@ sealed interface PrLinkUnlinkResult {
 }
 
 /**
- * One line for a phone's link list: "#612 owner/name · merged · Opened by the
- * agent". Ported from `phoneLinkRowText` + `linkSourceLabel` in
+ * One line for a phone's link list: "#612 · merged · Opened by the agent ·
+ * owner/name", the repository last so a one-line row cuts it off rather than
+ * the state or source. Ported from `phoneLinkRowText` + `linkSourceLabel` in
  * src/shared/pull-request-links.ts; keep them in sync. Both suites run
  * tests/fixtures/pr-link-rows.json.
  */
@@ -44,9 +45,13 @@ object PrLinkRows {
     )
 
     fun text(link: PrLink): String {
-        val parts = mutableListOf("#${link.ref.number} ${link.ref.owner}/${link.ref.name}")
+        val parts = mutableListOf("#${link.ref.number}")
         if (link.state != null && link.state != "open") parts += link.state
         parts += (SOURCE_LABELS[link.source] ?: "Linked")
+        parts += "${link.ref.owner}/${link.ref.name}"
         return parts.joinToString(" · ")
     }
+
+    /** Accessible name of a link's Unlink button. Ported from `unlinkPrLabel`. */
+    fun unlinkLabel(ref: PrLinkRef): String = "Unlink pull request ${ref.owner}/${ref.name} #${ref.number}"
 }

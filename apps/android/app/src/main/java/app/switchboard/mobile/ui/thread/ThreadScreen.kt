@@ -504,13 +504,23 @@ private fun ForkLineageBanner(metadata: ForkLineageMetadata) {
     )
 }
 
+/** About two and a half rows: the cut-off row shows the list scrolls. */
+private val PR_LINKS_BANNER_MAX_HEIGHT = 120.dp
+
 /** One quiet line per pull request linked to this chat, with an Unlink
- *  action behind a confirm dialog. Mirrors PrLinksBanner.tsx on the Expo app. */
+ *  action behind a confirm dialog. Mirrors PrLinksBanner.tsx on the Expo app.
+ *  A long list scrolls inside a capped height, so the feed keeps its room. */
 @Composable
 private fun PrLinksBanner(links: List<PrLink>, onUnlink: (PrLinkRef) -> Unit) {
     if (links.isEmpty()) return
     var confirmTarget by remember { mutableStateOf<PrLink?>(null) }
-    Column(modifier = Modifier.fillMaxWidth().background(Surface)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = PR_LINKS_BANNER_MAX_HEIGHT)
+            .background(Surface)
+            .verticalScroll(rememberScrollState()),
+    ) {
         links.forEach { link ->
             Row(
                 modifier = Modifier
@@ -526,7 +536,10 @@ private fun PrLinksBanner(links: List<PrLink>, onUnlink: (PrLinkRef) -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = { confirmTarget = link }) {
+                TextButton(
+                    onClick = { confirmTarget = link },
+                    modifier = Modifier.semantics { contentDescription = PrLinkRows.unlinkLabel(link.ref) },
+                ) {
                     Text("Unlink", color = Accent, style = MaterialTheme.typography.labelSmall)
                 }
             }
