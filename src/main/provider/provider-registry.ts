@@ -47,7 +47,7 @@ import {
 import { sessionDefaultsFor } from './session-defaults'
 import { QueuedTurnLedger } from './queued-turn-ledger'
 import { queuedTurnComposerText } from '@shared/queued-turns'
-import { echoMessageId, isRuntimeMode } from '@shared/provider-events'
+import { echoMessageId, isRuntimeMode, SESSION_START_STOPPED } from '@shared/provider-events'
 import { isReasoningEffort } from '@shared/provider-option-memory'
 import { promoteUnavailableReason, startsOwnProviderTurn, type QueuedTurnActionResult, type QueuedTurnSummary } from '@shared/turn-delivery'
 import {
@@ -224,6 +224,8 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly atomicTurnSubmission: Pick<AtomicUserTurnSubmission, 'submit'> & Partial<Pick<AtomicUserTurnSubmission, 'resolve'>>
   /** Provider startup shared by every client that reaches a thread before its adapter exists. */
   private startingSessions = new Map<string, Promise<ProviderSession>>()
+  /** Threads whose user pressed Stop while their session was still starting. */
+  private stopRequestedDuringStart = new Set<string>()
   private managedSessionStarter: ((opts: SessionStartOpts) => Promise<ProviderSession>) | null = null
   private switchingSessions = new Set<string>()
   /** Turns that have claimed a thread but have not crossed the provider
@@ -2102,6 +2104,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.sessionEpochs.set(opts.threadId, executionEpoch)
       const switchboardMcp = await this.openSwitchboardMcp(opts.threadId, opts.provider)
       if (switchboardMcp) enrichedOpts.switchboardMcp = switchboardMcp
+      if (this.stopRequestedDuringStart.delete(opts.threadId)) throw new Error(SESSION_START_STOPPED)
       const session = await adapter.startSession(enrichedOpts, (event) => {
         if (this.sessionEpochs.get(opts.threadId) !== executionEpoch) return
         const switchTiming = this.switchFirstEventSpans.get(opts.threadId)
@@ -2149,6 +2152,13 @@ export class ProviderRegistry implements PeerToolHost {
       // inside a profile switch or relocation (gated, or a rollback) is
       // skipped here; that flow flushes once it settles.
       if (!eventGate) this.flushHeldApprovalResultsLater(opts.threadId)
+      // Stop arrived while the adapter was starting: stop what just came up
+      // instead of letting the waiting turn run in it.
+      if (this.stopRequestedDuringStart.delete(opts.threadId)) {
+        log.info(`startSession ${opts.threadId} stopped by the user during start`)
+        await stopSession(opts.threadId)
+        throw new Error(SESSION_START_STOPPED)
+      }
       resolveStart(session)
       return session
       } catch (err) {
@@ -2166,6 +2176,7 @@ export class ProviderRegistry implements PeerToolHost {
         throw err
       } finally {
         this.startingSessions.delete(opts.threadId)
+        this.stopRequestedDuringStart.delete(opts.threadId)
       }
       } finally {
         startSpan.end()
@@ -2528,10 +2539,20 @@ export class ProviderRegistry implements PeerToolHost {
     this.host.handle(ProviderChannels.LIST_PEER_LINKS, async (input: { threadId: string }) =>
       this.listPeerLinks(input.threadId))
 
-    this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {
+    // `live` says whether this backend had a turn to stop. A client whose
+    // status says running after a resume gap clears it on `live: false`,
+    // since no closing event will ever come for a turn that is not there.
+    this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string): Promise<{ live: boolean }> => {
       const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) return
+      if (!adapter) {
+        // A profile switch restarts the session itself; a Stop there is not
+        // a cancel of the switch.
+        if (this.startingSessions.has(threadId) && !this.switchingSessions.has(threadId)) this.stopRequestedDuringStart.add(threadId)
+        return { live: false }
+      }
+      const live = this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running'
       await adapter.interruptTurn(threadId)
+      return { live }
     })
 
     this.host.handle(ProviderChannels.SET_RUNTIME_MODE, async (threadId: string, mode: RuntimeMode) => {
@@ -2636,6 +2657,13 @@ export class ProviderRegistry implements PeerToolHost {
       this.executionRoot?.onSessionStopped(threadId)
       this.dropPeerLinks(threadId)
       this.closeAgentCards(threadId)
+      const starting = this.startingSessions.get(threadId)
+      if (starting && !this.sessionAdapters.has(threadId) && !this.switchingSessions.has(threadId)) {
+        this.stopRequestedDuringStart.add(threadId)
+        // The start stops its own session once it exists; wait for that.
+        await starting.catch((err) => log.info(`stop of ${threadId} during start: ${err instanceof Error ? err.message : String(err)}`))
+        return null
+      }
       return await stopSession(threadId)
     })
 

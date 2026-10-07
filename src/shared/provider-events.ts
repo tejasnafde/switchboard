@@ -34,6 +34,13 @@ export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-a
 /** The one list of runtime modes; every validator goes through isRuntimeMode. */
 export const RUNTIME_MODES: readonly RuntimeMode[] = ['plan', 'sandbox', 'accept-edits', 'auto', 'full-access']
 
+/**
+ * Error text of a session start the user stopped before it finished. Errors
+ * cross the transport as strings, so clients match on this to treat it as a
+ * stop rather than a failure.
+ */
+export const SESSION_START_STOPPED = 'Stopped before the session started'
+
 export function isRuntimeMode(value: unknown): value is RuntimeMode {
   return typeof value === 'string' && (RUNTIME_MODES as readonly string[]).includes(value)
 }
