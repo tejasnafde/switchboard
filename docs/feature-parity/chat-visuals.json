@@ -58,8 +58,6 @@
         "tests/fixtures/chart-spec-cases.json",
         "tests/fixtures/visual-fence-cases.json",
         "src/main/mcp/switchboard-mcp-server.ts",
-        "src/visual-host/index.ts",
-        "scripts/build-visual-host.mjs",
         "tests/unit/visual-host-asset.test.ts"
       ]
     },
@@ -73,7 +71,9 @@
         "apps/mobile/package.json",
         "apps/mobile/app.json",
         "apps/android/app/build.gradle.kts",
-        ".github/workflows/android-native-ci.yml"
+        ".github/workflows/android-native-ci.yml",
+        "src/visual-host/index.ts",
+        "scripts/build-visual-host.mjs"
       ]
     }
   },
