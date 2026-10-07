@@ -47,7 +47,6 @@
       "status": "implemented",
       "evidence": [
         "CHANGELOG.md",
-        "AGENTS.md",
         "docs/feature-parity/desktop-history-window.json"
       ]
     }
