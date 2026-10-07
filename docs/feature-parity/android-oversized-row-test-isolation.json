@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-oversized-row-test-isolation",
+  "summary": "Test-only: OversizedRowRepairTest runs under a plain Application, so the real SwitchboardApplication's startup migration no longer opens the same database file in the background and races the test's migration checkpoint. No product behavior changes.",
+  "surfaces": {
+    "desktop": { "status": "not_applicable", "reason": "Android unit test only." },
+    "reactNativeIos": { "status": "not_applicable", "reason": "Android unit test only." },
+    "nativeAndroid": { "status": "implemented", "evidence": ["apps/android/app/src/test/java/app/switchboard/mobile/data/local/OversizedRowRepairTest.kt"] },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "No API change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "The migration code is unchanged; only its test's Robolectric application changes." },
+    "updateRelease": { "status": "not_applicable", "reason": "Test-only; nothing ships." }
+  },
+  "verification": {
+    "automated": ["./gradlew :app:testDebugUnitTest --tests '*OversizedRowRepairTest': 10 tests, 0 failures. Full vitest gate passes."],
+    "hardware": [],
+    "notExercised": ["The race itself cannot be forced in a unit test; the fix removes the second database user."]
+  }
+}
