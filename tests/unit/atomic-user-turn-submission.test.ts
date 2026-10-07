@@ -17,7 +17,8 @@ const AtomicUserTurnSubmission = (durable as unknown as {
     submit(input: UserTurnSubmissionV1, context: {
       clientScope: string
       prepare: () => Promise<void>
-      dispatch: () => Promise<void>
+      finalize?: (turn: UserTurnSubmissionV1) => Promise<UserTurnSubmissionV1>
+      dispatch: (turn: UserTurnSubmissionV1) => Promise<void>
     }): Promise<UserTurnSubmissionResult>
   }
 }).AtomicUserTurnSubmission
