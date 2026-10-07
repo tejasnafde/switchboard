@@ -34,6 +34,7 @@ import app.switchboard.mobile.ui.thread.toComposerPresentation
 import app.switchboard.mobile.ui.thread.toHeldPresentation
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.platform.protocol.Cancelable
+import app.switchboard.mobile.domain.thread.ExpiredRequests
 import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
@@ -1066,6 +1067,44 @@ class ThreadSessionCoordinatorTest {
         assertEquals(1, remote.interruptedThreadIds.size)
         remote.completeInterrupt(failure("interrupt", "too late"))
         assertEquals("too late", coordinator.state.value.composer.error)
+    }
+
+    @Test
+    fun `stop clears a running status the backend has no turn for`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, cached = ThreadState(status = "running"))
+
+        coordinator.interrupt()
+        remote.completeInterrupt(success("interrupt", CommandBody(JsonObject(linkedMapOf("live" to JsonBoolean(false))))))
+        assertEquals("idle", coordinator.currentThread()?.status)
+
+        // An older backend answers nothing: wait for the closing event as before.
+        val older = FakeThreadSessionRemote(scope)
+        val olderCoordinator = coordinator(older, cached = ThreadState(status = "running"))
+        olderCoordinator.interrupt()
+        older.completeInterrupt(success("interrupt", CommandBody(null)))
+        assertEquals("running", olderCoordinator.currentThread()?.status)
+    }
+
+    @Test
+    fun `an answer the backend refuses as expired closes the card with a notice`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+        remote.emit(
+            scope,
+            event(
+                "request.opened", "thread-1", "requestId" to JsonString("r1"), "requestType" to JsonString("tool"),
+                "toolName" to JsonString("Bash"), "detail" to JsonString("ls"),
+            ),
+        )
+
+        coordinator.perform(ThreadSessionControl.Approval("r1", ApprovalDecision.Approve))
+        remote.completeApproval(failure("approve", ExpiredRequests.REFUSED))
+
+        val row = coordinator.currentThread()?.feed?.single { it.id == "a-r1" }
+        assertTrue(row is FeedItem.RawNotice)
     }
 
     @Test

@@ -22,20 +22,48 @@ export function applyQueuedTurnEvent(state: QueuedTurnsByMessage, event: Runtime
         messageId: event.messageId,
         text: event.text ?? '',
         queuedAt: event.queuedAt ?? 0,
+        ...(event.held ? { held: true } : {}),
       },
     }
   }
   if (event.type === 'turn.dequeued') {
+    // Back on its row, marked: it never reached the agent.
+    if (event.reason === 'failed') {
+      return {
+        ...state,
+        [event.messageId]: { threadId: event.threadId, messageId: event.messageId, text: '', queuedAt: 0, failed: event.error || 'It could not start.' },
+      }
+    }
     if (!(event.messageId in state)) return state
     const next = { ...state }
     delete next[event.messageId]
     return next
   }
-  // A session that stopped or died holds nothing any more.
-  if (event.type === 'status' && (event.status === 'stopped' || event.status === 'error')) {
+  if (event.type === 'turn.queue-held') {
+    let changed = false
+    const next: Record<string, QueuedTurnSummary> = {}
+    for (const [id, turn] of Object.entries(state)) {
+      const held = event.held && !turn.failed
+      if (Boolean(turn.held) !== held) changed = true
+      const copy: QueuedTurnSummary = { ...turn }
+      if (held) copy.held = true
+      else delete copy.held
+      next[id] = copy
+    }
+    return changed ? next : state
+  }
+  // A session that stopped holds nothing any more. An error does not clear
+  // the rows: the backend holds them after a failed turn, and announces each
+  // one it drops (`turn.dequeued`).
+  if (event.type === 'status' && event.status === 'stopped') {
     return Object.keys(state).length === 0 ? state : NO_QUEUED_TURNS
   }
   return state
+}
+
+/** Whether the queue waits for the user to resume it. */
+export function queueIsHeld(state: QueuedTurnsByMessage): boolean {
+  return Object.values(state).some((turn) => turn.held)
 }
 
 /** Replace the state with what the backend reports (open, reconnect, resume gap). */

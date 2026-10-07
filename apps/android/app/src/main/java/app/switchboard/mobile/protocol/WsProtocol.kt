@@ -252,6 +252,7 @@ data class RuntimeEventPayload(
             "tool.denied",
             "request.opened",
             "request.closed",
+            "request.expired",
             "turn.completed",
             "turn.retrying",
             "error",
@@ -273,6 +274,7 @@ data class RuntimeEventPayload(
             "task.notification",
             "turn.queued",
             "turn.dequeued",
+            "turn.queue-held",
         )
 
         fun parse(raw: JsonObject): RuntimeEventPayload? {

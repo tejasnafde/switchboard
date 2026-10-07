@@ -12,6 +12,7 @@ import type { PendingBlockingEvent } from '@shared/pending-requests'
 import type { ChatMessage } from '@shared/types'
 import { useAgentStore } from '../stores/agent-store'
 import { createRendererLogger } from '../logger'
+import { expireRequestCard } from '../components/chat/expired-request'
 
 const log = createRendererLogger('chat:pending-recovery')
 const MAX_RECOVERY_ATTEMPTS = 3
@@ -27,6 +28,15 @@ export function pendingRequestMessageId(event: PendingBlockingEvent): string {
     case 'plan.proposed':
       return `plan_${event.planId}`
   }
+}
+
+const NO_LONGER_WAITING = 'The agent is no longer waiting for an answer.'
+
+/** The request id of an approval or question card that is still open. */
+export function openCardRequestId(message: ChatMessage): string | null {
+  if (message.approval?.status === 'pending' && message.id.startsWith('approval_')) return message.id.slice('approval_'.length)
+  if (message.question?.status === 'pending' && message.id.startsWith('question_')) return message.id.slice('question_'.length)
+  return null
 }
 
 /** Pending events not already present among a thread's shown message ids. */
@@ -103,6 +113,13 @@ export async function recoverPendingRequests(threadId: string, { cards = true } 
     }
     if (pending.length || session.pendingRequests?.length) store.setPendingRequests(threadId, pending)
     if (!cards) return
+    // A card this window still shows open that the backend no longer holds
+    // (its provider died while this window was away) can never be answered.
+    const held = new Set(pending.map(pendingRequestMessageId))
+    for (const message of session.messages) {
+      const requestId = openCardRequestId(message)
+      if (requestId && !held.has(message.id)) expireRequestCard(threadId, requestId, NO_LONGER_WAITING)
+    }
     const shownIds = new Set(session.messages.map((m) => m.id))
     const missing = missingPendingCards(pending, shownIds)
     for (const event of missing) {

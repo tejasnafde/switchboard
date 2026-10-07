@@ -242,7 +242,9 @@ const api = {
       id: string,
       agentType: AgentProvider,
       instanceId: string,
-    ): Promise<{ ok: boolean }> =>
+      // `model` / `reasoningEffort` are what the chat last used on this
+      // provider; absent from a backend older than per-provider memory.
+    ): Promise<{ ok: boolean; model?: string | null; reasoningEffort?: 'low' | 'medium' | 'high' | null }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, id, agentType, instanceId),
     getConversationPendingHandoff: (id: string): Promise<{ from: string | null }> =>
       transport.invoke(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, id),
@@ -666,7 +668,7 @@ const api = {
     resolveUserTurn: (resolution: import('@shared/provider-events').UserTurnResolutionV1): Promise<import('@shared/provider-events').UserTurnResolutionResult> =>
       transport.invoke(ProviderChannels.RESOLVE_USER_TURN, resolution),
 
-    interrupt: (threadId: string) =>
+    interrupt: (threadId: string): Promise<import('@shared/provider-events').InterruptResult | undefined> =>
       transport.invoke(ProviderChannels.INTERRUPT, threadId),
 
     setRuntimeMode: (threadId: string, mode: RuntimeMode) =>
@@ -674,6 +676,9 @@ const api = {
 
     setModel: (threadId: string, model: string) =>
       transport.invoke(ProviderChannels.SET_MODEL, threadId, model),
+
+    setReasoningEffort: (threadId: string, effort: 'low' | 'medium' | 'high') =>
+      transport.invoke(ProviderChannels.SET_REASONING_EFFORT, threadId, effort),
 
     /** Dynamically fetch `opencode models` output. Returns provider/model IDs. */
 
@@ -721,6 +726,9 @@ const api = {
     /** Take a queued message back before it runs. */
     cancelQueuedTurn: (threadId: string, messageId: string): Promise<import('@shared/turn-delivery').QueuedTurnActionResult> =>
       transport.invoke(ProviderChannels.CANCEL_QUEUED_TURN, threadId, messageId),
+    /** Start a queue held after a failed or usage-limited turn. */
+    resumeQueuedTurns: (threadId: string): Promise<{ ok: boolean; message?: string }> =>
+      transport.invoke(ProviderChannels.RESUME_QUEUED_TURNS, threadId),
 
     /**
      * Fetch the agent-defined slash commands/skills for a session

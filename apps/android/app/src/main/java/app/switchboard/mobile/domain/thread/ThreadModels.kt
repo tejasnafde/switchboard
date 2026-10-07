@@ -13,6 +13,7 @@ enum class ThreadEventKind {
     ToolDenied,
     RequestOpened,
     RequestClosed,
+    RequestExpired,
     TurnCompleted,
     TurnRetrying,
     Error,
@@ -34,6 +35,7 @@ enum class ThreadEventKind {
     TaskNotification,
     TurnQueued,
     TurnDequeued,
+    TurnQueueHeld,
     Extension,
     Malformed,
 }
@@ -113,6 +115,8 @@ sealed interface ThreadEventPayload {
         val hostWrite: HostWriteCard? = null,
     ) : ThreadEventPayload
     data class RequestClosed(val requestId: String, val decision: String) : ThreadEventPayload
+    /** The provider can no longer take an answer for this approval or question. */
+    data class RequestExpired(val requestId: String, val reason: String) : ThreadEventPayload
     data class TurnCompleted(
         val turnId: String?,
         val costUsd: Double?,
@@ -182,9 +186,11 @@ sealed interface ThreadEventPayload {
         val at: Long,
     ) : ThreadEventPayload
     /** A message the backend holds until the running turn ends; `messageId` is its user row id. */
-    data class TurnQueued(val messageId: String) : ThreadEventPayload
+    data class TurnQueued(val messageId: String, val held: Boolean = false) : ThreadEventPayload
+    /** The queue waits for Resume (`held`) or started again. */
+    data class TurnQueueHeld(val held: Boolean) : ThreadEventPayload
     /** It left the queue: started, promoted, cancelled or dropped. */
-    data class TurnDequeued(val messageId: String, val reason: String) : ThreadEventPayload
+    data class TurnDequeued(val messageId: String, val reason: String, val error: String? = null) : ThreadEventPayload
 }
 
 object UserMessageVisibility {

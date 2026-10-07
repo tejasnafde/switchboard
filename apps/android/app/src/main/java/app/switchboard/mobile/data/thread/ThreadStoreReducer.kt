@@ -2,6 +2,8 @@ package app.switchboard.mobile.data.thread
 
 import app.switchboard.mobile.domain.remote.SessionMeta
 import app.switchboard.mobile.domain.thread.DriftSuggestion
+import app.switchboard.mobile.domain.thread.EXPIRED_EVENT_TYPE
+import app.switchboard.mobile.domain.thread.ExpiredRequests
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.PeerUndelivered
 import app.switchboard.mobile.domain.thread.SpendBlock
@@ -57,6 +59,10 @@ data class ThreadState(
     val spendBlock: SpendBlock? = null,
     /** Message ids (their user row ids) the backend holds until the running turn ends. */
     val heldTurns: Set<String> = emptySet(),
+    /** The queue waits for Resume after a failed or usage-limited turn. */
+    val queueHeld: Boolean = false,
+    /** Held rows that could not start, with why. Cancel takes them back. */
+    val failedHeld: Map<String, String> = emptyMap(),
     val eventJournal: List<ScopedThreadEvent> = emptyList(),
     val eventArrival: Long = 0,
     val lastSequence: Long? = null,
@@ -85,7 +91,13 @@ sealed interface ThreadAction {
     data class CompleteReseed(val scope: ThreadEventScope) : ThreadAction
     data class SetViewing(val connectionId: String, val threadId: String, val viewing: Boolean) : ThreadAction
     /** Replace the held messages with what the backend lists (open, reconnect, resume gap). */
-    data class SeedHeldTurns(val connectionId: String, val threadId: String, val messageIds: Set<String>) : ThreadAction
+    data class SeedHeldTurns(
+        val connectionId: String,
+        val threadId: String,
+        val messageIds: Set<String>,
+        val queueHeld: Boolean = false,
+        val failed: Map<String, String> = emptyMap(),
+    ) : ThreadAction
 }
 
 object ThreadEventCoalescer {
@@ -133,7 +145,11 @@ object ThreadStoreReducer {
             is ThreadAction.SeedHeldTurns -> {
                 val key = ThreadKey(action.connectionId, action.threadId)
                 val thread = state.threads[key] ?: ThreadState()
-                state.copy(threads = state.threads + (key to thread.copy(heldTurns = action.messageIds)))
+                state.copy(
+                    threads = state.threads + (
+                        key to thread.copy(heldTurns = action.messageIds, queueHeld = action.queueHeld, failedHeld = action.failed)
+                    ),
+                )
             }
         }
 
@@ -338,6 +354,19 @@ object ThreadStoreReducer {
                     ),
                 )
             }
+            // An open card becomes a notice under the same id, so nothing offers
+            // buttons that answer nothing. An answered card is left as it is.
+            is ThreadEventPayload.RequestExpired -> withJournal.copy(
+                feed = withJournal.feed.map { item ->
+                    when {
+                        item is FeedItem.Approval && item.requestId == event.requestId && item.state == "pending" ->
+                            FeedItem.RawNotice(item.id, EXPIRED_EVENT_TYPE, ExpiredRequests.notice(approval = true, event.reason), scoped.event.raw)
+                        item is FeedItem.Question && item.requestId == event.requestId && item.answers == null ->
+                            FeedItem.RawNotice(item.id, EXPIRED_EVENT_TYPE, ExpiredRequests.notice(approval = false, event.reason), scoped.event.raw)
+                        else -> item
+                    }
+                },
+            )
             is ThreadEventPayload.TurnCompleted -> finishTurn(withJournal, event, scoped.nowMs)
             is ThreadEventPayload.TurnRetrying -> withJournal.copy(
                 feed = upsert(
@@ -355,7 +384,11 @@ object ThreadStoreReducer {
             is ThreadEventPayload.Status -> withJournal.copy(
                 status = event.status,
                 // A session that stopped or died holds nothing any more.
-                heldTurns = if (event.status == "stopped" || event.status == "error") emptySet() else withJournal.heldTurns,
+                // An error keeps them: the backend holds the queue after a
+                // failed turn and announces each message it drops.
+                heldTurns = if (event.status == "stopped") emptySet() else withJournal.heldTurns,
+                queueHeld = event.status != "stopped" && withJournal.queueHeld,
+                failedHeld = if (event.status == "stopped") emptyMap() else withJournal.failedHeld,
                 feed = if (event.status == "running") withJournal.feed else stopRetries(withJournal.feed),
             )
             is ThreadEventPayload.Session -> withJournal.copy(sessionId = event.sessionId)
@@ -461,11 +494,22 @@ object ThreadStoreReducer {
                     ),
                 ),
             )
-            is ThreadEventPayload.TurnQueued -> withJournal.copy(heldTurns = withJournal.heldTurns + event.messageId)
-            // A message taken back never reached the agent. The row can be
-            // live (`remote_x`) or from history (`h-remote_x`).
-            is ThreadEventPayload.TurnDequeued -> withJournal.copy(
+            is ThreadEventPayload.TurnQueued -> withJournal.copy(
+                heldTurns = withJournal.heldTurns + event.messageId,
+                queueHeld = event.held,
+            )
+            is ThreadEventPayload.TurnQueueHeld -> withJournal.copy(queueHeld = event.held)
+            // It could not start: back on its row, marked, until Cancel.
+            is ThreadEventPayload.TurnDequeued -> if (event.reason == "failed") {
+                withJournal.copy(
+                    heldTurns = withJournal.heldTurns + event.messageId,
+                    failedHeld = withJournal.failedHeld + (event.messageId to (event.error ?: "It could not start.")),
+                )
+            } else withJournal.copy(
+                // A message taken back never reached the agent. The row can be
+                // live (`remote_x`) or from history (`h-remote_x`).
                 heldTurns = withJournal.heldTurns - event.messageId,
+                failedHeld = withJournal.failedHeld - event.messageId,
                 feed = if (event.reason == "cancelled") {
                     withJournal.feed.filterNot { it is FeedItem.User && feedIdentity(it) == event.messageId }
                 } else {

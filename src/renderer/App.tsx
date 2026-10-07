@@ -64,6 +64,8 @@ import { useDraftStore } from './stores/draft-store'
 import { nextDualChatShortcutAction, shouldEvictReplacedSession } from './services/chat-workspace'
 import type { AgentProvider } from '@shared/types'
 import { recoverPendingRequests } from './services/pending-request-recovery'
+import { ProviderChannels } from '@shared/ipc-channels'
+import type { LiveSessionSummary } from '@shared/live-sessions'
 import { resolveGlobalKeydown } from './services/global-keybindings'
 import {
   LANDING_COMPOSER_ID,
@@ -398,6 +400,11 @@ export function App() {
   // card is gone for good. Recover it for whatever is actually on screen;
   // `machineId === null` means the base backend, so every displayed thread
   // is a candidate rather than trying to filter by one.
+  // The events that ended a turn may be in the gap too, so the backend's
+  // session list is read again: a chat it no longer runs stops showing
+  // "Working...", and a displayed chat that is not mid-turn reloads its
+  // transcript to fill the hole. A newer gap on the same machine wins.
+  const resumeGapTickets = useRef(new Map<string, number>())
   useEffect(() => {
     return window.api.routing?.onResumeGap?.((machineId) => {
       const displayed = new Set(useLayoutStore.getState().displayedChatSessionIds())
@@ -408,6 +415,37 @@ export function App() {
         if (machineId !== null && session.machineId !== machineId) continue
         void recoverPendingRequests(session.id, { cards: displayed.has(session.id) })
       }
+      const key = machineId ?? ''
+      const ticket = (resumeGapTickets.current.get(key) ?? 0) + 1
+      resumeGapTickets.current.set(key, ticket)
+      const current = () => resumeGapTickets.current.get(key) === ticket
+      void (async () => {
+        try {
+          const live = machineId === null
+            ? await window.api.provider.listSessions()
+            : await window.api.routing.invokeOn<LiveSessionSummary[]>(machineId, ProviderChannels.LIST_SESSIONS)
+          if (!current()) return
+          const store = useAgentStore.getState()
+          store.settleSessionsNotLive(live, machineId)
+          store.adoptLiveSessions(live, machineId ?? undefined)
+          for (const id of displayed) {
+            const session = useAgentStore.getState().sessions.find((s) => s.id === id)
+            if (!session || session.type === 'terminal') continue
+            if (machineId !== null && session.machineId !== machineId) continue
+            if (session.status === 'running' || session.status === 'thinking') continue
+            const loaded = await window.api.app.loadSessionById(id) as { messages?: ChatMessage[] } | null
+            if (!current()) return
+            const now = useAgentStore.getState().sessions.find((s) => s.id === id)
+            // A turn that started while this loaded owns the transcript now.
+            if (now && now.status !== 'running' && now.status !== 'thinking' && loaded?.messages?.length) {
+              useAgentStore.getState().setMessages(id, loaded.messages)
+              void recoverPendingRequests(id)
+            }
+          }
+        } catch (err) {
+          log.warn('resume gap: could not re-read sessions', { machineId, err })
+        }
+      })()
     })
   }, [])
 

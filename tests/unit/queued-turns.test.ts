@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   NO_QUEUED_TURNS,
   applyQueuedTurnEvent,
+  queueIsHeld,
   queuedTurnComposerText,
   seedQueuedTurns,
 } from '@shared/queued-turns'
@@ -21,10 +22,32 @@ describe('queued turns on a client', () => {
     expect(applyQueuedTurnEvent(queued, { type: 'turn.dequeued', threadId: 't1', messageId: 'other', reason: 'started' })).toBe(queued)
     expect(applyQueuedTurnEvent(queued, { type: 'status', threadId: 't1', status: 'running' })).toBe(queued)
   })
-  it('forgets everything when the session stops or dies', () => {
+  it('forgets everything when the session stops, but keeps the rows after a failed turn', () => {
     const queued = seedQueuedTurns([turn])
     expect(applyQueuedTurnEvent(queued, { type: 'status', threadId: 't1', status: 'stopped' })).toBe(NO_QUEUED_TURNS)
-    expect(applyQueuedTurnEvent(queued, { type: 'status', threadId: 't1', status: 'error' })).toBe(NO_QUEUED_TURNS)
+    // The backend holds them after a failed or usage-limited turn.
+    expect(applyQueuedTurnEvent(queued, { type: 'status', threadId: 't1', status: 'error' })).toBe(queued)
+  })
+  it('marks the queue held and resumed, and a message that could not start as failed', () => {
+    let state = seedQueuedTurns([turn, { ...turn, messageId: 'remote_b' }])
+    state = applyQueuedTurnEvent(state, { type: 'turn.queue-held', threadId: 't1', held: true, reason: 'usage limit' })
+    expect(queueIsHeld(state)).toBe(true)
+    expect(state.remote_a.held).toBe(true)
+    // Joins a held queue.
+    state = applyQueuedTurnEvent(state, { type: 'turn.queued', ...turn, messageId: 'remote_c', held: true })
+    expect(state.remote_c.held).toBe(true)
+    state = applyQueuedTurnEvent(state, { type: 'turn.queue-held', threadId: 't1', held: false })
+    expect(queueIsHeld(state)).toBe(false)
+    expect('held' in state.remote_a).toBe(false)
+
+    state = applyQueuedTurnEvent(state, { type: 'turn.dequeued', threadId: 't1', messageId: 'remote_a', reason: 'started' })
+    expect(state.remote_a).toBeUndefined()
+    state = applyQueuedTurnEvent(state, { type: 'turn.dequeued', threadId: 't1', messageId: 'remote_a', reason: 'failed', error: 'rate limited' })
+    expect(state.remote_a).toMatchObject({ messageId: 'remote_a', failed: 'rate limited' })
+    // A failed row never shows as held: it has left the queue.
+    state = applyQueuedTurnEvent(state, { type: 'turn.queue-held', threadId: 't1', held: true })
+    expect(state.remote_a.held).toBeUndefined()
+    expect(state.remote_b.held).toBe(true)
   })
   it('seeds from the backend list, replacing what was there', () => {
     expect(seedQueuedTurns([])).toBe(NO_QUEUED_TURNS)

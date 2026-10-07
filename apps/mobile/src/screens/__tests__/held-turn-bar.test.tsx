@@ -32,6 +32,27 @@ describe('HeldTurnBar', () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
+  it('a held queue shows Resume instead of Send now', () => {
+    const onResume = jest.fn()
+    const turn = { threadId: 't', messageId: 'm', text: 'x', queuedAt: 1, held: true }
+    const v = renderComponent(<HeldTurnBar actions={heldTurnActions('claude', turn)} onPromote={() => {}} onResume={onResume} onCancel={() => {}} />)
+    expect(v.texts().join(' ')).toContain('Held')
+    expect(v.root.findAllByProps({ testID: 'held-send-now' })).toHaveLength(0)
+    act(() => { v.root.findByProps({ testID: 'held-resume' }).props.onPress() })
+    expect(onResume).toHaveBeenCalledTimes(1)
+  })
+
+  it('a message that could not start says why and offers only Cancel', () => {
+    const turn = { threadId: 't', messageId: 'm', text: 'x', queuedAt: 1, failed: 'Usage limit reached' }
+    const v = renderComponent(<HeldTurnBar actions={heldTurnActions('claude', turn)} onPromote={() => {}} onCancel={() => {}} />)
+    const text = v.texts().join(' ')
+    expect(text).toContain('Not sent')
+    expect(text).toContain('Usage limit reached')
+    expect(v.root.findAllByProps({ testID: 'held-send-now' })).toHaveLength(0)
+    expect(v.root.findAllByProps({ testID: 'held-resume' })).toHaveLength(0)
+    expect(v.root.findByProps({ testID: 'held-cancel' })).toBeTruthy()
+  })
+
   it('shows a refused action on the row, in place of the hint', () => {
     const v = renderComponent(
       <HeldTurnBar actions={heldTurnActions('claude')} error="This message already started." onPromote={() => {}} onCancel={() => {}} />,

@@ -233,6 +233,8 @@ interface ActiveSession {
   turnStartedAt: number | null
   /** Messages sent with delivery 'queue' while a turn ran, oldest first. */
   queuedTurns: Array<{ id?: string; message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
+  /** Nothing queued starts until the user resumes: a turn failed (see holdQueue). */
+  queueHeld: boolean
   /** Active codex turn id (from turn/start response or turn/started); null
    * when idle. Required as `expectedTurnId` to steer a running turn. */
   activeTurnId: string | null
@@ -672,6 +674,7 @@ export class CodexAdapter implements ProviderAdapter {
       models: opts.knownModels?.length ? { models: opts.knownModels, identity: codexExecutable.current()?.identity ?? null } : null,
       turnStartedAt: null,
       queuedTurns: [],
+      queueHeld: false,
       activeTurnId: null,
       turnStartPromise: null,
     }
@@ -879,6 +882,8 @@ export class CodexAdapter implements ProviderAdapter {
     // mode, which must not reach the running turn, and started as its own
     // turn once that one completes (see drainQueued).
     if (delivery === 'queue' && (active.activeTurnId || active.turnStartPromise)) {
+      // A message joining an empty queue starts a new one, not held.
+      if (active.queuedTurns.length === 0) active.queueHeld = false
       active.queuedTurns.push({ id: queuedId, message, runtimeMode, images })
       if (queuedId) active.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
       return
@@ -1096,6 +1101,7 @@ export class CodexAdapter implements ProviderAdapter {
    * failure never strands the messages behind it.
    */
   private drainQueued(threadId: string, active: ActiveSession): void {
+    if (active.queueHeld) return
     const next = active.queuedTurns.shift()
     if (!next) return
     if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'started' })
@@ -1103,9 +1109,32 @@ export class CodexAdapter implements ProviderAdapter {
       const reason = err instanceof Error ? err.message : String(err)
       log.warn(`queued codex turn failed to start for ${threadId}: ${reason}`)
       active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
+      if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'failed', error: reason })
       active.onEvent({ type: 'turn.completed', threadId })
-      this.drainQueued(threadId, active)
+      // The next one would most likely fail the same way.
+      this.holdQueue(threadId, active, 'A queued message could not be sent.')
     })
+  }
+
+  /**
+   * Stop starting queued messages after a failed turn: the next one would
+   * run straight into the same failure (a usage limit, a broken model). The
+   * user resumes or cancels them.
+   */
+  private holdQueue(threadId: string, active: ActiveSession, reason: string): void {
+    if (active.queueHeld || active.queuedTurns.length === 0) return
+    active.queueHeld = true
+    log.info(`holding ${active.queuedTurns.length} queued message(s) on ${threadId}: ${reason}`)
+    active.onEvent({ type: 'turn.queue-held', threadId, held: true, reason })
+  }
+
+  async resumeQueuedTurns(threadId: string): Promise<boolean> {
+    const active = this.sessions.get(threadId)
+    if (!active?.queueHeld) return false
+    active.queueHeld = false
+    active.onEvent({ type: 'turn.queue-held', threadId, held: false })
+    if (!active.activeTurnId && !active.turnStartPromise) this.drainQueued(threadId, active)
+    return true
   }
 
   /**
@@ -1170,6 +1199,12 @@ export class CodexAdapter implements ProviderAdapter {
     const active = this.sessions.get(threadId)
     if (!active) return
     active.session.model = model
+  }
+
+  async setReasoningEffort(threadId: string, effort: 'low' | 'medium' | 'high'): Promise<void> {
+    const active = this.sessions.get(threadId)
+    if (!active) return
+    active.session.reasoningEffort = effort
   }
 
   async interruptTurn(threadId: string): Promise<void> {
@@ -1797,7 +1832,8 @@ export class CodexAdapter implements ProviderAdapter {
           ...(typeof turnId === 'string' ? { turnId } : {}),
         })
         // A failed turn still ends: the registry counts it as outstanding
-        // until turn.completed, and a queued turn starts right after.
+        // until turn.completed. The queue behind it is held, not started.
+        this.holdQueue(threadId, active, message)
         const durationMs = takeTurnDuration(active)
         active.onEvent({
           type: 'turn.completed',

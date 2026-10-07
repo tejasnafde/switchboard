@@ -33,7 +33,7 @@ import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ModelOption } from '@shared/models'
 import { formatTokens, contextPercent } from '@shared/format'
-import { echoMessageId, isRuntimeMode } from '@shared/provider-events'
+import { echoMessageId, interruptFoundNoTurn, isRuntimeMode } from '@shared/provider-events'
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
@@ -41,7 +41,7 @@ import type { RootStackParamList } from '../../App'
 import { colors } from '../theme'
 import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
-import { missingPendingFeedItems } from '../lib/pending-request-recovery'
+import { expiredOpenRequests, isExpiredAnswer, missingPendingFeedItems, NO_LONGER_WAITING, openRequestIds } from '../lib/pending-request-recovery'
 import {
   completeRejectedEdit,
   drain,
@@ -320,7 +320,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
       // channel, hence the capability gate.
       if (client.supportsCapability('pending_requests_v1') === true) {
         try {
+          const openBefore = openRequestIds(useChatStore.getState().threads[key]?.items ?? [])
           const pending = await client.getPendingRequests(threadId)
+          if (!isCurrent()) return
+          for (const requestId of expiredOpenRequests(openBefore, pending)) {
+            useChatStore.getState().ingestNow(connectionId, { type: 'request.expired', threadId, requestId, reason: NO_LONGER_WAITING })
+          }
           if (pending.length) {
             const items = useChatStore.getState().threads[key]?.items ?? []
             for (const event of missingPendingFeedItems(pending, items)) {
@@ -666,7 +671,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
   }, [])
 
   const stop = () => {
-    getClient(connectionId)?.interrupt(threadId).catch(reportError)
+    getClient(connectionId)?.interrupt(threadId)
+      .then((result) => {
+        // The backend has no turn (its end fell into a resume gap): no
+        // closing event will come, so clear the status here.
+        if (interruptFoundNoTurn(result)) useChatStore.getState().ingest(connectionId, { type: 'status', threadId, status: 'idle' })
+      })
+      .catch(reportError)
   }
 
   const implementPlan = useCallback(() => {
@@ -706,6 +717,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
         // A notice, not an error event: that would mark the thread errored and
         // take Stop away while the agent is still waiting on this card.
         useChatStore.getState().addNotice(key, `Could not answer the approval: ${err instanceof Error ? err.message : String(err)}`)
+        if (isExpiredAnswer(err)) {
+          useChatStore.getState().ingestNow(connectionId, { type: 'request.expired', threadId, requestId, reason: NO_LONGER_WAITING })
+          return
+        }
         // A refused answer can leave the card open on the backend (an older
         // backend refuses a phone's approval of a pull request write). Reopen
         // it only if it still is, and not if its close arrived meanwhile.
@@ -730,6 +745,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         reportError(err)
         // The card would otherwise stay Answered with no way to send it again.
         useChatStore.getState().reopenQuestion(key, requestId)
+        if (isExpiredAnswer(err)) useChatStore.getState().ingestNow(connectionId, { type: 'request.expired', threadId, requestId, reason: NO_LONGER_WAITING })
       })
       useChatStore.getState().markQuestionAnswered(key, requestId, answers)
     },
@@ -854,7 +870,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // A refused Send now / Cancel belongs on its row: reporting it as a thread
   // error would mark a still-running thread as failed and hide Stop.
   const [heldErrors, setHeldErrors] = useState<Record<string, string>>({})
-  const actOnHeld = useCallback(async (held: QueuedTurnSummary, action: 'promote' | 'cancel') => {
+  const actOnHeld = useCallback(async (held: QueuedTurnSummary, action: 'promote' | 'cancel' | 'resume') => {
     const client = getClient(connectionId)
     if (!client) return
     const showOnRow = (message: string | undefined) =>
@@ -866,6 +882,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
       })
     showOnRow(undefined)
     try {
+      if (action === 'resume') {
+        const resumed = await client.resumeQueuedTurns(threadId)
+        if (!resumed.ok) showOnRow(resumed.message ?? 'Nothing is held for this chat.')
+        return
+      }
       const result = action === 'promote'
         ? await client.promoteQueuedTurn(threadId, held.messageId)
         : await client.cancelQueuedTurn(threadId, held.messageId)
@@ -948,9 +969,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
                 )}
                 {held && (
                   <HeldTurnBar
-                    actions={heldTurnActions(thread.provider ?? provider)}
+                    actions={heldTurnActions(thread.provider ?? provider, held)}
                     error={heldErrors[held.messageId]}
                     onPromote={() => void actOnHeld(held, 'promote')}
+                    onResume={() => void actOnHeld(held, 'resume')}
                     onCancel={() => void actOnHeld(held, 'cancel')}
                   />
                 )}

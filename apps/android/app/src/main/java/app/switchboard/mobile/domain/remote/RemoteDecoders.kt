@@ -171,7 +171,12 @@ object RemoteDecoders {
         if (value == null || value === JsonNull) return emptyList()
         return value.array().values.map {
             val raw = it.obj()
-            app.switchboard.mobile.domain.thread.QueuedTurnSummary(raw.stringRequired("messageId"), raw.string("text").orEmpty())
+            app.switchboard.mobile.domain.thread.QueuedTurnSummary(
+                raw.stringRequired("messageId"),
+                raw.string("text").orEmpty(),
+                held = raw.boolean("held") ?: false,
+                failed = raw.string("failed"),
+            )
         }
     }
 
