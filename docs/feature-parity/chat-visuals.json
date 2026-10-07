@@ -1,0 +1,97 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "chat-visuals",
+  "summary": "An agent's ```mermaid block is drawn as a diagram and a ```chart block (a small versioned JSON spec: type bar, line or table, labels, named series of numbers, optional title and axis titles) as a chart, inside the chat on desktop, the Expo app and native Android. Only a closed top-level fence is drawn, so a block still streaming stays code; a block over 20,000 characters, an empty one or one past the twelfth in a message stays code. Each visual has a header with Source (raw text) and Copy (the SVG for a diagram, tab-separated data for a chart); the desktop adds Open in pane, which shows it at full size over the right pane while the terminal and IDE stay mounted underneath. An invalid chart or a diagram Mermaid cannot parse shows its error and its source. Mermaid is bundled (no network) and runs with securityLevel strict and HTML labels off; its SVG passes through DOMPurify, which removes scripts, event handlers, links, foreignObject and any url() outside the SVG. The desktop draws in the renderer, lazily when the block scrolls into view, with results cached by theme and source; charts use the theme variables. The phones load one bundled page (scripts/build-visual-host.mjs, committed as apps/mobile/assets/visual-host/visual-host.html) in a WebView that blocks navigation, file access and network loads, and send it the source as a JSON message. Agents learn the chart format from the Switchboard MCP server's instructions.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/visuals/ChatVisual.tsx",
+        "src/renderer/components/chat/visuals/MessageMarkdown.tsx",
+        "src/renderer/components/chat/visuals/diagram-render.ts",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/stores/layout-store.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/styles/tailwind.css",
+        "src/main/provider/adapters/demo-adapter.ts",
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "tests/unit/diagram-sanitize.test.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots/chat-diagram-dark-darwin.png",
+        "e2e/snapshots/chat-diagram-light-darwin.png",
+        "e2e/snapshots/chat-diagram-translucent-darwin.png",
+        "e2e/snapshots/chat-chart-dark-darwin.png",
+        "e2e/snapshots/chat-chart-light-darwin.png",
+        "e2e/snapshots/chat-chart-translucent-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/components/ChatVisual.tsx",
+        "apps/mobile/src/components/Markdown.tsx",
+        "apps/mobile/src/components/__tests__/ChatVisual.test.tsx",
+        "apps/mobile/assets/visual-host/visual-host.html",
+        "apps/mobile/metro.config.js",
+        "apps/mobile/jest.config.js",
+        "apps/mobile/jest.setup.js",
+        "apps/mobile/package.json",
+        "apps/mobile/app.json",
+        "src/visual-host/index.ts",
+        "scripts/build-visual-host.mjs",
+        "tests/unit/visual-host-asset.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ChatVisuals.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ChatVisualCard.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadRichTextRenderer.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ChatVisualsFixturesTest.kt",
+        "apps/android/app/build.gradle.kts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/chat-visuals.ts",
+        "tests/unit/chat-visuals.test.ts",
+        "tests/fixtures/chart-spec-cases.json",
+        "tests/fixtures/visual-fence-cases.json",
+        "src/main/mcp/switchboard-mcp-server.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Nothing is stored: the visuals are drawn from the message text already in the transcript, the pane visual is renderer state that is not persisted, and the render caches live in memory. Older and newer builds read the same messages; an older client shows the blocks as code."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/package.json",
+        "apps/mobile/app.json",
+        "apps/android/app/build.gradle.kts",
+        ".github/workflows/android-native-ci.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/chat-visuals.test.ts: every case of tests/fixtures/chart-spec-cases.json and tests/fixtures/visual-fence-cases.json, the size and count caps, escaping of every spec string in bar, line and table output, niceTicks and the copied data.",
+      "tests/unit/diagram-sanitize.test.ts (jsdom): scripts, event handlers, links, images and foreignObject removed; url(#id) kept, external url() and @import dropped.",
+      "tests/unit/visual-host-asset.test.ts: the committed page is built from the current sources and library versions, and its CSP allows nothing outside the page.",
+      "apps/mobile jest ChatVisual.test.tsx: an invalid chart shows its error and source with no WebView, Source toggles the drawing, Copy writes the chart data, a diagram error falls back to the source, every navigation but the page is refused, and a streaming block stays code.",
+      "Android ChatVisualsFixturesTest runs both shared fixture files and the copied data format (./gradlew testDebugUnitTest).",
+      "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new chat-diagram and chat-chart baselines in Dark, Light and Translucent, read; Open in pane and Close driven; two runs pass without updating.",
+      "The built visual host page was loaded in a hidden Electron window with its CSP: a flowchart, a sequence diagram and a chart drew through both answer paths (window.ReactNativeWebView and a MessagePort), a click directive and HTML in a label left no link or script, a parse error came back as an error, and no request left the page.",
+      "npm run typecheck, apps/mobile tsc and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The Expo app and native Android were not run on a device or emulator: the WebView settings, the asset loading (expo-asset in an APK, Android assets from the shared folder) and the measured heights are untested on hardware.",
+      "iOS was not run (no simulator on this Mac)."
+    ]
+  }
+}

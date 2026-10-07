@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createRendererLogger } from '../logger'
 import { useAgentStore } from './agent-store'
 import { SETTING_SHOW_FILE_DIFFS } from '@shared/project-settings'
+import type { VisualKind } from '@shared/chat-visuals'
 import { FOLLOW_UP_DEFAULT_KEY, parseFollowUpDefault, type TurnDelivery } from '@shared/turn-delivery'
 import {
   companionWithLanding,
@@ -52,6 +53,11 @@ export function paneMaxWidth(min: number, otherPaneWidth: number, viewportWidth?
 
 export type RightPaneMode = 'terminal' | 'files'
 
+export interface PaneVisual {
+  kind: VisualKind
+  source: string
+}
+
 /**
  * Top-level app view. `'chats'` is the default - sidebar + chat pane +
  * right column (terminal/files). `'kanban'` swaps the chat+right area
@@ -75,6 +81,15 @@ interface LayoutStore {
   rightPaneMode: RightPaneMode
   setRightPaneMode: (mode: RightPaneMode) => void
   toggleRightPaneMode: () => void
+
+  /**
+   * A chat diagram or chart opened at full size ("Open in pane"). Shown over
+   * the right pane, whose terminal and IDE stay mounted underneath. Not
+   * persisted; a right-pane mode change closes it.
+   */
+  paneVisual: PaneVisual | null
+  openPaneVisual: (visual: PaneVisual) => void
+  closePaneVisual: () => void
 
   /**
    * Top-level app view ('chats' | 'kanban' | 'reviews'). ⌘⇧K toggles the board.
@@ -288,7 +303,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     } catch (err) {
       log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
     }
-    set({ rightPaneMode: mode })
+    set({ rightPaneMode: mode, paneVisual: null })
   },
   toggleRightPaneMode: () => {
     // 2-mode cycle: terminal ↔ files. (Kanban is now a top-level view -
@@ -300,8 +315,12 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     } catch (err) {
       log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
     }
-    set({ rightPaneMode: next })
+    set({ rightPaneMode: next, paneVisual: null })
   },
+
+  paneVisual: null,
+  openPaneVisual: (visual) => set({ paneVisual: visual, terminalVisible: true }),
+  closePaneVisual: () => set({ paneVisual: null }),
 
   dataScienceMode: false,
   toggleDataScienceMode: () => {
@@ -370,7 +389,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     // serving the active session's repo. Fire-and-forget: if the ext host
     // isn't connected yet (workbench still booting), the click simply
     // focuses the pane.
-    set({ rightPaneMode: 'files' })
+    set({ rightPaneMode: 'files', paneVisual: null })
     try {
       persistSetting(RIGHT_PANE_MODE_KEY, 'files')
     } catch (err) {

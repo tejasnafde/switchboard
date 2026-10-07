@@ -28,6 +28,7 @@
 @source '../components/chat/PeerUndeliveredRow.tsx';
 @source '../components/chat/ApprovalResultRow.tsx';
 @source '../components/chat/QueuedTurnBar.tsx';
+@source '../components/chat/visuals';
 @source '../components/CommandPalette.tsx';
 @source '../components/SessionPickerModal.tsx';
 @source '../components/SearchModal.tsx';

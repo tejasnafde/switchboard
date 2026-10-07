@@ -4,7 +4,9 @@
  */
 import React, { memo, useMemo } from 'react'
 import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { splitVisualBlocks } from '@shared/chat-visuals'
 import { parseMarkdown, type Block, type Inline } from '../lib/markdown'
+import { ChatVisual } from './ChatVisual'
 import { colors, radius, space, type } from '../theme'
 
 function renderInlines(nodes: Inline[], keyPrefix = ''): React.ReactNode[] {
@@ -136,14 +138,21 @@ const BlockView = memo(function BlockView({ block }: { block: Block }): React.Re
   }
 })
 
-/** Re-parsed on change: once per coalesced flush, not once per token. */
+/**
+ * Re-parsed on change: once per coalesced flush, not once per token. Closed
+ * ```mermaid and ```chart blocks are drawn by ChatVisual; one still streaming
+ * stays a code block until its fence closes.
+ */
 export const Markdown = memo(function Markdown({ text }: { text: string }): React.ReactElement {
-  const blocks = useMemo(() => parseMarkdown(text), [text])
+  const segments = useMemo(
+    () => splitVisualBlocks(text).map((segment) => (segment.kind === 'markdown' ? parseMarkdown(segment.text) : segment)),
+    [text],
+  )
   return (
     <View style={styles.root}>
-      {blocks.map((block, i) => (
-        <BlockView key={i} block={block} />
-      ))}
+      {segments.map((segment, s) => Array.isArray(segment)
+        ? segment.map((block, i) => <BlockView key={`${s}.${i}`} block={block} />)
+        : <ChatVisual key={`${s}:${segment.source}`} kind={segment.kind} source={segment.source} />)}
     </View>
   )
 })
