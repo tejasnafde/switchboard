@@ -27,4 +27,11 @@ describe('sqliteTurnCheckpointStore', () => {
     store.remove('rotated')
     expect(db.prepare('SELECT COUNT(*) AS n FROM turn_checkpoints').get()).toEqual({ n: 0 })
   })
+
+  it('restores a row whose written paths are unreadable with none counted as the agent\'s', () => {
+    const db = new Database(':memory:')
+    ensureTurnCheckpointSchema(db)
+    db.prepare("INSERT INTO turn_checkpoints VALUES ('chat', 'x-1', 'T', '/repo', 'not json', 'earlier')").run()
+    expect(sqliteTurnCheckpointStore(() => db, root).takeEarlier('chat')).toEqual({ turnId: 'x-1', tree: 'T', repoRoot: '/repo', written: [] })
+  })
 })

@@ -7,6 +7,9 @@ import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import type { StoredTurnCheckpoint, TurnCheckpointStore } from '../provider/checkpoint-tracker'
 import { resolveRootThreadId } from './conversations'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('db:turn-checkpoints')
 
 /** Rows written by an earlier process are the turns a restart interrupted. */
 const LAUNCH = randomUUID()
@@ -49,7 +52,13 @@ export function sqliteTurnCheckpointStore(
           .get(key, LAUNCH) as Row | undefined
         if (!row) return null
         d.prepare('DELETE FROM turn_checkpoints WHERE thread_id = ?').run(key)
-        const written: unknown = JSON.parse(row.written)
+        // Unreadable means nothing counts as the agent's: every card shows without Reject.
+        let written: unknown = []
+        try {
+          written = JSON.parse(row.written)
+        } catch (err) {
+          log.warn('stored written paths are not JSON', { threadId: key, bytes: Buffer.byteLength(row.written), err })
+        }
         return {
           turnId: row.turn_id,
           tree: row.tree,
