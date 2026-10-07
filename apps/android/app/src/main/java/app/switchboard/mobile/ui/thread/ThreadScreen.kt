@@ -120,6 +120,9 @@ import app.switchboard.mobile.domain.thread.AgentDigest
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWritePreview
+import app.switchboard.mobile.domain.thread.PrLink
+import app.switchboard.mobile.domain.thread.PrLinkRef
+import app.switchboard.mobile.domain.thread.PrLinkRows
 import app.switchboard.mobile.domain.thread.SyntheticTone
 import app.switchboard.mobile.domain.thread.SystemMarkers
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
@@ -197,6 +200,8 @@ fun ThreadScreen(
     onToggleDelivery: () -> Unit = {},
     held: ThreadHeldPresentation = ThreadHeldPresentation(),
     onHeldAction: (messageId: String, promote: Boolean) -> Unit = { _, _ -> },
+    prLinks: List<PrLink> = emptyList(),
+    onUnlinkPrLink: (PrLinkRef) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
@@ -357,6 +362,7 @@ fun ThreadScreen(
                 )
             }
             forkMetadata?.let { ForkLineageBanner(it) }
+            PrLinksBanner(links = prLinks, onUnlink = onUnlinkPrLink)
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
                 ThreadPresentation.Loading -> FullPageLoading()
@@ -494,6 +500,57 @@ private fun ForkLineageBanner(metadata: ForkLineageMetadata) {
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
     )
+}
+
+/** One quiet line per pull request linked to this chat, with an Unlink
+ *  action behind a confirm dialog. Mirrors PrLinksBanner.tsx on the Expo app. */
+@Composable
+private fun PrLinksBanner(links: List<PrLink>, onUnlink: (PrLinkRef) -> Unit) {
+    if (links.isEmpty()) return
+    var confirmTarget by remember { mutableStateOf<PrLink?>(null) }
+    Column(modifier = Modifier.fillMaxWidth().background(Surface)) {
+        links.forEach { link ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = PrLinkRows.text(link),
+                    color = TextDim,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { confirmTarget = link }) {
+                    Text("Unlink", color = Accent, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+    confirmTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { confirmTarget = null },
+            title = { Text("Unlink #${target.ref.number}?") },
+            text = { Text("It will not be linked to this chat again automatically.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmTarget = null
+                        onUnlink(target.ref)
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text("Unlink")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmTarget = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 private fun ThreadPresentation.metadataOrNull(): ThreadMetadataPresentation? = when (this) {

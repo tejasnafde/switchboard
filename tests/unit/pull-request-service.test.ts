@@ -254,3 +254,44 @@ describe('PullRequestService: a project folder that holds several repositories',
     expect(result.data.unsupportedProjects).toEqual(['/w/ssg'])
   })
 })
+
+describe('PullRequestService.projectRepos with several remotes and forks', () => {
+  const FORK_REMOTES = [
+    'origin\tgit@github.com:me/app.git (fetch)',
+    'upstream\thttps://github.com/acme/app.git (fetch)',
+  ].join('\n')
+
+  it('covers upstream and origin, upstream first', async () => {
+    const svc = new PullRequestService(deps({ listProjects: () => ['/fork'], readRemotes: async () => FORK_REMOTES }))
+    const repos = await svc.projectRepos('/fork')
+    expect(repos.own).toEqual({ host: 'github', owner: 'acme', name: 'app' })
+    expect(repos.also).toEqual([{ host: 'github', owner: 'me', name: 'app' }])
+  })
+
+  it("adds a fork-only clone's parent, read once and cached", async () => {
+    const forkParent = vi.fn(async () => ({ host: 'github' as const, owner: 'acme', name: 'app' }))
+    const gh = provider('github', { forkParent })
+    let now = 0
+    const svc = new PullRequestService(deps({
+      listProjects: () => ['/fork'],
+      readRemotes: async () => 'origin\tgit@github.com:me/app.git (fetch)',
+      github: () => gh,
+      now: () => now,
+    }))
+    expect((await svc.projectRepos('/fork')).also).toEqual([{ host: 'github', owner: 'acme', name: 'app' }])
+    now = 10 * 60_000
+    await svc.projectRepos('/fork')
+    expect(forkParent).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a fork parent read that failed, later, and still covers the clone meanwhile', async () => {
+    const forkParent = vi.fn(async () => { throw new Error('offline') })
+    const gh = provider('github', { forkParent })
+    let now = 0
+    const svc = new PullRequestService(deps({ readRemotes: async () => 'origin\tgit@github.com:me/app.git (fetch)', github: () => gh, now: () => now }))
+    expect((await svc.projectRepos('/fork')).own).toEqual({ host: 'github', owner: 'me', name: 'app' })
+    now = 10 * 60_000
+    await svc.projectRepos('/fork')
+    expect(forkParent).toHaveBeenCalledTimes(2)
+  })
+})

@@ -5,7 +5,7 @@
  */
 import { WsTransport } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
-import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels, PushChannels, SttChannels, WorktreeCreationChannels } from '@shared/ipc-channels'
+import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels, PullRequestChannels, PushChannels, SttChannels, WorktreeCreationChannels } from '@shared/ipc-channels'
 import type { SttTranscribeRequest, SttTranscribeResult } from '@shared/stt'
 import type {
   RuntimeEvent,
@@ -27,6 +27,8 @@ import type { AgentType, Project, ConversationRow, CreateConversationParams, Cha
 import type { SshIapTarget } from '@shared/machines'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { PeerMessageInput } from '@shared/peer-messaging'
+import type { PrLink, PrLinkResult } from '@shared/pull-request-links'
+import type { PrRef } from '@shared/pull-requests'
 import type {
   ForkConversationOutcome,
   ForkConversationRequest,
@@ -371,6 +373,20 @@ export class SwitchboardClient {
   /** A user send to another session; with `undeliveredId` it sends a kept Not delivered row. */
   deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string }> {
     return this.transport.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, input)
+  }
+
+  /** The pull requests linked to a chat; open to a phone (`device-auth.ts`). */
+  pullRequestLinks(threadId: string): Promise<PrLink[]> {
+    return this.transport.invoke(PullRequestChannels.LINKS, threadId)
+  }
+
+  unlinkPullRequest(threadId: string, ref: PrRef): Promise<PrLinkResult> {
+    return this.transport.invoke(PullRequestChannels.UNLINK, threadId, ref)
+  }
+
+  /** Any chat's links changed; the payload names the root chat, so re-read rather than match ids. */
+  onPullRequestLinksChanged(handler: () => void): () => void {
+    return this.transport.on(PullRequestChannels.LINKS_CHANGED, () => handler())
   }
 
   interrupt(threadId: string): Promise<void> {

@@ -25,6 +25,7 @@ import type {
   SourceControlTestResult,
 } from '@shared/pull-requests'
 import { BITBUCKET_READ_SCOPES, prKey, repoKey } from '@shared/pull-requests'
+import { parseFullName } from '@shared/pull-request-remote'
 import { createMainLogger } from '../logger'
 import { VersionedCache } from './cache'
 import {
@@ -517,6 +518,11 @@ export class BitbucketProvider implements PullRequestProvider {
     const name = body.mainbranch?.name
     if (!name) throw new PrHostError({ kind: 'unknown', host: 'bitbucket', message: 'Bitbucket did not say which branch is the main branch.' })
     return name
+  }
+
+  async forkParent(repo: RepoRef): Promise<RepoRef | null> {
+    const body = await this.client.json<{ parent?: { full_name?: string } | null }>(`${repoPath(repo)}?fields=parent.full_name`)
+    return parseFullName('bitbucket', body.parent?.full_name ?? '')
   }
 
   async openPullRequestFor(repo: RepoRef, branch: string): Promise<CreatedPr | null> {

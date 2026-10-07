@@ -42,6 +42,8 @@ export interface PullRequestHistoryScanDeps {
   link(conversationId: string, ref: PrRef): boolean
   notify(conversationId: string): void
   markScanned(conversationId: string): void
+  /** A chat's background scan failed; the agent sees it through `list_thread_pull_requests`. */
+  problem?(conversationId: string, message: string): void
 }
 
 export interface PullRequestHistoryScanResult {
@@ -193,6 +195,7 @@ export async function scanPendingPullRequestHistory(
           results.push(await scanPullRequestHistoryForConversation(target, deps))
         } catch (err) {
           log.warn('history pull request scan failed', { conversationId: target.id, err: String(err) })
+          deps.problem?.(target.id, `Scanning this chat's history for pull requests failed: ${String(err)}`)
           if (err instanceof HistoryReadError) markQuietly(deps, target.id)
         }
         if (yieldMs > 0) await wait(yieldMs)

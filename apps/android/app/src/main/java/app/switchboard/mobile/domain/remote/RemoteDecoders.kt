@@ -187,6 +187,37 @@ object RemoteDecoders {
         }
     }
 
+    /** `pull-requests:links`: the pull requests linked to a chat, open to a phone's scopes. */
+    fun prLinks(value: JsonValue?): List<app.switchboard.mobile.domain.thread.PrLink> {
+        if (value == null || value === JsonNull) return emptyList()
+        return value.array().values.map {
+            val raw = it.obj()
+            val ref = raw.required("ref").obj()
+            app.switchboard.mobile.domain.thread.PrLink(
+                ref = app.switchboard.mobile.domain.thread.PrLinkRef(
+                    host = ref.stringRequired("host"),
+                    owner = ref.stringRequired("owner"),
+                    name = ref.stringRequired("name"),
+                    number = ref.longRequired("number"),
+                ),
+                source = raw.stringRequired("source"),
+                linkedAt = raw.longRequired("linkedAt"),
+                state = raw.string("state"),
+                stateAt = raw.long("stateAt"),
+            )
+        }
+    }
+
+    /** `pull-requests:unlink`: `{ ok: true }` or `{ ok: false, message }`. */
+    fun prLinkUnlinkResult(value: JsonValue?): app.switchboard.mobile.domain.thread.PrLinkUnlinkResult {
+        val raw = value.obj()
+        return if (raw.booleanRequired("ok")) {
+            app.switchboard.mobile.domain.thread.PrLinkUnlinkResult.Ok
+        } else {
+            app.switchboard.mobile.domain.thread.PrLinkUnlinkResult.Refused(raw.string("message") ?: "Refused")
+        }
+    }
+
     fun setting(value: JsonValue?): String? =
         when (value) {
             null, JsonNull -> null

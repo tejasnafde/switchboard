@@ -56,6 +56,8 @@ export interface PullRequestProvider {
 
   /** The branch a new pull request targets by default. */
   defaultBranch(repo: RepoRef): Promise<string>
+  /** The repository `repo` is a fork of, or null. Optional: a host without it links no fork parent. */
+  forkParent?(repo: RepoRef): Promise<RepoRef | null>
   /** An open pull request whose source is `branch` in this repository, or null. */
   openPullRequestFor(repo: RepoRef, branch: string): Promise<CreatedPr | null>
   /**

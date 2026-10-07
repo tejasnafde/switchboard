@@ -50,7 +50,7 @@ import {
   type PrSummary,
   type RepoRef,
 } from '@shared/pull-requests'
-import { repoFromRemotes } from '@shared/pull-request-remote'
+import { reposFromRemotes } from '@shared/pull-request-remote'
 import { coveredRepos, projectReposFrom, type ChildRepo, type ProjectRepos } from '@shared/project-repos'
 import { createMainLogger } from '../logger'
 import { relativeLabel } from './project-repos'
@@ -99,7 +99,8 @@ export function involvesViewer(pr: PrSummary): boolean {
 }
 
 export class PullRequestService {
-  private remotes = new Map<string, { at: number; repo: RepoRef | null }>()
+  private remotes = new Map<string, { at: number; repos: RepoRef[] }>()
+  private parents = new Map<string, { at: number; ok: boolean; parent: Promise<RepoRef | null> }>()
   /** Promises, so concurrent `detect()` calls share one scan per project. */
   private projects = new Map<string, { at: number; repos: Promise<ProjectRepos> }>()
   private readonly now: () => number
@@ -109,16 +110,41 @@ export class PullRequestService {
   }
 
   async repoFor(projectPath: string): Promise<RepoRef | null> {
+    return (await this.reposFor(projectPath))[0] ?? null
+  }
+
+  /** Every repository a directory's remotes point at, the primary (`repoFor`) first. */
+  async reposFor(projectPath: string): Promise<RepoRef[]> {
     const hit = this.remotes.get(projectPath)
-    if (hit && this.now() - hit.at < REMOTES_TTL_MS) return hit.repo
-    let repo: RepoRef | null = null
+    if (hit && this.now() - hit.at < REMOTES_TTL_MS) return hit.repos
+    let repos: RepoRef[] = []
     try {
-      repo = repoFromRemotes(await this.deps.readRemotes(projectPath))
+      repos = reposFromRemotes(await this.deps.readRemotes(projectPath))
     } catch (err) {
       log.warn('reading git remotes failed', { projectPath, err: String(err) })
     }
-    this.remotes.set(projectPath, { at: this.now(), repo })
-    return repo
+    this.remotes.set(projectPath, { at: this.now(), repos })
+    return repos
+  }
+
+  /**
+   * The repository `repo` was forked from, or null. Cached for the process
+   * (a fork's parent never changes); a failed read is retried after
+   * `REMOTES_TTL_MS`. A host without the read, or without an account, has none.
+   */
+  private forkParent(repo: RepoRef): Promise<RepoRef | null> {
+    const key = repoKey(repo)
+    const hit = this.parents.get(key)
+    if (hit && (hit.ok || this.now() - hit.at < REMOTES_TTL_MS)) return hit.parent
+    const provider = this.accountError(repo.host) ? null : this.provider(repo.host)
+    if (!provider?.forkParent) return Promise.resolve(null)
+    const entry = { at: this.now(), ok: true, parent: provider.forkParent(repo).catch((err: unknown) => {
+      entry.ok = false
+      log.warn('reading a fork parent failed', { host: repo.host, err: String(err) })
+      return null
+    }) }
+    this.parents.set(key, entry)
+    return entry.parent
   }
 
   /**
@@ -140,8 +166,12 @@ export class PullRequestService {
   }
 
   private async readProjectRepos(projectPath: string): Promise<{ repos: ProjectRepos; complete: boolean }> {
-    const own = await this.repoFor(projectPath)
-    if (own || !this.deps.scanChildRepos) return { repos: projectReposFrom(own, []), complete: true }
+    const [own, ...others] = await this.reposFor(projectPath)
+    if (own) {
+      const parent = await this.forkParent(own)
+      return { repos: projectReposFrom(own, [], parent ? [...others, parent] : others), complete: true }
+    }
+    if (!this.deps.scanChildRepos) return { repos: projectReposFrom(null, []), complete: true }
     let dirs: string[] = []
     let complete = true
     try {

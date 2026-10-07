@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Added
+- **Pull request links say how they were made and keep up with the PR.** A chat's link records whether you, automatic linking, an agent, or an agent that opened the PR made it, and the chat header popover, the Reviews chat picker and both phone apps show it. Agents get `link_pull_request`, `unlink_pull_request` and `list_thread_pull_requests` (plan mode refuses the first two; the list also reports the last automatic linking failure). A chat whose branch has an open PR links it at session start and turn end, so a second chat opened to review a PR links it too. A project's other remotes and its fork parent count as its repositories. A merge or close, from Reviews or from `gh`/`bbpr` in a shell, shows in the chat header instead of a stale open state. Phones can unlink. See `docs/feature-parity/pr-link-improvements.json`.
+
 ### Changed
 - **Faster desktop releases.** A release is a tag on `main`; the build takes its version from the tag, so there is no version-bump pull request (which also spent CodeRabbit's hourly review). The release skips its test Gate when main CI already passed on that commit, does not run the test suite a third time inside the build, and publishes as soon as the macOS build is verified; Windows follows on its own. About 10 to 12 minutes from merge to a published release instead of about 30. `docs/releasing.md` describes the new flow and adds a note on pull request sizing.
 

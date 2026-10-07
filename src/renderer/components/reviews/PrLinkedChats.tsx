@@ -4,7 +4,7 @@
  * or several linked. Both pick from the chats of the PR's projects.
  */
 import { useEffect, useMemo, useState } from 'react'
-import type { PrLinkChat } from '@shared/pull-request-links'
+import { linkSourceLabel, type PrLinkChat } from '@shared/pull-request-links'
 import { prKey, type PrSummary } from '@shared/pull-requests'
 import { reviewContextLabel } from '@shared/review-context'
 import { agentLabel, isAgentType } from '@shared/types'
@@ -43,7 +43,7 @@ function chatOptions(chats: PrLinkChat[], linked: PrLinkChat[]): ComboboxOption[
   return [...linked, ...chats.filter((c) => !linkedIds.has(c.id))].map((c) => ({
     value: c.id,
     label: c.title,
-    hint: linkedIds.has(c.id) ? `${chatAgent(c)} · linked` : chatAgent(c),
+    hint: linkedIds.has(c.id) ? `${chatAgent(c)} · ${linkSourceLabel(c.linkSource).toLowerCase()}` : chatAgent(c),
   }))
 }
 
@@ -87,7 +87,7 @@ export function LinkedChatsCard({ pr }: { pr: PrSummary }) {
           >
             {chat.title}
           </button>
-          <span className="ml-auto shrink-0 text-[12px] text-[var(--text-secondary)]">{chatAgent(chat)}</span>
+          <span className="ml-auto shrink-0 text-[12px] text-[var(--text-secondary)]" title={linkSourceLabel(chat.linkSource)}>{chatAgent(chat)}</span>
           <Button variant="ghost" size="sm" onClick={() => void change('unlink', chat.id)} aria-label={`Unlink ${chat.title}`}>Unlink</Button>
         </CardRow>
       ))}

@@ -42,11 +42,11 @@ export function parseRemoteUrl(url: string): RepoRef | null {
 }
 
 /**
- * The repository a project's pull requests live in, from `git remote -v`
- * output. `upstream` wins over `origin` (a fork's PRs are opened against
- * upstream), then `origin`, then the first supported remote.
+ * Every repository a checkout's remotes point at, from `git remote -v`
+ * output: `upstream` first (a fork's PRs are opened against upstream), then
+ * `origin`, then the rest in order, each once.
  */
-export function repoFromRemotes(remoteVerbose: string): RepoRef | null {
+export function reposFromRemotes(remoteVerbose: string): RepoRef[] {
   const byName = new Map<string, RepoRef>()
   for (const line of remoteVerbose.split('\n')) {
     const m = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(line.trim())
@@ -54,7 +54,18 @@ export function repoFromRemotes(remoteVerbose: string): RepoRef | null {
     const ref = parseRemoteUrl(m[2])
     if (ref && !byName.has(m[1])) byName.set(m[1], ref)
   }
-  return byName.get('upstream') ?? byName.get('origin') ?? byName.values().next().value ?? null
+  const ordered = [byName.get('upstream'), byName.get('origin'), ...byName.values()]
+  const seen = new Set<string>()
+  return ordered.filter((ref): ref is RepoRef => {
+    if (!ref || seen.has(repoKey(ref))) return false
+    seen.add(repoKey(ref))
+    return true
+  })
+}
+
+/** The repository a project's pull requests live in: the first of `reposFromRemotes`. */
+export function repoFromRemotes(remoteVerbose: string): RepoRef | null {
+  return reposFromRemotes(remoteVerbose)[0] ?? null
 }
 
 /** The remotes (by name, `git remote -v` order) whose fetch URL is `repo`. */
@@ -68,4 +79,11 @@ export function remotesForRepo(remoteVerbose: string, repo: RepoRef): string[] {
     if (ref && repoKey(ref) === key) names.push(m[1])
   }
   return names
+}
+
+/** "owner/name" as the host's API names a repository, or null. */
+export function parseFullName(host: PrHost, fullName: string): RepoRef | null {
+  const [owner, name, ...rest] = fullName.trim().split('/')
+  if (rest.length > 0 || !owner || !name || !SEGMENT.test(owner) || !SEGMENT.test(name) || name === '.' || name === '..') return null
+  return { host, owner, name }
 }

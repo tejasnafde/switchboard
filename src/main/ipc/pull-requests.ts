@@ -11,7 +11,7 @@
 import { execFile } from 'node:child_process'
 import type { BackendHost } from '../backend/host'
 import { PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
-import type { GithubAccountState, PrListData, PrResult, SourceControlStatus, SourceControlTestResult } from '@shared/pull-requests'
+import type { GithubAccountState, PrListData, PrRef, PrResult, PrState, SourceControlStatus, SourceControlTestResult } from '@shared/pull-requests'
 import { applyHidden } from '@shared/pull-request-groups'
 import { parseRepoRefs } from '@shared/pull-request-hidden-repos'
 import { canLinkToProject, isPrRef, type PrHistoryScanResult, type PrLink, type PrLinkChat, type PrLinkResult } from '@shared/pull-request-links'
@@ -29,6 +29,7 @@ import {
   listPullRequestChats,
   markPullRequestHistoryScanned,
   resolveRootThreadId,
+  setPullRequestLinkState,
   unhidePullRequest,
   unhidePullRequestKeys,
   unhidePullRequestRepos,
@@ -36,6 +37,7 @@ import {
 } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
 import { PullRequestAutoLinker } from '../pull-requests/auto-link'
+import { PullRequestLinkSync } from '../pull-requests/link-sync'
 import {
   MAX_HISTORY_SCAN_CHARS,
   scanPendingPullRequestHistory,
@@ -119,6 +121,27 @@ let notifyLinks: (conversationId: string, created?: boolean) => void = () => {}
 let backgroundHistoryScanStarted = false
 
 /**
+ * The last failure automatic linking hit per root chat, in memory: the agent
+ * reads it through `list_thread_pull_requests`. A restart forgets it, like
+ * the failure would be retried anyway.
+ */
+const linkProblems = new Map<string, { at: number; message: string }>()
+
+function recordLinkProblem(threadId: string, message: string): void {
+  linkProblems.set(resolveRootThreadId(threadId), { at: Date.now(), message })
+}
+
+/** Stores a PR's state on its links and tells the chats whose link changed. */
+function storeLinkState(ref: PrRef, state: PrState): string[] {
+  try {
+    return setPullRequestLinkState(ref, state)
+  } catch (err) {
+    log.warn('storing a linked pull request state failed', { number: ref.number, err: String(err) })
+    return []
+  }
+}
+
+/**
  * Auto-links PRs named in a chat's output (see `pull-requests/auto-link.ts`)
  * and tells clients when any chat's links change. Re-attach with each new
  * registry and host, like the push notifier.
@@ -134,8 +157,34 @@ export function attachPullRequestAutoLink(bus: RuntimeEventBus, host: BackendHos
     repoForProject: (projectPath) => getService().repoFor(projectPath),
     link: (conversationId, ref) => linkConversationPullRequest(conversationId, ref, 'auto'),
     notify: (conversationId) => notifyLinks(conversationId),
+    problem: recordLinkProblem,
   })
-  return bus.subscribe((event) => void linker.onEvent(event))
+  const sync = new PullRequestLinkSync({
+    conversationFor: (threadId) => {
+      const row = getConversationByThreadId(threadId)
+      return row ? { id: row.id, projectPath: row.project_path, cwd: row.worktree_path || row.project_path } : null
+    },
+    projectRepos: (projectPath) => getService().projectRepos(projectPath),
+    reposFor: (dir) => getService().reposFor(dir),
+    currentBranch: (cwd) => currentBranch(cwd),
+    openPullRequestFor: (repo, branch) => getService().openPullRequestFor(repo, branch),
+    linkedPrs: (chatId) => listConversationPullRequests(chatId),
+    link: (chatId, ref) => linkConversationPullRequest(chatId, ref, 'auto'),
+    prState: async (ref) => {
+      const read = await getService().detail(ref)
+      return read.ok ? { ok: true, data: read.data.state } : read
+    },
+    setState: storeLinkState,
+    notify: (chatId) => notifyLinks(chatId),
+    problem: recordLinkProblem,
+  })
+  const stopLinker = bus.subscribe((event) => void linker.onEvent(event))
+  // The demo adapter's fixture stays as seeded, for the visual harness.
+  const stopSync = DEMO ? () => {} : bus.subscribe((event) => void sync.onEvent(event))
+  return () => {
+    stopLinker()
+    stopSync()
+  }
 }
 
 function registerLinkHandlers(host: BackendHost): void {
@@ -174,6 +223,7 @@ function registerLinkHandlers(host: BackendHost): void {
       return { ok: true, linked, capped, capChars: MAX_HISTORY_SCAN_CHARS }
     } catch (err) {
       log.warn('scanning a chat for pull requests failed', { threadId, err: String(err) })
+      recordLinkProblem(chat.id, `Scanning this chat's history for pull requests failed: ${String(err)}`)
       return { ok: false, message: 'Could not read this chat; see the log.' }
     }
   })
@@ -188,6 +238,7 @@ function historyScanDeps(): PullRequestHistoryScanDeps {
     link: (conversationId, ref) => linkConversationPullRequest(conversationId, ref, 'auto'),
     notify: (conversationId) => notifyLinks(conversationId),
     markScanned: (conversationId) => markPullRequestHistoryScanned(conversationId),
+    problem: recordLinkProblem,
   }
 }
 
@@ -261,6 +312,12 @@ function registerHideHandlers(host: BackendHost): void {
   host.handle(PullRequestChannels.UNHIDE_REPOS, toggleRepos(false))
 }
 
+/** A merge or decline from Reviews: the PR's links show it at once rather than at the next sync. */
+function afterTerminalWrite<T>(ref: unknown, state: PrState, result: PrResult<T>): PrResult<T> {
+  if (result.ok && isPrRef(ref)) for (const chatId of storeLinkState(ref, state)) notifyLinks(chatId)
+  return result
+}
+
 export function registerPullRequestHandlers(host: BackendHost): void {
   registerLinkHandlers(host)
   registerHideHandlers(host)
@@ -290,7 +347,7 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     linkToChat: (chatId, ref, created) => {
       let added = false
       try {
-        added = linkConversationPullRequest(chatId, ref, 'manual')
+        added = linkConversationPullRequest(chatId, ref, created ? 'created' : 'agent')
       } catch (err) {
         // The PR exists either way; the agent must still hear its URL, not a failure it would retry.
         log.warn('linking an agent-opened pull request failed', { number: ref.number, err: String(err) })
@@ -300,8 +357,23 @@ export function registerPullRequestHandlers(host: BackendHost): void {
       if (added || created) notifyLinks(resolveRootThreadId(chatId), created)
       return true
     },
+    links: (chatId) => listConversationPullRequests(chatId),
+    unlinkFromChat: (chatId, ref) => {
+      const removed = unlinkConversationPullRequest(chatId, ref)
+      if (removed) notifyLinks(resolveRootThreadId(chatId))
+      return removed
+    },
+    linkProblem: (chatId) => linkProblems.get(resolveRootThreadId(chatId)) ?? null,
   })
-  host.handle(PullRequestChannels.LIST, async () => withHidden(await getService().list()))
+  host.handle(PullRequestChannels.LIST, async () => {
+    const result = withHidden(await getService().list())
+    // The list is a free state read for every linked PR in it.
+    if (result.ok) {
+      const changed = new Set(result.data.prs.flatMap((pr) => storeLinkState(pr.ref, pr.state)))
+      for (const chatId of changed) notifyLinks(chatId)
+    }
+    return result
+  })
   host.handle(PullRequestChannels.DETAIL, (ref: unknown) => getService().detail(ref))
   host.handle(PullRequestChannels.FILES, (ref: unknown) => getService().files(ref))
   host.handle(PullRequestChannels.CONVERSATIONS, (ref: unknown) => getService().conversations(ref))
@@ -314,11 +386,11 @@ export function registerPullRequestHandlers(host: BackendHost): void {
   host.handle(PullRequestWriteChannels.COMMENT, (ref: unknown, input: unknown) => getService().comment(ref, input))
   host.handle(PullRequestWriteChannels.INLINE_COMMENT, (ref: unknown, input: unknown) => getService().inlineComment(ref, input))
   host.handle(PullRequestWriteChannels.SUBMIT_REVIEW, (ref: unknown, input: unknown) => getService().submitReview(ref, input))
-  host.handle(PullRequestWriteChannels.MERGE, (ref: unknown, input: unknown) => getService().merge(ref, input))
+  host.handle(PullRequestWriteChannels.MERGE, async (ref: unknown, input: unknown) => afterTerminalWrite(ref, 'merged', await getService().merge(ref, input)))
   host.handle(PullRequestWriteChannels.RERUN_CHECK, (ref: unknown, input: unknown) => getService().rerunCheck(ref, input))
   host.handle(PullRequestWriteChannels.ADD_REVIEWER, (ref: unknown, input: unknown) => getService().addReviewer(ref, input))
   host.handle(PullRequestWriteChannels.REMOVE_REVIEWER, (ref: unknown, input: unknown) => getService().removeReviewer(ref, input))
-  host.handle(PullRequestWriteChannels.DECLINE, (ref: unknown) => getService().decline(ref))
+  host.handle(PullRequestWriteChannels.DECLINE, async (ref: unknown) => afterTerminalWrite(ref, 'closed', await getService().decline(ref)))
 
   host.handle(SourceControlChannels.STATUS, async (): Promise<SourceControlStatus> => ({
     bitbucket: DEMO ? { state: 'configured', email: 'tejas@example.com' } : credentials.status(),

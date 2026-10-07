@@ -1,0 +1,93 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "pr-link-improvements",
+  "summary": "Chat to pull request links record how they were made and the PR's last known state, agents can manage them, and more of them happen without the agent. (1) Provenance: conversation_pull_requests.source is now manual (Reviews), auto (a URL, bbpr command or branch in the chat), agent (link_pull_request) or created (create_pull_request opened it); an explicit link upgrades an automatic one. Existing manual and auto rows keep their value: nothing recorded which manual rows an agent opened. The chat header popover and the Reviews link picker show it. (2) Three Switchboard MCP tools for all three agents: link_pull_request and unlink_pull_request (a local write, no host card; plan mode denies both through decidePermission; same repository guard as Reviews; unlink tombstones) and list_thread_pull_requests (read-only, runs unasked, and reports the last automatic linking failure). (3) Branch detection: at session start (session.provider) and each turn end, the open PR of the branch checked out in the chat's working directory is auto-linked when it is on a repository the project covers; the host answer is cached 5 minutes per repository and branch, a failed read is not repeated for 60 s. (4) Repository scope: a project covers every repository its remotes point at (upstream first, then origin, then the rest) and the repository its primary remote was forked from (read once per process from the host); PRs elsewhere are still refused. (5) Link state: new state and state_at columns hold the PR's state; a shell gh pr merge/close or bbpr merge/decline re-reads the chat's links when the tool completes, a turn end re-reads links older than 15 minutes, a merge or decline from Reviews and every Reviews list read store it; the header shows merged or closed when that read is newer than the Reviews list. (6) Auto-link, history scan, branch detection and state sync failures are kept per chat in memory and returned by list_thread_pull_requests. Phones show the links with state and provenance and can unlink (pull-requests:links and pull-requests:unlink are already open to a phone's scopes); linking from a phone is left to Reviews on the desktop, agents and automatic linking.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/reviews/LinkedPrControl.tsx",
+        "src/renderer/components/reviews/PrLinkedChats.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/components/PrLinksBanner.tsx",
+        "apps/mobile/src/components/__tests__/PrLinksBanner.test.tsx",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/PrLinkRows.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSessionScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/PrLinkRowsFixturesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/remote/RemotePrLinksDecoderTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pull-request-links.ts",
+        "src/shared/project-repos.ts",
+        "src/shared/pull-request-remote.ts",
+        "src/main/mcp/pr-link-tools.ts",
+        "src/main/mcp/pr-tools.ts",
+        "src/main/mcp/agent-registration.ts",
+        "src/main/mcp/switchboard-mcp-server.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/pull-requests/link-sync.ts",
+        "src/main/pull-requests/auto-link.ts",
+        "src/main/pull-requests/history-scan.ts",
+        "src/main/pull-requests/service.ts",
+        "src/main/pull-requests/provider.ts",
+        "src/main/pull-requests/github.ts",
+        "src/main/pull-requests/bitbucket.ts",
+        "src/main/ipc/pull-requests.ts",
+        "tests/fixtures/pr-link-rows.json",
+        "tests/unit/mcp-pr-link-tools.test.ts",
+        "tests/unit/pull-request-link-rules.test.ts",
+        "tests/unit/pull-request-link-sync.test.ts",
+        "tests/unit/pull-request-service.test.ts",
+        "tests/unit/mcp-agent-registration.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/pull-request-links.ts",
+        "tests/unit/pull-request-links-db.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Two nullable columns added with ALTER TABLE when missing, and new source values in an existing TEXT column; an older build reading a newer database sees agent/created rows as links with an unknown source, which every client renders as plain 'Linked'. PrLink.state/stateAt and PrLinkChat.linkSource are optional, so newer clients against an older backend show no state and 'Linked'. The phone changes are JS (OTA) and Android app code with no new permission or native module. No package identity, signing, deep link or update channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/pull-request-links-db.test.ts: the four sources store and read back; an explicit link upgrades an auto link and revives a tombstone, an auto link never does; state columns are added to an older table; setPullRequestLinkState returns only chats whose state changed.",
+      "tests/unit/mcp-pr-link-tools.test.ts: link by URL and by repository + number, refused outside the project's repositories and in plan mode (with a tool.denied event), already-linked is not an error; unlink tombstones; the list reports source, state and the last problem.",
+      "tests/unit/pull-request-link-sync.test.ts: the branch PR links at session start and turn end, cached so a second turn end makes no host call, not for a repository the project does not cover; a shell merge re-reads states; terminal states are not re-read; failures are recorded and not retried at once.",
+      "tests/unit/pull-request-link-rules.test.ts: provenance labels, header state choice, merge/close command detection, several remotes and fork parents in coveredRepos, and phoneLinkRowText against tests/fixtures/pr-link-rows.json (shared with Android).",
+      "tests/unit/pull-request-service.test.ts: a fork parent and a second remote become linkable; a failed fork-parent read is retried later.",
+      "apps/mobile jest: PrLinksBanner renders each row, nothing without links, and unlinks the tapped row.",
+      "apps/android ./gradlew :app:testDebugUnitTest: PrLinkRows against tests/fixtures/pr-link-rows.json, the links and unlink decoders, and the existing coordinator suite (1014 tests).",
+      "npm run typecheck and npm test green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Not run in the built app or on a phone against a real GitHub or Bitbucket account: branch detection, fork-parent reads and state refresh are covered through injected fakes only.",
+      "Linking from a phone has no UI (the channel is open to a phone's scopes, but the phone has no PR picker yet).",
+      "The Android banner and unlink dialog were compiled and unit-tested but not opened on a device or emulator; the Expo banner was not opened on a phone."
+    ]
+  }
+}
