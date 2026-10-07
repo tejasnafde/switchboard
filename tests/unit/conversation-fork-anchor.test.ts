@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '../../src/shared/types'
 import { digestForkMessage, type ForkAnchor } from '../../src/shared/conversation-fork'
 import { compactSummaryText } from '../../src/shared/synthetic-message'
+import { imagesByReference } from '../../src/shared/history-image-refs'
 import {
   isForkableCanonicalMessage,
   resolveCanonicalForkAnchor,
@@ -60,6 +61,15 @@ describe('canonical conversation fork anchor', () => {
     const result = resolveCanonicalForkAnchor([canonical(wrapped)], legacy)
     expect(result.ok && result.resolved.contentDigest).toBe(digestForkMessage(wrapped, sha256))
     expect(resolveCanonicalForkAnchor([canonical(wrapped)], { ...legacy, messageId: 'gone' }).ok).toBe(true)
+  })
+
+  it('accepts an anchor digested over a desktop window that carried the image by reference', () => {
+    const withImage = message('u4', 'user', 'see', 11, { images: [{ url: 'data:image/png;base64,AAAA', mimeType: 'image/png' }] })
+    const [shown] = imagesByReference([withImage], () => {})
+    const result = resolveCanonicalForkAnchor([canonical(withImage)], anchor(shown))
+    expect(result.ok && result.resolved.contentDigest).toBe(digestForkMessage(withImage, sha256))
+    const otherImage = { ...shown, images: [{ ...shown.images![0], ref: { messageId: 'u4', index: 0, bytes: 9 } }] }
+    expect(resolveCanonicalForkAnchor([canonical(withImage)], anchor(otherImage)).ok).toBe(false)
   })
 
   it('resolves an exact durable id and validates the full fingerprint', () => {

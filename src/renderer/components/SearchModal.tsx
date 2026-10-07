@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAgentStore } from '../stores/agent-store'
+import { ensureFullHistory } from '../services/history-loader'
 import { renderSnippetHtml } from './search-snippet'
 import { resolveSessionSelectTarget } from '../utils/session-eviction'
 import type { ChatMessage } from '@shared/types'
@@ -97,6 +98,8 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
       }
     }
 
+    // The hit can be older than the window a long chat opened with.
+    await ensureFullHistory(targetId)
     setActiveSession(targetId)
     // Ask MessageList to jump the virtualizer to this message. The effect
     // there retries until the message shows up in the turns array (gives

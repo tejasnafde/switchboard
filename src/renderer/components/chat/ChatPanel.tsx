@@ -5,6 +5,7 @@ import { perfSpan } from '../../perf'
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { useAgentStore, adoptStartedRuntimeMode, runtimeModeToSend, type RuntimeMode } from '../../stores/agent-store'
+import { ensureFullHistory } from '../../services/history-loader'
 import { useDraftStore } from '../../stores/draft-store'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useKanbanStore } from '../../stores/kanban-store'
@@ -870,6 +871,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         log.warn('pending-handoff read failed, sending without preamble', err)
       }
       if (pendingHandoffFrom) {
+        // The preamble replays the whole chat, not just the open window.
+        await ensureFullHistory(sessionId)
         // Live read - the closure's `messages` lags in-place streamed edits.
         const history = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.messages ?? []
         const handoffSpan = perfSpan('handoff.build', { thread: sessionId, messages: history.length })
@@ -1462,6 +1465,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             sessionId={sessionId}
             visible={visible}
             busy={status === 'running' || status === 'thinking'}
+            hasOlderHistory={Boolean(activeSession?.olderHistoryCursor)}
             agentType={activeSession?.type ?? agentType}
             onApproval={handleApproval}
             onAnswerQuestion={handleAnswerQuestion}

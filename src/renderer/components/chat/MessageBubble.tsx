@@ -1,4 +1,5 @@
 import { memo, useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { MessageImages } from './MessageImages'
 import { createPortal } from 'react-dom'
 import { agentShortLabel, type ChatMessage } from '@shared/types'
 import { fmtDuration } from '@shared/format'
@@ -508,36 +509,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
 
         {/* Attached images */}
         {message.images && message.images.length > 0 && (
-          <div style={{
-            display: 'flex',
-            gap: '6px',
-            flexWrap: 'wrap',
-            marginTop: body ? '8px' : '0',
-          }}>
-            {message.images.map((img, i) => (
-              <div
-                key={i}
-                onClick={() => setPreviewImage(img.url)}
-                style={{
-                  width: '120px',
-                  height: '90px',
-                  borderRadius: '6px',
-                  overflow: 'hidden',
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer',
-                  transition: 'opacity 0.12s',
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.85' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
-              >
-                <img
-                  src={img.url}
-                  alt={img.name || 'attachment'}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-              </div>
-            ))}
-          </div>
+          <MessageImages images={message.images} sessionId={sessionId} spaced={Boolean(body)} onOpen={setPreviewImage} />
         )}
 
         {/* Tool calls */}

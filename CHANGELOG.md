@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Changed
+- **Long chats open fast on the desktop.** A chat opens with its newest 200 rows and loads older rows as you scroll up, keeping your place. Images in history load when they scroll into view instead of riding inside the chat load. The backend parses one profile copy of a session instead of every copy (the others are proven byte prefixes of it by hash), and a growing transcript parses only its new lines. On a copied 98 MB transcript held in five profiles, a reopen measured about 0.45 s and the load payload 130 KB; before, that chat took 3.7 to 7 s to open with a 58 MB payload. Search, export, fork and the handoff preamble still read the whole chat. See `docs/feature-parity/desktop-history-window.json`.
+
 ### Added
 - **Pull request links say how they were made and keep up with the PR.** A chat's link records whether you, automatic linking, an agent, or an agent that opened the PR made it, and the chat header popover, the Reviews chat picker and both phone apps show it. Agents get `link_pull_request`, `unlink_pull_request` and `list_thread_pull_requests` (plan mode refuses the first two; the list also reports the last automatic linking failure). A chat whose branch has an open PR links it at session start and turn end, so a second chat opened to review a PR links it too. A project's other remotes and its fork parent count as its repositories. A merge or close, from Reviews or from `gh`/`bbpr` in a shell, shows in the chat header instead of a stale open state. Phones can unlink, show why an unlink failed, keep a long link list from covering the chat, and name the repository on each Unlink for screen readers. See `docs/feature-parity/pr-link-improvements.json`.
 

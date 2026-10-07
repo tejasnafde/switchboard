@@ -1,6 +1,7 @@
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
 import type { AgentType, ChatMessage } from '@shared/types'
 import { useAgentStore } from '../stores/agent-store'
+import { ensureFullHistory } from './history-loader'
 import type { RuntimeMode } from '../../shared/provider-events'
 
 interface LoadedConversation {
@@ -57,6 +58,8 @@ export async function openConversationAtAnchor(metadata: ForkLineageMetadata): P
     store.setMessages(parentId, loaded.messages)
   }
 
+  // The anchor can be older than the window an open chat holds.
+  await ensureFullHistory(parentId)
   store.setActiveSession(parentId)
   store.requestScrollToMessage(parentId, metadata.anchor.messageId)
 }
