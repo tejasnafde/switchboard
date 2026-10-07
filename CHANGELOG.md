@@ -5,6 +5,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Fixed
+- **The chat loading placeholder fills the pane.** It sat as two short groups at the top of an empty pane. It now anchors to the bottom, next to the composer where the chat appears, and fills the pane.
+
+### Fixed
 - **Stop, queues and approval cards recover from failures, and a chat keeps its model per provider.** Switching a chat back to a provider restores the model and reasoning effort it last used there, and an effort change reaches the running session. Stop while a session is still starting cancels the start, so the message is not sent. After a lost connection the desktop re-reads which chats are running and reloads the transcript of a chat on screen; Stop clears a "Working..." the backend no longer has a turn for, on desktop and both phones. After a failed or usage-limited turn the queued messages are held (Held, with Resume and Cancel) instead of running into the same failure, and a queued message that could not start stays marked Not sent until Cancel returns its text. An approval or question whose agent session ended becomes a notice with the reason on every client, and answering one shows an error instead of hanging on "Approving...". The chat-load timing now logs the response size. See `docs/feature-parity/p0-turn-and-model.json`.
 
 ### Changed
