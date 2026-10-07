@@ -107,6 +107,10 @@ fun ThreadSessionScreen(
         onOutboxAction = onOutboxAction,
         forkMetadata = session.forkMetadata,
         onFork = onFork,
+        prLinks = session.prLinks,
+        onUnlinkPrLink = { ref ->
+            (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.unlinkPrLink(ref) }
+        },
     )
 }
 

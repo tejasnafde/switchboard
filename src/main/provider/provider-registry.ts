@@ -83,6 +83,7 @@ import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
 import { AgentApprovalBroker, type AgentApprovalCard, type AgentWritePlan } from '../mcp/agent-approvals'
 import { AgentWriteBudget } from '../mcp/agent-write-budget'
 import { agentPullRequestAccess, buildPrTools, isPrWritePlan, prWritePlanSummary, runPrWritePlan } from '../mcp/pr-tools'
+import { buildPrLinkTools } from '../mcp/pr-link-tools'
 import { buildPeerMcpTools, runPeerSendPlan } from '../mcp/peer-mcp-tools'
 import { buildApprovalMcpTools } from '../mcp/approval-mcp-tools'
 import { sqliteApprovalCardStore } from '../db/agent-approval-cards'
@@ -1303,6 +1304,7 @@ export class ProviderRegistry implements PeerToolHost {
           budget: this.agentWriteBudget,
           pullRequests: agentPullRequestAccess(),
         }),
+        ...buildPrLinkTools({ threadId, chatId: chatId(), runtimeMode, publish, pullRequests: agentPullRequestAccess() }),
         ...buildPeerMcpTools({ threadId, chatId: chatId(), runtimeMode, publish, approvals: this.agentApprovals, peers: this }),
         ...buildApprovalMcpTools({ chatId: chatId(), approvals: this.agentApprovals }),
       ])

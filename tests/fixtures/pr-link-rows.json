@@ -1,0 +1,7 @@
+[
+  { "id": "open-auto", "link": { "ref": { "host": "github", "owner": "acme", "name": "app", "number": 612 }, "source": "auto", "state": "open" }, "text": "#612 · Linked automatically · acme/app", "unlinkLabel": "Unlink pull request acme/app #612" },
+  { "id": "merged-created", "link": { "ref": { "host": "bitbucket", "owner": "geoiq", "name": "ssg-bot-v2", "number": 7 }, "source": "created", "state": "merged" }, "text": "#7 · merged · Opened by the agent · geoiq/ssg-bot-v2", "unlinkLabel": "Unlink pull request geoiq/ssg-bot-v2 #7" },
+  { "id": "closed-agent", "link": { "ref": { "host": "github", "owner": "acme", "name": "app", "number": 3 }, "source": "agent", "state": "closed" }, "text": "#3 · closed · Linked by the agent · acme/app", "unlinkLabel": "Unlink pull request acme/app #3" },
+  { "id": "older-backend-no-state", "link": { "ref": { "host": "github", "owner": "acme", "name": "app", "number": 9 }, "source": "manual" }, "text": "#9 · Linked by you · acme/app", "unlinkLabel": "Unlink pull request acme/app #9" },
+  { "id": "unknown-source", "link": { "ref": { "host": "github", "owner": "acme", "name": "app", "number": 10 }, "source": "stack", "state": null }, "text": "#10 · Linked · acme/app", "unlinkLabel": "Unlink pull request acme/app #10" }
+]

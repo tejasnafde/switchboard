@@ -45,6 +45,8 @@ export interface AutoLinkDeps {
   /** Returns whether a link was added (an existing or removed link returns false). */
   link(conversationId: string, ref: PrRef): boolean
   notify(conversationId: string): void
+  /** A scan failed; the agent sees it through `list_thread_pull_requests`. */
+  problem?(threadId: string, message: string): void
 }
 
 export class PullRequestAutoLinker {
@@ -93,6 +95,7 @@ export class PullRequestAutoLinker {
       if (added) this.deps.notify(chat.id)
     } catch (err) {
       log.warn('auto-linking a pull request failed', { threadId, err: String(err) })
+      this.deps.problem?.(threadId, `Linking a pull request this chat named failed: ${String(err)}`)
     }
   }
 }

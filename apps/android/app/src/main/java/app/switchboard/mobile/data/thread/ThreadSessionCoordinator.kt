@@ -29,6 +29,9 @@ import app.switchboard.mobile.domain.remote.StartedSession
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.domain.thread.PrLink
+import app.switchboard.mobile.domain.thread.PrLinkRef
+import app.switchboard.mobile.domain.thread.PrLinkUnlinkResult
 import app.switchboard.mobile.domain.thread.QueuedTurnActionResult
 import app.switchboard.mobile.domain.thread.QueuedTurnSummary
 import app.switchboard.mobile.domain.thread.TurnDelivery
@@ -90,6 +93,7 @@ data class ThreadSessionState(
     val pendingActions: ThreadPendingActions = ThreadPendingActions(),
     val forkMetadata: ForkLineageMetadata? = null,
     val followUp: ThreadFollowUpState = ThreadFollowUpState(),
+    val prLinks: List<PrLink> = emptyList(),
 )
 
 data class ThreadFollowUpState(
@@ -305,6 +309,19 @@ interface ThreadSessionRemote {
         callback: (RemoteResponse<QueuedTurnActionResult>) -> Unit,
     ): Unit = throw UnsupportedOperationException("Queued messages are not supported")
 
+    /** The pull requests linked to this chat; open to a phone's scopes, no capability gate. */
+    fun pullRequestLinks(threadId: String, callback: (RemoteResponse<List<PrLink>>) -> Unit): Unit =
+        throw UnsupportedOperationException("Pull request links are not supported")
+
+    fun unlinkPullRequest(
+        threadId: String,
+        ref: PrLinkRef,
+        callback: (RemoteResponse<PrLinkUnlinkResult>) -> Unit,
+    ): Unit = throw UnsupportedOperationException("Pull request links are not supported")
+
+    /** Any chat's links changed; re-read this thread's links rather than matching ids. */
+    fun onPullRequestLinksChanged(listener: () -> Unit): Cancelable = Cancelable {}
+
     /** Start a queue held after a failed or usage-limited turn. */
     fun resumeQueuedTurns(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit): Unit =
         throw UnsupportedOperationException("Queued messages are not supported")
@@ -436,6 +453,21 @@ class SwitchboardThreadSessionRemote(
     ) {
         if (promote) client.promoteQueuedTurn(threadId, messageId, callback) else client.cancelQueuedTurn(threadId, messageId, callback)
     }
+
+    override fun pullRequestLinks(threadId: String, callback: (RemoteResponse<List<PrLink>>) -> Unit) {
+        client.pullRequestLinks(threadId, callback)
+    }
+
+    override fun unlinkPullRequest(
+        threadId: String,
+        ref: PrLinkRef,
+        callback: (RemoteResponse<PrLinkUnlinkResult>) -> Unit,
+    ) {
+        client.unlinkPullRequest(threadId, ref, callback)
+    }
+
+    override fun onPullRequestLinksChanged(listener: () -> Unit): Cancelable =
+        client.onPullRequestLinksChanged(listener)
 
     override fun resumeQueuedTurns(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
         client.resumeQueuedTurns(threadId, callback)
@@ -588,6 +620,9 @@ class ThreadSessionCoordinator(
     private var archive = ThreadArchiveState()
     private var forkMetadata: ForkLineageMetadata? = initialCached?.historyMeta?.forkMetadata
     private var allProfiles: List<ProviderInstance> = emptyList()
+    private var prLinks: List<PrLink> = emptyList()
+    private var prLinksRequest = 0L
+    private var prLinksSubscription: Cancelable? = null
     private val mutableState = MutableStateFlow(
         ThreadSessionState(load, composer, models = models, profiles = profiles),
     )
@@ -641,6 +676,8 @@ class ThreadSessionCoordinator(
         loadSkills()
         refreshModels()
         refreshProfiles()
+        prLinksSubscription = remote.onPullRequestLinksChanged(::loadPrLinks)
+        loadPrLinks()
         remote.markRead(threadId) { /* best effort; local viewing state already cleared unread */ }
     }
 
@@ -1217,10 +1254,13 @@ class ThreadSessionCoordinator(
         profileChangeRequest += 1
         archiveRequest += 1
         reattachRequest += 1
+        prLinksRequest += 1
         subscription?.cancel()
         gapSubscription?.cancel()
+        prLinksSubscription?.cancel()
         gapSubscription = null
         subscription = null
+        prLinksSubscription = null
         reduce(ThreadAction.SetViewing(scope.connectionId, threadId, false))
     }
 
@@ -1737,6 +1777,7 @@ class ThreadSessionCoordinator(
                 heldErrors = heldErrors.toMap(),
                 heldBusy = heldBusy.toSet(),
             ),
+            prLinks = prLinks,
         )
     }
 
@@ -1753,6 +1794,56 @@ class ThreadSessionCoordinator(
             }
         } catch (_: RuntimeException) {
             // Skills are optional; built-in slash commands remain available.
+        }
+    }
+
+    /**
+     * Re-read the pull requests linked to this chat. Called on start and on
+     * `pull-requests:links-changed`, since the event names the root chat
+     * rather than this thread's id. Best-effort like [loadSkills]: an older
+     * backend has no handler for the channel, so a Failure just leaves the
+     * banner showing whatever it last had (empty, on a first load).
+     */
+    @Synchronized
+    private fun loadPrLinks() {
+        if (closed || remote.scope != scope) return
+        val request = ++prLinksRequest
+        try {
+            remote.pullRequestLinks(threadId) { response ->
+                synchronized(this) {
+                    if (!accepts(response, request, prLinksRequest) || closed || remote.scope != scope) return@synchronized
+                    (response.outcome as? RemoteOutcome.Success)?.let { prLinks = it.value }
+                    publish()
+                }
+            }
+        } catch (_: RuntimeException) {
+            // Pull request links are optional; the banner stays as it was.
+        }
+    }
+
+    /** Unlink a pull request from this chat. The links list itself is not
+     *  updated here - a successful unlink fires `pull-requests:links-changed`
+     *  on the backend, which [loadPrLinks] answers. */
+    @Synchronized
+    fun unlinkPrLink(ref: PrLinkRef) {
+        if (closed || remote.scope != scope) return
+        try {
+            remote.unlinkPullRequest(threadId, ref) { response ->
+                synchronized(this) {
+                    if (!accepts(response) || closed || remote.scope != scope) return@synchronized
+                    val message = when (val outcome = response.outcome) {
+                        is RemoteOutcome.Success -> (outcome.value as? PrLinkUnlinkResult.Refused)?.message
+                        is RemoteOutcome.Failure -> outcome.message
+                    }
+                    if (message != null) {
+                        controlMessage = message
+                        publish()
+                    }
+                }
+            }
+        } catch (error: RuntimeException) {
+            controlMessage = error.message ?: "Could not unlink the pull request"
+            publish()
         }
     }
 

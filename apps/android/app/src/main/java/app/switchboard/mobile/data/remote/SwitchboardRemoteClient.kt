@@ -34,6 +34,9 @@ import app.switchboard.mobile.domain.remote.WorktreeCreationRequest
 import app.switchboard.mobile.domain.remote.WorktreeCreationSnapshot
 import app.switchboard.mobile.domain.push.PushBackendResult
 import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.domain.thread.PrLink
+import app.switchboard.mobile.domain.thread.PrLinkRef
+import app.switchboard.mobile.domain.thread.PrLinkUnlinkResult
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.platform.protocol.RequestSubmission
 import app.switchboard.mobile.platform.protocol.RpcOutcome
@@ -98,6 +101,11 @@ object BackendChannels {
     const val WorktreeCreationAct = "worktree-creation:act"
     const val WorktreeCreationProgress = "worktree-creation:progress"
     const val ListIapTargets = "machines:list-iap-targets"
+    /** The pull requests linked to a chat; open to a phone's scopes (`device-auth.ts`), no capability gate. */
+    const val PullRequestLinks = "pull-requests:links"
+    const val PullRequestUnlink = "pull-requests:unlink"
+    /** Payload `{ conversationId, created? }`; re-read the open thread's links rather than matching ids. */
+    const val PullRequestLinksChanged = "pull-requests:links-changed"
 }
 
 class SwitchboardRemoteClient(
@@ -560,6 +568,37 @@ class SwitchboardRemoteClient(
         RemoteDecoders::pendingRequests,
         callback,
     )
+
+    /** The pull requests linked to a chat; open to a phone's scopes, no capability gate. */
+    fun pullRequestLinks(
+        threadId: String,
+        callback: (RemoteResponse<List<PrLink>>) -> Unit,
+    ) = call(BackendChannels.PullRequestLinks, array(JsonString(threadId)), RemoteDecoders::prLinks, callback)
+
+    fun unlinkPullRequest(
+        threadId: String,
+        ref: PrLinkRef,
+        callback: (RemoteResponse<PrLinkUnlinkResult>) -> Unit,
+    ) = call(
+        BackendChannels.PullRequestUnlink,
+        array(
+            JsonString(threadId),
+            obj(
+                "host" to JsonString(ref.host),
+                "owner" to JsonString(ref.owner),
+                "name" to JsonString(ref.name),
+                "number" to JsonNumber(ref.number.toString()),
+            ),
+        ),
+        RemoteDecoders::prLinkUnlinkResult,
+        callback,
+    )
+
+    /** Any chat's links changed; the payload names the root chat, so re-read rather than match ids. */
+    fun onPullRequestLinksChanged(listener: () -> Unit): Cancelable =
+        rpc.onChannelEvent(BackendChannels.PullRequestLinksChanged) { scope, _ ->
+            if (scope.connectionId == connectionId && rpc.scope == scope) listener()
+        }
 
     /** The backend's live sessions with their current status, which the desktop also adopts on launch. */
     fun listSessionStatuses(callback: (RemoteResponse<Map<String, String>>) -> Unit) =

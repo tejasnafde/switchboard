@@ -261,13 +261,15 @@ describe('the pending scan', () => {
     expect(d.readHistory).toHaveBeenCalledTimes(3)
   })
 
-  it('marks a chat whose history cannot be read', async () => {
+  it('marks a chat whose history cannot be read, and records the problem for the agent', async () => {
     const d = pendingDeps(['unreadable'])
+    const problem = vi.fn()
     vi.mocked(d.readHistory).mockRejectedValue(new Error('EACCES'))
 
-    await scanPendingPullRequestHistory(d, { yieldMs: 0 })
+    await scanPendingPullRequestHistory({ ...d, problem }, { yieldMs: 0 })
 
     expect([...d.scanned]).toEqual(['unreadable'])
+    expect(problem).toHaveBeenCalledWith('unreadable', expect.stringContaining('EACCES'))
   })
 
   it('does not mark a chat when a manual scan cannot read it', async () => {

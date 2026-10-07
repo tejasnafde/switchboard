@@ -66,6 +66,9 @@ import { keyboardAvoidance } from '../lib/keyboard-avoidance'
 import { mergeHistoryItems, historyToItems } from '../lib/thread-history'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
+import { PrLinksBanner } from '../components/PrLinksBanner'
+import { unlinkPrLink } from '../lib/pr-link-unlink'
+import type { PrLink } from '@shared/pull-request-links'
 import { VoiceNoteBar } from '../components/MicButton'
 import { SendMicButton } from '../components/SendMicButton'
 import { SyntheticRow } from '../components/SyntheticRow'
@@ -180,6 +183,42 @@ export default function ThreadScreen({ route, navigation }: Props) {
       }
     }, [key, connectionId, threadId]),
   )
+
+  // Linked pull requests, re-read whenever any chat's links change; the
+  // sequence drops a read that a newer one overtook.
+  const [prLinks, setPrLinks] = useState<PrLink[]>([])
+  const prLinksSeqRef = useRef(0)
+  const prLinksConnection = useConnectionsStore((s) => s.status[connectionId])
+  useEffect(() => {
+    const client = getClient(connectionId)
+    if (!client) return
+    const load = (): void => {
+      const seq = ++prLinksSeqRef.current
+      client.pullRequestLinks(threadId)
+        .then((links) => { if (seq === prLinksSeqRef.current) setPrLinks(links) })
+        .catch((err) => log.warn('reading linked pull requests failed', err))
+    }
+    load()
+    const stop = client.onPullRequestLinksChanged(load)
+    return () => {
+      prLinksSeqRef.current++
+      stop()
+    }
+  }, [connectionId, threadId, prLinksConnection])
+
+  const unlinkPr = useCallback((link: PrLink) => {
+    Alert.alert(`Unlink #${link.ref.number}?`, 'It will not be linked to this chat again automatically.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Unlink',
+        style: 'destructive',
+        onPress: () => {
+          void unlinkPrLink(getClient(connectionId), threadId, link.ref)
+            .then((problem) => { if (problem) Alert.alert('Could not unlink', problem) })
+        },
+      },
+    ])
+  }, [connectionId, threadId])
 
   const reportError = useCallback(
     (err: unknown) => {
@@ -1174,6 +1213,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
       )}
+
+      <PrLinksBanner links={prLinks} onUnlink={unlinkPr} />
 
       {forkMetadata && (
         <View style={styles.forkBanner} accessibilityRole="summary">

@@ -3,7 +3,8 @@
  * chat's own project's repository" check (Reviews, chat <-> PR links, the
  * agent PR tools).
  *
- * A project covers the repository its folder's git remotes point at. A folder
+ * A project covers the repositories its folder's git remotes point at
+ * (`upstream` and `origin` both) and the repository a fork was made from. A folder
  * that points at no GitHub or Bitbucket repository (often not a repository at
  * all, but a parent of several) covers instead the repositories of the git
  * work trees at most two levels below it. A project that is a repository never
@@ -24,7 +25,10 @@ export interface ChildRepo {
 }
 
 export interface ProjectRepos {
+  /** The primary repository: `upstream`, else `origin`, else the first remote. */
   own: RepoRef | null
+  /** The checkout's other remotes and the fork parents, linkable like `own`; empty when `own` is not set. */
+  also?: RepoRef[]
   /** Empty whenever `own` is set. */
   children: ChildRepo[]
 }
@@ -37,9 +41,9 @@ const SKIPPED_DIRS = new Set(['node_modules'])
 
 export function coveredRepos(project: ProjectRepos | null): RepoRef[] {
   if (!project) return []
-  if (project.own) return [project.own]
   const seen = new Set<string>()
-  return project.children.map((c) => c.repo).filter((repo) => {
+  const repos = project.own ? [project.own, ...(project.also ?? [])] : project.children.map((c) => c.repo)
+  return repos.filter((repo) => {
     const key = repoKey(repo)
     if (seen.has(key)) return false
     seen.add(key)
@@ -117,7 +121,12 @@ export async function scanChildWorkTrees(
   return found
 }
 
-/** The rule itself: a project's own repository wins, and only a folder without one covers its children. */
-export function projectReposFrom(own: RepoRef | null, children: readonly ChildRepo[]): ProjectRepos {
-  return own ? { own, children: [] } : { own: null, children: [...children] }
+/**
+ * The rule itself: a project's own repositories win (`also`: its other
+ * remotes and fork parents), and only a folder without one covers its children.
+ */
+export function projectReposFrom(own: RepoRef | null, children: readonly ChildRepo[], also: readonly RepoRef[] = []): ProjectRepos {
+  if (!own) return { own: null, children: [...children] }
+  const extra = also.filter((repo) => repoKey(repo) !== repoKey(own))
+  return extra.length > 0 ? { own, also: extra, children: [] } : { own, children: [] }
 }

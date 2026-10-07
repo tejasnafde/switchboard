@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const threadSessions = new Map<string, string>() // claude_session_id -> thread_id
 const conversations = new Map<string, { title: string; agent_type: string; project_path: string; updated_at: number; archived: number }>()
-interface LinkRow { conversation_id: string; host: string; owner: string; repo: string; number: number; source: string; linked_at: number; unlinked_at: number | null }
+interface LinkRow { conversation_id: string; host: string; owner: string; repo: string; number: number; source: string; linked_at: number; unlinked_at: number | null; state?: string | null; state_at?: number | null }
 const links = new Map<string, LinkRow>()
 const historyScans = new Map<string, number>() // conversation_id -> scanned_at
 const key = (id: string, host: string, owner: string, repo: string, number: number) => `${id}|${host}|${owner}|${repo}|${number}`
@@ -23,6 +23,7 @@ vi.mock('better-sqlite3', () => {
   class FakeDb {
     pragma() {}
     exec() {}
+    transaction<T extends unknown[], R>(fn: (...a: T) => R) { return (...a: T) => fn(...a) }
     prepare(sql: string) {
       return {
         get: (...args: unknown[]) => {
@@ -34,22 +35,33 @@ vi.mock('better-sqlite3', () => {
         },
         run: (...args: unknown[]) => {
           if (sql.includes('INSERT OR IGNORE INTO conversation_pull_requests')) {
-            const [id, host, owner, repo, number, at] = args as [string, string, string, string, number, number]
+            const [id, host, owner, repo, number, source, at] = args as [string, string, string, string, number, string, number]
             const k = key(id, host, owner, repo, number)
             if (links.has(k)) return { changes: 0 }
-            links.set(k, { conversation_id: id, host, owner, repo, number, source: 'auto', linked_at: at, unlinked_at: null })
+            links.set(k, { conversation_id: id, host, owner, repo, number, source, linked_at: at, unlinked_at: null })
             return { changes: 1 }
           }
           if (sql.includes('INSERT INTO conversation_pull_requests') && sql.includes('ON CONFLICT')) {
-            const [id, host, owner, repo, number, at] = args as [string, string, string, string, number, number]
+            const [id, host, owner, repo, number, source, at] = args as [string, string, string, string, number, string, number]
             const k = key(id, host, owner, repo, number)
             const row = links.get(k)
             if (!row) {
-              links.set(k, { conversation_id: id, host, owner, repo, number, source: 'manual', linked_at: at, unlinked_at: null })
+              links.set(k, { conversation_id: id, host, owner, repo, number, source, linked_at: at, unlinked_at: null })
               return { changes: 1 }
             }
-            if (row.unlinked_at === null) return { changes: 0 }
-            Object.assign(row, { unlinked_at: null, source: 'manual', linked_at: at })
+            if (row.unlinked_at === null && !(row.source === 'auto' && source !== 'auto')) return { changes: 0 }
+            const revived = row.unlinked_at !== null
+            const clearsState = revived && /state = CASE WHEN unlinked_at IS NOT NULL THEN NULL/.test(sql) && /state_at = CASE WHEN unlinked_at IS NOT NULL THEN NULL/.test(sql)
+            Object.assign(row, { source, linked_at: revived ? at : row.linked_at, unlinked_at: null, ...(clearsState ? { state: null, state_at: null } : {}) })
+            return { changes: 1 }
+          }
+          if (sql.includes('UPDATE conversation_pull_requests SET state = ?, state_at = ?')) {
+            const [state, at, host, owner, repo, number, observedAt] = args as [string, number, string, string, string, number, number]
+            const guarded = sql.includes('MAX(linked_at, COALESCE(state_at, 0)) <= ?')
+            for (const l of links.values()) {
+              if (l.host === host && l.owner === owner && l.repo === repo && l.number === number && l.unlinked_at === null
+                && !(guarded && Math.max(l.linked_at, l.state_at ?? 0) > observedAt)) Object.assign(l, { state, state_at: at })
+            }
             return { changes: 1 }
           }
           if (sql.includes('INSERT INTO conversation_pr_history_scans')) {
@@ -79,6 +91,19 @@ vi.mock('better-sqlite3', () => {
               .slice(0, args[0] as number)
               .map(([id, c]) => ({ id, projectPath: c.project_path, worktreePath: c.worktree_path ?? null }))
           }
+          if (sql.includes('SELECT conversation_id FROM conversation_pull_requests WHERE host = ?')) {
+            const guarded = sql.includes('MAX(linked_at, COALESCE(state_at, 0)) <= ?')
+            const [host, owner, repo, number] = args as [string, string, string, number]
+            const observedAt = guarded ? args[4] as number : Infinity
+            const state = args[guarded ? 5 : 4] as string
+            return [...links.values()]
+              .filter((l) => l.host === host && l.owner === owner && l.repo === repo && l.number === number && l.unlinked_at === null && l.state !== state)
+              .filter((l) => Math.max(l.linked_at, l.state_at ?? 0) <= observedAt)
+              .map((l) => ({ conversation_id: l.conversation_id }))
+          }
+          if (sql.includes('SELECT DISTINCT host, owner, repo, number FROM conversation_pull_requests WHERE unlinked_at IS NULL')) {
+            return [...links.values()].filter((l) => l.unlinked_at === null)
+          }
           if (sql.includes('FROM conversation_pull_requests WHERE conversation_id = ?')) {
             return [...links.values()]
               .filter((l) => l.conversation_id === args[0] && l.unlinked_at === null)
@@ -90,7 +115,7 @@ vi.mock('better-sqlite3', () => {
               .filter((l) => l.host === host && l.owner === owner && l.repo === repo && l.number === number && l.unlinked_at === null)
               .flatMap((l) => {
                 const c = conversations.get(l.conversation_id)
-                return c && !c.archived ? [{ id: l.conversation_id, ...c }] : []
+                return c && !c.archived ? [{ id: l.conversation_id, ...c, source: l.source }] : []
               })
           }
           return []
@@ -102,6 +127,8 @@ vi.mock('better-sqlite3', () => {
 })
 
 const {
+  setPullRequestLinkState,
+  linkedPullRequestKeys,
   linkConversationPullRequest,
   unlinkConversationPullRequest,
   listConversationPullRequests,
@@ -124,7 +151,7 @@ describe('PR links survive provider session rotation', () => {
     threadSessions.set('uuid-abc', 'agent_1')
     expect(linkConversationPullRequest('uuid-abc', PR, 'manual', 10)).toBe(true)
     expect([...links.values()].map((l) => l.conversation_id)).toEqual(['agent_1'])
-    const expected = [{ ref: { host: 'github', owner: 'tejasnafde', name: 'switchboard', number: 612 }, source: 'manual', linkedAt: 10 }]
+    const expected = [{ ref: { host: 'github', owner: 'tejasnafde', name: 'switchboard', number: 612 }, source: 'manual', linkedAt: 10, state: null, stateAt: null }]
     expect(listConversationPullRequests('agent_1')).toEqual(expected)
     expect(listConversationPullRequests('uuid-abc')).toEqual(expected)
   })
@@ -141,7 +168,7 @@ describe('PR links survive provider session rotation', () => {
     conversations.set('agent_1', { title: 'Sync backoff', agent_type: 'codex', project_path: '/p', updated_at: 5, archived: 0 })
     linkConversationPullRequest('uuid-abc', PR, 'manual', 10)
     expect(listPullRequestChats(PR)).toEqual([
-      { id: 'agent_1', familyIds: ['agent_1', 'uuid-abc'], title: 'Sync backoff', agentType: 'codex', projectPath: '/p', updatedAt: 5 },
+      { id: 'agent_1', familyIds: ['agent_1', 'uuid-abc'], title: 'Sync backoff', agentType: 'codex', projectPath: '/p', updatedAt: 5, linkSource: 'manual' },
     ])
   })
 })
@@ -160,8 +187,82 @@ describe('link once', () => {
     expect(listConversationPullRequests('agent_1')).toEqual([])
     expect(linkConversationPullRequest('agent_1', PR, 'manual', 40)).toBe(true)
     expect(listConversationPullRequests('agent_1')).toEqual([
-      { ref: { host: 'github', owner: 'tejasnafde', name: 'switchboard', number: 612 }, source: 'manual', linkedAt: 40 },
+      { ref: { host: 'github', owner: 'tejasnafde', name: 'switchboard', number: 612 }, source: 'manual', linkedAt: 40, state: null, stateAt: null },
     ])
+  })
+})
+
+describe('provenance', () => {
+  it('stores how a link was made, and an explicit link replaces an automatic one', () => {
+    expect(linkConversationPullRequest('agent_1', PR, 'auto', 10)).toBe(true)
+    expect(linkConversationPullRequest('agent_1', PR, 'created', 20)).toBe(true)
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ source: 'created', linkedAt: 10 })
+    // An explicit source never downgrades another explicit one.
+    expect(linkConversationPullRequest('agent_1', PR, 'agent', 30)).toBe(false)
+    expect(linkConversationPullRequest('agent_1', PR, 'auto', 30)).toBe(false)
+    expect(listConversationPullRequests('agent_1')[0].source).toBe('created')
+  })
+
+  it('an agent link revives a tombstone, like a link by hand', () => {
+    linkConversationPullRequest('agent_1', PR, 'manual', 10)
+    unlinkConversationPullRequest('agent_1', PR, 20)
+    expect(linkConversationPullRequest('agent_1', PR, 'agent', 30)).toBe(true)
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ source: 'agent', linkedAt: 30 })
+  })
+})
+
+describe('link state', () => {
+  it('records a state on every live link and names the chats that changed', () => {
+    linkConversationPullRequest('agent_1', PR, 'auto', 10)
+    linkConversationPullRequest('agent_2', PR, 'manual', 10)
+    linkConversationPullRequest('agent_3', PR, 'manual', 10)
+    unlinkConversationPullRequest('agent_3', PR, 11)
+    expect(setPullRequestLinkState(PR, 'merged', 50).sort()).toEqual(['agent_1', 'agent_2'])
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: 'merged', stateAt: 50 })
+    expect(setPullRequestLinkState(PR, 'merged', 60)).toEqual([])
+    expect(listConversationPullRequests('agent_2')[0].stateAt).toBe(60)
+  })
+})
+
+describe('stale state reads', () => {
+  it('a read that started before a newer stored state does not overwrite it', () => {
+    linkConversationPullRequest('agent_1', PR, 'manual', 10)
+    expect(setPullRequestLinkState(PR, 'merged', 50)).toEqual(['agent_1'])
+    expect(setPullRequestLinkState(PR, 'open', 40)).toEqual([])
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: 'merged', stateAt: 50 })
+    expect(setPullRequestLinkState(PR, 'open', 60)).toEqual(['agent_1'])
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: 'open', stateAt: 60 })
+  })
+
+  it('a read that started before an unlink and relink does not reach the new link', () => {
+    linkConversationPullRequest('agent_1', PR, 'manual', 10)
+    unlinkConversationPullRequest('agent_1', PR, 20)
+    linkConversationPullRequest('agent_1', PR, 'manual', 40)
+    expect(setPullRequestLinkState(PR, 'closed', 35)).toEqual([])
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: null, stateAt: null })
+    expect(setPullRequestLinkState(PR, 'open', 45)).toEqual(['agent_1'])
+  })
+})
+
+describe('link state on relink', () => {
+  it('a revived link drops the state cached before the unlink, a live one keeps it', () => {
+    linkConversationPullRequest('agent_1', PR, 'auto', 10)
+    setPullRequestLinkState(PR, 'closed', 20)
+    expect(linkConversationPullRequest('agent_1', PR, 'manual', 25)).toBe(true)
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: 'closed', stateAt: 20 })
+    unlinkConversationPullRequest('agent_1', PR, 30)
+    expect(linkConversationPullRequest('agent_1', PR, 'manual', 40)).toBe(true)
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: null, stateAt: null })
+  })
+})
+
+describe('linked pull request keys', () => {
+  it('names each PR with a live link once', () => {
+    const other = { ...PR, number: 613 }
+    linkConversationPullRequest('agent_1', PR, 'manual', 10)
+    linkConversationPullRequest('agent_2', other, 'manual', 10)
+    unlinkConversationPullRequest('agent_2', other, 11)
+    expect([...linkedPullRequestKeys()]).toEqual(['github:tejasnafde/switchboard#612'])
   })
 })
 
@@ -175,5 +276,30 @@ describe('history scan bookkeeping', () => {
     markPullRequestHistoryScanned('uuid-abc', 10)
     expect([...historyScans.keys()]).toEqual(['agent_1'])
     expect(listUnscannedPullRequestHistoryScanTargets(10)).toEqual([])
+  })
+})
+
+const { ensurePullRequestLinkSchema } = await import('../../src/main/db/pull-request-links')
+
+describe('link state columns', () => {
+  const fakeDb = (columns: string[]) => {
+    const execs: string[] = []
+    const db = {
+      exec: (sql: string) => { execs.push(sql) },
+      prepare: () => ({ all: () => columns.map((name) => ({ name })) }),
+    }
+    return { db: db as unknown as Parameters<typeof ensurePullRequestLinkSchema>[0], execs }
+  }
+
+  it('adds state and state_at to a table from before them, once', () => {
+    const old = fakeDb(['conversation_id', 'host', 'owner', 'repo', 'number', 'source', 'linked_at', 'unlinked_at'])
+    ensurePullRequestLinkSchema(old.db)
+    expect(old.execs.filter((s) => s.startsWith('ALTER'))).toEqual([
+      'ALTER TABLE conversation_pull_requests ADD COLUMN state TEXT',
+      'ALTER TABLE conversation_pull_requests ADD COLUMN state_at INTEGER',
+    ])
+    const current = fakeDb(['source', 'state', 'state_at'])
+    ensurePullRequestLinkSchema(current.db)
+    expect(current.execs.some((s) => s.startsWith('ALTER'))).toBe(false)
   })
 })

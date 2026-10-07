@@ -189,6 +189,20 @@ describe('PullRequestAutoLinker', () => {
     expect(notified).toEqual([])
   })
 
+  it('reports a failed scan as a problem the agent can read', async () => {
+    const problems: string[] = []
+    const linker = new PullRequestAutoLinker({
+      conversationFor: () => ({ id: 'agent_1', projectPath: '/p', cwd: '/p' }),
+      projectRepos: async () => { throw new Error('git broke') },
+      repoForProject: async () => SB,
+      link: () => true,
+      notify: () => {},
+      problem: (threadId, message) => problems.push(`${threadId}: ${message}`),
+    })
+    await linker.onEvent({ type: 'tool.completed', threadId: 't', toolId: 'x', output: 'https://github.com/tejasnafde/switchboard/pull/7' } as RuntimeEvent)
+    expect(problems).toEqual(['t: Linking a pull request this chat named failed: Error: git broke'])
+  })
+
   it('does nothing for a thread with no conversation row', async () => {
     const { linker, linked } = setup()
     await linker.onEvent({ type: 'tool.completed', threadId: 'missing', toolId: 'x', output: 'https://github.com/tejasnafde/switchboard/pull/7' } as RuntimeEvent)

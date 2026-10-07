@@ -58,7 +58,7 @@ import {
   reviewFromResponse,
   type DraftLineComment,
 } from '@shared/agent-pr-review'
-import { findPullRequestUrls, normalizePrRef } from '@shared/pull-request-links'
+import { findPullRequestUrls, normalizePrRef, type PrLink } from '@shared/pull-request-links'
 import {
   lineLocation,
   lineTargetFit,
@@ -142,9 +142,18 @@ export interface AgentPullRequestAccess {
   createPullRequest(repo: RepoRef, input: { title: string; description: string; sourceBranch: string; targetBranch: string; draft: boolean; reviewers?: string[] }): Promise<PrResult<OpenedPr & { existing: boolean }>>
   /** Who may review a pull request opened on `repo` (the Reviewers card's candidates), and the signed-in user. */
   reviewerPool(repo: RepoRef): Promise<PrResult<{ candidates: PrReviewerCandidate[]; viewer: ReviewerViewer }>>
-  /** Links a PR of the chat's repository to the chat and tells clients; `created` asks Reviews to refresh. */
-  /** False when the link could not be stored; the PR exists either way. */
+  /**
+   * Links a PR of the chat's repository to the chat as the agent's and tells
+   * clients. `created`: the agent opened it (source `created`, and Reviews
+   * refreshes); otherwise source `agent`. False when the link could not be stored.
+   */
   linkToChat(chatId: string, ref: PrRef, created: boolean): boolean
+  /** The chat's live links, with how each was made and its last known state. */
+  links(chatId: string): PrLink[]
+  /** Tombstones a link and tells clients; false when it was not linked. */
+  unlinkFromChat(chatId: string, ref: PrRef): boolean
+  /** The last failure automatic linking hit for the chat (auto-link, history scan, branch detection, state sync). */
+  linkProblem(chatId: string): { at: number; message: string } | null
 }
 
 let registeredAccess: AgentPullRequestAccess | null = null
@@ -224,8 +233,8 @@ function describeLinks(refs: PrRef[]): string {
 
 const NO_LINK =
   'No pull request is linked to this chat, so there is nothing these tools may read or write. ' +
-  'The user links one from Reviews ("Link to chat"), and a pull request of this project links itself ' +
-  'once its URL appears in the chat.'
+  'The user links one from Reviews ("Link to chat"), you can link one with link_pull_request, and a pull request of this project ' +
+  'links itself once its URL appears in the chat or it is the open pull request of the chat\'s branch.'
 
 /**
  * The linked PR the agent means: `pr` as a number, "#612" or a URL, or omitted

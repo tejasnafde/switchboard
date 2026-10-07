@@ -3,22 +3,73 @@
  * backend under the chat's root conversation (`resolveRootThreadId`), so a
  * provider session rotation keeps them.
  *
- * A link is made by hand (Reviews > Link to chat), by an agent that opened
- * the PR (`create_pull_request`), or automatically, once, when the chat's
- * assistant text, a tool's input or its output names a PR URL (or a bbpr
- * command a PR number) of a repository the chat's project covers
- * (`project-repos.ts`: its own, or for a parent folder of several
- * repositories, theirs). A PR of any other repository is never linked.
+ * A link is made by hand (Reviews > Link to chat), by an agent
+ * (`link_pull_request`, or `create_pull_request` for a PR it opened), or
+ * automatically, once, when the chat's assistant text, a tool's input or its
+ * output names a PR URL (or a bbpr command a PR number), or the chat's branch
+ * has an open PR, on a repository the chat's project covers
+ * (`project-repos.ts`). A PR of any other repository is never linked.
  */
-import { prKey, type PrHost, type PrRef, type PrSummary } from './pull-requests'
+import { prKey, type PrHost, type PrRef, type PrState, type PrSummary } from './pull-requests'
 import { coveredRepos, projectCoversRepo, type ProjectRepos } from './project-repos'
 
-export type PrLinkSource = 'manual' | 'auto'
+/** How a link was made. `created`: the agent opened the PR; `agent`: it linked an existing one. */
+export type PrLinkSource = 'manual' | 'auto' | 'agent' | 'created'
+
+export const PR_LINK_SOURCE_LABEL: Record<PrLinkSource, string> = {
+  manual: 'Linked by you',
+  auto: 'Linked automatically',
+  agent: 'Linked by the agent',
+  created: 'Opened by the agent',
+}
+
+/** A source a newer backend may send reads as a plain "Linked". */
+export function linkSourceLabel(source: string | undefined): string {
+  return PR_LINK_SOURCE_LABEL[source as PrLinkSource] ?? 'Linked'
+}
 
 export interface PrLink {
   ref: PrRef
   source: PrLinkSource
   linkedAt: number
+  /** The PR's state when the backend last read it (a merge in a shell, a sync at turn end); absent from older backends. */
+  state?: PrState | null
+  stateAt?: number | null
+}
+
+/**
+ * The state a chat header shows: the stored link state when it was read after
+ * the Reviews list (a merge the list has not seen yet), else the list's.
+ */
+export function linkHeaderState(
+  link: Pick<PrLink, 'state' | 'stateAt'>,
+  listState: PrState | null,
+  listFetchedAt: number | null,
+): PrState | null {
+  if (link.state && (listState === null || (link.stateAt ?? 0) > (listFetchedAt ?? 0))) return link.state
+  return listState ?? link.state ?? null
+}
+
+/**
+ * One line for a phone's link list: "#612 · merged · Opened by the agent ·
+ * owner/name". The repository goes last, so a long name is what a one-line
+ * row cuts off, never the state or source. Ported to Android as `PrLinkRows.text`.
+ */
+export function phoneLinkRowText(link: Pick<PrLink, 'ref' | 'source' | 'state'>): string {
+  const parts = [`#${link.ref.number}`]
+  if (link.state && link.state !== 'open') parts.push(link.state)
+  parts.push(linkSourceLabel(link.source), `${link.ref.owner}/${link.ref.name}`)
+  return parts.join(' · ')
+}
+
+/** Accessible name of a link's Unlink button. It names the repository, since two repositories can share a number. */
+export function unlinkPrLabel(ref: PrRef): string {
+  return `Unlink pull request ${ref.owner}/${ref.name} #${ref.number}`
+}
+
+/** A shell command that merges or closes a PR, after which the chat's links re-read their state. */
+export function mergesOrClosesPr(command: string): boolean {
+  return /(?:^|[\s;&|(])(?:gh\s+pr\s+(?:merge|close)|bbpr\s+(?:merge|decline))\b/.test(command)
 }
 
 /** A chat a PR is linked to, or could be linked to. */
@@ -31,6 +82,8 @@ export interface PrLinkChat {
   agentType: string
   projectPath: string
   updatedAt: number
+  /** How this chat's link to the PR was made (`linked-chats` only). */
+  linkSource?: PrLinkSource
 }
 
 export type PrLinkResult = { ok: true } | { ok: false; message: string }

@@ -13,6 +13,7 @@ import type { ReviewerViewer } from '@shared/agent-pr-reviewers'
 import type { InlineCommentInput, ReviewEvent, SubmitReviewInput } from '@shared/pull-request-writes'
 import type { MergeStrategy, PrChangedFile, PrCheck, PrConversation, PrDetail, PrError, PrRef, PrReviewerCandidate, RepoRef } from '@shared/pull-requests'
 import { repoKey } from '@shared/pull-requests'
+import { parseFullName } from '@shared/pull-request-remote'
 import { childProcessEnv } from '../shell-env'
 import { createMainLogger } from '../logger'
 import {
@@ -465,6 +466,12 @@ export class GitHubProvider implements PullRequestProvider {
     const branch = res.stdout.trim()
     if (!branch || branch === 'null') throw new PrHostError({ kind: 'unknown', host: 'github', message: 'GitHub did not say which branch is the default.' })
     return branch
+  }
+
+  async forkParent(repo: RepoRef): Promise<RepoRef | null> {
+    const res = await this.read(['api', `repos/${repo.owner}/${repo.name}`, '--jq', '.parent.full_name // ""'])
+    if (res.code !== 0) throw new PrHostError(classifyGhError(res))
+    return parseFullName('github', res.stdout.trim())
   }
 
   /**

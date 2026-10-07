@@ -64,6 +64,8 @@ export const styles = StyleSheet.create({
     lineHeight: 15,
   },
   compactBanner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  // About five rows; a longer link list scrolls instead of pushing the feed off screen.
+  prLinksBanner: { flexGrow: 0, maxHeight: 96 },
   queueChip: { alignSelf: 'flex-start', marginBottom: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   queueChipOn: { borderColor: colors.accent, backgroundColor: colors.accentWash },
   queueChipText: { color: colors.textDim, fontSize: 11 },

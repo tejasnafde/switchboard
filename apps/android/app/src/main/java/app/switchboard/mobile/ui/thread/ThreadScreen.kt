@@ -120,6 +120,9 @@ import app.switchboard.mobile.domain.thread.AgentDigest
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWritePreview
+import app.switchboard.mobile.domain.thread.PrLink
+import app.switchboard.mobile.domain.thread.PrLinkRef
+import app.switchboard.mobile.domain.thread.PrLinkRows
 import app.switchboard.mobile.domain.thread.SyntheticTone
 import app.switchboard.mobile.domain.thread.SystemMarkers
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
@@ -197,6 +200,8 @@ fun ThreadScreen(
     onToggleDelivery: () -> Unit = {},
     held: ThreadHeldPresentation = ThreadHeldPresentation(),
     onHeldAction: (messageId: String, promote: Boolean) -> Unit = { _, _ -> },
+    prLinks: List<PrLink> = emptyList(),
+    onUnlinkPrLink: (PrLinkRef) -> Unit = {},
     onHeldResume: (messageId: String) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
@@ -358,6 +363,7 @@ fun ThreadScreen(
                 )
             }
             forkMetadata?.let { ForkLineageBanner(it) }
+            PrLinksBanner(links = prLinks, onUnlink = onUnlinkPrLink)
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
                 ThreadPresentation.Loading -> FullPageLoading()
@@ -496,6 +502,70 @@ private fun ForkLineageBanner(metadata: ForkLineageMetadata) {
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
     )
+}
+
+/** About two and a half rows: the cut-off row shows the list scrolls. */
+private val PR_LINKS_BANNER_MAX_HEIGHT = 120.dp
+
+/** One quiet line per pull request linked to this chat, with an Unlink
+ *  action behind a confirm dialog. Mirrors PrLinksBanner.tsx on the Expo app.
+ *  A long list scrolls inside a capped height, so the feed keeps its room. */
+@Composable
+private fun PrLinksBanner(links: List<PrLink>, onUnlink: (PrLinkRef) -> Unit) {
+    if (links.isEmpty()) return
+    var confirmTarget by remember { mutableStateOf<PrLink?>(null) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = PR_LINKS_BANNER_MAX_HEIGHT)
+            .background(Surface)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        links.forEach { link ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = PrLinkRows.text(link),
+                    color = TextDim,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = { confirmTarget = link },
+                    modifier = Modifier.semantics { contentDescription = PrLinkRows.unlinkLabel(link.ref) },
+                ) {
+                    Text("Unlink", color = Accent, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+    confirmTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { confirmTarget = null },
+            title = { Text("Unlink #${target.ref.number}?") },
+            text = { Text("It will not be linked to this chat again automatically.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmTarget = null
+                        onUnlink(target.ref)
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text("Unlink")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmTarget = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 private fun ThreadPresentation.metadataOrNull(): ThreadMetadataPresentation? = when (this) {

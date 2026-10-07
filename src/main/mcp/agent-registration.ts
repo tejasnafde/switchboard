@@ -22,6 +22,7 @@ import {
   PR_REVIEW_TOOL,
   PR_STATUS_TOOL,
 } from './pr-tools'
+import { PR_LINK_TOOL, PR_LIST_LINKS_TOOL, PR_UNLINK_TOOL } from './pr-link-tools'
 import { WITHDRAW_APPROVAL_TOOL } from './approval-mcp-tools'
 
 /**
@@ -78,7 +79,7 @@ export function acpSwitchboardMcpServer(launch: SwitchboardMcpLaunch): AcpStdioM
  */
 export const SWITCHBOARD_OPENCODE_TOOLS: readonly string[] = [
   PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PR_DIFF_TOOL, PR_REPLY_TOOL, PR_RESOLVE_TOOL, PR_RERUN_TOOL,
-  PR_COMMENT_TOOL, PR_REVIEW_TOOL, PR_CREATE_TOOL,
+  PR_COMMENT_TOOL, PR_REVIEW_TOOL, PR_CREATE_TOOL, PR_LINK_TOOL, PR_UNLINK_TOOL, PR_LIST_LINKS_TOOL,
   PEER_LIST_TOOL_NAME, PEER_SEND_TOOL_NAME, WITHDRAW_APPROVAL_TOOL,
 ].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`)
 
@@ -86,7 +87,7 @@ const SWITCHBOARD_OPENCODE_TOOL_SET = new Set(SWITCHBOARD_OPENCODE_TOOLS)
 
 /** Our tools plan mode allows: the reads, and withdrawing a card, which only takes a write back. */
 const SWITCHBOARD_OPENCODE_READ_TOOLS = new Set(
-  [PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PR_DIFF_TOOL, PEER_LIST_TOOL_NAME, WITHDRAW_APPROVAL_TOOL].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`),
+  [PR_STATUS_TOOL, PR_CONVERSATIONS_TOOL, PR_DIFF_TOOL, PR_LIST_LINKS_TOOL, PEER_LIST_TOOL_NAME, WITHDRAW_APPROVAL_TOOL].map((tool) => `${SWITCHBOARD_MCP_SERVER_NAME}_${tool}`),
 )
 
 export function isSwitchboardOpencodeReadTool(toolName: string): boolean {
