@@ -58,6 +58,7 @@ import type { ProviderAdapter, ProviderKind, ProviderSession, SessionStartOpts }
 import type { RuntimeEvent, UserTurnSubmissionV1 } from '../../src/shared/provider-events'
 import type { QueuedTurnActionResult, QueuedTurnSummary, TurnDelivery } from '../../src/shared/turn-delivery'
 import type { AtomicUserTurnContext } from '../../src/main/provider/durable-turn-acceptance'
+import type { QueuedTurnRowStore } from '../../src/main/db/queued-turn-rows'
 
 class FakeHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
@@ -133,10 +134,28 @@ const passThroughSubmission = {
   },
 }
 
-async function setup(provider: ProviderKind) {
+/** Records what the registry asks of the queued-row store. */
+function fakeRowStore(earlier: string[] = []) {
+  const calls: string[] = []
+  const store: QueuedTurnRowStore = {
+    record: (row) => { calls.push(`record ${row.messageId} ${row.conversationId} ${row.text}`) },
+    forget: (id) => { calls.push(`forget ${id}`) },
+    markNotSent: (id, cause) => {
+      calls.push(`notSent ${id} ${cause}`)
+      return { conversationId: 't1', messageId: id, content: `Error: not sent ${id}` }
+    },
+    sweepEarlierLaunches: () => {
+      calls.push('sweep')
+      return earlier.map((id) => ({ conversationId: 't1', messageId: id, content: `Error: not sent ${id}` }))
+    },
+  }
+  return { store, calls }
+}
+
+async function setup(provider: ProviderKind, rows = fakeRowStore()) {
   const host = new FakeHost()
   const adapter = new QueueingAdapter(provider)
-  const registry = new ProviderRegistry(host, new Map([[provider, adapter]]), undefined, passThroughSubmission)
+  const registry = new ProviderRegistry(host, new Map([[provider, adapter]]), undefined, passThroughSubmission, undefined, undefined, rows.store)
   registry.registerIpcHandlers()
   await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider, cwd: '/tmp' })
   const published: RuntimeEvent[] = []
@@ -240,5 +259,56 @@ describe('ProviderRegistry queued messages', () => {
     await t.cancel('remote_b')
     ;(Reflect.get(t.adapter, 'onEvent') as (e: RuntimeEvent) => void)({ type: 'turn.dequeued', threadId: 't1', messageId: 'remote_b', reason: 'cancelled' })
     expect(t.outstanding()).toBe(1)
+  })
+
+  it('turns a message that left the queue without running into a not-sent row, and says so live', async () => {
+    const rows = fakeRowStore()
+    const t = await setup('claude', rows)
+    await t.submit('a')
+    await t.submit('b', 'queue')
+    await t.submit('c', 'queue')
+    t.adapter.finishTurn('t1')
+    ;(Reflect.get(t.adapter, 'onEvent') as (e: RuntimeEvent) => void)({ type: 'turn.dequeued', threadId: 't1', messageId: 'remote_c', reason: 'dropped' })
+    expect(rows.calls).toEqual([
+      'sweep',
+      'record remote_b t1 text of b',
+      'record remote_c t1 text of c',
+      'forget remote_b',
+      'notSent remote_c stopped',
+    ])
+    expect(t.published).toContainEqual({ type: 'error', threadId: 't1', message: 'not sent remote_c' })
+  })
+
+  it('checks for messages an earlier launch left queued when it starts', async () => {
+    const rows = fakeRowStore(['remote_old'])
+    await setup('claude', rows)
+    expect(rows.calls[0]).toBe('sweep')
+  })
+})
+
+describe('ProviderRegistry diff-card baseline', () => {
+  it('keeps the running turn baseline for a queued send, and hands tool writes and queued starts to the tracker', async () => {
+    const t = await setup('claude')
+    const tracker = Reflect.get(t.registry, 'checkpoints') as {
+      beginTurn: (...args: unknown[]) => Promise<void>
+      noteToolStarted: (...args: unknown[]) => void
+      noteToolCompleted: (...args: unknown[]) => void
+      startQueuedTurn: (...args: unknown[]) => void
+    }
+    const begin = vi.spyOn(tracker, 'beginTurn').mockResolvedValue()
+    const started = vi.spyOn(tracker, 'noteToolStarted')
+    const completed = vi.spyOn(tracker, 'noteToolCompleted')
+    const queuedStart = vi.spyOn(tracker, 'startQueuedTurn')
+    await t.submit('a')
+    await t.submit('b', 'queue')
+    expect(begin.mock.calls.map((c) => c[2])).toEqual([false, true])
+
+    const emit = Reflect.get(t.adapter, 'onEvent') as (e: RuntimeEvent) => void
+    emit({ type: 'tool.started', threadId: 't1', toolId: 'x', toolName: 'Edit', input: { file_path: 'a.ts' } })
+    emit({ type: 'tool.completed', threadId: 't1', toolId: 'x', writtenPaths: ['b.ts'] })
+    emit({ type: 'turn.dequeued', threadId: 't1', messageId: 'remote_b', reason: 'started' })
+    expect(started).toHaveBeenCalledWith('t1', 'x', 'Edit', { file_path: 'a.ts' })
+    expect(completed).toHaveBeenCalledWith('t1', 'x', ['b.ts'])
+    expect(queuedStart).toHaveBeenCalledWith('t1')
   })
 })

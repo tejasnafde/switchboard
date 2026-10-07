@@ -13,7 +13,7 @@ function makeActive(query: unknown) {
       createdAt: 0,
     },
     query,
-    prompt: { push: vi.fn(), close: vi.fn(), remove: vi.fn(() => false) },
+    prompt: { push: vi.fn(), close: vi.fn(), remove: vi.fn(() => false), forget: vi.fn(), answered: vi.fn() },
     onEvent: vi.fn(),
     abortController: new AbortController(),
     pendingApprovals: new Map(),
@@ -95,9 +95,12 @@ describe('ClaudeAdapter queued turns', () => {
     await adapter.sendTurn('thread-1', 'take me back', undefined, undefined, 'queue', 'remote_q1')
     expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.queued', threadId: 'thread-1', messageId: 'remote_q1' })
     const uuid = active.queuedTurns[0].uuid
+    const sdkMessage = active.queuedTurns[0].sdkMessage
 
     await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(true)
     expect(cancelAsyncMessage).toHaveBeenCalledWith(uuid)
+    // A retried query must not send the cancelled message again.
+    expect(active.prompt.forget).toHaveBeenCalledWith(sdkMessage)
     expect(active.queuedTurns).toEqual([])
     expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'cancelled' })
     active.watchdog.turnEnded()
@@ -118,6 +121,7 @@ describe('ClaudeAdapter queued turns', () => {
     await adapter.sendTurn('thread-1', 'too late', undefined, undefined, 'queue', 'remote_q1')
     await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(false)
     expect(active.queuedTurns).toHaveLength(1)
+    expect(active.prompt.forget).not.toHaveBeenCalled()
     expect(active.onEvent.mock.calls.some(([e]) => e.type === 'turn.dequeued')).toBe(false)
     active.watchdog.turnEnded()
   })

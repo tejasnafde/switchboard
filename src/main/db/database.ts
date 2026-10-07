@@ -14,6 +14,8 @@ import { ensureBookmarksTable } from './bookmarks'
 import { ensurePullRequestLinkSchema } from './pull-request-links'
 import { ensurePullRequestHiddenSchema } from './pull-request-hidden'
 import { ensureAgentApprovalCardSchema } from './agent-approval-cards'
+import { ensureQueuedTurnRowsSchema } from './queued-turn-rows'
+import { ensureTurnCheckpointSchema } from './turn-checkpoints'
 
 const log = createLogger('db')
 
@@ -624,6 +626,8 @@ function migrate(db: Database.Database): void {
   ensurePullRequestLinkSchema(db)
   ensurePullRequestHiddenSchema(db)
   ensureAgentApprovalCardSchema(db)
+  ensureQueuedTurnRowsSchema(db)
+  ensureTurnCheckpointSchema(db)
 
   log.info('database migrated')
 }

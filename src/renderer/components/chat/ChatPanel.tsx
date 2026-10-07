@@ -81,6 +81,7 @@ import {
 import { providerKindFor } from '@shared/types'
 import { confirm } from '../ui/confirm'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
+import { fileDiffNoRevertMessage } from '@shared/file-diff-revert'
 
 interface ChatPanelProps {
   /**
@@ -581,6 +582,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         persist()
         return
       }
+      if (fd.noRevert) throw new Error(fileDiffNoRevertMessage(fd.noRevert))
       // Rejecting an agent-*added* file means it shouldn't exist - delete it
       // rather than leaving a stray empty file (matches Cursor's revert).
       // Only over what the agent wrote: a card reopened from history may be

@@ -25,7 +25,7 @@ import { echoMessageId, expiredRequestNotice, visibleUserMessageText } from '@sh
 import { pillBodyText } from '@shared/pill-body-text'
 import { transcriptShowsTaskNotification, type SyntheticUserPart } from '@shared/synthetic-message'
 import { splitLegacyCachedItems } from '../lib/thread-history'
-import { applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
+import { applyQueuedTurnEvent, queuedRowRemoved, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { HostWriteCard } from '@shared/agent-host-writes'
 import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-approval-cards'
@@ -479,9 +479,9 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
         case 'turn.dequeued': {
           const heldTurns = applyQueuedTurnEvent(t.heldTurns ?? {}, event)
           const heldRevision = (t.heldRevision ?? 0) + 1
-          // A cancelled message never reached the agent: its bubble goes, on
-          // every client, live or reloaded from history.
-          if (event.reason !== 'cancelled') return { heldTurns, heldRevision }
+          // A cancelled or dropped message never reached the agent: its
+          // bubble goes, on every client, live or reloaded from history.
+          if (!queuedRowRemoved(event.reason)) return { heldTurns, heldRevision }
           const gone = new Set([event.messageId, `h-${event.messageId}`])
           return { heldTurns, heldRevision, items: t.items.filter((i) => !(i.kind === 'user' && gone.has(i.id))) }
         }

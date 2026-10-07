@@ -435,6 +435,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
         oldContent: event.oldContent,
         newContent: event.newContent,
         status: 'pending' as const,
+        ...(event.noRevert ? { noRevert: event.noRevert } : {}),
       }
       if (existing) {
         updateMessage(tid, id, { fileDiff })

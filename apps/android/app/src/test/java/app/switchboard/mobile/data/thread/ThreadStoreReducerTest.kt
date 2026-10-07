@@ -166,6 +166,20 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun aQueuedMessageThatNeverRanLosesItsRow() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = reduce(
+            state,
+            ThreadAction.InstallSnapshot(
+                ThreadEventScope("mac-a", 1),
+                ThreadSnapshot("thread-1", listOf(FeedItem.User("h-remote_q", "later", 1))),
+            ),
+        )
+        state = ingest(state, "mac-a", 1, 1, event("turn.dequeued", "messageId" to s("remote_q"), "reason" to s("dropped")))
+        assertTrue(state.thread("mac-a", "thread-1")!!.feed.none { it is FeedItem.User })
+    }
+
+    @Test
     fun syntheticContextUserMessageIsNotRendered() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         state = ingest(

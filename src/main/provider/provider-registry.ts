@@ -31,7 +31,9 @@ import { realpathSync } from 'node:fs'
 import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { CheckpointTracker } from './checkpoint-tracker'
+import { CheckpointTracker, type TurnCheckpointStore } from './checkpoint-tracker'
+import { sqliteTurnCheckpointStore } from '../db/turn-checkpoints'
+import { sqliteQueuedTurnRowStore, type QueuedTurnRowStore } from '../db/queued-turn-rows'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
@@ -220,7 +222,7 @@ export class ProviderRegistry implements PeerToolHost {
    * provider-agnostic, so Claude / Codex / OpenCode all surface edits the
    * same way in chat.
    */
-  private checkpoints = new CheckpointTracker()
+  private readonly checkpoints: CheckpointTracker
   private readonly atomicTurnSubmission: Pick<AtomicUserTurnSubmission, 'submit'> & Partial<Pick<AtomicUserTurnSubmission, 'resolve'>>
   /** Provider startup shared by every client that reaches a thread before its adapter exists. */
   private startingSessions = new Map<string, Promise<ProviderSession>>()
@@ -265,9 +267,15 @@ export class ProviderRegistry implements PeerToolHost {
     // Same rule for the card store: injected adapters mean a test, which gets
     // an in-memory store unless it passes one.
     approvalStore: ApprovalCardStore<AgentWritePlan> = adapters ? memoryApprovalCardStore() : sqliteApprovalCardStore(),
+    // Tests get none unless they pass one.
+    queuedRows: QueuedTurnRowStore | null = adapters ? null : sqliteQueuedTurnRowStore(() => getDb()),
+    turnCheckpoints: TurnCheckpointStore | null = adapters ? null : sqliteTurnCheckpointStore(() => getDb()),
   ) {
     this.switchboardMcp = switchboardMcp
     this.approvalStore = approvalStore
+    this.queuedRows = queuedRows
+    this.checkpoints = new CheckpointTracker({ store: turnCheckpoints })
+    this.sweepQueuedRowsFromEarlierLaunch()
     this.agentApprovals = new AgentApprovalBroker({
       publish: (event) => this.publish(event),
       sameChat: (a, b) => a === b || resolveRootThreadId(a) === resolveRootThreadId(b),
@@ -346,6 +354,7 @@ export class ProviderRegistry implements PeerToolHost {
    */
   private readonly agentApprovals: AgentApprovalBroker
   private readonly approvalStore: ApprovalCardStore<AgentWritePlan>
+  private readonly queuedRows: QueuedTurnRowStore | null
 
   /** Serves this backend's MCP tools to every agent; one per process, shared across registries. */
   private readonly switchboardMcp: SwitchboardMcpServer | null
@@ -571,6 +580,7 @@ export class ProviderRegistry implements PeerToolHost {
       oldContent: event.oldContent,
       newContent: event.newContent,
       status: 'pending',
+      ...(event.noRevert ? { noRevert: event.noRevert } : {}),
     }
     const chars = fileDiff.oldContent.length + fileDiff.newContent.length
     if (chars > MIRRORED_FILE_DIFF_MAX_CHARS) {
@@ -1003,7 +1013,7 @@ export class ProviderRegistry implements PeerToolHost {
     // edits produce no diff cards and notebook mirrors go unwatched.
     const targetCwd = this.sessionCwd.get(targetThreadId)
     const targetWasMidTurn = this.hasOutstandingTurn(targetThreadId)
-    if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd)
+    if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd, targetWasMidTurn)
     // The only await before sendTurn: everything from here to it is
     // synchronous, so what this sees is what the send runs under.
     const withdrawn = this.peerDeliveryProblem({
@@ -1340,11 +1350,49 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  /**
+   * A queued message's row is stored when it is queued, so one that leaves
+   * the queue without running would read as sent. Its row becomes an error
+   * row that keeps the text, here or, after a restart, at the next launch.
+   */
+  private trackQueuedRow(event: RuntimeEvent): void {
+    if (!this.queuedRows || (event.type !== 'turn.queued' && event.type !== 'turn.dequeued')) return
+    try {
+      if (event.type === 'turn.queued') {
+        this.queuedRows.record({
+          messageId: event.messageId,
+          conversationId: resolveRootThreadId(event.threadId),
+          text: event.text ?? '',
+          queuedAt: event.queuedAt ?? Date.now(),
+        })
+      } else if (event.reason !== 'dropped') {
+        this.queuedRows.forget(event.messageId)
+      } else {
+        const notSent = this.queuedRows.markNotSent(event.messageId, 'stopped')
+        // Already stored by markNotSent, so straight to the bus.
+        if (notSent) this.bus.publish({ type: 'error', threadId: event.threadId, message: notSent.content.slice('Error: '.length) })
+      }
+    } catch (err) {
+      log.warn(`could not track queued message ${event.messageId} on ${event.threadId}: ${errorMessage(err)}`)
+    }
+  }
+
+  private sweepQueuedRowsFromEarlierLaunch(): void {
+    if (!this.queuedRows) return
+    try {
+      const swept = this.queuedRows.sweepEarlierLaunches()
+      if (swept.length > 0) log.warn(`${swept.length} queued message(s) never ran before the last exit; marked not sent`)
+    } catch (err) {
+      log.warn(`could not check for queued messages left by the last exit: ${errorMessage(err)}`)
+    }
+  }
+
   private publish(event: RuntimeEvent): void {
     if (event.type === 'turn.queued' || event.type === 'turn.dequeued' || event.type === 'turn.queue-held') {
       const observed = this.queuedTurns.observe(event, this.sessionAdapters.get(event.threadId)?.provider)
       if (observed.releasesOutstandingTurn) this.finishOutstandingTurn(event.threadId)
       event = observed.event
+      this.trackQueuedRow(event)
     }
     // Persisted here, not in ChatPanel, which only exists when a desktop window
     // is attached - a phone on a headless server saw a 529 once and lost it on
@@ -1425,6 +1473,9 @@ export class ProviderRegistry implements PeerToolHost {
     // inside a turn and nowhere else, unlike content, which also carries
     // notices sent while the chat is idle.
     if (event.type === 'tool.started' && !this.hasOutstandingTurn(event.threadId)) this.beginOutstandingTurn(event.threadId)
+    if (event.type === 'tool.started') this.checkpoints.noteToolStarted(event.threadId, event.toolId, event.toolName, event.input)
+    if (event.type === 'tool.completed') this.checkpoints.noteToolCompleted(event.threadId, event.toolId, event.writtenPaths)
+    if (event.type === 'turn.dequeued' && event.reason === 'started') this.checkpoints.startQueuedTurn(event.threadId)
     if (event.type === 'turn.completed') this.finishOutstandingTurn(event.threadId)
     this.bus.publish(event)
     if (event.type === 'turn.dequeued') {
@@ -1709,7 +1760,7 @@ export class ProviderRegistry implements PeerToolHost {
           }
           try {
             const cwd = this.sessionCwd.get(threadId)
-            if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
+            if (cwd) await this.checkpoints.beginTurn(threadId, cwd, this.hasOutstandingTurn(threadId))
             notebookManager.beginTurn(threadId)
             this.turnDepth.set(threadId, 0)
             this.renewPeerLinks(threadId)
@@ -2204,6 +2255,8 @@ export class ProviderRegistry implements PeerToolHost {
         remoteConfigDir: credentialSnapshot?.remoteConfigDir ?? opts.remoteConfigDir,
       })
       await this.attachNotebooks(opts.threadId, session.cwd)
+      // A turn an earlier process was running when it stopped: its cards now.
+      if (this.checkpoints.restoreEarlier(opts.threadId)) void this.emitFileEdits(opts.threadId, Date.now())
       trackAnalyticsEvent('session_started', { provider: opts.provider })
       // Stop arrived while the adapter was starting: stop what just came up
       // instead of letting the waiting turn run in it. Checked before the flush
@@ -2522,7 +2575,7 @@ export class ProviderRegistry implements PeerToolHost {
         // is a definite rejection and may safely release the reservation.
         try {
           const cwd = this.sessionCwd.get(threadId)
-          if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
+          if (cwd) await this.checkpoints.beginTurn(threadId, cwd, this.hasOutstandingTurn(threadId))
           notebookManager.beginTurn(threadId)
           this.turnDepth.set(threadId, 0)
           this.renewPeerLinks(threadId)

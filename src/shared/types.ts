@@ -1,5 +1,5 @@
 /** Shared types between main process and renderer */
-import type { ProviderKind, RuntimeMode, UserMessagePillsMeta } from './provider-events'
+import type { FileDiffNoRevertReason, ProviderKind, RuntimeMode, UserMessagePillsMeta } from './provider-events'
 
 // ─── Terminal ────────────────────────────────────────────────────────
 
@@ -243,6 +243,8 @@ export interface FileDiffAttachment {
    * partial  - user kept a subset of hunks; disk holds the resolved content
    */
   status: 'pending' | 'accepted' | 'rejected' | 'partial'
+  /** Set when Reject must not be offered (see `FileDiffNoRevertReason`). */
+  noRevert?: FileDiffNoRevertReason
 }
 
 export interface ChatMessage {

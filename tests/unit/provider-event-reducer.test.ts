@@ -333,6 +333,13 @@ describe('agent store queued messages', () => {
     expect(session().queuedTurns).toEqual({})
   })
 
+  it('drops the row of a queued message that never ran: the backend replaced it with a not-sent row', () => {
+    useAgentStore.getState().appendMessage(T, { id: 'remote_q', role: 'user', content: 'never ran', timestamp: 1 })
+    track({ type: 'turn.queued', messageId: 'remote_q', text: 'never ran', queuedAt: 1 })
+    track({ type: 'turn.dequeued', messageId: 'remote_q', reason: 'dropped' })
+    expect(messages()).toEqual([])
+  })
+
   it('seeds from the backend list', () => {
     useAgentStore.getState().setQueuedTurns(T, [{ threadId: T, messageId: 'remote_x', text: 'x', queuedAt: 2 }])
     expect(Object.keys(session().queuedTurns ?? {})).toEqual(['remote_x'])

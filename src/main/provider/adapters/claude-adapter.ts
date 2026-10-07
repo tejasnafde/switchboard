@@ -452,17 +452,35 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
   private buffer: SDKUserMessage[] = []
   private waiting: Array<(result: IteratorResult<SDKUserMessage>) => void> = []
   private closed = false
+  /** Pushed and not yet answered by a `result`, so a retried query can be given them again. */
+  private unanswered: SDKUserMessage[] = []
 
   /** Take back a message the SDK has not read yet. */
   remove(message: SDKUserMessage): boolean {
     const index = this.buffer.indexOf(message)
     if (index < 0) return false
     this.buffer.splice(index, 1)
+    this.unanswered = this.unanswered.filter((m) => m !== message)
     return true
+  }
+
+  /** The CLI cancelled a message it had read: a retried query must not send it again. */
+  forget(message: SDKUserMessage): void {
+    this.unanswered = this.unanswered.filter((m) => m !== message)
+  }
+
+  /** A turn ended: everything sent so far is answered, except messages still waiting their own turn. */
+  answered(stillWaiting: ReadonlySet<SDKUserMessage>): void {
+    this.unanswered = this.unanswered.filter((m) => stillWaiting.has(m))
+  }
+
+  pendingMessages(): SDKUserMessage[] {
+    return [...this.unanswered]
   }
 
   push(message: SDKUserMessage): void {
     if (this.closed) return
+    this.unanswered.push(message)
     const waiter = this.waiting.shift()
     if (waiter) {
       waiter({ value: message, done: false })
@@ -1176,10 +1194,12 @@ export class ClaudeAdapter implements ProviderAdapter {
         const retryOptions: Record<string, unknown> = { ...queryOptions }
         delete retryOptions.resume
 
-        // Need a fresh prompt queue since the old one was consumed
+        // The failed query consumed the old queue. Every message it did not
+        // answer (this turn's, a steer, a queued one) goes to the new session,
+        // or it is stored as sent and the agent never reads it.
+        const unanswered = active.prompt.pendingMessages()
         active.prompt = new PromptQueue()
-        // Re-push the original message (it was already consumed by the failed query)
-        // The user already saw their message in UI, so just resend to the agent
+        for (const message of unanswered) active.prompt.push(message)
         active.onEvent({
           type: 'content',
           threadId,
@@ -1384,6 +1404,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       } finally {
         turn.withdrawing = false
       }
+      // The CLI dropped it, so a retried query must not send it again.
+      if (withdrawn) active.prompt.forget(turn.sdkMessage)
     }
     return withdrawn
   }
@@ -1917,6 +1939,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
         const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
+        active.prompt.answered(new Set(active.queuedTurns.map((turn) => turn.sdkMessage)))
         // A failed turn holds the queue rather than running it into the failure.
         if ((result as { is_error?: boolean }).is_error) this.holdQueuedTurns(active, 'The last turn failed.')
         else this.startQueuedTurn(active)

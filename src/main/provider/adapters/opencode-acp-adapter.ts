@@ -570,11 +570,13 @@ export function mapSessionUpdate(
       // already-emitted `tool.started` card.
       if (update.status === 'completed' || update.status === 'failed') {
         const output = stringifyOutput(update)
+        const writtenPaths = update.status === 'completed' ? acpEditPaths(update) : []
         events.push({
           type: 'tool.completed',
           threadId,
           toolId: update.toolCallId,
           ...(output ? { output } : {}),
+          ...(writtenPaths.length > 0 ? { writtenPaths } : {}),
         })
       }
       break
@@ -623,6 +625,16 @@ export function mapSessionUpdate(
   }
 
   return events
+}
+
+/** Files an ACP edit tool call wrote: its locations, plus the path its input names. */
+function acpEditPaths(update: SessionUpdate & { sessionUpdate: 'tool_call_update' }): string[] {
+  if (update.kind !== 'edit') return []
+  const input = (typeof update.rawInput === 'object' && update.rawInput !== null ? update.rawInput : {}) as Record<string, unknown>
+  return [
+    ...(update.locations ?? []).map((l) => l.path),
+    ...(typeof input.filePath === 'string' ? [input.filePath] : []),
+  ]
 }
 
 /** Pluck the displayable text out of an ACP ContentBlock. */
@@ -1079,9 +1091,11 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       if (queuedId) active.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
       return
     }
+    // Refused, not ignored: resolving here would store the message as sent
+    // while the agent never sees it.
     if (busy) {
-      log.warn(`sendTurn called while turn in progress for ${threadId} - ignoring`)
-      return
+      log.warn(`sendTurn refused while a turn is in progress for ${threadId}`)
+      throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
     }
     // Hold the slot across the mode await below, or a queued send arriving
     // now would start its own prompt ahead of this one.
