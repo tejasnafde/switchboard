@@ -45,8 +45,8 @@ export interface LinkSyncDeps {
   /** An automatic link; returns whether it was added. */
   link(chatId: string, ref: PrRef): boolean
   prState(ref: PrRef): Promise<PrResult<PrState>>
-  /** Stores a PR's state on its links; returns the chats whose link changed. */
-  setState(ref: PrRef, state: PrState): string[]
+  /** Stores a PR's state, read from `observedAt` on, on its links; returns the chats whose link changed. */
+  setState(ref: PrRef, state: PrState, observedAt: number): string[]
   notify(chatId: string): void
   problem(chatId: string, message: string): void
   now?: () => number
@@ -165,6 +165,7 @@ export class PullRequestLinkSync {
     const due = this.deps.linkedPrs(chat.id).filter((link) => !(link.state && TERMINAL.has(link.state)) && (force || (
       now - (link.stateAt ?? 0) >= STATE_TTL_MS && now - (this.failedAt.get(prKey(link.ref)) ?? -Infinity) >= RETRY_AFTER_MS)))
     for (const { ref } of due) {
+      const observedAt = this.now()
       const read = await this.deps.prState(ref)
       if (!read.ok) {
         this.failedAt.set(prKey(ref), this.now())
@@ -173,7 +174,7 @@ export class PullRequestLinkSync {
         continue
       }
       this.failedAt.delete(prKey(ref))
-      for (const id of this.deps.setState(ref, read.data)) changed.add(id)
+      for (const id of this.deps.setState(ref, read.data, observedAt)) changed.add(id)
     }
   }
 }

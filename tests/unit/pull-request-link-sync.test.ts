@@ -36,7 +36,7 @@ function setup(over: Partial<LinkSyncDeps> = {}) {
       return true
     }),
     prState: vi.fn(async (ref: PrRef) => ({ ok: true as const, data: states.get(ref.number) ?? 'open' as PrState })),
-    setState: vi.fn((ref: PrRef, state: PrState) => {
+    setState: vi.fn((ref: PrRef, state: PrState, _observedAt: number) => {
       const hit = links.find((l) => l.ref.number === ref.number)
       if (!hit) return []
       const changed = hit.state !== state

@@ -10,7 +10,7 @@ const { hidden, unhideKeys, hide, hiddenRepos, hideRepos, unhideRepos, linkedKey
   process.env.SB_DEMO_REPO_ERRORS = '1'
   return {
     hidden: new Map<string, number>(), unhideKeys: vi.fn(), hide: vi.fn(), hiddenRepos: new Set<string>(), hideRepos: vi.fn(), unhideRepos: vi.fn(),
-    linkedKeys: new Set<string>(), setLinkState: vi.fn((): string[] => []),
+    linkedKeys: new Set<string>(), setLinkState: vi.fn((..._args: unknown[]): string[] => []),
   }
 })
 
@@ -78,6 +78,16 @@ describe('pull-requests:list link state', () => {
     const result = await handlers().get(PullRequestChannels.LIST)!() as PrResult<PrListData>
     expect(result.ok && result.data.prs.length).toBeGreaterThan(1)
     expect(setLinkState.mock.calls.map(([ref]) => prKey(ref as PrRef))).toEqual([BOT])
+  })
+
+  it('dates the stored state from when the read started, so it never outranks a later write', async () => {
+    linkedKeys.add(BOT)
+    const before = Date.now()
+    const result = await handlers().get(PullRequestChannels.LIST)!() as PrResult<PrListData>
+    if (!result.ok) throw new Error('expected ok')
+    const observedAt = (setLinkState.mock.calls[0] as unknown[])[2] as number
+    expect(observedAt).toBeGreaterThanOrEqual(before)
+    expect(observedAt).toBeLessThanOrEqual(result.data.fetchedAt)
   })
 })
 

@@ -133,9 +133,9 @@ function recordLinkProblem(threadId: string, message: string): void {
 }
 
 /** Stores a PR's state on its links and tells the chats whose link changed. */
-function storeLinkState(ref: PrRef, state: PrState): string[] {
+function storeLinkState(ref: PrRef, state: PrState, observedAt = Date.now()): string[] {
   try {
-    return setPullRequestLinkState(ref, state)
+    return setPullRequestLinkState(ref, state, observedAt)
   } catch (err) {
     log.warn('storing a linked pull request state failed', { number: ref.number, err: String(err) })
     return []
@@ -377,11 +377,12 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     linkProblem: (chatId) => linkProblems.get(resolveRootThreadId(chatId)) ?? null,
   })
   host.handle(PullRequestChannels.LIST, async () => {
+    const startedAt = Date.now()
     const result = withHidden(await getService().list())
-    // The list is a free state read for every linked PR in it.
+    // The list is a free state read for every linked PR in it, as of when it started.
     if (result.ok) {
       const linked = readLinkedPrKeys()
-      const changed = new Set(result.data.prs.filter((pr) => linked.has(prKey(pr.ref))).flatMap((pr) => storeLinkState(pr.ref, pr.state)))
+      const changed = new Set(result.data.prs.filter((pr) => linked.has(prKey(pr.ref))).flatMap((pr) => storeLinkState(pr.ref, pr.state, startedAt)))
       for (const chatId of changed) notifyLinks(chatId)
     }
     return result

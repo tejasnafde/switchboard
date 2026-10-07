@@ -101,19 +101,21 @@ export function linkedPullRequestKeys(): Set<string> {
 }
 
 /**
- * Records a PR's state on every live link to it. Returns the root chats whose
- * link changed state, so their clients re-read it.
+ * Records a PR's state on every live link to it. `observedAt` is when the read
+ * started: a link holding a state stored later keeps it, so a slow list read
+ * that began before a merge cannot put "open" back. Returns the root chats
+ * whose link changed state, so their clients re-read it.
  */
-export function setPullRequestLinkState(ref: PrRef, state: PrState, now = Date.now()): string[] {
+export function setPullRequestLinkState(ref: PrRef, state: PrState, observedAt = Date.now()): string[] {
   const db = getDb()
   const key = keyArgs(ref)
-  const where = 'host = ? AND owner = ? AND repo = ? AND number = ? AND unlinked_at IS NULL'
+  const where = 'host = ? AND owner = ? AND repo = ? AND number = ? AND unlinked_at IS NULL AND (state_at IS NULL OR state_at <= ?)'
   return db.transaction(() => {
     const changed = (db.prepare(
       `SELECT conversation_id FROM conversation_pull_requests WHERE ${where} AND (state IS NULL OR state != ?)`,
-    ).all(...key, state) as { conversation_id: string }[]).map((r) => r.conversation_id)
+    ).all(...key, observedAt, state) as { conversation_id: string }[]).map((r) => r.conversation_id)
     // Every live row gets the time, so a refresh that found no change is not repeated at once.
-    db.prepare(`UPDATE conversation_pull_requests SET state = ?, state_at = ? WHERE ${where}`).run(state, now, ...key)
+    db.prepare(`UPDATE conversation_pull_requests SET state = ?, state_at = ? WHERE ${where}`).run(state, observedAt, ...key, observedAt)
     return changed
   })()
 }
