@@ -15,22 +15,37 @@ describe('Desktop release compatibility gate', () => {
   })
 
   it('fails release verification if the published macOS feed loses its Darwin floor', () => {
-    const workflow = readFileSync(resolve('.github/workflows/release.yml'), 'utf8')
-    expect(workflow).toContain('^minimumSystemVersion: 21.0.0$')
+    const verify = readFileSync(resolve('scripts/verify-release-assets.sh'), 'utf8')
+    expect(verify).toContain('^minimumSystemVersion: 21.0.0$')
   })
 
-  it('creates one draft before parallel publishers and exposes it only after verification', () => {
+  it('creates one draft before the platform builds and exposes it only after the macOS assets verify', () => {
     const workflow = readFileSync(resolve('.github/workflows/release.yml'), 'utf8')
     const prepareAt = workflow.indexOf('prepare_release:')
-    const buildAt = workflow.indexOf('\n  build:')
-    const verifyAt = workflow.indexOf('\n  verify:')
+    const buildAt = workflow.indexOf('\n  build_mac:')
+    const publishJob = workflow.slice(workflow.indexOf('\n  publish:'), workflow.indexOf('\n  verify_windows:'))
 
     expect(prepareAt).toBeGreaterThan(-1)
     expect(prepareAt).toBeLessThan(buildAt)
     expect(workflow).toContain('gh release create "$TAG" --repo "$REPO" --draft')
     expect(workflow).toContain('needs: prepare_release')
-    expect(workflow).toContain('gh release edit "$TAG" --repo "$REPO" --draft=false --latest')
-    expect(workflow.indexOf('gh release edit "$TAG" --repo "$REPO" --draft=false --latest')).toBeGreaterThan(verifyAt)
+    expect(publishJob).toContain('needs: build_mac')
+    expect(publishJob.indexOf('verify-release-assets.sh')).toBeGreaterThan(-1)
+    expect(publishJob.indexOf('gh release edit "$TAG" --repo "$REPO" --draft=false --latest')).toBeGreaterThan(publishJob.indexOf('verify-release-assets.sh'))
+    expect(workflow).toMatch(/verify_windows:[\s\S]*needs: \[build_win, publish\][\s\S]*verify-release-assets\.sh[^\n]*win/)
+  })
+
+  it('skips the release Gate only when main CI already passed on the same commit', () => {
+    const workflow = readFileSync(resolve('.github/workflows/release.yml'), 'utf8')
+    expect(workflow).toContain('actions/workflows/ci.yml/runs?head_sha=$SHA&status=success')
+    expect(workflow).toContain("if: needs.ci_status.outputs.green != 'true'")
+    expect(workflow).toContain("(needs.gate.result == 'success' || needs.gate.result == 'skipped')")
+  })
+
+  it('takes the version from the tag, so main needs no version-bump pull request', () => {
+    const build = readFileSync(resolve('.github/workflows/release-build.yml'), 'utf8')
+    expect(build).toContain('npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version')
+    expect(build.indexOf('npm version')).toBeLessThan(build.indexOf('npm run build:ci'))
   })
 
   it('removes run-as-node from the Electron smoke-test environment', () => {
