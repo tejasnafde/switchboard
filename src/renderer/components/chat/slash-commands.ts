@@ -34,6 +34,8 @@ export interface SlashCommandContext {
   pickImage: () => void
   /** Interrupt the currently running turn. */
   interrupt: () => void
+  /** In a fork: open the dialog that sends its work back to the parent chat. */
+  mergeBack: () => void
   /** Current agent status - used to gate commands that only make sense while running. */
   status?: AgentStatus
 }
@@ -133,6 +135,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: 'Remove a session link (no name removes every link of this chat)',
     argumentHint: '[session]',
     takesArgs: true,
+  },
+  {
+    name: 'merge-back',
+    description: "In a forked chat: send a summary of the fork's work to its parent chat (context only, no git merge)",
+    run: (ctx) => ctx.mergeBack(),
   },
   {
     name: 'clear',

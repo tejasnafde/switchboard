@@ -76,11 +76,23 @@ export class DurableTurnAcceptance {
   }
 }
 
+/**
+ * What a dispatch changed about the turn it sent. `providerText` is what the
+ * provider actually got, stored as the transcript row so it matches the
+ * provider's own transcript. `commitInTransaction` joins the turn's commit;
+ * `afterCommit` hears whether that commit happened.
+ */
+export interface DispatchedUserTurn {
+  providerText?: string
+  commitInTransaction?: AcceptedUserTurnRecord['commitInTransaction']
+  afterCommit?: (committed: boolean) => void
+}
+
 export interface AtomicUserTurnContext {
   clientScope: string
   conversationId?: string
   prepare: () => Promise<void>
-  dispatch: () => Promise<void>
+  dispatch: () => Promise<void | DispatchedUserTurn>
 }
 
 export class AtomicUserTurnSubmission {
@@ -246,10 +258,11 @@ export class AtomicUserTurnSubmission {
     key: TurnAcceptanceKey,
     payloadHash: string,
     messageId: string,
-    dispatch: () => Promise<void>,
+    dispatch: AtomicUserTurnContext['dispatch'],
   ): Promise<UserTurnSubmissionResult> {
+    let dispatched: DispatchedUserTurn | undefined
     try {
-      await dispatch()
+      dispatched = (await dispatch()) ?? undefined
     } catch (error) {
       if (error instanceof TurnNotAcceptedError) {
         log.warn(`provider definitely rejected turn ${turn.threadId}`, error)
@@ -269,18 +282,20 @@ export class AtomicUserTurnSubmission {
     const acceptedAt = this.now()
     const record: AcceptedUserTurnRecord = {
       messageId,
-      providerText: turn.providerText,
+      providerText: dispatched?.providerText ?? turn.providerText,
       imagesJson: turn.images ? JSON.stringify(turn.images) : undefined,
       displayBody: turn.displayBody,
       pillsMetaJson: turn.pillsMeta ? JSON.stringify(turn.pillsMeta) : undefined,
       acceptedAt,
       autoTitle: turn.autoTitleText ? generateTitle(turn.autoTitleText) : undefined,
       handoff: turn.handoff,
+      commitInTransaction: dispatched?.commitInTransaction,
     }
     let completion: { completed: boolean; conversationTitle?: string }
     try {
       completion = this.store.completeUserTurn(key, payloadHash, record)
     } catch (error) {
+      dispatched?.afterCommit?.(false)
       log.warn(`provider accepted turn but transcript commit failed for ${turn.threadId}`, error)
       return {
         status: 'ambiguous',
@@ -291,6 +306,7 @@ export class AtomicUserTurnSubmission {
       }
     }
     if (!completion.completed) {
+      dispatched?.afterCommit?.(false)
       return {
         status: 'ambiguous',
         accepted: false,
@@ -301,6 +317,7 @@ export class AtomicUserTurnSubmission {
     }
     const canonicalRow = this.store.readCanonicalUserTurn(key)
     if (!canonicalRow) {
+      dispatched?.afterCommit?.(true)
       return {
         status: 'ambiguous',
         accepted: false,
@@ -310,6 +327,8 @@ export class AtomicUserTurnSubmission {
       }
     }
     this.publish(canonicalEvent(key, canonicalRow))
+    // After the user's message, so a client places what rode on it above it.
+    dispatched?.afterCommit?.(true)
     return {
       status: 'accepted',
       accepted: true,

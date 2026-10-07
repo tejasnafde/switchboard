@@ -23,6 +23,7 @@ import { ChatInput, type ChatSendResult } from './ChatInput'
 import { chatIdentity } from './chat-identity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ForkLineageBanner } from './ForkLineageBanner'
+import { MergeBackDialog } from './MergeBackDialog'
 import { PeerLinkBanner } from './PeerLinkBanner'
 import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
@@ -150,6 +151,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const pendingNoteRef = useRef<{ sessionId: string; text: string } | null>(null)
   const agentStartedRef = useRef<Set<string>>(new Set())
   const [slashHelpOpen, setSlashHelpOpen] = useState(false)
+  const [mergeBackOpen, setMergeBackOpen] = useState(false)
 
 
   const messages = opening ? [] : activeSession?.messages ?? []
@@ -1239,6 +1241,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           removeSession(sessionId)
         }}
         onShowSlashHelp={() => setSlashHelpOpen(true)}
+        onMergeBack={() => setMergeBackOpen(true)}
         leadingControl={landing?.composerLead}
       />
 
@@ -1439,7 +1442,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           </div>
 
           {activeSession?.forkMetadata && (
-            <ForkLineageBanner metadata={activeSession.forkMetadata} />
+            <ForkLineageBanner
+              metadata={activeSession.forkMetadata}
+              onSendBack={sessionId && !activeSession.draft ? () => setMergeBackOpen(true) : undefined}
+            />
           )}
 
           {sessionId && !activeSession?.draft && <PeerLinkBanner sessionId={sessionId} />}
@@ -1471,6 +1477,12 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
 
           {composer}
         </>
+      )}
+      {mergeBackOpen && sessionId && (
+        <MergeBackDialog
+          mode={{ kind: 'send', forkSessionId: sessionId, parentTitle: activeSession?.forkMetadata?.parentTitle ?? 'the parent chat' }}
+          onClose={() => setMergeBackOpen(false)}
+        />
       )}
       {slashHelpOpen && (
         <SlashHelpOverlay onClose={() => setSlashHelpOpen(false)} />
