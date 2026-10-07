@@ -71,8 +71,7 @@
       "status": "implemented",
       "evidence": [
         "src/shared/ws-protocol.ts",
-        "CHANGELOG.md",
-        "AGENTS.md"
+        "CHANGELOG.md"
       ]
     }
   },
