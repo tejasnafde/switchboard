@@ -70,3 +70,20 @@ export function mergeLiveSessions<Row>(input: MergeInput<Row>): Row[] {
   // reconnect would move rows under the user's cursor.
   return [...updated, ...[...byId.values()].map(input.create)]
 }
+
+/**
+ * After a resume gap, a row this window shows as working whose session the
+ * backend no longer has cannot still be working: the event that would have
+ * ended it fell into the gap. Rows outside `inScope` (another machine) are
+ * untouched; rows the backend has take its status through `mergeLiveSessions`.
+ */
+export function settleSessionsNotLive<Row extends { id: string; status: string }>(
+  rows: readonly Row[],
+  live: readonly LiveSessionSummary[],
+  inScope: (row: Row) => boolean,
+): Row[] {
+  const liveIds = new Set(live.map((s) => s.threadId))
+  const stale = (row: Row) => inScope(row) && !liveIds.has(row.id) && (row.status === 'running' || row.status === 'thinking')
+  if (!rows.some(stale)) return rows as Row[]
+  return rows.map((row) => (stale(row) ? { ...row, status: 'idle' } : row))
+}

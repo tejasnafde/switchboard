@@ -153,6 +153,8 @@ interface QueuedClaudeTurn {
   sdkMessage: SDKUserMessage
   /** A cancel is in flight; a turn end waits for its result before starting anything. */
   withdrawing?: boolean
+  /** Taken out of the CLI's queue while the queue is held; pushed back on resume. */
+  held?: boolean
 }
 type SDKMessage = import('@anthropic-ai/claude-agent-sdk').SDKMessage
 type SDKUserMessage = import('@anthropic-ai/claude-agent-sdk').SDKUserMessage
@@ -634,6 +636,8 @@ interface ActiveSession {
   queuedTurns: QueuedClaudeTurn[]
   /** A turn ended while the head of the queue was being cancelled; start the next once that settles. */
   startAfterWithdraw?: boolean
+  /** Nothing queued starts until the user resumes: a turn failed (see holdQueuedTurns). */
+  queueHeld?: boolean
   /**
    * Effective model id from the last `getContextUsage()` poll, e.g.
    * `claude-fable-5`. The rejection payload never carries the model, yet the
@@ -851,12 +855,16 @@ export class ClaudeAdapter implements ProviderAdapter {
       parent_tool_use_id: null,
       ...(queued ? { priority: 'later' as const, uuid } : {}),
     } as SDKUserMessage
-    active.prompt.push(userMsg)
+    // A message joining an empty queue starts a new one, not held. One joining
+    // a held queue waits behind it, out of the CLI's queue, as on Codex and OpenCode.
+    if (queued && active.queuedTurns.length === 0) active.queueHeld = false
+    const holdNow = queued && active.queueHeld === true
+    if (!holdNow) active.prompt.push(userMsg)
     // A queued message leaves the running turn's clock and watchdog alone
     // (it may be suspended on an approval). Its own turn starts when that
     // one ends, in startQueuedTurn.
     if (queued && uuid) {
-      active.queuedTurns.push({ id: queuedId, uuid, message, runtimeMode, images, sdkMessage: userMsg })
+      active.queuedTurns.push({ id: queuedId, uuid, message, runtimeMode, images, sdkMessage: userMsg, ...(holdNow ? { held: true } : {}) })
       if (queuedId) active.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
     }
 
@@ -1308,6 +1316,7 @@ export class ClaudeAdapter implements ProviderAdapter {
   private dropQueuedTurns(threadId: string, active: ActiveSession): void {
     // Nothing is left to start once a withdrawal settles.
     active.startAfterWithdraw = false
+    active.queueHeld = false
     if (active.queuedTurns.length === 0) return
     const dropped = active.queuedTurns
     const count = dropped.length
@@ -1362,6 +1371,21 @@ export class ClaudeAdapter implements ProviderAdapter {
    * left to run as a turn.
    */
   private async withdrawQueuedTurn(threadId: string, active: ActiveSession, turn: QueuedClaudeTurn): Promise<boolean> {
+    // A held message is in neither queue: it is ours alone.
+    const withdrawn = turn.held || await this.withdrawFromCli(threadId, active, turn)
+    if (withdrawn) {
+      const index = active.queuedTurns.indexOf(turn)
+      if (index >= 0) active.queuedTurns.splice(index, 1)
+    }
+    if (active.startAfterWithdraw) {
+      active.startAfterWithdraw = false
+      this.startQueuedTurn(active)
+    }
+    return withdrawn
+  }
+
+  /** Take a queued message out of the SDK's prompt queue or the CLI's command queue. */
+  private async withdrawFromCli(threadId: string, active: ActiveSession, turn: QueuedClaudeTurn): Promise<boolean> {
     let withdrawn = active.prompt.remove(turn.sdkMessage)
     if (!withdrawn) {
       const query = active.query as CancellableQuery | null
@@ -1383,15 +1407,54 @@ export class ClaudeAdapter implements ProviderAdapter {
       // The CLI dropped it, so a retried query must not send it again.
       if (withdrawn) active.prompt.forget(turn.sdkMessage)
     }
-    if (withdrawn) {
-      const index = active.queuedTurns.indexOf(turn)
-      if (index >= 0) active.queuedTurns.splice(index, 1)
+    return withdrawn
+  }
+
+  /**
+   * A turn failed or hit a usage limit: the CLI would run the queued messages
+   * straight into the same failure. Take each one back out of its queue and
+   * keep it here, held, until the user resumes or cancels. One the CLI has
+   * already taken runs, so it starts as a turn of its own as before.
+   */
+  private holdQueuedTurns(active: ActiveSession, reason: string): void {
+    const threadId = active.session.threadId
+    if (active.queueHeld || active.queuedTurns.length === 0) return
+    active.queueHeld = true
+    log.info(`holding ${active.queuedTurns.length} queued message(s) on ${threadId}: ${reason}`)
+    active.onEvent({ type: 'turn.queue-held', threadId, held: true, reason })
+    void (async () => {
+      for (const turn of [...active.queuedTurns]) {
+        if (turn.held || !active.queuedTurns.includes(turn)) continue
+        if (await this.withdrawFromCli(threadId, active, turn)) turn.held = true
+        else if (active.queuedTurns.includes(turn)) this.beginQueuedTurn(active, turn)
+      }
+      if (active.startAfterWithdraw) {
+        active.startAfterWithdraw = false
+        this.startQueuedTurn(active)
+      }
+    })().catch((err: unknown) => log.warn(`holding the queue on ${threadId} failed`, err))
+  }
+
+  async resumeQueuedTurns(threadId: string): Promise<boolean> {
+    const active = this.sessions.get(threadId)
+    if (!active?.queueHeld) return false
+    active.queueHeld = false
+    active.onEvent({ type: 'turn.queue-held', threadId, held: false })
+    const held = active.queuedTurns.filter((turn) => turn.held)
+    for (const turn of held) {
+      turn.held = false
+      // A fresh uuid: the CLI already cancelled the old one.
+      turn.uuid = randomUUID()
+      turn.sdkMessage = { ...turn.sdkMessage, uuid: turn.uuid } as SDKUserMessage
+      active.prompt.push(turn.sdkMessage)
     }
-    if (active.startAfterWithdraw) {
-      active.startAfterWithdraw = false
+    // Idle: the CLI runs the first one now, as a turn of its own.
+    if (held.length > 0 && active.turnStartedAt == null) {
+      active.session.status = 'running'
+      active.onEvent({ type: 'status', threadId, status: 'running' })
       this.startQueuedTurn(active)
     }
-    return withdrawn
+    return true
   }
 
   /**
@@ -1402,13 +1465,17 @@ export class ClaudeAdapter implements ProviderAdapter {
   private startQueuedTurn(active: ActiveSession): void {
     // The CLI runs the head of its queue. If that one is being cancelled,
     // only the cancel result says which message runs now, so wait for it.
-    const head = active.queuedTurns[0]
+    const head = active.queuedTurns.find((turn) => !turn.held)
     if (!head) return
     if (head.withdrawing) {
       active.startAfterWithdraw = true
       return
     }
-    const next = active.queuedTurns.shift()!
+    this.beginQueuedTurn(active, head)
+  }
+
+  private beginQueuedTurn(active: ActiveSession, next: QueuedClaudeTurn): void {
+    active.queuedTurns.splice(active.queuedTurns.indexOf(next), 1)
     const mode = next.runtimeMode
     if (next.id) active.onEvent({ type: 'turn.dequeued', threadId: active.session.threadId, messageId: next.id, reason: 'started' })
     active.turnStartedAt = Date.now()
@@ -1873,7 +1940,9 @@ export class ClaudeAdapter implements ProviderAdapter {
         const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
         active.prompt.answered(new Set(active.queuedTurns.map((turn) => turn.sdkMessage)))
-        this.startQueuedTurn(active)
+        // A failed turn holds the queue rather than running it into the failure.
+        if ((result as { is_error?: boolean }).is_error) this.holdQueuedTurns(active, 'The last turn failed.')
+        else this.startQueuedTurn(active)
         active.onEvent({
           type: 'turn.completed',
           threadId,
@@ -1958,7 +2027,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           // turn.completed, then flag the error status.
           const durationMs = takeTurnDuration(active)
           active.watchdog.turnEnded()
-          this.startQueuedTurn(active)
+          this.holdQueuedTurns(active, 'The usage limit was reached.')
           active.currentMessageId = null
           active.currentReasoningMessageId = null
           active.partialMessageText.clear()

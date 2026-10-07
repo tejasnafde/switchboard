@@ -132,3 +132,45 @@ describe('recoverPendingRequests (desktop orchestration)', () => {
     await expect(recoverPendingRequests('t1')).resolves.toBeUndefined()
   })
 })
+
+describe('expired cards', () => {
+  beforeEach(() => {
+    useAgentStore.setState({ sessions: [] })
+  })
+
+  const openCards = () => {
+    useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'running' })
+    const store = useAgentStore.getState()
+    store.appendMessage('t1', { id: 'approval_r1', role: 'assistant', content: '', timestamp: 1, approval: { toolName: 'Bash', detail: 'ls', status: 'pending' } })
+    store.appendMessage('t1', { id: 'question_q1', role: 'assistant', content: '', timestamp: 2, question: { requestId: 'q1', questions: [], status: 'pending' } })
+    store.appendMessage('t1', { id: 'approval_r0', role: 'assistant', content: '', timestamp: 0, approval: { toolName: 'Read', detail: 'x', status: 'accepted' } })
+  }
+  const messages = () => useAgentStore.getState().sessions.find((s) => s.id === 't1')!.messages
+
+  it('a request.expired event turns the open card into a notice naming the reason', async () => {
+    const { reduceProviderEvent } = await import('../../src/renderer/components/chat/provider-event-reducer')
+    openCards()
+    reduceProviderEvent({ type: 'request.expired', threadId: 't1', requestId: 'r1', reason: 'The agent session ended before it was answered.' }, { streamingEnabled: true, coalescer: null })
+    const card = messages().find((m) => m.id === 'approval_r1')!
+    expect(card.approval).toBeUndefined()
+    expect(card.role).toBe('system')
+    expect(card.content).toBe('Approval expired, nothing was approved. The agent session ended before it was answered.')
+    expect(messages().find((m) => m.id === 'question_q1')?.question?.status).toBe('pending')
+  })
+
+  it('recovery closes open cards the backend no longer holds, and leaves answered ones', async () => {
+    openCards()
+    setWindowApi(vi.fn(() => Promise.resolve([])))
+    await recoverPendingRequests('t1')
+    expect(messages().find((m) => m.id === 'approval_r1')?.content).toMatch(/^Approval expired/)
+    expect(messages().find((m) => m.id === 'question_q1')?.content).toMatch(/^Question expired/)
+    expect(messages().find((m) => m.id === 'approval_r0')?.approval?.status).toBe('accepted')
+  })
+
+  it('recovery keeps a card the backend still holds', async () => {
+    openCards()
+    setWindowApi(vi.fn(() => Promise.resolve([{ type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' } as PendingBlockingEvent])))
+    await recoverPendingRequests('t1')
+    expect(messages().find((m) => m.id === 'approval_r1')?.approval?.status).toBe('pending')
+  })
+})

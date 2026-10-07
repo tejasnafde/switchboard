@@ -44,3 +44,19 @@ describe('missingPendingFeedItems', () => {
     expect(missingPendingFeedItems([approval, question, plan], [])).toEqual([approval, question, plan])
   })
 })
+
+describe('expiredOpenRequests', () => {
+  it('names open cards the backend no longer holds, never one that opened during the call', async () => {
+    const { expiredOpenRequests, openRequestIds } = await import('../../apps/mobile/src/lib/pending-request-recovery')
+    const feed: FeedItem[] = [
+      { kind: 'approval', id: 'a-r1', requestId: 'r1', toolName: 'Bash', detail: 'ls', requestType: 'command', state: 'pending' },
+      { kind: 'approval', id: 'a-r2', requestId: 'r2', toolName: 'Bash', detail: 'ls', requestType: 'command', state: 'approve', closed: true },
+      { kind: 'question', id: 'q-q1', requestId: 'q1', questions: [] },
+      { kind: 'question', id: 'q-q2', requestId: 'q2', questions: [], answers: [['a']] },
+    ]
+    const before = openRequestIds(feed)
+    expect(before).toEqual(new Set(['r1', 'q1']))
+    // q1 is still held; r1 is gone; r9 opened while the call was on the wire.
+    expect(expiredOpenRequests(before, [question, { ...approval, requestId: 'r9' }])).toEqual(['r1'])
+  })
+})

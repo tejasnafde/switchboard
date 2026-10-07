@@ -21,9 +21,14 @@ describe('held message rows', () => {
     expect(heldTurnFor(undefined, 'remote_q')).toBeUndefined()
   })
   it('offers Send now except where the provider cannot steer', () => {
-    expect(heldTurnActions('claude')).toEqual({ canPromote: true, hint: 'Runs after this turn' })
+    expect(heldTurnActions('claude')).toEqual({ label: 'Queued', canPromote: true, canResume: false, hint: 'Runs after this turn' })
     const opencode = heldTurnActions('opencode')
     expect(opencode.canPromote).toBe(false)
     expect(opencode.hint).toMatch(/OpenCode/)
+  })
+  it('offers Resume on a held queue, and only Cancel on a message that could not start', () => {
+    const turn = held.remote_q
+    expect(heldTurnActions('claude', { ...turn, held: true })).toMatchObject({ label: 'Held', canPromote: false, canResume: true })
+    expect(heldTurnActions('claude', { ...turn, failed: 'usage limit' })).toEqual({ label: 'Not sent', canPromote: false, canResume: false, hint: 'usage limit' })
   })
 })

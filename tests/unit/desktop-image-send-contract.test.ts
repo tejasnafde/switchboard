@@ -9,6 +9,7 @@ import {
   submitDesktopUserTurn,
 } from '../../src/renderer/services/desktop-turn-submission'
 import type { UserTurnSubmissionV1 } from '../../src/shared/provider-events'
+import { SESSION_START_STOPPED } from '../../src/shared/provider-events'
 
 function database(): Database.Database {
   const db = new Database(':memory:')
@@ -118,6 +119,21 @@ describe('Desktop atomic user-turn submission', () => {
       accepted: false,
       delivery: 'rejected',
       error: 'Failed to start session: authentication failed',
+    })
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('a start the user stopped is unsent and says so plainly', async () => {
+    const submit = vi.fn()
+    const result = await submitDesktopUserTurn(envelope(undefined), {
+      startSession: async () => { throw new Error(`Error invoking remote method 'provider:start-session': Error: ${SESSION_START_STOPPED}`) },
+      submit,
+    })
+
+    expect(result).toEqual({
+      accepted: false,
+      delivery: 'rejected',
+      error: 'Stopped before the session started. The message was not sent.',
     })
     expect(submit).not.toHaveBeenCalled()
   })

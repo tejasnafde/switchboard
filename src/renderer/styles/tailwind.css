@@ -27,6 +27,7 @@
 @source '../components/chat/PeerLinkBanner.tsx';
 @source '../components/chat/PeerUndeliveredRow.tsx';
 @source '../components/chat/ApprovalResultRow.tsx';
+@source '../components/chat/QueuedTurnBar.tsx';
 @source '../components/CommandPalette.tsx';
 @source '../components/SessionPickerModal.tsx';
 @source '../components/SearchModal.tsx';
@@ -61,4 +62,5 @@
   /* No default theme means no animations: each animate-* utility needs its own
      entry. sb-spin lives in global.css and stops under reduced motion. */
   --animate-spin: sb-spin 1s linear infinite;
+  --animate-shimmer: sb-shimmer 1.4s ease-in-out infinite;
 }

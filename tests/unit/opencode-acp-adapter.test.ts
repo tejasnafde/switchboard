@@ -430,6 +430,7 @@ describe('OpenCode queued turns', () => {
       assistantMessageText: new Map(),
       firstUserMessage: 'already titled',
       queuedTurns: [],
+      queueHeld: false,
       drainingQueue: false,
       startingPrompt: false,
     }
@@ -472,6 +473,27 @@ describe('OpenCode queued turns', () => {
     await adapter.sendTurn(tid, 'queued', undefined, undefined, 'queue')
     releaseMode()
     await expect(first).rejects.toBeInstanceOf(TurnNotAcceptedError)
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2))
+    expect(prompt.mock.calls[1][0].prompt).toEqual([{ type: 'text', text: 'queued' }])
+  })
+
+  it('holds the queue when the running prompt fails, and starts it on resume', async () => {
+    const adapter = new OpencodeAcpAdapter()
+    let failFirst!: () => void
+    const prompt = vi.fn()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { failFirst = () => reject(new Error('usage limit')) }))
+      .mockImplementation(() => Promise.resolve({}))
+    const active = fakeSession({ prompt })
+    ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
+
+    await adapter.sendTurn(tid, 'first')
+    await adapter.sendTurn(tid, 'queued', undefined, undefined, 'queue', 'remote_q1')
+    failFirst()
+    await vi.waitFor(() => expect(active.inFlightPrompt).toBeNull())
+    expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.queue-held', threadId: tid, held: true, reason: 'usage limit' })
+    expect(prompt).toHaveBeenCalledTimes(1)
+
+    await expect(adapter.resumeQueuedTurns(tid)).resolves.toBe(true)
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2))
     expect(prompt.mock.calls[1][0].prompt).toEqual([{ type: 'text', text: 'queued' }])
   })

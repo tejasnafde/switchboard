@@ -465,19 +465,21 @@ export function HeldTurnBar({
   actions,
   error,
   onPromote,
+  onResume,
   onCancel,
 }: {
   actions: HeldTurnActions
   /** Why the last Send now / Cancel was refused, shown in place of the hint. */
   error?: string
   onPromote: () => void
+  onResume?: () => void
   onCancel: () => void
 }) {
   return (
     <View style={styles.heldBar}>
       <View style={styles.heldChip}>
         <Ionicons name="time-outline" size={11} color={colors.textDim} />
-        <Text style={styles.heldChipText}>Queued</Text>
+        <Text style={styles.heldChipText}>{actions.label}</Text>
       </View>
       <Text
         style={[styles.heldHint, error !== undefined && styles.deliveryFailed]}
@@ -486,18 +488,31 @@ export function HeldTurnBar({
       >
         {error ?? actions.hint}
       </Text>
-      <Pressable
-        onPress={onPromote}
-        disabled={!actions.canPromote}
-        accessibilityRole="button"
-        accessibilityLabel="Send now"
-        accessibilityState={{ disabled: !actions.canPromote }}
-        testID="held-send-now"
-        hitSlop={8}
-        style={[styles.heldAction, !actions.canPromote && styles.heldActionDisabled]}
-      >
-        <Ionicons name="arrow-up" size={15} color={colors.textDim} />
-      </Pressable>
+      {actions.canResume ? (
+        <Pressable
+          onPress={onResume}
+          accessibilityRole="button"
+          accessibilityLabel="Resume"
+          testID="held-resume"
+          hitSlop={8}
+          style={styles.heldAction}
+        >
+          <Ionicons name="arrow-up" size={15} color={colors.textDim} />
+        </Pressable>
+      ) : actions.label === 'Queued' && (
+        <Pressable
+          onPress={onPromote}
+          disabled={!actions.canPromote}
+          accessibilityRole="button"
+          accessibilityLabel="Send now"
+          accessibilityState={{ disabled: !actions.canPromote }}
+          testID="held-send-now"
+          hitSlop={8}
+          style={[styles.heldAction, !actions.canPromote && styles.heldActionDisabled]}
+        >
+          <Ionicons name="arrow-up" size={15} color={colors.textDim} />
+        </Pressable>
+      )}
       <Pressable
         onPress={onCancel}
         accessibilityRole="button"
