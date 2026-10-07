@@ -2205,17 +2205,18 @@ export class ProviderRegistry implements PeerToolHost {
       })
       await this.attachNotebooks(opts.threadId, session.cwd)
       trackAnalyticsEvent('session_started', { provider: opts.provider })
-      // Results of cards answered while the chat was not running. A start
-      // inside a profile switch or relocation (gated, or a rollback) is
-      // skipped here; that flow flushes once it settles.
-      if (!eventGate) this.flushHeldApprovalResultsLater(opts.threadId)
       // Stop arrived while the adapter was starting: stop what just came up
-      // instead of letting the waiting turn run in it.
+      // instead of letting the waiting turn run in it. Checked before the flush
+      // below, so held approval results stay held for the next start.
       if (this.stopRequestedDuringStart.delete(opts.threadId)) {
         log.info(`startSession ${opts.threadId} stopped by the user during start`)
         await stopSession(opts.threadId)
         throw new Error(SESSION_START_STOPPED)
       }
+      // Results of cards answered while the chat was not running. A start
+      // inside a profile switch or relocation (gated, or a rollback) is
+      // skipped here; that flow flushes once it settles.
+      if (!eventGate) this.flushHeldApprovalResultsLater(opts.threadId)
       resolveStart(session)
       return session
       } catch (err) {
