@@ -281,6 +281,13 @@ describe('messages the backend holds', () => {
     expect(items()).toEqual([])
   })
 
+  it('drops the bubble of a queued message that never ran', () => {
+    useChatStore.getState().addUserMessage(KEY, 'later', [], 'h-remote_q')
+    ingest({ type: 'turn.queued', ...held })
+    ingest({ type: 'turn.dequeued', threadId: THREAD, messageId: 'remote_q', reason: 'dropped' })
+    expect(items()).toEqual([])
+  })
+
   it('re-lists from the backend and never caches what it holds', async () => {
     useChatStore.getState().setHeldTurns(KEY, [held])
     expect(Object.keys(heldTurns())).toEqual(['remote_q'])

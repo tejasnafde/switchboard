@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react'
 import type { FileDiffAttachment } from '@shared/types'
 import { createRendererLogger } from '../../logger'
 import { buildFileDiff, hunkRows, applyHunkDecision, resolvedContent } from './file-diff-resolve'
+import { fileDiffNoRevertMessage } from '@shared/file-diff-revert'
 
 const log = createRendererLogger('chat:file-diff-card')
 
@@ -35,7 +36,7 @@ const KIND_LABEL: Record<FileDiffAttachment['changeKind'], string> = {
 }
 
 export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement {
-  const { relPath, oldContent, newContent, changeKind, status } = fileDiff
+  const { relPath, oldContent, newContent, changeKind, status, noRevert } = fileDiff
 
   // Build diff metadata once per (old,new). Guard against the degenerate
   // equal-content case (shouldn't happen - checkpoints only report changes).
@@ -151,10 +152,12 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
             <button style={btnStyle} onClick={keepAll} disabled={writing !== null}>
               {writing === 'keep' ? 'Keeping…' : 'Keep all'}
             </button>
-            <button style={btnStyle} onClick={rejectAll} disabled={writing !== null}>
-              {writing === 'reject' ? 'Rejecting…' : 'Reject all'}
-            </button>
-            {Object.values(reverted).some(Boolean) && (
+            {!noRevert && (
+              <button style={btnStyle} onClick={rejectAll} disabled={writing !== null}>
+                {writing === 'reject' ? 'Rejecting…' : 'Reject all'}
+              </button>
+            )}
+            {!noRevert && Object.values(reverted).some(Boolean) && (
               <button
                 style={{ ...btnStyle, borderColor: 'var(--accent)', color: 'var(--accent)' }}
                 onClick={() => apply('apply', reverted)}
@@ -166,6 +169,17 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
           </div>
         )}
       </div>
+
+      {noRevert && !resolved && (
+        <div style={{
+          padding: '5px 10px',
+          borderBottom: '1px solid var(--border)',
+          color: 'var(--text-muted)',
+          fontSize: 11,
+        }}>
+          {fileDiffNoRevertMessage(noRevert)}
+        </div>
+      )}
 
       {writeError && (
         <div style={{
@@ -195,7 +209,7 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
                   key={hunkIndex}
                   rows={hunkRows(metadata, hunkIndex)}
                   reverted={!!reverted[hunkIndex]}
-                  disabled={resolved}
+                  disabled={resolved || noRevert !== undefined}
                   onToggle={() => toggleHunk(hunkIndex)}
                 />
               ))}

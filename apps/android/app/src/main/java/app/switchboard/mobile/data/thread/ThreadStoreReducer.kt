@@ -462,11 +462,12 @@ object ThreadStoreReducer {
                 ),
             )
             is ThreadEventPayload.TurnQueued -> withJournal.copy(heldTurns = withJournal.heldTurns + event.messageId)
-            // A message taken back never reached the agent. The row can be
-            // live (`remote_x`) or from history (`h-remote_x`).
+            // A message taken back or dropped never reached the agent (the
+            // backend stored a not-sent row instead). The row can be live
+            // (`remote_x`) or from history (`h-remote_x`).
             is ThreadEventPayload.TurnDequeued -> withJournal.copy(
                 heldTurns = withJournal.heldTurns - event.messageId,
-                feed = if (event.reason == "cancelled") {
+                feed = if (event.reason == "cancelled" || event.reason == "dropped") {
                     withJournal.feed.filterNot { it is FeedItem.User && feedIdentity(it) == event.messageId }
                 } else {
                     withJournal.feed

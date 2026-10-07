@@ -560,6 +560,11 @@ export interface RuntimeToolCompletedEvent {
   threadId: string
   toolId: string
   output?: string
+  /**
+   * Files the tool wrote, for adapters whose `tool.started` input does not
+   * name them yet (OpenCode). Absolute, or relative to the session folder.
+   */
+  writtenPaths?: string[]
 }
 
 /**
@@ -811,4 +816,15 @@ export interface RuntimeFileEditedEvent {
   oldContent: string
   /** File content at end of turn. Empty for a deleted file. */
   newContent: string
+  /** Set when Reject must not be offered. Absent on events from older backends. */
+  noRevert?: FileDiffNoRevertReason
 }
+
+/**
+ * Why a diff card offers no Reject:
+ * - `outside`: this chat's own edit tools did not write the file (another
+ *   chat, the user, or a command did), so reverting it could undo their work.
+ * - `binary`: the content is not text, and a text write would corrupt it.
+ * - `unknown`: a side could not be read, so there is nothing safe to write.
+ */
+export type FileDiffNoRevertReason = 'outside' | 'binary' | 'unknown'

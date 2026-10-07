@@ -11,7 +11,7 @@ import { mergeLiveSessions, toAgentStatus, toAgentType } from './live-session-me
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { PENDING_REQUEST_EVENT_TYPES, applyPendingRequestEvent, type PendingBlockingEvent } from '@shared/pending-requests'
 import type { RuntimeEvent } from '@shared/provider-events'
-import { NO_QUEUED_TURNS, applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
+import { NO_QUEUED_TURNS, applyQueuedTurnEvent, queuedRowRemoved, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { FollowSuggestionMode } from '@shared/follow-suggestions'
 import { isRuntimeMode, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
@@ -518,9 +518,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         const revision = event.type === 'status' ? s.queuedTurnRevision : (s.queuedTurnRevision ?? 0) + 1
         const current = s.queuedTurns ?? NO_QUEUED_TURNS
         const next = applyQueuedTurnEvent(current, event)
-        // A cancelled message never reached the agent, so its row goes too,
-        // on every client (the backend deleted the stored copy).
-        const cancelled = event.type === 'turn.dequeued' && event.reason === 'cancelled'
+        // A cancelled or dropped message never reached the agent, so its row
+        // goes too, on every client (the backend replaced the stored copy).
+        const cancelled = event.type === 'turn.dequeued' && queuedRowRemoved(event.reason)
           && s.messages.some((m) => m.id === event.messageId)
         if (next === current && !cancelled && revision === s.queuedTurnRevision) return s
         changed = true

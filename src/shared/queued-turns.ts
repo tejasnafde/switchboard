@@ -38,6 +38,15 @@ export function applyQueuedTurnEvent(state: QueuedTurnsByMessage, event: Runtime
   return state
 }
 
+/**
+ * The message never reached the agent, so its chat row goes on every client:
+ * taken back by the user, or dropped (the backend stored a not-sent row with
+ * its text instead).
+ */
+export function queuedRowRemoved(reason: string): boolean {
+  return reason === 'cancelled' || reason === 'dropped'
+}
+
 /** Replace the state with what the backend reports (open, reconnect, resume gap). */
 export function seedQueuedTurns(turns: readonly QueuedTurnSummary[]): QueuedTurnsByMessage {
   if (turns.length === 0) return NO_QUEUED_TURNS
@@ -58,4 +67,12 @@ export function queuedTurnComposerText(
   const hasPills = pillsMeta !== undefined && Object.keys(pillsMeta).length > 0
   if (displayBody !== undefined && !hasPills) return displayBody
   return stripHandoffPreamble(providerText)
+}
+
+export type QueuedTurnNotSentCause = 'stopped' | 'restarted'
+
+/** What replaces a queued message that never ran. It keeps the text, which is all the user loses otherwise. */
+export function queuedTurnNotSentMessage(text: string, cause: QueuedTurnNotSentCause): string {
+  const why = cause === 'stopped' ? 'the session stopped before it ran' : 'Switchboard restarted before it ran'
+  return `A queued message was not sent: ${why}. Send it again. Its text:\n\n${text}`
 }

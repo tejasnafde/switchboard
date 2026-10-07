@@ -1,0 +1,82 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "data-loss-batch-a",
+  "summary": "Data-loss fixes from the T3 audit. Diff cards offer Reject only for files this chat's own edit tools wrote (others show 'changed outside this chat's edit tools'), never for a binary file or a side git could not read; a session folder inside a repository gets paths relative to it and only its own files; a steer or queued send keeps the running turn's baseline and a queued turn starts from the previous turn's end tree; the baseline is stored in SQLite and restored when the chat starts after a restart. OpenCode refuses a plain send while busy instead of storing it as sent. A queued message that never ran (stop, crash, restart) becomes an error row that keeps its text. A Claude resume retry sends the unanswered messages again. Compatibility: Additive only: optional noRevert on file.edited and stored diff cards, optional writtenPaths on tool.completed, and a new turn.dequeued reason use ('dropped') that older clients already treat as a plain dequeue. Older backends send no noRevert, so their cards keep Reject as before. The two new tables are created with CREATE TABLE IF NOT EXISTS.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/FileDiffCard.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "src/renderer/stores/agent-store.ts",
+        "tests/unit/provider-event-reducer.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts",
+        "tests/unit/mobile-chat-store.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "src/shared/types.ts",
+        "src/shared/queued-turns.ts",
+        "src/shared/file-diff-revert.ts",
+        "src/main/git/checkpoint.ts",
+        "src/main/provider/checkpoint-tracker.ts",
+        "src/main/provider/agent-written-paths.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "tests/unit/checkpoint.test.ts",
+        "tests/unit/checkpoint-tracker.test.ts",
+        "tests/unit/agent-written-paths.test.ts",
+        "tests/unit/opencode-acp-adapter.test.ts",
+        "tests/unit/claude-adapter-resume-retry.test.ts",
+        "tests/unit/provider-registry-queued-turns.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/queued-turn-rows.ts",
+        "src/main/db/turn-checkpoints.ts",
+        "src/main/db/database.ts",
+        "tests/unit/queued-turn-rows-sqlite.test.ts",
+        "tests/unit/turn-checkpoints-sqlite.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test",
+      "./gradlew testDebugUnitTest --tests '*ThreadStoreReducerTest*'"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live agent run: tool attribution is tested against each adapter's event shape, not a real Claude, Codex or OpenCode session. OpenCode's completed edit update is assumed to carry kind 'edit'; if it does not, those cards show without Reject (the safe side).",
+      "The restart restore was not exercised by killing a running app; it is tested at the tracker and the SQLite store.",
+      "Phones show diff cards without Reject already, so they need no noRevert handling."
+    ]
+  }
+}
