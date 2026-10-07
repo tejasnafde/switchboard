@@ -103,13 +103,14 @@ export function linkedPullRequestKeys(): Set<string> {
 /**
  * Records a PR's state on every live link to it. `observedAt` is when the read
  * started: a link holding a state stored later keeps it, so a slow list read
- * that began before a merge cannot put "open" back. Returns the root chats
+ * that began before a merge cannot put "open" back, and a link made or revived
+ * after it started gets nothing from it (a relink clears the old state). Returns the root chats
  * whose link changed state, so their clients re-read it.
  */
 export function setPullRequestLinkState(ref: PrRef, state: PrState, observedAt = Date.now()): string[] {
   const db = getDb()
   const key = keyArgs(ref)
-  const where = 'host = ? AND owner = ? AND repo = ? AND number = ? AND unlinked_at IS NULL AND (state_at IS NULL OR state_at <= ?)'
+  const where = 'host = ? AND owner = ? AND repo = ? AND number = ? AND unlinked_at IS NULL AND MAX(linked_at, COALESCE(state_at, 0)) <= ?'
   return db.transaction(() => {
     const changed = (db.prepare(
       `SELECT conversation_id FROM conversation_pull_requests WHERE ${where} AND (state IS NULL OR state != ?)`,

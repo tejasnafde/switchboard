@@ -57,10 +57,10 @@ vi.mock('better-sqlite3', () => {
           }
           if (sql.includes('UPDATE conversation_pull_requests SET state = ?, state_at = ?')) {
             const [state, at, host, owner, repo, number, observedAt] = args as [string, number, string, string, string, number, number]
-            const guarded = sql.includes('(state_at IS NULL OR state_at <= ?)')
+            const guarded = sql.includes('MAX(linked_at, COALESCE(state_at, 0)) <= ?')
             for (const l of links.values()) {
               if (l.host === host && l.owner === owner && l.repo === repo && l.number === number && l.unlinked_at === null
-                && !(guarded && l.state_at != null && l.state_at > observedAt)) Object.assign(l, { state, state_at: at })
+                && !(guarded && Math.max(l.linked_at, l.state_at ?? 0) > observedAt)) Object.assign(l, { state, state_at: at })
             }
             return { changes: 1 }
           }
@@ -92,13 +92,13 @@ vi.mock('better-sqlite3', () => {
               .map(([id, c]) => ({ id, projectPath: c.project_path, worktreePath: c.worktree_path ?? null }))
           }
           if (sql.includes('SELECT conversation_id FROM conversation_pull_requests WHERE host = ?')) {
-            const guarded = sql.includes('(state_at IS NULL OR state_at <= ?)')
+            const guarded = sql.includes('MAX(linked_at, COALESCE(state_at, 0)) <= ?')
             const [host, owner, repo, number] = args as [string, string, string, number]
             const observedAt = guarded ? args[4] as number : Infinity
             const state = args[guarded ? 5 : 4] as string
             return [...links.values()]
               .filter((l) => l.host === host && l.owner === owner && l.repo === repo && l.number === number && l.unlinked_at === null && l.state !== state)
-              .filter((l) => l.state_at == null || l.state_at <= observedAt)
+              .filter((l) => Math.max(l.linked_at, l.state_at ?? 0) <= observedAt)
               .map((l) => ({ conversation_id: l.conversation_id }))
           }
           if (sql.includes('SELECT DISTINCT host, owner, repo, number FROM conversation_pull_requests WHERE unlinked_at IS NULL')) {
@@ -232,6 +232,15 @@ describe('stale state reads', () => {
     expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: 'merged', stateAt: 50 })
     expect(setPullRequestLinkState(PR, 'open', 60)).toEqual(['agent_1'])
     expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: 'open', stateAt: 60 })
+  })
+
+  it('a read that started before an unlink and relink does not reach the new link', () => {
+    linkConversationPullRequest('agent_1', PR, 'manual', 10)
+    unlinkConversationPullRequest('agent_1', PR, 20)
+    linkConversationPullRequest('agent_1', PR, 'manual', 40)
+    expect(setPullRequestLinkState(PR, 'closed', 35)).toEqual([])
+    expect(listConversationPullRequests('agent_1')[0]).toMatchObject({ state: null, stateAt: null })
+    expect(setPullRequestLinkState(PR, 'open', 45)).toEqual(['agent_1'])
   })
 })
 
