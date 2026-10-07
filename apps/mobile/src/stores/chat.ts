@@ -21,11 +21,11 @@ import type {
   Question,
 } from '@shared/provider-events'
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
-import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
+import { echoMessageId, expiredRequestNotice, visibleUserMessageText } from '@shared/provider-events'
 import { pillBodyText } from '@shared/pill-body-text'
 import { transcriptShowsTaskNotification, type SyntheticUserPart } from '@shared/synthetic-message'
 import { splitLegacyCachedItems } from '../lib/thread-history'
-import { applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
+import { applyQueuedTurnEvent, queuedRowRemoved, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { HostWriteCard } from '@shared/agent-host-writes'
 import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-approval-cards'
@@ -187,12 +187,14 @@ const FLUSH_MS = 50
 const FLUSH_IMMEDIATELY: ReadonlySet<RuntimeEvent['type']> = new Set([
   'request.opened',
   'request.closed',
+  'request.expired',
   'question.asked',
   'question.answered',
   'plan.proposed',
   'turn.completed',
   'turn.queued',
   'turn.dequeued',
+  'turn.queue-held',
   'error',
   'status',
 ])
@@ -397,6 +399,21 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
               (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: event.decision, closed: true }),
             ),
           }
+        case 'request.expired':
+          // The provider can no longer take an answer: the open card becomes
+          // a notice with the reason, so nothing offers buttons that answer nothing.
+          return {
+            items: t.items.map((i) => {
+              // Not by state: an optimistic Approve is still unanswered until request.closed.
+              if (i.kind === 'approval' && i.requestId === event.requestId && !i.closed) {
+                return { kind: 'notice', id: i.id, text: expiredRequestNotice('approval', event.reason) }
+              }
+              if (i.kind === 'question' && i.requestId === event.requestId && !i.answers) {
+                return { kind: 'notice', id: i.id, text: expiredRequestNotice('question', event.reason) }
+              }
+              return i
+            }),
+          }
         case 'question.asked':
           return {
             items: [
@@ -457,13 +474,14 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
         case 'status':
           return { status: event.status, heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event) }
         case 'turn.queued':
+        case 'turn.queue-held':
           return { heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event), heldRevision: (t.heldRevision ?? 0) + 1 }
         case 'turn.dequeued': {
           const heldTurns = applyQueuedTurnEvent(t.heldTurns ?? {}, event)
           const heldRevision = (t.heldRevision ?? 0) + 1
-          // A cancelled message never reached the agent: its bubble goes, on
-          // every client, live or reloaded from history.
-          if (event.reason !== 'cancelled') return { heldTurns, heldRevision }
+          // A cancelled or dropped message never reached the agent: its
+          // bubble goes, on every client, live or reloaded from history.
+          if (!queuedRowRemoved(event.reason)) return { heldTurns, heldRevision }
           const gone = new Set([event.messageId, `h-${event.messageId}`])
           return { heldTurns, heldRevision, items: t.items.filter((i) => !(i.kind === 'user' && gone.has(i.id))) }
         }

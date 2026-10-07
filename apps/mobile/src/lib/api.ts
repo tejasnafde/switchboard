@@ -19,6 +19,7 @@ import type {
   UserTurnSubmissionResult,
   UserTurnResolutionV1,
   UserTurnResolutionResult,
+  InterruptResult,
 } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
@@ -370,6 +371,11 @@ export class SwitchboardClient {
     return this.transport.invoke(ProviderChannels.CANCEL_QUEUED_TURN, threadId, messageId)
   }
 
+  /** Start a queue held after a failed or usage-limited turn. */
+  resumeQueuedTurns(threadId: string): Promise<{ ok: boolean; message?: string }> {
+    return this.transport.invoke(ProviderChannels.RESUME_QUEUED_TURNS, threadId)
+  }
+
   /** A user send to another session; with `undeliveredId` it sends a kept Not delivered row. */
   deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string }> {
     return this.transport.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, input)
@@ -389,7 +395,7 @@ export class SwitchboardClient {
     return this.transport.on(PullRequestChannels.LINKS_CHANGED, () => handler())
   }
 
-  interrupt(threadId: string): Promise<void> {
+  interrupt(threadId: string): Promise<InterruptResult | undefined> {
     return this.transport.invoke(ProviderChannels.INTERRUPT, threadId)
   }
 

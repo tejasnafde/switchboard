@@ -13,7 +13,7 @@ function makeActive(query: unknown) {
       createdAt: 0,
     },
     query,
-    prompt: { push: vi.fn(), close: vi.fn(), remove: vi.fn(() => false) },
+    prompt: { push: vi.fn(), close: vi.fn(), remove: vi.fn(() => false), forget: vi.fn(), answered: vi.fn() },
     onEvent: vi.fn(),
     abortController: new AbortController(),
     pendingApprovals: new Map(),
@@ -95,9 +95,12 @@ describe('ClaudeAdapter queued turns', () => {
     await adapter.sendTurn('thread-1', 'take me back', undefined, undefined, 'queue', 'remote_q1')
     expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.queued', threadId: 'thread-1', messageId: 'remote_q1' })
     const uuid = active.queuedTurns[0].uuid
+    const sdkMessage = active.queuedTurns[0].sdkMessage
 
     await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(true)
     expect(cancelAsyncMessage).toHaveBeenCalledWith(uuid)
+    // A retried query must not send the cancelled message again.
+    expect(active.prompt.forget).toHaveBeenCalledWith(sdkMessage)
     expect(active.queuedTurns).toEqual([])
     expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'cancelled' })
     active.watchdog.turnEnded()
@@ -118,6 +121,7 @@ describe('ClaudeAdapter queued turns', () => {
     await adapter.sendTurn('thread-1', 'too late', undefined, undefined, 'queue', 'remote_q1')
     await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(false)
     expect(active.queuedTurns).toHaveLength(1)
+    expect(active.prompt.forget).not.toHaveBeenCalled()
     expect(active.onEvent.mock.calls.some(([e]) => e.type === 'turn.dequeued')).toBe(false)
     active.watchdog.turnEnded()
   })
@@ -260,6 +264,85 @@ describe('ClaudeAdapter queued turns', () => {
     ;(adapter as any).startQueuedTurn(active)
     expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
     expect(active.queuedTurns).toEqual([])
+    active.watchdog.turnEnded()
+  })
+})
+
+describe('ClaudeAdapter holds the queue after a usage limit or a failed turn', () => {
+  const rejected = { type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: 1 } }
+
+  async function queuedBehindRunningTurn(cancelAsyncMessage: (uuid: string) => Promise<boolean>) {
+    const adapter = new ClaudeAdapter()
+    const active = { ...makeActive({ cancelAsyncMessage, setPermissionMode: vi.fn(async () => {}), getContextUsage: vi.fn(async () => ({ totalTokens: 1, maxTokens: 2, percentage: 50 })) }), currentReasoningMessageId: null, partialMessageText: new Map(), lastKnownModel: null }
+    active.turnStartedAt = Date.now()
+    withSession(adapter, active)
+    await adapter.sendTurn('thread-1', 'q1', undefined, undefined, 'queue', 'remote_q1')
+    await adapter.sendTurn('thread-1', 'q2', undefined, undefined, 'queue', 'remote_q2')
+    return { adapter, active, events: () => active.onEvent.mock.calls.map(([e]) => e) }
+  }
+
+  it('takes the queued messages back out of the CLI, holds them, and pushes them again on resume', async () => {
+    const cancelAsyncMessage = vi.fn(async () => true)
+    const { adapter, active, events } = await queuedBehindRunningTurn(cancelAsyncMessage)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).handleSDKMessage('thread-1', active, rejected)
+    await vi.waitFor(() => expect(cancelAsyncMessage).toHaveBeenCalledTimes(2))
+
+    expect(events()).toContainEqual({ type: 'turn.queue-held', threadId: 'thread-1', held: true, reason: 'The usage limit was reached.' })
+    // Nothing started into the limit.
+    expect(events().some((e) => e.type === 'turn.dequeued')).toBe(false)
+    expect(active.queuedTurns.map((t) => (t as { held?: boolean }).held)).toEqual([true, true])
+
+    active.prompt.push.mockClear()
+    await expect(adapter.resumeQueuedTurns('thread-1')).resolves.toBe(true)
+    expect(active.prompt.push.mock.calls.map(([m]) => m.message.content)).toEqual(['q1', 'q2'])
+    // Idle, so the CLI runs the first one now.
+    expect(events()).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    expect(events()).toContainEqual({ type: 'turn.queue-held', threadId: 'thread-1', held: false })
+    active.watchdog.turnEnded()
+  })
+
+  it('a held message is ours alone: cancel needs no CLI round trip', async () => {
+    const cancelAsyncMessage = vi.fn(async () => true)
+    const { adapter, active } = await queuedBehindRunningTurn(cancelAsyncMessage)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).handleSDKMessage('thread-1', active, { type: 'result', is_error: true, subtype: 'error_during_execution' })
+    await vi.waitFor(() => expect(cancelAsyncMessage).toHaveBeenCalledTimes(2))
+    await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q2')).resolves.toBe(true)
+    expect(cancelAsyncMessage).toHaveBeenCalledTimes(2)
+    expect(active.queuedTurns.map((t) => t.id)).toEqual(['remote_q1'])
+    active.watchdog.turnEnded()
+  })
+
+  it('a message queued behind a held queue waits there instead of reaching the CLI', async () => {
+    const cancelAsyncMessage = vi.fn(async () => true)
+    const { adapter, active } = await queuedBehindRunningTurn(cancelAsyncMessage)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).handleSDKMessage('thread-1', active, rejected)
+    await vi.waitFor(() => expect(cancelAsyncMessage).toHaveBeenCalledTimes(2))
+    // The user starts a new turn and queues another message behind it.
+    active.turnStartedAt = Date.now()
+    active.prompt.push.mockClear()
+    await adapter.sendTurn('thread-1', 'q3', undefined, undefined, 'queue', 'remote_q3')
+    expect(active.prompt.push).not.toHaveBeenCalled()
+    expect(active.queuedTurns.map((t) => [t.id, (t as { held?: boolean }).held])).toEqual([
+      ['remote_q1', true], ['remote_q2', true], ['remote_q3', true],
+    ])
+    await expect(adapter.resumeQueuedTurns('thread-1')).resolves.toBe(true)
+    expect(active.prompt.push.mock.calls.map(([m]) => m.message.content)).toEqual(['q1', 'q2', 'q3'])
+    active.watchdog.turnEnded()
+  })
+
+  it('a message the CLI already took starts as before; the rest are held', async () => {
+    const cancelAsyncMessage = vi.fn(async (uuid: string) => uuid !== firstUuid)
+    let firstUuid = ''
+    const { adapter, active, events } = await queuedBehindRunningTurn((uuid) => cancelAsyncMessage(uuid))
+    firstUuid = active.queuedTurns[0].uuid
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).handleSDKMessage('thread-1', active, rejected)
+    await vi.waitFor(() => expect(cancelAsyncMessage).toHaveBeenCalledTimes(2))
+    expect(events()).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    expect(active.queuedTurns.map((t) => t.id)).toEqual(['remote_q2'])
     active.watchdog.turnEnded()
   })
 })

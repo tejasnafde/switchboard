@@ -37,6 +37,7 @@ import app.switchboard.mobile.domain.thread.QueuedTurnSummary
 import app.switchboard.mobile.domain.thread.TurnDelivery
 import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import app.switchboard.mobile.domain.thread.ThreadEventDecoder
+import app.switchboard.mobile.domain.thread.ExpiredRequests
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
 import app.switchboard.mobile.domain.thread.UserMessageVisibility
@@ -320,6 +321,10 @@ interface ThreadSessionRemote {
 
     /** Any chat's links changed; re-read this thread's links rather than matching ids. */
     fun onPullRequestLinksChanged(listener: () -> Unit): Cancelable = Cancelable {}
+
+    /** Start a queue held after a failed or usage-limited turn. */
+    fun resumeQueuedTurns(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit): Unit =
+        throw UnsupportedOperationException("Queued messages are not supported")
 }
 
 class SwitchboardThreadSessionRemote(
@@ -463,6 +468,10 @@ class SwitchboardThreadSessionRemote(
 
     override fun onPullRequestLinksChanged(listener: () -> Unit): Cancelable =
         client.onPullRequestLinksChanged(listener)
+
+    override fun resumeQueuedTurns(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
+        client.resumeQueuedTurns(threadId, callback)
+    }
 }
 
 object LoadedSessionSnapshotMapper {
@@ -1093,12 +1102,33 @@ class ThreadSessionCoordinator(
             synchronized(this) {
                 if (!accepts(response)) return@synchronized
                 composer = when (val outcome = response.outcome) {
-                    is RemoteOutcome.Success -> composer.copy(interrupting = false, error = null)
+                    is RemoteOutcome.Success -> {
+                        // No turn on the backend (its end fell into a resume gap): no
+                        // closing event will come, so clear the status here.
+                        if (outcome.value.foundNoTurn) settleStaleRunning()
+                        composer.copy(interrupting = false, error = null)
+                    }
                     is RemoteOutcome.Failure -> composer.copy(interrupting = false, error = outcome.message)
                 }
                 publish()
             }
         }
+    }
+
+    private fun settleStaleRunning() {
+        val status = currentThread()?.status ?: return
+        if (status == "running" || status == "thinking") replaceThreadStatus("idle")
+    }
+
+    private fun replaceThreadStatus(status: String) {
+        val thread = currentThread() ?: return
+        store = store.copy(threads = store.threads + (key to thread.copy(status = status)))
+        load = when (val current = load) {
+            is ThreadSessionLoad.Loading -> ThreadSessionLoad.Loading(currentThread())
+            is ThreadSessionLoad.Failed -> current.copy(cached = currentThread())
+            is ThreadSessionLoad.Ready -> current.copy(thread = requireNotNull(currentThread()))
+        }
+        persistSnapshot()
     }
 
     /** The composer chip: the next send steers instead of queueing, or the other way round. */
@@ -1146,16 +1176,48 @@ class ThreadSessionCoordinator(
         }
     }
 
+    /** Resume a held queue; a refusal shows on the row that was tapped. */
+    @Synchronized
+    fun resumeHeld(messageId: String) {
+        if (closed || !canControlHeld || remote.scope != scope || !heldBusy.add(messageId)) return
+        heldErrors.remove(messageId)
+        publish()
+        try {
+            remote.resumeQueuedTurns(threadId) { response ->
+                synchronized(this) {
+                    heldBusy -= messageId
+                    if (!accepts(response) || closed) return@synchronized
+                    when (val outcome = response.outcome) {
+                        is RemoteOutcome.Failure -> heldErrors[messageId] = outcome.message
+                        is RemoteOutcome.Success -> {
+                            val body = outcome.value.body as? JsonObject
+                            if ((body?.values?.get("ok") as? JsonBoolean)?.value == false) {
+                                heldErrors[messageId] = (body.values["message"] as? JsonString)?.value ?: "Nothing is held for this chat."
+                            }
+                        }
+                    }
+                    publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            heldBusy -= messageId
+            heldErrors[messageId] = error.message ?: "Request failed"
+            publish()
+        }
+    }
+
     @Synchronized
     fun perform(control: ThreadSessionControl): ThreadControlOutcome = when (control) {
         is ThreadSessionControl.Approval -> requestControl(
             key = "approval:${control.requestId}",
+            requestId = control.requestId,
             onPending = { pendingApprovalDecisions[control.requestId] = control.decision },
             onFinished = { pendingApprovalDecisions.remove(control.requestId) },
         ) { callback -> remote.respondToRequest(threadId, control.requestId, control.decision, control.response, callback) }
 
         is ThreadSessionControl.AnswerQuestion -> requestControl(
             key = "question:${control.requestId}",
+            requestId = control.requestId,
             onPending = { pendingQuestionRequestIds += control.requestId },
             onFinished = { pendingQuestionRequestIds -= control.requestId },
         ) { callback -> remote.answerQuestion(threadId, control.requestId, control.answers, callback) }
@@ -1253,6 +1315,10 @@ class ThreadSessionCoordinator(
      */
     private fun recoverPendingRequests() {
         if (!supportsPendingRequests) return
+        // Cards open before the call that the backend no longer holds can never
+        // be answered (their provider died meanwhile). One that opens while the
+        // call is on the wire is not in this set, so it is kept.
+        val openBefore = ExpiredRequests.openRequestIds(currentThread()?.feed.orEmpty())
         try {
             remote.getPendingRequests(threadId) { response ->
                 synchronized(this) {
@@ -1263,6 +1329,11 @@ class ThreadSessionCoordinator(
                     // resume gap) tries again.
                     val pending = (response.outcome as? RemoteOutcome.Success)?.value ?: return@synchronized
                     var changed = false
+                    val held = pending.mapNotNullTo(mutableSetOf()) { (it.values["requestId"] as? JsonString)?.value }
+                    for (requestId in openBefore - held) {
+                        reduce(ThreadAction.Runtime(ScopedThreadEvent(scope, null, ThreadEventDecoder.decode(ExpiredRequests.event(threadId, requestId)), nowMs = clock.nowMs())))
+                        changed = true
+                    }
                     for (raw in pending) {
                         val event = ThreadEventDecoder.decode(raw)
                         if (event.threadId != threadId) continue
@@ -1318,7 +1389,15 @@ class ThreadSessionCoordinator(
                         if (attempt < HELD_RECOVERY_ATTEMPTS) recoverHeldTurns(attempt + 1)
                         return@synchronized
                     }
-                    reduce(ThreadAction.SeedHeldTurns(scope.connectionId, threadId, held.mapTo(mutableSetOf()) { it.messageId }))
+                    reduce(
+                        ThreadAction.SeedHeldTurns(
+                            scope.connectionId,
+                            threadId,
+                            held.mapTo(mutableSetOf()) { it.messageId },
+                            queueHeld = held.any { it.held },
+                            failed = held.mapNotNull { turn -> turn.failed?.let { turn.messageId to it } }.toMap(),
+                        ),
+                    )
                     load = when (val current = load) {
                         is ThreadSessionLoad.Loading -> ThreadSessionLoad.Loading(currentThread())
                         is ThreadSessionLoad.Failed -> current.copy(cached = currentThread())
@@ -1411,15 +1490,7 @@ class ThreadSessionCoordinator(
                             // A reattach to a live session answers with its status and emits
                             // none, so an idle chat kept the cached or default "connecting"
                             // ("Reconnecting") until its next turn.
-                            currentThread()?.let { thread ->
-                                store = store.copy(threads = store.threads + (key to thread.copy(status = outcome.value.status)))
-                                load = when (val current = load) {
-                                    is ThreadSessionLoad.Loading -> ThreadSessionLoad.Loading(currentThread())
-                                    is ThreadSessionLoad.Failed -> current.copy(cached = currentThread())
-                                    is ThreadSessionLoad.Ready -> current.copy(thread = requireNotNull(currentThread()))
-                                }
-                                persistSnapshot()
-                            }
+                            replaceThreadStatus(outcome.value.status)
                         }
                         is RemoteOutcome.Failure -> controlMessage = outcome.message
                     }
@@ -1444,6 +1515,12 @@ class ThreadSessionCoordinator(
                 is app.switchboard.mobile.domain.thread.ThreadEventPayload.RequestClosed -> {
                     pendingControls -= "approval:${decoded.requestId}"
                     pendingApprovalDecisions.remove(decoded.requestId)
+                }
+                is app.switchboard.mobile.domain.thread.ThreadEventPayload.RequestExpired -> {
+                    pendingControls -= "approval:${decoded.requestId}"
+                    pendingControls -= "question:${decoded.requestId}"
+                    pendingApprovalDecisions.remove(decoded.requestId)
+                    pendingQuestionRequestIds -= decoded.requestId
                 }
                 is app.switchboard.mobile.domain.thread.ThreadEventPayload.QuestionAnswered -> {
                     pendingControls -= "question:${decoded.requestId}"
@@ -1501,6 +1578,7 @@ class ThreadSessionCoordinator(
 
     private fun requestControl(
         key: String,
+        requestId: String,
         onPending: () -> Unit,
         onFinished: () -> Unit,
         request: (((RemoteResponse<CommandBody>) -> Unit) -> Unit),
@@ -1519,6 +1597,11 @@ class ThreadSessionCoordinator(
                         pendingControls -= key
                         onFinished()
                         controlMessage = failure.message
+                        // Nothing waits for this answer any more: close the card too.
+                        if (failure.message.contains(ExpiredRequests.REFUSED)) {
+                            reduce(ThreadAction.Runtime(ScopedThreadEvent(scope, null, ThreadEventDecoder.decode(ExpiredRequests.event(threadId, requestId)), nowMs = clock.nowMs())))
+                            persistSnapshot()
+                        }
                         publish()
                     }
                 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { RuntimeFileEditedEvent } from '../../src/shared/provider-events'
 import { filterNotebookFileEdits } from '../../src/main/notebooks/file-edit-filter'
 import { NotebookManager, type NotebookWatchFactory } from '../../src/main/notebooks/manager'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -77,17 +77,28 @@ describe('NotebookManager.explainsFileEdit', () => {
     }
   })
 
-  it('resolves the attach cwd as an alias when the repo root differs (subdir sessions)', () => {
+  it('maps a subfolder session\'s folder-relative paths onto the toplevel mirror map', () => {
     const root = mkdtempSync(join(tmpdir(), 'sb-nbfilter-root-'))
     try {
-      writeFileSync(join(root, 'nb.ipynb'), nbJson)
+      const sub = join(root, 'analysis')
+      mkdirSync(sub)
+      writeFileSync(join(sub, 'nb.ipynb'), nbJson)
       const manager = new NotebookManager({ watch: noWatch })
       // Session opened at <root>/analysis but rooted at the git toplevel.
-      manager.attach('t1', join(root, 'analysis'), root)
-
-      // Checkpoint events carry repoRoot = session cwd + toplevel-relative paths.
-      expect(manager.explainsFileEdit(ev('.switchboard/notebooks/nb.py', { repoRoot: join(root, 'analysis') }))).toBe(true)
+      manager.attach('t1', sub, root)
       expect(manager.rootFor('t1')).toBe(root)
+
+      const mirror = join(root, '.switchboard/notebooks', readdirSync(join(root, '.switchboard/notebooks'), { recursive: true })
+        .map(String).find((f) => f.endsWith('.py'))!)
+      writeFileSync(mirror, readFileSync(mirror, 'utf-8').replace('x = 1', 'x = 2'))
+      manager.beginTurn('t1')
+      manager.drainTurnEdits('t1')
+      const engineWritten = readFileSync(join(sub, 'nb.ipynb'), 'utf-8')
+
+      // A checkpoint taken in the subfolder names the notebook relative to it.
+      expect(manager.explainsFileEdit(ev('nb.ipynb', { repoRoot: sub, newContent: engineWritten }))).toBe(true)
+      expect(manager.explainsFileEdit(ev('nb.ipynb', { repoRoot: sub, newContent: '{"cells": []}' }))).toBe(false)
+      expect(manager.explainsFileEdit(ev('.switchboard/notebooks/nb.py', { repoRoot: root }))).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

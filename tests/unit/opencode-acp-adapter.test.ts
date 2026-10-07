@@ -254,6 +254,23 @@ describe('mapSessionUpdate', () => {
     })
   })
 
+  it('reports the files a completed edit tool call wrote', () => {
+    const update = (status: string, kind: string) => mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'tool_call_update', toolCallId: 't_9', status, kind,
+          locations: [{ path: '/repo/a.ts' }], rawInput: { filePath: '/repo/b.ts' },
+        },
+      } as any,
+      new Map(),
+    )
+    expect(update('completed', 'edit')[0]).toMatchObject({ type: 'tool.completed', writtenPaths: ['/repo/a.ts', '/repo/b.ts'] })
+    expect(update('failed', 'edit')[0]).not.toHaveProperty('writtenPaths')
+    expect(update('completed', 'read')[0]).not.toHaveProperty('writtenPaths')
+  })
+
   it('emits tool.completed only on terminal status', () => {
     const inProg = mapSessionUpdate(
       tid,
@@ -413,6 +430,7 @@ describe('OpenCode queued turns', () => {
       assistantMessageText: new Map(),
       firstUserMessage: 'already titled',
       queuedTurns: [],
+      queueHeld: false,
       drainingQueue: false,
       startingPrompt: false,
     }
@@ -459,6 +477,27 @@ describe('OpenCode queued turns', () => {
     expect(prompt.mock.calls[1][0].prompt).toEqual([{ type: 'text', text: 'queued' }])
   })
 
+  it('holds the queue when the running prompt fails, and starts it on resume', async () => {
+    const adapter = new OpencodeAcpAdapter()
+    let failFirst!: () => void
+    const prompt = vi.fn()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { failFirst = () => reject(new Error('usage limit')) }))
+      .mockImplementation(() => Promise.resolve({}))
+    const active = fakeSession({ prompt })
+    ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
+
+    await adapter.sendTurn(tid, 'first')
+    await adapter.sendTurn(tid, 'queued', undefined, undefined, 'queue', 'remote_q1')
+    failFirst()
+    await vi.waitFor(() => expect(active.inFlightPrompt).toBeNull())
+    expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.queue-held', threadId: tid, held: true, reason: 'usage limit' })
+    expect(prompt).toHaveBeenCalledTimes(1)
+
+    await expect(adapter.resumeQueuedTurns(tid)).resolves.toBe(true)
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2))
+    expect(prompt.mock.calls[1][0].prompt).toEqual([{ type: 'text', text: 'queued' }])
+  })
+
   it('takes a held message back on cancel, so the prompt ending starts nothing', async () => {
     const adapter = new OpencodeAcpAdapter()
     let finishFirst!: () => void
@@ -479,6 +518,32 @@ describe('OpenCode queued turns', () => {
     expect(prompt).toHaveBeenCalledTimes(1)
     // OpenCode cannot steer, so there is nothing to promote with.
     expect((adapter as { promoteQueuedTurn?: unknown }).promoteQueuedTurn).toBeUndefined()
+  })
+
+  it('refuses a plain send while a prompt runs, so the message is not stored as sent', async () => {
+    const adapter = new OpencodeAcpAdapter()
+    const prompt = vi.fn(() => new Promise(() => {}))
+    const active = fakeSession({ prompt })
+    ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
+
+    await adapter.sendTurn(tid, 'first')
+    await expect(adapter.sendTurn(tid, 'second')).rejects.toBeInstanceOf(TurnNotAcceptedError)
+    expect(prompt).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses the second of two plain sends that arrive together', async () => {
+    const adapter = new OpencodeAcpAdapter()
+    let releaseMode!: () => void
+    const setSessionMode = vi.fn(() => new Promise<void>((resolve) => { releaseMode = resolve }))
+    const prompt = vi.fn(() => new Promise(() => {}))
+    const active = fakeSession({ prompt, setSessionMode })
+    ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
+
+    const first = adapter.sendTurn(tid, 'desktop', 'full-access')
+    await expect(adapter.sendTurn(tid, 'phone')).rejects.toBeInstanceOf(TurnNotAcceptedError)
+    releaseMode()
+    await first
+    expect(prompt).toHaveBeenCalledTimes(1)
   })
 
   it('ends a prompt that fails in flight with turn.completed', async () => {

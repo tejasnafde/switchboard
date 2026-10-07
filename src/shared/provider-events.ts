@@ -34,6 +34,28 @@ export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-a
 /** The one list of runtime modes; every validator goes through isRuntimeMode. */
 export const RUNTIME_MODES: readonly RuntimeMode[] = ['plan', 'sandbox', 'accept-edits', 'auto', 'full-access']
 
+/**
+ * Error text of a session start the user stopped before it finished. Errors
+ * cross the transport as strings, so clients match on this to treat it as a
+ * stop rather than a failure.
+ */
+export const SESSION_START_STOPPED = 'Stopped before the session started'
+
+/** What `provider:interrupt` answers. Backends before 2026-10 answer nothing. */
+export interface InterruptResult {
+  /** Whether the backend had a turn to stop. */
+  live: boolean
+}
+
+/**
+ * True only when the backend says it had no turn to stop, so a client still
+ * showing one as running is stale. An older backend's empty answer is false:
+ * the client keeps waiting for the closing event, as it always did.
+ */
+export function interruptFoundNoTurn(result: unknown): boolean {
+  return typeof result === 'object' && result !== null && (result as Partial<InterruptResult>).live === false
+}
+
 export function isRuntimeMode(value: unknown): value is RuntimeMode {
   return typeof value === 'string' && (RUNTIME_MODES as readonly string[]).includes(value)
 }
@@ -319,10 +341,12 @@ export type RuntimeEvent = (
   | RuntimeToolDeniedEvent
   | RuntimeRequestOpenedEvent
   | RuntimeRequestClosedEvent
+  | RuntimeRequestExpiredEvent
   | RuntimeTurnCompletedEvent
   | RuntimeTurnRetryingEvent
   | RuntimeTurnQueuedEvent
   | RuntimeTurnDequeuedEvent
+  | RuntimeTurnQueueHeldEvent
   | RuntimeErrorEvent
   | RuntimeStatusEvent
   | RuntimeSessionEvent
@@ -560,6 +584,11 @@ export interface RuntimeToolCompletedEvent {
   threadId: string
   toolId: string
   output?: string
+  /**
+   * Files the tool wrote, for adapters whose `tool.started` input does not
+   * name them yet (OpenCode). Absolute, or relative to the session folder.
+   */
+  writtenPaths?: string[]
 }
 
 /**
@@ -593,6 +622,29 @@ export interface RuntimeRequestClosedEvent {
   decision: ApprovalDecision
 }
 
+/**
+ * An approval or question the provider can no longer take an answer for: its
+ * session ended, errored or restarted first. Clients replace the card with a
+ * notice naming the reason, and the backend refuses a late answer
+ * (`REQUEST_EXPIRED`) instead of dropping it silently.
+ */
+export interface RuntimeRequestExpiredEvent {
+  type: 'request.expired'
+  threadId: string
+  requestId: string
+  reason: string
+}
+
+/** Error text of an answer to an approval or question the backend no longer holds. */
+export const REQUEST_EXPIRED = 'This request has expired: the agent is no longer waiting for an answer'
+
+/** The notice that replaces an expired card, the same words on every client. */
+export function expiredRequestNotice(kind: 'approval' | 'question', reason: string): string {
+  return kind === 'approval'
+    ? `Approval expired, nothing was approved. ${reason}`
+    : `Question expired, no answer was sent. ${reason}`
+}
+
 export interface RuntimeTurnCompletedEvent {
   type: 'turn.completed'
   threadId: string
@@ -622,6 +674,8 @@ export interface RuntimeTurnQueuedEvent {
   messageId: string
   text?: string
   queuedAt?: number
+  /** Filled by the registry: the queue this joins is held. */
+  held?: boolean
 }
 
 /** A queued message left the queue; see `QueuedTurnExit` for the reasons. */
@@ -630,6 +684,21 @@ export interface RuntimeTurnDequeuedEvent {
   threadId: string
   messageId: string
   reason: QueuedTurnExit
+  /** With `reason: 'failed'`: why it could not start. */
+  error?: string
+}
+
+/**
+ * The adapter stopped starting queued messages (`held: true`, after a failed
+ * or usage-limited turn, or a queued message that could not start) or
+ * started again (`held: false`, the user resumed). Sent only while messages
+ * are queued.
+ */
+export interface RuntimeTurnQueueHeldEvent {
+  type: 'turn.queue-held'
+  threadId: string
+  held: boolean
+  reason?: string
 }
 
 export interface RuntimeTurnRetryingEvent {
@@ -811,4 +880,15 @@ export interface RuntimeFileEditedEvent {
   oldContent: string
   /** File content at end of turn. Empty for a deleted file. */
   newContent: string
+  /** Set when Reject must not be offered. Absent on events from older backends. */
+  noRevert?: FileDiffNoRevertReason
 }
+
+/**
+ * Why a diff card offers no Reject:
+ * - `outside`: this chat's own edit tools did not write the file (another
+ *   chat, the user, or a command did), so reverting it could undo their work.
+ * - `binary`: the content is not text, and a text write would corrupt it.
+ * - `unknown`: a side could not be read, so there is nothing safe to write.
+ */
+export type FileDiffNoRevertReason = 'outside' | 'binary' | 'unknown'

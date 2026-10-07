@@ -42,6 +42,10 @@ data class ThreadHeldPresentation(
     val actions: HeldTurnActions = TurnDeliveryPolicy.heldTurnActions(null),
     val errors: Map<String, String> = emptyMap(),
     val busy: Set<String> = emptySet(),
+    /** The queue waits for Resume after a failed or usage-limited turn. */
+    val queueHeld: Boolean = false,
+    /** Rows that could not start, with why; they offer only Cancel. */
+    val failed: Map<String, String> = emptyMap(),
 )
 
 fun ThreadSessionState.toHeldPresentation(): ThreadHeldPresentation {
@@ -57,6 +61,8 @@ fun ThreadSessionState.toHeldPresentation(): ThreadHeldPresentation {
         actions = TurnDeliveryPolicy.heldTurnActions(thread.provider),
         errors = followUp.heldErrors,
         busy = followUp.heldBusy,
+        queueHeld = thread.queueHeld,
+        failed = thread.failedHeld,
     )
 }
 

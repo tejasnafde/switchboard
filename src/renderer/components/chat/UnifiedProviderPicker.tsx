@@ -178,21 +178,30 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           style={accentVar(accent)}
           className="inline-flex max-w-[280px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] py-[3px] pr-[8px] pl-[4px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] data-[state=open]:border-[var(--pick-accent)]"
         >
-          {wait?.pending && <span aria-hidden className="size-3 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none" />}
-          <span
-            aria-hidden
-            className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--pick-accent)] text-[8px] font-[700] tracking-[0.02em] text-[#fff]"
-          >
-            {showInstanceBadge ? initials : agentShortLabel(agentType).slice(0, 2).toUpperCase()}
-          </span>
-          <span className="truncate font-[500] text-[var(--text-primary)]">
-            {agentShortLabel(agentType)}
-            {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
-          </span>
-          <span className="whitespace-nowrap text-[var(--text-muted)]">·</span>
-          <span className="truncate [font-family:var(--font-mono)] text-[var(--text-secondary)]">
-            {wait?.pending ? wait.label : modelLabel}
-          </span>
+          {wait?.pending ? (
+            <>
+              {/* The spinner takes the avatar's place, where the user just clicked. */}
+              <span aria-hidden className="inline-flex size-[18px] shrink-0 items-center justify-center">
+                <span className="size-3 animate-spin rounded-full border-2 border-[var(--pick-accent)] border-r-transparent motion-reduce:animate-none" />
+              </span>
+              <span className="truncate font-[500] text-[var(--text-primary)]">{wait.label}</span>
+            </>
+          ) : (
+            <>
+              <span
+                aria-hidden
+                className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--pick-accent)] text-[8px] font-[700] tracking-[0.02em] text-[#fff]"
+              >
+                {showInstanceBadge ? initials : agentShortLabel(agentType).slice(0, 2).toUpperCase()}
+              </span>
+              <span className="truncate font-[500] text-[var(--text-primary)]">
+                {agentShortLabel(agentType)}
+                {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
+              </span>
+              <span className="whitespace-nowrap text-[var(--text-muted)]">·</span>
+              <span className="truncate [font-family:var(--font-mono)] text-[var(--text-secondary)]">{modelLabel}</span>
+            </>
+          )}
           <span className="ml-[2px] text-[9px] text-[var(--text-muted)]">▾</span>
         </button>
       </PopoverTrigger>
@@ -218,7 +227,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
         }}
         className="sb-provider-picker z-[1200] flex max-h-[360px] w-[480px] flex-col overflow-hidden rounded-[8px] border border-[var(--border)]"
       >
-        {wait && <LoadingStatus label={wait.label} error={wait.error} />}
+        {wait?.error && <LoadingStatus label={wait.label} error />}
         <UnifiedPickerPopover
           searchRef={searchRef}
           showCustom={showCustom}
@@ -230,7 +239,12 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           instances={instances}
           effectiveInstanceId={effectiveInstance?.id}
           showRail={showRail}
-          onInstanceChange={(id) => { if (!wait?.pending) onInstanceChange(id) }}
+          onInstanceChange={(id) => {
+            if (wait?.pending) return
+            onInstanceChange(id)
+            // The switch shows on the trigger, so the popup gets out of the way.
+            setOpen(false)
+          }}
           model={model}
           models={models}
           onModelChange={(m) => {

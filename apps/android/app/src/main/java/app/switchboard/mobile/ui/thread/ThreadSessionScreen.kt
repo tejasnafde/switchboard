@@ -82,6 +82,9 @@ fun ThreadSessionScreen(
         onHeldAction = { messageId, promote ->
             (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.actOnHeld(messageId, promote) }
         },
+        onHeldResume = { messageId ->
+            (commandDispatcher ?: ProcessThreadCommandDispatcher).dispatch { coordinator.resumeHeld(messageId) }
+        },
         onSendOverride = router::sendText,
         onInterrupt = router::interrupt,
         onRuntimeModeChange = router::selectRuntimeMode,

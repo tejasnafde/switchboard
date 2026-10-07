@@ -281,6 +281,13 @@ describe('messages the backend holds', () => {
     expect(items()).toEqual([])
   })
 
+  it('drops the bubble of a queued message that never ran', () => {
+    useChatStore.getState().addUserMessage(KEY, 'later', [], 'h-remote_q')
+    ingest({ type: 'turn.queued', ...held })
+    ingest({ type: 'turn.dequeued', threadId: THREAD, messageId: 'remote_q', reason: 'dropped' })
+    expect(items()).toEqual([])
+  })
+
   it('re-lists from the backend and never caches what it holds', async () => {
     useChatStore.getState().setHeldTurns(KEY, [held])
     expect(Object.keys(heldTurns())).toEqual(['remote_q'])
@@ -367,5 +374,27 @@ describe('question answer refused', () => {
     expect(items()[0]).toMatchObject({ answers: [['Yes']] })
     useChatStore.getState().reopenQuestion(KEY, 'req-1')
     expect(items()[0]).toMatchObject({ kind: 'question', answers: undefined })
+  })
+})
+
+describe('request.expired', () => {
+  it('turns an open approval (even one approved optimistically) and an open question into notices', () => {
+    ingest({ type: 'request.opened', threadId: THREAD, requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' })
+    ingest({ type: 'question.asked', threadId: THREAD, requestId: 'q1', questions: [] })
+    ingest({ type: 'request.opened', threadId: THREAD, requestId: 'r2', requestType: 'command', toolName: 'Read', detail: 'x' })
+    ingest({ type: 'request.closed', threadId: THREAD, requestId: 'r2', decision: 'approve' })
+    flushQueue()
+    useChatStore.getState().markApprovalResolved(KEY, 'r1', 'approve')
+
+    ingest({ type: 'request.expired', threadId: THREAD, requestId: 'r1', reason: 'The agent session ended before it was answered.' })
+    ingest({ type: 'request.expired', threadId: THREAD, requestId: 'q1', reason: 'Gone.' })
+    ingest({ type: 'request.expired', threadId: THREAD, requestId: 'r2', reason: 'Gone.' })
+    flushQueue()
+
+    expect(items()).toEqual([
+      { kind: 'notice', id: 'a-r1', text: 'Approval expired, nothing was approved. The agent session ended before it was answered.' },
+      { kind: 'notice', id: 'q-q1', text: 'Question expired, no answer was sent. Gone.' },
+      expect.objectContaining({ kind: 'approval', requestId: 'r2', closed: true }),
+    ])
   })
 })

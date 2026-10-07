@@ -2,6 +2,7 @@ package app.switchboard.mobile.ui.thread
 
 import app.switchboard.mobile.data.thread.ThreadState
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.EXPIRED_EVENT_TYPE
 import app.switchboard.mobile.domain.thread.HostWriteButton
 import app.switchboard.mobile.domain.thread.HostWriteCard
 import app.switchboard.mobile.domain.thread.HostWriteCards
@@ -455,6 +456,8 @@ object ThreadPresenter {
                 title = "Earlier messages are not shown",
                 body = item.text,
             )
+        } else if (item.eventType == EXPIRED_EVENT_TYPE) {
+            ThreadRowPresentation.Notice(key = item.id, title = "Expired", body = item.text)
         } else if (item.eventType == "model.unavailable") {
             ThreadRowPresentation.Notice(
                 key = item.id,

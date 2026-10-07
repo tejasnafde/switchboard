@@ -1,5 +1,6 @@
 import {
   echoMessageId,
+  SESSION_START_STOPPED,
   validateUserTurnSubmission,
   visibleUserMessageText,
   type RuntimeUserMessageEvent,
@@ -101,6 +102,9 @@ export async function submitDesktopUserTurn(
   try {
     await dependencies.startSession()
   } catch (error) {
+    if (isStoppedStart(error)) {
+      return { accepted: false, delivery: 'rejected', error: `${SESSION_START_STOPPED}. The message was not sent.` }
+    }
     return {
       accepted: false,
       delivery: 'rejected',
@@ -147,6 +151,10 @@ export async function submitDesktopUserTurn(
       ? { recoveryOrigin: result.blockingOrigin }
       : {}),
   }
+}
+
+function isStoppedStart(error: unknown): boolean {
+  return errorMessage(error).includes(SESSION_START_STOPPED)
 }
 
 export interface DesktopTurnAttemptRegistry {

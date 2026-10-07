@@ -73,6 +73,7 @@ object BackendChannels {
     const val ListQueuedTurns = "provider:list-queued-turns"
     const val PromoteQueuedTurn = "provider:promote-queued-turn"
     const val CancelQueuedTurn = "provider:cancel-queued-turn"
+    const val ResumeQueuedTurns = "provider:resume-queued-turns"
     const val ResolveUserTurn = "provider:resolve-user-turn"
     const val Interrupt = "provider:interrupt"
     const val DeliverPeerMessage = "provider:deliver-peer-message"
@@ -463,6 +464,9 @@ class SwitchboardRemoteClient(
         RemoteDecoders::queuedTurnAction,
         callback,
     )
+
+    fun resumeQueuedTurns(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) =
+        command(BackendChannels.ResumeQueuedTurns, array(JsonString(threadId)), callback)
 
     fun cancelQueuedTurn(
         threadId: String,

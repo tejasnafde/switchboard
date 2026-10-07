@@ -380,6 +380,7 @@ export const ProviderChannels = {
   RELOCATE_EXECUTION_ROOT: 'provider:relocate-execution-root',
   SET_RUNTIME_MODE: 'provider:set-runtime-mode',
   SET_MODEL: 'provider:set-model',
+  SET_REASONING_EFFORT: 'provider:set-reasoning-effort',
   LIST_MODELS: 'provider:list-models',
   /** Live catalog of an instance without a chat; `threadId` only routes it to a machine. */
   LIST_CATALOG: 'provider:list-catalog',
@@ -407,6 +408,8 @@ export const ProviderChannels = {
   LIST_QUEUED_TURNS: 'provider:list-queued-turns',
   PROMOTE_QUEUED_TURN: 'provider:promote-queued-turn',
   CANCEL_QUEUED_TURN: 'provider:cancel-queued-turn',
+  /** Start a queue held after a failed or usage-limited turn (`turn.queue-held`). */
+  RESUME_QUEUED_TURNS: 'provider:resume-queued-turns',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
   /**

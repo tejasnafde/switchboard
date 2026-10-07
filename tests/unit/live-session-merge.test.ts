@@ -15,6 +15,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  settleSessionsNotLive,
   mergeLiveSessions,
   toAgentStatus,
   type LiveSessionSummary,
@@ -139,5 +140,22 @@ describe('mergeLiveSessions', () => {
       applyStatus: (row, status) => ({ ...row, status }),
     })
     expect(result).toHaveLength(1)
+  })
+})
+
+describe('settleSessionsNotLive (after a resume gap)', () => {
+  const row = (id: string, status: string, machineId = 'local') => ({ id, status, machineId })
+  const inLocal = (r: { machineId: string }) => r.machineId === 'local'
+
+  it('a running row the backend no longer runs goes idle; others keep their status', () => {
+    const rows = [row('a', 'running'), row('b', 'thinking'), row('c', 'error'), row('d', 'running', 'vm')]
+    const out = settleSessionsNotLive(rows, [], inLocal)
+    expect(out.map((r) => r.status)).toEqual(['idle', 'idle', 'error', 'running'])
+  })
+
+  it('leaves rows the backend still has to the live merge', () => {
+    const rows = [row('a', 'running')]
+    const live = [{ threadId: 'a', provider: 'claude', status: 'running', runtimeMode: 'sandbox', cwd: '/', createdAt: 0 }]
+    expect(settleSessionsNotLive(rows, live, inLocal)).toBe(rows)
   })
 })

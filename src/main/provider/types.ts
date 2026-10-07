@@ -150,6 +150,12 @@ export interface ProviderAdapter {
   promoteQueuedTurn?(threadId: string, queuedId: string): Promise<boolean>
 
   /**
+   * Start a queue the adapter held after a failed or usage-limited turn
+   * (`turn.queue-held`). False when nothing was held.
+   */
+  resumeQueuedTurns?(threadId: string): Promise<boolean>
+
+  /**
    * Interrupt the current turn (cancel in-progress work).
    */
   interruptTurn(threadId: string): Promise<void>
@@ -182,6 +188,8 @@ export interface ProviderAdapter {
    * they don't support mid-session model changes.
    */
   setModel?(threadId: string, model: string): Promise<void>
+  /** Applies to the next turn of a live session (Codex reads it per turn). */
+  setReasoningEffort?(threadId: string, effort: 'low' | 'medium' | 'high'): Promise<void>
 
   /**
    * Answer an AskUserQuestion request (unblocks the agent).

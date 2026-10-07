@@ -39,6 +39,51 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun `an expired approval or question becomes a notice and an answered card stays`() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = ingest(state, "mac-a", 1, 1, event("request.opened", "requestId" to s("r1"), "requestType" to s("tool"), "toolName" to s("Bash"), "detail" to s("ls")))
+        state = ingest(state, "mac-a", 1, 2, event("question.asked", "requestId" to s("q1"), "questions" to arr(question())))
+        state = ingest(state, "mac-a", 1, 3, event("request.opened", "requestId" to s("r2"), "requestType" to s("tool"), "toolName" to s("Read"), "detail" to s("x")))
+        state = ingest(state, "mac-a", 1, 4, event("request.closed", "requestId" to s("r2"), "decision" to s("approve")))
+        for ((sequence, id) in listOf(5L to "r1", 6L to "q1", 7L to "r2")) {
+            state = ingest(state, "mac-a", 1, sequence, event("request.expired", "requestId" to s(id), "reason" to s("The agent session ended before it was answered.")))
+        }
+        val feed = state.thread("mac-a", "thread-1")!!.feed
+        assertEquals(
+            "Approval expired, nothing was approved. The agent session ended before it was answered.",
+            (feed.single { it.id == "a-r1" } as FeedItem.RawNotice).text,
+        )
+        assertEquals("request.expired", (feed.single { it.id == "q-q1" } as FeedItem.RawNotice).eventType)
+        assertEquals("approve", (feed.single { it.id == "a-r2" } as FeedItem.Approval).state)
+    }
+
+    @Test
+    fun `a failed turn keeps the queue held and a message that could not start stays marked`() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = ingest(state, "mac-a", 1, 1, event("turn.queued", "messageId" to s("remote_a")))
+        state = ingest(state, "mac-a", 1, 2, event("turn.queued", "messageId" to s("remote_b")))
+        state = ingest(state, "mac-a", 1, 3, event("turn.queue-held", "held" to b(true), "reason" to s("limit")))
+        state = ingest(state, "mac-a", 1, 4, event("status", "status" to s("error")))
+        var thread = state.thread("mac-a", "thread-1")!!
+        assertEquals(setOf("remote_a", "remote_b"), thread.heldTurns)
+        assertTrue(thread.queueHeld)
+
+        state = ingest(state, "mac-a", 1, 5, event("turn.queue-held", "held" to b(false)))
+        state = ingest(state, "mac-a", 1, 6, event("turn.dequeued", "messageId" to s("remote_a"), "reason" to s("started")))
+        state = ingest(state, "mac-a", 1, 7, event("turn.dequeued", "messageId" to s("remote_a"), "reason" to s("failed"), "error" to s("limit")))
+        thread = state.thread("mac-a", "thread-1")!!
+        assertEquals(false, thread.queueHeld)
+        assertEquals(mapOf("remote_a" to "limit"), thread.failedHeld)
+        assertTrue("remote_a" in thread.heldTurns)
+
+        state = ingest(state, "mac-a", 1, 8, event("turn.dequeued", "messageId" to s("remote_a"), "reason" to s("cancelled")))
+        state = ingest(state, "mac-a", 1, 9, event("status", "status" to s("stopped")))
+        thread = state.thread("mac-a", "thread-1")!!
+        assertTrue(thread.failedHeld.isEmpty())
+        assertTrue(thread.heldTurns.isEmpty())
+    }
+
+    @Test
     fun `live content renders while a snapshot is pending`() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         state = reduce(state, ThreadAction.ReplayGap(ThreadEventScope("mac-a", 1)))
@@ -117,6 +162,20 @@ class ThreadStoreReducerTest {
             ),
         )
         state = ingest(state, "mac-a", 1, 1, event("turn.dequeued", "messageId" to s("remote_q"), "reason" to s("cancelled")))
+        assertTrue(state.thread("mac-a", "thread-1")!!.feed.none { it is FeedItem.User })
+    }
+
+    @Test
+    fun aQueuedMessageThatNeverRanLosesItsRow() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = reduce(
+            state,
+            ThreadAction.InstallSnapshot(
+                ThreadEventScope("mac-a", 1),
+                ThreadSnapshot("thread-1", listOf(FeedItem.User("h-remote_q", "later", 1))),
+            ),
+        )
+        state = ingest(state, "mac-a", 1, 1, event("turn.dequeued", "messageId" to s("remote_q"), "reason" to s("dropped")))
         assertTrue(state.thread("mac-a", "thread-1")!!.feed.none { it is FeedItem.User })
     }
 

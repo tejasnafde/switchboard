@@ -7,11 +7,11 @@ import {
 import type { AgentStatus, AgentType, ChatMessage } from '@shared/types'
 import type { ReasoningEffort } from '@shared/models'
 import { createRendererLogger } from '../logger'
-import { mergeLiveSessions, toAgentStatus, toAgentType } from './live-session-merge'
+import { mergeLiveSessions, settleSessionsNotLive, toAgentStatus, toAgentType } from './live-session-merge'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { PENDING_REQUEST_EVENT_TYPES, applyPendingRequestEvent, type PendingBlockingEvent } from '@shared/pending-requests'
 import type { RuntimeEvent } from '@shared/provider-events'
-import { NO_QUEUED_TURNS, applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
+import { NO_QUEUED_TURNS, applyQueuedTurnEvent, queuedRowRemoved, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { FollowSuggestionMode } from '@shared/follow-suggestions'
 import { isRuntimeMode, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
@@ -263,6 +263,8 @@ interface AgentStore {
    * no-ops and the chat reads as idle while it streams.
    */
   adoptLiveSessions: (live: LiveSessionSummary[], machineId?: string) => void
+  /** After a resume gap: idle the machine's working rows its backend no longer runs. `null` = the base backend. */
+  settleSessionsNotLive: (live: LiveSessionSummary[], machineId: string | null) => void
   appendMessage: (sessionId: string, message: ChatMessage) => void
   updateMessage: (sessionId: string, messageId: string, updates: Partial<ChatMessage>) => void
   removeMessage: (sessionId: string, messageId: string) => void
@@ -415,6 +417,12 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       }),
     })),
 
+  settleSessionsNotLive: (live, machineId) =>
+    set((state) => ({
+      sessions: settleSessionsNotLive(state.sessions, live, (s) =>
+        s.type !== 'terminal' && (machineId === null ? !s.machineId || s.machineId === 'local' : s.machineId === machineId)),
+    })),
+
   adoptLiveSessions: (live, machineId) =>
     set((state) => ({
       sessions: mergeLiveSessions<AgentSession>({
@@ -510,7 +518,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     })),
 
   trackQueuedTurnEvent: (event) => {
-    if (event.type !== 'turn.queued' && event.type !== 'turn.dequeued' && event.type !== 'status') return
+    if (event.type !== 'turn.queued' && event.type !== 'turn.dequeued' && event.type !== 'turn.queue-held' && event.type !== 'status') return
     set((state) => {
       let changed = false
       const sessions = state.sessions.map((s) => {
@@ -518,9 +526,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         const revision = event.type === 'status' ? s.queuedTurnRevision : (s.queuedTurnRevision ?? 0) + 1
         const current = s.queuedTurns ?? NO_QUEUED_TURNS
         const next = applyQueuedTurnEvent(current, event)
-        // A cancelled message never reached the agent, so its row goes too,
-        // on every client (the backend deleted the stored copy).
-        const cancelled = event.type === 'turn.dequeued' && event.reason === 'cancelled'
+        // A cancelled or dropped message never reached the agent, so its row
+        // goes too, on every client (the backend replaced the stored copy).
+        const cancelled = event.type === 'turn.dequeued' && queuedRowRemoved(event.reason)
           && s.messages.some((m) => m.id === event.messageId)
         if (next === current && !cancelled && revision === s.queuedTurnRevision) return s
         changed = true

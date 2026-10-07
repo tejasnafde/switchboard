@@ -31,7 +31,9 @@ import { realpathSync } from 'node:fs'
 import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { CheckpointTracker } from './checkpoint-tracker'
+import { CheckpointTracker, type TurnCheckpointStore } from './checkpoint-tracker'
+import { sqliteTurnCheckpointStore } from '../db/turn-checkpoints'
+import { sqliteQueuedTurnRowStore, type QueuedTurnRowStore } from '../db/queued-turn-rows'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
@@ -47,7 +49,8 @@ import {
 import { sessionDefaultsFor } from './session-defaults'
 import { QueuedTurnLedger } from './queued-turn-ledger'
 import { queuedTurnComposerText } from '@shared/queued-turns'
-import { echoMessageId, isRuntimeMode } from '@shared/provider-events'
+import { echoMessageId, isRuntimeMode, REQUEST_EXPIRED, SESSION_START_STOPPED } from '@shared/provider-events'
+import { isReasoningEffort } from '@shared/provider-option-memory'
 import { promoteUnavailableReason, startsOwnProviderTurn, type QueuedTurnActionResult, type QueuedTurnSummary } from '@shared/turn-delivery'
 import {
   errorMessage,
@@ -220,10 +223,12 @@ export class ProviderRegistry implements PeerToolHost {
    * provider-agnostic, so Claude / Codex / OpenCode all surface edits the
    * same way in chat.
    */
-  private checkpoints = new CheckpointTracker()
+  private readonly checkpoints: CheckpointTracker
   private readonly atomicTurnSubmission: Pick<AtomicUserTurnSubmission, 'submit'> & Partial<Pick<AtomicUserTurnSubmission, 'resolve'>>
   /** Provider startup shared by every client that reaches a thread before its adapter exists. */
   private startingSessions = new Map<string, Promise<ProviderSession>>()
+  /** Threads whose user pressed Stop while their session was still starting. */
+  private stopRequestedDuringStart = new Set<string>()
   private managedSessionStarter: ((opts: SessionStartOpts) => Promise<ProviderSession>) | null = null
   private switchingSessions = new Set<string>()
   /** Turns that have claimed a thread but have not crossed the provider
@@ -263,9 +268,15 @@ export class ProviderRegistry implements PeerToolHost {
     // Same rule for the card store: injected adapters mean a test, which gets
     // an in-memory store unless it passes one.
     approvalStore: ApprovalCardStore<AgentWritePlan> = adapters ? memoryApprovalCardStore() : sqliteApprovalCardStore(),
+    // Tests get none unless they pass one.
+    queuedRows: QueuedTurnRowStore | null = adapters ? null : sqliteQueuedTurnRowStore(() => getDb()),
+    turnCheckpoints: TurnCheckpointStore | null = adapters ? null : sqliteTurnCheckpointStore(() => getDb()),
   ) {
     this.switchboardMcp = switchboardMcp
     this.approvalStore = approvalStore
+    this.queuedRows = queuedRows
+    this.checkpoints = new CheckpointTracker({ store: turnCheckpoints })
+    this.sweepQueuedRowsFromEarlierLaunch()
     this.agentApprovals = new AgentApprovalBroker({
       publish: (event) => this.publish(event),
       sameChat: (a, b) => a === b || resolveRootThreadId(a) === resolveRootThreadId(b),
@@ -344,6 +355,7 @@ export class ProviderRegistry implements PeerToolHost {
    */
   private readonly agentApprovals: AgentApprovalBroker
   private readonly approvalStore: ApprovalCardStore<AgentWritePlan>
+  private readonly queuedRows: QueuedTurnRowStore | null
 
   /** Serves this backend's MCP tools to every agent; one per process, shared across registries. */
   private readonly switchboardMcp: SwitchboardMcpServer | null
@@ -402,6 +414,7 @@ export class ProviderRegistry implements PeerToolHost {
   private async actOnQueuedTurn(action: 'promote' | 'cancel', threadId: string, messageId: string): Promise<QueuedTurnActionResult> {
     const live = this.liveThreadId(threadId)
     const turn = this.queuedTurns.get(live, messageId)
+    if (turn?.failed) return this.actOnFailedQueuedTurn(action, live, messageId)
     const adapter = this.sessionAdapters.get(live)
     if (!turn || !adapter) {
       return { ok: false, reason: 'not-found', message: 'This message is no longer queued.' }
@@ -430,6 +443,39 @@ export class ProviderRegistry implements PeerToolHost {
       }
     }
     return { ok: true, turn }
+  }
+
+  /**
+   * A queued message that could not start is no longer the adapter's: the
+   * ledger keeps it, marked, so the user can take it back. It cannot be sent
+   * now; Cancel puts its text back in the composer.
+   */
+  private actOnFailedQueuedTurn(action: 'promote' | 'cancel', live: string, messageId: string): QueuedTurnActionResult {
+    if (action === 'promote') {
+      return { ok: false, reason: 'failed', message: 'This message was not sent. Cancel it to edit it and send it again.' }
+    }
+    const turn = this.queuedTurns.removeFailed(live, messageId)
+    if (!turn) return { ok: false, reason: 'not-found', message: 'This message is no longer queued.' }
+    this.publish({ type: 'turn.dequeued', threadId: live, messageId, reason: 'cancelled' })
+    try {
+      deleteUserMessage(resolveRootThreadId(live), messageId)
+    } catch (err) {
+      log.warn(`could not delete failed queued message ${messageId}: ${errorMessage(err)}`)
+    }
+    return { ok: true, turn }
+  }
+
+  /** Start a queue the adapter held after a failed or usage-limited turn. */
+  private async resumeQueuedTurns(threadId: string): Promise<{ ok: boolean; message?: string }> {
+    const live = this.liveThreadId(threadId)
+    const adapter = this.sessionAdapters.get(live)
+    if (!adapter?.resumeQueuedTurns) return { ok: false, message: 'Nothing is held for this chat.' }
+    try {
+      return (await adapter.resumeQueuedTurns(live)) ? { ok: true } : { ok: false, message: 'Nothing is held for this chat.' }
+    } catch (err) {
+      log.warn(`resume of the held queue on ${live} failed: ${errorMessage(err)}`)
+      return { ok: false, message: errorMessage(err) }
+    }
   }
 
   /**
@@ -535,6 +581,7 @@ export class ProviderRegistry implements PeerToolHost {
       oldContent: event.oldContent,
       newContent: event.newContent,
       status: 'pending',
+      ...(event.noRevert ? { noRevert: event.noRevert } : {}),
     }
     const chars = fileDiff.oldContent.length + fileDiff.newContent.length
     if (chars > MIRRORED_FILE_DIFF_MAX_CHARS) {
@@ -562,6 +609,27 @@ export class ProviderRegistry implements PeerToolHost {
     if (!byKey) return
     byKey.delete(key)
     if (byKey.size === 0) this.pendingRequests.delete(threadId)
+  }
+
+  /**
+   * The provider can no longer take an answer for anything open on this
+   * thread. Every client is told, so no card is left with live buttons that
+   * would answer nothing. A plan needs no answer from the provider (Implement
+   * sends a new turn), so it is dropped without a notice.
+   */
+  private expirePendingRequests(threadId: string, reason: string): void {
+    const byKey = this.pendingRequests.get(threadId)
+    this.pendingRequests.delete(threadId)
+    for (const event of byKey?.values() ?? []) {
+      if (event.type === 'plan.proposed') continue
+      log.info(`request ${event.requestId} on ${threadId} expired: ${reason}`)
+      this.publish({ type: 'request.expired', threadId, requestId: event.requestId, reason })
+    }
+  }
+
+  /** Whether the provider still waits on this approval or question. */
+  private holdsPendingRequest(threadId: string, requestId: string): boolean {
+    return [threadId, resolveRootThreadId(threadId)].some((id) => this.pendingRequests.get(id)?.has(requestId))
   }
 
   /**
@@ -946,7 +1014,7 @@ export class ProviderRegistry implements PeerToolHost {
     // edits produce no diff cards and notebook mirrors go unwatched.
     const targetCwd = this.sessionCwd.get(targetThreadId)
     const targetWasMidTurn = this.hasOutstandingTurn(targetThreadId)
-    if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd)
+    if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd, targetWasMidTurn)
     // The only await before sendTurn: everything from here to it is
     // synchronous, so what this sees is what the send runs under.
     const withdrawn = this.peerDeliveryProblem({
@@ -1284,11 +1352,49 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  /**
+   * A queued message's row is stored when it is queued, so one that leaves
+   * the queue without running would read as sent. Its row becomes an error
+   * row that keeps the text, here or, after a restart, at the next launch.
+   */
+  private trackQueuedRow(event: RuntimeEvent): void {
+    if (!this.queuedRows || (event.type !== 'turn.queued' && event.type !== 'turn.dequeued')) return
+    try {
+      if (event.type === 'turn.queued') {
+        this.queuedRows.record({
+          messageId: event.messageId,
+          conversationId: resolveRootThreadId(event.threadId),
+          text: event.text ?? '',
+          queuedAt: event.queuedAt ?? Date.now(),
+        })
+      } else if (event.reason !== 'dropped') {
+        this.queuedRows.forget(event.messageId)
+      } else {
+        const notSent = this.queuedRows.markNotSent(event.messageId, 'stopped')
+        // Already stored by markNotSent, so straight to the bus.
+        if (notSent) this.bus.publish({ type: 'error', threadId: event.threadId, message: notSent.content.slice('Error: '.length) })
+      }
+    } catch (err) {
+      log.warn(`could not track queued message ${event.messageId} on ${event.threadId}: ${errorMessage(err)}`)
+    }
+  }
+
+  private sweepQueuedRowsFromEarlierLaunch(): void {
+    if (!this.queuedRows) return
+    try {
+      const swept = this.queuedRows.sweepEarlierLaunches()
+      if (swept.length > 0) log.warn(`${swept.length} queued message(s) never ran before the last exit; marked not sent`)
+    } catch (err) {
+      log.warn(`could not check for queued messages left by the last exit: ${errorMessage(err)}`)
+    }
+  }
+
   private publish(event: RuntimeEvent): void {
-    if (event.type === 'turn.queued' || event.type === 'turn.dequeued') {
+    if (event.type === 'turn.queued' || event.type === 'turn.dequeued' || event.type === 'turn.queue-held') {
       const observed = this.queuedTurns.observe(event, this.sessionAdapters.get(event.threadId)?.provider)
       if (observed.releasesOutstandingTurn) this.finishOutstandingTurn(event.threadId)
       event = observed.event
+      this.trackQueuedRow(event)
     }
     // Persisted here, not in ChatPanel, which only exists when a desktop window
     // is attached - a phone on a headless server saw a 529 once and lost it on
@@ -1357,7 +1463,9 @@ export class ProviderRegistry implements PeerToolHost {
     // The provider reporting it died means nothing on this thread can still
     // be waiting - a stale card must not survive that either.
     if (event.type === 'status' && (event.status === 'error' || event.status === 'stopped')) {
-      this.pendingRequests.delete(event.threadId)
+      this.expirePendingRequests(event.threadId, event.status === 'error'
+        ? 'The agent stopped with an error before it was answered.'
+        : 'The agent session ended before it was answered.')
     }
     this.bufferAssistantText(event)
     this.bufferToolCall(event)
@@ -1367,6 +1475,9 @@ export class ProviderRegistry implements PeerToolHost {
     // inside a turn and nowhere else, unlike content, which also carries
     // notices sent while the chat is idle.
     if (event.type === 'tool.started' && !this.hasOutstandingTurn(event.threadId)) this.beginOutstandingTurn(event.threadId)
+    if (event.type === 'tool.started') this.checkpoints.noteToolStarted(event.threadId, event.toolId, event.toolName, event.input)
+    if (event.type === 'tool.completed') this.checkpoints.noteToolCompleted(event.threadId, event.toolId, event.writtenPaths)
+    if (event.type === 'turn.dequeued' && event.reason === 'started') this.checkpoints.startQueuedTurn(event.threadId)
     if (event.type === 'turn.completed') this.finishOutstandingTurn(event.threadId)
     this.bus.publish(event)
     if (event.type === 'turn.dequeued') {
@@ -1651,7 +1762,7 @@ export class ProviderRegistry implements PeerToolHost {
           }
           try {
             const cwd = this.sessionCwd.get(threadId)
-            if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
+            if (cwd) await this.checkpoints.beginTurn(threadId, cwd, this.hasOutstandingTurn(threadId))
             notebookManager.beginTurn(threadId)
             this.turnDepth.set(threadId, 0)
             this.renewPeerLinks(threadId)
@@ -1777,7 +1888,7 @@ export class ProviderRegistry implements PeerToolHost {
       // Approval cards are not closed here: a profile switch or a relocation
       // restarts the session, and the cards are the chat's. A user stop closes them.
       this.switchboardMcp?.close(threadId)
-      this.pendingRequests.delete(threadId)
+      this.expirePendingRequests(threadId, 'The agent session restarted before it was answered.')
       this.checkpoints.clear(threadId)
       this.driftWatcher.onSessionStopped(threadId)
       notebookManager.detach(threadId)
@@ -2103,6 +2214,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.sessionEpochs.set(opts.threadId, executionEpoch)
       const switchboardMcp = await this.openSwitchboardMcp(opts.threadId, opts.provider)
       if (switchboardMcp) enrichedOpts.switchboardMcp = switchboardMcp
+      if (this.stopRequestedDuringStart.delete(opts.threadId)) throw new Error(SESSION_START_STOPPED)
       const session = await adapter.startSession(enrichedOpts, (event) => {
         if (this.sessionEpochs.get(opts.threadId) !== executionEpoch) return
         const switchTiming = this.switchFirstEventSpans.get(opts.threadId)
@@ -2145,7 +2257,17 @@ export class ProviderRegistry implements PeerToolHost {
         remoteConfigDir: credentialSnapshot?.remoteConfigDir ?? opts.remoteConfigDir,
       })
       await this.attachNotebooks(opts.threadId, session.cwd)
+      // A turn an earlier process was running when it stopped: its cards now.
+      if (this.checkpoints.restoreEarlier(opts.threadId)) void this.emitFileEdits(opts.threadId, Date.now())
       trackAnalyticsEvent('session_started', { provider: opts.provider })
+      // Stop arrived while the adapter was starting: stop what just came up
+      // instead of letting the waiting turn run in it. Checked before the flush
+      // below, so held approval results stay held for the next start.
+      if (this.stopRequestedDuringStart.delete(opts.threadId)) {
+        log.info(`startSession ${opts.threadId} stopped by the user during start`)
+        await stopSession(opts.threadId)
+        throw new Error(SESSION_START_STOPPED)
+      }
       // Results of cards answered while the chat was not running. A start
       // inside a profile switch or relocation (gated, or a rollback) is
       // skipped here; that flow flushes once it settles.
@@ -2167,6 +2289,7 @@ export class ProviderRegistry implements PeerToolHost {
         throw err
       } finally {
         this.startingSessions.delete(opts.threadId)
+        this.stopRequestedDuringStart.delete(opts.threadId)
       }
       } finally {
         startSpan.end()
@@ -2454,7 +2577,7 @@ export class ProviderRegistry implements PeerToolHost {
         // is a definite rejection and may safely release the reservation.
         try {
           const cwd = this.sessionCwd.get(threadId)
-          if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
+          if (cwd) await this.checkpoints.beginTurn(threadId, cwd, this.hasOutstandingTurn(threadId))
           notebookManager.beginTurn(threadId)
           this.turnDepth.set(threadId, 0)
           this.renewPeerLinks(threadId)
@@ -2529,10 +2652,20 @@ export class ProviderRegistry implements PeerToolHost {
     this.host.handle(ProviderChannels.LIST_PEER_LINKS, async (input: { threadId: string }) =>
       this.listPeerLinks(input.threadId))
 
-    this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {
+    // `live` says whether this backend had a turn to stop. A client whose
+    // status says running after a resume gap clears it on `live: false`,
+    // since no closing event will ever come for a turn that is not there.
+    this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string): Promise<{ live: boolean }> => {
       const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) return
+      if (!adapter) {
+        // A profile switch restarts the session itself; a Stop there is not
+        // a cancel of the switch.
+        if (this.startingSessions.has(threadId) && !this.switchingSessions.has(threadId)) this.stopRequestedDuringStart.add(threadId)
+        return { live: false }
+      }
+      const live = this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running'
       await adapter.interruptTurn(threadId)
+      return { live }
     })
 
     this.host.handle(ProviderChannels.SET_RUNTIME_MODE, async (threadId: string, mode: RuntimeMode) => {
@@ -2548,9 +2681,16 @@ export class ProviderRegistry implements PeerToolHost {
       if (adapter.setModel) await adapter.setModel(threadId, model)
     })
 
+    this.host.handle(ProviderChannels.SET_REASONING_EFFORT, async (threadId: string, effort: string) => {
+      if (!isReasoningEffort(effort)) throw new Error(`Unknown reasoning effort: ${String(effort)}`)
+      await this.sessionAdapters.get(threadId)?.setReasoningEffort?.(threadId, effort)
+    })
+
+    // An answer to a request the provider no longer waits on is refused, so
+    // the card shows an error rather than hanging on "Submitting...".
     this.host.handle(ProviderChannels.ANSWER_QUESTION, async (threadId: string, requestId: string, answers: string[][]) => {
       const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) return
+      if (!adapter || !this.holdsPendingRequest(threadId, requestId)) throw new Error(REQUEST_EXPIRED)
       if (adapter.answerQuestion) await adapter.answerQuestion(threadId, requestId, answers)
     })
 
@@ -2573,7 +2713,7 @@ export class ProviderRegistry implements PeerToolHost {
         return
       }
       const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) return
+      if (!adapter || !this.holdsPendingRequest(threadId, requestId)) throw new Error(REQUEST_EXPIRED)
       await adapter.respondToRequest(threadId, requestId, decision)
     })
 
@@ -2621,6 +2761,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.host.handle(ProviderChannels.GET_PENDING_REQUESTS, (threadId: string) => this.getPendingRequests(threadId))
 
     this.host.handle(ProviderChannels.LIST_QUEUED_TURNS, (threadId: string) => this.listQueuedTurns(threadId))
+    this.host.handle(ProviderChannels.RESUME_QUEUED_TURNS, (threadId: string) => this.resumeQueuedTurns(threadId))
     this.host.handle(ProviderChannels.PROMOTE_QUEUED_TURN, (threadId: string, messageId: string) =>
       this.actOnQueuedTurn('promote', threadId, messageId))
     this.host.handle(ProviderChannels.CANCEL_QUEUED_TURN, (threadId: string, messageId: string) =>
@@ -2632,6 +2773,13 @@ export class ProviderRegistry implements PeerToolHost {
       this.executionRoot?.onSessionStopped(threadId)
       this.dropPeerLinks(threadId)
       this.closeAgentCards(threadId)
+      const starting = this.startingSessions.get(threadId)
+      if (starting && !this.sessionAdapters.has(threadId) && !this.switchingSessions.has(threadId)) {
+        this.stopRequestedDuringStart.add(threadId)
+        // The start stops its own session once it exists; wait for that.
+        await starting.catch((err) => log.info(`stop of ${threadId} during start: ${err instanceof Error ? err.message : String(err)}`))
+        return null
+      }
       return await stopSession(threadId)
     })
 

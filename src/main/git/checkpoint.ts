@@ -29,6 +29,7 @@ import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createMainLogger } from '../logger'
+import type { FileDiffNoRevertReason } from '@shared/provider-events'
 
 const log = createMainLogger('git:checkpoint')
 const execFileP = promisify(execFile)
@@ -36,12 +37,15 @@ const execFileP = promisify(execFile)
 export type ChangeKind = 'add' | 'modify' | 'delete'
 
 export interface CheckpointFileDiff {
+  /** Relative to the directory the checkpoint was taken in. */
   relPath: string
   changeKind: ChangeKind
   /** Content at the start checkpoint. Empty string for an added file. */
   oldContent: string
   /** Content at the end checkpoint. Empty string for a deleted file. */
   newContent: string
+  /** Set when the card must not offer Reject: the content is not text, or a side could not be read. */
+  noRevert?: FileDiffNoRevertReason
 }
 
 /**
@@ -107,24 +111,26 @@ export async function createCheckpoint(
 
 /**
  * Diff a start checkpoint (tree sha) against the *current* working tree,
- * returning the per-file change set with both sides' content.
+ * returning the per-file change set with both sides' content. Only files
+ * under `repoRoot` (which may be a subfolder of the repository) count, with
+ * paths relative to it, which is what a Reject writes against.
  */
 export async function diffCheckpoint(
   repoRoot: string,
   startTree: string,
   runner: CheckpointGitRunner = defaultRunner,
-): Promise<{ ok: true; files: CheckpointFileDiff[] } | { ok: false; error: string }> {
+): Promise<{ ok: true; files: CheckpointFileDiff[]; endTree: string } | { ok: false; error: string }> {
   const endTree = await writeWorkingTree(repoRoot, runner)
   if (endTree == null) return { ok: false, error: 'failed to write end-checkpoint snapshot' }
 
   // Identical trees diff to nothing - skip the spawn (common on turns that
   // wrote no files).
-  if (endTree === startTree) return { ok: true, files: [] }
+  if (endTree === startTree) return { ok: true, files: [], endTree }
 
   let nameStatus: string
   try {
     const { stdout } = await runner(
-      ['diff', '-z', '--name-status', '--no-renames', startTree, endTree],
+      ['diff', '-z', '--name-status', '--no-renames', '--relative', startTree, endTree],
       repoRoot,
     )
     nameStatus = stdout
@@ -148,12 +154,32 @@ export async function diffCheckpoint(
           changeKind === 'add' ? '' : showContent(repoRoot, startTree, relPath, runner),
           changeKind === 'delete' ? '' : showContent(repoRoot, endTree, relPath, runner),
         ])
-        return { relPath, changeKind, oldContent, newContent }
+        return checkedFileDiff(relPath, changeKind, oldContent, newContent)
       }),
     )
     files.push(...resolved)
   }
-  return { ok: true, files }
+  return { ok: true, files, endTree }
+}
+
+/**
+ * Text the card can show and a Reject can write back. Content is decoded as
+ * UTF-8, so a binary side (a NUL, or bytes that are not UTF-8) would be
+ * written back mangled; it ships empty and the card offers no Reject.
+ */
+function checkedFileDiff(relPath: string, changeKind: ChangeKind, oldContent: string | null, newContent: string | null): CheckpointFileDiff {
+  if (oldContent === null || newContent === null) {
+    return { relPath, changeKind, oldContent: oldContent ?? '', newContent: newContent ?? '', noRevert: 'unknown' }
+  }
+  if (looksBinary(oldContent) || looksBinary(newContent)) {
+    return { relPath, changeKind, oldContent: '', newContent: '', noRevert: 'binary' }
+  }
+  return { relPath, changeKind, oldContent, newContent }
+}
+
+/** A NUL, or U+FFFD from a lossy decode. A real U+FFFD in a text file is refused too; refusing is the safe side. */
+export function looksBinary(content: string): boolean {
+  return content.includes('\0') || content.includes('\uFFFD')
 }
 
 /**
@@ -198,19 +224,23 @@ async function writeWorkingTree(repoRoot: string, runner: CheckpointGitRunner): 
   }
 }
 
-/** `git show <tree>:<path>` → content, or '' if the path is absent. */
+/**
+ * `git show <tree>:./<path>` (relative to `repoRoot`) → content, or null when
+ * it cannot be read (a failure, or a side over maxBuffer). Null is unknown
+ * content, never an empty file: writing '' back would destroy the file.
+ */
 async function showContent(
   repoRoot: string,
   tree: string,
   relPath: string,
   runner: CheckpointGitRunner,
-): Promise<string> {
+): Promise<string | null> {
   try {
-    const { stdout } = await runner(['show', `${tree}:${relPath}`], repoRoot)
+    const { stdout } = await runner(['show', `${tree}:./${relPath}`], repoRoot)
     return stdout
   } catch (err) {
     log.warn('git show failed for checkpoint file', { tree, relPath, err })
-    return ''
+    return null
   }
 }
 

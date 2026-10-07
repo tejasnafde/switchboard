@@ -12,7 +12,7 @@
 import { describe, it, expect } from 'vitest'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtemp, rm, writeFile, unlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -88,7 +88,7 @@ describe('createCheckpoint', () => {
       throw new Error('unexpected ' + args.join(' '))
     }
     const res = await diffCheckpoint('/repo', 'SAMETREE', runner)
-    expect(res).toEqual({ ok: true, files: [] })
+    expect(res).toEqual({ ok: true, files: [], endTree: 'SAMETREE' })
     expect(calls.some((c) => c[0] === 'diff')).toBe(false)
   })
 })
@@ -104,10 +104,10 @@ describe('diffCheckpoint', () => {
       }
       if (args[0] === 'show') {
         const map: Record<string, string> = {
-          'STARTTREE:a.txt': 'old-a\n',
-          'ENDTREE:a.txt': 'new-a\n',
-          'ENDTREE:c.txt': 'new-c\n',
-          'STARTTREE:b.txt': 'old-b\n',
+          'STARTTREE:./a.txt': 'old-a\n',
+          'ENDTREE:./a.txt': 'new-a\n',
+          'ENDTREE:./c.txt': 'new-c\n',
+          'STARTTREE:./b.txt': 'old-b\n',
         }
         const spec = args[1]
         if (!(spec in map)) throw new Error('unexpected show ' + spec)
@@ -133,7 +133,21 @@ describe('diffCheckpoint', () => {
       throw new Error('unexpected ' + args.join(' '))
     }
     const res = await diffCheckpoint('/repo', 'STARTTREE', runner)
-    expect(res).toEqual({ ok: true, files: [] })
+    expect(res).toEqual({ ok: true, files: [], endTree: 'ENDTREE' })
+  })
+
+  it('offers no revert for a side git could not read', async () => {
+    const runner: CheckpointGitRunner = async (args) => {
+      if (args[0] === 'add') return { stdout: '', stderr: '' }
+      if (args[0] === 'write-tree') return { stdout: 'ENDTREE\n', stderr: '' }
+      if (args[0] === 'diff') return { stdout: 'M\0big.txt\0', stderr: '' }
+      if (args[0] === 'show' && args[1].startsWith('ENDTREE')) return { stdout: 'new\n', stderr: '' }
+      throw new Error('stdout maxBuffer length exceeded')
+    }
+    const res = await diffCheckpoint('/repo', 'STARTTREE', runner)
+    expect(res.ok && res.files).toEqual([
+      { relPath: 'big.txt', changeKind: 'modify', oldContent: '', newContent: 'new\n', noRevert: 'unknown' },
+    ])
   })
 })
 
@@ -200,6 +214,55 @@ describe('checkpoint against real git', () => {
       // an unstaged modification.
       const status = await git(['status', '--porcelain'])
       expect(status.stdout).toContain('a.txt')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  async function realRepo() {
+    const dir = await mkdtemp(join(tmpdir(), 'sb-ckpt-real-'))
+    const git = (args: string[], cwd = dir) => execFileP('git', args, { cwd, env: scrubGitEnv(process.env) })
+    await git(['init', '-q'])
+    await git(['config', 'user.email', 't@t.io'])
+    await git(['config', 'user.name', 't'])
+    return { dir, git }
+  }
+
+  it('marks a binary file as not revertable and ships none of its bytes', async () => {
+    const { dir, git } = await realRepo()
+    try {
+      await writeFile(join(dir, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0x01]))
+      await git(['add', '-A'])
+      await git(['commit', '-qm', 'init'])
+      const start = await createCheckpoint(dir)
+      if (!start.ok) throw new Error(start.error)
+      await writeFile(join(dir, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xc3, 0x28, 0x02]))
+      const diff = await diffCheckpoint(dir, start.tree)
+      expect(diff.ok && diff.files).toEqual([
+        { relPath: 'logo.png', changeKind: 'modify', oldContent: '', newContent: '', noRevert: 'binary' },
+      ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('in a repo subfolder, reports paths relative to it and only files under it', async () => {
+    const { dir, git } = await realRepo()
+    try {
+      await mkdir(join(dir, 'pkg'))
+      await writeFile(join(dir, 'pkg', 'x.txt'), 'old\n')
+      await writeFile(join(dir, 'root.txt'), 'root\n')
+      await git(['add', '-A'])
+      await git(['commit', '-qm', 'init'])
+      const cwd = join(dir, 'pkg')
+      const start = await createCheckpoint(cwd)
+      if (!start.ok) throw new Error(start.error)
+      await writeFile(join(cwd, 'x.txt'), 'new\n')
+      await writeFile(join(dir, 'root.txt'), 'changed outside the cwd\n')
+      const diff = await diffCheckpoint(cwd, start.tree)
+      expect(diff.ok && diff.files).toEqual([
+        { relPath: 'x.txt', changeKind: 'modify', oldContent: 'old\n', newContent: 'new\n' },
+      ])
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

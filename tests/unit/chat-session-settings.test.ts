@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { changeModel, changeReasoningEffort, changeRuntimeMode } from '../../src/renderer/components/chat/chat-session-settings'
+import { applyProviderSelection, changeModel, changeReasoningEffort, changeRuntimeMode } from '../../src/renderer/components/chat/chat-session-settings'
 import { useAgentStore, getStoreDefaultRuntimeMode } from '../../src/renderer/stores/agent-store'
 import { defaultModelSettingKey, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
 
@@ -8,7 +8,7 @@ let api: Record<string, Record<string, ReturnType<typeof ok>>>
 
 beforeEach(() => {
   api = {
-    provider: { setRuntimeMode: ok(), setModel: ok() },
+    provider: { setRuntimeMode: ok(), setModel: ok(), setReasoningEffort: ok() },
     app: { setConversationRuntimeMode: ok(), setConversationModel: ok(), setConversationReasoningEffort: ok() },
     settings: { set: ok() },
   }
@@ -41,5 +41,23 @@ describe('chat session settings', () => {
     changeReasoningEffort('s1', 'high')
     expect(session().reasoningEffort).toBe('high')
     expect(api.app.setConversationReasoningEffort).toHaveBeenCalledWith('s1', 'high')
+  })
+
+  it('changeReasoningEffort reaches the live session, not only the store', () => {
+    changeReasoningEffort('s1', 'low')
+    expect(api.provider.setReasoningEffort).toHaveBeenCalledWith('s1', 'low')
+  })
+
+  it('applyProviderSelection restores the model and effort the backend remembered', () => {
+    useAgentStore.getState().setModel('s1', 'gpt-x')
+    applyProviderSelection('s1', 'claude-code', { model: 'opus', reasoningEffort: 'high' })
+    expect(session()).toMatchObject({ type: 'claude-code', model: 'opus', reasoningEffort: 'high' })
+  })
+
+  it('applyProviderSelection leaves the provider default when nothing is remembered', () => {
+    useAgentStore.getState().setModel('s1', 'gpt-x')
+    applyProviderSelection('s1', 'claude-code', { ok: true })
+    expect(session().type).toBe('claude-code')
+    expect(session().model).toBeUndefined()
   })
 })

@@ -498,6 +498,8 @@ interface ActiveSession {
   startingPrompt: boolean
   /** Messages sent with delivery 'queue' while a prompt ran, oldest first. */
   queuedTurns: Array<{ id?: string; message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
+  /** Nothing queued starts until the user resumes: a turn failed (see holdQueue). */
+  queueHeld: boolean
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
   /** Accumulates chunk deltas by messageId for text and reasoning blocks. */
@@ -568,11 +570,13 @@ export function mapSessionUpdate(
       // already-emitted `tool.started` card.
       if (update.status === 'completed' || update.status === 'failed') {
         const output = stringifyOutput(update)
+        const writtenPaths = update.status === 'completed' ? acpEditPaths(update) : []
         events.push({
           type: 'tool.completed',
           threadId,
           toolId: update.toolCallId,
           ...(output ? { output } : {}),
+          ...(writtenPaths.length > 0 ? { writtenPaths } : {}),
         })
       }
       break
@@ -621,6 +625,16 @@ export function mapSessionUpdate(
   }
 
   return events
+}
+
+/** Files an ACP edit tool call wrote: its locations, plus the path its input names. */
+function acpEditPaths(update: SessionUpdate & { sessionUpdate: 'tool_call_update' }): string[] {
+  if (update.kind !== 'edit') return []
+  const input = (typeof update.rawInput === 'object' && update.rawInput !== null ? update.rawInput : {}) as Record<string, unknown>
+  return [
+    ...(update.locations ?? []).map((l) => l.path),
+    ...(typeof input.filePath === 'string' ? [input.filePath] : []),
+  ]
 }
 
 /** Pluck the displayable text out of an ACP ContentBlock. */
@@ -780,6 +794,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       drainingQueue: false,
       startingPrompt: false,
       queuedTurns: [],
+      queueHeld: false,
       turnStartedAt: null,
       assistantMessageText: new Map(),
     }
@@ -968,7 +983,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
    * turn.completed (which the registry counts), and the next one is tried.
    */
   private drainQueued(threadId: string, active: ActiveSession): void {
-    const next = active.queuedTurns.shift()
+    const next = active.queueHeld ? undefined : active.queuedTurns.shift()
     if (!next) {
       active.drainingQueue = false
       return
@@ -981,9 +996,32 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         const reason = err instanceof Error ? err.message : String(err)
         log.warn(`queued opencode turn failed to start for ${threadId}: ${reason}`)
         active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
+        if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'failed', error: reason })
         active.onEvent({ type: 'turn.completed', threadId })
+        // The next one would most likely fail the same way.
+        this.holdQueue(threadId, active, 'A queued message could not be sent.')
         this.drainQueued(threadId, active)
       })
+  }
+
+  /**
+   * Stop starting queued messages after a failed turn: the next one would
+   * run straight into the same failure. The user resumes or cancels them.
+   */
+  private holdQueue(threadId: string, active: ActiveSession, reason: string): void {
+    if (active.queueHeld || active.queuedTurns.length === 0) return
+    active.queueHeld = true
+    log.info(`holding ${active.queuedTurns.length} queued message(s) on ${threadId}: ${reason}`)
+    active.onEvent({ type: 'turn.queue-held', threadId, held: true, reason })
+  }
+
+  async resumeQueuedTurns(threadId: string): Promise<boolean> {
+    const active = this.sessions.get(threadId)
+    if (!active?.queueHeld) return false
+    active.queueHeld = false
+    active.onEvent({ type: 'turn.queue-held', threadId, held: false })
+    if (active.inFlightPrompt === null && !active.startingPrompt && !active.drainingQueue) this.drainQueued(threadId, active)
+    return true
   }
 
   async sendTurn(
@@ -1047,13 +1085,17 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     // new send could start a second prompt ahead of it.
     const busy = active.inFlightPrompt !== null || active.startingPrompt || (active.drainingQueue && !fromQueue)
     if (busy && delivery === 'queue') {
+      // A message joining an empty queue starts a new one, not held.
+      if (active.queuedTurns.length === 0) active.queueHeld = false
       active.queuedTurns.push({ id: queuedId, message, runtimeMode, images })
       if (queuedId) active.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
       return
     }
+    // Refused, not ignored: resolving here would store the message as sent
+    // while the agent never sees it.
     if (busy) {
-      log.warn(`sendTurn called while turn in progress for ${threadId} - ignoring`)
-      return
+      log.warn(`sendTurn refused while a turn is in progress for ${threadId}`)
+      throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
     }
     // Hold the slot across the mode await below, or a queued send arriving
     // now would start its own prompt ahead of this one.
@@ -1131,8 +1173,9 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         log.error(`acp prompt failed: ${msg}`)
         active.session.status = 'error'
         active.onEvent({ type: 'error', threadId, message: msg })
-        // The failed prompt still ends its turn, which the registry counts,
-        // before a queued one starts.
+        // The failed prompt still ends its turn, which the registry counts.
+        // The queue behind it is held, not started.
+        this.holdQueue(threadId, active, msg)
         active.onEvent({ type: 'turn.completed', threadId })
         active.onEvent({ type: 'status', threadId, status: 'error' })
       })

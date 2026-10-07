@@ -518,9 +518,16 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
         `(${history.diskMessageCount} disk, ${history.databaseMessageCount} DB) ` +
         `across ${history.familyIds.length} family id(s)`,
       )
-      const response = capTail({ messages: history.messages, meta }, opts)
-      span.end({ ...history.timing, messages: history.messages.length, diskMessages: history.diskMessageCount, dbMessages: history.databaseMessageCount })
-      return { ...response, timing: history.timing, loadStatus: 'loaded' }
+      const response = { ...capTail({ messages: history.messages, meta }, opts), timing: history.timing, loadStatus: 'loaded' as const }
+      span.end({
+        ...history.timing,
+        messages: history.messages.length,
+        diskMessages: history.diskMessageCount,
+        dbMessages: history.databaseMessageCount,
+        // What the wire carries, so long-chat paging work can be measured.
+        payloadBytes: Buffer.byteLength(JSON.stringify(response)),
+      })
+      return response
     } catch (err) {
       span.end({ outcome: 'error' })
       log.warn(`load-by-id failed for ${conversationId}: ${err}`)
@@ -618,8 +625,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     agentType: string,
     instanceId: string,
   ) => {
-    setConversationProviderSelection(id, agentType, instanceId)
-    return { ok: true }
+    return { ok: true, ...setConversationProviderSelection(id, agentType, instanceId) }
   })
 
   // Pending cross-provider context handoff. Scheduled by an agent switch

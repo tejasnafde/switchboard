@@ -1,0 +1,124 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "p0-turn-and-model",
+  "summary": "Six fixes from the T3 Code comparison. (1) A chat remembers the model and reasoning effort it last used on each agent type (conversations.provider_options_json) and restores them when it switches back; a reasoning-effort change reaches the live session (provider:set-reasoning-effort). (2) Stop or STOP_SESSION while startSession is in flight is recorded; the start stops the session as soon as it exists and the turn is not submitted (SESSION_START_STOPPED). (3) provider:interrupt answers { live }, and every client clears a running status the backend has no turn for; after a resume gap the desktop re-reads the backend's sessions, idles chats it no longer runs, and reloads the transcript of a displayed chat that is not mid-turn. (4) After a failed or usage-limited turn (Codex failed turn/completed, Claude rate-limit rejection or is_error result, OpenCode failed prompt) or a queued message that cannot start, the adapter holds its queue (turn.queue-held) instead of running it into the same failure; clients keep the queued rows on status error, show them as Held with Resume (provider:resume-queued-turns) and Cancel, and show a message that could not start (turn.dequeued reason 'failed') as Not sent with Cancel, which returns its text. Claude takes held messages back out of the CLI queue with cancelAsyncMessage and pushes them again on Resume. (5) When a provider session errors, stops or restarts, the registry publishes request.expired for each open approval and question; clients replace the card with a notice naming the reason, recovery closes cards the backend no longer holds, and an answer to an expired request is refused with REQUEST_EXPIRED instead of succeeding silently. (6) The chat.load perf span reports payloadBytes.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/App.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/chat-session-settings.ts",
+        "src/renderer/components/chat/QueuedTurnBar.tsx",
+        "src/renderer/components/chat/expired-request.ts",
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "src/renderer/services/desktop-turn-submission.ts",
+        "src/renderer/services/pending-request-recovery.ts",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/stores/live-session-merge.ts",
+        "src/renderer/styles/tailwind.css",
+        "src/preload/index.ts",
+        "tests/unit/chat-session-settings.test.ts",
+        "tests/unit/desktop-image-send-contract.test.ts",
+        "tests/unit/live-session-merge.test.ts",
+        "tests/unit/pending-request-recovery-orchestration.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/lib/held-turns.ts",
+        "apps/mobile/src/lib/pending-request-recovery.ts",
+        "apps/mobile/src/screens/__tests__/held-turn-bar.test.tsx",
+        "tests/unit/mobile-chat-store.test.ts",
+        "tests/unit/mobile-held-turns.test.ts",
+        "tests/unit/mobile-pending-request-recovery.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ExpiredRequests.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadEventDecoder.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/TurnDelivery.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/protocol/WsProtocol.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSessionPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSessionScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "src/shared/pending-requests.ts",
+        "src/shared/queued-turns.ts",
+        "src/shared/turn-delivery.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/provider-option-memory.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/queued-turn-ledger.ts",
+        "src/main/provider/types.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/ipc/app.ts",
+        "tests/unit/provider-registry-stop-during-start.test.ts",
+        "tests/unit/provider-registry-expired-requests.test.ts",
+        "tests/unit/provider-registry-held-queue.test.ts",
+        "tests/unit/queued-turn-ledger-hold.test.ts",
+        "tests/unit/queued-turns.test.ts",
+        "tests/unit/claude-adapter-queue.test.ts",
+        "tests/unit/codex-adapter.test.ts",
+        "tests/unit/opencode-acp-adapter.test.ts",
+        "tests/unit/provider-option-memory.test.ts",
+        "tests/unit/chat-load-payload-bytes.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/conversation-fork.ts",
+        "src/main/db/conversations.ts",
+        "tests/unit/conversation-rotation-fallback.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck",
+      "npm test",
+      "npm test --prefix apps/mobile -- held-turn-bar",
+      "cd apps/android && ./gradlew --no-daemon testDebugUnitTest lintDebug compileDebugAndroidTestKotlin",
+      "SB_VISUAL_SCOPE=screens node e2e/visual-regressions.e2e.mjs (queued-message screen, after QueuedTurnBar moved to Tailwind; no new baselines)"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Item 1 is desktop-only: neither phone switches a chat's agent type or its reasoning effort, so neither has the per-provider memory to restore. The backend keeps it, so a desktop switch restores it whichever client opens the chat next.",
+      "The Held and Not sent states were not driven against live Claude, Codex or OpenCode binaries. Claude's re-push of a held message after cancelAsyncMessage (with a fresh uuid) is covered over a mocked query only.",
+      "A usage limit that OpenCode reports as a resolved prompt rather than a rejected one does not hold its queue; only a failed prompt does.",
+      "The resume-gap re-seed was not driven against a restarted remote backend; the reconcile rule and the Stop fallback are unit-tested.",
+      "Neither phone was driven on a device or emulator; the stores, rules and the Expo held bar are covered by vitest and jest, Android by its unit tests."
+    ]
+  }
+}
