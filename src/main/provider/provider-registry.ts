@@ -1838,7 +1838,13 @@ export class ProviderRegistry implements PeerToolHost {
           } finally {
             if (queuedId) this.queuedTurns.settle(queuedId)
           }
-          this.announceTurnRuntimeMode(adapter, threadId, modeBefore, input.runtimeMode, queuedId)
+          try {
+            this.announceTurnRuntimeMode(adapter, threadId, modeBefore, input.runtimeMode, queuedId)
+          } catch (error) {
+            // The turn ends ambiguous: the summaries stay pending, not held.
+            mergeBack?.release()
+            throw error
+          }
           return mergeBack?.dispatched(providerText)
         },
       })

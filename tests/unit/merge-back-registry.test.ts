@@ -79,6 +79,8 @@ class RecordingAdapter implements ProviderAdapter {
   sent: string[] = []
   running = false
   failNext = false
+  /** Throw from the mode read that follows a successful send. */
+  failAfterSend = false
   private onEvent: (e: RuntimeEvent) => void = () => {}
   async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     this.onEvent = onEvent
@@ -90,11 +92,21 @@ class RecordingAdapter implements ProviderAdapter {
       throw new Error('connection dropped')
     }
     this.sent.push(text)
+    if (this.failAfterSend) this.modeReadFails = true
     if (delivery === 'queue' && this.running && queuedId) {
       this.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
       return
     }
     this.running = true
+  }
+  private modeReadFails = false
+  runtimeModeOf(): 'sandbox' {
+    if (this.modeReadFails) {
+      this.modeReadFails = false
+      this.failAfterSend = false
+      throw new Error('mode read failed')
+    }
+    return 'sandbox'
   }
   finishTurn(threadId: string): void {
     this.running = false
@@ -173,5 +185,19 @@ describe('merge-back in the registry', () => {
     expect(state(id)).toBe('pending')
     // The card can be changed again: nothing holds it.
     expect(await t.host.invoke(ProviderChannels.MERGE_BACK_EDIT, 't1', id, 'edited')).toEqual({ ok: true })
+  })
+
+  it('lets go of the summary when the turn fails after the send', async () => {
+    // The previous test left its ambiguous turn unresolved, which blocks every send.
+    db.prepare("DELETE FROM mobile_turn_acceptances WHERE state = 'dispatching'").run()
+    const t = await setup()
+    const id = seedPending('after-send failure')
+    t.adapter.failAfterSend = true
+    await t.host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+      version: 1, threadId: 't1', origin: 'g', providerText: 'text of g', runtimeMode: 'plan',
+    }).catch(() => undefined)
+    expect(t.adapter.sent.at(-1)).toContain('after-send failure')
+    expect(state(id)).toBe('pending')
+    expect(await t.host.invoke(ProviderChannels.MERGE_BACK_DISCARD, 't1', id)).toEqual({ ok: true })
   })
 })
