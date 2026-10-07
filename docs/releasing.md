@@ -59,8 +59,11 @@ all carry the tag's version while `main` keeps whatever it had.
 ```bash
 set -euo pipefail                          # or the tag outlives a failed step
 git fetch origin
-gh run list --branch main --workflow ci.yml --limit 1   # must be success on origin/main
-git tag v<version> origin/main && git push origin v<version>
+sha=$(git rev-parse origin/main)
+ci=$(gh run list --branch main --workflow ci.yml --limit 10 --json headSha,conclusion \
+  --jq ".[] | select(.headSha==\"$sha\") | .conclusion" | head -1)
+[ "$ci" = success ] || { echo "main CI is not green on $sha ($ci)"; exit 1; }
+git tag "v<version>" "$sha" && git push origin "v<version>"
 ```
 
 Tag only a commit on `main`. `release.yml` fires on any `v*` tag and builds it,
@@ -99,8 +102,17 @@ sees, a release one included, spends that slot. So:
 - **Batch small related fixes** into one pull request (one review, one release).
 - **Keep each large feature in its own pull request**, so a finding on one does
   not hold the others.
-- Self-review against the review checklist and run `coderabbit review --agent`
-  locally before pushing, so the hosted review usually passes in one round.
+- Self-review against the review checklist and run
+  `coderabbit review --agent --committed --base origin/main` locally before
+  pushing. The local CLI has its own limit (3 reviews per window on the free
+  plan), separate from the hosted one.
+
+**When a pull request may merge without waiting for the hosted review:** a small
+or medium change merges once the local CodeRabbit review is clean (every finding
+fixed or declined in the PR body with a reason), the full gate passed and CI is
+green. The hosted review still runs afterwards; a real finding gets a follow-up
+pull request. A change that can lose data, changes the wire protocol, or changes
+stored data or a migration also waits for a clean hosted review.
 
 ### Signing modes
 
