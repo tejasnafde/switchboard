@@ -5,6 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Changed
+- **Clearer loading states.** A chat that is still loading shows shimmering message shapes instead of a small "Loading conversation..." line. Switching provider or account closes the picker at once; the picker button shows a spinner and "Switching to <name>...", and the composer says you can keep typing. Extend on a session link now shows a spinner, then "Extended", and the link text flashes so you see the new count.
 - **Faster desktop releases.** A release is a tag on `main`; the build takes its version from the tag, so there is no version-bump pull request (which also spent CodeRabbit's hourly review). The release skips its test Gate when main CI already passed on that commit, does not run the test suite a third time inside the build, and publishes as soon as the macOS build is verified; Windows follows on its own. About 10 to 12 minutes from merge to a published release instead of about 30. `docs/releasing.md` describes the new flow and adds a note on pull request sizing.
 
 ### Fixed

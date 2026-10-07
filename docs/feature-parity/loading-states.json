@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "loading-states",
+  "summary": "Desktop loading states the user picked from an HTML mock: a chat that is loading shows shimmering skeleton messages; a provider or profile switch closes the picker popup and shows a spinner in place of the avatar on the picker button, with 'Switching to <name>... You can keep typing.' in the composer and a hidden live region for screen readers; Extend on a session link shows a spinner, then 'Extended' and an accent flash on the link text.",
+  "surfaces": {
+    "desktop": { "status": "implemented", "evidence": ["src/renderer/components/ui/chat-skeleton.tsx", "src/renderer/components/chat/ChatPanel.tsx", "src/renderer/components/chat/UnifiedProviderPicker.tsx", "src/renderer/components/chat/PeerLinkBanner.tsx", "tests/unit/peer-link-banner-extend.test.ts", "e2e/visual-regressions.e2e.mjs"] },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The phone already shows its own load and switch states (#241); this change is the desktop's visual treatment only." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The phone already shows its own load and switch states (#241); this change is the desktop's visual treatment only." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "No API change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Nothing stored changes." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release." }
+  },
+  "verification": {
+    "automated": ["Visual regression screens updated for chat loading, provider switch, profile switch, session start and switch error in all three themes, then passed twice without updating; the provider-picker-switch capture was removed because the picker now closes on a profile click. tests/unit/peer-link-banner-extend.test.ts covers Extending, Extended and the reset."],
+    "hardware": [],
+    "notExercised": ["Not clicked through in the installed app."]
+  }
+}

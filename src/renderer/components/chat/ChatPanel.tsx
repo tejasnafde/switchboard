@@ -1,5 +1,6 @@
 import { useChatWaitStore } from '../../stores/chat-wait-store'
 import { LoadingStatus } from '../ui/loading-status'
+import { ChatSkeleton } from '../ui/chat-skeleton'
 import { perfSpan } from '../../perf'
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
@@ -1154,7 +1155,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         onSend={handleSend}
         disabled={!hasSession || status === 'exited'}
         placeholder={
-          status === 'exited'
+          wait?.pending
+            ? `${wait.label} You can keep typing.`
+            : status === 'exited'
             ? 'Agent has exited. Start a new session.'
             : !hasSession
               ? emptyPlaceholder ?? 'Click "+ New Chat" or select a session to start...'
@@ -1440,8 +1443,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           )}
 
           {/* Messages */}
-          {wait && <LoadingStatus label={wait.pending ? `${wait.label} Send is held; you can keep typing.` : wait.label} error={wait.error} />}
-          {opening ? <LoadingStatus label="Loading conversation..." fill /> : <MessageList
+          {/* A pending switch shows in the picker button and the composer; only a failure needs a row here. */}
+          {wait?.error && <LoadingStatus label={wait.label} error />}
+          {/* Always mounted, only its text changes: a live region inserted already filled is often not announced. */}
+          <span role="status" aria-live="polite" className="sr-only">{wait?.pending ? wait.label : ''}</span>
+          {opening ? <ChatSkeleton label="Loading conversation..." /> : <MessageList
             messages={messages}
             sessionId={sessionId}
             visible={visible}
