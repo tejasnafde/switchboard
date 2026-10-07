@@ -2013,14 +2013,14 @@ describe('CodexAdapter', () => {
     expect(started?.params.approvalPolicy).toBe('never')
   })
 
-  it('ends a failed turn with turn.completed before it starts the queued one', async () => {
+  it('ends a failed turn with turn.completed and holds the queue until the user resumes it', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
     await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
     await adapter.sendTurn('thread-1', 'hello codex')
-    await adapter.sendTurn('thread-1', 'queued follow-up', undefined, undefined, 'queue')
+    await adapter.sendTurn('thread-1', 'queued follow-up', undefined, undefined, 'queue', 'remote_q')
     writes.length = 0
 
     lastChild?.stdout.write(JSON.stringify({
@@ -2033,8 +2033,42 @@ describe('CodexAdapter', () => {
     const types = onEvent.mock.calls.map(([e]) => e.type)
     expect(types).toContain('error')
     expect(onEvent.mock.calls.filter(([e]) => e.type === 'turn.completed' && e.turnId === 'turn-1')).toHaveLength(1)
-    const frames = writes.map((w) => JSON.parse(w))
-    expect(frames.find((m) => m.method === 'turn/start')?.params.input).toEqual([{ type: 'text', text: 'queued follow-up' }])
+    // Held: the next message would run straight into the same failure.
+    expect(onEvent).toHaveBeenCalledWith({ type: 'turn.queue-held', threadId: 'thread-1', held: true, reason: 'boom' })
+    expect(writes.map((w) => JSON.parse(w)).some((m) => m.method === 'turn/start')).toBe(false)
+
+    expect(await adapter.resumeQueuedTurns('thread-1')).toBe(true)
+    expect(onEvent).toHaveBeenCalledWith({ type: 'turn.queue-held', threadId: 'thread-1', held: false })
+    await vi.waitFor(() => {
+      const frames = writes.map((w) => JSON.parse(w))
+      expect(frames.find((m) => m.method === 'turn/start')?.params.input).toEqual([{ type: 'text', text: 'queued follow-up' }])
+    })
+    expect(await adapter.resumeQueuedTurns('thread-1')).toBe(false)
+  })
+
+  it('marks a queued message that cannot start as failed and holds the rest', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.sendTurn('thread-1', 'q1', undefined, undefined, 'queue', 'remote_q1')
+    await adapter.sendTurn('thread-1', 'q2', undefined, undefined, 'queue', 'remote_q2')
+    turnStartErrors = ['model not loaded']
+    writes.length = 0
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
+    }) + '\n')
+
+    await vi.waitFor(() => {
+      expect(onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'failed', error: 'model not loaded' })
+    })
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'turn.queue-held', held: true }))
+    const starts = writes.map((w) => JSON.parse(w)).filter((m) => m.method === 'turn/start')
+    expect(starts.map((m) => m.params.input[0].text)).toEqual(['q1'])
   })
 
   it('starts the queued message when the turn it waited for fails to start', async () => {

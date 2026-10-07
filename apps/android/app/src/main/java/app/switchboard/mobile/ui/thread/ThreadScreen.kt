@@ -197,6 +197,7 @@ fun ThreadScreen(
     onToggleDelivery: () -> Unit = {},
     held: ThreadHeldPresentation = ThreadHeldPresentation(),
     onHeldAction: (messageId: String, promote: Boolean) -> Unit = { _, _ -> },
+    onHeldResume: (messageId: String) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
@@ -396,6 +397,7 @@ fun ThreadScreen(
                                 onFork = { messageId -> forkMessageId = messageId },
                                 held = held,
                                 onHeldAction = onHeldAction,
+                                onHeldResume = onHeldResume,
                                 onToggleFileGroup = { key ->
                                     expandedFileGroups = if (key in expandedFileGroups) expandedFileGroups - key else expandedFileGroups + key
                                 },
@@ -1311,6 +1313,7 @@ private fun ThreadRow(
     onFork: (String) -> Unit,
     held: ThreadHeldPresentation = ThreadHeldPresentation(),
     onHeldAction: (String, Boolean) -> Unit = { _, _ -> },
+    onHeldResume: (String) -> Unit = {},
     onToggleFileGroup: (String) -> Unit = {},
 ) {
     when (row) {
@@ -1321,6 +1324,7 @@ private fun ThreadRow(
             heldMessageId = TurnDeliveryPolicy.heldMessageId(held.messageIds, row.source.id),
             held = held,
             onHeldAction = onHeldAction,
+            onHeldResume = onHeldResume,
         )
         is ThreadRowPresentation.Text -> TextRow(
             row,
@@ -1445,6 +1449,7 @@ private fun UserRow(
     heldMessageId: String? = null,
     held: ThreadHeldPresentation = ThreadHeldPresentation(),
     onHeldAction: (String, Boolean) -> Unit = { _, _ -> },
+    onHeldResume: (String) -> Unit = {},
 ) {
     Row(
         modifier = Modifier
@@ -1491,6 +1496,7 @@ private fun UserRow(
                         messageId = messageId,
                         held = held,
                         onPromote = { onHeldAction(messageId, true) },
+                        onResume = { onHeldResume(messageId) },
                         onCancel = { onHeldAction(messageId, false) },
                     )
                 }
@@ -1499,37 +1505,60 @@ private fun UserRow(
     }
 }
 
-/** The foot of a user bubble the backend holds: Queued, then Send now and Cancel. */
+/**
+ * The foot of a user bubble the backend holds: Queued, then Send now and
+ * Cancel. A held queue (after a failed turn) offers Resume instead of Send
+ * now; a message that could not start offers only Cancel.
+ */
 @Composable
 private fun HeldTurnBar(
     messageId: String,
     held: ThreadHeldPresentation,
     onPromote: () -> Unit,
+    onResume: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val onBubble = MaterialTheme.colorScheme.onPrimary
     val error = held.errors[messageId]
     val busy = messageId in held.busy
+    val failed = held.failed[messageId]
+    val label = when {
+        failed != null -> "Not sent · ${error ?: failed}"
+        held.queueHeld -> "Held · ${error ?: "The last turn failed. Resume sends the queue."}"
+        else -> "Queued · ${error ?: held.actions.hint}"
+    }
     Column(
         modifier = Modifier.testTag(ThreadTestTags.heldBar(messageId)),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
-            text = "Queued · ${error ?: held.actions.hint}",
+            text = label,
             color = if (error != null) Red else onBubble.copy(alpha = 0.8f),
             style = MaterialTheme.typography.labelSmall,
             maxLines = 2,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(
-                onClick = onPromote,
-                enabled = held.actions.canPromote && !busy,
-                modifier = Modifier
-                    .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
-                    .testTag(ThreadTestTags.heldSendNow(messageId)),
-            ) {
-                Text("Send now", color = onBubble.copy(alpha = if (held.actions.canPromote && !busy) 1f else 0.5f))
+            if (failed == null && held.queueHeld) {
+                TextButton(
+                    onClick = onResume,
+                    enabled = !busy,
+                    modifier = Modifier
+                        .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+                        .testTag(ThreadTestTags.heldResume(messageId)),
+                ) {
+                    Text("Resume", color = onBubble.copy(alpha = if (!busy) 1f else 0.5f))
+                }
+            } else if (failed == null) {
+                TextButton(
+                    onClick = onPromote,
+                    enabled = held.actions.canPromote && !busy,
+                    modifier = Modifier
+                        .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+                        .testTag(ThreadTestTags.heldSendNow(messageId)),
+                ) {
+                    Text("Send now", color = onBubble.copy(alpha = if (held.actions.canPromote && !busy) 1f else 0.5f))
+                }
             }
             TextButton(
                 onClick = onCancel,

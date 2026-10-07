@@ -45,7 +45,9 @@ import {
   prepareRuntimeEventLifecycle,
 } from '../../services/message-lifecycle'
 import { LinkedPrControl } from '../reviews/LinkedPrControl'
+import { expireIfRefused } from './expired-request'
 import {
+  interruptFoundNoTurn,
   validateUserMessageImages,
   type UserMessagePillsMeta,
   type UserTurnSubmissionV1,
@@ -526,6 +528,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       await window.api.provider?.respondToRequest(sessionId, requestId, decision, response)
     } catch (err) {
       log.warn('respondToRequest failed', { requestId, decision, err })
+      expireIfRefused(sessionId, requestId, err)
       appendMessage(sessionId, {
         id: `error_${Date.now()}`,
         role: 'system',
@@ -547,6 +550,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       await window.api.provider?.answerQuestion?.(sessionId, requestId, answers)
     } catch (err) {
       log.warn('answerQuestion failed', { requestId, err })
+      expireIfRefused(sessionId, requestId, err)
       appendMessage(sessionId, {
         id: `error_${Date.now()}`,
         role: 'system',
@@ -1197,9 +1201,12 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             return
           }
           try {
-            await window.api.provider?.interrupt?.(sessionId)
+            const result = await window.api.provider?.interrupt?.(sessionId)
             contentCoalescerRef.current?.flushThread(sessionId)
             messageLifecycle.settleThread(sessionId)
+            // No turn on the backend (its end fell into a resume gap): no
+            // closing event will come, so clear the status here.
+            if (interruptFoundNoTurn(result)) updateStatus(sessionId, 'idle')
           } catch (err) {
             log.warn('provider interrupt failed; stopping wedged session', { sessionId, err })
             await window.api.provider?.stopSession?.(sessionId).catch((stopErr: unknown) => {

@@ -18,6 +18,7 @@ import { createRendererLogger } from '../../logger'
 import { peerMessageToChatMessage } from './send-to-command'
 import { formatUndeliveredMarker } from '@shared/peer-links'
 import { clearProviderRetry, upsertProviderRetry } from './provider-retry'
+import { expireRequestCard } from './expired-request'
 
 const log = createRendererLogger('chat:panel')
 
@@ -233,6 +234,9 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       }
       break
     }
+    case 'request.expired':
+      expireRequestCard(tid, event.requestId, event.reason)
+      break
     case 'turn.completed': {
       clearProviderRetry(tid)
       // Flush buffered content if streaming was off this turn.

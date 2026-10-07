@@ -150,6 +150,12 @@ export interface ProviderAdapter {
   promoteQueuedTurn?(threadId: string, queuedId: string): Promise<boolean>
 
   /**
+   * Start a queue the adapter held after a failed or usage-limited turn
+   * (`turn.queue-held`). False when nothing was held.
+   */
+  resumeQueuedTurns?(threadId: string): Promise<boolean>
+
+  /**
    * Interrupt the current turn (cancel in-progress work).
    */
   interruptTurn(threadId: string): Promise<void>

@@ -2,6 +2,7 @@ package app.switchboard.mobile.domain.remote
 
 import app.switchboard.mobile.domain.thread.MessagePill
 import app.switchboard.mobile.protocol.JsonObject
+import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonValue
 
 enum class RuntimeMode(val wire: String) {
@@ -256,7 +257,14 @@ data class RemoteResponse<T>(
 
 data class CommandBody(
     val body: JsonValue?,
-)
+) {
+    /**
+     * A Stop answered `{ live: false }`: the backend had no turn, so a thread
+     * still shown as running is stale. An older backend answers nothing.
+     */
+    val foundNoTurn: Boolean
+        get() = ((body as? JsonObject)?.values?.get("live") as? JsonBoolean)?.value == false
+}
 
 sealed interface ArchiveConversationResult {
     data object Archived : ArchiveConversationResult

@@ -47,7 +47,7 @@ import {
 import { sessionDefaultsFor } from './session-defaults'
 import { QueuedTurnLedger } from './queued-turn-ledger'
 import { queuedTurnComposerText } from '@shared/queued-turns'
-import { echoMessageId, isRuntimeMode, SESSION_START_STOPPED } from '@shared/provider-events'
+import { echoMessageId, isRuntimeMode, REQUEST_EXPIRED, SESSION_START_STOPPED } from '@shared/provider-events'
 import { isReasoningEffort } from '@shared/provider-option-memory'
 import { promoteUnavailableReason, startsOwnProviderTurn, type QueuedTurnActionResult, type QueuedTurnSummary } from '@shared/turn-delivery'
 import {
@@ -404,6 +404,7 @@ export class ProviderRegistry implements PeerToolHost {
   private async actOnQueuedTurn(action: 'promote' | 'cancel', threadId: string, messageId: string): Promise<QueuedTurnActionResult> {
     const live = this.liveThreadId(threadId)
     const turn = this.queuedTurns.get(live, messageId)
+    if (turn?.failed) return this.actOnFailedQueuedTurn(action, live, messageId)
     const adapter = this.sessionAdapters.get(live)
     if (!turn || !adapter) {
       return { ok: false, reason: 'not-found', message: 'This message is no longer queued.' }
@@ -432,6 +433,39 @@ export class ProviderRegistry implements PeerToolHost {
       }
     }
     return { ok: true, turn }
+  }
+
+  /**
+   * A queued message that could not start is no longer the adapter's: the
+   * ledger keeps it, marked, so the user can take it back. It cannot be sent
+   * now; Cancel puts its text back in the composer.
+   */
+  private actOnFailedQueuedTurn(action: 'promote' | 'cancel', live: string, messageId: string): QueuedTurnActionResult {
+    if (action === 'promote') {
+      return { ok: false, reason: 'failed', message: 'This message was not sent. Cancel it to edit it and send it again.' }
+    }
+    const turn = this.queuedTurns.removeFailed(live, messageId)
+    if (!turn) return { ok: false, reason: 'not-found', message: 'This message is no longer queued.' }
+    this.publish({ type: 'turn.dequeued', threadId: live, messageId, reason: 'cancelled' })
+    try {
+      deleteUserMessage(resolveRootThreadId(live), messageId)
+    } catch (err) {
+      log.warn(`could not delete failed queued message ${messageId}: ${errorMessage(err)}`)
+    }
+    return { ok: true, turn }
+  }
+
+  /** Start a queue the adapter held after a failed or usage-limited turn. */
+  private async resumeQueuedTurns(threadId: string): Promise<{ ok: boolean; message?: string }> {
+    const live = this.liveThreadId(threadId)
+    const adapter = this.sessionAdapters.get(live)
+    if (!adapter?.resumeQueuedTurns) return { ok: false, message: 'Nothing is held for this chat.' }
+    try {
+      return (await adapter.resumeQueuedTurns(live)) ? { ok: true } : { ok: false, message: 'Nothing is held for this chat.' }
+    } catch (err) {
+      log.warn(`resume of the held queue on ${live} failed: ${errorMessage(err)}`)
+      return { ok: false, message: errorMessage(err) }
+    }
   }
 
   /**
@@ -564,6 +598,27 @@ export class ProviderRegistry implements PeerToolHost {
     if (!byKey) return
     byKey.delete(key)
     if (byKey.size === 0) this.pendingRequests.delete(threadId)
+  }
+
+  /**
+   * The provider can no longer take an answer for anything open on this
+   * thread. Every client is told, so no card is left with live buttons that
+   * would answer nothing. A plan needs no answer from the provider (Implement
+   * sends a new turn), so it is dropped without a notice.
+   */
+  private expirePendingRequests(threadId: string, reason: string): void {
+    const byKey = this.pendingRequests.get(threadId)
+    this.pendingRequests.delete(threadId)
+    for (const event of byKey?.values() ?? []) {
+      if (event.type === 'plan.proposed') continue
+      log.info(`request ${event.requestId} on ${threadId} expired: ${reason}`)
+      this.publish({ type: 'request.expired', threadId, requestId: event.requestId, reason })
+    }
+  }
+
+  /** Whether the provider still waits on this approval or question. */
+  private holdsPendingRequest(threadId: string, requestId: string): boolean {
+    return [threadId, resolveRootThreadId(threadId)].some((id) => this.pendingRequests.get(id)?.has(requestId))
   }
 
   /**
@@ -1286,7 +1341,7 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   private publish(event: RuntimeEvent): void {
-    if (event.type === 'turn.queued' || event.type === 'turn.dequeued') {
+    if (event.type === 'turn.queued' || event.type === 'turn.dequeued' || event.type === 'turn.queue-held') {
       const observed = this.queuedTurns.observe(event, this.sessionAdapters.get(event.threadId)?.provider)
       if (observed.releasesOutstandingTurn) this.finishOutstandingTurn(event.threadId)
       event = observed.event
@@ -1358,7 +1413,9 @@ export class ProviderRegistry implements PeerToolHost {
     // The provider reporting it died means nothing on this thread can still
     // be waiting - a stale card must not survive that either.
     if (event.type === 'status' && (event.status === 'error' || event.status === 'stopped')) {
-      this.pendingRequests.delete(event.threadId)
+      this.expirePendingRequests(event.threadId, event.status === 'error'
+        ? 'The agent stopped with an error before it was answered.'
+        : 'The agent session ended before it was answered.')
     }
     this.bufferAssistantText(event)
     this.bufferToolCall(event)
@@ -1778,7 +1835,7 @@ export class ProviderRegistry implements PeerToolHost {
       // Approval cards are not closed here: a profile switch or a relocation
       // restarts the session, and the cards are the chat's. A user stop closes them.
       this.switchboardMcp?.close(threadId)
-      this.pendingRequests.delete(threadId)
+      this.expirePendingRequests(threadId, 'The agent session restarted before it was answered.')
       this.checkpoints.clear(threadId)
       this.driftWatcher.onSessionStopped(threadId)
       notebookManager.detach(threadId)
@@ -2573,9 +2630,11 @@ export class ProviderRegistry implements PeerToolHost {
       await this.sessionAdapters.get(threadId)?.setReasoningEffort?.(threadId, effort)
     })
 
+    // An answer to a request the provider no longer waits on is refused, so
+    // the card shows an error rather than hanging on "Submitting...".
     this.host.handle(ProviderChannels.ANSWER_QUESTION, async (threadId: string, requestId: string, answers: string[][]) => {
       const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) return
+      if (!adapter || !this.holdsPendingRequest(threadId, requestId)) throw new Error(REQUEST_EXPIRED)
       if (adapter.answerQuestion) await adapter.answerQuestion(threadId, requestId, answers)
     })
 
@@ -2598,7 +2657,7 @@ export class ProviderRegistry implements PeerToolHost {
         return
       }
       const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) return
+      if (!adapter || !this.holdsPendingRequest(threadId, requestId)) throw new Error(REQUEST_EXPIRED)
       await adapter.respondToRequest(threadId, requestId, decision)
     })
 
@@ -2646,6 +2705,7 @@ export class ProviderRegistry implements PeerToolHost {
     this.host.handle(ProviderChannels.GET_PENDING_REQUESTS, (threadId: string) => this.getPendingRequests(threadId))
 
     this.host.handle(ProviderChannels.LIST_QUEUED_TURNS, (threadId: string) => this.listQueuedTurns(threadId))
+    this.host.handle(ProviderChannels.RESUME_QUEUED_TURNS, (threadId: string) => this.resumeQueuedTurns(threadId))
     this.host.handle(ProviderChannels.PROMOTE_QUEUED_TURN, (threadId: string, messageId: string) =>
       this.actOnQueuedTurn('promote', threadId, messageId))
     this.host.handle(ProviderChannels.CANCEL_QUEUED_TURN, (threadId: string, messageId: string) =>

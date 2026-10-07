@@ -48,7 +48,7 @@ export function missingPendingRequests(
 
 /** The event types `applyPendingRequestEvent` can act on. */
 export const PENDING_REQUEST_EVENT_TYPES: ReadonlySet<RuntimeEvent['type']> = new Set([
-  'request.opened', 'question.asked', 'plan.proposed', 'request.closed', 'question.answered', 'status', 'user.message',
+  'request.opened', 'question.asked', 'plan.proposed', 'request.closed', 'request.expired', 'question.answered', 'status', 'user.message',
 ])
 
 /**
@@ -77,6 +77,7 @@ export function applyPendingRequestEvent(
       return [...current.filter((open) => pendingRequestKey(open) !== key), event]
     }
     case 'request.closed':
+    case 'request.expired':
     case 'question.answered': {
       const next = current.filter((open) => open.type === 'plan.proposed' || open.requestId !== event.requestId)
       return next.length === current.length ? current : next

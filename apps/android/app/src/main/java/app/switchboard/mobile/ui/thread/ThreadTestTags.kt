@@ -20,6 +20,7 @@ object ThreadTestTags {
     fun heldBar(messageId: String) = "thread-held-bar:$messageId"
     fun heldSendNow(messageId: String) = "thread-held-send-now:$messageId"
     fun heldCancel(messageId: String) = "thread-held-cancel:$messageId"
+    fun heldResume(messageId: String) = "thread-held-resume:$messageId"
 
     fun toolContainer(key: String) = "thread-tool-container:$key"
     fun toolRow(key: String) = "thread-tool-row:$key"

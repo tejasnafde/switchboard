@@ -11,7 +11,14 @@ enum class TurnDelivery(val wire: String) {
 }
 
 /** A message the backend holds until the running turn ends; `messageId` is its user row id. */
-data class QueuedTurnSummary(val messageId: String, val text: String)
+data class QueuedTurnSummary(
+    val messageId: String,
+    val text: String,
+    /** The queue waits for Resume after a failed or usage-limited turn. */
+    val held: Boolean = false,
+    /** Why it could not start; it never reached the agent. */
+    val failed: String? = null,
+)
 
 sealed interface QueuedTurnActionResult {
     /** `text` is what the user typed, for putting back in the composer on cancel. */

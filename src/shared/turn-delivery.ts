@@ -89,8 +89,10 @@ export function startsOwnProviderTurn(_provider: string, midTurn: boolean, deliv
  * A queued message leaving the queue. `started`: it is now running as its own
  * turn. `promoted`: it was steered into the running turn. `cancelled`: the
  * user took it back. `dropped`: the session stopped before it could run.
+ * `failed`: it left as `started` but could not start; it stays listed as
+ * failed until the user cancels it, and the queue behind it is held.
  */
-export type QueuedTurnExit = 'started' | 'promoted' | 'cancelled' | 'dropped'
+export type QueuedTurnExit = 'started' | 'promoted' | 'cancelled' | 'dropped' | 'failed'
 
 /**
  * The registry counted a queued message as an outstanding turn when it was
@@ -116,6 +118,13 @@ export interface QueuedTurnSummary {
   /** What the user typed, for putting back in the composer on cancel. */
   text: string
   queuedAt: number
+  /**
+   * The queue is held after a failed or usage-limited turn: nothing starts
+   * until the user resumes it (`provider:resume-queued-turns`) or cancels.
+   */
+  held?: boolean
+  /** Why this message could not start. It never reached the agent; Cancel takes it back. */
+  failed?: string
 }
 
 export type QueuedTurnActionResult =

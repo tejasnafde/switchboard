@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Fixed
+- **Stop, queues and approval cards recover from failures, and a chat keeps its model per provider.** Switching a chat back to a provider restores the model and reasoning effort it last used there, and an effort change reaches the running session. Stop while a session is still starting cancels the start, so the message is not sent. After a lost connection the desktop re-reads which chats are running and reloads the transcript of a chat on screen; Stop clears a "Working..." the backend no longer has a turn for, on desktop and both phones. After a failed or usage-limited turn the queued messages are held (Held, with Resume and Cancel) instead of running into the same failure, and a queued message that could not start stays marked Not sent until Cancel returns its text. An approval or question whose agent session ended becomes a notice with the reason on every client, and answering one shows an error instead of hanging on "Approving...". The chat-load timing now logs the response size. See `docs/feature-parity/p0-turn-and-model.json`.
+
 ### Changed
 - **Faster desktop releases.** A release is a tag on `main`; the build takes its version from the tag, so there is no version-bump pull request (which also spent CodeRabbit's hourly review). The release skips its test Gate when main CI already passed on that commit, does not run the test suite a third time inside the build, and publishes as soon as the macOS build is verified; Windows follows on its own. About 10 to 12 minutes from merge to a published release instead of about 30. `docs/releasing.md` describes the new flow and adds a note on pull request sizing.
 

@@ -66,6 +66,9 @@ object ThreadEventDecoder {
             "request.closed" -> ThreadEventKind.RequestClosed to ThreadEventPayload.RequestClosed(
                 raw.requiredString("requestId"), raw.requiredString("decision"),
             )
+            "request.expired" -> ThreadEventKind.RequestExpired to ThreadEventPayload.RequestExpired(
+                raw.requiredString("requestId"), raw.requiredString("reason"),
+            )
             "turn.completed" -> ThreadEventKind.TurnCompleted to ThreadEventPayload.TurnCompleted(
                 raw.string("turnId"), raw.double("costUsd"), raw.long("usedTokens"),
                 raw.long("maxTokens"), raw.long("numTurns"), raw.long("durationMs"),
@@ -134,10 +137,13 @@ object ThreadEventDecoder {
                 raw.requiredString("messageId"), raw.requiredString("taskId"), raw.requiredString("status"),
                 raw.requiredString("summary"), raw.string("outputFile"), raw.requiredLong("at"),
             )
-            "turn.queued" -> ThreadEventKind.TurnQueued to ThreadEventPayload.TurnQueued(raw.requiredString("messageId"))
-            "turn.dequeued" -> ThreadEventKind.TurnDequeued to ThreadEventPayload.TurnDequeued(
-                raw.requiredString("messageId"), raw.requiredString("reason"),
+            "turn.queued" -> ThreadEventKind.TurnQueued to ThreadEventPayload.TurnQueued(
+                raw.requiredString("messageId"), raw.boolean("held") ?: false,
             )
+            "turn.dequeued" -> ThreadEventKind.TurnDequeued to ThreadEventPayload.TurnDequeued(
+                raw.requiredString("messageId"), raw.requiredString("reason"), raw.string("error"),
+            )
+            "turn.queue-held" -> ThreadEventKind.TurnQueueHeld to ThreadEventPayload.TurnQueueHeld(raw.boolean("held") ?: false)
             else -> null
         }
 

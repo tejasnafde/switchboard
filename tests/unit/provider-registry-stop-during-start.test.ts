@@ -152,3 +152,14 @@ describe('Stop reports whether a turn was live', () => {
     expect(adapter.interrupted).toEqual(['t1'])
   })
 })
+
+describe('interruptFoundNoTurn', () => {
+  it('is true only for an explicit live: false', async () => {
+    const { interruptFoundNoTurn } = await import('../../src/shared/provider-events')
+    expect(interruptFoundNoTurn({ live: false })).toBe(true)
+    expect(interruptFoundNoTurn({ live: true })).toBe(false)
+    // An older backend answers nothing: keep waiting for the closing event.
+    expect(interruptFoundNoTurn(undefined)).toBe(false)
+    expect(interruptFoundNoTurn(null)).toBe(false)
+  })
+})

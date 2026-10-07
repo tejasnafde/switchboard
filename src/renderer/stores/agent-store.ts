@@ -7,7 +7,7 @@ import {
 import type { AgentStatus, AgentType, ChatMessage } from '@shared/types'
 import type { ReasoningEffort } from '@shared/models'
 import { createRendererLogger } from '../logger'
-import { mergeLiveSessions, toAgentStatus, toAgentType } from './live-session-merge'
+import { mergeLiveSessions, settleSessionsNotLive, toAgentStatus, toAgentType } from './live-session-merge'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { PENDING_REQUEST_EVENT_TYPES, applyPendingRequestEvent, type PendingBlockingEvent } from '@shared/pending-requests'
 import type { RuntimeEvent } from '@shared/provider-events'
@@ -263,6 +263,8 @@ interface AgentStore {
    * no-ops and the chat reads as idle while it streams.
    */
   adoptLiveSessions: (live: LiveSessionSummary[], machineId?: string) => void
+  /** After a resume gap: idle the machine's working rows its backend no longer runs. `null` = the base backend. */
+  settleSessionsNotLive: (live: LiveSessionSummary[], machineId: string | null) => void
   appendMessage: (sessionId: string, message: ChatMessage) => void
   updateMessage: (sessionId: string, messageId: string, updates: Partial<ChatMessage>) => void
   removeMessage: (sessionId: string, messageId: string) => void
@@ -415,6 +417,12 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       }),
     })),
 
+  settleSessionsNotLive: (live, machineId) =>
+    set((state) => ({
+      sessions: settleSessionsNotLive(state.sessions, live, (s) =>
+        s.type !== 'terminal' && (machineId === null ? !s.machineId || s.machineId === 'local' : s.machineId === machineId)),
+    })),
+
   adoptLiveSessions: (live, machineId) =>
     set((state) => ({
       sessions: mergeLiveSessions<AgentSession>({
@@ -510,7 +518,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     })),
 
   trackQueuedTurnEvent: (event) => {
-    if (event.type !== 'turn.queued' && event.type !== 'turn.dequeued' && event.type !== 'status') return
+    if (event.type !== 'turn.queued' && event.type !== 'turn.dequeued' && event.type !== 'turn.queue-held' && event.type !== 'status') return
     set((state) => {
       let changed = false
       const sessions = state.sessions.map((s) => {

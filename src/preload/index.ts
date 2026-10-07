@@ -668,7 +668,7 @@ const api = {
     resolveUserTurn: (resolution: import('@shared/provider-events').UserTurnResolutionV1): Promise<import('@shared/provider-events').UserTurnResolutionResult> =>
       transport.invoke(ProviderChannels.RESOLVE_USER_TURN, resolution),
 
-    interrupt: (threadId: string) =>
+    interrupt: (threadId: string): Promise<import('@shared/provider-events').InterruptResult | undefined> =>
       transport.invoke(ProviderChannels.INTERRUPT, threadId),
 
     setRuntimeMode: (threadId: string, mode: RuntimeMode) =>
@@ -726,6 +726,9 @@ const api = {
     /** Take a queued message back before it runs. */
     cancelQueuedTurn: (threadId: string, messageId: string): Promise<import('@shared/turn-delivery').QueuedTurnActionResult> =>
       transport.invoke(ProviderChannels.CANCEL_QUEUED_TURN, threadId, messageId),
+    /** Start a queue held after a failed or usage-limited turn. */
+    resumeQueuedTurns: (threadId: string): Promise<{ ok: boolean; message?: string }> =>
+      transport.invoke(ProviderChannels.RESUME_QUEUED_TURNS, threadId),
 
     /**
      * Fetch the agent-defined slash commands/skills for a session
