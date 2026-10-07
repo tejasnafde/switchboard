@@ -1,0 +1,125 @@
+# One platform's release build, called by release.yml once per OS so the macOS
+# build can publish without waiting for the slower Windows one.
+name: Release build
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & publish (${{ inputs.os }})
+    runs-on: ${{ inputs.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # 22 (not 20) - `@electron/rebuild@4` and `node-abi@4` both
+          # require >=22.12.0. Node 20 emits EBADENGINE warnings and
+          # the CDN binary fetch flakes more often on the older runtime.
+          node-version: '22'
+          cache: 'npm'
+
+      # `npm ci` (NOT `npm install`) - deterministic, faster, and it
+      # honors optionalDependencies for the host platform automatically.
+      # Do NOT pass `--no-optional`; that's what makes the per-platform
+      # claude-agent-sdk binary install correctly.
+      #
+      # Retry on transient failures: the Electron download CDN (and the
+      # Claude SDK's per-platform tarball) occasionally 502s on the
+      # windows-latest runner. Three attempts with a short backoff is
+      # enough to ride out the typical hiccup without masking a real
+      # dependency error.
+      - name: Install dependencies
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 15
+          command: npm ci
+
+      # `npm run build` runs the test gate first, and the root vitest suite
+      # imports pure logic out of apps/mobile, whose tsconfig extends
+      # `expo/tsconfig.base`. Same reason ci.yml installs it - the build cannot
+      # transform those files without it.
+      - name: Install mobile dependencies
+        run: npm ci --prefix apps/mobile
+
+      # The version comes from the tag, so main needs no version-bump PR. A
+      # manual dispatch keeps package.json as it is.
+      - name: Set the version from the tag
+        if: github.event_name == 'push'
+        shell: bash
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+
+      # Typecheck and tests already passed on this commit (main CI or the Gate),
+      # so the build skips them and keeps the packaged-app smoke test.
+      - name: Build renderer + main
+        run: npm run build:ci
+        env:
+          SB_SMOKE_CRASH_DIR: ${{ runner.temp }}/smoke-dumps
+
+      - name: Upload smoke-test minidumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-dumps-${{ inputs.os }}
+          path: ${{ runner.temp }}/smoke-dumps
+          if-no-files-found: ignore
+
+      - name: Select macOS signing mode
+        if: runner.os == 'macOS'
+        id: signing_mac
+        run: node scripts/signing-mode.mjs mac
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Select Windows signing mode
+        if: runner.os == 'Windows'
+        id: signing_windows
+        run: node scripts/signing-mode.mjs windows
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      # `--publish always` makes electron-builder upload artifacts to the
+      # prepared GitHub draft matching the current tag. The two platform builds can
+      # upload to that stable target concurrently with name-based dedup.
+      # GH_TOKEN is needed to write to the Release.
+      # Tag push publishes to the Release; a manual dispatch only builds
+      # (validation), so it never uploads assets to any Release.
+      - name: Build & publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$SB_SIGNING_MODE" = "signed" ]; then
+            npx electron-builder --config electron-builder.signed.yml --publish "$PUBLISH_MODE"
+          else
+            npx electron-builder --publish "$PUBLISH_MODE"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISH_MODE: ${{ github.event_name == 'workflow_dispatch' && 'never' || 'always' }}
+          SB_SIGNING_MODE: ${{ steps.signing_mac.outputs.mode || steps.signing_windows.outputs.mode }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ (steps.signing_mac.outputs.mode == 'signed' || steps.signing_windows.outputs.mode == 'signed') && 'true' || 'false' }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+

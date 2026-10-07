@@ -69,7 +69,7 @@ describe('release signing mode', () => {
   })
 
   it('keeps release packaging compatible with the macOS Bash 3.2 runner', () => {
-    const workflow = readFileSync('.github/workflows/release.yml', 'utf8')
+    const workflow = readFileSync('.github/workflows/release-build.yml', 'utf8')
 
     expect(workflow).not.toContain('config=()')
     expect(workflow).not.toContain('${config[@]}')

@@ -4,6 +4,12 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Changed
+- **Faster desktop releases.** A release is a tag on `main`; the build takes its version from the tag, so there is no version-bump pull request (which also spent CodeRabbit's hourly review). The release skips its test Gate when main CI already passed on that commit, does not run the test suite a third time inside the build, and publishes as soon as the macOS build is verified; Windows follows on its own. About 10 to 12 minutes from merge to a published release instead of about 30. `docs/releasing.md` describes the new flow and adds a note on pull request sizing.
+
+### Fixed
+- **The loading spinner moves, and a new chat keeps the profile you picked.** The "Loading conversation..." spinner was frozen because Tailwind's `animate-spin` had no animation defined (the app uses no default Tailwind theme); a test now fails for any `animate-*` utility without one. A profile chosen in a new chat's composer was dropped when the chat was created, because the picker tried to save it to a conversation that did not exist yet; a draft now keeps the choice until the chat is made.
+
 ### Fixed
 - **Phone chats load in pages and keep live messages visible.** Android and Expo clients use 200-row history windows and fetch older rows on scroll when the backend advertises `history_window_v1`. Clean replay resumes retain the live cache and refreshes leave messages on screen. A return after a short absence probes the connection; after 10 s or more it reconnects, as before. An IAP tunnel to a host without `heartbeat_v1` is handed to connect() instead of being probed. Older phones and desktops retain the existing load contract. Native Android needs an APK release; this change bumps it to 0.5.16 (versionCode 18). See `docs/feature-parity/phone-thread-load.json`.
 - **A reopened chat can no longer show an old copy of its transcript.** The chat history cache trusted file size and times, which miss a same-size rewrite that keeps the old modification time (the Windows release build caught it). A cache hit now also checks a hash of the file, which costs about 60 ms for an 80 MB transcript and still skips the parse.
