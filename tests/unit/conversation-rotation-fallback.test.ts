@@ -19,6 +19,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
+const savedMessages: Array<{ id: string; conversationId: string; content: string; timestamp: number }> = []
 const threadSessions = new Map<string, string>() // claude_session_id -> thread_id
 const conversations = new Map<string, {
   agent_type?: string
@@ -42,9 +43,16 @@ vi.mock('better-sqlite3', () => {
   class FakeDb {
     pragma() {}
     exec() {}
+    transaction<A extends unknown[], R>(fn: (...args: A) => R) {
+      return (...args: A) => fn(...args)
+    }
     prepare(sql: string) {
       return {
         get: (...args: unknown[]) => {
+          if (/SELECT agent_type, pending_handoff_from FROM conversations WHERE id = \?/.test(sql)) {
+            const row = conversations.get(args[0] as string)
+            return row ? { agent_type: row.agent_type ?? null, pending_handoff_from: row.pending_handoff_from ?? null } : undefined
+          }
           if (/SELECT \* FROM conversations WHERE id = \?/.test(sql)) {
             return conversations.get(args[0] as string)
           }
@@ -108,6 +116,11 @@ vi.mock('better-sqlite3', () => {
           return undefined
         },
         run: (...args: unknown[]) => {
+          if (/INSERT OR IGNORE INTO messages/.test(sql)) {
+            const [id, conversationId, content, timestamp] = args as [string, string, string, number]
+            savedMessages.push({ id, conversationId, content, timestamp })
+            return { changes: 1 }
+          }
           // Real `UPDATE ... WHERE id = ?` is a no-op against a row that
           // doesn't exist yet - it must not insert one, or this fake would
           // hide a write silently landing on a nonexistent resolved-root row.
@@ -249,6 +262,7 @@ const {
   getConversationPendingHandoff,
   setConversationPendingHandoff,
   setConversationProviderSelection,
+  switchConversationAgent,
   updateConversationTitle,
   getConversationFollowSuggestions,
   setConversationFollowSuggestions,
@@ -261,6 +275,7 @@ const {
 beforeEach(() => {
   threadSessions.clear()
   conversations.clear()
+  savedMessages.length = 0
 })
 
 describe('provider instance survives Claude session-id rotation', () => {
@@ -323,6 +338,38 @@ describe('atomic conversation provider selection', () => {
     expect(setConversationProviderSelection('agent_123', 'codex', 'codex-default')).toEqual({ model: 'gpt-5.5', reasoningEffort: 'high' })
     expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'codex', model: 'gpt-5.5', reasoning_effort: 'high' })
     expect(setConversationProviderSelection('agent_123', 'claude-code', 'claude-work')).toEqual({ model: 'claude-opus-4', reasoningEffort: 'low' })
+  })
+})
+
+describe('agent switch commits selection, marker and pending handoff together', () => {
+  it('writes the marker and schedules the handoff from the previous agent', () => {
+    conversations.set('agent_123', { agent_type: 'claude-code', provider_instance_id: 'claude-work' })
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    const result = switchConversationAgent('uuid-abc', 'codex', 'codex-default', { hasHistory: true, markerId: 'agentswap_1' })
+
+    expect(result).toMatchObject({ pendingHandoffFrom: 'claude-code', marker: { id: 'agentswap_1', content: '[[sb:agent-switched]] Claude Code → Codex' } })
+    expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'codex', pending_handoff_from: 'claude-code' })
+    expect(savedMessages).toEqual([expect.objectContaining({ id: 'agentswap_1', conversationId: 'agent_123' })])
+  })
+
+  it('switching back to the pending source clears the handoff', () => {
+    conversations.set('agent_123', { agent_type: 'codex', pending_handoff_from: 'claude-code' })
+
+    const result = switchConversationAgent('agent_123', 'claude-code', 'claude-work', { hasHistory: true, markerId: 'agentswap_2' })
+
+    expect(result.pendingHandoffFrom).toBeNull()
+    expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'claude-code', pending_handoff_from: null })
+  })
+
+  it('writes no marker and schedules nothing without history', () => {
+    conversations.set('agent_123', { agent_type: 'claude-code' })
+
+    const result = switchConversationAgent('agent_123', 'codex', 'codex-default', { hasHistory: false, markerId: 'agentswap_3' })
+
+    expect(result.marker).toBeUndefined()
+    expect(result.pendingHandoffFrom).toBeNull()
+    expect(savedMessages).toEqual([])
   })
 })
 

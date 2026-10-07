@@ -48,6 +48,11 @@ object ThreadEventDecoder {
                 },
                 raw.string("origin"), raw.requiredLong("at"),
                 decodeMessagePills(raw.values["pillsMeta"]),
+                (raw.values["handoffMarker"] as? JsonObject)?.let { marker ->
+                    val id = marker.string("id")
+                    val text = marker.string("text")
+                    if (id != null && text != null) ThreadEventPayload.HandoffMarker(id, text) else null
+                },
             )
             "tool.started" -> ThreadEventKind.ToolStarted to ThreadEventPayload.ToolStarted(
                 raw.requiredString("toolId"), raw.requiredString("toolName"), raw.required("input"),

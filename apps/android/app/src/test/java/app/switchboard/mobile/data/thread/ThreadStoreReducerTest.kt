@@ -119,6 +119,30 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun userMessageHandoffMarkerBecomesOneNoticeRowBeforeTheTurn() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val raw = event(
+            "user.message",
+            "text" to s("Conversation so far:\nuser: q\n\nnext"),
+            "displayBody" to s("next"),
+            "origin" to s("o1"),
+            "at" to n(2),
+            "handoffMarker" to obj(
+                "id" to s("handoff_o1"),
+                "text" to s("[[sb:context-handoff]] Claude Code → Codex"),
+            ),
+        )
+        state = ingest(state, "mac-a", 1, 1, raw)
+        state = ingest(state, "mac-a", 1, 2, raw)
+
+        val feed = state.thread("mac-a", "thread-1")!!.feed
+        assertEquals(listOf("h-handoff_o1", "remote_o1"), feed.map { it.id })
+        val notice = feed.first() as FeedItem.RawNotice
+        assertEquals(SystemMarkers.ROW_EVENT_TYPE, notice.eventType)
+        assertEquals("[[sb:context-handoff]] Claude Code → Codex", notice.text)
+    }
+
+    @Test
     fun queuedMessageEventsStayOutOfTheFeedAndACancelRemovesTheBubble() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         state = ingest(state, "mac-a", 1, 1, event("user.message", "text" to s("later"), "origin" to s("q"), "at" to n(1)))

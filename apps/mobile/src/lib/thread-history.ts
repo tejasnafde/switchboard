@@ -55,11 +55,7 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
       continue
     }
     if (message.role === 'system') {
-      const view = systemRowView(message.content)
-      const id = `h-${message.id}`
-      if (view.kind === 'peer-undelivered') items.push({ kind: 'undelivered', id, messageId: message.id, row: view.row })
-      else if (view.kind === 'error') items.push({ kind: 'error', id, message: view.message })
-      else items.push({ kind: 'notice', id, text: view.body ? `${view.title}: ${view.body}` : view.title })
+      items.push(systemRowItem(message.id, message.content))
       continue
     }
     if (message.content.trim()) {
@@ -84,6 +80,15 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
     }
   }
   return items
+}
+
+/** A stored system row as a feed item; a live event for the same row uses the same id. */
+export function systemRowItem(messageId: string, content: string): FeedItem {
+  const view = systemRowView(content)
+  const id = `h-${messageId}`
+  if (view.kind === 'peer-undelivered') return { kind: 'undelivered', id, messageId, row: view.row }
+  if (view.kind === 'error') return { kind: 'error', id, message: view.message }
+  return { kind: 'notice', id, text: view.body ? `${view.title}: ${view.body}` : view.title }
 }
 
 function historyItemIdentity(item: FeedItem): string {

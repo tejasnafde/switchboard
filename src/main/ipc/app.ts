@@ -53,6 +53,7 @@ import {
   setConversationProviderSelection,
   getConversationPendingHandoff,
   setConversationPendingHandoff,
+  switchConversationAgent,
   listSessionIdsForThread,
   resolveRootThreadId,
   recordThreadSession,
@@ -620,20 +621,27 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     setConversationReasoningEffort(id, effort)
     return { ok: true }
   })
+  // With `agentSwitch`, the switch marker and the pending handoff commit in
+  // the same transaction, and the answer carries `pendingHandoffFrom`. An
+  // older backend ignores the 4th argument, which is how a client tells.
   host.handle(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, (
     id: string,
     agentType: string,
     instanceId: string,
+    agentSwitch?: { hasHistory: boolean; markerId: string },
   ) => {
+    if (agentSwitch && typeof agentSwitch.markerId === 'string' && agentSwitch.markerId) {
+      return { ok: true, ...switchConversationAgent(id, agentType, instanceId, { hasHistory: agentSwitch.hasHistory === true, markerId: agentSwitch.markerId }) }
+    }
     return { ok: true, ...setConversationProviderSelection(id, agentType, instanceId) }
   })
 
-  // Pending cross-provider context handoff. Scheduled by an agent switch
-  // (ChatPanel) or a transcript-handoff fork; the chat panel
-  // consumes it on the next send by prefixing the transcript preamble, then
-  // clears it so a reload cannot re-inject.
+  // Pending cross-provider context handoff. Scheduled by an agent switch or a
+  // transcript-handoff fork, built by the backend into the next accepted turn
+  // and cleared in the same transaction. `backendBuilds` tells a client not to
+  // build one itself; an older backend leaves that to the client.
   host.handle(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, (id: string) => {
-    return { from: getConversationPendingHandoff(id) }
+    return { from: getConversationPendingHandoff(id), backendBuilds: true }
   })
   host.handle(AppChannels.SET_CONVERSATION_PENDING_HANDOFF, (id: string, from: string | null) => {
     setConversationPendingHandoff(id, from)

@@ -319,6 +319,13 @@ export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
              SET pending_handoff_from = NULL
            WHERE id = ? AND pending_handoff_from = ?
         `).run(key.threadId, turn.handoff.expectedFrom)
+        // A backend-built handoff is not in the client's envelope; the
+        // canonical echo reads its marker from there.
+        db.prepare(`
+          UPDATE mobile_turn_acceptances
+             SET envelope_json = json_set(COALESCE(envelope_json, '{}'), '$.handoff', json(?))
+           WHERE client_scope = ? AND thread_id = ? AND origin = ?
+        `).run(JSON.stringify(turn.handoff), key.clientScope, key.threadId, key.origin)
       }
 
       let conversationTitle: string | undefined

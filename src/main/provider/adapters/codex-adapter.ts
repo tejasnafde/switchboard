@@ -7,6 +7,7 @@
 
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
+import { withVisibleHistory, type VisibleHistoryState } from '../visible-history'
 import { takeTurnDuration } from '../turn-duration'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process'
 import { inferModelTier } from '@shared/models'
@@ -213,7 +214,7 @@ interface McpElicitationField {
   type: 'string' | 'boolean' | 'number' | 'integer' | 'array'
 }
 
-interface ActiveSession {
+interface ActiveSession extends VisibleHistoryState {
   session: ProviderSession
   child: ChildProcessWithoutNullStreams | null
   onEvent: (event: RuntimeEvent) => void
@@ -663,6 +664,7 @@ export class CodexAdapter implements ProviderAdapter {
       session,
       child: null,
       onEvent,
+      portableHistory: opts.portableHistory,
       nextRpcId: 1,
       pendingRpcs: new Map(),
       pendingApprovals: new Map(),
@@ -791,10 +793,11 @@ export class CodexAdapter implements ProviderAdapter {
           if (!isMissingThreadError(err)) throw err
           active.threadId = null
           session.sessionId = undefined
+          active.needsVisibleHistory = true
           onEvent({
             type: 'error',
             threadId: opts.threadId,
-            message: `Could not resume Codex thread ${resumeThreadId}; the next turn will start a new thread. ${err instanceof Error ? err.message : String(err)}`,
+            message: `Could not resume Codex thread ${resumeThreadId}; the next turn starts a new thread with the visible conversation as context. ${err instanceof Error ? err.message : String(err)}`,
           })
         }
       }
@@ -893,6 +896,7 @@ export class CodexAdapter implements ProviderAdapter {
     if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
       active.session.runtimeMode = runtimeMode
     }
+    message = await withVisibleHistory(active, threadId, message)
 
     // A model chosen before the live catalog existed - a persisted picker
     // value, or the static list's default - must not go on being sent once
@@ -1279,6 +1283,10 @@ export class CodexAdapter implements ProviderAdapter {
 
   runtimeModeOf(threadId: string): RuntimeMode | undefined {
     return this.sessions.get(threadId)?.session.runtimeMode
+  }
+
+  resumedNativeSession(threadId: string): boolean {
+    return Boolean(this.sessions.get(threadId)?.threadId)
   }
 
   async setRuntimeMode(threadId: string, mode: import('../types').RuntimeMode): Promise<void> {

@@ -183,6 +183,25 @@ describe('user.message echo', () => {
     expect(users).toHaveLength(1)
   })
 
+  it('shows the backend handoff marker before the turn, once, for its own send too', () => {
+    const origin = 'm-789'
+    useChatStore.getState().addUserMessage(KEY, 'next', undefined, echoMessageId(origin))
+    const event = {
+      type: 'user.message' as const,
+      threadId: 't1',
+      text: 'Conversation so far:\nuser: q\n\nRespond to the latest user message, using the conversation above as context.\n\nnext',
+      displayBody: 'next',
+      origin,
+      at: 2,
+      handoffMarker: { id: `handoff_${origin}`, text: '[[sb:context-handoff]] Claude Code → Codex' },
+    }
+    useChatStore.getState().ingestNow('c1', event)
+    useChatStore.getState().ingestNow('c1', event)
+    const items = useChatStore.getState().threads[KEY].items
+    expect(items.map((i) => i.kind)).toEqual(['notice', 'user'])
+    expect(items[0]).toMatchObject({ id: `h-handoff_${origin}`, text: 'Context handoff: Claude Code → Codex' })
+  })
+
   it('is idempotent if the echo arrives twice', () => {
     const origin = 'm-456'
     const event = { type: 'user.message' as const, threadId: 't1', text: 'hi', origin, at: 1 }

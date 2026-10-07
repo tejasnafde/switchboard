@@ -242,11 +242,21 @@ const api = {
       id: string,
       agentType: AgentProvider,
       instanceId: string,
+      // With it, the backend commits the switch marker and pending handoff in
+      // the same transaction; `pendingHandoffFrom` in the answer confirms it.
+      agentSwitch?: { hasHistory: boolean; markerId: string },
       // `model` / `reasoningEffort` are what the chat last used on this
       // provider; absent from a backend older than per-provider memory.
-    ): Promise<{ ok: boolean; model?: string | null; reasoningEffort?: 'low' | 'medium' | 'high' | null }> =>
-      transport.invoke(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, id, agentType, instanceId),
-    getConversationPendingHandoff: (id: string): Promise<{ from: string | null }> =>
+    ): Promise<{
+      ok: boolean
+      model?: string | null
+      reasoningEffort?: 'low' | 'medium' | 'high' | null
+      pendingHandoffFrom?: string | null
+      marker?: { id: string; content: string; timestamp: number }
+    }> =>
+      transport.invoke(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, id, agentType, instanceId, ...(agentSwitch ? [agentSwitch] : [])),
+    // `backendBuilds`: the backend adds the handoff to the next turn itself.
+    getConversationPendingHandoff: (id: string): Promise<{ from: string | null; backendBuilds?: boolean }> =>
       transport.invoke(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, id),
     setConversationPendingHandoff: (id: string, from: string | null): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_PENDING_HANDOFF, id, from),

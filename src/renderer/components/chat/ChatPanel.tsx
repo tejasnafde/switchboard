@@ -10,8 +10,8 @@ import { useTerminalStore } from '../../stores/terminal-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useMachineStore } from '../../stores/machine-store'
-import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from '@shared/rotation-marker'
-import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
+import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX } from '@shared/rotation-marker'
+import { isHandoffSource, nextPendingHandoffFrom, planTurnHandoff } from '@shared/handoff'
 import { parseSendTo, resolveSendToTarget } from './send-to-command'
 import { parseLinkCommand, resolveLinkTarget } from './link-command'
 import { reduceProviderEvent, upsertAssistantContent } from './provider-event-reducer'
@@ -67,7 +67,7 @@ import {
 import { fitImageToBudget } from '../../services/image-downscale'
 import { imageRefusalMessage, MESSAGE_IMAGE_WIRE_BUDGET } from '@shared/image-resize'
 import { InPaneSearchBar } from '../InPaneSearchBar'
-import { defaultInstanceId, agentLabel, type AgentType, type ChatMessage } from '@shared/types'
+import { defaultInstanceId, agentLabel, type AgentProvider, type AgentType, type ChatMessage } from '@shared/types'
 import { defaultInstanceSettingKey } from '@shared/session-defaults'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useFollowUpDefault } from '../../services/effective-settings'
@@ -291,50 +291,56 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     const switchSpan = perfSpan('provider.switch.action', { thread: sessionId, kind: 'agent', from: prevType, to: t })
     try {
     // Persist first so a failed write cannot leave the picker and DB on
-    // different providers.
+    // different providers. The backend commits the switch marker and the
+    // pending context handoff in the same transaction; an older one answers
+    // without `pendingHandoffFrom` and the two are written below instead.
+    const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
+    const markerId = `agentswap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     let restored: Awaited<ReturnType<typeof window.api.app.setConversationProviderSelection>>
     try {
-      restored = await window.api.app.setConversationProviderSelection(sessionId, t, defaultInstanceId(t))
+      restored = await window.api.app.setConversationProviderSelection(sessionId, t, defaultInstanceId(t), { hasHistory: hasPriorMessages, markerId })
     } catch (err) {
       setAgentType(prevType)
       log.warn('failed to persist provider selection', err)
       useChatWaitStore.getState().fail(sessionId, `Could not switch provider: ${err instanceof Error ? err.message : String(err)}`)
       return
     }
-    // Persisted in-chat marker: an agent swap silently drops all context
-    // (the new adapter starts cold), so make the switch - and its cost -
-    // visible and auditable, mirroring the instance-rotation marker below.
-    const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
-    if (hasPriorMessages && prevType !== t) {
-      const marker: ChatMessage = {
-        id: `agentswap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        role: 'system',
-        content: `${AGENT_SWITCH_MARKER_PREFIX} ${agentLabel(prevType)} → ${agentLabel(t)}`,
-        timestamp: Date.now(),
+    if ('pendingHandoffFrom' in restored) {
+      if (restored.marker) {
+        appendMessage(sessionId, { id: restored.marker.id, role: 'system', content: restored.marker.content, timestamp: restored.marker.timestamp })
       }
-      appendMessage(sessionId, marker)
-      window.api.app.saveMessage({
-        id: marker.id,
-        conversationId: sessionId,
-        role: marker.role,
-        content: marker.content,
-      }).catch((err) => {
-        log.warn(`failed to persist agent-swap marker for ${sessionId}`, err)
-      })
-    }
-    // Schedule the cross-provider context handoff: the new adapter starts
-    // cold, so the next send replays the transcript as a preamble (see
-    // handleSend). Folded through the persisted flag so a chain of switches
-    // keeps the ORIGINAL source, and switching back to it clears the flag
-    // (that provider resumes its own native context).
-    try {
-      const { from: existing } = await window.api.app.getConversationPendingHandoff(sessionId)
-      const next = nextPendingHandoffFrom(existing, prevType, t, hasPriorMessages)
-      if (next !== existing) {
-        await window.api.app.setConversationPendingHandoff(sessionId, next)
+    } else {
+      // Persisted in-chat marker: an agent swap starts the new adapter cold,
+      // so make the switch - and its cost - visible and auditable.
+      if (hasPriorMessages && prevType !== t) {
+        const marker: ChatMessage = {
+          id: markerId,
+          role: 'system',
+          content: `${AGENT_SWITCH_MARKER_PREFIX} ${agentLabel(prevType)} → ${agentLabel(t)}`,
+          timestamp: Date.now(),
+        }
+        appendMessage(sessionId, marker)
+        window.api.app.saveMessage({
+          id: marker.id,
+          conversationId: sessionId,
+          role: marker.role,
+          content: marker.content,
+        }).catch((err) => {
+          log.warn(`failed to persist agent-swap marker for ${sessionId}`, err)
+        })
       }
-    } catch (err) {
-      log.warn('failed to schedule context handoff', err)
+      // Folded through the persisted flag so a chain of switches keeps the
+      // ORIGINAL source, and switching back to it clears the flag (that
+      // provider resumes its own native context).
+      try {
+        const { from: existing } = await window.api.app.getConversationPendingHandoff(sessionId)
+        const next = nextPendingHandoffFrom(existing, prevType, t, hasPriorMessages)
+        if (next !== existing) {
+          await window.api.app.setConversationPendingHandoff(sessionId, next)
+        }
+      } catch (err) {
+        log.warn('failed to schedule context handoff', err)
+      }
     }
     // Write-through to the store so other consumers (StatusBar, sidebar
     // session badges, command-palette filters) see the new agent type
@@ -859,38 +865,27 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       // Cross-provider context handoff. A pending flag - set by an agent
       // switch over existing history, or by a degraded Codex / OpenCode
       // fork - means the current adapter has never seen the visible
-      // transcript. Prefix this turn's wire message with the transcript
-      // preamble. The backend clears the flag in the acceptance transaction.
+      // transcript. The backend prefixes this turn with it and clears the
+      // flag in the acceptance transaction; an older backend
+      // (`backendBuilds` absent) leaves the prefixing to this client.
       let wireMessage = message
       let pendingHandoffFrom: string | null = null
       let handoff: UserTurnSubmissionV1['handoff']
       try {
-        pendingHandoffFrom = (await window.api.app.getConversationPendingHandoff(sessionId)).from
+        const pending = await window.api.app.getConversationPendingHandoff(sessionId)
+        if (!pending.backendBuilds) pendingHandoffFrom = pending.from
       } catch (err) {
         log.warn('pending-handoff read failed, sending without preamble', err)
       }
-      if (pendingHandoffFrom) {
+      if (pendingHandoffFrom && isHandoffSource(pendingHandoffFrom)) {
         // Live read - the closure's `messages` lags in-place streamed edits.
         const history = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.messages ?? []
         const handoffSpan = perfSpan('handoff.build', { thread: sessionId, messages: history.length })
-        const preamble = buildHandoffPreamble(history)
-        handoffSpan.end({ characters: preamble?.length ?? 0 })
-        if (preamble) {
-          wireMessage = `${preamble}\n\n${message}`
-          const handoffFrom = pendingHandoffFrom as NonNullable<UserTurnSubmissionV1['handoff']>['expectedFrom']
-          const markerText = handoffFrom === agentType
-            ? `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(agentType)} profile restarted with visible history`
-            : `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(handoffFrom)} → ${agentLabel(agentType)}`
-          if (handoffFrom === 'claude-code'
-            || handoffFrom === 'codex'
-            || handoffFrom === 'opencode'
-            || handoffFrom === 'cursor') {
-            handoff = {
-              expectedFrom: handoffFrom,
-              markerId: '',
-              markerText,
-            }
-          }
+        const plan = planTurnHandoff({ messages: history, pendingFrom: pendingHandoffFrom, target: agentType as AgentProvider, resumedNatively: false })
+        handoffSpan.end({ characters: plan.preamble?.length ?? 0 })
+        if (plan.preamble) {
+          wireMessage = `${plan.preamble}\n\n${message}`
+          handoff = { expectedFrom: pendingHandoffFrom, markerId: '', markerText: plan.markerText }
         }
       }
       const handoffInjected = wireMessage !== message

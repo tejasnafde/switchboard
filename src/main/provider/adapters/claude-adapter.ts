@@ -11,6 +11,7 @@
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
+import { withHandoffPreamble } from '@shared/handoff'
 import { execSync, execFile } from 'child_process'
 import { randomUUID } from 'crypto'
 import { inferModelTier } from '@shared/models'
@@ -672,6 +673,20 @@ interface ActiveSession {
   stderrTail: StderrTail
   /** Consecutive turns `resolveResumePlacement` has tolerated a sibling io-error for; see MAX_ALTERNATE_IO_RETRIES. */
   resumeAlternateIoErrorStreak: number
+  /** The visible conversation, for a session whose resume failed (see SessionStartOpts). */
+  portableHistory?: () => Promise<string | null>
+}
+
+/** Put `preamble` in front of the text of a user message the CLI has not read yet. */
+export function prefixUserMessage(message: SDKUserMessage, preamble: string): void {
+  const content = message.message.content
+  if (typeof content === 'string') {
+    message.message.content = withHandoffPreamble(content, preamble)
+    return
+  }
+  const text = content.find((block) => block.type === 'text')
+  if (text && text.type === 'text') text.text = withHandoffPreamble(text.text, preamble)
+  else content.push({ type: 'text', text: preamble })
 }
 
 export class ClaudeAdapter implements ProviderAdapter {
@@ -693,6 +708,21 @@ export class ClaudeAdapter implements ProviderAdapter {
 
   runtimeModeOf(threadId: string): RuntimeMode | undefined {
     return this.sessions.get(threadId)?.session.runtimeMode
+  }
+
+  resumedNativeSession(threadId: string): boolean {
+    return Boolean(this.sessions.get(threadId)?.session.sessionId)
+  }
+
+  /** The resume failed and the CLI starts fresh: `message` carries the visible conversation. */
+  private async handOverVisibleHistory(threadId: string, active: ActiveSession, message: SDKUserMessage | undefined): Promise<void> {
+    if (!message || !active.portableHistory) return
+    try {
+      const preamble = await active.portableHistory()
+      if (preamble) prefixUserMessage(message, preamble)
+    } catch (err) {
+      log.warn(`could not load the visible conversation for ${threadId}; the new session starts without it`, err)
+    }
   }
 
   async isAvailable(): Promise<boolean> {
@@ -772,6 +802,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       watchdog,
       stderrTail,
       resumeAlternateIoErrorStreak: 0,
+      portableHistory: opts.portableHistory,
     }
 
     this.sessions.set(opts.threadId, active)
@@ -1074,12 +1105,15 @@ export class ClaudeAdapter implements ProviderAdapter {
           messageId: `sys_migrate_${Date.now()}`,
           text:
             placed.reason === 'source-missing'
-              ? '(No Claude transcript found for this conversation in any known profile. Starting a fresh session - your messages here are unaffected.)'
+              ? '(No Claude transcript found for this conversation in any known profile. Starting a fresh session with the visible conversation as context.)'
               : `(Couldn't move session history into place: ${placed.detail}. Retrying may fix it.)`,
           streamKind: 'reasoning',
         })
         // io-error is transient (ENOSPC, TCC); clearing the id is permanent.
-        if (placed.reason === 'source-missing') active.session.sessionId = undefined
+        if (placed.reason === 'source-missing') {
+          active.session.sessionId = undefined
+          await this.handOverVisibleHistory(threadId, active, active.prompt.pendingMessages()[0])
+        }
       }
     }
 
@@ -1198,13 +1232,15 @@ export class ClaudeAdapter implements ProviderAdapter {
         // answer (this turn's, a steer, a queued one) goes to the new session,
         // or it is stored as sent and the agent never reads it.
         const unanswered = active.prompt.pendingMessages()
+        await this.handOverVisibleHistory(threadId, active, unanswered[0])
+        if (this.sessions.get(threadId) !== active) return
         active.prompt = new PromptQueue()
         for (const message of unanswered) active.prompt.push(message)
         active.onEvent({
           type: 'content',
           threadId,
           messageId: `sys_retry_${Date.now()}`,
-          text: '(Retrying as new session - could not resume imported conversation)',
+          text: '(Could not resume the earlier session. Retrying as a new session with the visible conversation as context.)',
           streamKind: 'reasoning',
         })
 
