@@ -53,6 +53,14 @@ class ChatVisualsFixturesTest {
         assertEquals("x\ts\na\t1\nb\t2.5", ChatVisuals.chartDataText(parsed.spec))
     }
 
+    @Test
+    fun numbersAreWrittenAsJavaScriptWritesThem() {
+        mapOf(
+            3800.0 to "3800", 2.5 to "2.5", 0.1 to "0.1", -0.0 to "0", 1e-7 to "1e-7", 1.5e21 to "1.5e+21",
+            1.2345678901234568e20 to "123456789012345680000", 1e21 to "1e+21", -2.5e-8 to "-2.5e-8",
+        ).forEach { (value, js) -> assertEquals(js, ChatVisuals.formatNumber(value)) }
+    }
+
     private fun spec(value: JsonObject) = ChartSpec(
         type = value.str("type"),
         labels = (value.values.getValue("labels") as JsonArray).values.map { (it as JsonString).value },

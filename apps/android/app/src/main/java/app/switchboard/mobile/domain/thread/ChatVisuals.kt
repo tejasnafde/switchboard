@@ -121,9 +121,18 @@ object ChatVisuals {
         return (listOf(header) + rows).joinToString("\n")
     }
 
-    /** JavaScript's String(number) for the values a chart holds. */
-    fun formatNumber(value: Double): String =
-        if (value == Math.floor(value) && Math.abs(value) < 1e15) value.toLong().toString() else value.toString()
+    /** JavaScript's String(number): plain digits in [1e-6, 1e21), else "1.5e+21" / "1e-7". */
+    fun formatNumber(value: Double): String {
+        if (value == 0.0) return "0"
+        // Double.toString is the shortest round-trip digits, as JavaScript uses.
+        val shortest = java.math.BigDecimal(value.toString())
+        val abs = Math.abs(value)
+        if (abs >= 1e-6 && abs < 1e21) return shortest.stripTrailingZeros().toPlainString()
+        val (mantissa, exponent) = value.toString().split('E')
+        val digits = mantissa.removeSuffix(".0")
+        val exp = exponent.toInt()
+        return "${digits}e${if (exp > 0) "+" else ""}$exp"
+    }
 
     private class InvalidChart(message: String) : Exception(message)
 

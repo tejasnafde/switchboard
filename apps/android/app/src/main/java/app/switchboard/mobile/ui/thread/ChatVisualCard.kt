@@ -25,6 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -131,7 +132,7 @@ fun ChatVisualCard(kind: VisualKind, source: String) {
     val scope = rememberCoroutineScope()
     val cacheKey = "${kind.wire}\n$source"
     val chart = remember(kind, source) { if (kind == VisualKind.CHART) ChatVisuals.parseChartSpec(source) else null }
-    var state by remember(cacheKey) { mutableStateOf<VisualState>(drawnCache[cacheKey] ?: VisualState.Drawing) }
+    var state by remember(cacheKey) { mutableStateOf<VisualState>(synchronized(drawnCache) { drawnCache[cacheKey] } ?: VisualState.Drawing) }
     var html by remember { mutableStateOf(hostHtml) }
     var showSource by remember { mutableStateOf(false) }
     val invalid = (chart as? ChartParse.Invalid)?.error ?: (state as? VisualState.Failed)?.error
@@ -191,18 +192,21 @@ fun ChatVisualCard(kind: VisualKind, source: String) {
             Text("Drawing ${noun.lowercase()}...", color = TextDim, fontSize = 12.sp, modifier = Modifier.padding(10.dp))
         } else {
             val height = (state as? VisualState.Drawn)?.heightDp ?: 160
-            AndroidView(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(height.dp),
-                factory = { viewContext ->
-                    visualWebView(viewContext, page, requestJson(kind, source)) { answer ->
-                        if (answer is VisualState.Drawn) drawnCache[cacheKey] = answer
-                        state = answer
-                    }
-                },
-                onRelease = { it.destroy() },
-            )
+            // A different visual gets a fresh WebView, never the old one's request.
+            key(cacheKey) {
+                AndroidView(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(height.dp),
+                    factory = { viewContext ->
+                        visualWebView(viewContext, page, requestJson(kind, source)) { answer ->
+                            if (answer is VisualState.Drawn) synchronized(drawnCache) { drawnCache[cacheKey] = answer }
+                            state = answer
+                        }
+                    },
+                    onRelease = { it.destroy() },
+                )
+            }
         }
     }
 }

@@ -37,6 +37,8 @@ function cachedDiagram(source: string, themeKey: string): Promise<DiagramResult>
   if (!hit) {
     hit = renderDiagram(source, diagramTheme())
     diagramCache.set(key, hit)
+    // A rejected render is not kept, so the next view tries again.
+    hit.catch(() => diagramCache.delete(key))
     if (diagramCache.size > CACHE_LIMIT) diagramCache.delete(diagramCache.keys().next().value as string)
   }
   return hit
