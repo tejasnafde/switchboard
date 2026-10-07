@@ -10,10 +10,10 @@ function setup() {
   const db = new Database(':memory:')
   db.exec(`
     CREATE TABLE conversations (id TEXT PRIMARY KEY);
-    CREATE TABLE messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', timestamp INTEGER NOT NULL);
+    CREATE TABLE messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', images TEXT, timestamp INTEGER NOT NULL);
     INSERT INTO conversations VALUES ('chat');
-    INSERT INTO messages VALUES ('remote_q1', 'chat', 'user', 'run the tests', 10);
-    INSERT INTO messages VALUES ('remote_q2', 'chat', 'user', 'then deploy', 11);
+    INSERT INTO messages VALUES ('remote_q1', 'chat', 'user', 'run the tests', NULL, 10);
+    INSERT INTO messages VALUES ('remote_q2', 'chat', 'user', 'then deploy', NULL, 11);
   `)
   ensureQueuedTurnRowsSchema(db)
   ensureQueuedTurnRowsSchema(db)
@@ -36,6 +36,14 @@ describe('sqliteQueuedTurnRowStore', () => {
     expect(notSent!.content.endsWith('run the tests')).toBe(true)
     // Only once.
     expect(store.markNotSent('remote_q1', 'stopped')).toBeNull()
+  })
+
+  it('keeps the images of a dropped message on its error row', () => {
+    const { db, store } = setup()
+    db.prepare("UPDATE messages SET images = ? WHERE id = 'remote_q1'").run('["data:image/png;base64,AAAA"]')
+    store.record({ messageId: 'remote_q1', conversationId: 'chat', text: 'run the tests', queuedAt: 10 })
+    store.markNotSent('remote_q1', 'stopped')
+    expect(db.prepare("SELECT images FROM messages WHERE id = 'queued_not_sent_remote_q1'").get()).toEqual({ images: '["data:image/png;base64,AAAA"]' })
   })
 
   it('leaves a message that ran alone', () => {

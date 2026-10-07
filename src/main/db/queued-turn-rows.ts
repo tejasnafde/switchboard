@@ -45,11 +45,14 @@ export interface QueuedTurnRowStore {
 export function sqliteQueuedTurnRowStore(db: () => Database.Database): QueuedTurnRowStore {
   const convert = (d: Database.Database, row: { message_id: string; conversation_id: string; text: string; queued_at: number }, cause: QueuedTurnNotSentCause): NotSentRow => {
     const content = `Error: ${queuedTurnNotSentMessage(row.text, cause)}`
+    // The images go onto the not-sent row, so the whole message can be sent again.
+    const images = (d.prepare("SELECT images FROM messages WHERE id = ? AND conversation_id = ? AND role = 'user'")
+      .get(row.message_id, row.conversation_id) as { images: string | null } | undefined)?.images ?? null
     d.prepare("DELETE FROM messages WHERE id = ? AND conversation_id = ? AND role = 'user'").run(row.message_id, row.conversation_id)
     d.prepare(
-      `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, timestamp)
-       SELECT ?, ?, 'system', ?, ? WHERE EXISTS (SELECT 1 FROM conversations WHERE id = ?)`,
-    ).run(`queued_not_sent_${row.message_id}`, row.conversation_id, content, row.queued_at, row.conversation_id)
+      `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, images, timestamp)
+       SELECT ?, ?, 'system', ?, ?, ? WHERE EXISTS (SELECT 1 FROM conversations WHERE id = ?)`,
+    ).run(`queued_not_sent_${row.message_id}`, row.conversation_id, content, images, row.queued_at, row.conversation_id)
     d.prepare('DELETE FROM queued_turn_rows WHERE message_id = ?').run(row.message_id)
     return { conversationId: row.conversation_id, messageId: row.message_id, content }
   }

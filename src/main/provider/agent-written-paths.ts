@@ -4,7 +4,7 @@
  * chat on the same checkout, the user in the IDE, a shell command) is shown
  * without Reject. Unknown shapes give no paths: the safe side is no Reject.
  */
-import { isAbsolute, resolve } from 'node:path'
+import { isAbsolute, posix, resolve, win32 } from 'node:path'
 
 /** Edit tools across the three agents, lower-cased (Claude, Codex `fileChange` as Edit, OpenCode tool ids). */
 const WRITE_TOOLS = new Set(['edit', 'write', 'multiedit', 'notebookedit', 'apply_patch', 'patch'])
@@ -37,6 +37,6 @@ export function absolutePaths(paths: readonly string[], cwd: string): string[] {
  * `C:\repo` where git's root says `c:/repo`).
  */
 export function pathKey(path: string, platform: NodeJS.Platform = process.platform): string {
-  const resolved = resolve(path).replace(/\\/g, '/')
+  const resolved = (platform === 'win32' ? win32 : posix).resolve(path).replace(/\\/g, '/')
   return platform === 'win32' ? resolved.toLowerCase() : resolved
 }

@@ -462,6 +462,11 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
     return true
   }
 
+  /** The CLI cancelled a message it had read: a retried query must not send it again. */
+  forget(message: SDKUserMessage): void {
+    this.unanswered = this.unanswered.filter((m) => m !== message)
+  }
+
   /** A turn ended: everything sent so far is answered, except messages still waiting their own turn. */
   answered(stillWaiting: ReadonlySet<SDKUserMessage>): void {
     this.unanswered = this.unanswered.filter((m) => stillWaiting.has(m))
@@ -1375,6 +1380,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       } finally {
         turn.withdrawing = false
       }
+      // The CLI dropped it, so a retried query must not send it again.
+      if (withdrawn) active.prompt.forget(turn.sdkMessage)
     }
     if (withdrawn) {
       const index = active.queuedTurns.indexOf(turn)

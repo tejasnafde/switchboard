@@ -16,7 +16,7 @@
  * attached to it.
  */
 import { randomUUID } from 'node:crypto'
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { watch } from 'chokidar'
 import type { RuntimeEvent, RuntimeFileEditedEvent } from '@shared/provider-events'
@@ -194,12 +194,15 @@ export class NotebookManager {
    * its raw diff card stays visible.
    */
   explainsFileEdit(event: RuntimeFileEditedEvent): boolean {
-    if (isMirrorRelPath(event.relPath)) return true
-    if (!event.relPath.endsWith('.ipynb')) return false
     const root = this.rootAliases.get(event.repoRoot)
     const repo = root ? this.repos.get(root) : undefined
-    if (!repo || !repo.mirrored.has(event.relPath)) return false
-    return repo.sync.explainsNotebookContent(event.relPath, event.newContent)
+    if (!root || !repo) return isMirrorRelPath(event.relPath)
+    // A checkpoint in a repository subfolder names paths relative to that
+    // folder; the mirror map is keyed relative to the git toplevel.
+    const relPath = relative(root, resolve(event.repoRoot, event.relPath)).replace(/\\/g, '/')
+    if (isMirrorRelPath(relPath)) return true
+    if (!relPath.endsWith('.ipynb') || !repo.mirrored.has(relPath)) return false
+    return repo.sync.explainsNotebookContent(relPath, event.newContent)
   }
 
   /** The resolved repo root for a thread (git toplevel), for path mapping. */
