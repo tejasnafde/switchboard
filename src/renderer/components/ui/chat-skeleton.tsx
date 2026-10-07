@@ -10,7 +10,8 @@ const ROWS: Array<{ side: 'user' | 'agent'; widths: string[] }> = [
   { side: 'agent', widths: ['w-[88%]', 'w-[70%]'] },
 ]
 
-const FILL = [...ROWS, ...ROWS, ...ROWS]
+// About 230 px per set: ten sets cover a tall display; the extra clips at the top.
+const FILL = Array.from({ length: 10 }, () => ROWS).flat()
 
 const SHIMMER = 'animate-shimmer bg-[linear-gradient(90deg,var(--bg-hover)_0%,var(--bg-tertiary)_40%,var(--bg-hover)_80%)] bg-[length:300%_100%] motion-reduce:animate-none'
 
