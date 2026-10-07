@@ -214,9 +214,9 @@ export function buildMergeBackSummary(
   let kept = 0
   let used = 0
   for (let i = rendered.length - 1; i >= 0; i--) {
-    const omittedIfStop = i
+    // Keeping turn i leaves the i turns before it out.
     const cost = utf8Bytes(rendered[i]) + (kept > 0 ? 2 : 0)
-    if (fixed(omittedIfStop > 0 ? omittedIfStop : 0) + used + cost > maxBytes) break
+    if (fixed(i) + used + cost > maxBytes) break
     used += cost
     kept++
   }
