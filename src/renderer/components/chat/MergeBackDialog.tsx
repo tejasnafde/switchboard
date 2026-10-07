@@ -92,12 +92,16 @@ export function MergeBackDialog({ mode, onClose }: { mode: Mode; onClose: () => 
     : `Edit the summary from fork "${mode.forkTitle}"`
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+    // A send in flight cannot be called back, so the dialog stays until it settles.
+    <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose() }}>
       <DialogContent
         data-testid="merge-back-dialog"
         onOpenAutoFocus={(e) => {
+          // Until the preview lands there is no textarea: let Radix focus the
+          // first control; the preview moves focus to the textarea when ready.
+          if (!textRef.current) return
           e.preventDefault()
-          textRef.current?.focus()
+          textRef.current.focus()
         }}
         overlayClassName="z-[1300]"
         className="sb-floating-surface inset-x-0 top-[12vh] z-[1300] mx-auto flex max-h-[76vh] w-[min(680px,92vw)] flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--border)]"
@@ -138,7 +142,7 @@ export function MergeBackDialog({ mode, onClose }: { mode: Mode; onClose: () => 
           </div>
         )}
         <div className="flex justify-end gap-[6px] border-t border-[var(--border)] px-[14px] py-[10px]">
-          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" size="sm" disabled={saving} onClick={onClose}>Cancel</Button>
           {load.kind === 'ready' && (
             <Button size="sm" disabled={saving || !text.trim()} onClick={() => void submit()}>
               {mode.kind === 'send' ? (saving ? 'Sending…' : 'Send back') : (saving ? 'Saving…' : 'Save')}

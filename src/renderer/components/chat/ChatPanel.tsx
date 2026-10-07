@@ -151,7 +151,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const pendingNoteRef = useRef<{ sessionId: string; text: string } | null>(null)
   const agentStartedRef = useRef<Set<string>>(new Set())
   const [slashHelpOpen, setSlashHelpOpen] = useState(false)
-  const [mergeBackOpen, setMergeBackOpen] = useState(false)
+  // The fork the merge-back dialog was opened for; a session change closes it.
+  const [mergeBackFor, setMergeBackFor] = useState<string | null>(null)
+  useEffect(() => { setMergeBackFor(null) }, [sessionId])
 
 
   const messages = opening ? [] : activeSession?.messages ?? []
@@ -1241,7 +1243,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           removeSession(sessionId)
         }}
         onShowSlashHelp={() => setSlashHelpOpen(true)}
-        onMergeBack={() => setMergeBackOpen(true)}
+        onMergeBack={() => setMergeBackFor(sessionId ?? null)}
         leadingControl={landing?.composerLead}
       />
 
@@ -1444,7 +1446,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           {activeSession?.forkMetadata && (
             <ForkLineageBanner
               metadata={activeSession.forkMetadata}
-              onSendBack={sessionId && !activeSession.draft ? () => setMergeBackOpen(true) : undefined}
+              onSendBack={sessionId && !activeSession.draft ? () => setMergeBackFor(sessionId) : undefined}
             />
           )}
 
@@ -1478,10 +1480,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           {composer}
         </>
       )}
-      {mergeBackOpen && sessionId && (
+      {mergeBackFor && mergeBackFor === sessionId && (
         <MergeBackDialog
-          mode={{ kind: 'send', forkSessionId: sessionId, parentTitle: activeSession?.forkMetadata?.parentTitle ?? 'the parent chat' }}
-          onClose={() => setMergeBackOpen(false)}
+          mode={{ kind: 'send', forkSessionId: mergeBackFor, parentTitle: activeSession?.forkMetadata?.parentTitle ?? 'the parent chat' }}
+          onClose={() => setMergeBackFor(null)}
         />
       )}
       {slashHelpOpen && (
