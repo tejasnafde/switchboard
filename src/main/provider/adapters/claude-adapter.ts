@@ -1117,6 +1117,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           active.session.sessionId = undefined
           active.resumedNative = false
           await this.handOverVisibleHistory(threadId, active, active.prompt.pendingMessages()[0])
+          if (this.sessions.get(threadId) !== active) return
         }
       }
     }
