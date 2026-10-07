@@ -2967,6 +2967,7 @@ mark.sb-search-mark.active {
 
 /* Worktree-modal refresh state. Used by Spinner + SkeletonRow. */
 @keyframes sb-spin { to { transform: rotate(360deg); } }
+@keyframes sb-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @keyframes sb-pulse {
   0%, 100% { opacity: 0.55; }
   50%      { opacity: 0.85; }

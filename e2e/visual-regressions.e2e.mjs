@@ -782,10 +782,13 @@ async function captureChatWaitScreens(win, theme) {
   try {
     await picker.getByRole('radio', { name: /akshaya/ }).click()
     await panel.getByRole('status').filter({ hasText: 'Switching to akshaya...' }).waitFor({ state: 'visible' })
+    // The picker closes on a profile click; the switch shows on its trigger and the composer.
+    await picker.waitFor({ state: 'hidden' })
     await snapScreen(win, 'chat-profile-switch', theme, panel)
-    await snapScreen(win, 'provider-picker-switch', theme, picker)
   } finally { await release() }
   await panel.getByRole('status').filter({ hasText: 'Switching to akshaya...' }).waitFor({ state: 'hidden' })
+  await panel.locator('.chat-composer button[title*="Claude"]').first().click()
+  await picker.getByRole('radio', { name: 'Default', exact: true }).waitFor({ state: 'visible' })
   release = await holdChatCall('provider:switch-instance')
   try {
     await picker.getByRole('radio', { name: 'Default', exact: true }).click()
