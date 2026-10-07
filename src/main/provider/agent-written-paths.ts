@@ -28,5 +28,15 @@ export function agentWrittenPaths(toolName: string, input: unknown, cwd: string)
 }
 
 export function absolutePaths(paths: readonly string[], cwd: string): string[] {
-  return paths.map((p) => (isAbsolute(p) ? resolve(p) : resolve(cwd, p)))
+  return paths.map((p) => pathKey(isAbsolute(p) ? p : resolve(cwd, p)))
+}
+
+/**
+ * One comparable form for a path on every platform: resolved, forward slashes,
+ * and lower case on Windows, whose paths are case-insensitive (a tool may say
+ * `C:\repo` where git's root says `c:/repo`).
+ */
+export function pathKey(path: string, platform: NodeJS.Platform = process.platform): string {
+  const resolved = resolve(path).replace(/\\/g, '/')
+  return platform === 'win32' ? resolved.toLowerCase() : resolved
 }

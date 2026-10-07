@@ -24,7 +24,7 @@ import {
   isGitRepo as realIsGitRepo,
 } from '../git/checkpoint'
 import { createMainLogger } from '../logger'
-import { absolutePaths, agentWrittenPaths } from './agent-written-paths'
+import { absolutePaths, agentWrittenPaths, pathKey } from './agent-written-paths'
 
 const log = createMainLogger('provider:checkpoint-tracker')
 
@@ -168,7 +168,7 @@ export class CheckpointTracker {
         if (this.startsNext.delete(threadId)) this.keepBaseline(threadId)
       }
       return res.files.map((f) => {
-        const noRevert = f.noRevert ?? (entry.written.has(resolve(entry.repoRoot, f.relPath)) ? undefined : 'outside')
+        const noRevert = f.noRevert ?? (entry.written.has(pathKey(resolve(entry.repoRoot, f.relPath))) ? undefined : 'outside')
         return {
           type: 'file.edited',
           threadId,
@@ -204,7 +204,8 @@ export class CheckpointTracker {
       return false
     }
     if (!stored) return false
-    const entry = { ...stored, written: new Set(stored.written), active: true }
+    // Normalised again on restore, so a baseline stored by an older build still matches.
+    const entry = { ...stored, written: new Set(stored.written.map((p) => pathKey(p))), active: true }
     this.pending.set(threadId, entry)
     this.persist(threadId, entry)
     return true

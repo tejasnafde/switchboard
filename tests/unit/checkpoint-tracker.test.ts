@@ -5,6 +5,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { CheckpointTracker, type StoredTurnCheckpoint, type TurnCheckpointStore } from '../../src/main/provider/checkpoint-tracker'
+import { pathKey } from '../../src/main/provider/agent-written-paths'
 import type { CheckpointFileDiff } from '../../src/main/git/checkpoint'
 
 function fakeDeps(over: {
@@ -207,7 +208,7 @@ describe('CheckpointTracker', () => {
     const t = new CheckpointTracker(fakeDeps({ store }))
     await t.beginTurn('t', '/repo')
     agentWrote(t, 't', 'a.ts')
-    expect(rows.get('t')).toMatchObject({ tree: 'START', repoRoot: '/repo', written: ['/repo/a.ts'] })
+    expect(rows.get('t')).toMatchObject({ tree: 'START', repoRoot: '/repo', written: [pathKey('/repo/a.ts')] })
     await t.finishTurn('t')
     expect(rows.has('t')).toBe(false)
   })
@@ -225,5 +226,12 @@ describe('CheckpointTracker', () => {
     expect(diffedFrom).toEqual(['BEFORE'])
     expect(events.map((e) => [e.fileEditId, e.noRevert])).toEqual([['old-7:a.ts', undefined], ['old-7:b.ts', 'outside']])
     expect(t.restoreEarlier('t')).toBe(false)
+  })
+})
+
+describe('pathKey', () => {
+  it('compares Windows paths regardless of separators and drive-letter case', () => {
+    expect(pathKey('C:\\repo\\src\\a.ts', 'win32')).toBe(pathKey('c:/repo/src/a.ts', 'win32'))
+    expect(pathKey('/repo/src/../a.ts', 'darwin')).toBe('/repo/a.ts')
   })
 })
