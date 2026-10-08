@@ -18,6 +18,7 @@ import { isRuntimeMode, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-def
 import { effectiveLocalSetting, projectOverride } from './project-settings-store'
 import { isDraftSessionId, type DraftChatOptions } from '@shared/new-chat-draft'
 import { prependOlder, rebaseOnNewest } from '../services/history-window'
+import { splitModelVariant } from '@shared/effort'
 import type {
   ForkLineageMetadata,
 } from '@shared/conversation-fork'
@@ -624,9 +625,16 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   setModel: (sessionId, model) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, model } : s
-      ),
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId) return s
+        // OpenCode variants belong to one base model; a variant pick keeps them,
+        // another model drops them until its own `model.variants` arrives.
+        const variants = s.availableVariants ?? []
+        const sameBase = splitModelVariant(model, variants).base === splitModelVariant(s.variantModelId || s.model || '', variants).base
+        return sameBase || !s.availableVariants
+          ? { ...s, model }
+          : { ...s, model, availableVariants: undefined, currentVariant: undefined, variantModelId: undefined }
+      }),
     })),
 
   setResolvedModel: (sessionId, resolvedModel) =>
