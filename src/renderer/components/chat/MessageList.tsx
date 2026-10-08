@@ -1,5 +1,6 @@
 import { chatMessagesCommitted, chatMessagesUnmounted } from '../../services/perf-chat-open'
-import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, useReducer, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types'
 import { MessageBubble } from './MessageBubble'
@@ -188,8 +189,21 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
     (s) => (sessionId ? s.namesBySession[sessionId] : undefined),
   )
 
+  // A measured row above the view moves the scroll at once, but the virtualizer
+  // re-renders the rows' positions in a later task: one frame painted the
+  // content shifted by the size correction (the jump and flicker when
+  // scrolling up). Re-render before that frame instead.
+  const [, rerender] = useReducer((n: number) => n + 1, 0)
+  const scrollCorrectedRef = useRef(false)
   const virtualizer = useVirtualizer({
     count: turns.length,
+    onChange: (_instance, sync) => {
+      if (sync || !scrollCorrectedRef.current) return
+      scrollCorrectedRef.current = false
+      // A microtask: still before paint, and outside the commit a ref
+      // measurement may run in, where flushSync is not allowed.
+      queueMicrotask(() => flushSync(rerender))
+    },
     getScrollElement: () => containerRef.current,
     // Rough estimate - the measurer corrects this on mount via the ref.
     // 120px covers a short chat bubble + role label + timestamp.
@@ -206,6 +220,19 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
     getItemKey: (index) => turns[index]?.[0]?.id ?? index,
   })
 
+  // A row above the view changed size: move the scroll by the same amount so
+  // the view stays put. Done here rather than by the virtualizer, whose own
+  // correction adds to the offset of its last scroll event and so undoes a
+  // scroll position set since (the anchor restore below).
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
+    const container = instance.scrollElement
+    if (!container || item.start >= container.scrollTop) return false
+    container.scrollTop += delta
+    instance.scrollOffset = container.scrollTop
+    scrollCorrectedRef.current = true
+    return false
+  }
+
   // The first row in view, so rows added above it (an older history window)
   // do not move what the user is reading.
   const viewAnchorRef = useRef<{ messageId: string; index: number; offset: number } | null>(null)
@@ -216,10 +243,17 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
   const maybeLoadOlder = useCallback(() => {
     const container = containerRef.current
     if (!container || !sessionId || programmaticScrollRef.current) return
-    if (!shouldLoadOlder(container.scrollTop, hasOlderRef.current, loadingOlderRef.current)) return
+    const first = virtualizer.getVirtualItems().find((item) => item.end > container.scrollTop)
+    if (!shouldLoadOlder({
+      scrollTop: container.scrollTop,
+      firstVisibleTurn: first?.index ?? null,
+      turnCount: turnsLengthRef.current,
+      hasOlder: hasOlderRef.current,
+      loading: loadingOlderRef.current,
+    })) return
     loadingOlderRef.current = true
     void loadOlderHistory(sessionId).finally(() => { loadingOlderRef.current = false })
-  }, [sessionId])
+  }, [sessionId, virtualizer])
 
   const handleScroll = useCallback(() => {
     const container = containerRef.current
@@ -251,6 +285,12 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
       if (index !== anchor.index && start !== undefined) {
         container.scrollTop = start - anchor.offset
         viewAnchorRef.current = { ...anchor, index }
+        // This render laid out the rows around the old offset, which now
+        // hold other turns: one frame showed an empty view. Render the rows
+        // around the anchor before that frame (an update from a layout
+        // effect commits before paint).
+        virtualizer.scrollOffset = container.scrollTop
+        rerender()
       }
     }
     // A window shorter than the pane cannot be scrolled to its top.

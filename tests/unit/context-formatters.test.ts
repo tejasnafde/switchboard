@@ -7,8 +7,9 @@
  *     pill marker followed by a fenced code block of the lines, both
  *     appended to the active draft.
  *
- *   - chat-message: a selection inside an assistant message bubble →
- *     `> from <agent>: "<text>"` quoted block, so the user can call out a
+ *   - chat-message: a selection inside an assistant message bubble, or one
+ *     of the user's own messages →
+ *     `> from <agent | you>: "<text>"` quoted block, so the user can call out a
  *     specific paragraph for follow-up annotation.
  *
  * Both formatters are pure (inputs fully determine outputs) so the wire
@@ -18,7 +19,25 @@ import { describe, it, expect } from 'vitest'
 import {
   formatFileViewerContext,
   formatChatMessageContext,
+  chatQuoteAuthor,
 } from '../../src/renderer/services/context-formatters'
+
+describe('chatQuoteAuthor', () => {
+  it('quotes the agent for its replies and "you" for the user\'s own messages', () => {
+    expect(chatQuoteAuthor('assistant', 'Claude')).toBe('Claude')
+    expect(chatQuoteAuthor('user', 'Claude')).toBe('you')
+  })
+
+  it('does not quote system rows or a bubble with no role', () => {
+    expect(chatQuoteAuthor('system', 'Claude')).toBeNull()
+    expect(chatQuoteAuthor(null, 'Claude')).toBeNull()
+  })
+
+  it('attributes a quote of the user\'s message to "you"', () => {
+    expect(formatChatMessageContext({ agent: chatQuoteAuthor('user', 'Codex') ?? '', selection: 'Compare a.ts with b.ts' }))
+      .toBe('> from you: "Compare a.ts with b.ts"\n')
+  })
+})
 
 describe('formatFileViewerContext', () => {
   it('emits pill marker + fenced block', () => {
