@@ -1288,7 +1288,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           {/* ── Top bar: folder / chat name ──────────────────────── */}
           <div
             // The linked-PR control hides itself when the header is too narrow for it (container query).
-            className="chat-panel-header flex min-h-[32px] shrink-0 items-center gap-[6px] border-b border-solid border-[var(--border)] bg-[var(--bg-secondary)] px-[16px] py-[7px] text-[12px] [container-type:inline-size]"
+            className="chat-panel-header flex min-h-[32px] shrink-0 items-center gap-[6px] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-[16px] py-[7px] text-[12px] [container-type:inline-size]"
           >
             {/* Plain identity breadcrumb; only consequential state receives color. */}
             {hasSession ? (
@@ -1308,7 +1308,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
                       if (e.key === 'Escape') setEditingTitle(false)
                     }}
                     onBlur={commitRename}
-                    className="min-w-0 flex-[1_1_0%] rounded-[3px] border border-solid border-[var(--border-focus)] bg-[var(--bg-primary)] px-[6px] py-[1px] text-[12px] text-[var(--text-primary)] outline-none"
+                    className="min-w-0 flex-[1_1_0%] rounded-[3px] border border-[var(--border-focus)] bg-[var(--bg-primary)] px-[6px] py-[1px] text-[12px] text-[var(--text-primary)] outline-none"
                   />
                 ) : (
                   <span className="chat-identity-title" title={chatTitle}>{chatTitle}</span>
