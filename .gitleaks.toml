@@ -15,9 +15,8 @@ paths = [
 regexes = ['''ATATT3xFfGF0-secret''', '''tok-12345678''']
 
 [[allowlists]]
-description = "Firebase Android api_key: public by design (restricted by package name), committed for EAS Build"
+description = "Firebase client api_key in google-services.json: public by design (every APK carries it), committed for EAS Build"
 targetRules = ["gcp-api-key", "generic-api-key"]
-# Path AND the exact committed key, so any other key in this file is still reported.
-condition = "AND"
+# Path only: the key itself must not be copied here, or secret scanners flag
+# this file as a second leak. Any key in this file is a Firebase client key.
 paths = ['''^apps/mobile/google-services\.json$''']
-regexes = ['''AIzaSyAFcw4aNehZAhReL4sGMCNxtnqQu8NrAXM''']
