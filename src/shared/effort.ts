@@ -182,17 +182,18 @@ export function claudeQueryEffort(
 }
 
 /**
- * The effort to put on a Codex turn. Codex has no `max`, and a level its
- * catalog says the model does not take would fail the turn, so either leaves
- * the model's own default in effect.
+ * The effort to put on a Codex turn: only a level the composer offers for the
+ * model (its catalog's, else Low to High). Codex has no `max`, and an older
+ * Codex refuses `xhigh`, so a level carried over from another agent leaves
+ * the model's own default in effect instead of failing the turn.
  */
 export function codexWireEffort(
   effort: ReasoningEffort | undefined,
   model: string | undefined,
   models: readonly ModelOption[],
-): Exclude<ReasoningEffort, 'max'> | undefined {
-  if (effort === 'max') return undefined
-  return takenBy(effort, modelRowFor(models, model)) as Exclude<ReasoningEffort, 'max'> | undefined
+): ReasoningEffort | undefined {
+  const levels = modelRowFor(models, model)?.effortLevels ?? CODEX_FALLBACK_LEVELS
+  return effort && levels.includes(effort) ? effort : undefined
 }
 
 function takenBy(effort: ReasoningEffort | undefined, row: ModelOption | undefined): ReasoningEffort | undefined {

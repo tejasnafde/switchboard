@@ -127,11 +127,14 @@ describe('what goes on the wire', () => {
     expect(claudeQueryEffort('max', undefined, claudeCatalog)).toBeUndefined()
   })
 
-  it('Codex never gets max, nor a level its catalog rules out', () => {
-    const codex: ModelOption[] = [{ id: 'gpt-6', label: 'GPT-6', tier: 'max', effortLevels: ['low', 'high'] }]
+  it('Codex gets only a level the composer offers for the model', () => {
+    const codex: ModelOption[] = [{ id: 'gpt-6', label: 'GPT-6', tier: 'max', effortLevels: ['low', 'high', 'xhigh'] }]
     expect(codexWireEffort('max', 'gpt-6', codex)).toBeUndefined()
-    expect(codexWireEffort('xhigh', 'gpt-6', codex)).toBeUndefined()
-    expect(codexWireEffort('high', 'gpt-6', codex)).toBe('high')
-    expect(codexWireEffort('xhigh', 'gpt-5.2', codex)).toBe('xhigh')
+    expect(codexWireEffort('medium', 'gpt-6', codex)).toBeUndefined()
+    expect(codexWireEffort('xhigh', 'gpt-6', codex)).toBe('xhigh')
+    // No catalog row: Low to High, as offered, so an older Codex never sees xhigh.
+    expect(codexWireEffort('xhigh', 'gpt-5.2', codex)).toBeUndefined()
+    expect(codexWireEffort('high', undefined, [])).toBe('high')
+    expect(codexWireEffort(undefined, 'gpt-6', codex)).toBeUndefined()
   })
 })
