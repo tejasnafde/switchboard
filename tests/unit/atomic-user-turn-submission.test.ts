@@ -17,7 +17,8 @@ const AtomicUserTurnSubmission = (durable as unknown as {
     submit(input: UserTurnSubmissionV1, context: {
       clientScope: string
       prepare: () => Promise<void>
-      dispatch: () => Promise<void>
+      finalize?: (turn: UserTurnSubmissionV1) => Promise<UserTurnSubmissionV1>
+      dispatch: (turn: UserTurnSubmissionV1) => Promise<void>
     }): Promise<UserTurnSubmissionResult>
   }
 }).AtomicUserTurnSubmission
@@ -237,6 +238,38 @@ describe('AtomicUserTurnSubmission', () => {
         text: '[[sb:context-handoff]] Codex → Claude',
       },
     })
+    harness.close()
+  })
+})
+
+describe('backend-finalized handoff', () => {
+  it('dispatches and commits the finalized turn, and the echo and its replay carry the marker', async () => {
+    const harness = fixture()
+    const sent: string[] = []
+    const input = submission({ providerText: 'typed', displayBody: undefined, pillsMeta: undefined, images: undefined })
+    const context = {
+      ...harness.context(),
+      finalize: async (turn: UserTurnSubmissionV1) => ({
+        ...turn,
+        providerText: `Conversation so far:\nuser: q\n\n${turn.providerText}`,
+        displayBody: turn.providerText,
+        handoff: { expectedFrom: 'codex' as const, markerId: 'handoff_origin-1', markerText: '[[sb:context-handoff]] Codex → Claude Code' },
+      }),
+      dispatch: async (turn: UserTurnSubmissionV1) => { sent.push(turn.providerText) },
+    }
+
+    await expect(harness.service.submit(input, context)).resolves.toMatchObject({ status: 'accepted' })
+    expect(sent).toEqual(['Conversation so far:\nuser: q\n\ntyped'])
+    expect(harness.userRows()[0]).toMatchObject({ content: sent[0], display_body: 'typed' })
+    expect(harness.db.prepare(`SELECT pending_handoff_from FROM conversations WHERE id = 'thread-1'`).get())
+      .toEqual({ pending_handoff_from: null })
+    const marker = { id: 'handoff_origin-1', text: '[[sb:context-handoff]] Codex → Claude Code' }
+    expect(harness.events[0]).toMatchObject({ handoffMarker: marker })
+
+    // A retry of the same origin replays the canonical echo with the marker.
+    await expect(harness.service.submit(input, context)).resolves.toMatchObject({ status: 'accepted', duplicate: true })
+    expect(sent).toHaveLength(1)
+    expect(harness.events[1]).toMatchObject({ handoffMarker: marker })
     harness.close()
   })
 })

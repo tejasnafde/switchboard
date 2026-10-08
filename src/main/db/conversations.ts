@@ -6,7 +6,9 @@ import type { WorktreeCreationStatus } from '@shared/worktree-creation'
 import { commitConversationProfileSwitch } from './conversation-profile-commit'
 import { SqliteConversationForkStore } from './conversation-fork'
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
-import type { AgentProvider } from '@shared/types'
+import { agentLabel, type AgentProvider, type AgentType } from '@shared/types'
+import { AGENT_SWITCH_MARKER_PREFIX } from '@shared/rotation-marker'
+import { nextPendingHandoffFrom } from '@shared/handoff'
 import { getDb } from './database'
 import type { ReasoningEffort } from '@shared/models'
 import { isReasoningEffort, normalizeProviderOptionMemory, switchProviderOptions } from '@shared/provider-option-memory'
@@ -861,6 +863,58 @@ export function setConversationProviderSelection(
 }
 
 /**
+ * An agent switch as one transaction: the provider selection, the switch
+ * marker row and the pending context handoff, so a reload or a failed call
+ * can never leave the new agent selected without the handoff. Returns what
+ * was restored, the marker (absent when nothing changed or the chat has no
+ * history yet) and the pending handoff source.
+ */
+export function switchConversationAgent(
+  id: string,
+  agentType: string,
+  instanceId: string,
+  opts: { hasHistory: boolean; markerId: string },
+): {
+  model: string | null
+  reasoningEffort: ReasoningEffort | null
+  pendingHandoffFrom: string | null
+  marker?: { id: string; content: string; timestamp: number }
+} {
+  const db = getDb()
+  const rootId = resolveRootThreadId(id)
+  return db.transaction(() => {
+    const row = db.prepare(
+      'SELECT agent_type, pending_handoff_from FROM conversations WHERE id = ?'
+    ).get(rootId) as { agent_type: string | null; pending_handoff_from: string | null } | undefined
+    const previous = row?.agent_type ?? null
+    // The client's count can be empty when a reload returned nothing or
+    // failed, so stored messages on any id of the thread count as history too.
+    const familyIds = threadFamilyIds(rootId)
+    const hasStoredHistory = db.prepare(
+      `SELECT 1 FROM messages WHERE conversation_id IN (${familyIds.map(() => '?').join(', ')})
+       AND role IN ('user', 'assistant') LIMIT 1`
+    ).get(...familyIds) !== undefined
+    const hasHistory = opts.hasHistory || hasStoredHistory
+    const restored = setConversationProviderSelection(rootId, agentType, instanceId)
+    let marker: { id: string; content: string; timestamp: number } | undefined
+    if (hasHistory && previous && previous !== agentType) {
+      marker = {
+        id: opts.markerId,
+        content: `${AGENT_SWITCH_MARKER_PREFIX} ${agentLabel(previous as AgentType)} → ${agentLabel(agentType as AgentType)}`,
+        timestamp: Date.now(),
+      }
+      db.prepare(`
+        INSERT OR IGNORE INTO messages (id, conversation_id, role, content, timestamp)
+        VALUES (?, ?, 'system', ?, ?)
+      `).run(marker.id, rootId, marker.content, marker.timestamp)
+    }
+    const pendingHandoffFrom = nextPendingHandoffFrom(row?.pending_handoff_from ?? null, previous, agentType, hasHistory)
+    db.prepare('UPDATE conversations SET pending_handoff_from = ?, updated_at = ? WHERE id = ?').run(pendingHandoffFrom, Date.now(), rootId)
+    return { ...restored, pendingHandoffFrom, ...(marker ? { marker } : {}) }
+  })()
+}
+
+/**
  * Provider a pending cross-provider context handoff should attribute its
  * preamble to, or null when no handoff is scheduled. Set by an agent switch
  * over existing history and by degraded (non-resumable) forks; cleared when
@@ -881,6 +935,13 @@ export function setConversationPendingHandoff(id: string, from: string | null): 
   getDb().prepare(
     'UPDATE conversations SET pending_handoff_from = ?, updated_at = ? WHERE id = ?'
   ).run(from, Date.now(), resolveRootThreadId(id))
+}
+
+/** Clear the pending handoff only if it is still `expected` (a newer switch wins). */
+export function clearConversationPendingHandoff(id: string, expected: string): void {
+  getDb().prepare(
+    'UPDATE conversations SET pending_handoff_from = NULL, updated_at = ? WHERE id = ? AND pending_handoff_from = ?'
+  ).run(Date.now(), resolveRootThreadId(id), expected)
 }
 
 export function archiveConversation(id: string): void {
