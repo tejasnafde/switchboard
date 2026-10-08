@@ -14,11 +14,17 @@ const THREAD = 'thread-1'
 const KEY = threadKey(CONN, THREAD)
 
 const thread = () => useChatStore.getState().threads[KEY]!
-const turn = () => buildTurn({ connectionId: CONN, threadId: THREAD, text: 'hi', runtimeMode: thread().pickedMode }).queued
+const turn = () =>
+  buildTurn({ connectionId: CONN, threadId: THREAD, text: 'hi', runtimeMode: thread().pickedMode }).queued
 
 function announce(runtimeMode: string): void {
   useChatStore.getState().ingest(CONN, {
-    type: 'session.provider', threadId: THREAD, provider: 'claude', instanceId: 'work', instanceName: 'Work', runtimeMode,
+    type: 'session.provider',
+    threadId: THREAD,
+    provider: 'claude',
+    instanceId: 'work',
+    instanceName: 'Work',
+    runtimeMode,
   } as RuntimeEvent)
   flushQueue()
 }
@@ -53,7 +59,15 @@ describe('mobile runtime mode sync', () => {
   it('a pick is settled only after the durable write succeeds', async () => {
     useChatStore.getState().pickRuntimeMode(KEY, 'auto')
     const settle = (mode: string) => useChatStore.getState().settlePickedMode(KEY, mode as 'auto')
-    await expect(enqueueTurn(turn(), async () => { throw new Error('disk full') }, settle)).rejects.toThrow('disk full')
+    await expect(
+      enqueueTurn(
+        turn(),
+        async () => {
+          throw new Error('disk full')
+        },
+        settle,
+      ),
+    ).rejects.toThrow('disk full')
     expect(thread().pickedMode).toBe('auto')
     await enqueueTurn(turn(), async () => {}, settle)
     expect(thread().pickedMode).toBeUndefined()
@@ -69,7 +83,12 @@ describe('mobile runtime mode sync', () => {
   it('a mode changed on the desktop shows on the phone and wins over a pick not yet sent, profile too', () => {
     useChatStore.getState().pickRuntimeMode(KEY, 'plan')
     announce('full-access')
-    expect(thread()).toMatchObject({ runtimeMode: 'full-access', pickedMode: undefined, instanceId: 'work', instanceName: 'Work' })
+    expect(thread()).toMatchObject({
+      runtimeMode: 'full-access',
+      pickedMode: undefined,
+      instanceId: 'work',
+      instanceName: 'Work',
+    })
   })
 
   it('drops the default mode an older build stored on an untried message, and keeps a tried or picked one', () => {
@@ -77,8 +96,12 @@ describe('mobile runtime mode sync', () => {
     expect(parseQueuedMessage({ ...base, runtimeMode: 'sandbox', attempts: 0 })?.runtimeMode).toBeUndefined()
     // Already tried: the mode is part of the backend's fingerprint for this origin.
     expect(parseQueuedMessage({ ...base, runtimeMode: 'sandbox', attempts: 1 })?.runtimeMode).toBe('sandbox')
-    expect(parseQueuedMessage({ ...base, runtimeMode: 'sandbox', attempts: 0, deliveryState: 'ambiguous' })?.runtimeMode).toBe('sandbox')
-    expect(parseQueuedMessage({ ...base, runtimeMode: 'sandbox', attempts: 0, providerText: 'hi' })?.runtimeMode).toBe('sandbox')
+    expect(
+      parseQueuedMessage({ ...base, runtimeMode: 'sandbox', attempts: 0, deliveryState: 'ambiguous' })?.runtimeMode,
+    ).toBe('sandbox')
+    expect(parseQueuedMessage({ ...base, runtimeMode: 'sandbox', attempts: 0, providerText: 'hi' })?.runtimeMode).toBe(
+      'sandbox',
+    )
     const picked = buildTurn({ connectionId: CONN, threadId: THREAD, text: 'hi', runtimeMode: 'plan' }).queued
     expect(parseQueuedMessage(JSON.parse(JSON.stringify(picked)))).toEqual(picked)
   })

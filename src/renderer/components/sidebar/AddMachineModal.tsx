@@ -46,7 +46,9 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
     void loadSshHosts().finally(() => {
       if (current) setRefreshing(false)
     })
-    return () => { current = false }
+    return () => {
+      current = false
+    }
   }, [editing, loadSshHosts])
 
   const { available, alreadyAdded } = partitionSshHosts(sshHosts, remotes)
@@ -92,8 +94,19 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
   }
 
   const addFromSsh = (h: SshHost) => {
-    if (adding || isDuplicateMachine(remotes, { sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null })) return
-    void submit({ name: h.alias, sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null, sshPort: h.port, remoteUser: runAs() })
+    if (
+      adding ||
+      isDuplicateMachine(remotes, { sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null })
+    )
+      return
+    void submit({
+      name: h.alias,
+      sshAlias: h.alias,
+      sshHost: h.hostName ?? h.alias,
+      sshUser: h.user ?? null,
+      sshPort: h.port,
+      remoteUser: runAs(),
+    })
   }
 
   // In edit mode the machine's own row must not read as a duplicate of itself.
@@ -151,7 +164,11 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
           <div className="machine-modal-section">
             <div className="machine-modal-section-heading">
               <div className="machine-modal-label">From ~/.ssh/config</div>
-              {refreshing && <div className="machine-modal-refreshing" role="status">Refreshing…</div>}
+              {refreshing && (
+                <div className="machine-modal-refreshing" role="status">
+                  Refreshing…
+                </div>
+              )}
             </div>
             <input
               className="machine-modal-input"
@@ -163,12 +180,7 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
             />
             <div className="machine-modal-hostlist">
               {filteredAvailable.map((h) => (
-                <button
-                  key={h.alias}
-                  className="machine-modal-host"
-                  onClick={() => addFromSsh(h)}
-                  disabled={adding}
-                >
+                <button key={h.alias} className="machine-modal-host" onClick={() => addFromSsh(h)} disabled={adding}>
                   <span className="machine-modal-host-alias">{h.alias}</span>
                   <span className="machine-modal-host-addr">
                     {h.user ? `${h.user}@` : ''}
@@ -205,9 +217,7 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
                       </span>
                     </div>
                   ))}
-                  {filteredAlreadyAdded.length === 0 && (
-                    <div className="machine-modal-empty">No added hosts match</div>
-                  )}
+                  {filteredAlreadyAdded.length === 0 && <div className="machine-modal-empty">No added hosts match</div>}
                 </div>
               </details>
             )}
@@ -223,9 +233,19 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
             onChange={(e) => setName(e.target.value)}
             autoFocus={editing || sshHosts.length === 0}
           />
-          <input className="machine-modal-input" placeholder="Host (e.g. 10.0.0.4)" value={host} onChange={(e) => setHost(e.target.value)} />
+          <input
+            className="machine-modal-input"
+            placeholder="Host (e.g. 10.0.0.4)"
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+          />
           <div className="machine-modal-row">
-            <input className="machine-modal-input" placeholder="User" value={user} onChange={(e) => setUser(e.target.value)} />
+            <input
+              className="machine-modal-input"
+              placeholder="User"
+              value={user}
+              onChange={(e) => setUser(e.target.value)}
+            />
             <input
               className="machine-modal-input"
               style={{ width: '70px' }}
@@ -254,7 +274,9 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
         {error && <div className="machine-modal-error">{error}</div>}
 
         <div className="machine-modal-actions">
-          <button className="machine-modal-cancel" onClick={onClose}>Cancel</button>
+          <button className="machine-modal-cancel" onClick={onClose}>
+            Cancel
+          </button>
           <button className="machine-modal-add" onClick={addManual} disabled={!manualReady}>
             {editing ? (adding ? 'Saving…' : 'Save') : adding ? 'Adding…' : 'Add + connect'}
           </button>

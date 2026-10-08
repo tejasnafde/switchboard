@@ -20,9 +20,21 @@ vi.setConfig({ testTimeout: 20_000 })
 
 vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({
-    id: id ?? `${agentType}-default`, agentType, displayName: id ?? `${agentType}-default`, enabled: true, env: {}, oauthDir: null,
+    id: id ?? `${agentType}-default`,
+    agentType,
+    displayName: id ?? `${agentType}-default`,
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
-  getProviderInstanceFull: (id: string) => ({ id, agentType: 'codex', displayName: id, enabled: true, env: {}, oauthDir: null }),
+  getProviderInstanceFull: (id: string) => ({
+    id,
+    agentType: 'codex',
+    displayName: id,
+    enabled: true,
+    env: {},
+    oauthDir: null,
+  }),
   listOauthDirsForAgent: () => [],
 }))
 
@@ -73,7 +85,10 @@ class BridgeClient {
   private waiting = new Map<number, (msg: Record<string, unknown>) => void>()
 
   constructor(launch: SwitchboardMcpLaunch) {
-    this.child = spawn(launch.command, launch.args, { env: { ...process.env, ...launch.env }, stdio: ['pipe', 'pipe', 'pipe'] })
+    this.child = spawn(launch.command, launch.args, {
+      env: { ...process.env, ...launch.env },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
     this.exited = new Promise((resolve) => this.child.on('exit', (code) => resolve(code)))
     createInterface({ input: this.child.stdout }).on('line', (line) => {
       const msg = JSON.parse(line) as Record<string, unknown>
@@ -118,7 +133,11 @@ describe('the stdio bridge against the server', () => {
     const launch = await server.open('chat-1', () => [echo])
     const client = connect(launch)
 
-    const init = await client.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } })
+    const init = await client.request('initialize', {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'test', version: '1' },
+    })
     expect((init.result as { serverInfo: { name: string } }).serverInfo.name).toBe('switchboard')
     const list = await client.request('tools/list')
     expect((list.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name)).toEqual(['echo'])
@@ -193,7 +212,14 @@ class LaunchRecordingAdapter implements ProviderAdapter {
   respondCalls = 0
   async startSession(opts: SessionStartOpts): Promise<ProviderSession> {
     this.launches.push(opts.switchboardMcp)
-    return { threadId: opts.threadId, provider: 'codex', status: 'idle', runtimeMode: opts.runtimeMode ?? 'sandbox', cwd: opts.cwd, createdAt: 0 }
+    return {
+      threadId: opts.threadId,
+      provider: 'codex',
+      status: 'idle',
+      runtimeMode: opts.runtimeMode ?? 'sandbox',
+      cwd: opts.cwd,
+      createdAt: 0,
+    }
   }
   turns: string[] = []
   async sendTurn(_threadId: string, message: string): Promise<void> {
@@ -218,57 +244,115 @@ describe('through the provider registry', () => {
     detail: async () => ({ ok: false, error: { kind: 'unknown', host: 'github', message: 'unused' } }),
     conversations: async () => ({
       ok: true,
-      data: [{ id: 'T1', path: 'a.ts', line: 3, side: 'new', resolved: false, outdated: false, comments: [{ id: 'c', author: { login: 'rev', displayName: 'Rev', avatarUrl: null }, body: 'Why?', createdAt: 0, url: null }] }],
+      data: [
+        {
+          id: 'T1',
+          path: 'a.ts',
+          line: 3,
+          side: 'new',
+          resolved: false,
+          outdated: false,
+          comments: [
+            {
+              id: 'c',
+              author: { login: 'rev', displayName: 'Rev', avatarUrl: null },
+              body: 'Why?',
+              createdAt: 0,
+              url: null,
+            },
+          ],
+        },
+      ],
     }),
-    reply: async (_ref, input) => { posted.push(input); return { ok: true, data: { refresh: [] } } },
+    reply: async (_ref, input) => {
+      posted.push(input)
+      return { ok: true, data: { refresh: [] } }
+    },
     setResolved: async () => ({ ok: true, data: { refresh: [] } }),
     rerunCheck: async () => ({ ok: true, data: { refresh: [] } }),
   }
 
-  it('carries a reply from the agent to a card, refuses a device without the chat scope, and posts the phone\'s approval as drafted', async () => {
+  it("carries a reply from the agent to a card, refuses a device without the chat scope, and posts the phone's approval as drafted", async () => {
     setAgentPullRequestAccess(access)
     const host = new FakeHost()
     const adapter = new LaunchRecordingAdapter()
     const server = new SwitchboardMcpServer({ bridgeDir: () => bridgeDir })
     const registry = new ProviderRegistry(host, new Map([['codex', adapter]]), undefined, undefined, server)
     registry.registerIpcHandlers()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'codex', cwd: '/tmp', runtimeMode: 'full-access' })
+    await host.invoke(ProviderChannels.START_SESSION, {
+      threadId: 't1',
+      provider: 'codex',
+      cwd: '/tmp',
+      runtimeMode: 'full-access',
+    })
 
     const launch = adapter.launches[0]!
     expect(launch.args[0]).toBe(join(bridgeDir, 'switchboard-mcp.cjs'))
     const client = connect(launch)
     await client.request('initialize', {})
-    const reply = client.request('tools/call', { name: 'reply_to_conversation', arguments: { conversationId: 'T1', text: 'Because.' } })
+    const reply = client.request('tools/call', {
+      name: 'reply_to_conversation',
+      arguments: { conversationId: 'T1', text: 'Because.' },
+    })
     // The call does not wait for the user: it answers that the write is queued.
-    expect(((await reply).result as { content: Array<{ text: string }> }).content[0].text).toMatch(/^Queued for the user's approval \(card sbmcp_/)
+    expect(((await reply).result as { content: Array<{ text: string }> }).content[0].text).toMatch(
+      /^Queued for the user's approval \(card sbmcp_/,
+    )
 
     await vi.waitFor(() => expect(host.events.some((e) => e.type === 'request.opened')).toBe(true))
-    const card = host.events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
-    expect(card.hostWrite).toMatchObject({ action: 'reply', agentLabel: 'Codex', replyText: 'Because.', quote: { author: 'rev', body: 'Why?' } })
+    const card = host.events.find((e) => e.type === 'request.opened') as Extract<
+      RuntimeEvent,
+      { type: 'request.opened' }
+    >
+    expect(card.hostWrite).toMatchObject({
+      action: 'reply',
+      agentLabel: 'Codex',
+      replyText: 'Because.',
+      quote: { author: 'rev', body: 'Why?' },
+    })
     // The card is recoverable like any other open approval.
     expect(await host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 't1')).toEqual([card])
 
     const scopeless = withBackendRequestContext({ clientScope: 'watch', transport: 'remote', deviceScopes: [] }, () =>
-      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { text: 'from the watch' }))
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { text: 'from the watch' }),
+    )
     await expect(scopeless).rejects.toThrow('cannot post')
     expect(posted).toEqual([])
 
-    const phone = { clientScope: 'phone', transport: 'remote' as const, deviceScopes: ['chat' as const], deviceSessionId: 'dev_1' }
+    const phone = {
+      clientScope: 'phone',
+      transport: 'remote' as const,
+      deviceScopes: ['chat' as const],
+      deviceSessionId: 'dev_1',
+    }
     // An app built before the digest showed a shortened card: its approval is refused.
-    await expect(withBackendRequestContext(phone, () =>
-      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false }))).rejects.toThrow(HOST_WRITE_SHOWN_REQUIRED)
+    await expect(
+      withBackendRequestContext(phone, () =>
+        host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false }),
+      ),
+    ).rejects.toThrow(HOST_WRITE_SHOWN_REQUIRED)
     expect(posted).toEqual([])
 
     // The phone approves the draft its card showed: replacement text from a
     // device without the admin scope is dropped before the broker sees it.
     await withBackendRequestContext(phone, () =>
-      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', { resolve: false, text: 'Replaced on the phone', shown: hostWriteShownDigest(card.requestId, card.hostWrite!) }))
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', card.requestId, 'approve', {
+        resolve: false,
+        text: 'Replaced on the phone',
+        shown: hostWriteShownDigest(card.requestId, card.hostWrite!),
+      }),
+    )
     const result = await reply
     expect((result.result as { isError?: boolean }).isError).toBeUndefined()
     await vi.waitFor(() => expect(host.events.some((e) => e.type === 'approval.result')).toBe(true))
     expect(posted).toEqual([{ conversationId: 'T1', body: 'Because.\n\nvia Switchboard' }])
     expect(adapter.respondCalls).toBe(0)
-    expect(host.events).toContainEqual({ type: 'request.closed', threadId: 't1', requestId: card.requestId, decision: 'approve' })
+    expect(host.events).toContainEqual({
+      type: 'request.closed',
+      threadId: 't1',
+      requestId: card.requestId,
+      decision: 'approve',
+    })
     // The agent hears the result in a later turn of its own.
     expect(adapter.turns.at(-1)).toContain('Posted the reply')
 
@@ -279,7 +363,7 @@ describe('through the provider registry', () => {
     setAgentPullRequestAccess(null)
   })
 
-  it('posts the desktop\'s edit of the draft', async () => {
+  it("posts the desktop's edit of the draft", async () => {
     setAgentPullRequestAccess(access)
     posted.length = 0
     const host = new FakeHost()
@@ -287,14 +371,28 @@ describe('through the provider registry', () => {
     const server = new SwitchboardMcpServer({ bridgeDir: () => bridgeDir })
     const registry = new ProviderRegistry(host, new Map([['codex', adapter]]), undefined, undefined, server)
     registry.registerIpcHandlers()
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 't3', provider: 'codex', cwd: '/tmp', runtimeMode: 'full-access' })
+    await host.invoke(ProviderChannels.START_SESSION, {
+      threadId: 't3',
+      provider: 'codex',
+      cwd: '/tmp',
+      runtimeMode: 'full-access',
+    })
     const client = connect(adapter.launches[0]!)
     await client.request('initialize', {})
-    const reply = client.request('tools/call', { name: 'reply_to_conversation', arguments: { conversationId: 'T1', text: 'Because.' } })
+    const reply = client.request('tools/call', {
+      name: 'reply_to_conversation',
+      arguments: { conversationId: 'T1', text: 'Because.' },
+    })
     await vi.waitFor(() => expect(host.events.some((e) => e.type === 'request.opened')).toBe(true))
-    const card = host.events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
+    const card = host.events.find((e) => e.type === 'request.opened') as Extract<
+      RuntimeEvent,
+      { type: 'request.opened' }
+    >
 
-    await host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't3', card.requestId, 'approve', { resolve: false, text: 'Edited on the desktop.' })
+    await host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't3', card.requestId, 'approve', {
+      resolve: false,
+      text: 'Edited on the desktop.',
+    })
     await reply
     expect(posted).toEqual([{ conversationId: 'T1', body: 'Edited on the desktop.\n\nvia Switchboard' }])
 
@@ -317,11 +415,21 @@ describe('through the provider registry', () => {
     await client.request('initialize', {})
     void client.request('tools/call', { name: 'reply_to_conversation', arguments: { conversationId: 'T1', text: 'x' } })
     await vi.waitFor(() => expect(host.events.some((e) => e.type === 'request.opened')).toBe(true))
-    const card = host.events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
+    const card = host.events.find((e) => e.type === 'request.opened') as Extract<
+      RuntimeEvent,
+      { type: 'request.opened' }
+    >
 
     await host.invoke(ProviderChannels.STOP_SESSION, 't2')
-    expect(host.events).toContainEqual({ type: 'request.closed', threadId: 't2', requestId: card.requestId, decision: 'deny' })
-    await expect(host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't2', card.requestId, 'approve', {})).rejects.toThrow()
+    expect(host.events).toContainEqual({
+      type: 'request.closed',
+      threadId: 't2',
+      requestId: card.requestId,
+      decision: 'deny',
+    })
+    await expect(
+      host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't2', card.requestId, 'approve', {}),
+    ).rejects.toThrow()
     expect(posted).toEqual([])
     await server.stop()
     setAgentPullRequestAccess(null)

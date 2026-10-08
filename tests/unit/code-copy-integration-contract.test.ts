@@ -39,9 +39,15 @@ describe('code-copy integration contract', () => {
   it('settles transient copy state in local interruption and provider-stop fallbacks', () => {
     const settleCalls = panel.match(/messageLifecycle\.settleThread\(sessionId\)/g) ?? []
     expect(settleCalls.length).toBeGreaterThanOrEqual(2)
-    expect(panel).toMatch(/await window\.api\.provider\?\.interrupt\?\.\(sessionId\)[^]*?flushThread\(sessionId\)[^]*?messageLifecycle\.settleThread\(sessionId\)/)
-    expect(panel).toMatch(/onClearMessages=\{\(\) => \{[^]*?messageLifecycle\.settleThread\(sessionId\)[^]*?clearMessages\(sessionId\)/)
-    expect(panel).toMatch(/onArchive=\{\(\) => \{[^]*?messageLifecycle\.settleThread\(sessionId\)[^]*?removeSession\(sessionId\)/)
+    expect(panel).toMatch(
+      /await window\.api\.provider\?\.interrupt\?\.\(sessionId\)[^]*?flushThread\(sessionId\)[^]*?messageLifecycle\.settleThread\(sessionId\)/,
+    )
+    expect(panel).toMatch(
+      /onClearMessages=\{\(\) => \{[^]*?messageLifecycle\.settleThread\(sessionId\)[^]*?clearMessages\(sessionId\)/,
+    )
+    expect(panel).toMatch(
+      /onArchive=\{\(\) => \{[^]*?messageLifecycle\.settleThread\(sessionId\)[^]*?removeSession\(sessionId\)/,
+    )
   })
 
   it('aligns the React-owned tool code button with the accessible shared contract', () => {
@@ -49,8 +55,10 @@ describe('code-copy integration contract', () => {
     expect(toolCall).toContain('aria-live="polite"')
     expect(toolCall).toContain('className="tool-code-toolbar"')
     expect(toolCall).toContain("padding: '6px 10px'")
-    expect(toolCall).toContain("const codeRef = useRef<HTMLSpanElement>(null)")
-    expect(toolCall).toMatch(/tool-code-toolbar[^]*?<button[^]*?<\/div>[^]*?<pre[^]*?<span ref=\{codeRef\}>\{children\}<\/span>/)
+    expect(toolCall).toContain('const codeRef = useRef<HTMLSpanElement>(null)')
+    expect(toolCall).toMatch(
+      /tool-code-toolbar[^]*?<button[^]*?<\/div>[^]*?<pre[^]*?<span ref=\{codeRef\}>\{children\}<\/span>/,
+    )
     expect(css).toMatch(/\.tool-code-block \.tool-code-toolbar \.code-copy-btn\s*\{[^}]*position:\s*static/s)
   })
 })

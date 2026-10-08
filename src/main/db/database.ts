@@ -187,7 +187,7 @@ function migrate(db: Database.Database): void {
 
   // Migration: add `images` column to messages if missing
   try {
-    const cols = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>
+    const cols = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
     if (!cols.some((c) => c.name === 'images')) {
       db.exec('ALTER TABLE messages ADD COLUMN images TEXT')
     }
@@ -205,7 +205,7 @@ function migrate(db: Database.Database): void {
 
   // Migration: add `archived` column to conversations if missing
   try {
-    const cols = db.prepare("PRAGMA table_info(conversations)").all() as Array<{ name: string }>
+    const cols = db.prepare('PRAGMA table_info(conversations)').all() as Array<{ name: string }>
     if (!cols.some((c) => c.name === 'archived')) {
       db.exec('ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
     }
@@ -253,7 +253,7 @@ function migrate(db: Database.Database): void {
       db.exec('ALTER TABLE conversations ADD COLUMN last_read_at INTEGER')
     }
     if (!cols.some((c) => c.name === 'sidebar_role')) {
-      db.exec("ALTER TABLE conversations ADD COLUMN sidebar_role TEXT")
+      db.exec('ALTER TABLE conversations ADD COLUMN sidebar_role TEXT')
     }
     // Migration (2026-09-17 - execution-root relocation): optimistic
     // concurrency token for the conversation's execution root. Bumped in the
@@ -276,7 +276,7 @@ function migrate(db: Database.Database): void {
   // "template" names. We rename the existing column in place so pinned
   // selections survive the upgrade.
   try {
-    const cols = db.prepare("PRAGMA table_info(session_layouts)").all() as Array<{ name: string }>
+    const cols = db.prepare('PRAGMA table_info(session_layouts)').all() as Array<{ name: string }>
     const hasNew = cols.some((c) => c.name === 'launch_config_name')
     const hasOld = cols.some((c) => c.name === 'template_name')
     if (!hasNew && hasOld) {
@@ -303,20 +303,28 @@ function migrate(db: Database.Database): void {
     );
   `)
   try {
-    const cols = db.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>
+    const cols = db.prepare('PRAGMA table_info(projects)').all() as Array<{ name: string }>
     if (!cols.some((c) => c.name === 'workspace_id')) {
       db.exec('ALTER TABLE projects ADD COLUMN workspace_id TEXT REFERENCES project_workspaces(id) ON DELETE SET NULL')
     }
     if (!cols.some((c) => c.name === 'sort_order')) {
       db.exec('ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0')
-      const saved = db.prepare("SELECT value FROM settings WHERE key = 'projectOrder'").get() as { value: string } | undefined
+      const saved = db.prepare("SELECT value FROM settings WHERE key = 'projectOrder'").get() as
+        | { value: string }
+        | undefined
       let savedOrder: string[] | null = null
       if (saved?.value) {
-        try { savedOrder = JSON.parse(saved.value) } catch { savedOrder = null }
+        try {
+          savedOrder = JSON.parse(saved.value)
+        } catch {
+          savedOrder = null
+        }
       }
-      const rows = db.prepare(
-        'SELECT path, workspace_id, added_at FROM projects'
-      ).all() as Array<{ path: string; workspace_id: string | null; added_at: number }>
+      const rows = db.prepare('SELECT path, workspace_id, added_at FROM projects').all() as Array<{
+        path: string
+        workspace_id: string | null
+        added_at: number
+      }>
       const positions = deriveProjectPositions(
         rows.map((row) => ({ path: row.path, workspaceId: row.workspace_id, addedAt: row.added_at })),
         savedOrder,
@@ -370,7 +378,8 @@ function migrate(db: Database.Database): void {
   // ultimate root and re-writing makes lookups O(1) again.
   try {
     const rows = db.prepare('SELECT claude_session_id, thread_id FROM thread_sessions').all() as Array<{
-      claude_session_id: string; thread_id: string
+      claude_session_id: string
+      thread_id: string
     }>
     if (rows.length > 0) {
       const byChild = new Map(rows.map((r) => [r.claude_session_id, r.thread_id]))
@@ -432,7 +441,7 @@ function migrate(db: Database.Database): void {
   // Migration: add `runtime_mode` to kanban_cards if missing. Existing
   // rows backfill to `accept-edits` to match the new default.
   try {
-    const cols = db.prepare("PRAGMA table_info(kanban_cards)").all() as Array<{ name: string }>
+    const cols = db.prepare('PRAGMA table_info(kanban_cards)').all() as Array<{ name: string }>
     if (!cols.some((c) => c.name === 'runtime_mode')) {
       db.exec("ALTER TABLE kanban_cards ADD COLUMN runtime_mode TEXT NOT NULL DEFAULT 'accept-edits'")
     }
@@ -467,7 +476,7 @@ function migrate(db: Database.Database): void {
   // Decrypting on LIST hit the macOS Keychain at every app boot, and on an
   // unsigned build that means a password prompt on every launch. Key names
   // are not secrets; values stay encrypted. Backfilled on next upsert.
-  const piCols = db.prepare("PRAGMA table_info(provider_instances)").all() as Array<{ name: string }>
+  const piCols = db.prepare('PRAGMA table_info(provider_instances)').all() as Array<{ name: string }>
   if (!piCols.some((c) => c.name === 'env_keys')) {
     db.exec('ALTER TABLE provider_instances ADD COLUMN env_keys TEXT')
   }
@@ -476,14 +485,14 @@ function migrate(db: Database.Database): void {
   const seed = db.prepare(
     `INSERT OR IGNORE INTO provider_instances
        (id, agent_type, display_name, auth_mode, enabled)
-     VALUES (?, ?, 'Default', 'env', 1)`
+     VALUES (?, ?, 'Default', 'env', 1)`,
   )
   for (const kind of AGENT_TYPES) {
     seed.run(defaultInstanceId(kind), kind)
   }
 
   // Backfill conversations.provider_instance_id from agent_type.
-  const convCols = db.prepare("PRAGMA table_info(conversations)").all() as Array<{ name: string }>
+  const convCols = db.prepare('PRAGMA table_info(conversations)').all() as Array<{ name: string }>
   if (!convCols.some((c) => c.name === 'provider_instance_id')) {
     db.exec('ALTER TABLE conversations ADD COLUMN provider_instance_id TEXT')
   }
@@ -544,9 +553,10 @@ function migrate(db: Database.Database): void {
   // Rebuild FTS index from existing messages
   try {
     const ftsCount = (db.prepare('SELECT count(*) as c FROM messages_fts').get() as { c: number } | undefined)?.c ?? 0
-    const msgCount = (db.prepare("SELECT count(*) as c FROM messages WHERE content != ''").get() as { c: number } | undefined)?.c ?? 0
+    const msgCount =
+      (db.prepare("SELECT count(*) as c FROM messages WHERE content != ''").get() as { c: number } | undefined)?.c ?? 0
     if (ftsCount < msgCount) {
-      db.exec("DELETE FROM messages_fts;")
+      db.exec('DELETE FROM messages_fts;')
       db.exec(`
         INSERT INTO messages_fts(rowid, content, conversation_id, role)
           SELECT rowid, content, conversation_id, role FROM messages WHERE content != '';

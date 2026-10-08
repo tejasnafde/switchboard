@@ -52,17 +52,20 @@ describe('registerFilesHandlers via BackendHost', () => {
       const host = new FakeHost()
       registerFilesHandlers(host)
       const write = host.handlers.get(FilesChannels.WRITE_FILE)!
-      const asPhone = (...args: unknown[]) => withBackendRequestContext(
-        { clientScope: 'phone', transport: 'remote', deviceScopes: ['chat'] },
-        () => write(...args),
-      )
+      const asPhone = (...args: unknown[]) =>
+        withBackendRequestContext({ clientScope: 'phone', transport: 'remote', deviceScopes: ['chat'] }, () =>
+          write(...args),
+        )
 
-      await expect(asPhone(join(root, '.switchboard'), 'launch-config.yaml', 'command: evil'))
-        .resolves.toMatchObject({ ok: false, error: expect.stringMatching(/not permitted/i) })
-      await expect(asPhone(root, 'config-alias/workspace.yaml', 'command: evil'))
-        .resolves.toMatchObject({ ok: false, error: expect.stringMatching(/not permitted/i) })
-      await expect(asPhone(root, 'src/ordinary.ts', 'export const safe = true'))
-        .resolves.toMatchObject({ ok: true })
+      await expect(asPhone(join(root, '.switchboard'), 'launch-config.yaml', 'command: evil')).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/not permitted/i),
+      })
+      await expect(asPhone(root, 'config-alias/workspace.yaml', 'command: evil')).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/not permitted/i),
+      })
+      await expect(asPhone(root, 'src/ordinary.ts', 'export const safe = true')).resolves.toMatchObject({ ok: true })
       await expect(readFile(join(root, 'src/ordinary.ts'), 'utf8')).resolves.toBe('export const safe = true')
     } finally {
       await rm(root, { recursive: true, force: true })

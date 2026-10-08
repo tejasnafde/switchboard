@@ -48,14 +48,19 @@ describe('applyExecutionRoot', () => {
   it('trusts the backend isWorktree flag rather than comparing paths', () => {
     // The renderer cannot realpath, so it must not decide this itself.
     useAgentStore.getState().applyExecutionRoot('s1', {
-      path: '/private/repo/app', branch: 'main', revision: 9, isWorktree: false,
+      path: '/private/repo/app',
+      branch: 'main',
+      revision: 9,
+      isWorktree: false,
     })
     expect(session()?.worktreePath).toBeNull()
   })
 
   it('clears the pointer when the root returns to the parent checkout', () => {
     useAgentStore.getState().applyExecutionRoot('s1', { path: '/wt/a', branch: 'sb/a', revision: 1, isWorktree: true })
-    useAgentStore.getState().applyExecutionRoot('s1', { path: '/repo/app', branch: 'main', revision: 2, isWorktree: false })
+    useAgentStore
+      .getState()
+      .applyExecutionRoot('s1', { path: '/repo/app', branch: 'main', revision: 2, isWorktree: false })
     expect(session()?.worktreePath).toBeNull()
     expect(session()?.worktreeBranch).toBeNull()
   })
@@ -75,7 +80,10 @@ describe('applyExecutionRoot', () => {
 
   it('does not touch another session', () => {
     useAgentStore.getState().addSession({
-      id: 's2', type: 'claude-code', status: 'idle', projectPath: '/repo/app',
+      id: 's2',
+      type: 'claude-code',
+      status: 'idle',
+      projectPath: '/repo/app',
     } as never)
     useAgentStore.getState().applyExecutionRoot('s1', { path: '/wt/a', branch: 'sb/a', revision: 1, isWorktree: true })
     expect(useAgentStore.getState().sessions.find((s) => s.id === 's2')?.worktreePath).toBeUndefined()

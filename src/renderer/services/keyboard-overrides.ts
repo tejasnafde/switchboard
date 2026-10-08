@@ -23,7 +23,7 @@ function adopt(raw: string | null): void {
   if (ignored.length > 0) log.warn('ignoring shortcut overrides this build cannot use', ignored)
   try {
     const parsed: unknown = raw ? JSON.parse(raw) : {}
-    stored = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+    stored = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
   } catch (err) {
     stored = {}
     log.warn('stored shortcut overrides are not JSON; starting from the defaults', err)
@@ -35,7 +35,8 @@ function adopt(raw: string | null): void {
  * a failed read would erase every other rebind.
  */
 export function loadKeyboardOverrides(): Promise<void> {
-  loading ??= window.api.settings.get(KEYBOARD_OVERRIDES_SETTING)
+  loading ??= window.api.settings
+    .get(KEYBOARD_OVERRIDES_SETTING)
     .then(adopt)
     .catch((err) => {
       loading = null

@@ -14,11 +14,11 @@ const mocks = vi.hoisted(() => {
       removeAllListeners() {
         listeners.clear()
       },
-    checkForUpdates: vi.fn(async () => ({})),
-    quitAndInstall: vi.fn(),
-    autoDownload: false,
-    autoInstallOnAppQuit: true,
-    disableDifferentialDownload: false,
+      checkForUpdates: vi.fn(async () => ({})),
+      quitAndInstall: vi.fn(),
+      autoDownload: false,
+      autoInstallOnAppQuit: true,
+      disableDifferentialDownload: false,
       logger: null as unknown,
     },
     handlers: new Map<string, (...args: unknown[]) => unknown>(),
@@ -71,10 +71,10 @@ describe('updater window lifecycle', () => {
     registerAutoUpdater(replacement as never)
     mocks.updater.emit('update-downloaded', { version: '0.8.25' })
 
-    expect(replacement.webContents.send).toHaveBeenCalledWith(
-      'app:update-status',
-      { kind: 'downloaded', version: '0.8.25' },
-    )
+    expect(replacement.webContents.send).toHaveBeenCalledWith('app:update-status', {
+      kind: 'downloaded',
+      version: '0.8.25',
+    })
   })
 
   it('exposes the latest updater state for a settings row that mounted late', async () => {

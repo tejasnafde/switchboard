@@ -27,10 +27,7 @@
  * Do NOT add `terminal:data`: that is the client-to-server keystroke channel,
  * sent as `snd`, so listing it excludes nothing while pty output pours in.
  */
-export const NON_REPLAYABLE_EVENT_CHANNELS: ReadonlySet<string> = new Set([
-  'terminal:output',
-  'terminal:exit',
-])
+export const NON_REPLAYABLE_EVENT_CHANNELS: ReadonlySet<string> = new Set(['terminal:output', 'terminal:exit'])
 
 export const BACKEND_CAPABILITIES = [
   'durable_turn_origin',
@@ -158,7 +155,8 @@ export function decodeFrame(data: string): WsFrame | null {
       if (
         frame.capabilities !== undefined &&
         (!Array.isArray(frame.capabilities) || frame.capabilities.some((item) => typeof item !== 'string'))
-      ) return null
+      )
+        return null
       return {
         k: 'ready',
         epoch: frame.epoch,

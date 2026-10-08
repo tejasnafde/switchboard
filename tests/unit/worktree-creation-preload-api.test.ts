@@ -2,10 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createWorktreeCreationApi } from '../../src/preload/worktree-creation-api'
 import { WorktreeCreationChannels } from '../../src/shared/ipc-channels'
 import type { Transport } from '../../src/shared/transport'
-import type {
-  WorktreeCreationProgressEvent,
-  WorktreeCreationRequest,
-} from '../../src/shared/worktree-creation'
+import type { WorktreeCreationProgressEvent, WorktreeCreationRequest } from '../../src/shared/worktree-creation'
 
 const request: WorktreeCreationRequest = {
   schemaVersion: 1,

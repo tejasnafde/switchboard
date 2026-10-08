@@ -38,7 +38,7 @@ vi.mock('../../src/main/db/database', () => ({
 
 const claudeCandidateDirs = vi.fn(() => ['/profile-a', '/profile-b'])
 const listClaudeSessionCopies = vi.fn((dir: string, id: string) =>
-  transcriptsByDir.get(dir)?.has(id) ? [{ id, path: `${dir}/${id}.jsonl` }] : []
+  transcriptsByDir.get(dir)?.has(id) ? [{ id, path: `${dir}/${id}.jsonl` }] : [],
 )
 
 vi.mock('../../src/main/provider/claude-session-migrate', () => ({

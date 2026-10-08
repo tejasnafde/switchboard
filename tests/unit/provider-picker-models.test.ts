@@ -5,7 +5,11 @@ import { filterModels, groupModelsByProvider } from '../../src/renderer/componen
 const model = (id: string, label = id): ModelOption => ({ id, label, tier: 'balanced' })
 
 describe('filterModels', () => {
-  const models = [model('claude-sonnet-5', 'Sonnet 5'), model('openai/gpt-5', 'GPT-5'), model('anthropic/claude-haiku', 'Haiku')]
+  const models = [
+    model('claude-sonnet-5', 'Sonnet 5'),
+    model('openai/gpt-5', 'GPT-5'),
+    model('anthropic/claude-haiku', 'Haiku'),
+  ]
 
   it('returns the list unchanged for a blank query', () => {
     expect(filterModels(models, '  ')).toBe(models)

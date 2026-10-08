@@ -167,11 +167,7 @@ export const SendMicButton = memo(function SendMicButton({
                 ? 'Stop the agent'
                 : 'Hold to dictate, slide up to lock'
         }
-        style={[
-          styles.button,
-          mode === 'send' && styles.buttonSend,
-          mode === 'stop-turn' && styles.buttonStop,
-        ]}
+        style={[styles.button, mode === 'send' && styles.buttonSend, mode === 'stop-turn' && styles.buttonStop]}
       >
         {dictation.listening && (
           <Animated.View

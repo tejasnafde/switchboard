@@ -52,7 +52,10 @@ const app = await electron.launch({
 try {
   const win = await app.firstWindow()
   if (process.env.SB_E2E_CONSOLE) {
-    win.on('console', (m) => { const t = m.text(); if (/relocat|worktree|execution/i.test(t)) console.log(`  [renderer] ${t}`) })
+    win.on('console', (m) => {
+      const t = m.text()
+      if (/relocat|worktree|execution/i.test(t)) console.log(`  [renderer] ${t}`)
+    })
   }
   await win.waitForFunction(() => !!window.api?.ide?.ensure, null, { timeout: 20_000 })
   await win.evaluate((dir) => window.api.routing.invokeOn('local', 'app:add-project-path', dir), project)
@@ -80,9 +83,12 @@ try {
   check(!!threadId, `thread resolved (${threadId})`)
 
   // Push the exact event the registry's drift watcher emits.
-  await app.evaluate(({ BrowserWindow }, payload) => {
-    BrowserWindow.getAllWindows()[0].webContents.send('provider:event', payload)
-  }, { type: 'worktree.drift', threadId, worktreePath: realpathSync(worktree), branch: 'fork/wt-e2e' })
+  await app.evaluate(
+    ({ BrowserWindow }, payload) => {
+      BrowserWindow.getAllWindows()[0].webContents.send('provider:event', payload)
+    },
+    { type: 'worktree.drift', threadId, worktreePath: realpathSync(worktree), branch: 'fork/wt-e2e' },
+  )
 
   const banner = win.locator('[data-drift-banner]')
   let visible = false
@@ -102,7 +108,12 @@ try {
   let chipText = ''
   for (let i = 0; i < 16 && !chipText.includes('wt-e2e'); i++) {
     await win.waitForTimeout(1000)
-    chipText = (await win.locator('button[title="Switch branch"]').first().textContent().catch(() => '')) ?? ''
+    chipText =
+      (await win
+        .locator('button[title="Switch branch"]')
+        .first()
+        .textContent()
+        .catch(() => '')) ?? ''
   }
   check(chipText.includes('wt-e2e'), `branch chip follows the worktree (shows: ${chipText.trim()})`)
 
@@ -115,7 +126,12 @@ try {
   let healedChip = ''
   for (let i = 0; i < 80 && !healedChip.includes(mainBranch); i++) {
     await win.waitForTimeout(1000)
-    healedChip = (await win.locator('button[title="Switch branch"]').first().textContent().catch(() => '')) ?? ''
+    healedChip =
+      (await win
+        .locator('button[title="Switch branch"]')
+        .first()
+        .textContent()
+        .catch(() => '')) ?? ''
   }
   check(healedChip.includes(mainBranch), `deleted worktree heals back to the main clone (chip: ${healedChip.trim()})`)
   // The heal does append a system notice, but `MessageList` renders the

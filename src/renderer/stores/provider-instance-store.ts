@@ -127,22 +127,27 @@ export const useProviderInstanceStore = create<ProviderInstanceStore>((set, get)
     const running = usageReads.get(id)
     if (running) {
       if (opts?.force || opts?.refreshWithTurn) {
-        queuedUsage.set(id, { force: true, refreshWithTurn: queuedUsage.get(id)?.refreshWithTurn || opts.refreshWithTurn })
+        queuedUsage.set(id, {
+          force: true,
+          refreshWithTurn: queuedUsage.get(id)?.refreshWithTurn || opts.refreshWithTurn,
+        })
       }
       return running
     }
     set((s) => ({ usageLoading: { ...s.usageLoading, [id]: true } }))
-    const task = get().usage(id, opts).then((usage) => {
-      usageReads.delete(id)
-      const next = queuedUsage.get(id)
-      queuedUsage.delete(id)
-      set((s) => {
-        const usageLoading = { ...s.usageLoading }
-        if (!next) delete usageLoading[id]
-        return { usages: { ...s.usages, [id]: usage }, usageLoading }
+    const task = get()
+      .usage(id, opts)
+      .then((usage) => {
+        usageReads.delete(id)
+        const next = queuedUsage.get(id)
+        queuedUsage.delete(id)
+        set((s) => {
+          const usageLoading = { ...s.usageLoading }
+          if (!next) delete usageLoading[id]
+          return { usages: { ...s.usages, [id]: usage }, usageLoading }
+        })
+        if (next) return get().loadUsage(id, next)
       })
-      if (next) return get().loadUsage(id, next)
-    })
     usageReads.set(id, task)
     return task
   },

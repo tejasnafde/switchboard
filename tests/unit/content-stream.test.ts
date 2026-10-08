@@ -64,11 +64,7 @@ describe('mergeContentChunks', () => {
   })
 
   it('survives a snapshot arriving mid-batch', () => {
-    const chunks: ContentChunk[] = [
-      { text: 'aa', append: true },
-      { text: 'RESET' },
-      { text: 'bb', append: true },
-    ]
+    const chunks: ContentChunk[] = [{ text: 'aa', append: true }, { text: 'RESET' }, { text: 'bb', append: true }]
     const direct = chunks.reduce<string | undefined>((acc, c) => applyContentText(acc, c), 'seed')
     const folded = chunks.reduce((a, b) => mergeContentChunks(a, b))
     expect(applyContentText('seed', folded)).toBe(direct)

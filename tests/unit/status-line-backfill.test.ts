@@ -5,7 +5,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '../../src/shared/types'
 
-const rows = new Map<string, { id: string; project_path: string; agent_type: string; title: string; status_line?: string | null }>()
+const rows = new Map<
+  string,
+  { id: string; project_path: string; agent_type: string; title: string; status_line?: string | null }
+>()
 const stored: Array<{ id: string; line: string }> = []
 let history: ChatMessage[] = []
 let historyError = false
@@ -18,7 +21,10 @@ vi.mock('../../src/main/db/database', async (importOriginal) => ({
   resolveRootThreadId: (id: string) => id,
   getSessionLayout: () => null,
   getConversationForkMetadata: () => null,
-  setConversationStatusLineIfMissing: (id: string, line: string) => { stored.push({ id, line }); return writeTakes },
+  setConversationStatusLineIfMissing: (id: string, line: string) => {
+    stored.push({ id, line })
+    return writeTakes
+  },
 }))
 vi.mock('../../src/main/conversations/history', () => ({
   loadConversationHistory: async () => {
@@ -30,13 +36,25 @@ vi.mock('../../src/main/conversations/history', () => ({
 const { registerAppHandlers } = await import('../../src/main/ipc/app')
 const { AppChannels } = await import('../../src/shared/ipc-channels')
 
-function loadById(turnInFlight = false, opts?: { limit?: number; window?: boolean; beforeId?: string }): Promise<{ messages: ChatMessage[]; total: number; nextBeforeId?: string | null }> {
+function loadById(
+  turnInFlight = false,
+  opts?: { limit?: number; window?: boolean; beforeId?: string },
+): Promise<{ messages: ChatMessage[]; total: number; nextBeforeId?: string | null }> {
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
   registerAppHandlers(
-    { handle: (c: string, h: (...args: unknown[]) => unknown) => handlers.set(c, h), emit: (channel: string) => { emitted.push(channel) } } as never,
+    {
+      handle: (c: string, h: (...args: unknown[]) => unknown) => handlers.set(c, h),
+      emit: (channel: string) => {
+        emitted.push(channel)
+      },
+    } as never,
     { isTurnInFlight: () => turnInFlight },
   )
-  return handlers.get(AppChannels.LOAD_SESSION_BY_ID)!('c1', opts) as Promise<{ messages: ChatMessage[]; total: number; nextBeforeId?: string | null }>
+  return handlers.get(AppChannels.LOAD_SESSION_BY_ID)!('c1', opts) as Promise<{
+    messages: ChatMessage[]
+    total: number
+    nextBeforeId?: string | null
+  }>
 }
 
 beforeEach(() => {
@@ -74,7 +92,13 @@ describe('status line backfill on history load', () => {
   })
 
   it('leaves a stored line alone', async () => {
-    rows.set('c1', { id: 'c1', project_path: '/repo', agent_type: 'claude-code', title: 'Chat', status_line: 'Earlier line' })
+    rows.set('c1', {
+      id: 'c1',
+      project_path: '/repo',
+      agent_type: 'claude-code',
+      title: 'Chat',
+      status_line: 'Earlier line',
+    })
     await loadById()
     expect(stored).toHaveLength(0)
     expect(emitted).toHaveLength(0)

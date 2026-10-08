@@ -31,9 +31,11 @@ function snapshot(overrides: Partial<WorktreeCreationSnapshot> = {}): WorktreeCr
 
 describe('WorktreeCreationProgress', () => {
   it('uses honest phase copy without fake percentage progress', () => {
-    const markup = renderToStaticMarkup(createElement(WorktreeCreationProgress, {
-      snapshot: snapshot(),
-    }))
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeCreationProgress, {
+        snapshot: snapshot(),
+      }),
+    )
 
     expect(markup).toContain('Configuring sparse checkout')
     expect(markup).toContain('creation-progress-1')
@@ -43,20 +45,22 @@ describe('WorktreeCreationProgress', () => {
 
   it('explains retained mutable state and renders only advertised recovery actions', () => {
     const onAction = vi.fn()
-    const markup = renderToStaticMarkup(createElement(WorktreeCreationProgress, {
-      snapshot: snapshot({
-        phase: 'provisioning',
-        status: 'cleanup_required',
-        error: {
-          code: 'setup_failed',
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeCreationProgress, {
+        snapshot: snapshot({
           phase: 'provisioning',
-          message: 'Setup failed after it may have modified the worktree.',
-          retryable: false,
-        },
-        recoveryActions: ['retain', 'remove'],
+          status: 'cleanup_required',
+          error: {
+            code: 'setup_failed',
+            phase: 'provisioning',
+            message: 'Setup failed after it may have modified the worktree.',
+            retryable: false,
+          },
+          recoveryActions: ['retain', 'remove'],
+        }),
+        onAction,
       }),
-      onAction,
-    }))
+    )
 
     expect(markup).toContain('Setup failed after it may have modified the worktree.')
     expect(markup).toContain('The worktree was retained')
@@ -67,10 +71,12 @@ describe('WorktreeCreationProgress', () => {
   })
 
   it('shows an explicit reconnect instruction for a pending remote operation', () => {
-    const markup = renderToStaticMarkup(createElement(WorktreeCreationProgress, {
-      snapshot: snapshot({ phase: 'materializing' }),
-      disconnected: true,
-    }))
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeCreationProgress, {
+        snapshot: snapshot({ phase: 'materializing' }),
+        disconnected: true,
+      }),
+    )
 
     expect(markup).toContain('Reconnect to continue tracking creation creation-progress-1.')
   })

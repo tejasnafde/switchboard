@@ -41,10 +41,7 @@ function cursorUserDir(): string {
 
 const MAX_CURSOR_RECORD_BYTES = 16 * 1024 * 1024
 
-export function parseCursorJsonValue(
-  value: unknown,
-  maxBytes = MAX_CURSOR_RECORD_BYTES,
-): unknown {
+export function parseCursorJsonValue(value: unknown, maxBytes = MAX_CURSOR_RECORD_BYTES): unknown {
   try {
     if (Buffer.isBuffer(value)) {
       if (value.byteLength > maxBytes) return null
@@ -61,9 +58,7 @@ export function parseCursorJsonValue(
 }
 
 function record(value: unknown): JsonRecord | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as JsonRecord
-    : null
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as JsonRecord) : null
 }
 
 function timestamp(value: unknown, fallback = 0): number {
@@ -89,7 +84,11 @@ function inlineBubbles(composer: JsonRecord): JsonRecord[] {
     if (bubbles.length) return bubbles
   }
   const map = record(composer.conversationMap)
-  return map ? Object.values(map).map(record).filter((item): item is JsonRecord => item !== null) : []
+  return map
+    ? Object.values(map)
+        .map(record)
+        .filter((item): item is JsonRecord => item !== null)
+    : []
 }
 
 function composerHeaders(composer: JsonRecord): JsonRecord[] {
@@ -98,9 +97,7 @@ function composerHeaders(composer: JsonRecord): JsonRecord[] {
 }
 
 function hasTable(db: Database.Database, table: string): boolean {
-  return Boolean(db.prepare(
-    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-  ).get(table))
+  return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table))
 }
 
 function openReadonly(path: string): Database.Database | null {
@@ -181,11 +178,13 @@ function globalLocations(workspaceDirs: string[], userDir: string): CursorConver
     if (!hasTable(db, 'composerHeaders')) return []
     const workspaceIds = new Set(workspaceDirs.map((dir) => basename(dir)))
     if (!workspaceIds.size) return []
-    const rows = db.prepare(`
+    const rows = db
+      .prepare(`
       SELECT composerId, workspaceId, createdAt, lastUpdatedAt,
              isArchived, isSubagent, value
       FROM composerHeaders
-    `).all() as Array<{
+    `)
+      .all() as Array<{
       composerId: unknown
       workspaceId: unknown
       createdAt: unknown
@@ -195,32 +194,37 @@ function globalLocations(workspaceDirs: string[], userDir: string): CursorConver
       value: unknown
     }>
     return rows.flatMap((row): CursorConversationLocation[] => {
-      if (typeof row.composerId !== 'string'
-        || typeof row.workspaceId !== 'string'
-        || !workspaceIds.has(row.workspaceId)
-        || row.isSubagent === 1) return []
+      if (
+        typeof row.composerId !== 'string' ||
+        typeof row.workspaceId !== 'string' ||
+        !workspaceIds.has(row.workspaceId) ||
+        row.isSubagent === 1
+      )
+        return []
       const header = record(parseCursorJsonValue(row.value)) ?? {}
       const composerRow = hasTable(db, 'cursorDiskKV')
-        ? db.prepare('SELECT value FROM cursorDiskKV WHERE key = ?').get(`composerData:${row.composerId}`) as
-          | { value: unknown }
-          | undefined
+        ? (db.prepare('SELECT value FROM cursorDiskKV WHERE key = ?').get(`composerData:${row.composerId}`) as
+            | { value: unknown }
+            | undefined)
         : undefined
       const composer = record(parseCursorJsonValue(composerRow?.value)) ?? {}
       if (row.isArchived !== 0 && row.isArchived !== null && row.isArchived !== undefined) return []
-      return [{
-        format: 'global',
-        databasePath,
-        composerId: row.composerId,
-        summary: {
-          id: row.composerId,
-          source: 'cursor',
-          title: titleOf({ ...composer, ...header }),
-          startedAt: timestamp(row.lastUpdatedAt, timestamp(row.createdAt)),
-          messageCount: composerHeaders(composer).length,
-          filePath: databasePath,
-          nativeRole: 'foreground',
+      return [
+        {
+          format: 'global',
+          databasePath,
+          composerId: row.composerId,
+          summary: {
+            id: row.composerId,
+            source: 'cursor',
+            title: titleOf({ ...composer, ...header }),
+            startedAt: timestamp(row.lastUpdatedAt, timestamp(row.createdAt)),
+            messageCount: composerHeaders(composer).length,
+            filePath: databasePath,
+            nativeRole: 'foreground',
+          },
         },
-      }]
+      ]
     })
   } catch (error) {
     log.warn('could not read global Cursor database', { databasePath, error: errorName(error) })
@@ -249,15 +253,10 @@ function normalizeBubbles(composerId: string, bubbles: JsonRecord[], fallbackTim
   for (let index = 0; index < bubbles.length; index += 1) {
     const bubble = bubbles[index]
     const role = roleOf(bubble)
-    const content = typeof bubble.text === 'string'
-      ? bubble.text
-      : typeof bubble.richText === 'string'
-        ? bubble.richText
-        : ''
+    const content =
+      typeof bubble.text === 'string' ? bubble.text : typeof bubble.richText === 'string' ? bubble.richText : ''
     if (!role || !content.trim()) continue
-    const bubbleId = typeof bubble.bubbleId === 'string' && bubble.bubbleId
-      ? bubble.bubbleId
-      : String(index)
+    const bubbleId = typeof bubble.bubbleId === 'string' && bubble.bubbleId ? bubble.bubbleId : String(index)
     messages.push({
       id: `cursor:${composerId}:${bubbleId}`,
       role,
@@ -287,15 +286,14 @@ function loadStoredBubbles(
     return { messages: [], complete: textHeaders.length === 0 }
   }
   const prefix = `bubbleId:${location.composerId}:`
-  const rows = db.prepare('SELECT key, value FROM cursorDiskKV WHERE substr(key, 1, ?) = ?')
+  const rows = db
+    .prepare('SELECT key, value FROM cursorDiskKV WHERE substr(key, 1, ?) = ?')
     .all(prefix.length, prefix) as Array<{ key: string; value: unknown }>
   const bubbles = new Map<string, JsonRecord>()
   for (const row of rows) {
     const bubble = record(parseCursorJsonValue(row.value))
     if (!bubble) continue
-    const id = typeof bubble.bubbleId === 'string'
-      ? bubble.bubbleId
-      : row.key.slice(prefix.length)
+    const id = typeof bubble.bubbleId === 'string' ? bubble.bubbleId : row.key.slice(prefix.length)
     bubbles.set(id, bubble)
   }
   const ordered = headers.flatMap((header): JsonRecord[] => {
@@ -305,9 +303,7 @@ function loadStoredBubbles(
   })
   return {
     messages: normalizeBubbles(location.composerId, ordered, location.summary.startedAt),
-    complete: textHeaders.every((header) => (
-      typeof header.bubbleId === 'string' && bubbles.has(header.bubbleId)
-    )),
+    complete: textHeaders.every((header) => typeof header.bubbleId === 'string' && bubbles.has(header.bubbleId)),
   }
 }
 
@@ -315,7 +311,8 @@ function loadGlobal(location: CursorConversationLocation): CursorMessageLoad {
   const db = openReadonly(location.databasePath)
   if (!db) return { messages: [], complete: false }
   try {
-    const composerRow = db.prepare('SELECT value FROM cursorDiskKV WHERE key = ?')
+    const composerRow = db
+      .prepare('SELECT value FROM cursorDiskKV WHERE key = ?')
       .get(`composerData:${location.composerId}`) as { value: unknown } | undefined
     const composer = record(parseCursorJsonValue(composerRow?.value))
     if (!composer) return { messages: [], complete: false }
@@ -347,10 +344,7 @@ function loadLegacy(location: CursorConversationLocation): CursorMessageLoad {
   }
 }
 
-export async function scanCursorSessions(
-  projectPath: string,
-  userDir = cursorUserDir(),
-): Promise<SessionSummary[]> {
+export async function scanCursorSessions(projectPath: string, userDir = cursorUserDir()): Promise<SessionSummary[]> {
   return discoverLocations(projectPath, userDir).map((location) => location.summary)
 }
 
@@ -359,11 +353,8 @@ export async function loadCursorConversation(
   composerId: string,
   userDir = cursorUserDir(),
 ): Promise<LoadedCursorConversation | null> {
-  const location = discoverLocations(projectPath, userDir)
-    .find((candidate) => candidate.composerId === composerId)
+  const location = discoverLocations(projectPath, userDir).find((candidate) => candidate.composerId === composerId)
   if (!location) return null
-  const loaded = location.format === 'global'
-    ? loadGlobal(location)
-    : loadLegacy(location)
+  const loaded = location.format === 'global' ? loadGlobal(location) : loadLegacy(location)
   return { summary: location.summary, ...loaded }
 }

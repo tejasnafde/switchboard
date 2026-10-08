@@ -15,11 +15,7 @@
  */
 
 import type { RuntimeMode } from './provider-events'
-import type {
-  WorktreeCreationSnapshot,
-  WorktreeInitialAgentIntent,
-  WorktreeSetupPolicy,
-} from './worktree-creation'
+import type { WorktreeCreationSnapshot, WorktreeInitialAgentIntent, WorktreeSetupPolicy } from './worktree-creation'
 
 export type KanbanStatus = 'backlog' | 'in_progress' | 'needs_input' | 'done'
 

@@ -58,10 +58,7 @@ describe('HybridTransport', () => {
     expect(await h.invoke('app:close-window')).toBe('local')
     expect(await h.invoke('app:quit-and-install')).toBe('local')
 
-    expect(local.calls).toEqual([
-      'local:invoke:app:close-window',
-      'local:invoke:app:quit-and-install',
-    ])
+    expect(local.calls).toEqual(['local:invoke:app:close-window', 'local:invoke:app:quit-and-install'])
     expect(remote.calls).toEqual([])
   })
 

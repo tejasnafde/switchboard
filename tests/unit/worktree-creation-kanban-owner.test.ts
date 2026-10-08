@@ -1,13 +1,7 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
-import type {
-  WorktreeCreationProgressEvent,
-  WorktreeCreationRequest,
-} from '../../src/shared/worktree-creation'
-import {
-  ensureWorktreeCreationSchema,
-  SqliteWorktreeCreationStore,
-} from '../../src/main/db/worktree-creation'
+import type { WorktreeCreationProgressEvent, WorktreeCreationRequest } from '../../src/shared/worktree-creation'
+import { ensureWorktreeCreationSchema, SqliteWorktreeCreationStore } from '../../src/main/db/worktree-creation'
 import type {
   ResolvedGitRepository,
   WorktreeMaterializationInspection,
@@ -125,12 +119,14 @@ class ScriptedGitPort implements GitWorktreePort {
 
   async materialize(plan: WorktreeMaterializationPlan): Promise<WorktreeMaterializationResult> {
     this.calls.push('materialize')
-    return this.materializeResults.shift() ?? {
-      kind: 'completed',
-      worktreePath: plan.worktreePath,
-      branch: plan.branch,
-      headCommit: plan.resolvedBaseCommit,
-    }
+    return (
+      this.materializeResults.shift() ?? {
+        kind: 'completed',
+        worktreePath: plan.worktreePath,
+        branch: plan.branch,
+        headCommit: plan.resolvedBaseCommit,
+      }
+    )
   }
 
   async inspectMaterialization(_plan: WorktreeMaterializationPlan): Promise<WorktreeMaterializationInspection> {
@@ -168,20 +164,24 @@ class DurableProgressSink implements WorktreeCreationProgressSink {
   ) {}
 
   publish(event: WorktreeCreationProgressEvent): void {
-    expect(this.store.get({
-      machineId: 'machine-local',
-      creationId: event.creationId,
-    })).toMatchObject({
+    expect(
+      this.store.get({
+        machineId: 'machine-local',
+        creationId: event.creationId,
+      }),
+    ).toMatchObject({
       revision: event.revision,
       phase: event.phase,
       status: event.status,
     })
     if (event.phase === 'linking' && event.status === 'pending') {
-      const card = this.db.prepare(`
+      const card = this.db
+        .prepare(`
         SELECT worktree_id, worktree_creation_id
           FROM kanban_cards
          WHERE id = 'card-kanban-owner'
-      `).get() as { worktree_id: string | null; worktree_creation_id: string | null } | undefined
+      `)
+        .get() as { worktree_id: string | null; worktree_creation_id: string | null } | undefined
       this.atomicLinks.push({
         cardWorktreeId: card?.worktree_id ?? null,
         cardCreationId: card?.worktree_creation_id ?? null,
@@ -192,9 +192,11 @@ class DurableProgressSink implements WorktreeCreationProgressSink {
   }
 }
 
-function fixture(options: {
-  startupLauncher?: ConstructorParameters<typeof WorktreeCreationService>[0]['startupLauncher']
-} = {}) {
+function fixture(
+  options: {
+    startupLauncher?: ConstructorParameters<typeof WorktreeCreationService>[0]['startupLauncher']
+  } = {},
+) {
   const db = new Database(':memory:')
   ensureOwnerTables(db)
   ensureWorktreeCreationSchema(db)
@@ -218,29 +220,33 @@ function count(db: Database.Database, table: string): number {
 }
 
 function card(db: Database.Database) {
-  return db.prepare(`
+  return db
+    .prepare(`
     SELECT id, project_path, title, description, tags, status, runtime_mode, cost_cap_usd,
            conversation_id, worktree_path, worktree_branch, worktree_id,
            worktree_creation_id, created_at, updated_at
       FROM kanban_cards
      WHERE id = 'card-kanban-owner'
-  `).get() as {
-    id: string
-    project_path: string
-    title: string
-    description: string
-    tags: string
-    status: string
-    runtime_mode: string
-    cost_cap_usd: number | null
-    conversation_id: string | null
-    worktree_path: string | null
-    worktree_branch: string | null
-    worktree_id: string | null
-    worktree_creation_id: string | null
-    created_at: number
-    updated_at: number
-  } | undefined
+  `)
+    .get() as
+    | {
+        id: string
+        project_path: string
+        title: string
+        description: string
+        tags: string
+        status: string
+        runtime_mode: string
+        cost_cap_usd: number | null
+        conversation_id: string | null
+        worktree_path: string | null
+        worktree_branch: string | null
+        worktree_id: string | null
+        worktree_creation_id: string | null
+        created_at: number
+        updated_at: number
+      }
+    | undefined
 }
 
 function insertExistingCard(db: Database.Database, updatedAt = 700): void {
@@ -298,10 +304,14 @@ describe('WorktreeCreationService Kanban owner', () => {
       expect(count(harness.db, 'kanban_cards')).toBe(1)
       expect(count(harness.db, 'managed_worktrees')).toBe(1)
       expect(count(harness.db, 'conversations')).toBe(0)
-      expect(harness.db.prepare(`
+      expect(
+        harness.db
+          .prepare(`
         SELECT initial_owner_kind, initial_owner_id, purpose
           FROM managed_worktrees
-      `).get()).toEqual({
+      `)
+          .get(),
+      ).toEqual({
         initial_owner_kind: 'kanban-card',
         initial_owner_id: 'card-kanban-owner',
         purpose: 'kanban',
@@ -354,8 +364,9 @@ describe('WorktreeCreationService Kanban owner', () => {
         },
       })
 
-      await expect(harness.service.createWorktreeTransaction(staleAttach))
-        .rejects.toMatchObject({ name: 'WorktreeCreationOwnerConflictError' })
+      await expect(harness.service.createWorktreeTransaction(staleAttach)).rejects.toMatchObject({
+        name: 'WorktreeCreationOwnerConflictError',
+      })
 
       expect(harness.git.calls).toEqual([])
       expect(card(harness.db)).toMatchObject({
@@ -376,19 +387,27 @@ describe('WorktreeCreationService Kanban owner', () => {
     const harness = fixture()
     try {
       insertExistingCard(harness.db, 700)
-      harness.db.prepare(`
+      harness.db
+        .prepare(`
         INSERT INTO conversations (id, project_path, agent_type, title, created_at, updated_at)
         VALUES ('existing-chat', '/repo', 'claude-code', 'Existing chat', 600, 700)
-      `).run()
-      harness.db.prepare(`UPDATE kanban_cards SET conversation_id = 'existing-chat' WHERE id = 'card-kanban-owner'`).run()
+      `)
+        .run()
+      harness.db
+        .prepare(`UPDATE kanban_cards SET conversation_id = 'existing-chat' WHERE id = 'card-kanban-owner'`)
+        .run()
 
-      await expect(harness.service.createWorktreeTransaction(request({
-        owner: {
-          kind: 'kanban-card',
-          cardId: 'card-kanban-owner',
-          expectedRevision: 700,
-        },
-      }))).rejects.toThrow(/already has a conversation/i)
+      await expect(
+        harness.service.createWorktreeTransaction(
+          request({
+            owner: {
+              kind: 'kanban-card',
+              cardId: 'card-kanban-owner',
+              expectedRevision: 700,
+            },
+          }),
+        ),
+      ).rejects.toThrow(/already has a conversation/i)
 
       expect(harness.git.calls).toEqual([])
       expect(card(harness.db)).toMatchObject({
@@ -406,12 +425,14 @@ describe('WorktreeCreationService Kanban owner', () => {
   it('preserves a new backlog card linked to a failed creation without false worktree projections', async () => {
     const harness = fixture()
     try {
-      harness.git.materializeResults = [{
-        kind: 'conflict',
-        worktreePath: WORKTREE_PATH,
-        branch: WORKTREE_BRANCH,
-        reason: 'branch_exists',
-      }]
+      harness.git.materializeResults = [
+        {
+          kind: 'conflict',
+          worktreePath: WORKTREE_PATH,
+          branch: WORKTREE_BRANCH,
+          reason: 'branch_exists',
+        },
+      ]
 
       const failed = await harness.service.createWorktreeTransaction(request())
 
@@ -466,12 +487,14 @@ describe('WorktreeCreationService Kanban owner', () => {
   it('retries the same failed creation onto the same preserved card', async () => {
     const harness = fixture()
     try {
-      harness.git.materializeResults = [{
-        kind: 'conflict',
-        worktreePath: WORKTREE_PATH,
-        branch: WORKTREE_BRANCH,
-        reason: 'branch_exists',
-      }]
+      harness.git.materializeResults = [
+        {
+          kind: 'conflict',
+          worktreePath: WORKTREE_PATH,
+          branch: WORKTREE_BRANCH,
+          reason: 'branch_exists',
+        },
+      ]
       const failed = await harness.service.createWorktreeTransaction(request())
       const cardBeforeRetry = card(harness.db)
 
@@ -499,7 +522,9 @@ describe('WorktreeCreationService Kanban owner', () => {
   })
 
   it('atomically links a stable conversation before launching the initial agent exactly once', async () => {
-    const launchCalls: Array<Parameters<NonNullable<ConstructorParameters<typeof WorktreeCreationService>[0]['startupLauncher']>['launch']>[0]> = []
+    const launchCalls: Array<
+      Parameters<NonNullable<ConstructorParameters<typeof WorktreeCreationService>[0]['startupLauncher']>['launch']>[0]
+    > = []
     const harness = fixture({
       startupLauncher: {
         launch: async (input) => {
@@ -507,10 +532,14 @@ describe('WorktreeCreationService Kanban owner', () => {
           expect(linked?.conversation_id).toBe(input.conversationId)
           expect(linked?.status).toBe('in_progress')
           expect(count(harness.db, 'conversations')).toBe(1)
-          expect(harness.db.prepare(`
+          expect(
+            harness.db
+              .prepare(`
             SELECT worktree_id, worktree_creation_id, worktree_path, worktree_branch, sidebar_role
               FROM conversations WHERE id = ?
-          `).get(input.conversationId)).toEqual({
+          `)
+              .get(input.conversationId),
+          ).toEqual({
             worktree_id: 'worktree-kanban-owner',
             worktree_creation_id: request().creationId,
             worktree_path: WORKTREE_PATH,
@@ -579,10 +608,12 @@ describe('WorktreeCreationService Kanban owner', () => {
 
       await harness.service.createWorktreeTransaction(launchedRequest)
       await harness.service.recoverInterruptedCreations()
-      expect(await harness.service.getWorktreeCreation({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-      })).toMatchObject({ phase: 'ready', status: 'ready' })
+      expect(
+        await harness.service.getWorktreeCreation({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+        }),
+      ).toMatchObject({ phase: 'ready', status: 'ready' })
       expect(launchCalls).toHaveLength(1)
       expect(count(harness.db, 'managed_worktrees')).toBe(1)
       expect(count(harness.db, 'conversations')).toBe(1)

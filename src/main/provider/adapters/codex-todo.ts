@@ -19,9 +19,7 @@ export function parseCodexTodoItems(params: unknown): TodoItem[] {
     const text = typeof obj?.step === 'string' ? obj.step.trim() : ''
     if (!text) continue
     const raw = obj?.status
-    const status = typeof raw === 'string' && STATUSES.has(raw as TodoStatus)
-      ? (raw as TodoStatus)
-      : 'pending'
+    const status = typeof raw === 'string' && STATUSES.has(raw as TodoStatus) ? (raw as TodoStatus) : 'pending'
     items.push({ text, status })
   }
   return items

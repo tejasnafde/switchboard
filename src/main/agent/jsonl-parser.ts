@@ -83,9 +83,7 @@ export class JsonlParser {
     // this every line gets stamped Date.now() at parse time and out-of-band
     // markers (e.g. the rotation pill) end up clumped before all turns.
     const rawTs = event.timestamp
-    const parsedTs = typeof rawTs === 'string' ? Date.parse(rawTs)
-      : typeof rawTs === 'number' ? rawTs
-      : NaN
+    const parsedTs = typeof rawTs === 'string' ? Date.parse(rawTs) : typeof rawTs === 'number' ? rawTs : NaN
     const ts = Number.isFinite(parsedTs) ? parsedTs : Date.now()
 
     switch (type) {
@@ -196,10 +194,10 @@ function hasOnlyToolResults(message: unknown): boolean {
   if (!message || typeof message !== 'object') return false
   const msg = message as Record<string, unknown>
   if (!Array.isArray(msg.content)) return false
-  return msg.content.length > 0 &&
-    msg.content.every((block: Record<string, unknown>) =>
-      block.type === 'tool_result' || block.type === 'image'
-    )
+  return (
+    msg.content.length > 0 &&
+    msg.content.every((block: Record<string, unknown>) => block.type === 'tool_result' || block.type === 'image')
+  )
 }
 
 function extractToolCalls(message: unknown): ToolCall[] {
@@ -213,9 +211,7 @@ function extractToolCalls(message: unknown): ToolCall[] {
     .map((block: Record<string, unknown>) => ({
       id: (block.id as string) ?? generateId(),
       name: (block.name as string) ?? 'unknown',
-      input: typeof block.input === 'string'
-        ? block.input
-        : JSON.stringify(block.input, null, 2),
+      input: typeof block.input === 'string' ? block.input : JSON.stringify(block.input, null, 2),
     }))
 }
 
@@ -277,9 +273,7 @@ export function normalizeCodexEvent(event: Record<string, unknown>): ChatMessage
   if (role === 'user' && images.length === 0 && (!content || visibleUserMessageText(content) === null)) return null
 
   // Codex timestamps are ISO strings at the event root.
-  const ts = typeof event.timestamp === 'string'
-    ? Date.parse(event.timestamp)
-    : Date.now()
+  const ts = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : Date.now()
 
   return {
     id: stableCodexId(event),
@@ -309,8 +303,11 @@ function extractCodexText(content: unknown): string {
         // Codex brackets each attached image with `<image>` / `</image>` text
         // blocks. Drop a tag only when an image block sits right next to it,
         // so a literal tag the user typed survives.
-        if (CODEX_IMAGE_WRAPPER.test(block.text)
-          && (blocks[index + 1]?.type === 'input_image' || blocks[index - 1]?.type === 'input_image')) return ''
+        if (
+          CODEX_IMAGE_WRAPPER.test(block.text) &&
+          (blocks[index + 1]?.type === 'input_image' || blocks[index - 1]?.type === 'input_image')
+        )
+          return ''
         return block.text
       }
       return ''
@@ -325,11 +322,14 @@ function extractCodexImages(content: unknown): MessageImage[] {
   for (const block of content as Array<Record<string, unknown>>) {
     if (block.type !== 'input_image') continue
     const imageUrl = block.image_url
-    const url = typeof imageUrl === 'string'
-      ? imageUrl
-      : imageUrl && typeof imageUrl === 'object' && typeof (imageUrl as Record<string, unknown>).url === 'string'
-        ? (imageUrl as Record<string, unknown>).url as string
-        : typeof block.url === 'string' ? block.url : null
+    const url =
+      typeof imageUrl === 'string'
+        ? imageUrl
+        : imageUrl && typeof imageUrl === 'object' && typeof (imageUrl as Record<string, unknown>).url === 'string'
+          ? ((imageUrl as Record<string, unknown>).url as string)
+          : typeof block.url === 'string'
+            ? block.url
+            : null
     if (!url) continue
     const mimeMatch = /^data:([^;,]+)[;,]/.exec(url)
     images.push({

@@ -41,7 +41,13 @@ interface Block {
   command?: 'name' | 'args' | 'message'
 }
 
-const COMMAND_RECORD_TAGS = ['command-name', 'command-message', 'command-args', 'local-command-stdout', 'local-command-stderr']
+const COMMAND_RECORD_TAGS = [
+  'command-name',
+  'command-message',
+  'command-args',
+  'local-command-stdout',
+  'local-command-stderr',
+]
 
 /** A slash-command record is ONLY these tags, so tags pasted ahead of the user's own prose stay their text. */
 function isCommandRecord(text: string): boolean {
@@ -137,7 +143,12 @@ const BLOCKS: readonly Block[] = [
  * The transcript form of a task notification, so a live notice goes through
  * the same split as the one rebuilt from the transcript on reload.
  */
-export function taskNotificationText(n: { taskId: string; status: string; summary: string; outputFile?: string }): string {
+export function taskNotificationText(n: {
+  taskId: string
+  status: string
+  summary: string
+  outputFile?: string
+}): string {
   const lines = [
     `<task-id>${n.taskId}</task-id>`,
     n.outputFile ? `<output-file>${n.outputFile}</output-file>` : '',
@@ -181,8 +192,12 @@ export function transcriptShowsTaskNotification(
 ): boolean {
   const key = taskNoticeKey(live)
   for (const { part, at } of rows) {
-    if (part.kind === 'task-notification' && taskNoticeKey(part) === key
-      && Math.abs(at - live.at) <= TRANSCRIPT_NOTICE_SKEW_MS) return true
+    if (
+      part.kind === 'task-notification' &&
+      taskNoticeKey(part) === key &&
+      Math.abs(at - live.at) <= TRANSCRIPT_NOTICE_SKEW_MS
+    )
+      return true
   }
   return false
 }

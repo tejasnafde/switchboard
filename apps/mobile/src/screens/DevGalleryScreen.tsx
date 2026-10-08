@@ -48,26 +48,24 @@ const dictation = (over: Partial<Dictation> = {}): Dictation => ({
   ...over,
 })
 
-const tool = (over: Partial<Extract<FeedItem, { kind: 'tool' }>> = {}) =>
-  ({
-    kind: 'tool' as const,
-    id: 't-gallery',
-    toolName: 'Bash',
-    input: { command: 'npm run typecheck' },
-    state: 'done' as const,
-    output: 'ok',
-    ...over,
-  })
+const tool = (over: Partial<Extract<FeedItem, { kind: 'tool' }>> = {}) => ({
+  kind: 'tool' as const,
+  id: 't-gallery',
+  toolName: 'Bash',
+  input: { command: 'npm run typecheck' },
+  state: 'done' as const,
+  output: 'ok',
+  ...over,
+})
 
-const text = (over: Partial<Extract<FeedItem, { kind: 'text' }>> = {}) =>
-  ({
-    kind: 'text' as const,
-    id: 'm-gallery',
-    text: 'Plain reply.',
-    stream: 'assistant' as const,
-    done: true,
-    ...over,
-  })
+const text = (over: Partial<Extract<FeedItem, { kind: 'text' }>> = {}) => ({
+  kind: 'text' as const,
+  id: 'm-gallery',
+  text: 'Plain reply.',
+  stream: 'assistant' as const,
+  done: true,
+  ...over,
+})
 
 export default function DevGalleryScreen() {
   const [listening, setListening] = useState(false)
@@ -110,7 +108,13 @@ export default function DevGalleryScreen() {
       <Section title="Primary button">
         <View style={styles.row}>
           <Labelled label="empty">
-            <SendMicButton canSend={false} isRunning={false} dictation={dictation()} onSend={() => {}} onStopTurn={() => {}} />
+            <SendMicButton
+              canSend={false}
+              isRunning={false}
+              dictation={dictation()}
+              onSend={() => {}}
+              onStopTurn={() => {}}
+            />
           </Labelled>
           <Labelled label="can send">
             <SendMicButton canSend isRunning={false} dictation={dictation()} onSend={() => {}} onStopTurn={() => {}} />
@@ -132,9 +136,7 @@ export default function DevGalleryScreen() {
             handler only fires onSend when canSend is true, so wiring the toggle
             there made the tile inert and the ring unreachable. */}
         <Pressable onPress={() => setListening((v) => !v)} style={styles.noteButton}>
-          <Text style={styles.note}>
-            {listening ? 'Stop the recording ring' : 'Start the recording ring'}
-          </Text>
+          <Text style={styles.note}>{listening ? 'Stop the recording ring' : 'Start the recording ring'}</Text>
         </Pressable>
       </Section>
     </ScrollView>

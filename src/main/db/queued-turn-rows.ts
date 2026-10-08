@@ -43,12 +43,23 @@ export interface QueuedTurnRowStore {
 }
 
 export function sqliteQueuedTurnRowStore(db: () => Database.Database): QueuedTurnRowStore {
-  const convert = (d: Database.Database, row: { message_id: string; conversation_id: string; text: string; queued_at: number }, cause: QueuedTurnNotSentCause): NotSentRow => {
+  const convert = (
+    d: Database.Database,
+    row: { message_id: string; conversation_id: string; text: string; queued_at: number },
+    cause: QueuedTurnNotSentCause,
+  ): NotSentRow => {
     const content = `Error: ${queuedTurnNotSentMessage(row.text, cause)}`
     // The images go onto the not-sent row, so the whole message can be sent again.
-    const images = (d.prepare("SELECT images FROM messages WHERE id = ? AND conversation_id = ? AND role = 'user'")
-      .get(row.message_id, row.conversation_id) as { images: string | null } | undefined)?.images ?? null
-    d.prepare("DELETE FROM messages WHERE id = ? AND conversation_id = ? AND role = 'user'").run(row.message_id, row.conversation_id)
+    const images =
+      (
+        d
+          .prepare("SELECT images FROM messages WHERE id = ? AND conversation_id = ? AND role = 'user'")
+          .get(row.message_id, row.conversation_id) as { images: string | null } | undefined
+      )?.images ?? null
+    d.prepare("DELETE FROM messages WHERE id = ? AND conversation_id = ? AND role = 'user'").run(
+      row.message_id,
+      row.conversation_id,
+    )
     d.prepare(
       `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, images, timestamp)
        SELECT ?, ?, 'system', ?, ?, ? WHERE EXISTS (SELECT 1 FROM conversations WHERE id = ?)`,
@@ -59,7 +70,10 @@ export function sqliteQueuedTurnRowStore(db: () => Database.Database): QueuedTur
   type Row = { message_id: string; conversation_id: string; text: string; queued_at: number }
   return {
     record(row) {
-      db().prepare('INSERT OR REPLACE INTO queued_turn_rows (message_id, conversation_id, text, queued_at, launch) VALUES (?, ?, ?, ?, ?)')
+      db()
+        .prepare(
+          'INSERT OR REPLACE INTO queued_turn_rows (message_id, conversation_id, text, queued_at, launch) VALUES (?, ?, ?, ?, ?)',
+        )
         .run(row.messageId, row.conversationId, row.text, row.queuedAt, LAUNCH)
     },
     forget(messageId) {
@@ -75,7 +89,9 @@ export function sqliteQueuedTurnRowStore(db: () => Database.Database): QueuedTur
     sweepEarlierLaunches() {
       const d = db()
       return d.transaction(() => {
-        const rows = d.prepare('SELECT * FROM queued_turn_rows WHERE launch != ? ORDER BY queued_at').all(LAUNCH) as Row[]
+        const rows = d
+          .prepare('SELECT * FROM queued_turn_rows WHERE launch != ? ORDER BY queued_at')
+          .all(LAUNCH) as Row[]
         return rows.map((row) => convert(d, row, 'restarted'))
       })()
     },

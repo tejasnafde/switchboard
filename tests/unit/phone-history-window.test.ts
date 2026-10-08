@@ -4,7 +4,9 @@ import { historyWindow, shouldLoadPhoneHistory } from '../../src/shared/phone-hi
 import type { ChatMessage } from '../../src/shared/types'
 
 const messages = Array.from({ length: 6800 }, (_, i) => ({
-  id: `m${i}`, role: i % 2 ? 'assistant' : 'user', content: 'x'.repeat(12000),
+  id: `m${i}`,
+  role: i % 2 ? 'assistant' : 'user',
+  content: 'x'.repeat(12000),
   timestamp: i,
 })) as ChatMessage[]
 

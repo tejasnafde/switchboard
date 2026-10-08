@@ -52,7 +52,10 @@ export class TransportRouter implements Transport {
     if (this.transports.has(machineId)) return
     this.transports.set(machineId, transport)
     for (const f of this.fanouts) {
-      f.offs.set(machineId, transport.on(f.channel, (...args: unknown[]) => f.handler(machineId, ...args)))
+      f.offs.set(
+        machineId,
+        transport.on(f.channel, (...args: unknown[]) => f.handler(machineId, ...args)),
+      )
     }
   }
 
@@ -101,14 +104,14 @@ export class TransportRouter implements Transport {
 
   /** Like on(), but the handler also receives the emitting machine's id
    *  ('local' or a remote's) - two machines can emit the same threadId. */
-  onWithSource<A extends unknown[]>(
-    channel: string,
-    handler: (machineId: string, ...args: A) => void,
-  ): () => void {
+  onWithSource<A extends unknown[]>(channel: string, handler: (machineId: string, ...args: A) => void): () => void {
     const h = handler as (machineId: string, ...args: unknown[]) => void
     const offs = new Map<string, () => void>()
     for (const [id, t] of this.transports) {
-      offs.set(id, t.on(channel, (...args: unknown[]) => h(id, ...args)))
+      offs.set(
+        id,
+        t.on(channel, (...args: unknown[]) => h(id, ...args)),
+      )
     }
     const fanout: Fanout = { channel, handler: h, offs }
     this.fanouts.add(fanout)

@@ -24,35 +24,24 @@ function sourceBadge(session: SessionSummary): string {
   return 'CLAUDE'
 }
 
-export function filterRecoveryCandidates(
-  candidates: SessionSummary[],
-  query: string,
-): SessionSummary[] {
+export function filterRecoveryCandidates(candidates: SessionSummary[], query: string): SessionSummary[] {
   const needle = query.trim().toLowerCase()
   if (!needle) return candidates
-  return candidates.filter((session) => [
-    session.title,
-    session.id,
-    session.source === 'codex' ? 'codex' : session.source === 'claude-code' ? 'claude' : session.source,
-    recoveryRole(session),
-  ].some((value) => value.toLowerCase().includes(needle)))
+  return candidates.filter((session) =>
+    [
+      session.title,
+      session.id,
+      session.source === 'codex' ? 'codex' : session.source === 'claude-code' ? 'claude' : session.source,
+      recoveryRole(session),
+    ].some((value) => value.toLowerCase().includes(needle)),
+  )
 }
 
-export function NativeSessionImportModal({
-  projectName,
-  candidates,
-  importingId,
-  error,
-  onImport,
-  onClose,
-}: Props) {
+export function NativeSessionImportModal({ projectName, candidates, importingId, error, onImport, onClose }: Props) {
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
-  const filtered = useMemo(
-    () => filterRecoveryCandidates(candidates, query),
-    [candidates, query],
-  )
+  const filtered = useMemo(() => filterRecoveryCandidates(candidates, query), [candidates, query])
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -69,14 +58,20 @@ export function NativeSessionImportModal({
     const frame = requestAnimationFrame(() => searchRef.current?.focus())
     const trapFocus = (event: KeyboardEvent) => {
       if (event.key !== 'Tab' || !dialogRef.current) return
-      const controls = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
-      ))
+      const controls = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ),
+      )
       if (controls.length === 0) return
       const current = controls.indexOf(document.activeElement as HTMLElement)
       const next = event.shiftKey
-        ? (current <= 0 ? controls.length - 1 : current - 1)
-        : (current === controls.length - 1 ? 0 : current + 1)
+        ? current <= 0
+          ? controls.length - 1
+          : current - 1
+        : current === controls.length - 1
+          ? 0
+          : current + 1
       event.preventDefault()
       controls[next].focus()
     }
@@ -108,7 +103,10 @@ export function NativeSessionImportModal({
           <div className="recovery-modal-heading">
             <div className="recovery-modal-eyebrow">Recovery inventory · {projectName}</div>
             <h2 id="recovery-modal-title">Import a native conversation</h2>
-            <p>Provider files stay outside the sidebar until you choose one. Delegated agents remain nested under their parent.</p>
+            <p>
+              Provider files stay outside the sidebar until you choose one. Delegated agents remain nested under their
+              parent.
+            </p>
           </div>
           <button
             type="button"
@@ -131,7 +129,9 @@ export function NativeSessionImportModal({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <span className="recovery-modal-count" aria-live="polite">{resultLabel}</span>
+          <span className="recovery-modal-count" aria-live="polite">
+            {resultLabel}
+          </span>
         </div>
 
         <div className="recovery-modal-results">
@@ -141,44 +141,48 @@ export function NativeSessionImportModal({
                 ? 'No native transcripts found for this project.'
                 : `No transcripts match “${query.trim()}”.`}
             </div>
-          ) : filtered.map((session) => {
-            const importable = Boolean(session.filePath)
-            const delegated = session.nativeRole === 'subagent' || session.nativeRole === 'utility'
-            return (
-              <div
-                className="recovery-modal-row"
-                key={`${session.source}:${session.id}`}
-                data-unavailable={!importable || undefined}
-              >
-                <span className="recovery-modal-provider">
-                  {sourceBadge(session)}
-                </span>
-                <div className="recovery-modal-summary">
-                  <div className="recovery-modal-title" title={session.title}>{session.title}</div>
-                  <div className="recovery-modal-meta">
-                    {recoveryRole(session)} · {session.id}
+          ) : (
+            filtered.map((session) => {
+              const importable = Boolean(session.filePath)
+              const delegated = session.nativeRole === 'subagent' || session.nativeRole === 'utility'
+              return (
+                <div
+                  className="recovery-modal-row"
+                  key={`${session.source}:${session.id}`}
+                  data-unavailable={!importable || undefined}
+                >
+                  <span className="recovery-modal-provider">{sourceBadge(session)}</span>
+                  <div className="recovery-modal-summary">
+                    <div className="recovery-modal-title" title={session.title}>
+                      {session.title}
+                    </div>
+                    <div className="recovery-modal-meta">
+                      {recoveryRole(session)} · {session.id}
+                    </div>
                   </div>
+                  {importable ? (
+                    <button
+                      type="button"
+                      className="recovery-modal-action"
+                      disabled={importingId !== null}
+                      aria-busy={importingId === session.id || undefined}
+                      onClick={() => onImport(session)}
+                    >
+                      {importingId === session.id ? 'Importing…' : delegated ? 'Promote' : 'Import'}
+                    </button>
+                  ) : (
+                    <span className="recovery-modal-unavailable">Unavailable</span>
+                  )}
                 </div>
-                {importable ? (
-                  <button
-                    type="button"
-                    className="recovery-modal-action"
-                    disabled={importingId !== null}
-                    aria-busy={importingId === session.id || undefined}
-                    onClick={() => onImport(session)}
-                  >
-                    {importingId === session.id ? 'Importing…' : delegated ? 'Promote' : 'Import'}
-                  </button>
-                ) : (
-                  <span className="recovery-modal-unavailable">Unavailable</span>
-                )}
-              </div>
-            )
-          })}
+              )
+            })
+          )}
         </div>
 
         <footer className="recovery-modal-footer">
-          <span className="recovery-modal-error" aria-live="assertive">{error}</span>
+          <span className="recovery-modal-error" aria-live="assertive">
+            {error}
+          </span>
           <span>Esc to close</span>
         </footer>
       </section>

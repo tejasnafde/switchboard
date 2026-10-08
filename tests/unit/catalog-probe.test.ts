@@ -4,21 +4,46 @@ const execFile = vi.fn()
 const resolveProviderInstance = vi.fn()
 
 vi.mock('child_process', () => ({ execFile: (...args: unknown[]) => execFile(...args) }))
-vi.mock('../../src/main/db/provider-instances', () => ({ resolveProviderInstance: (...args: unknown[]) => resolveProviderInstance(...args) }))
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
-vi.mock('../../src/main/provider/adapters/claude-adapter', () => ({ findClaudeBin: () => undefined, buildClaudeCliEnv: () => ({}) }))
-vi.mock('../../src/main/provider/adapters/codex-adapter', () => ({ findCodexPath: () => '/bin/codex', parseCodexModels: (r: { data: Array<{ id: string }> }) => r.data.map((m) => ({ id: m.id, label: m.id, tier: 'balanced' })), buildCodexCliEnv: () => ({}) }))
-const applyCredentialHome = vi.fn((env: Record<string, string>, _agent: string, dir: string) => { env.CODEX_HOME = dir })
-vi.mock('../../src/main/provider/credential-home', () => ({ applyCredentialHome: (...a: [Record<string, string>, string, string]) => applyCredentialHome(...a) }))
-vi.mock('../../src/main/provider/remote-gate', () => ({ remoteProviderConfigDir: (_agent: string, seg: string) => `/home/vm/${seg}` }))
-vi.mock('../../src/main/provider/adapters/opencode/env', () => ({ findOpencodePath: () => '/bin/opencode', buildOpencodeEnv: () => ({}) }))
+vi.mock('../../src/main/db/provider-instances', () => ({
+  resolveProviderInstance: (...args: unknown[]) => resolveProviderInstance(...args),
+}))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
+vi.mock('../../src/main/provider/adapters/claude-adapter', () => ({
+  findClaudeBin: () => undefined,
+  buildClaudeCliEnv: () => ({}),
+}))
+vi.mock('../../src/main/provider/adapters/codex-adapter', () => ({
+  findCodexPath: () => '/bin/codex',
+  parseCodexModels: (r: { data: Array<{ id: string }> }) =>
+    r.data.map((m) => ({ id: m.id, label: m.id, tier: 'balanced' })),
+  buildCodexCliEnv: () => ({}),
+}))
+const applyCredentialHome = vi.fn((env: Record<string, string>, _agent: string, dir: string) => {
+  env.CODEX_HOME = dir
+})
+vi.mock('../../src/main/provider/credential-home', () => ({
+  applyCredentialHome: (...a: [Record<string, string>, string, string]) => applyCredentialHome(...a),
+}))
+vi.mock('../../src/main/provider/remote-gate', () => ({
+  remoteProviderConfigDir: (_agent: string, seg: string) => `/home/vm/${seg}`,
+}))
+vi.mock('../../src/main/provider/adapters/opencode/env', () => ({
+  findOpencodePath: () => '/bin/opencode',
+  buildOpencodeEnv: () => ({}),
+}))
 vi.mock('../../src/main/provider/adapters/opencode/version', () => ({ assertSupportedOpencode: async () => {} }))
 vi.mock('../../src/main/provider/instance-env', () => ({ resolveInstanceEnv: () => ({}) }))
 const codexEnvs: Array<Record<string, string>> = []
 vi.mock('../../src/main/provider/usage/codex-usage', () => ({
   CodexProbeSession: class {
-    constructor(_bin: string, env: Record<string, string>) { codexEnvs.push(env) }
-    send(method: string) { return Promise.resolve(method === 'model/list' ? { data: [{ id: 'gpt-6-sol' }] } : {}) }
+    constructor(_bin: string, env: Record<string, string>) {
+      codexEnvs.push(env)
+    }
+    send(method: string) {
+      return Promise.resolve(method === 'model/list' ? { data: [{ id: 'gpt-6-sol' }] } : {})
+    }
     notify() {}
     dispose() {}
   },
@@ -27,7 +52,9 @@ vi.mock('../../src/main/provider/usage/codex-usage', () => ({
 const { probeCatalog, peekCatalog, invalidateCatalog } = await import('../../src/main/provider/catalog-probe')
 
 function answer(stdout: string) {
-  execFile.mockImplementationOnce((_bin: string, _args: string[], _opts: unknown, cb: (e: Error | null, out: string) => void) => cb(null, stdout))
+  execFile.mockImplementationOnce(
+    (_bin: string, _args: string[], _opts: unknown, cb: (e: Error | null, out: string) => void) => cb(null, stdout),
+  )
 }
 
 beforeEach(() => {
@@ -60,14 +87,18 @@ describe('probeCatalog', () => {
   })
 
   it('falls back to the default instance for an id this backend does not know', async () => {
-    resolveProviderInstance.mockImplementationOnce(() => { throw new Error('Provider instance not found: desktop-only') })
+    resolveProviderInstance.mockImplementationOnce(() => {
+      throw new Error('Provider instance not found: desktop-only')
+    })
     answer('google/gemini-2.5-flash\n')
     expect((await probeCatalog('opencode', 'desktop-only')).length).toBe(1)
     expect(resolveProviderInstance).toHaveBeenLastCalledWith('opencode', null)
   })
 
   it('returns [] instead of throwing when the probe fails', async () => {
-    execFile.mockImplementationOnce((_b: string, _a: string[], _o: unknown, cb: (e: Error | null) => void) => cb(new Error('boom')))
+    execFile.mockImplementationOnce((_b: string, _a: string[], _o: unknown, cb: (e: Error | null) => void) =>
+      cb(new Error('boom')),
+    )
     expect(await probeCatalog('opencode', undefined)).toEqual([])
   })
 

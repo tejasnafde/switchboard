@@ -41,9 +41,7 @@ describe('validateUserMessageImages', () => {
 
   it('rejects external URLs and mismatched MIME declarations', () => {
     expect(() => validateUserMessageImages([{ url: 'https://tracker.test/pixel.png' }])).toThrow()
-    expect(() => validateUserMessageImages([
-      { url: 'data:image/png;base64,AAA=', mimeType: 'image/jpeg' },
-    ])).toThrow()
+    expect(() => validateUserMessageImages([{ url: 'data:image/png;base64,AAA=', mimeType: 'image/jpeg' }])).toThrow()
   })
 
   it('rejects a payload above the replay-safe synchronization budget', () => {

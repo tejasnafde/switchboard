@@ -17,10 +17,7 @@ import type {
   WorktreeCreationSnapshot,
 } from '@shared/worktree-creation'
 
-function withWorktreeSnapshot(
-  card: KanbanCard,
-  snapshot: WorktreeCreationSnapshot,
-): KanbanCard {
+function withWorktreeSnapshot(card: KanbanCard, snapshot: WorktreeCreationSnapshot): KanbanCard {
   return {
     ...card,
     worktreePath: snapshot.worktreePath ?? card.worktreePath,
@@ -113,7 +110,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
           title: input.title,
           description: input.description ?? '',
           tags: input.tags ?? [],
-          status: input.worktreeCreation?.initialAgent ? 'in_progress' : input.status ?? 'backlog',
+          status: input.worktreeCreation?.initialAgent ? 'in_progress' : (input.status ?? 'backlog'),
           costCapUsd: input.costCapUsd ?? null,
           costUsedUsd: null,
           runtimeMode: input.runtimeMode ?? null,
@@ -130,14 +127,18 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
             status: 'pending',
             projectPath: input.projectPath,
             baseRef: intent.baseRef ?? 'HEAD',
-            owner: { kind: 'kanban-card', cardId: intent.cardId, create: {
-              title: input.title,
-              description: input.description ?? '',
-              tags: input.tags ?? [],
-              status: input.worktreeCreation?.initialAgent ? 'in_progress' : input.status ?? 'backlog',
-              ...(input.runtimeMode ? { runtimeMode: input.runtimeMode } : {}),
-              costCapUsd: input.costCapUsd ?? null,
-            } },
+            owner: {
+              kind: 'kanban-card',
+              cardId: intent.cardId,
+              create: {
+                title: input.title,
+                description: input.description ?? '',
+                tags: input.tags ?? [],
+                status: input.worktreeCreation?.initialAgent ? 'in_progress' : (input.status ?? 'backlog'),
+                ...(input.runtimeMode ? { runtimeMode: input.runtimeMode } : {}),
+                costCapUsd: input.costCapUsd ?? null,
+              },
+            },
             purpose: 'kanban',
             provenance: {
               surface: 'desktop',
@@ -164,8 +165,9 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
           set((state) => ({
             byProject: {
               ...state.byProject,
-              [input.projectPath]: (state.byProject[input.projectPath] ?? [])
-                .filter((candidate) => candidate.id !== intent.cardId),
+              [input.projectPath]: (state.byProject[input.projectPath] ?? []).filter(
+                (candidate) => candidate.id !== intent.cardId,
+              ),
             },
           }))
         }
@@ -229,7 +231,10 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     // Find the project path before deletion so we can patch the right slice.
     let projectPath: string | null = null
     for (const [path, list] of Object.entries(get().byProject)) {
-      if (list.some((c) => c.id === id)) { projectPath = path; break }
+      if (list.some((c) => c.id === id)) {
+        projectPath = path
+        break
+      }
     }
     await api.delete(id, opts)
     if (projectPath) {
@@ -291,14 +296,15 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       expectedRevision: snapshot.revision,
       action,
     })
-    const canonicalCards = await window.api.kanban?.list?.(card.projectPath) ?? [card]
+    const canonicalCards = (await window.api.kanban?.list?.(card.projectPath)) ?? [card]
     const canonicalCard = canonicalCards.find((candidate) => candidate.id === id) ?? card
     const updated = withWorktreeSnapshot(canonicalCard, updatedSnapshot)
     set((state) => ({
       byProject: {
         ...state.byProject,
-        [card.projectPath]: (state.byProject[card.projectPath] ?? [])
-          .map((candidate) => candidate.id === id ? updated : candidate),
+        [card.projectPath]: (state.byProject[card.projectPath] ?? []).map((candidate) =>
+          candidate.id === id ? updated : candidate,
+        ),
       },
     }))
     return updated

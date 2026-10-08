@@ -31,14 +31,16 @@ type Load =
 function describeReady(preview: Extract<MergeBackPreview, { status: 'ready' }>): string {
   const turns = `${preview.turns} turn${preview.turns === 1 ? '' : 's'}`
   const files = preview.files.length + preview.moreFiles
-  return `${turns}${preview.omittedTurns > 0 ? ` (${preview.omittedTurns} oldest left out to fit)` : ''}`
-    + ` · ${files} file${files === 1 ? '' : 's'} changed`
+  return (
+    `${turns}${preview.omittedTurns > 0 ? ` (${preview.omittedTurns} oldest left out to fit)` : ''}` +
+    ` · ${files} file${files === 1 ? '' : 's'} changed`
+  )
 }
 
 export function MergeBackDialog({ mode, onClose }: { mode: Mode; onClose: () => void }) {
-  const [load, setLoad] = useState<Load>(() => mode.kind === 'edit'
-    ? { kind: 'ready', token: null, replacesPending: false, note: null }
-    : { kind: 'loading' })
+  const [load, setLoad] = useState<Load>(() =>
+    mode.kind === 'edit' ? { kind: 'ready', token: null, replacesPending: false, note: null } : { kind: 'loading' },
+  )
   const [text, setText] = useState(mode.kind === 'edit' ? mode.text : '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,20 +51,30 @@ export function MergeBackDialog({ mode, onClose }: { mode: Mode; onClose: () => 
     if (!forkSessionId) return
     // The dialog can close (or open for another fork) before the preview lands.
     let current = true
-    window.api.provider.mergeBackPreview(forkSessionId).then((preview) => {
-      if (!current) return
-      if (preview.status !== 'ready') {
-        setLoad({ kind: 'blocked', message: preview.message })
-        return
-      }
-      setText(preview.text)
-      setLoad({ kind: 'ready', token: preview.token, replacesPending: preview.replacesPending, note: describeReady(preview) })
-      requestAnimationFrame(() => textRef.current?.focus())
-    }).catch((err: unknown) => {
-      log.warn('merge-back preview failed', err)
-      if (current) setLoad({ kind: 'blocked', message: errorText(err) })
-    })
-    return () => { current = false }
+    window.api.provider
+      .mergeBackPreview(forkSessionId)
+      .then((preview) => {
+        if (!current) return
+        if (preview.status !== 'ready') {
+          setLoad({ kind: 'blocked', message: preview.message })
+          return
+        }
+        setText(preview.text)
+        setLoad({
+          kind: 'ready',
+          token: preview.token,
+          replacesPending: preview.replacesPending,
+          note: describeReady(preview),
+        })
+        requestAnimationFrame(() => textRef.current?.focus())
+      })
+      .catch((err: unknown) => {
+        log.warn('merge-back preview failed', err)
+        if (current) setLoad({ kind: 'blocked', message: errorText(err) })
+      })
+    return () => {
+      current = false
+    }
   }, [forkSessionId])
 
   const submit = async () => {
@@ -87,13 +99,17 @@ export function MergeBackDialog({ mode, onClose }: { mode: Mode; onClose: () => 
     }
   }
 
-  const title = mode.kind === 'send'
-    ? `Send back to "${mode.parentTitle}"`
-    : `Edit the summary from fork "${mode.forkTitle}"`
+  const title =
+    mode.kind === 'send' ? `Send back to "${mode.parentTitle}"` : `Edit the summary from fork "${mode.forkTitle}"`
 
   return (
     // A send in flight cannot be called back, so the dialog stays until it settles.
-    <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !saving) onClose()
+      }}
+    >
       <DialogContent
         data-testid="merge-back-dialog"
         onOpenAutoFocus={(e) => {
@@ -118,7 +134,9 @@ export function MergeBackDialog({ mode, onClose }: { mode: Mode; onClose: () => 
           <div className="px-[14px] py-[16px] text-[12px] text-[var(--text-muted)]">Building the summary…</div>
         )}
         {load.kind === 'blocked' && (
-          <div role="alert" className="px-[14px] py-[16px] text-[12px] text-[var(--text-secondary)]">{load.message}</div>
+          <div role="alert" className="px-[14px] py-[16px] text-[12px] text-[var(--text-secondary)]">
+            {load.message}
+          </div>
         )}
         {load.kind === 'ready' && (
           <div className="flex min-h-0 flex-1 flex-col gap-[8px] px-[14px] py-[10px]">
@@ -134,18 +152,27 @@ export function MergeBackDialog({ mode, onClose }: { mode: Mode; onClose: () => 
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit() }
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  void submit()
+                }
               }}
               className="min-h-[240px] flex-1 resize-none rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[9px] py-[7px] text-[12px] leading-[1.45] [font-family:var(--font-mono)] text-[var(--text-primary)] outline-none"
             />
-            {error && <div role="alert" className="text-[12px] text-[var(--error)]">{error}</div>}
+            {error && (
+              <div role="alert" className="text-[12px] text-[var(--error)]">
+                {error}
+              </div>
+            )}
           </div>
         )}
         <div className="flex justify-end gap-[6px] border-t border-[var(--border)] px-[14px] py-[10px]">
-          <Button variant="outline" size="sm" disabled={saving} onClick={onClose}>Cancel</Button>
+          <Button variant="outline" size="sm" disabled={saving} onClick={onClose}>
+            Cancel
+          </Button>
           {load.kind === 'ready' && (
             <Button size="sm" disabled={saving || !text.trim()} onClick={() => void submit()}>
-              {mode.kind === 'send' ? (saving ? 'Sending…' : 'Send back') : (saving ? 'Saving…' : 'Save')}
+              {mode.kind === 'send' ? (saving ? 'Sending…' : 'Send back') : saving ? 'Saving…' : 'Save'}
             </Button>
           )}
         </div>

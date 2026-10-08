@@ -72,19 +72,13 @@ export function nextDualChatShortcutAction(
   return state.secondarySessionId ? 'close-secondary' : 'open-picker'
 }
 
-export function shouldEvictReplacedSession(
-  sessionId: string,
-  displayedAfterSelection: readonly string[],
-): boolean {
+export function shouldEvictReplacedSession(sessionId: string, displayedAfterSelection: readonly string[]): boolean {
   return !displayedAfterSelection.includes(sessionId)
 }
 
 export type ChatPresentation = 'split' | 'tabs'
 
-export function shouldShowChatFocusIndicator(
-  hasSecondary: boolean,
-  presentation: ChatPresentation,
-): boolean {
+export function shouldShowChatFocusIndicator(hasSecondary: boolean, presentation: ChatPresentation): boolean {
   return hasSecondary && presentation === 'split'
 }
 
@@ -100,10 +94,7 @@ export function nextChatPresentation(
   return width >= 840 ? 'split' : 'tabs'
 }
 
-function normalize(
-  state: ChatWorkspaceState,
-  canonicalId: CanonicalSessionId,
-): ChatWorkspaceState {
+function normalize(state: ChatWorkspaceState, canonicalId: CanonicalSessionId): ChatWorkspaceState {
   let next = state
 
   if (!next.primarySessionId && next.secondarySessionId) {
@@ -116,9 +107,9 @@ function normalize(
   }
 
   if (
-    next.primarySessionId
-    && next.secondarySessionId
-    && canonicalId(next.primarySessionId) === canonicalId(next.secondarySessionId)
+    next.primarySessionId &&
+    next.secondarySessionId &&
+    canonicalId(next.primarySessionId) === canonicalId(next.secondarySessionId)
   ) {
     next = { ...next, secondarySessionId: null, focusedSlot: 'primary' }
   }
@@ -137,10 +128,13 @@ function focusExisting(
 ): ChatWorkspaceState | null {
   const slot = slotForSession(state, sessionId, canonicalId)
   if (!slot) return null
-  return normalize({
-    ...state,
-    focusedSlot: slot,
-  }, canonicalId)
+  return normalize(
+    {
+      ...state,
+      focusedSlot: slot,
+    },
+    canonicalId,
+  )
 }
 
 export function reconcileChatWorkspace(
@@ -155,11 +149,14 @@ export function reconcileChatWorkspace(
       if (!state.primarySessionId || !state.secondarySessionId) {
         return normalize({ ...state, primarySessionId: event.sessionId, focusedSlot: 'primary' }, canonicalId)
       }
-      return normalize({
-        ...state,
-        primarySessionId: state.focusedSlot === 'primary' ? event.sessionId : state.primarySessionId,
-        secondarySessionId: state.focusedSlot === 'secondary' ? event.sessionId : state.secondarySessionId,
-      }, canonicalId)
+      return normalize(
+        {
+          ...state,
+          primarySessionId: state.focusedSlot === 'primary' ? event.sessionId : state.primarySessionId,
+          secondarySessionId: state.focusedSlot === 'secondary' ? event.sessionId : state.secondarySessionId,
+        },
+        canonicalId,
+      )
     }
 
     case 'open-beside': {
@@ -172,9 +169,7 @@ export function reconcileChatWorkspace(
     }
 
     case 'focus':
-      return event.slot === 'secondary' && !state.secondarySessionId
-        ? state
-        : { ...state, focusedSlot: event.slot }
+      return event.slot === 'secondary' && !state.secondarySessionId ? state : { ...state, focusedSlot: event.slot }
 
     case 'close':
       return event.slot === 'secondary'
@@ -190,19 +185,28 @@ export function reconcileChatWorkspace(
     }
 
     case 'rotate':
-      return normalize({
-        ...state,
-        primarySessionId: state.primarySessionId === event.fromSessionId ? event.toSessionId : state.primarySessionId,
-        secondarySessionId: state.secondarySessionId === event.fromSessionId ? event.toSessionId : state.secondarySessionId,
-      }, canonicalId)
+      return normalize(
+        {
+          ...state,
+          primarySessionId: state.primarySessionId === event.fromSessionId ? event.toSessionId : state.primarySessionId,
+          secondarySessionId:
+            state.secondarySessionId === event.fromSessionId ? event.toSessionId : state.secondarySessionId,
+        },
+        canonicalId,
+      )
 
     case 'restore': {
       const available = new Set(event.availableSessionIds)
-      return normalize({
-        ...state,
-        primarySessionId: state.primarySessionId && available.has(state.primarySessionId) ? state.primarySessionId : null,
-        secondarySessionId: state.secondarySessionId && available.has(state.secondarySessionId) ? state.secondarySessionId : null,
-      }, canonicalId)
+      return normalize(
+        {
+          ...state,
+          primarySessionId:
+            state.primarySessionId && available.has(state.primarySessionId) ? state.primarySessionId : null,
+          secondarySessionId:
+            state.secondarySessionId && available.has(state.secondarySessionId) ? state.secondarySessionId : null,
+        },
+        canonicalId,
+      )
     }
 
     case 'forward-target': {

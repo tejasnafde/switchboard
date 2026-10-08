@@ -39,10 +39,7 @@ function loadForks(): void {
     const stored = JSON.parse(window.localStorage?.getItem(FORK_STORAGE_KEY) ?? '[]') as DurableForkIntent[]
     for (const intent of stored) {
       if (!intent?.requestId || !intent.sourceConversationId || !intent.messageId) continue
-      pendingForks.set(
-        durableForkKey(intent.sourceConversationId, intent.messageId, intent.checkoutKind),
-        intent,
-      )
+      pendingForks.set(durableForkKey(intent.sourceConversationId, intent.messageId, intent.checkoutKind), intent)
     }
   } catch (err) {
     log.warn('failed to load persisted fork intents - backend idempotency remains authoritative', err)
@@ -154,9 +151,7 @@ export async function forkAndOpenSession(
     sourceConversationId,
     ...(source.machineId ? { machineId: source.machineId } : {}),
   })
-  const outcome = prior?.kind === 'completed'
-    ? prior
-    : await window.api.app.forkConversation(request)
+  const outcome = prior?.kind === 'completed' ? prior : await window.api.app.forkConversation(request)
   if (outcome.kind === 'confirmation-required') {
     return {
       ok: false,

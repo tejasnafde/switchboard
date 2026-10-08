@@ -16,7 +16,9 @@ export const PERF_THRESHOLDS = {
 
 export type PerfFields = Record<string, string | number | boolean | null | undefined>
 export type PerfName = keyof typeof PERF_THRESHOLDS
-export interface PerfSpan { end: (fields?: PerfFields) => number }
+export interface PerfSpan {
+  end: (fields?: PerfFields) => number
+}
 
 export function createPerfSpan(
   log: { info: (line: string) => void; debug: (line: string) => void },

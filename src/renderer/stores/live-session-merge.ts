@@ -83,7 +83,8 @@ export function settleSessionsNotLive<Row extends { id: string; status: string }
   inScope: (row: Row) => boolean,
 ): Row[] {
   const liveIds = new Set(live.map((s) => s.threadId))
-  const stale = (row: Row) => inScope(row) && !liveIds.has(row.id) && (row.status === 'running' || row.status === 'thinking')
+  const stale = (row: Row) =>
+    inScope(row) && !liveIds.has(row.id) && (row.status === 'running' || row.status === 'thinking')
   if (!rows.some(stale)) return rows as Row[]
   return rows.map((row) => (stale(row) ? { ...row, status: 'idle' } : row))
 }

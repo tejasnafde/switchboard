@@ -1,3 +1,4 @@
 {
+  "*.{ts,tsx,mts,cts,js,mjs,cjs}": "oxfmt --no-error-on-unmatched-pattern",
   "src/**/*.{ts,tsx}": "eslint --max-warnings=0"
 }

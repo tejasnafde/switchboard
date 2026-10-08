@@ -115,7 +115,7 @@ describe('formatTerminalContext', () => {
 describe('session-aware context routing', () => {
   it('uses the focused terminal when the browser selection anchor has no routing metadata', () => {
     const terminal = {
-      getAttribute: (name: string) => name === 'data-context-source' ? 'terminal' : null,
+      getAttribute: (name: string) => (name === 'data-context-source' ? 'terminal' : null),
       parentElement: null,
     }
     const xtermInput = { getAttribute: () => null, parentElement: terminal }
@@ -126,7 +126,7 @@ describe('session-aware context routing', () => {
 
   it('resolves chat selection ownership from its containing message session', () => {
     const root = {
-      getAttribute: (name: string) => name === 'data-session-id' ? 'right-session' : null,
+      getAttribute: (name: string) => (name === 'data-session-id' ? 'right-session' : null),
       parentElement: null,
     }
     const child = { getAttribute: () => null, parentElement: root }
@@ -134,16 +134,19 @@ describe('session-aware context routing', () => {
   })
 
   it('formats an IDE selection relative to the explicitly bound session folder', () => {
-    const formatted = formatIdeSelection({
-      path: '/repo-b/src/query.sql',
-      startLine: 4,
-      endLine: 8,
-      text: 'select * from events',
-    }, {
-      sessionId: 'right-session',
-      machineId: 'remote-b',
-      folder: '/repo-b',
-    })
+    const formatted = formatIdeSelection(
+      {
+        path: '/repo-b/src/query.sql',
+        startLine: 4,
+        endLine: 8,
+        text: 'select * from events',
+      },
+      {
+        sessionId: 'right-session',
+        machineId: 'remote-b',
+        folder: '/repo-b',
+      },
+    )
     expect(formatted).toMatchObject({ sessionId: 'right-session', label: 'query.sql (4-8)' })
     expect(formatted?.block).toContain('src/query.sql')
   })
@@ -162,9 +165,11 @@ describe('session-aware context routing', () => {
   })
 
   it('treats machine and folder as one atomic IDE navigation target', () => {
-    expect(sameIdeWorkspaceTarget(
-      { sessionId: 'left', machineId: 'local', folder: '/repo' },
-      { sessionId: 'right', machineId: 'remote', folder: '/repo' },
-    )).toBe(false)
+    expect(
+      sameIdeWorkspaceTarget(
+        { sessionId: 'left', machineId: 'local', folder: '/repo' },
+        { sessionId: 'right', machineId: 'remote', folder: '/repo' },
+      ),
+    ).toBe(false)
   })
 })

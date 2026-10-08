@@ -14,8 +14,14 @@ export function withTimeout<T>(p: Promise<T>, ms: number, opName: string): Promi
       reject(new Error(`${opName} timed out after ${ms}ms`))
     }, ms)
     p.then(
-      (value) => { clearTimeout(timer); resolve(value) },
-      (err) => { clearTimeout(timer); reject(err) },
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      },
     )
   })
 }

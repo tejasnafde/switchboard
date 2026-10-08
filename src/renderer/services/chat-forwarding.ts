@@ -17,10 +17,7 @@ export function forwardingTargets<T extends ForwardSession>(
     .sort((a, b) => Number(displayed.has(b.id)) - Number(displayed.has(a.id)))
 }
 
-export function buildForwardedContext(
-  content: string,
-  source: { title: string; provider: string },
-): string {
+export function buildForwardedContext(content: string, source: { title: string; provider: string }): string {
   const quoted = content
     .split('\n')
     .slice(0, 40)

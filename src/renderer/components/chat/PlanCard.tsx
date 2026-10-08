@@ -28,25 +28,38 @@ export function PlanCard({ plan, onApprove, onReject }: PlanCardProps) {
       }}
     >
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '8px 12px',
-        borderBottom: '1px solid var(--border)',
-        background: 'rgba(88, 166, 255, 0.08)',
-      }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 12px',
+          borderBottom: '1px solid var(--border)',
+          background: 'rgba(88, 166, 255, 0.08)',
+        }}
+      >
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M9 11l3 3L22 4" />
           <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
         </svg>
-        <span style={{
-          fontSize: '11px',
-          fontWeight: 600,
-          color: 'var(--accent)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.4px',
-        }}>
+        <span
+          style={{
+            fontSize: '11px',
+            fontWeight: 600,
+            color: 'var(--accent)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.4px',
+          }}
+        >
           Proposed Plan
         </span>
       </div>
@@ -60,13 +73,15 @@ export function PlanCard({ plan, onApprove, onReject }: PlanCardProps) {
 
       {/* Actions */}
       {(onApprove || onReject) && (
-        <div style={{
-          display: 'flex',
-          gap: '8px',
-          padding: '8px 12px',
-          borderTop: '1px solid var(--border)',
-          background: 'rgba(88, 166, 255, 0.04)',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '8px',
+            padding: '8px 12px',
+            borderTop: '1px solid var(--border)',
+            background: 'rgba(88, 166, 255, 0.04)',
+          }}
+        >
           {onApprove && (
             <button
               onClick={() => {

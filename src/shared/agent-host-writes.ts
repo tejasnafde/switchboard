@@ -179,7 +179,13 @@ export function createPullRequestGate(mode: RuntimeMode): AgentToolGate {
 /** `text` with exactly one marker line at the end, whatever the agent or the user already typed. */
 export function withViaMarker(text: string): string {
   const lines = text.replace(/\s+$/, '').split('\n')
-  while (lines.length > 0 && lines[lines.length - 1].trim().replace(/^[_*]+|[_*]+$/g, '').toLowerCase() === VIA_SWITCHBOARD_MARKER.toLowerCase()) {
+  while (
+    lines.length > 0 &&
+    lines[lines.length - 1]
+      .trim()
+      .replace(/^[_*]+|[_*]+$/g, '')
+      .toLowerCase() === VIA_SWITCHBOARD_MARKER.toLowerCase()
+  ) {
     lines.pop()
   }
   const body = lines.join('\n').replace(/\s+$/, '')
@@ -193,7 +199,10 @@ export function checkReplyText(value: unknown): ReplyTextCheck {
   if (typeof value !== 'string' || !value.trim()) return { ok: false, message: 'The reply is empty.' }
   const text = value.trim()
   if (text.length > AGENT_REPLY_MAX_CHARS) {
-    return { ok: false, message: `The reply is ${text.length} characters; the limit is ${AGENT_REPLY_MAX_CHARS}. Say it shorter.` }
+    return {
+      ok: false,
+      message: `The reply is ${text.length} characters; the limit is ${AGENT_REPLY_MAX_CHARS}. Say it shorter.`,
+    }
   }
   return { ok: true, text }
 }
@@ -204,7 +213,9 @@ export function hostWriteDetail(card: HostWriteCard): string {
   const lines: string[] = []
   if (card.action === 'create' && card.create) {
     const c = card.create
-    lines.push(`Open a${c.draft ? ' draft' : ''} pull request on ${c.repoLabel}: ${c.sourceBranch} -> ${c.targetBranch}`)
+    lines.push(
+      `Open a${c.draft ? ' draft' : ''} pull request on ${c.repoLabel}: ${c.sourceBranch} -> ${c.targetBranch}`,
+    )
     if (c.localPath) lines.push(`From the local repository ${c.localPath}`)
     lines.push('', c.title)
     if (c.reviewers && c.reviewers.length > 0) lines.push('', `Reviewers: ${c.reviewers.map(reviewerLabel).join(', ')}`)
@@ -214,7 +225,8 @@ export function hostWriteDetail(card: HostWriteCard): string {
   if (card.action === 'resolve') lines.push(`Resolve the conversation on ${where}`)
   if (card.action === 'rerun') lines.push(`Re-run ${card.checkName ?? 'a failed check'} on ${card.prLabel}`)
   if (card.action === 'comment') lines.push(`Comment on ${where}`)
-  if (card.action === 'review') lines.push(`Review ${card.prLabel} with ${card.review?.comments.length ?? 0} line comments`)
+  if (card.action === 'review')
+    lines.push(`Review ${card.prLabel} with ${card.review?.comments.length ?? 0} line comments`)
   if (card.quote) lines.push('', `${card.quote.author}: ${card.quote.body}`)
   if (card.replyText) lines.push('', card.replyText)
   if (card.review) {
@@ -232,9 +244,11 @@ function capDetail(text: string): string {
 
 export function hostWriteTitle(card: HostWriteCard): string {
   if (card.action === 'create') return card.create?.draft ? 'Open a draft pull request' : 'Open a pull request'
-  if (card.action === 'reply') return card.suggestResolve ? 'Reply and resolve a review conversation' : 'Reply to a review conversation'
+  if (card.action === 'reply')
+    return card.suggestResolve ? 'Reply and resolve a review conversation' : 'Reply to a review conversation'
   if (card.action === 'resolve') return 'Resolve a review conversation'
-  if (card.action === 'comment') return card.lineRange ? `Comment on lines ${card.lineRange.start}-${card.lineRange.end}` : 'Comment on a line'
+  if (card.action === 'comment')
+    return card.lineRange ? `Comment on lines ${card.lineRange.start}-${card.lineRange.end}` : 'Comment on a line'
   if (card.action === 'review') return 'Submit a review'
   return 'Re-run a failed check'
 }
@@ -245,19 +259,25 @@ export function parseHostWriteResponse(value: unknown): HostWriteResponse {
   const r = value as Record<string, unknown>
   const comments = Array.isArray(r.comments)
     ? r.comments.flatMap((c: unknown) => {
-      const item = c as Record<string, unknown> | null
-      return item && typeof item.id === 'string' && typeof item.text === 'string' ? [{ id: item.id, text: item.text }] : []
-    })
+        const item = c as Record<string, unknown> | null
+        return item && typeof item.id === 'string' && typeof item.text === 'string'
+          ? [{ id: item.id, text: item.text }]
+          : []
+      })
     : undefined
   return {
     ...(typeof r.text === 'string' ? { text: r.text } : {}),
     ...(typeof r.resolve === 'boolean' ? { resolve: r.resolve } : {}),
-    ...(r.verdict === 'comment' || r.verdict === 'approve' || r.verdict === 'request_changes' ? { verdict: r.verdict } : {}),
+    ...(r.verdict === 'comment' || r.verdict === 'approve' || r.verdict === 'request_changes'
+      ? { verdict: r.verdict }
+      : {}),
     ...(typeof r.summary === 'string' ? { summary: r.summary } : {}),
     ...(comments ? { comments } : {}),
     ...(typeof r.title === 'string' ? { title: r.title } : {}),
     ...(typeof r.description === 'string' ? { description: r.description } : {}),
-    ...(Array.isArray(r.reviewers) ? { reviewers: r.reviewers.filter((id): id is string => typeof id === 'string') } : {}),
+    ...(Array.isArray(r.reviewers)
+      ? { reviewers: r.reviewers.filter((id): id is string => typeof id === 'string') }
+      : {}),
     ...(typeof r.shown === 'string' ? { shown: r.shown } : {}),
     ...(r.quiet === true ? { quiet: true } : {}),
   }

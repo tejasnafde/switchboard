@@ -19,8 +19,14 @@ import { openLandingProjectPicker } from './lib/new-chat.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
-const mk = (p) => { const d = mkdtempSync(join(tmpdir(), p)); scratch.push(d); return d }
-process.on('exit', () => { for (const d of scratch) rmSync(d, { recursive: true, force: true }) })
+const mk = (p) => {
+  const d = mkdtempSync(join(tmpdir(), p))
+  scratch.push(d)
+  return d
+}
+process.on('exit', () => {
+  for (const d of scratch) rmSync(d, { recursive: true, force: true })
+})
 const userData = mk('sb-order-ud-')
 const project = realpathSync(mk('sb-order-proj-'))
 const claudeDir = realpathSync(mk('sb-order-claude-'))
@@ -28,17 +34,29 @@ const db = join(userData, 'data', 'switchboard.db')
 const q = (sql) => execFileSync('sqlite3', [db, sql]).toString().trim()
 
 async function launch() {
-  const app = await electron.launch({ args: ['.'], cwd: repoRoot, timeout: 30_000,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1',
-      SB_DEMO_CLAUDE_TRANSCRIPT_DIR: claudeDir, SHELL: '/bin/sh' } })
+  const app = await electron.launch({
+    args: ['.'],
+    cwd: repoRoot,
+    timeout: 30_000,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '',
+      SB_USER_DATA: userData,
+      SB_DEMO_ADAPTER: '1',
+      SB_DEMO_CLAUDE_TRANSCRIPT_DIR: claudeDir,
+      SHELL: '/bin/sh',
+    },
+  })
   const win = await app.firstWindow({ timeout: 20_000 })
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
-  await win.evaluate(() => Promise.all([
-    window.api.settings.set('tour.autoplay', 'false'),
-    window.api.settings.set('analytics.enabled', 'false'),
-    window.api.settings.set('analytics.noticeSeen', 'true'),
-    window.api.settings.set('session.defaultEnvMode', 'local'),
-  ]))
+  await win.evaluate(() =>
+    Promise.all([
+      window.api.settings.set('tour.autoplay', 'false'),
+      window.api.settings.set('analytics.enabled', 'false'),
+      window.api.settings.set('analytics.noticeSeen', 'true'),
+      window.api.settings.set('session.defaultEnvMode', 'local'),
+    ]),
+  )
   const skip = win.getByRole('button', { name: 'Skip tour' })
   if (await skip.isVisible().catch(() => false)) await skip.click()
   return { app, win }
@@ -46,24 +64,33 @@ async function launch() {
 
 let { app, win } = await launch()
 await app.close()
-q(`INSERT OR REPLACE INTO projects (path, name, added_at, sort_order) VALUES ('${project}', 'ordery', ${Date.now()}, 0);`)
+q(
+  `INSERT OR REPLACE INTO projects (path, name, added_at, sort_order) VALUES ('${project}', 'ordery', ${Date.now()}, 0);`,
+)
 // History scans every enabled oauth_dir, so this is where it finds the transcript.
 q(`INSERT OR REPLACE INTO provider_instances (id, agent_type, display_name, auth_mode, oauth_dir, enabled)
    VALUES ('claude-code-e2e', 'claude-code', 'e2e', 'oauth_dir', '${claudeDir}', 1);`)
 ;({ app, win } = await launch())
 
 const results = []
-const check = (name, ok, detail = '') => { results.push({ ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`) }
+const check = (name, ok, detail = '') => {
+  results.push({ ok })
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`)
+}
 const MARKERS = { 'Interim note': 'interim', 'Final answer': 'final' }
 /** Every marker occurrence in the focused chat, in DOM order. */
-const markerOrder = () => win.evaluate((markers) => {
-  const text = document.querySelector('[data-chat-panel]')?.innerText ?? ''
-  const hits = []
-  for (const [needle, name] of Object.entries(markers)) {
-    for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + 1)) hits.push([i, name])
-  }
-  return hits.sort((a, b) => a[0] - b[0]).map(([, name]) => name).join(',')
-}, MARKERS)
+const markerOrder = () =>
+  win.evaluate((markers) => {
+    const text = document.querySelector('[data-chat-panel]')?.innerText ?? ''
+    const hits = []
+    for (const [needle, name] of Object.entries(markers)) {
+      for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + 1)) hits.push([i, name])
+    }
+    return hits
+      .sort((a, b) => a[0] - b[0])
+      .map(([, name]) => name)
+      .join(',')
+  }, MARKERS)
 /** The registry mirrors a turn's text to SQLite at turn end, so a row means the turn is over. */
 const replied = async (prefix, timeout) => {
   const until = Date.now() + timeout
@@ -105,10 +132,15 @@ try {
   check('after switching away and back, the order is unchanged', reloaded === live, `live=${live} reloaded=${reloaded}`)
 
   // A 61s tool separates them. Rows stamped at turn end land within a few ms.
-  const at = (prefix) => Number(q(`SELECT timestamp FROM messages WHERE role = 'assistant' AND content LIKE '${prefix}%';`))
+  const at = (prefix) =>
+    Number(q(`SELECT timestamp FROM messages WHERE role = 'assistant' AND content LIKE '${prefix}%';`))
   const interimAt = at('Interim note')
   const finalAt = at('Final answer')
-  check('the mirrored interim text keeps its own time, before the tool call', interimAt > 0 && finalAt - interimAt > 30_000, `${interimAt} < ${finalAt}`)
+  check(
+    'the mirrored interim text keeps its own time, before the tool call',
+    interimAt > 0 && finalAt - interimAt > 30_000,
+    `${interimAt} < ${finalAt}`,
+  )
 } catch (e) {
   check('unexpected error', false, e.message.split('\n')[0])
   await win.screenshot({ path: join(tmpdir(), 'sb-order-error.png') }).catch(() => {})

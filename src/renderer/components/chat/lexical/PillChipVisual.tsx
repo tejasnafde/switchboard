@@ -48,11 +48,7 @@ const CHIP_STYLE: CSSProperties = {
 export function PillChipVisual({ label, kind, selectable = true, trailing, rootProps }: PillChipVisualProps) {
   const tint = tintForKind(kind)
   return (
-    <span
-      title={label}
-      {...rootProps}
-      style={{ ...CHIP_STYLE, userSelect: selectable ? 'text' : 'none' }}
-    >
+    <span title={label} {...rootProps} style={{ ...CHIP_STYLE, userSelect: selectable ? 'text' : 'none' }}>
       <span style={{ width: 4, height: 4, borderRadius: '50%', background: tint, flexShrink: 0 }} />
       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
       {trailing}

@@ -47,14 +47,22 @@ export function saveBookmark(params: {
   messageTimestamp: number
 }): { ok: boolean } {
   try {
-    getDb().prepare(
-      `INSERT OR IGNORE INTO bookmarks
+    getDb()
+      .prepare(
+        `INSERT OR IGNORE INTO bookmarks
        (id, session_id, project_path, session_title, agent_type, message_role, content_excerpt, message_timestamp)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      params.id, params.sessionId, params.projectPath, params.sessionTitle,
-      params.agentType, params.messageRole, params.contentExcerpt, params.messageTimestamp,
-    )
+      )
+      .run(
+        params.id,
+        params.sessionId,
+        params.projectPath,
+        params.sessionTitle,
+        params.agentType,
+        params.messageRole,
+        params.contentExcerpt,
+        params.messageTimestamp,
+      )
     return { ok: true }
   } catch (err) {
     log.warn(`saveBookmark failed for ${params.id}`, err)
@@ -73,7 +81,5 @@ export function removeBookmark(id: string): { ok: boolean } {
 }
 
 export function listBookmarks(): BookmarkRow[] {
-  return getDb()
-    .prepare('SELECT * FROM bookmarks ORDER BY saved_at DESC')
-    .all() as BookmarkRow[]
+  return getDb().prepare('SELECT * FROM bookmarks ORDER BY saved_at DESC').all() as BookmarkRow[]
 }

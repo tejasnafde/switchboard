@@ -29,7 +29,10 @@ export class OutputCoalescer {
     }
     this.pending.set(id, buffered)
     if (!this.timers.has(id)) {
-      this.timers.set(id, setTimeout(() => this.flush(id), this.flushMs))
+      this.timers.set(
+        id,
+        setTimeout(() => this.flush(id), this.flushMs),
+      )
     }
   }
 

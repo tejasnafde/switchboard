@@ -1,13 +1,7 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
-import type {
-  WorktreeCreationProgressEvent,
-  WorktreeCreationRequest,
-} from '../../src/shared/worktree-creation'
-import {
-  ensureWorktreeCreationSchema,
-  SqliteWorktreeCreationStore,
-} from '../../src/main/db/worktree-creation'
+import type { WorktreeCreationProgressEvent, WorktreeCreationRequest } from '../../src/shared/worktree-creation'
+import { ensureWorktreeCreationSchema, SqliteWorktreeCreationStore } from '../../src/main/db/worktree-creation'
 import type {
   ResolvedGitRepository,
   WorktreeMaterializationInspection,
@@ -215,10 +209,12 @@ class DurableProgressSink implements WorktreeCreationProgressSink {
   constructor(private readonly store: SqliteWorktreeCreationStore) {}
 
   publish(event: WorktreeCreationProgressEvent): void {
-    expect(this.store.get({
-      machineId: 'machine-local',
-      creationId: event.creationId,
-    })).toMatchObject({
+    expect(
+      this.store.get({
+        machineId: 'machine-local',
+        creationId: event.creationId,
+      }),
+    ).toMatchObject({
       revision: event.revision,
       phase: event.phase,
       status: event.status,
@@ -253,12 +249,14 @@ describe('WorktreeCreationService compensation', () => {
   it('records a definite materialization failure and safely retries the same creation identity', async () => {
     const harness = fixture()
     try {
-      harness.git.materializeResults = [{
-        kind: 'conflict',
-        worktreePath: '/repo/.switchboard/worktrees/compensation-test-1234567890',
-        branch: 'sb/compensation-test-1234567890',
-        reason: 'path_exists',
-      }]
+      harness.git.materializeResults = [
+        {
+          kind: 'conflict',
+          worktreePath: '/repo/.switchboard/worktrees/compensation-test-1234567890',
+          branch: 'sb/compensation-test-1234567890',
+          reason: 'path_exists',
+        },
+      ]
 
       const failed = await harness.service.createWorktreeTransaction(request())
 
@@ -349,12 +347,14 @@ describe('WorktreeCreationService compensation', () => {
   it('inspects and quarantines a wrong-head materialization instead of throwing unjournaled', async () => {
     const harness = fixture()
     try {
-      harness.git.materializeResults = [{
-        kind: 'completed',
-        worktreePath: '/repo/.switchboard/worktrees/compensation-test-1234567890',
-        branch: 'sb/compensation-test-1234567890',
-        headCommit: WRONG_COMMIT,
-      }]
+      harness.git.materializeResults = [
+        {
+          kind: 'completed',
+          worktreePath: '/repo/.switchboard/worktrees/compensation-test-1234567890',
+          branch: 'sb/compensation-test-1234567890',
+          headCommit: WRONG_COMMIT,
+        },
+      ]
 
       const retained = await harness.service.createWorktreeTransaction(request())
 
@@ -362,10 +362,12 @@ describe('WorktreeCreationService compensation', () => {
       expect(retained.recoveryActions).toEqual(expect.arrayContaining(['retain', 'remove']))
       expect(harness.git.calls.filter((call) => call === 'inspectMaterialization')).toHaveLength(1)
       expect(harness.git.calls).not.toContain('rollbackMaterialization')
-      expect(harness.store.get({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-      })).toMatchObject({ status: 'cleanup_required' })
+      expect(
+        harness.store.get({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+        }),
+      ).toMatchObject({ status: 'cleanup_required' })
       expect(count(harness.db, 'managed_worktrees')).toBe(0)
       expect(count(harness.db, 'conversations')).toBe(0)
     } finally {
@@ -376,12 +378,14 @@ describe('WorktreeCreationService compensation', () => {
   it('makes an absent outcome-unknown materialization retryable without rollback', async () => {
     const harness = fixture()
     try {
-      harness.git.materializeResults = [{
-        kind: 'outcome_unknown',
-        worktreePath: '/repo/.switchboard/worktrees/compensation-test-1234567890',
-        branch: 'sb/compensation-test-1234567890',
-        reason: 'git response stream closed',
-      }]
+      harness.git.materializeResults = [
+        {
+          kind: 'outcome_unknown',
+          worktreePath: '/repo/.switchboard/worktrees/compensation-test-1234567890',
+          branch: 'sb/compensation-test-1234567890',
+          reason: 'git response stream closed',
+        },
+      ]
 
       const failed = await harness.service.createWorktreeTransaction(request())
 
@@ -389,10 +393,12 @@ describe('WorktreeCreationService compensation', () => {
       expect(failed.recoveryActions).toContain('retry')
       expect(harness.git.calls.filter((call) => call === 'inspectMaterialization')).toHaveLength(1)
       expect(harness.git.calls).not.toContain('rollbackMaterialization')
-      expect(harness.store.get({
-        machineId: 'machine-local',
-        creationId: request().creationId,
-      })).toMatchObject({ phase: 'materializing', status: 'failed' })
+      expect(
+        harness.store.get({
+          machineId: 'machine-local',
+          creationId: request().creationId,
+        }),
+      ).toMatchObject({ phase: 'materializing', status: 'failed' })
       expect(count(harness.db, 'managed_worktrees')).toBe(0)
       expect(count(harness.db, 'conversations')).toBe(0)
     } finally {

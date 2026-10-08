@@ -90,24 +90,24 @@ describe('sameExecutionRoot', () => {
   const base = { projectPath: '/repo/app' }
 
   it('matches equal paths on the same machine ignoring a trailing slash', () => {
-    expect(sameExecutionRoot(
-      resolveExecutionRoot(base),
-      resolveExecutionRoot({ projectPath: '/repo/app/' }),
-    )).toBe(true)
+    expect(sameExecutionRoot(resolveExecutionRoot(base), resolveExecutionRoot({ projectPath: '/repo/app/' }))).toBe(
+      true,
+    )
   })
 
   it('does not match the same path on a different machine', () => {
-    expect(sameExecutionRoot(
-      resolveExecutionRoot(base),
-      resolveExecutionRoot({ ...base, machineId: 'vm-7' }),
-    )).toBe(false)
+    expect(sameExecutionRoot(resolveExecutionRoot(base), resolveExecutionRoot({ ...base, machineId: 'vm-7' }))).toBe(
+      false,
+    )
   })
 
   it('ignores the revision and the branch', () => {
-    expect(sameExecutionRoot(
-      resolveExecutionRoot({ ...base, executionRootRevision: 1, worktreeBranch: 'main' }),
-      resolveExecutionRoot({ ...base, executionRootRevision: 9 }),
-    )).toBe(true)
+    expect(
+      sameExecutionRoot(
+        resolveExecutionRoot({ ...base, executionRootRevision: 1, worktreeBranch: 'main' }),
+        resolveExecutionRoot({ ...base, executionRootRevision: 9 }),
+      ),
+    ).toBe(true)
   })
 })
 

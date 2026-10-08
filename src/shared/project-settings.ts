@@ -31,7 +31,10 @@ export interface ScopableSetting {
 export const SETTING_SESSION_ENV_MODE = 'defaultSessionEnvMode'
 export const SETTING_SHOW_FILE_DIFFS = 'chat.showFileDiffs'
 
-const oneOf = (...values: string[]) => (value: string) => values.includes(value)
+const oneOf =
+  (...values: string[]) =>
+  (value: string) =>
+    values.includes(value)
 
 /**
  * Every setting a project can override. Only what varies by project belongs

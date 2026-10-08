@@ -163,12 +163,17 @@ export class CheckpointTracker {
       // A turn begun while this diff ran owns the slot now.
       if (!this.pending.has(threadId) && res.endTree) {
         this.pending.set(threadId, {
-          turnId: this.nextTurnId(), tree: res.endTree, repoRoot: entry.repoRoot, written: new Set(), active: false,
+          turnId: this.nextTurnId(),
+          tree: res.endTree,
+          repoRoot: entry.repoRoot,
+          written: new Set(),
+          active: false,
         })
         if (this.startsNext.delete(threadId)) this.keepBaseline(threadId)
       }
       return res.files.map((f) => {
-        const noRevert = f.noRevert ?? (entry.written.has(pathKey(resolve(entry.repoRoot, f.relPath))) ? undefined : 'outside')
+        const noRevert =
+          f.noRevert ?? (entry.written.has(pathKey(resolve(entry.repoRoot, f.relPath))) ? undefined : 'outside')
         return {
           type: 'file.edited',
           threadId,
@@ -249,7 +254,12 @@ export class CheckpointTracker {
 
   private persist(threadId: string, entry: PendingCheckpoint): void {
     try {
-      this.deps.store?.save(threadId, { turnId: entry.turnId, tree: entry.tree, repoRoot: entry.repoRoot, written: [...entry.written] })
+      this.deps.store?.save(threadId, {
+        turnId: entry.turnId,
+        tree: entry.tree,
+        repoRoot: entry.repoRoot,
+        written: [...entry.written],
+      })
     } catch (err) {
       log.warn('could not store the turn checkpoint', { threadId, err })
     }

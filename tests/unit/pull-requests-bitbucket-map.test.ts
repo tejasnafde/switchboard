@@ -8,7 +8,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
 
 import {
   conflictedPaths,
@@ -20,7 +22,12 @@ import {
   mapBbSummary,
   type BbViewer,
 } from '../../src/main/pull-requests/bitbucket-map'
-import { BITBUCKET_API, BitbucketClient, BitbucketProvider, testBitbucket } from '../../src/main/pull-requests/bitbucket'
+import {
+  BITBUCKET_API,
+  BitbucketClient,
+  BitbucketProvider,
+  testBitbucket,
+} from '../../src/main/pull-requests/bitbucket'
 import type { RepoRef } from '../../src/shared/pull-requests'
 
 const dir = join(__dirname, '../fixtures/pull-requests')
@@ -56,9 +63,11 @@ describe('mapBbComments', () => {
     expect(threads[0].comments[0].url).toContain('#comment-1')
   })
 
-  it('reads a multi-line comment\'s first line from the side it anchors on, and none for an outdated one', () => {
+  it("reads a multi-line comment's first line from the side it anchors on, and none for an outdated one", () => {
     expect(threads.map((t) => t.startLine)).toEqual([undefined, 80, undefined])
-    const ranged = mapBbComments([{ ...comments[0], inline: { path: 'sync/worker.py', from: null, to: 90, start_from: null, start_to: 86 } }])
+    const ranged = mapBbComments([
+      { ...comments[0], inline: { path: 'sync/worker.py', from: null, to: 90, start_from: null, start_to: 86 } },
+    ])
     expect(ranged[0]).toMatchObject({ line: 90, startLine: 86, side: 'new' })
   })
 
@@ -92,21 +101,36 @@ describe('mapBbSummary', () => {
   it('keeps a PR you only commented on, as a participant who gave no verdict (shaped like #676)', () => {
     const pr = mapBbSummary(repo, fixture('bitbucket-pullrequest-commented.json'), viewer, null)
     expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true })
-    expect(pr.reviewers.map((r) => [r.person.login, r.state, r.requested])).toEqual([['neha', 'pending', true], ['tejas', 'commented', false]])
+    expect(pr.reviewers.map((r) => [r.person.login, r.state, r.requested])).toEqual([
+      ['neha', 'pending', true],
+      ['tejas', 'commented', false],
+    ])
   })
 
   it('does not count a requested reviewer who has not taken part as a commenter', () => {
     const pr = fixture('bitbucket-pullrequest-commented.json')
     const asNeha = mapBbSummary(repo, pr, { uuid: '{neha}', accountId: null }, null)
     expect(asNeha.viewer).toMatchObject({ isRequestedReviewer: true, hasCommented: false })
-    const approved = { ...pr, participants: pr.participants.map((p: { role: string }) => (p.role === 'PARTICIPANT' ? { ...p, approved: true, state: 'approved' } : p)) }
+    const approved = {
+      ...pr,
+      participants: pr.participants.map((p: { role: string }) =>
+        p.role === 'PARTICIPANT' ? { ...p, approved: true, state: 'approved' } : p,
+      ),
+    }
     expect(mapBbSummary(repo, approved, viewer, null).viewer).toMatchObject({ hasReviewed: true, hasCommented: false })
   })
 
   it('marks a requested reviewer who has not participated', () => {
     const pr = mapBbSummary(repo, open[1], viewer, null)
     expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: true, hasReviewed: false, hasCommented: false })
-    expect(pr.reviewers).toEqual([{ id: '{me-uuid}', person: expect.objectContaining({ displayName: 'Tejas Nafde' }), state: 'pending', requested: true }])
+    expect(pr.reviewers).toEqual([
+      {
+        id: '{me-uuid}',
+        person: expect.objectContaining({ displayName: 'Tejas Nafde' }),
+        state: 'pending',
+        requested: true,
+      },
+    ])
     expect(pr.unresolvedConversations).toBeNull()
     // Not enriched yet, so whether it conflicts is not known.
     expect(pr.mergeConflicts).toBeNull()
@@ -127,9 +151,12 @@ describe('mapBbSummary', () => {
 })
 
 describe('mapBbFiles', () => {
-  const files = mapBbFiles(fixture('bitbucket-diffstat.json').values, readFileSync(join(dir, 'bitbucket-diff.txt'), 'utf8'))
+  const files = mapBbFiles(
+    fixture('bitbucket-diffstat.json').values,
+    readFileSync(join(dir, 'bitbucket-diff.txt'), 'utf8'),
+  )
 
-  it('pairs the diffstat with each file\'s hunks', () => {
+  it("pairs the diffstat with each file's hunks", () => {
     expect(files.map((f) => [f.path, f.status, f.additions, f.deletions, f.hunks.length, f.binary])).toEqual([
       ['sync/worker.py', 'modified', 2, 1, 1, false],
       ['sync/backoff.py', 'added', 3, 0, 1, false],
@@ -139,7 +166,11 @@ describe('mapBbFiles', () => {
     ])
     expect(files[3].oldPath).toBe('docs/old name.md')
     expect(files[0].hunks[0].lines.map((l) => [l.kind, l.oldLine, l.newLine])).toEqual([
-      ['context', 84, 84], ['del', 85, null], ['add', null, 85], ['add', null, 86], ['context', 86, 87],
+      ['context', 84, 84],
+      ['del', 85, null],
+      ['add', null, 85],
+      ['add', null, 86],
+      ['context', 86, 87],
     ])
     expect(files[2].hunks[0].lines.every((l) => l.kind === 'del')).toBe(true)
   })
@@ -176,7 +207,11 @@ describe('mapBbActivity and mapBbDetail', () => {
     expect([detail.additions, detail.deletions, detail.changedFiles]).toEqual([5, 3, 5])
     expect(detail.headSha).toBe('a1b2c3d4e5f6')
     expect(detail.description).toBe('Replaces the fixed 30 s retry.')
-    expect(detail.mergeBlockers.map((b) => b.kind)).toEqual(['checks_failed', 'unresolved_conversations', 'changes_requested'])
+    expect(detail.mergeBlockers.map((b) => b.kind)).toEqual([
+      'checks_failed',
+      'unresolved_conversations',
+      'changes_requested',
+    ])
     expect(detail.mergeConflicts).toBe(false)
     expect(detail.viewerCanManage).toBe(true)
   })
@@ -194,7 +229,10 @@ describe('mapBbActivity and mapBbDetail', () => {
   })
 
   it('says nothing about conflicts when the conflicts read failed', () => {
-    expect(mapBbSummary(repo, open[0], viewer, { checks: [], unresolvedConversations: 0, conflictedFiles: null }).mergeConflicts).toBeNull()
+    expect(
+      mapBbSummary(repo, open[0], viewer, { checks: [], unresolvedConversations: 0, conflictedFiles: null })
+        .mergeConflicts,
+    ).toBeNull()
   })
 
   it('marks a conflicted file as conflicted, not modified', () => {
@@ -254,12 +292,18 @@ describe('BitbucketClient', () => {
   it('sends Basic auth to api.bitbucket.org only', async () => {
     const { impl, calls } = fakeFetch({ '/user': { body: { uuid: 'x' } } })
     await new BitbucketClient(creds, impl).json('/user')
-    expect(calls[0].headers.Authorization).toBe(`Basic ${Buffer.from('me@example.com:ATATT-secret-token').toString('base64')}`)
+    expect(calls[0].headers.Authorization).toBe(
+      `Basic ${Buffer.from('me@example.com:ATATT-secret-token').toString('base64')}`,
+    )
   })
 
   it('refuses a next page on another origin instead of sending the token there', async () => {
-    const { impl, calls } = fakeFetch({ '/things': { body: { values: [1], next: 'https://evil.example/2.0/things?page=2' } } })
-    await expect(new BitbucketClient(creds, impl).paged('/things')).rejects.toMatchObject({ error: { kind: 'unknown' } })
+    const { impl, calls } = fakeFetch({
+      '/things': { body: { values: [1], next: 'https://evil.example/2.0/things?page=2' } },
+    })
+    await expect(new BitbucketClient(creds, impl).paged('/things')).rejects.toMatchObject({
+      error: { kind: 'unknown' },
+    })
     expect(calls).toHaveLength(1)
   })
 
@@ -275,7 +319,9 @@ describe('BitbucketClient', () => {
   })
 
   it('classifies a failed fetch as offline, with no token in the message', async () => {
-    const impl = async () => { throw new TypeError('fetch failed') }
+    const impl = async () => {
+      throw new TypeError('fetch failed')
+    }
     const err = await new BitbucketClient(creds, impl).json('/user').catch((e) => e)
     expect(err.error.kind).toBe('offline')
     expect(JSON.stringify(err.error)).not.toContain('ATATT')
@@ -310,7 +356,9 @@ describe('BitbucketProvider', () => {
     const routes = providerRoutes()
     routes[`${base}/pullrequests/612/conflicts`] = { status: 404, body: {} }
     const { impl } = fakeFetch(routes)
-    const [result] = await new BitbucketProvider(new BitbucketClient(creds, impl), () => Date.parse('2026-09-27T12:00:00Z')).list([repo])
+    const [result] = await new BitbucketProvider(new BitbucketClient(creds, impl), () =>
+      Date.parse('2026-09-27T12:00:00Z'),
+    ).list([repo])
     expect(result.error).toBeNull()
     expect([result.prs[0].mergeConflicts, result.prs[0].unresolvedConversations]).toEqual([null, 2])
   })
@@ -427,11 +475,17 @@ describe('testBitbucket', () => {
       ...readable('geoiq', 'retailiq'),
     })
     const result = await testBitbucket(new BitbucketClient(creds, impl), repos)
-    expect(result).toEqual({ ok: true, message: 'Signed in as Tejas Nafde.\n2 of 3 project repositories are readable.\nCannot read in personal: notes' })
+    expect(result).toEqual({
+      ok: true,
+      message: 'Signed in as Tejas Nafde.\n2 of 3 project repositories are readable.\nCannot read in personal: notes',
+    })
     expect(calls.map((c) => c.url.split('?')[0].slice(BITBUCKET_API.length)).sort()).toEqual([
-      '/repositories/geoiq/retailiq', '/repositories/geoiq/retailiq/pullrequests',
-      '/repositories/geoiq/ssg-bot-v2', '/repositories/geoiq/ssg-bot-v2/pullrequests',
-      '/repositories/personal/notes', '/user',
+      '/repositories/geoiq/retailiq',
+      '/repositories/geoiq/retailiq/pullrequests',
+      '/repositories/geoiq/ssg-bot-v2',
+      '/repositories/geoiq/ssg-bot-v2/pullrequests',
+      '/repositories/personal/notes',
+      '/user',
     ])
     expect(calls.every((c) => !c.url.includes('/user/permissions'))).toBe(true)
   })
@@ -439,10 +493,12 @@ describe('testBitbucket', () => {
   it('says what it checked when every repository works, or there are none', async () => {
     const { impl } = fakeFetch({ '/user': { body: { display_name: 'Tejas' } }, ...readable('geoiq', 'ssg-bot-v2') })
     expect(await testBitbucket(new BitbucketClient(creds, impl), repos.slice(0, 1))).toEqual({
-      ok: true, message: 'Signed in as Tejas.\nYour project repository is readable.',
+      ok: true,
+      message: 'Signed in as Tejas.\nYour project repository is readable.',
     })
     expect(await testBitbucket(new BitbucketClient(creds, impl), [])).toEqual({
-      ok: true, message: 'Signed in as Tejas.\nNone of your projects uses a Bitbucket repository yet.',
+      ok: true,
+      message: 'Signed in as Tejas.\nNone of your projects uses a Bitbucket repository yet.',
     })
   })
 
@@ -454,7 +510,8 @@ describe('testBitbucket', () => {
     })
     expect(await testBitbucket(new BitbucketClient(creds, impl), repos.slice(0, 1))).toEqual({
       ok: false,
-      message: 'Signed in.\nYour project repository is not readable.\nCannot read in geoiq: ssg-bot-v2 (pull requests)\nThe API token may be missing read:pullrequest:bitbucket.',
+      message:
+        'Signed in.\nYour project repository is not readable.\nCannot read in geoiq: ssg-bot-v2 (pull requests)\nThe API token may be missing read:pullrequest:bitbucket.',
     })
   })
 
@@ -467,14 +524,17 @@ describe('testBitbucket', () => {
     })
     const result = await testBitbucket(new BitbucketClient(creds, impl), repos)
     expect(result.ok).toBe(false)
-    expect(result.message).toBe('Signed in.\nNone of your 3 project repositories is readable.\nCannot read in geoiq: retailiq, ssg-bot-v2\nCannot read in personal: notes\nThe API token may be missing read:repository:bitbucket.')
+    expect(result.message).toBe(
+      'Signed in.\nNone of your 3 project repositories is readable.\nCannot read in geoiq: retailiq, ssg-bot-v2\nCannot read in personal: notes\nThe API token may be missing read:repository:bitbucket.',
+    )
   })
 
   it('says to retry when Bitbucket rate-limits the checks', async () => {
     const { impl } = fakeFetch({ '/user': { body: {} }, '/repositories/geoiq/ssg-bot-v2': { status: 429, body: {} } })
     expect(await testBitbucket(new BitbucketClient(creds, impl), repos.slice(0, 1))).toEqual({
       ok: false,
-      message: 'Signed in.\nYour project repository is not readable.\nCannot read in geoiq: ssg-bot-v2\nBitbucket rate-limited some checks. Try again in a minute.',
+      message:
+        'Signed in.\nYour project repository is not readable.\nCannot read in geoiq: ssg-bot-v2\nBitbucket rate-limited some checks. Try again in a minute.',
     })
   })
 
@@ -490,11 +550,17 @@ describe('testBitbucket', () => {
 
   it('says why a rejected token failed', async () => {
     const { impl } = fakeFetch({ '/user': { status: 401, body: {} } })
-    expect(await testBitbucket(new BitbucketClient(creds, impl), repos)).toEqual({ ok: false, message: 'Bitbucket rejected the email and API token.' })
+    expect(await testBitbucket(new BitbucketClient(creds, impl), repos)).toEqual({
+      ok: false,
+      message: 'Bitbucket rejected the email and API token.',
+    })
   })
 
   it('names the user scope when /user is forbidden', async () => {
     const { impl } = fakeFetch({ '/user': { status: 403, body: {} } })
-    expect(await testBitbucket(new BitbucketClient(creds, impl), repos)).toEqual({ ok: false, message: 'The API token is missing the read:user:bitbucket scope.' })
+    expect(await testBitbucket(new BitbucketClient(creds, impl), repos)).toEqual({
+      ok: false,
+      message: 'The API token is missing the read:user:bitbucket scope.',
+    })
   })
 })

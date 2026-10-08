@@ -4,7 +4,12 @@
  * cover them (see AGENTS.md "Testing: two runners, one rule").
  */
 import type { QueuedTurnsByMessage } from '@shared/queued-turns'
-import { followUpDelivery, promoteUnavailableReason, type QueuedTurnSummary, type TurnDelivery } from '@shared/turn-delivery'
+import {
+  followUpDelivery,
+  promoteUnavailableReason,
+  type QueuedTurnSummary,
+  type TurnDelivery,
+} from '@shared/turn-delivery'
 
 export interface QueueToggle {
   /** The next send waits for the running turn. */
@@ -51,7 +56,8 @@ export interface HeldTurnActions {
 
 export function heldTurnActions(provider: string | undefined, turn?: QueuedTurnSummary): HeldTurnActions {
   if (turn?.failed) return { label: 'Not sent', canPromote: false, canResume: false, hint: turn.failed }
-  if (turn?.held) return { label: 'Held', canPromote: false, canResume: true, hint: 'The last turn failed. Resume sends the queue.' }
+  if (turn?.held)
+    return { label: 'Held', canPromote: false, canResume: true, hint: 'The last turn failed. Resume sends the queue.' }
   const blocked = promoteUnavailableReason(provider)
   return { label: 'Queued', canPromote: blocked === null, canResume: false, hint: blocked ?? 'Runs after this turn' }
 }

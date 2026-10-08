@@ -94,11 +94,11 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
       const inAnyChatPanel = !!active && !!active.closest('[data-chat-panel="true"]')
       // If focus is inside a terminal (xterm), the terminal pane will
       // claim ⌘F via its own listener - bail so we don't double-trigger.
-      const inTerminal = !!active && (
-        active.classList.contains('xterm-helper-textarea') ||
-        !!active.closest('.xterm') ||
-        !!active.closest('[data-terminal-pane="true"]')
-      )
+      const inTerminal =
+        !!active &&
+        (active.classList.contains('xterm-helper-textarea') ||
+          !!active.closest('.xterm') ||
+          !!active.closest('[data-terminal-pane="true"]'))
       // If focus is inside the CM6 file editor, let it handle ⌘F natively
       // via its own searchKeymap binding - bail so we don't steal it.
       const inFileViewer = !!active && !!active.closest('[data-context-source="file-viewer"]')
@@ -121,7 +121,10 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
 
   const chatSearchMatchInfo = searchOpen
     ? {
-        current: searchMatches.length === 0 ? 0 : (searchIdx % searchMatches.length + searchMatches.length) % searchMatches.length + 1,
+        current:
+          searchMatches.length === 0
+            ? 0
+            : (((searchIdx % searchMatches.length) + searchMatches.length) % searchMatches.length) + 1,
         total: searchMatches.length,
       }
     : null

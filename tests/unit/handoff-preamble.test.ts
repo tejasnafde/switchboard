@@ -22,10 +22,10 @@ describe('buildHandoffPreamble', () => {
     const out = buildHandoffPreamble([user('hello'), assistant('hi there'), user('follow up')])
     expect(out).toBe(
       `${HANDOFF_PREAMBLE_HEADER}\n` +
-      'user: hello\n' +
-      'assistant: hi there\n' +
-      'user: follow up\n\n' +
-      HANDOFF_PREAMBLE_FOOTER,
+        'user: hello\n' +
+        'assistant: hi there\n' +
+        'user: follow up\n\n' +
+        HANDOFF_PREAMBLE_FOOTER,
     )
   })
 
@@ -91,11 +91,7 @@ describe('buildHandoffPreamble', () => {
   })
 
   it('pluralizes the truncation notice', () => {
-    const msgs = [
-      user('one '.padEnd(300, 'a')),
-      user('two '.padEnd(300, 'b')),
-      user('three '.padEnd(300, 'c')),
-    ]
+    const msgs = [user('one '.padEnd(300, 'a')), user('two '.padEnd(300, 'b')), user('three '.padEnd(300, 'c'))]
     const out = buildHandoffPreamble(msgs, { maxChars: 500 })!
     expect(out).toContain('2 older turns omitted.')
   })
@@ -127,10 +123,7 @@ describe('stripHandoffPreamble', () => {
   })
 
   it('strips a truncated preamble too', () => {
-    const preamble = buildHandoffPreamble(
-      [user('a'.repeat(400)), user('b'.repeat(400))],
-      { maxChars: 500 },
-    )!
+    const preamble = buildHandoffPreamble([user('a'.repeat(400)), user('b'.repeat(400))], { maxChars: 500 })!
     expect(preamble.startsWith('(Earlier conversation truncated:')).toBe(true)
     expect(stripHandoffPreamble(`${preamble}\n\ntail`)).toBe('tail')
   })

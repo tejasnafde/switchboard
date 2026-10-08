@@ -16,10 +16,12 @@ describe('source-aware chat forwarding', () => {
   })
 
   it('uses the actual source title and provider in forwarded provenance', () => {
-    expect(buildForwardedContext('first line\nsecond line', {
-      title: 'Implementation',
-      provider: 'Codex',
-    })).toBe('[Forwarded from Codex · "Implementation"]\n> first line\n> second line\n')
+    expect(
+      buildForwardedContext('first line\nsecond line', {
+        title: 'Implementation',
+        provider: 'Codex',
+      }),
+    ).toBe('[Forwarded from Codex · "Implementation"]\n> first line\n> second line\n')
   })
 
   it('caps forwarded context without forwarding to itself implicitly', () => {

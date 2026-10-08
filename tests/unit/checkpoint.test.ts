@@ -175,8 +175,7 @@ describe('checkpoint against real git', () => {
     try {
       // scrubGitEnv: without it, GIT_DIR/GIT_INDEX_FILE inherited from a git
       // hook (pre-commit runs this suite) redirect these calls at the REAL repo.
-      const git = (args: string[]) =>
-        execFileP('git', args, { cwd: dir, env: scrubGitEnv(process.env) })
+      const git = (args: string[]) => execFileP('git', args, { cwd: dir, env: scrubGitEnv(process.env) })
       await git(['init', '-q'])
       await git(['config', 'user.email', 't@t.io'])
       await git(['config', 'user.name', 't'])

@@ -92,11 +92,13 @@ interface CommandResult {
 }
 
 function slug(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48) || 'worktree'
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || 'worktree'
+  )
 }
 
 function creationSuffix(creationId: string): string {
@@ -105,7 +107,9 @@ function creationSuffix(creationId: string): string {
 
 function isContained(parent: string, child: string): boolean {
   const rel = relative(parent, child)
-  return rel !== '' && rel !== '..' && !rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && !isAbsolute(rel)
+  return (
+    rel !== '' && rel !== '..' && !rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && !isAbsolute(rel)
+  )
 }
 
 interface PorcelainWorktree {
@@ -224,9 +228,8 @@ export class ExecFileGitWorktreeAdapter {
       statusDigest: createHash('sha256').update(status.stdout).digest('hex'),
       trackedChanges,
       untrackedChanges,
-      omittedChangeSummary: parts.length > 0
-        ? `${parts.join(' and ')} will not be copied.`
-        : 'The source checkout is clean.',
+      omittedChangeSummary:
+        parts.length > 0 ? `${parts.join(' and ')} will not be copied.` : 'The source checkout is clean.',
     }
   }
 
@@ -252,12 +255,14 @@ export class ExecFileGitWorktreeAdapter {
   }
 
   async planMaterialization(intent: WorktreeMaterializationIntent): Promise<WorktreeMaterializationPlan> {
-    const resolvedBaseCommit = (await this.run(intent.repository.projectPath, [
-      'rev-parse',
-      '--verify',
-      '--end-of-options',
-      `${intent.baseRef}^{commit}`,
-    ])).stdout.trim()
+    const resolvedBaseCommit = (
+      await this.run(intent.repository.projectPath, [
+        'rev-parse',
+        '--verify',
+        '--end-of-options',
+        `${intent.baseRef}^{commit}`,
+      ])
+    ).stdout.trim()
     if (!/^[0-9a-f]{40,64}$/i.test(resolvedBaseCommit)) {
       throw new Error(`Git returned an invalid commit for ${intent.baseRef}`)
     }
@@ -302,7 +307,7 @@ export class ExecFileGitWorktreeAdapter {
   }
 
   async materialize(plan: WorktreeMaterializationPlan): Promise<WorktreeMaterializationResult> {
-    if (!await this.hasSafeManagedPath(plan)) {
+    if (!(await this.hasSafeManagedPath(plan))) {
       return {
         kind: 'conflict',
         branch: plan.branch,
@@ -363,22 +368,16 @@ export class ExecFileGitWorktreeAdapter {
   }
 
   async inspectMaterialization(plan: WorktreeMaterializationPlan): Promise<WorktreeMaterializationInspection> {
-    const output = (await this.run(plan.repository.projectPath, [
-      'worktree',
-      'list',
-      '--porcelain',
-    ])).stdout
+    const output = (await this.run(plan.repository.projectPath, ['worktree', 'list', '--porcelain'])).stdout
     const worktrees = parsePorcelainWorktrees(output)
     const byPath = worktrees.find((worktree) => worktree.worktreePath === resolve(plan.worktreePath))
     const byBranch = worktrees.find((worktree) => worktree.branch === plan.branch)
     const observed = byPath ?? byBranch
     if (!observed) {
       try {
-        const headCommit = (await this.run(plan.repository.projectPath, [
-          'rev-parse',
-          '--verify',
-          `refs/heads/${plan.branch}^{commit}`,
-        ])).stdout.trim()
+        const headCommit = (
+          await this.run(plan.repository.projectPath, ['rev-parse', '--verify', `refs/heads/${plan.branch}^{commit}`])
+        ).stdout.trim()
         return { kind: 'branch_only', branch: plan.branch, headCommit }
       } catch {
         return { kind: 'absent' }
@@ -416,14 +415,12 @@ export class ExecFileGitWorktreeAdapter {
     plan: WorktreeMaterializationPlan,
     mode: WorktreeRollbackMode = 'compensate',
   ): Promise<WorktreeRollbackResult> {
-    if (!await this.hasSafeManagedPath(plan)) return { kind: 'refused', reason: 'unsafe_path' }
+    if (!(await this.hasSafeManagedPath(plan))) return { kind: 'refused', reason: 'unsafe_path' }
     const inspection = await this.inspectMaterialization(plan)
     if (inspection.kind === 'absent') return { kind: 'absent' }
     if (inspection.kind === 'branch_only') {
       if (inspection.headCommit !== plan.resolvedBaseCommit) {
-        return mode === 'compensate'
-          ? { kind: 'refused', reason: 'identity_mismatch' }
-          : { kind: 'removed' }
+        return mode === 'compensate' ? { kind: 'refused', reason: 'identity_mismatch' } : { kind: 'removed' }
       }
       await this.run(plan.repository.projectPath, ['branch', '-D', plan.branch])
       return { kind: 'removed' }
@@ -432,11 +429,7 @@ export class ExecFileGitWorktreeAdapter {
     if (mode === 'compensate' && inspection.headCommit !== plan.resolvedBaseCommit) {
       return { kind: 'refused', reason: 'identity_mismatch' }
     }
-    const status = (await this.run(plan.worktreePath, [
-      'status',
-      '--porcelain',
-      '--untracked-files=all',
-    ])).stdout
+    const status = (await this.run(plan.worktreePath, ['status', '--porcelain', '--untracked-files=all'])).stdout
     if (status.trim().length > 0) return { kind: 'refused', reason: 'dirty' }
     await this.run(plan.repository.projectPath, ['worktree', 'remove', plan.worktreePath])
     if (inspection.headCommit === plan.resolvedBaseCommit) {

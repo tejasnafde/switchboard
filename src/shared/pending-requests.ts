@@ -16,10 +16,7 @@ import type {
   RuntimeRequestOpenedEvent,
 } from './provider-events'
 
-export type PendingBlockingEvent =
-  | RuntimeRequestOpenedEvent
-  | RuntimeQuestionAskedEvent
-  | RuntimePlanProposedEvent
+export type PendingBlockingEvent = RuntimeRequestOpenedEvent | RuntimeQuestionAskedEvent | RuntimePlanProposedEvent
 
 /**
  * The id a pending event is tracked and closed under: `requestId` for an
@@ -48,7 +45,14 @@ export function missingPendingRequests(
 
 /** The event types `applyPendingRequestEvent` can act on. */
 export const PENDING_REQUEST_EVENT_TYPES: ReadonlySet<RuntimeEvent['type']> = new Set([
-  'request.opened', 'question.asked', 'plan.proposed', 'request.closed', 'request.expired', 'question.answered', 'status', 'user.message',
+  'request.opened',
+  'question.asked',
+  'plan.proposed',
+  'request.closed',
+  'request.expired',
+  'question.answered',
+  'status',
+  'user.message',
 ])
 
 /**

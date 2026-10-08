@@ -18,27 +18,57 @@ const MIN = 60_000
 
 function inst(id: string, extra: Partial<ProviderInstance> = {}): ProviderInstance {
   return {
-    id, agentType: 'claude-code', displayName: id, accentColor: null, authMode: 'oauth_dir', envKeys: [],
-    oauthDir: `/h/.claude-${id}`, effectiveOauthDir: `/h/.claude-${id}`, effectiveOauthDirSource: 'oauth_dir',
-    enabled: true, createdAt: 0, updatedAt: 0, ...extra,
+    id,
+    agentType: 'claude-code',
+    displayName: id,
+    accentColor: null,
+    authMode: 'oauth_dir',
+    envKeys: [],
+    oauthDir: `/h/.claude-${id}`,
+    effectiveOauthDir: `/h/.claude-${id}`,
+    effectiveOauthDirSource: 'oauth_dir',
+    enabled: true,
+    createdAt: 0,
+    updatedAt: 0,
+    ...extra,
   }
 }
 
 function usage(id: string, status: ProviderUsage['status'], windows: [number, number][] = []): ProviderUsage {
   return {
-    instanceId: id, agentType: 'claude-code', status, plan: null, account: null, overage: [], fetchedAtMs: NOW,
-    windows: windows.map(([percent, resetIn], i) => buildWindow({
-      id: `w${i}`, label: i === 0 ? '5-hour session' : 'Weekly', kind: 'other', percent,
-      resetsAtMs: NOW + resetIn * MIN, windowMinutes: null,
-    })),
+    instanceId: id,
+    agentType: 'claude-code',
+    status,
+    plan: null,
+    account: null,
+    overage: [],
+    fetchedAtMs: NOW,
+    windows: windows.map(([percent, resetIn], i) =>
+      buildWindow({
+        id: `w${i}`,
+        label: i === 0 ? '5-hour session' : 'Weekly',
+        kind: 'other',
+        percent,
+        resetsAtMs: NOW + resetIn * MIN,
+        windowMinutes: null,
+      }),
+    ),
     ...(status === 'ok' ? {} : { message: 'the sign-in expired' }),
   }
 }
 
 describe('barTone', () => {
   it('is ok under 75, amber from 75, red from 90', () => {
-    const tone = (p: number | null) => barTone(buildWindow({ id: 'w', label: 'W', kind: 'other', percent: p, resetsAtMs: null, windowMinutes: null }))
-    expect([tone(null), tone(74), tone(75), tone(89), tone(90), tone(100)]).toEqual(['ok', 'ok', 'warn', 'warn', 'bad', 'bad'])
+    const tone = (p: number | null) =>
+      barTone(buildWindow({ id: 'w', label: 'W', kind: 'other', percent: p, resetsAtMs: null, windowMinutes: null }))
+    expect([tone(null), tone(74), tone(75), tone(89), tone(90), tone(100)]).toEqual([
+      'ok',
+      'ok',
+      'warn',
+      'warn',
+      'bad',
+      'bad',
+    ])
   })
 
   it('is red for a window the provider marks reached, whatever its number', () => {
@@ -62,9 +92,15 @@ describe('sortByRoomLeft', () => {
     const list = [inst('out'), inst('full'), inst('none'), inst('free'), inst('broken')]
     const usages = {
       out: usage('out', 'unauthenticated'),
-      full: usage('full', 'ok', [[42, 10], [81, 100]]),
+      full: usage('full', 'ok', [
+        [42, 10],
+        [81, 100],
+      ]),
       none: usage('none', 'not-applicable'),
-      free: usage('free', 'ok', [[1, 10], [0, 100]]),
+      free: usage('free', 'ok', [
+        [1, 10],
+        [0, 100],
+      ]),
       broken: usage('broken', 'error'),
     }
     expect(sortByRoomLeft(list, usages).map((i) => i.id)).toEqual(['free', 'full', 'none', 'out', 'broken'])
@@ -76,11 +112,21 @@ describe('sortByRoomLeft', () => {
 describe('accountsSummary', () => {
   it('names the roomiest account, the soonest reset and who needs attention', () => {
     const list = [inst('tejas'), inst('akshaya'), inst('aditya')]
-    const summary = accountsSummary(list, {
-      tejas: usage('tejas', 'ok', [[42, 134], [81, 3000]]),
-      akshaya: usage('akshaya', 'ok', [[1, 280], [0, 9000]]),
-      aditya: usage('aditya', 'unauthenticated'),
-    }, NOW)
+    const summary = accountsSummary(
+      list,
+      {
+        tejas: usage('tejas', 'ok', [
+          [42, 134],
+          [81, 3000],
+        ]),
+        akshaya: usage('akshaya', 'ok', [
+          [1, 280],
+          [0, 9000],
+        ]),
+        aditya: usage('aditya', 'unauthenticated'),
+      },
+      NOW,
+    )
     expect(summary.mostRoom).toEqual({ value: 'akshaya', detail: '5-hour session 1%, Weekly 0%' })
     expect(summary.nextReset).toEqual({ value: 'in 2 h 14 min', detail: 'tejas, 5-hour session' })
     expect(summary.attention).toEqual({ count: 1, value: '1 account', detail: 'aditya is signed out' })
@@ -119,11 +165,15 @@ describe('stableOrder', () => {
 
   it('sorts by the readings at hand the first time', () => {
     expect(ids(stableOrder([], list, {}))).toEqual(['full', 'free', 'out'])
-    expect(ids(stableOrder([], list, {
-      full: usage('full', 'ok', [[80, 10]]),
-      free: usage('free', 'ok', [[5, 10]]),
-      out: usage('out', 'unauthenticated'),
-    }))).toEqual(['free', 'full', 'out'])
+    expect(
+      ids(
+        stableOrder([], list, {
+          full: usage('full', 'ok', [[80, 10]]),
+          free: usage('free', 'ok', [[5, 10]]),
+          out: usage('out', 'unauthenticated'),
+        }),
+      ),
+    ).toEqual(['free', 'full', 'out'])
   })
 
   it('keeps the cards shown in place as readings land and change', () => {
@@ -157,7 +207,9 @@ describe('defaultAccountId', () => {
 describe('credentialSummary', () => {
   it('shows the folder, the API key names, or the shell environment', () => {
     expect(credentialSummary(inst('a'))).toBe('/h/.claude-a')
-    expect(credentialSummary(inst('b', { authMode: 'env', envKeys: ['ANTHROPIC_API_KEY'] }))).toBe('API key (ANTHROPIC_API_KEY)')
+    expect(credentialSummary(inst('b', { authMode: 'env', envKeys: ['ANTHROPIC_API_KEY'] }))).toBe(
+      'API key (ANTHROPIC_API_KEY)',
+    )
     expect(credentialSummary(inst('c', { agentType: 'opencode', authMode: 'env' }))).toBe('Shell environment')
   })
 })

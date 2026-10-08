@@ -18,11 +18,13 @@ const ctx: AnalyticsContext = {
 
 describe('buildAnalyticsEnvelope', () => {
   it('produces the exact envelope the worker validates', () => {
-    expect(buildAnalyticsEnvelope(ctx, 'app_launched', {
-      arch: 'arm64',
-      translated: 'false',
-      app_version: '0.8.55',
-    })).toEqual({
+    expect(
+      buildAnalyticsEnvelope(ctx, 'app_launched', {
+        arch: 'arm64',
+        translated: 'false',
+        app_version: '0.8.55',
+      }),
+    ).toEqual({
       event: 'app_launched',
       event_version: 1,
       product: 'switchboard',
@@ -50,7 +52,15 @@ describe('buildAnalyticsEnvelope', () => {
   it('sends only the install id as identifier - no other top-level keys', () => {
     const envelope = buildAnalyticsEnvelope(ctx, 'tour_completed')!
     expect(Object.keys(envelope).sort()).toEqual([
-      'authority', 'environment', 'event', 'event_version', 'install_id', 'platform', 'product', 'properties', 'surface',
+      'authority',
+      'environment',
+      'event',
+      'event_version',
+      'install_id',
+      'platform',
+      'product',
+      'properties',
+      'surface',
     ])
     expect(envelope.properties).toEqual({})
   })
@@ -58,12 +68,14 @@ describe('buildAnalyticsEnvelope', () => {
 
 describe('whitelistAnalyticsProperties', () => {
   it('drops properties the event does not declare', () => {
-    expect(whitelistAnalyticsProperties('session_started', {
-      provider: 'codex',
-      hostname: 'my-mac',
-      cwd: '/Users/me/project',
-      arch: 'arm64',
-    })).toEqual({ provider: 'codex' })
+    expect(
+      whitelistAnalyticsProperties('session_started', {
+        provider: 'codex',
+        hostname: 'my-mac',
+        cwd: '/Users/me/project',
+        arch: 'arm64',
+      }),
+    ).toEqual({ provider: 'codex' })
   })
 
   it('drops enum values the worker would reject', () => {
@@ -78,7 +90,9 @@ describe('whitelistAnalyticsProperties', () => {
 
   it('accepts app_version only as a dotted semver-looking string within the length cap', () => {
     expect(whitelistAnalyticsProperties('app_launched', { app_version: '0.8.55' })).toEqual({ app_version: '0.8.55' })
-    expect(whitelistAnalyticsProperties('app_launched', { app_version: '1.2.3-beta.1' })).toEqual({ app_version: '1.2.3-beta.1' })
+    expect(whitelistAnalyticsProperties('app_launched', { app_version: '1.2.3-beta.1' })).toEqual({
+      app_version: '1.2.3-beta.1',
+    })
     expect(whitelistAnalyticsProperties('app_launched', { app_version: 'dev' })).toEqual({})
     expect(whitelistAnalyticsProperties('app_launched', { app_version: '1.2.3' + 'x'.repeat(40) })).toEqual({})
   })

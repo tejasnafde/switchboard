@@ -1,10 +1,7 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
 import type { WorktreeCreationRequest } from '../../src/shared/worktree-creation'
-import {
-  ensureWorktreeCreationSchema,
-  SqliteWorktreeCreationStore,
-} from '../../src/main/db/worktree-creation'
+import { ensureWorktreeCreationSchema, SqliteWorktreeCreationStore } from '../../src/main/db/worktree-creation'
 import type {
   ResolvedGitRepository,
   WorktreeMaterializationInspection,
@@ -172,9 +169,7 @@ class TestForkOwner implements ForkWorktreeOwnerPort {
       now: input.now,
     })
     if (result.kind === 'missing') return result
-    return result.kind === 'updated'
-      ? { kind: 'committed' as const, record: result.record }
-      : result
+    return result.kind === 'updated' ? { kind: 'committed' as const, record: result.record } : result
   }
 
   async compensate(stage: TestStage): Promise<void> {
@@ -324,12 +319,7 @@ describe('WorktreeCreationService fork owner coordination', () => {
       const result = await h.service.createWorktreeTransaction(request())
 
       expect(result).toMatchObject({ status: 'rolled_back' })
-      expect(h.forkOwner.calls).toEqual([
-        'owner.prepare',
-        'owner.publish',
-        'owner.commit',
-        'owner.compensate',
-      ])
+      expect(h.forkOwner.calls).toEqual(['owner.prepare', 'owner.publish', 'owner.commit', 'owner.compensate'])
       expect(h.git.calls.at(-1)).toBe('git.rollback')
       expect(h.git.world).toBe('absent')
       expect(h.forkOwner.artifacts.size).toBe(0)

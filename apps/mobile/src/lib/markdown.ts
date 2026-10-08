@@ -36,14 +36,20 @@ const INLINE_PATTERNS: Array<{
   },
   // CommonMark's flanking rule: emphasis must begin and end on a non-space
   // char, or `2 * 3 * 4` parses as italics and the asterisks vanish.
-  { re: /^\*\*\*(\S|\S[^*]*?\S)\*\*\*/, build: (m, r) => ({ kind: 'strong', children: [{ kind: 'em', children: r(m[1]) }] }) },
+  {
+    re: /^\*\*\*(\S|\S[^*]*?\S)\*\*\*/,
+    build: (m, r) => ({ kind: 'strong', children: [{ kind: 'em', children: r(m[1]) }] }),
+  },
   { re: /^\*\*(\S|\S[\s\S]*?\S)\*\*/, build: (m, r) => ({ kind: 'strong', children: r(m[1]) }) },
   { re: /^__(\S|\S[\s\S]*?\S)__/, build: (m, r) => ({ kind: 'strong', children: r(m[1]) }) },
   { re: /^~~(\S|\S[\s\S]*?\S)~~/, build: (m, r) => ({ kind: 'strike', children: r(m[1]) }) },
   { re: /^\*(\S|\S[^*\n]*?\S)\*/, build: (m, r) => ({ kind: 'em', children: r(m[1]) }) },
   // Underscore emphasis only at a word boundary, or snake_case_names break up.
   { re: /^_(\S|\S[^_\n]*?\S)_(?![A-Za-z0-9])/, build: (m, r) => ({ kind: 'em', children: r(m[1]) }) },
-  { re: /^(https?:\/\/[^\s<>()]+)/, build: (m) => ({ kind: 'link', href: m[1], children: [{ kind: 'text', text: m[1] }] }) },
+  {
+    re: /^(https?:\/\/[^\s<>()]+)/,
+    build: (m) => ({ kind: 'link', href: m[1], children: [{ kind: 'text', text: m[1] }] }),
+  },
 ]
 
 /** Merge adjacent text runs so the renderer emits fewer nodes. */

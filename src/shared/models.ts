@@ -123,15 +123,9 @@ export function formatOpencodeModelLabel(id: string): string {
   // the second segment is the name.
   const modelName = parts[parts.length - 1]
   // Prettify: replace dashes/underscores with spaces, title-case-ish
-  const pretty = modelName
-    .replace(/[-_]/g, ' ')
-    .replace(/\b(glm|gpt|llm|ai|r1|v3|k2)\b/gi, (s) => s.toUpperCase())
+  const pretty = modelName.replace(/[-_]/g, ' ').replace(/\b(glm|gpt|llm|ai|r1|v3|k2)\b/gi, (s) => s.toUpperCase())
   // Free-tier callouts
   const isFree = id.startsWith('opencode/') || id.endsWith('-free')
-  const badge = isFree
-    ? ' · free'
-    : provider === 'nvidia-nim'
-      ? ' · nvidia'
-      : ` · ${provider}`
+  const badge = isFree ? ' · free' : provider === 'nvidia-nim' ? ' · nvidia' : ` · ${provider}`
   return `${pretty}${badge}`
 }

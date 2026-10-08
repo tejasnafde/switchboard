@@ -71,7 +71,7 @@ export function peerLinkWindowProblem(ms: number): string | null {
   return null
 }
 
-export type PeerLinkDurationChoice = typeof PEER_LINK_DURATION_CHOICES[number]
+export type PeerLinkDurationChoice = (typeof PEER_LINK_DURATION_CHOICES)[number]
 
 /**
  * The stored Settings default as one of its choices; anything else is `30m`.
@@ -140,17 +140,15 @@ export type PeerLinkSendCheck =
   | { linked: false }
   | { linked: true; ok: true }
   | {
-    linked: true
-    ok: false
-    reason: PeerLinkRefusal
-    message: string
-    /** True for the first refusal since the edge ran out, which is the one the user is notified about. */
-    firstRefusal: boolean
-  }
+      linked: true
+      ok: false
+      reason: PeerLinkRefusal
+      message: string
+      /** True for the first refusal since the edge ran out, which is the one the user is notified about. */
+      firstRefusal: boolean
+    }
 
-export type PeerLinkResult =
-  | { ok: true; created: boolean }
-  | { ok: false; message: string }
+export type PeerLinkResult = { ok: true; created: boolean } | { ok: false; message: string }
 
 interface Edge {
   /** Distinct per link, so an unlink and relink is a different edge, and a different consent. */
@@ -216,7 +214,14 @@ export class PeerLinkBook {
     const key = edgeKey(a, b)
     const created = !this.edges.has(key)
     const existing = this.edges.get(key)
-    this.edges.set(key, { id: existing?.id ?? ++this.nextEdgeId, since: nowMs, used: 0, budget, windowMs, notified: false })
+    this.edges.set(key, {
+      id: existing?.id ?? ++this.nextEdgeId,
+      since: nowMs,
+      used: 0,
+      budget,
+      windowMs,
+      notified: false,
+    })
     return { ok: true, created }
   }
 
@@ -267,7 +272,13 @@ export class PeerLinkBook {
     for (const [key, edge] of this.edges) {
       const peer = otherEnd(key, id)
       if (peer === null) continue
-      out.push({ peerThreadId: peer, used: edge.used, budget: edge.budget, expiresAt: edge.since + edge.windowMs, windowMs: edge.windowMs })
+      out.push({
+        peerThreadId: peer,
+        used: edge.used,
+        budget: edge.budget,
+        expiresAt: edge.since + edge.windowMs,
+        windowMs: edge.windowMs,
+      })
     }
     return out
   }
@@ -427,8 +438,11 @@ export function peerLinkSpentText(fromLabel: string, toLabel: string): string {
 /** The row's heading. */
 export function peerUndeliveredHeading(undelivered: PeerUndelivered): string {
   if (undelivered.sent) return `Sent by you to ${undelivered.toLabel} after the link ran out`
-  const why = undelivered.reason === 'link-expired'
-    ? 'link time used up'
-    : undelivered.reason === 'link-removed' ? 'link removed before it was sent' : 'link budget used up'
+  const why =
+    undelivered.reason === 'link-expired'
+      ? 'link time used up'
+      : undelivered.reason === 'link-removed'
+        ? 'link removed before it was sent'
+        : 'link budget used up'
   return `Not delivered to ${undelivered.toLabel}: ${why}`
 }

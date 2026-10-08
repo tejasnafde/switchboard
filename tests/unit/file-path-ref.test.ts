@@ -104,15 +104,11 @@ describe('formatFilePathRef (round-trip)', () => {
   })
 
   it('emits single line when start === end', () => {
-    expect(formatFilePathRef({ path: 'src/foo.ts', startLine: 42, endLine: 42 })).toBe(
-      'src/foo.ts:42',
-    )
+    expect(formatFilePathRef({ path: 'src/foo.ts', startLine: 42, endLine: 42 })).toBe('src/foo.ts:42')
   })
 
   it('emits range when start !== end', () => {
-    expect(formatFilePathRef({ path: 'src/foo.ts', startLine: 30, endLine: 45 })).toBe(
-      'src/foo.ts:30-45',
-    )
+    expect(formatFilePathRef({ path: 'src/foo.ts', startLine: 30, endLine: 45 })).toBe('src/foo.ts:30-45')
   })
 
   it('round-trips parse → format', () => {

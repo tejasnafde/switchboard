@@ -18,9 +18,7 @@ function getSessionCwd(sessionId: string | null): string | undefined {
  */
 export function TerminalStrip() {
   const activeSessionId = useTerminalStore((s) => s.activeSessionId)
-  const layout = useTerminalStore((s) =>
-    s.activeSessionId ? s.getLayout(s.activeSessionId) : null
-  )
+  const layout = useTerminalStore((s) => (s.activeSessionId ? s.getLayout(s.activeSessionId) : null))
   const { addWindow, splitActiveWindow, addPaneToActiveWindow, setActiveWindow } = useTerminalStore()
 
   // Flex ratios for rows (row resizing)
@@ -64,12 +62,15 @@ export function TerminalStrip() {
     if (pid) setTimeout(() => focusTerminal(pid), 80)
   }, [activeSessionId, addPaneToActiveWindow])
 
-  const handleFocusWindow = useCallback((windowId: string) => {
-    if (!activeSessionId) return
-    setActiveWindow(activeSessionId, windowId)
-    const pid = useTerminalStore.getState().getLayout(activeSessionId).windows[windowId]?.activePaneId
-    if (pid) focusTerminal(pid)
-  }, [activeSessionId, setActiveWindow])
+  const handleFocusWindow = useCallback(
+    (windowId: string) => {
+      if (!activeSessionId) return
+      setActiveWindow(activeSessionId, windowId)
+      const pid = useTerminalStore.getState().getLayout(activeSessionId).windows[windowId]?.activePaneId
+      if (pid) focusTerminal(pid)
+    },
+    [activeSessionId, setActiveWindow],
+  )
 
   // Row-to-row resize (vertical drag)
   const makeRowResizeHandler = useCallback((topRowId: string, bottomRowId: string) => {
@@ -146,20 +147,22 @@ export function TerminalStrip() {
           background: 'var(--bg-secondary)',
         }}
       >
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
-          TERMINAL
-        </span>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>TERMINAL</span>
         <LaunchConfigPicker />
         <div style={{ flex: 1 }} />
         {activeSessionId && (
           <>
             <button
-              onClick={hasAny ? newWindowInRow : () => {
-                const ids = useTerminalStore.getState().getAllWindowIds(activeSessionId)
-                const cwd = getSessionCwd(activeSessionId)
-                const r = addWindow(activeSessionId, { label: `Terminal ${ids.length + 1}`, cwd })
-                setTimeout(() => focusTerminal(r.paneId), 80)
-              }}
+              onClick={
+                hasAny
+                  ? newWindowInRow
+                  : () => {
+                      const ids = useTerminalStore.getState().getAllWindowIds(activeSessionId)
+                      const cwd = getSessionCwd(activeSessionId)
+                      const r = addWindow(activeSessionId, { label: `Terminal ${ids.length + 1}`, cwd })
+                      setTimeout(() => focusTerminal(r.paneId), 80)
+                    }
+              }
               title="New window (⌘T)"
               style={toolbarBtn}
             >
@@ -175,7 +178,15 @@ export function TerminalStrip() {
               </svg>
             </button>
             <button onClick={newPaneInActiveWindow} title={'New tab in active window (⌘\\)'} style={toolbarBtn}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              >
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
@@ -195,17 +206,17 @@ export function TerminalStrip() {
         }}
       >
         {!hasAny && (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--text-muted)',
-            fontSize: '12px',
-          }}>
-            {activeSessionId
-              ? 'No terminals open. Press ⌘T to create a window.'
-              : 'Select a chat to open terminals.'}
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-muted)',
+              fontSize: '12px',
+            }}
+          >
+            {activeSessionId ? 'No terminals open. Press ⌘T to create a window.' : 'Select a chat to open terminals.'}
           </div>
         )}
 

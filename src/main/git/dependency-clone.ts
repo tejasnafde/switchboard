@@ -130,7 +130,9 @@ export async function checkSameDevice(a: string, b: string): Promise<boolean> {
     const [statA, statB] = await Promise.all([stat(a), stat(b)])
     return statA.dev === statB.dev
   } catch (err) {
-    log.warn(`dependency clone: could not compare devices for ${a} / ${b}: ${err instanceof Error ? err.message : String(err)}`)
+    log.warn(
+      `dependency clone: could not compare devices for ${a} / ${b}: ${err instanceof Error ? err.message : String(err)}`,
+    )
     return false
   }
 }
@@ -169,7 +171,9 @@ export async function checkIsApfs(p: string): Promise<boolean> {
     }
     return bestType.toLowerCase() === 'apfs'
   } catch (err) {
-    log.warn(`dependency clone: could not determine filesystem type for ${p}: ${err instanceof Error ? err.message : String(err)}`)
+    log.warn(
+      `dependency clone: could not determine filesystem type for ${p}: ${err instanceof Error ? err.message : String(err)}`,
+    )
     return false
   }
 }
@@ -178,7 +182,9 @@ async function removeStaging(staging: string): Promise<void> {
   try {
     await rm(staging, { recursive: true, force: true })
   } catch (rmErr) {
-    log.warn(`dependency clone: failed to remove staging dir ${staging}: ${rmErr instanceof Error ? rmErr.message : String(rmErr)}`)
+    log.warn(
+      `dependency clone: failed to remove staging dir ${staging}: ${rmErr instanceof Error ? rmErr.message : String(rmErr)}`,
+    )
   }
 }
 
@@ -242,7 +248,9 @@ export async function cloneDependencyDirs(
   if (platform === 'darwin') {
     const isApfs = options.isApfs ?? checkIsApfs
     if (!(await isApfs(worktreeRoot))) {
-      log.info(`dependency clone skipped: destination filesystem is not confirmed APFS (cp -c silently falls back to a full copy otherwise)`)
+      log.info(
+        `dependency clone skipped: destination filesystem is not confirmed APFS (cp -c silently falls back to a full copy otherwise)`,
+      )
       return
     }
   }

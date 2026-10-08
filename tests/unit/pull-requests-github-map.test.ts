@@ -7,10 +7,18 @@ import { describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
 vi.mock('../../src/main/shell-env', () => ({ childProcessEnv: () => process.env }))
 
-import { classifyGhError, mapGhDetail, mapGhFiles, mapGhSummary, mapGhThreads } from '../../src/main/pull-requests/github-map'
+import {
+  classifyGhError,
+  mapGhDetail,
+  mapGhFiles,
+  mapGhSummary,
+  mapGhThreads,
+} from '../../src/main/pull-requests/github-map'
 import { buildListQuery, GitHubProvider, type GhRunner } from '../../src/main/pull-requests/github'
 import { PrHostError } from '../../src/main/pull-requests/provider'
 import type { RepoRef } from '../../src/shared/pull-requests'
@@ -42,21 +50,42 @@ describe('mapGhSummary', () => {
 
   it('tells a COMMENTED review apart from a verdict', () => {
     // pankaj left a COMMENTED review on #161.
-    expect(mapGhSummary(repo, review, 'pankaj').viewer).toEqual({ isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true })
+    expect(mapGhSummary(repo, review, 'pankaj').viewer).toEqual({
+      isAuthor: false,
+      isRequestedReviewer: false,
+      hasReviewed: false,
+      hasCommented: true,
+    })
     const approved = { ...review, latestReviews: { nodes: [{ state: 'APPROVED', author: { login: 'pankaj' } }] } }
     expect(mapGhSummary(repo, approved, 'pankaj').viewer).toMatchObject({ hasReviewed: true, hasCommented: false })
   })
 
   it('maps a merged PR read with the light fragment: no mergeable, threads, checks or requests', () => {
     const merged = {
-      number: 150, title: 'Light', url: 'https://github.com/tejasnafde/switchboard/pull/150', state: 'MERGED' as const, isDraft: false,
-      createdAt: '2026-09-25T00:00:00Z', updatedAt: '2026-09-26T00:00:00Z', mergedAt: '2026-09-26T00:00:00Z',
-      headRefName: 'fix/light', baseRefName: 'main', additions: 3, deletions: 1, changedFiles: 1,
+      number: 150,
+      title: 'Light',
+      url: 'https://github.com/tejasnafde/switchboard/pull/150',
+      state: 'MERGED' as const,
+      isDraft: false,
+      createdAt: '2026-09-25T00:00:00Z',
+      updatedAt: '2026-09-26T00:00:00Z',
+      mergedAt: '2026-09-26T00:00:00Z',
+      headRefName: 'fix/light',
+      baseRefName: 'main',
+      additions: 3,
+      deletions: 1,
+      changedFiles: 1,
       author: { login: 'akshaya', name: 'Akshaya', avatarUrl: null },
       latestReviews: { nodes: [{ state: 'COMMENTED', author: { login: 'tejasnafde', avatarUrl: null } }] },
     }
     const pr = mapGhSummary(repo, merged, 'tejasnafde')
-    expect(pr).toMatchObject({ state: 'merged', mergedAt: Date.parse('2026-09-26T00:00:00Z'), mergeConflicts: false, unresolvedConversations: null, additions: 3 })
+    expect(pr).toMatchObject({
+      state: 'merged',
+      mergedAt: Date.parse('2026-09-26T00:00:00Z'),
+      mergeConflicts: false,
+      unresolvedConversations: null,
+      additions: 3,
+    })
     expect(pr.checks.state).toBe('none')
     expect(pr.approvals).toEqual({ given: 0, required: null })
     expect(pr.viewer).toEqual({ isAuthor: false, isRequestedReviewer: false, hasReviewed: false, hasCommented: true })
@@ -115,7 +144,15 @@ describe('mapGhDetail', () => {
 
   it('keeps the check list with durations', () => {
     expect(detail.checkList).toEqual([
-      { id: 'run:0:Test (macos-14)', name: 'Test (macos-14)', state: 'failure', description: null, url: 'https://github.com/x/y/actions/runs/3', durationMs: 120_000, rerunId: '3' },
+      {
+        id: 'run:0:Test (macos-14)',
+        name: 'Test (macos-14)',
+        state: 'failure',
+        description: null,
+        url: 'https://github.com/x/y/actions/runs/3',
+        durationMs: 120_000,
+        rerunId: '3',
+      },
     ])
     expect(detail.headSha).toBe('aa11bb22cc33')
   })
@@ -127,9 +164,15 @@ describe('mapGhDetail', () => {
   it('lets the author manage the PR, and otherwise only write access or more', () => {
     expect(detail.viewerCanManage).toBe(true)
     const pr = detailRepo.pullRequest
-    expect(mapGhDetail(repo, pr, 'someone-else', { ...detailRepo, viewerPermission: 'READ' }).viewerCanManage).toBe(false)
-    expect(mapGhDetail(repo, pr, 'someone-else', { ...detailRepo, viewerPermission: 'TRIAGE' }).viewerCanManage).toBe(false)
-    expect(mapGhDetail(repo, pr, 'someone-else', { ...detailRepo, viewerPermission: 'WRITE' }).viewerCanManage).toBe(true)
+    expect(mapGhDetail(repo, pr, 'someone-else', { ...detailRepo, viewerPermission: 'READ' }).viewerCanManage).toBe(
+      false,
+    )
+    expect(mapGhDetail(repo, pr, 'someone-else', { ...detailRepo, viewerPermission: 'TRIAGE' }).viewerCanManage).toBe(
+      false,
+    )
+    expect(mapGhDetail(repo, pr, 'someone-else', { ...detailRepo, viewerPermission: 'WRITE' }).viewerCanManage).toBe(
+      true,
+    )
   })
 })
 
@@ -137,7 +180,14 @@ describe('mapGhThreads', () => {
   const threads = mapGhThreads(fixture('github-threads.json').data.repository.pullRequest.reviewThreads.nodes)
 
   it('anchors a live thread to its line on the new side', () => {
-    expect(threads[0]).toMatchObject({ id: 'PRRT_1', path: 'src/shared/iap-tunnel.ts', line: 88, side: 'new', resolved: false, outdated: false })
+    expect(threads[0]).toMatchObject({
+      id: 'PRRT_1',
+      path: 'src/shared/iap-tunnel.ts',
+      line: 88,
+      side: 'new',
+      resolved: false,
+      outdated: false,
+    })
     expect(threads[0].comments.map((c) => [c.author.login, c.body])).toEqual([
       ['backend', 'A cap of 0 reads as no cap here.'],
       ['ghost', 'Fixed.'],
@@ -176,7 +226,12 @@ describe('mapGhFiles', () => {
 
   it('tells binary, renamed and too-large files apart', () => {
     expect(files[2]).toMatchObject({ path: 'assets/logo.png', binary: true, truncated: false })
-    expect(files[3]).toMatchObject({ path: 'src/main/renamed.ts', oldPath: 'src/main/old.ts', status: 'renamed', binary: false })
+    expect(files[3]).toMatchObject({
+      path: 'src/main/renamed.ts',
+      oldPath: 'src/main/old.ts',
+      status: 'renamed',
+      binary: false,
+    })
     expect(files[4]).toMatchObject({ path: 'package-lock.json', binary: false, truncated: true, hunks: [] })
   })
 })
@@ -217,8 +272,11 @@ describe('GitHubProvider', () => {
     expect(q).toContain('fragment Pr on PullRequest')
     // Merged rows use the light fragment: nothing GitHub has to compute or page through.
     const mergedFragment = q.slice(q.indexOf('fragment MergedPr'))
-    expect(q).toContain('merged: pullRequests(states: MERGED, first: 15, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ...MergedPr } }')
-    for (const heavy of ['mergeable', 'reviewThreads', 'statusCheckRollup', 'reviewRequests']) expect(mergedFragment).not.toContain(heavy)
+    expect(q).toContain(
+      'merged: pullRequests(states: MERGED, first: 15, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ...MergedPr } }',
+    )
+    for (const heavy of ['mergeable', 'reviewThreads', 'statusCheckRollup', 'reviewRequests'])
+      expect(mergedFragment).not.toContain(heavy)
   })
 
   it('throws a classified error when gh fails without data', async () => {
@@ -228,8 +286,15 @@ describe('GitHubProvider', () => {
   })
 
   it('pages changed files until a short page', async () => {
-    const page = Array.from({ length: 100 }, (_, i) => ({ filename: `f${i}.ts`, status: 'modified', additions: 1, deletions: 0, patch: '@@ -1 +1 @@\n+x' }))
-    const run = vi.fn<GhRunner>()
+    const page = Array.from({ length: 100 }, (_, i) => ({
+      filename: `f${i}.ts`,
+      status: 'modified',
+      additions: 1,
+      deletions: 0,
+      patch: '@@ -1 +1 @@\n+x',
+    }))
+    const run = vi
+      .fn<GhRunner>()
       .mockResolvedValueOnce(ok(JSON.stringify(page)))
       .mockResolvedValueOnce(ok(JSON.stringify(page.slice(0, 3))))
     const files = await new GitHubProvider(run).files({ ...repo, number: 5 })

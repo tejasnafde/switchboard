@@ -14,10 +14,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { resolveExecutionRoot, type ExecutionRoot } from '../../src/shared/execution-root'
 import type { RelocateExecutionRootRequest } from '../../src/shared/execution-root-relocation'
-import {
-  ExecutionRootCoordinator,
-  type ExecutionRootHost,
-} from '../../src/main/provider/execution-root-coordinator'
+import { ExecutionRootCoordinator, type ExecutionRootHost } from '../../src/main/provider/execution-root-coordinator'
 
 const PROJECT = '/repo/app'
 const TARGET = '/repo/app/.switchboard/worktrees/feat'
@@ -53,16 +50,17 @@ function makeHost(): ExecutionRootHost {
       machineIdsSeen.push(machineId)
       return { ...state.root, machineId }
     },
-    sessionState: (threadId) => threadId === 't1'
-      ? {
-        threadIsLive: state.threadIsLive,
-        starting: state.starting,
-        switchingProfile: state.switchingProfile,
-        preparingTurn: state.preparingTurn,
-        turnActive: state.turnActive,
-        provider: state.provider,
-      }
-      : null,
+    sessionState: (threadId) =>
+      threadId === 't1'
+        ? {
+            threadIsLive: state.threadIsLive,
+            starting: state.starting,
+            switchingProfile: state.switchingProfile,
+            preparingTurn: state.preparingTurn,
+            turnActive: state.turnActive,
+            provider: state.provider,
+          }
+        : null,
     resolveTarget: async () => {
       calls.push('resolveTarget')
       duringValidation?.()
@@ -93,8 +91,12 @@ function makeHost(): ExecutionRootHost {
       })
       return commitReturns
     },
-    commitRuntime: (_threadId, path) => { calls.push(`runtime:${path}`) },
-    publish: (event) => { calls.push(`publish:${event.type}`) },
+    commitRuntime: (_threadId, path) => {
+      calls.push(`runtime:${path}`)
+    },
+    publish: (event) => {
+      calls.push(`publish:${event.type}`)
+    },
   }
 }
 
@@ -199,8 +201,13 @@ describe('refusals that must not touch the provider', () => {
   it('rejects a second relocation while one holds the thread', async () => {
     const coordinator = new ExecutionRootCoordinator(host)
     let release: () => void = () => {}
-    const gate = new Promise<void>((r) => { release = r })
-    host.resolveTarget = async () => { await gate; return resolveTargetResult }
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    host.resolveTarget = async () => {
+      await gate
+      return resolveTargetResult
+    }
 
     const first = coordinator.relocate(request())
     const second = await coordinator.relocate(request())
@@ -218,8 +225,7 @@ describe('refusals that must not touch the provider', () => {
 
   it('relocates an unsupported provider when the caller accepted the loss', async () => {
     state.provider = 'opencode'
-    const result = await new ExecutionRootCoordinator(host)
-      .relocate(request({ acceptContinuityLoss: true }))
+    const result = await new ExecutionRootCoordinator(host).relocate(request({ acceptContinuityLoss: true }))
     expect(result.ok).toBe(true)
     expect(calls).toContain('detach')
   })
@@ -263,20 +269,23 @@ describe('rollback', () => {
     commitReturns = null
     const result = await new ExecutionRootCoordinator(host).relocate(request())
     expect(result).toMatchObject({ ok: false, code: 'unknown-thread', rolledBack: true })
-    expect(calls).toEqual([
-      'resolveTarget', 'detach', `attach:${TARGET}`, `commit:${TARGET}`, `attach:${PROJECT}`,
-    ])
+    expect(calls).toEqual(['resolveTarget', 'detach', `attach:${TARGET}`, `commit:${TARGET}`, `attach:${PROJECT}`])
   })
 })
 
 describe('a thread with no live provider', () => {
-  beforeEach(() => { state.threadIsLive = false })
+  beforeEach(() => {
+    state.threadIsLive = false
+  })
 
   it('commits straight away, with no provider work', async () => {
     const result = await new ExecutionRootCoordinator(host).relocate(request())
     expect(result).toMatchObject({ ok: true, outcome: 'relocated', continuity: 'not-needed' })
     expect(calls).toEqual([
-      'resolveTarget', `commit:${TARGET}`, `runtime:${TARGET}`, 'publish:session.execution-root-changed',
+      'resolveTarget',
+      `commit:${TARGET}`,
+      `runtime:${TARGET}`,
+      'publish:session.execution-root-changed',
     ])
   })
 
@@ -288,7 +297,9 @@ describe('a thread with no live provider', () => {
 })
 
 describe('queueing behind a running turn', () => {
-  beforeEach(() => { state.turnActive = true })
+  beforeEach(() => {
+    state.turnActive = true
+  })
 
   it('queues instead of killing the turn', async () => {
     const coordinator = new ExecutionRootCoordinator(host)
@@ -363,16 +374,18 @@ describe('the published event', () => {
     host.publish = published
     commitReturns = 3
     await new ExecutionRootCoordinator(host).relocate(request({ reason: 'branch-picker' }))
-    expect(published).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'session.execution-root-changed',
-      threadId: 't1',
-      machineId: 'local',
-      from: { path: PROJECT, branch: null },
-      to: { path: TARGET, branch: 'sb/feat', isWorktree: true },
-      revision: 3,
-      reason: 'branch-picker',
-      continuity: 'preserved',
-    }))
+    expect(published).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'session.execution-root-changed',
+        threadId: 't1',
+        machineId: 'local',
+        from: { path: PROJECT, branch: null },
+        to: { path: TARGET, branch: 'sb/feat', isWorktree: true },
+        revision: 3,
+        reason: 'branch-picker',
+        continuity: 'preserved',
+      }),
+    )
   })
 
   it('uses the branch git resolved, not the one the client asked for', async () => {
@@ -380,9 +393,11 @@ describe('the published event', () => {
     host.publish = published
     resolveTargetResult = { ok: true, path: TARGET, branch: 'actually/this-one' }
     await new ExecutionRootCoordinator(host).relocate(request({ targetBranch: 'client/guess' }))
-    expect(published).toHaveBeenCalledWith(expect.objectContaining({
-      to: { path: TARGET, branch: 'actually/this-one', isWorktree: true },
-    }))
+    expect(published).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: { path: TARGET, branch: 'actually/this-one', isWorktree: true },
+      }),
+    )
   })
 })
 

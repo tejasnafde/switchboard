@@ -9,12 +9,14 @@ import { BACKEND_CAPABILITIES, decodeFrame, encodeFrame, isReplayableEventChanne
 
 describe('backend capabilities', () => {
   it('advertises atomic user turns without removing durable origins', () => {
-    expect(BACKEND_CAPABILITIES).toEqual(expect.arrayContaining([
-      'durable_turn_origin',
-      'atomic_user_turn_v1',
-      'worktree_creation_v1',
-      'conversation_fork_v1',
-    ]))
+    expect(BACKEND_CAPABILITIES).toEqual(
+      expect.arrayContaining([
+        'durable_turn_origin',
+        'atomic_user_turn_v1',
+        'worktree_creation_v1',
+        'conversation_fork_v1',
+      ]),
+    )
   })
 })
 
@@ -81,16 +83,37 @@ describe('decodeFrame', () => {
 
   it('accepts old ready frames and preserves only string capabilities when advertised', () => {
     expect(decodeFrame(JSON.stringify({ k: 'ready', epoch: 'e', seq: 1, replayed: 0, gap: false }))).toEqual({
-      k: 'ready', epoch: 'e', seq: 1, replayed: 0, gap: false, capabilities: undefined,
+      k: 'ready',
+      epoch: 'e',
+      seq: 1,
+      replayed: 0,
+      gap: false,
+      capabilities: undefined,
     })
-    expect(decodeFrame(JSON.stringify({
-      k: 'ready', epoch: 'e', seq: 1, replayed: 0, gap: false,
-      capabilities: ['durable_turn_origin'],
-    }))).toMatchObject({ capabilities: ['durable_turn_origin'] })
-    expect(decodeFrame(JSON.stringify({
-      k: 'ready', epoch: 'e', seq: 1, replayed: 0, gap: false,
-      capabilities: ['durable_turn_origin', 7],
-    }))).toBeNull()
+    expect(
+      decodeFrame(
+        JSON.stringify({
+          k: 'ready',
+          epoch: 'e',
+          seq: 1,
+          replayed: 0,
+          gap: false,
+          capabilities: ['durable_turn_origin'],
+        }),
+      ),
+    ).toMatchObject({ capabilities: ['durable_turn_origin'] })
+    expect(
+      decodeFrame(
+        JSON.stringify({
+          k: 'ready',
+          epoch: 'e',
+          seq: 1,
+          replayed: 0,
+          gap: false,
+          capabilities: ['durable_turn_origin', 7],
+        }),
+      ),
+    ).toBeNull()
   })
 
   it('rejects a heartbeat with no timestamp', () => {

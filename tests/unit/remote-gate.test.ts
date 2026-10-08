@@ -26,25 +26,31 @@ vi.mock('node:child_process', () => ({
   // The probe is async now (behavior 4) - a synchronous one would freeze the
   // remote's event loop. The sync entry points stay mocked as throwers so a
   // regression to spawnSync fails loudly here.
-  execFileSync: vi.fn(() => { throw new Error('login probe must not block the event loop') }),
-  spawnSync: vi.fn(() => { throw new Error('login probe must not block the event loop') }),
-  execFile: vi.fn((
-    _bin: string,
-    _args: string[],
-    _opts: unknown,
-    cb: (err: (Error & { code?: number }) | null, stdout: string, stderr: string) => void,
-  ) => {
-    const { status, stdout, stderr } = codexStatus.result
-    queueMicrotask(() => {
-      if (status === 0) cb(null, stdout, stderr)
-      else {
-        const err = new Error(`exit ${status}`) as Error & { code?: number }
-        err.code = status
-        cb(err, stdout, stderr)
-      }
-    })
-    return { kill: () => {} }
+  execFileSync: vi.fn(() => {
+    throw new Error('login probe must not block the event loop')
   }),
+  spawnSync: vi.fn(() => {
+    throw new Error('login probe must not block the event loop')
+  }),
+  execFile: vi.fn(
+    (
+      _bin: string,
+      _args: string[],
+      _opts: unknown,
+      cb: (err: (Error & { code?: number }) | null, stdout: string, stderr: string) => void,
+    ) => {
+      const { status, stdout, stderr } = codexStatus.result
+      queueMicrotask(() => {
+        if (status === 0) cb(null, stdout, stderr)
+        else {
+          const err = new Error(`exit ${status}`) as Error & { code?: number }
+          err.code = status
+          cb(err, stdout, stderr)
+        }
+      })
+      return { kill: () => {} }
+    },
+  ),
 }))
 import {
   remoteBlockedProviderLabel,

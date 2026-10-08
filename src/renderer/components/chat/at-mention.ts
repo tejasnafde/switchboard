@@ -34,7 +34,10 @@ export function detectAtTrigger(text: string, cursorInput: number): AtTrigger | 
   let atIdx = -1
   for (let i = cursor - 1; i >= 0; i--) {
     const ch = text[i]
-    if (ch === '@') { atIdx = i; break }
+    if (ch === '@') {
+      atIdx = i
+      break
+    }
     if (/\s/.test(ch)) return null
   }
   if (atIdx === -1) return null

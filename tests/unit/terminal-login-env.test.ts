@@ -126,19 +126,23 @@ describe('withResolvedLoginEnv', () => {
       throw new Error('invalid instance: wrong kind')
     })
     const { withResolvedLoginEnv, TerminalLoginInstanceError } = await import('../../src/main/ipc/terminal-login-env')
-    expect(() => withResolvedLoginEnv({
-      id: 't5',
-      loginInstance: { agentType: 'claude-code', instanceId: 'codex-work' },
-    })).toThrow(TerminalLoginInstanceError)
+    expect(() =>
+      withResolvedLoginEnv({
+        id: 't5',
+        loginInstance: { agentType: 'claude-code', instanceId: 'codex-work' },
+      }),
+    ).toThrow(TerminalLoginInstanceError)
     expect(resolveInstanceEnv).not.toHaveBeenCalled()
   })
 
   it('throws a TerminalLoginInstanceError when resolution returns nothing usable', async () => {
     resolveProviderInstance.mockReturnValue(null)
     const { withResolvedLoginEnv, TerminalLoginInstanceError } = await import('../../src/main/ipc/terminal-login-env')
-    expect(() => withResolvedLoginEnv({
-      id: 't6',
-      loginInstance: { agentType: 'codex', instanceId: 'ghost' },
-    })).toThrow(TerminalLoginInstanceError)
+    expect(() =>
+      withResolvedLoginEnv({
+        id: 't6',
+        loginInstance: { agentType: 'codex', instanceId: 'ghost' },
+      }),
+    ).toThrow(TerminalLoginInstanceError)
   })
 })

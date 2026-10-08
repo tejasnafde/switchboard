@@ -33,7 +33,10 @@ describe('a successful move', () => {
 
   it('applies the committed root, revision included', () => {
     expect(view.applyRoot).toEqual({
-      path: '/wt/feat', branch: 'sb/feat', revision: 3, isWorktree: true,
+      path: '/wt/feat',
+      branch: 'sb/feat',
+      revision: 3,
+      isWorktree: true,
     })
   })
 
@@ -89,14 +92,20 @@ describe('the stale-revision self-heal', () => {
   // carries the right number, so adopting it makes the retry work.
   it('adopts the revision the refusal reported', () => {
     const view = describeRelocationOutcome({
-      ok: false, code: 'stale-revision', message: 'moved', root,
+      ok: false,
+      code: 'stale-revision',
+      message: 'moved',
+      root,
     })
     expect(view.syncRevision).toBe(3)
   })
 
   it('does not move anything while adopting it', () => {
     const view = describeRelocationOutcome({
-      ok: false, code: 'stale-revision', message: 'moved', root,
+      ok: false,
+      code: 'stale-revision',
+      message: 'moved',
+      root,
     })
     expect(view.applyRoot).toBeNull()
     expect(view.clearSuggestion).toBe(false)
@@ -164,7 +173,11 @@ describe('failures', () => {
 
   it('says the conversation is back where it was when rollback worked', () => {
     const view = describeRelocationOutcome({
-      ok: false, code: 'target-start-failed', message: 'x', rolledBack: true, root,
+      ok: false,
+      code: 'target-start-failed',
+      message: 'x',
+      rolledBack: true,
+      root,
     })
     expect(view.notice).toContain('still in')
   })
@@ -177,7 +190,10 @@ describe('failures', () => {
 
   it('falls back to the backend message for a code it does not know', () => {
     const view = describeRelocationOutcome({
-      ok: false, code: 'unknown-thread', message: 'gone from this backend', root,
+      ok: false,
+      code: 'unknown-thread',
+      message: 'gone from this backend',
+      root,
     })
     expect(view.notice).toBe('gone from this backend')
   })

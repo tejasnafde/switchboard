@@ -74,45 +74,24 @@ export function resolveCanonicalForkAnchor(
   let resolution: ResolvedForkAnchor['resolution']
 
   if (exact.length > 1) {
-    return conflict(
-      'ambiguous-anchor',
-      'The fork anchor matches more than one canonical message.',
-      exact.length,
-    )
+    return conflict('ambiguous-anchor', 'The fork anchor matches more than one canonical message.', exact.length)
   }
   if (exact.length === 1) {
     selected = exact[0]
     if (!selected.forkable) {
-      return conflict(
-        'non-forkable-anchor',
-        'The selected item is not a durable conversation boundary.',
-        1,
-      )
+      return conflict('non-forkable-anchor', 'The selected item is not a durable conversation boundary.', 1)
     }
     if (!matchesFingerprint(selected.message, anchor)) {
-      return conflict(
-        'stale-anchor',
-        'The selected message changed after the fork action was prepared.',
-        1,
-      )
+      return conflict('stale-anchor', 'The selected message changed after the fork action was prepared.', 1)
     }
     resolution = 'exact-id'
   } else {
-    const legacy = history.filter((candidate) =>
-      candidate.forkable && matchesFingerprint(candidate.message, anchor))
+    const legacy = history.filter((candidate) => candidate.forkable && matchesFingerprint(candidate.message, anchor))
     if (legacy.length === 0) {
-      return conflict(
-        'missing-anchor',
-        'The fork anchor no longer exists in canonical history.',
-        0,
-      )
+      return conflict('missing-anchor', 'The fork anchor no longer exists in canonical history.', 0)
     }
     if (legacy.length > 1) {
-      return conflict(
-        'ambiguous-anchor',
-        'The fork anchor matches more than one canonical message.',
-        legacy.length,
-      )
+      return conflict('ambiguous-anchor', 'The fork anchor matches more than one canonical message.', legacy.length)
     }
     selected = legacy[0]
     resolution = 'unique-legacy-fingerprint'
@@ -121,11 +100,7 @@ export function resolveCanonicalForkAnchor(
   const canonical = history.filter((candidate) => candidate.forkable)
   const canonicalIndex = canonical.indexOf(selected)
   if (canonicalIndex < 0) {
-    return conflict(
-      'non-forkable-anchor',
-      'The selected item is not a durable conversation boundary.',
-      1,
-    )
+    return conflict('non-forkable-anchor', 'The selected item is not a durable conversation boundary.', 1)
   }
   const provenance = selected.provenance
   return {
@@ -142,8 +117,9 @@ export function resolveCanonicalForkAnchor(
       provider: provenance?.provider ?? null,
       providerSessionId: provenance?.providerSessionId ?? null,
       providerEventId: provenance?.providerEventId ?? null,
-      preview: selected.message.content.trim().replace(/\s+/g, ' ').slice(0, 140)
-        || (selected.message.images?.length ? 'Image attachment' : 'Conversation message'),
+      preview:
+        selected.message.content.trim().replace(/\s+/g, ' ').slice(0, 140) ||
+        (selected.message.images?.length ? 'Image attachment' : 'Conversation message'),
     },
   }
 }

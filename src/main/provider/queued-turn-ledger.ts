@@ -76,7 +76,8 @@ export class QueuedTurnLedger {
       const known = turns?.delete(event.messageId) ?? false
       if (turns?.size === 0) this.byThread.delete(event.threadId)
       const exit = event.reason
-      const releases = known && (exit === 'cancelled' || exit === 'promoted') && releasesOutstandingTurn(provider ?? '', exit)
+      const releases =
+        known && (exit === 'cancelled' || exit === 'promoted') && releasesOutstandingTurn(provider ?? '', exit)
       return { event, releasesOutstandingTurn: releases }
     }
     return { event, releasesOutstandingTurn: false }
@@ -107,7 +108,9 @@ export class QueuedTurnLedger {
 
   list(threadId: string): QueuedTurnSummary[] {
     const held = this.heldThreads.has(threadId)
-    return [...(this.byThread.get(threadId)?.values() ?? [])].map((turn) => (held && !turn.failed ? { ...turn, held: true } : turn))
+    return [...(this.byThread.get(threadId)?.values() ?? [])].map((turn) =>
+      held && !turn.failed ? { ...turn, held: true } : turn,
+    )
   }
 
   clear(threadId: string): void {

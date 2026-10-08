@@ -11,7 +11,11 @@ import { Button } from '../ui/button'
 
 const log = createRendererLogger('chat:peer-undelivered')
 
-export function PeerUndeliveredRow({ row, messageId, sessionId }: {
+export function PeerUndeliveredRow({
+  row,
+  messageId,
+  sessionId,
+}: {
   row: PeerUndelivered
   messageId: string
   sessionId: string | undefined
@@ -46,7 +50,9 @@ export function PeerUndeliveredRow({ row, messageId, sessionId }: {
       className="mx-4 my-2 rounded-[8px] border border-dashed border-[var(--border)] px-3 py-2 text-[12px] text-[var(--text-secondary)]"
     >
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate font-[600] text-[var(--text-primary)]">{peerUndeliveredHeading(row)}</span>
+        <span className="min-w-0 flex-1 truncate font-[600] text-[var(--text-primary)]">
+          {peerUndeliveredHeading(row)}
+        </span>
         {!row.sent && (
           <Button variant="outline" size="sm" disabled={sending || !sessionId} onClick={() => void send()}>
             {sending ? 'Sending…' : 'Send'}
@@ -54,7 +60,11 @@ export function PeerUndeliveredRow({ row, messageId, sessionId }: {
         )}
       </div>
       <div className="mt-1 max-h-[160px] overflow-auto whitespace-pre-wrap break-words">{row.text}</div>
-      {error && <div role="alert" className="mt-1 text-[var(--error)]">{error}</div>}
+      {error && (
+        <div role="alert" className="mt-1 text-[var(--error)]">
+          {error}
+        </div>
+      )}
     </div>
   )
 }

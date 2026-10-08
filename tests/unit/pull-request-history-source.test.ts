@@ -4,9 +4,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
 vi.mock('../../src/main/db/database', () => ({}))
-vi.mock('../../src/main/provider/claude-session-migrate', () => ({ claudeCandidateDirs: () => [], listClaudeSessionCopies: () => [] }))
+vi.mock('../../src/main/provider/claude-session-migrate', () => ({
+  claudeCandidateDirs: () => [],
+  listClaudeSessionCopies: () => [],
+}))
 vi.mock('../../src/main/provider/codex-session-dirs', () => ({ codexCandidateDirs: () => [] }))
 vi.mock('../../src/main/projects/session-scanner', () => ({ scanCodexSessionCopies: async () => [] }))
 
@@ -24,14 +29,38 @@ function transcript(name: string, lines: unknown[]): string {
 }
 
 const claudeLines = [
-  { type: 'user', uuid: 'u1', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: 'review 605 please' } },
   {
-    type: 'assistant', uuid: 'a1', timestamp: '2026-01-01T00:00:01Z',
-    message: { role: 'assistant', content: [{ type: 'text', text: 'Looking.' }, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'bbpr 605 diff' } }] },
+    type: 'user',
+    uuid: 'u1',
+    timestamp: '2026-01-01T00:00:00Z',
+    message: { role: 'user', content: 'review 605 please' },
   },
   {
-    type: 'user', uuid: 'u2', timestamp: '2026-01-01T00:00:02Z',
-    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'PR https://bitbucket.org/geoiq/bot/pull-requests/605' }] }] },
+    type: 'assistant',
+    uuid: 'a1',
+    timestamp: '2026-01-01T00:00:01Z',
+    message: {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Looking.' },
+        { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'bbpr 605 diff' } },
+      ],
+    },
+  },
+  {
+    type: 'user',
+    uuid: 'u2',
+    timestamp: '2026-01-01T00:00:02Z',
+    message: {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 't1',
+          content: [{ type: 'text', text: 'PR https://bitbucket.org/geoiq/bot/pull-requests/605' }],
+        },
+      ],
+    },
   },
 ]
 
@@ -53,11 +82,22 @@ describe('readJsonlHistory', () => {
 
   it('reads a Codex tool call and its output', async () => {
     const path = transcript('codex.jsonl', [
-      { type: 'response_item', timestamp: '2026-01-01T00:00:00Z', payload: { type: 'function_call', name: 'shell', arguments: '{"command":["bash","-lc","bbpr 605"]}' } },
-      { type: 'response_item', timestamp: '2026-01-01T00:00:01Z', payload: { type: 'function_call_output', output: 'https://bitbucket.org/geoiq/bot/pull-requests/605' } },
+      {
+        type: 'response_item',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: { type: 'function_call', name: 'shell', arguments: '{"command":["bash","-lc","bbpr 605"]}' },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-01-01T00:00:01Z',
+        payload: { type: 'function_call_output', output: 'https://bitbucket.org/geoiq/bot/pull-requests/605' },
+      },
     ])
     const parts: Array<[string, string]> = []
-    await readJsonlHistory(path, 'codex', (kind, text) => { parts.push([kind, text]); return true })
+    await readJsonlHistory(path, 'codex', (kind, text) => {
+      parts.push([kind, text])
+      return true
+    })
     expect(parts).toEqual([
       ['toolInput', '{"command":["bash","-lc","bbpr 605"]}'],
       ['toolOutput', 'https://bitbucket.org/geoiq/bot/pull-requests/605'],
@@ -65,7 +105,12 @@ describe('readJsonlHistory', () => {
   })
 
   it('stops reading the file once the visitor has enough', async () => {
-    const lines = Array.from({ length: 5_000 }, (_, i) => ({ type: 'user', uuid: `u${i}`, timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: `line ${i}` } }))
+    const lines = Array.from({ length: 5_000 }, (_, i) => ({
+      type: 'user',
+      uuid: `u${i}`,
+      timestamp: '2026-01-01T00:00:00Z',
+      message: { role: 'user', content: `line ${i}` },
+    }))
     let visits = 0
     const done = await readJsonlHistory(transcript('long.jsonl', lines), 'claude-code', () => ++visits < 3)
     expect(done).toBe(false)

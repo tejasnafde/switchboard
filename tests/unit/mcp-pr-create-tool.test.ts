@@ -10,7 +10,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AgentApprovalBroker } from '../../src/main/mcp/agent-approvals'
 import { AgentWriteBudget } from '../../src/main/mcp/agent-write-budget'
-import { buildPrTools, prWritePlanSummary, runPrWritePlan, type AgentPullRequestAccess, type PrWritePlan, type RemoteBranchCheck } from '../../src/main/mcp/pr-tools'
+import {
+  buildPrTools,
+  prWritePlanSummary,
+  runPrWritePlan,
+  type AgentPullRequestAccess,
+  type PrWritePlan,
+  type RemoteBranchCheck,
+} from '../../src/main/mcp/pr-tools'
 import { toolText, type McpToolResult } from '../../src/main/mcp/mcp-session'
 import { declinedResultText } from '../../src/shared/agent-approval-cards'
 import type { HostWriteResponse } from '../../src/shared/agent-host-writes'
@@ -23,9 +30,18 @@ import type { RuntimeEvent, RuntimeMode } from '../../src/shared/provider-events
 
 const APP: RepoRef = { host: 'github', owner: 'acme', name: 'app' }
 const BOT: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2' }
-const candidate = (id: string, displayName = id, kind: 'user' | 'team' = 'user'): PrReviewerCandidate =>
-  ({ id, person: { login: kind === 'team' ? id.slice(5) : id, displayName, avatarUrl: null }, kind, reviewed: 0 })
-const CANDIDATES = [candidate('jdoe', 'Jane Doe'), candidate('rahul', 'Rahul K'), candidate('me', 'Me Myself'), candidate('team:platform', 'Platform', 'team')]
+const candidate = (id: string, displayName = id, kind: 'user' | 'team' = 'user'): PrReviewerCandidate => ({
+  id,
+  person: { login: kind === 'team' ? id.slice(5) : id, displayName, avatarUrl: null },
+  kind,
+  reviewed: 0,
+})
+const CANDIDATES = [
+  candidate('jdoe', 'Jane Doe'),
+  candidate('rahul', 'Rahul K'),
+  candidate('me', 'Me Myself'),
+  candidate('team:platform', 'Platform', 'team'),
+]
 
 interface Options {
   mode?: RuntimeMode
@@ -38,7 +54,9 @@ interface Options {
   create?: (input: unknown) => PrResult<OpenedPr & { existing: boolean }>
   /** Who may review; the default is Jane, Rahul and the signed-in user (me). */
   pool?: PrResult<{ candidates: PrReviewerCandidate[]; viewer: ReviewerViewer }>
-  answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => { decision: 'approve'; response: HostWriteResponse } | { decision: 'deny' } | null
+  answer?: (
+    card: Extract<RuntimeEvent, { type: 'request.opened' }>,
+  ) => { decision: 'approve'; response: HostWriteResponse } | { decision: 'deny' } | null
   budget?: AgentWriteBudget
   cwd?: string | null
   /** Work trees under the project folder, covered only when `repo` is null. */
@@ -60,36 +78,64 @@ function setup(opts: Options = {}) {
     linkedPrs: vi.fn(() => []),
     chatProject: vi.fn((chatId: string) => (chatId === 'root-1' ? '/p' : null)),
     repoFor: vi.fn(async (dir: string) => (opts.dirRepos && dir in opts.dirRepos ? opts.dirRepos[dir] : repo)),
-    projectRepos: vi.fn(async (projectPath: string) => projectReposFrom(await access.repoFor(projectPath), opts.children ?? [])),
-    resolveRepoDir: vi.fn(async (_projectPath: string, repoPath: string): Promise<RepoDir> =>
-      opts.repoDirs?.[repoPath] ?? { ok: false, message: `repoPath "${repoPath}" is outside this chat's project folder /p; only a repository inside it can be used.` }),
+    projectRepos: vi.fn(async (projectPath: string) =>
+      projectReposFrom(await access.repoFor(projectPath), opts.children ?? []),
+    ),
+    resolveRepoDir: vi.fn(
+      async (_projectPath: string, repoPath: string): Promise<RepoDir> =>
+        opts.repoDirs?.[repoPath] ?? {
+          ok: false,
+          message: `repoPath "${repoPath}" is outside this chat's project folder /p; only a repository inside it can be used.`,
+        },
+    ),
     currentBranch: vi.fn(async () => (opts.branch === undefined ? 'feat/x' : opts.branch)),
-    remoteHasBranch: vi.fn(async (): Promise<RemoteBranchCheck> => opts.pushed ?? { ok: true, found: true, remote: 'origin' }),
+    remoteHasBranch: vi.fn(
+      async (): Promise<RemoteBranchCheck> => opts.pushed ?? { ok: true, found: true, remote: 'origin' },
+    ),
     defaultBranch: vi.fn(async () => opts.defaultBranch ?? { ok: true as const, data: 'main' }),
     openPullRequestFor: vi.fn(async () => ({ ok: true as const, data: open })),
     createPullRequest: vi.fn(async (_repo: RepoRef, input: unknown) => {
       creates.push(input)
       return opts.create?.(input) ?? { ok: true as const, data: { number: 42, url: url(42), existing: false } }
     }),
-    linkToChat: vi.fn((chatId: string, ref: PrRef, created: boolean) => { links.push({ chatId, ref, created }); return true }),
-    reviewerPool: vi.fn(async () => opts.pool ?? { ok: true as const, data: { candidates: CANDIDATES, viewer: { id: 'me', login: 'me' } } }),
+    linkToChat: vi.fn((chatId: string, ref: PrRef, created: boolean) => {
+      links.push({ chatId, ref, created })
+      return true
+    }),
+    reviewerPool: vi.fn(
+      async () =>
+        opts.pool ?? { ok: true as const, data: { candidates: CANDIDATES, viewer: { id: 'me', login: 'me' } } },
+    ),
   } as unknown as AgentPullRequestAccess
   let mode: RuntimeMode = opts.mode ?? 'sandbox'
   const results: Array<Promise<McpToolResult>> = []
-  const runContext = { threadId: 't1', chatId: 'root-1', runtimeMode: () => mode, publish: (e: RuntimeEvent) => events.push(e), pullRequests: access }
+  const runContext = {
+    threadId: 't1',
+    chatId: 'root-1',
+    runtimeMode: () => mode,
+    publish: (e: RuntimeEvent) => events.push(e),
+    pullRequests: access,
+  }
   const approvals = new AgentApprovalBroker({
     onClosed: (card, close, response) => {
       const plan = card.plan as PrWritePlan
-      results.push(close.kind === 'approve'
-        ? runPrWritePlan(runContext, plan, response)
-        : Promise.resolve(toolText(declinedResultText(prWritePlanSummary(plan)), true)))
+      results.push(
+        close.kind === 'approve'
+          ? runPrWritePlan(runContext, plan, response)
+          : Promise.resolve(toolText(declinedResultText(prWritePlanSummary(plan)), true)),
+      )
     },
     publish: (e) => {
       events.push(e)
       if (e.type !== 'request.opened') return
       const outcome = opts.answer?.(e)
       if (!outcome) return
-      queueMicrotask(() => approvals.respond('t1', e.requestId, outcome.decision, outcome.decision === 'approve' ? outcome.response : {}, { mayApproveHostWrite: true, label: 'test' }))
+      queueMicrotask(() =>
+        approvals.respond('t1', e.requestId, outcome.decision, outcome.decision === 'approve' ? outcome.response : {}, {
+          mayApproveHostWrite: true,
+          label: 'test',
+        }),
+      )
     },
   })
   const tools = buildPrTools({
@@ -113,14 +159,26 @@ function setup(opts: Options = {}) {
     return results[before] ?? queued
   }
   return {
-    tool, call, events, access, links, creates,
-    setMode: (m: RuntimeMode) => { mode = m },
-    setOpen: (pr: CreatedPr | null) => { open = pr },
+    tool,
+    call,
+    events,
+    access,
+    links,
+    creates,
+    setMode: (m: RuntimeMode) => {
+      mode = m
+    },
+    setOpen: (pr: CreatedPr | null) => {
+      open = pr
+    },
   }
 }
 
-const approve = (response = {}) => () => ({ decision: 'approve' as const, response })
-const opened = (events: RuntimeEvent[]) => events.filter((e) => e.type === 'request.opened') as Array<Extract<RuntimeEvent, { type: 'request.opened' }>>
+const approve =
+  (response = {}) =>
+  () => ({ decision: 'approve' as const, response })
+const opened = (events: RuntimeEvent[]) =>
+  events.filter((e) => e.type === 'request.opened') as Array<Extract<RuntimeEvent, { type: 'request.opened' }>>
 const text = (r: { content: Array<{ text: string }> }) => r.content[0].text
 
 describe('create_pull_request: what the agent is told', () => {
@@ -130,7 +188,16 @@ describe('create_pull_request: what the agent is told', () => {
     expect(tool.description).toMatch(/instead of gh pr create, bbpr/)
     expect(tool.description).toMatch(/push the branch first/i)
     expect(tool.inputSchema.required).toEqual(['title'])
-    expect(Object.keys(tool.inputSchema.properties as object).sort()).toEqual(['description', 'draft', 'repoPath', 'repository', 'reviewers', 'sourceBranch', 'targetBranch', 'title'])
+    expect(Object.keys(tool.inputSchema.properties as object).sort()).toEqual([
+      'description',
+      'draft',
+      'repoPath',
+      'repository',
+      'reviewers',
+      'sourceBranch',
+      'targetBranch',
+      'title',
+    ])
     expect(tool.description).toMatch(/several repositories.*"repoPath"/)
     expect(tool.description).toMatch(/"reviewers": up to 10 logins, display names or emails/)
   })
@@ -139,7 +206,10 @@ describe('create_pull_request: what the agent is told', () => {
 describe('create_pull_request: defaults and the card', () => {
   it('defaults to the checkout branch and the default branch, and the card shows both, editable', async () => {
     const s = setup({ answer: approve() })
-    const result = await s.call({ title: 'Jittered backoff', description: 'Adds jitter.\n\nTested with the unit suite.' })
+    const result = await s.call({
+      title: 'Jittered backoff',
+      description: 'Adds jitter.\n\nTested with the unit suite.',
+    })
     expect(result.isError).toBeFalsy()
     expect(s.access.currentBranch).toHaveBeenCalledWith('/p/.switchboard/worktrees/x')
     expect(s.access.remoteHasBranch).toHaveBeenCalledWith('/p/.switchboard/worktrees/x', APP, 'feat/x')
@@ -149,16 +219,24 @@ describe('create_pull_request: defaults and the card', () => {
       action: 'create',
       host: 'github',
       prLabel: 'acme/app',
-      create: { repoLabel: 'acme/app', sourceBranch: 'feat/x', targetBranch: 'main', title: 'Jittered backoff', draft: false },
+      create: {
+        repoLabel: 'acme/app',
+        sourceBranch: 'feat/x',
+        targetBranch: 'main',
+        title: 'Jittered backoff',
+        draft: false,
+      },
     })
     expect(card.detail).toContain('Open a pull request on acme/app: feat/x -> main')
-    expect(s.creates).toEqual([{
-      title: 'Jittered backoff',
-      description: 'Adds jitter.\n\nTested with the unit suite.\n\nvia Switchboard',
-      sourceBranch: 'feat/x',
-      targetBranch: 'main',
-      draft: false,
-    }])
+    expect(s.creates).toEqual([
+      {
+        title: 'Jittered backoff',
+        description: 'Adds jitter.\n\nTested with the unit suite.\n\nvia Switchboard',
+        sourceBranch: 'feat/x',
+        targetBranch: 'main',
+        draft: false,
+      },
+    ])
     expect(text(result)).toContain('Opened acme/app #42: https://github.com/acme/app/pull/42')
     expect(text(result)).toContain('linked to this chat and shows in Reviews')
   })
@@ -192,7 +270,10 @@ describe('create_pull_request: defaults and the card', () => {
   it('opens what the user left in the card, not the agent draft, and says so', async () => {
     const s = setup({ answer: approve({ title: '  Backoff with jitter ', description: 'Rewritten by me.' }) })
     const result = await s.call({ title: 'Agent title', description: 'Agent body' })
-    expect(s.creates[0]).toMatchObject({ title: 'Backoff with jitter', description: 'Rewritten by me.\n\nvia Switchboard' })
+    expect(s.creates[0]).toMatchObject({
+      title: 'Backoff with jitter',
+      description: 'Rewritten by me.\n\nvia Switchboard',
+    })
     expect(text(result)).toContain('The user edited the title to "Backoff with jitter" and the description first.')
   })
 
@@ -241,7 +322,9 @@ describe('create_pull_request: refused before a card', () => {
   })
 
   it('refuses when git could not ask the remote', async () => {
-    const s = setup({ pushed: { ok: false, message: 'git could not read the branches of origin: Permission denied (publickey).' } })
+    const s = setup({
+      pushed: { ok: false, message: 'git could not read the branches of origin: Permission denied (publickey).' },
+    })
     const result = await s.call({ title: 'T' })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('Permission denied (publickey)')
@@ -283,7 +366,11 @@ describe('create_pull_request: refused before a card', () => {
   })
 
   it('says why when the default branch cannot be read', async () => {
-    const error: PrError = { kind: 'token_rejected', host: 'github', message: 'gh is signed out or its token was rejected.' }
+    const error: PrError = {
+      kind: 'token_rejected',
+      host: 'github',
+      message: 'gh is signed out or its token was rejected.',
+    }
     const result = await setup({ defaultBranch: { ok: false, error } }).call({ title: 'T' })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('gh is signed out')
@@ -297,7 +384,9 @@ describe('create_pull_request: modes and the budget', () => {
     expect(result.isError).toBe(true)
     expect(text(result)).toMatch(/^Plan mode/)
     expect(opened(s.events)).toEqual([])
-    expect(s.events.some((e) => e.type === 'tool.denied' && e.toolName === 'mcp__switchboard__create_pull_request')).toBe(true)
+    expect(
+      s.events.some((e) => e.type === 'tool.denied' && e.toolName === 'mcp__switchboard__create_pull_request'),
+    ).toBe(true)
     expect(s.access.remoteHasBranch).not.toHaveBeenCalled()
   })
 
@@ -351,7 +440,12 @@ describe('create_pull_request: modes and the budget', () => {
 
   it('opens nothing when plan mode was switched on while the card was open', async () => {
     let s: ReturnType<typeof setup>
-    s = setup({ answer: () => { s.setMode('plan'); return { decision: 'approve', response: {} } } })
+    s = setup({
+      answer: () => {
+        s.setMode('plan')
+        return { decision: 'approve', response: {} }
+      },
+    })
     const result = await s.call({ title: 'T' })
     expect(result.isError).toBe(true)
     expect(s.creates).toEqual([])
@@ -373,7 +467,12 @@ describe('create_pull_request: modes and the budget', () => {
 
   it('keeps the card open after the agent stops waiting, and opens nothing until the user answers', async () => {
     const controller = new AbortController()
-    const s = setup({ answer: () => { controller.abort(); return null } })
+    const s = setup({
+      answer: () => {
+        controller.abort()
+        return null
+      },
+    })
     const result = await s.call({ title: 'T' }, controller.signal)
     expect(result.isError).toBeFalsy()
     expect(text(result)).toMatch(/^Queued for the user's approval/)
@@ -383,7 +482,11 @@ describe('create_pull_request: modes and the budget', () => {
 
 describe('create_pull_request: the host answer', () => {
   it('passes a definite refusal on, missing scope included, and says nothing was created', async () => {
-    const error: PrError = { kind: 'forbidden', host: 'bitbucket', message: 'The Bitbucket API token is missing the write:pullrequest:bitbucket scope.' }
+    const error: PrError = {
+      kind: 'forbidden',
+      host: 'bitbucket',
+      message: 'The Bitbucket API token is missing the write:pullrequest:bitbucket scope.',
+    }
     const s = setup({ repo: BOT, answer: approve(), create: () => ({ ok: false, error }) })
     const result = await s.call({ title: 'T' })
     expect(result.isError).toBe(true)
@@ -393,7 +496,10 @@ describe('create_pull_request: the host answer', () => {
   })
 
   it('links the one that appeared while the card was open, instead of a second', async () => {
-    const s = setup({ answer: approve(), create: () => ({ ok: true, data: { number: 9, url: 'https://github.com/acme/app/pull/9', existing: true } }) })
+    const s = setup({
+      answer: approve(),
+      create: () => ({ ok: true, data: { number: 9, url: 'https://github.com/acme/app/pull/9', existing: true } }),
+    })
     const result = await s.call({ title: 'T' })
     expect(text(result)).toContain('opened while the card was open: acme/app #9')
     expect(s.links).toEqual([{ chatId: 'root-1', ref: { ...APP, number: 9 }, created: false }])
@@ -416,7 +522,13 @@ describe('create_pull_request: the host answer', () => {
   })
 
   it('on an uncertain answer with no PR found, tells the agent not to create again', async () => {
-    const s = setup({ answer: approve(), create: () => ({ ok: false, error: { kind: 'offline', host: 'bitbucket', message: 'Could not reach bitbucket.org.' } }) })
+    const s = setup({
+      answer: approve(),
+      create: () => ({
+        ok: false,
+        error: { kind: 'offline', host: 'bitbucket', message: 'Could not reach bitbucket.org.' },
+      }),
+    })
     const result = await s.call({ title: 'T' })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('may or may not have been opened')
@@ -434,7 +546,9 @@ describe('create_pull_request: reviewers', () => {
       { id: 'rahul', login: 'rahul', displayName: 'Rahul K', kind: 'user' },
       { id: 'team:platform', login: 'team:platform', displayName: 'Platform', kind: 'team' },
     ])
-    expect(opened(s.events)[0].detail).toContain('Reviewers: Jane Doe (jdoe), Rahul K (rahul), Platform (team:platform)')
+    expect(opened(s.events)[0].detail).toContain(
+      'Reviewers: Jane Doe (jdoe), Rahul K (rahul), Platform (team:platform)',
+    )
     expect(s.access.reviewerPool).toHaveBeenCalledWith(APP)
     expect(s.creates[0]).toMatchObject({ reviewers: ['jdoe', 'rahul', 'team:platform'] })
     expect(text(result)).toContain('Asked Jane Doe (jdoe), Rahul K (rahul), Platform (team:platform) to review it.')
@@ -475,10 +589,15 @@ describe('create_pull_request: reviewers', () => {
   })
 
   it('refuses, opening nothing, when the candidates cannot be read', async () => {
-    const s = setup({ answer: approve(), pool: { ok: false, error: { kind: 'offline', host: 'github', message: 'No network.' } } })
+    const s = setup({
+      answer: approve(),
+      pool: { ok: false, error: { kind: 'offline', host: 'github', message: 'No network.' } },
+    })
     const result = await s.call({ title: 'T', reviewers: ['jdoe'] })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('Could not read who can review on acme/app: No network. Call again without "reviewers"')
+    expect(text(result)).toContain(
+      'Could not read who can review on acme/app: No network. Call again without "reviewers"',
+    )
     expect(opened(s.events)).toEqual([])
   })
 
@@ -514,14 +633,24 @@ describe('create_pull_request: reviewers', () => {
       answer: approve(),
       create: () => ({
         ok: true,
-        data: { number: 42, url: 'https://github.com/acme/app/pull/42', existing: false, reviewerFailure: { reviewers: ['jdoe', 'rahul'], error: { kind: 'invalid', host: 'github', message: 'Reviews may only be requested from collaborators.' } } },
+        data: {
+          number: 42,
+          url: 'https://github.com/acme/app/pull/42',
+          existing: false,
+          reviewerFailure: {
+            reviewers: ['jdoe', 'rahul'],
+            error: { kind: 'invalid', host: 'github', message: 'Reviews may only be requested from collaborators.' },
+          },
+        },
       }),
     })
     const result = await s.call({ title: 'T', reviewers: ['jdoe', 'rahul'] })
     expect(result.isError).toBeFalsy()
     expect(s.access.createPullRequest).toHaveBeenCalledTimes(1)
     expect(text(result)).toContain('Opened acme/app #42: https://github.com/acme/app/pull/42')
-    expect(text(result)).toContain('Asking Jane Doe (jdoe), Rahul K (rahul) to review failed: Reviews may only be requested from collaborators.')
+    expect(text(result)).toContain(
+      'Asking Jane Doe (jdoe), Rahul K (rahul) to review failed: Reviews may only be requested from collaborators.',
+    )
     expect(text(result)).toContain('do not open it again')
     expect(s.links).toHaveLength(1)
   })
@@ -540,12 +669,18 @@ describe('create_pull_request: a project folder that holds several repositories'
     { path: '/p/core', relPath: 'core', repo: CORE },
     { path: '/p/apps/studio', relPath: 'apps/studio', repo: STUDIO },
   ]
-  const parent = (extra: Options = {}) => setup({
-    repo: null, children, answer: approve(),
-    repoDirs: { core: { ok: true, dir: '/p/core', relPath: 'core' }, '/p/apps/studio': { ok: true, dir: '/p/apps/studio', relPath: 'apps/studio' } },
-    dirRepos: { '/p/core': CORE, '/p/apps/studio': STUDIO },
-    ...extra,
-  })
+  const parent = (extra: Options = {}) =>
+    setup({
+      repo: null,
+      children,
+      answer: approve(),
+      repoDirs: {
+        core: { ok: true, dir: '/p/core', relPath: 'core' },
+        '/p/apps/studio': { ok: true, dir: '/p/apps/studio', relPath: 'apps/studio' },
+      },
+      dirRepos: { '/p/core': CORE, '/p/apps/studio': STUDIO },
+      ...extra,
+    })
 
   it('opens from repoPath: its remote is the repository, its branch the source, and the card names the path', async () => {
     const s = parent({ answer: undefined })
@@ -554,7 +689,10 @@ describe('create_pull_request: a project folder that holds several repositories'
     expect(s.access.currentBranch).toHaveBeenCalledWith('/p/core')
     expect(s.access.remoteHasBranch).toHaveBeenCalledWith('/p/core', CORE, 'feat/x')
     const card = opened(s.events)[0]
-    expect(card.hostWrite).toMatchObject({ target: { repository: 'geoiq/geoiq-ssg-core-v1', number: null }, create: { repoLabel: 'geoiq/geoiq-ssg-core-v1', localPath: 'core' } })
+    expect(card.hostWrite).toMatchObject({
+      target: { repository: 'geoiq/geoiq-ssg-core-v1', number: null },
+      create: { repoLabel: 'geoiq/geoiq-ssg-core-v1', localPath: 'core' },
+    })
     expect(card.detail).toContain('From the local repository core')
   })
 
@@ -568,25 +706,34 @@ describe('create_pull_request: a project folder that holds several repositories'
 
   it('refuses a repoPath outside the folder, one with no supported remote, and a repository that is not its remote', async () => {
     const outside = await parent().call({ title: 'T', repoPath: '../elsewhere' })
-    expect(text(outside)).toContain('outside this chat\'s project folder')
+    expect(text(outside)).toContain("outside this chat's project folder")
 
     const noRemote = parent({ dirRepos: { '/p/core': null } })
-    expect(text(await noRemote.call({ title: 'T', repoPath: 'core' }))).toContain('The git remotes of core (under /p) point at neither GitHub nor Bitbucket')
+    expect(text(await noRemote.call({ title: 'T', repoPath: 'core' }))).toContain(
+      'The git remotes of core (under /p) point at neither GitHub nor Bitbucket',
+    )
 
     const mismatch = parent()
     const result = await mismatch.call({ title: 'T', repoPath: 'core', repository: 'geoiq/geoiq-ssg-studio-v1' })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('The git remote of core points at geoiq/geoiq-ssg-core-v1, not "geoiq/geoiq-ssg-studio-v1"')
+    expect(text(result)).toContain(
+      'The git remote of core points at geoiq/geoiq-ssg-core-v1, not "geoiq/geoiq-ssg-studio-v1"',
+    )
     expect(opened(mismatch.events)).toEqual([])
     expect(mismatch.creates).toEqual([])
   })
 
   it('refuses any nested checkout in a project that is a repository itself, even one of the same repository', async () => {
     for (const nested of [CORE, APP]) {
-      const s = setup({ repoDirs: { vendor: { ok: true, dir: '/p/vendor', relPath: 'vendor' } }, dirRepos: { '/p/vendor': nested } })
+      const s = setup({
+        repoDirs: { vendor: { ok: true, dir: '/p/vendor', relPath: 'vendor' } },
+        dirRepos: { '/p/vendor': nested },
+      })
       const result = await s.call({ title: 'T', repoPath: 'vendor' })
       expect(result.isError).toBe(true)
-      expect(text(result)).toContain('/p is itself a repository (acme/app), so "repoPath" can only be the project folder; vendor is inside it')
+      expect(text(result)).toContain(
+        '/p is itself a repository (acme/app), so "repoPath" can only be the project folder; vendor is inside it',
+      )
       expect(s.access.currentBranch).not.toHaveBeenCalledWith('/p/vendor')
       expect(s.creates).toEqual([])
     }
@@ -625,10 +772,14 @@ describe('create_pull_request: a project folder that holds several repositories'
 
   it('refuses no match, several checkouts, or no repository named, listing the candidates', async () => {
     const none = await parent().call({ title: 'T', repository: 'geoiq/ssg-bot-v2' })
-    expect(text(none)).toContain('No repository under /p has its remote at "geoiq/ssg-bot-v2". It holds geoiq/geoiq-ssg-core-v1 (core), geoiq/geoiq-ssg-studio-v1 (apps/studio)')
+    expect(text(none)).toContain(
+      'No repository under /p has its remote at "geoiq/ssg-bot-v2". It holds geoiq/geoiq-ssg-core-v1 (core), geoiq/geoiq-ssg-studio-v1 (apps/studio)',
+    )
 
     const twice = parent({ children: [...children, { path: '/p/core-copy', relPath: 'core-copy', repo: CORE }] })
-    expect(text(await twice.call({ title: 'T', repository: 'geoiq/geoiq-ssg-core-v1' }))).toContain('Several checkouts under /p point at "geoiq/geoiq-ssg-core-v1": geoiq/geoiq-ssg-core-v1 (core), geoiq/geoiq-ssg-core-v1 (core-copy)')
+    expect(text(await twice.call({ title: 'T', repository: 'geoiq/geoiq-ssg-core-v1' }))).toContain(
+      'Several checkouts under /p point at "geoiq/geoiq-ssg-core-v1": geoiq/geoiq-ssg-core-v1 (core), geoiq/geoiq-ssg-core-v1 (core-copy)',
+    )
 
     const unnamed = await parent().call({ title: 'T' })
     expect(unnamed.isError).toBe(true)

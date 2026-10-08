@@ -138,11 +138,18 @@ export class MergeBackService {
     const id = this.newId()
     const row = mergeBackRowFor(id, fork, summary, (text as string).trim())
     const { created, replaced } = this.deps.store.createPending({
-      id, parentId: parent.id, forkId: fork.id, row, through: summary.through, now: this.now(),
+      id,
+      parentId: parent.id,
+      forkId: fork.id,
+      row,
+      through: summary.through,
+      now: this.now(),
     })
     if (replaced) this.deps.publishRow(replaced.parentId, replaced.messageId, null, created.createdAt)
     this.publish(created)
-    log.info(`merge-back ${id} pending: fork ${fork.id} -> parent ${parent.id} turns=${summary.turns} bytes=${Buffer.byteLength(row.text)}`)
+    log.info(
+      `merge-back ${id} pending: fork ${fork.id} -> parent ${parent.id} turns=${summary.turns} bytes=${Buffer.byteLength(row.text)}`,
+    )
     return { ok: true }
   }
 

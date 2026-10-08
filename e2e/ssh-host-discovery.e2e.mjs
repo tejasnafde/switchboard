@@ -69,7 +69,10 @@ async function closeApp() {
   const closing = app
   app = undefined
   const closed = await Promise.race([
-    closing.close().then(() => true, () => true),
+    closing.close().then(
+      () => true,
+      () => true,
+    ),
     new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
   ])
   if (!closed) closing.process().kill('SIGKILL')
@@ -127,18 +130,30 @@ try {
   let modal = await openAddMachine(win)
   const available = modal.locator('.machine-modal-hostlist').first()
   check(await available.getByText('new-box', { exact: true }).isVisible(), 'new SSH host is actionable')
-  check(await available.getByText('existing-box', { exact: true }).count() === 0, 'saved host is absent from the actionable list')
+  check(
+    (await available.getByText('existing-box', { exact: true }).count()) === 0,
+    'saved host is absent from the actionable list',
+  )
   const added = modal.locator('.machine-modal-added')
-  check(await added.locator('summary').textContent() === 'Already added (1)', 'saved hosts have a separate collapsed count')
+  check(
+    (await added.locator('summary').textContent()) === 'Already added (1)',
+    'saved hosts have a separate collapsed count',
+  )
   await added.locator('summary').click()
-  check(await added.getByText('existing-box', { exact: true }).isVisible(), 'saved host remains discoverable in its disclosure')
+  check(
+    await added.getByText('existing-box', { exact: true }).isVisible(),
+    'saved host remains discoverable in its disclosure',
+  )
   check(await modal.getByPlaceholder('Host (e.g. 10.0.0.4)').isVisible(), 'manual entry remains available')
   await modal.getByRole('button', { name: 'Cancel' }).click()
   await modal.waitFor({ state: 'detached' })
 
   writeFileSync(sshConfig, config(true))
   modal = await openAddMachine(win)
-  check(await modal.getByText('late-box', { exact: true }).isVisible(), 'reopening rescans SSH config and shows a newly added host')
+  check(
+    await modal.getByText('late-box', { exact: true }).isVisible(),
+    'reopening rescans SSH config and shows a newly added host',
+  )
   check(pageErrors.length === 0, 'discovery flow produced no renderer errors')
 
   console.log('\nSSH HOST DISCOVERY E2E PASSED')

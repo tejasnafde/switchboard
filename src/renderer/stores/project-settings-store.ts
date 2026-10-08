@@ -39,7 +39,9 @@ export const useProjectSettingsStore = create<ProjectSettingsState>((set, get) =
     }
   },
   setOverride: async (projectPath, key, value) => {
-    set((state) => ({ byProject: { ...state.byProject, [projectPath]: { ...state.byProject[projectPath], [key]: value } } }))
+    set((state) => ({
+      byProject: { ...state.byProject, [projectPath]: { ...state.byProject[projectPath], [key]: value } },
+    }))
     try {
       await window.api.settings.setProjectOverride(projectPath, key, value)
     } catch (err) {
@@ -77,7 +79,10 @@ export async function ensureProjectOverrides(projectPath: string | null | undefi
   if (!projectPath || projectPath in useProjectSettingsStore.getState().byProject) return true
   let read = pending.get(projectPath)
   if (!read) {
-    read = useProjectSettingsStore.getState().load([projectPath]).finally(() => pending.delete(projectPath))
+    read = useProjectSettingsStore
+      .getState()
+      .load([projectPath])
+      .finally(() => pending.delete(projectPath))
     pending.set(projectPath, read)
   }
   return read
@@ -89,7 +94,11 @@ export function projectOverride(projectPath: string | null | undefined, key: Sco
 }
 
 /** Resolve against this window's cache, given the global value the caller already holds. */
-export function effectiveLocalSetting(key: ScopableSettingKey, projectPath: string | null | undefined, global: string | null | undefined): string {
+export function effectiveLocalSetting(
+  key: ScopableSettingKey,
+  projectPath: string | null | undefined,
+  global: string | null | undefined,
+): string {
   return effectiveSetting(key, projectPath, { override: (path) => projectOverride(path, key), global: () => global })
 }
 

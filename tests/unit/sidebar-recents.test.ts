@@ -4,7 +4,14 @@ import type { Project } from '@shared/types'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
 
 function approvalOpened(threadId: string): PendingBlockingEvent {
-  return { type: 'request.opened', threadId, requestId: `req-${threadId}`, requestType: 'command', toolName: 'Bash', detail: 'npm test' }
+  return {
+    type: 'request.opened',
+    threadId,
+    requestId: `req-${threadId}`,
+    requestType: 'command',
+    toolName: 'Bash',
+    detail: 'npm test',
+  }
 }
 
 function project(): Project {
@@ -47,7 +54,12 @@ describe('deriveRecentSessions', () => {
 
   it('orders approvals before input even when the input is newer', () => {
     const inputSession = {
-      id: 'input', source: 'switchboard' as const, title: 'Input', startedAt: 500, messageCount: 1, filePath: '',
+      id: 'input',
+      source: 'switchboard' as const,
+      title: 'Input',
+      startedAt: 500,
+      messageCount: 1,
+      filePath: '',
     }
     const result = deriveRecentSessions({
       localProjects: [{ ...project(), sessions: [...project().sessions, inputSession] }],
@@ -78,15 +90,14 @@ describe('deriveRecentSessions', () => {
     const result = deriveRecentSessions({
       localProjects: [{ ...project(), sessions: [duplicate, { ...duplicate }] }],
       remoteProjects: {
-        vm: [{ path: '/repo', name: 'remote-repo', sessions: [{ ...duplicate, title: 'Remote copy', startedAt: 400 }] }],
+        vm: [
+          { path: '/repo', name: 'remote-repo', sessions: [{ ...duplicate, title: 'Remote copy', startedAt: 400 }] },
+        ],
       },
       liveSessions: [],
     })
 
-    expect(result.map((item) => `${item.machineId}:${item.session.title}`)).toEqual([
-      'vm:Remote copy',
-      'local:Recent',
-    ])
+    expect(result.map((item) => `${item.machineId}:${item.session.title}`)).toEqual(['vm:Remote copy', 'local:Recent'])
   })
 
   it('uses semantic status priority and marks unseen completions done', () => {
@@ -128,9 +139,7 @@ describe('deriveRecentSessions', () => {
       ],
     })
 
-    expect(result.find((item) => item.session.id === 'running')?.previewLine).toBe(
-      'Reading cost tracking code',
-    )
+    expect(result.find((item) => item.session.id === 'running')?.previewLine).toBe('Reading cost tracking code')
   })
 
   it('falls back to a truncated raw preview when the assistant reported no digest', () => {
@@ -155,7 +164,7 @@ describe('deriveRecentSessions', () => {
 
   it('falls back from the live preview to the stored status line, then the project name', () => {
     const stored = project()
-    stored.sessions = stored.sessions.map((s) => s.id === 'approval' ? s : { ...s, statusLine: `Stored ${s.id}` })
+    stored.sessions = stored.sessions.map((s) => (s.id === 'approval' ? s : { ...s, statusLine: `Stored ${s.id}` }))
     const result = deriveRecentSessions({
       localProjects: [stored],
       remoteProjects: {},
@@ -164,7 +173,9 @@ describe('deriveRecentSessions', () => {
           id: 'running',
           machineId: 'local',
           status: 'idle',
-          messages: [{ id: 'm1', role: 'assistant', content: '<agent_digest>Live digest</agent_digest>', timestamp: 1 }],
+          messages: [
+            { id: 'm1', role: 'assistant', content: '<agent_digest>Live digest</agent_digest>', timestamp: 1 },
+          ],
         },
         // Loaded but with no assistant text yet: the stored line still shows.
         { id: 'recent', machineId: 'local', status: 'idle', messages: [] },
@@ -221,13 +232,15 @@ describe('deriveRecentSessions', () => {
           id: 'recent',
           machineId: 'local',
           status: 'idle',
-          messages: [{
-            id: 'approval_old',
-            role: 'assistant',
-            content: '',
-            timestamp: 1,
-            approval: { toolName: 'Bash', detail: 'npm test', status: 'pending' },
-          }],
+          messages: [
+            {
+              id: 'approval_old',
+              role: 'assistant',
+              content: '',
+              timestamp: 1,
+              approval: { toolName: 'Bash', detail: 'npm test', status: 'pending' },
+            },
+          ],
         },
         {
           id: 'running',
@@ -248,24 +261,42 @@ describe('deriveRecentSessions', () => {
       localProjects: [project()],
       remoteProjects: {},
       liveSessions: [
-        { id: 'approval', machineId: 'local', status: 'idle', messages: [], pendingRequests: [approvalOpened('approval')] },
+        {
+          id: 'approval',
+          machineId: 'local',
+          status: 'idle',
+          messages: [],
+          pendingRequests: [approvalOpened('approval')],
+        },
         {
           id: 'running',
           machineId: 'local',
           status: 'idle',
           messages: [],
-          pendingRequests: [{
-            type: 'question.asked',
-            threadId: 'running',
-            requestId: 'q1',
-            questions: [{ id: 'q', header: 'Region', question: 'Which region is the default?', options: [], multiSelect: false }],
-          }],
+          pendingRequests: [
+            {
+              type: 'question.asked',
+              threadId: 'running',
+              requestId: 'q1',
+              questions: [
+                {
+                  id: 'q',
+                  header: 'Region',
+                  question: 'Which region is the default?',
+                  options: [],
+                  multiSelect: false,
+                },
+              ],
+            },
+          ],
         },
         {
           id: 'recent',
           machineId: 'local',
           status: 'idle',
-          messages: [{ id: 'm1', role: 'assistant', content: '<agent_digest>Done: tests green</agent_digest>', timestamp: 1 }],
+          messages: [
+            { id: 'm1', role: 'assistant', content: '<agent_digest>Done: tests green</agent_digest>', timestamp: 1 },
+          ],
         },
       ],
     })

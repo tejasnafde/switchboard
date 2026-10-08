@@ -20,8 +20,15 @@ describe('settings rows', () => {
 
   it('has the nine pages in navigation order', () => {
     expect(SETTINGS_PAGES.map((page) => page.title)).toEqual([
-      'General', 'Appearance', 'Chat & agents', 'Accounts & models', 'Projects',
-      'Keyboard', 'Devices & machines', 'Archive & data', 'About',
+      'General',
+      'Appearance',
+      'Chat & agents',
+      'Accounts & models',
+      'Projects',
+      'Keyboard',
+      'Devices & machines',
+      'Archive & data',
+      'About',
     ])
   })
 })

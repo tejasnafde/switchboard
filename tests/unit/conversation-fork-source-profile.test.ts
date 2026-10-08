@@ -42,18 +42,23 @@ describe('fork source execution projection', () => {
   })
 
   it('uses the parent checkout and safe stored defaults without inventing provider identity', () => {
-    expect(projectForkSourceExecution({
-      ...source,
-      worktree_path: null,
-      worktree_branch: null,
-      worktree_id: null,
-      session_id: null,
-      provider_instance_id: null,
-      runtime_mode: null,
-      model: null,
-      reasoning_effort: null,
-      launch_config_name: null,
-    }, { machineId: 'local' })).toMatchObject({
+    expect(
+      projectForkSourceExecution(
+        {
+          ...source,
+          worktree_path: null,
+          worktree_branch: null,
+          worktree_id: null,
+          session_id: null,
+          provider_instance_id: null,
+          runtime_mode: null,
+          model: null,
+          reasoning_effort: null,
+          launch_config_name: null,
+        },
+        { machineId: 'local' },
+      ),
+    ).toMatchObject({
       projectPath: '/repo',
       sourceCheckoutPath: '/repo',
       sourceWorktreePath: null,
@@ -67,12 +72,17 @@ describe('fork source execution projection', () => {
   })
 
   it('keeps a non-default Claude profile instead of resolving a default profile', () => {
-    expect(projectForkSourceExecution({
-      ...source,
-      agent_type: 'claude-code',
-      provider_instance_id: 'claude-tech-team',
-      session_id: 'claude-session',
-    }, { machineId: 'remote-a' })).toMatchObject({
+    expect(
+      projectForkSourceExecution(
+        {
+          ...source,
+          agent_type: 'claude-code',
+          provider_instance_id: 'claude-tech-team',
+          session_id: 'claude-session',
+        },
+        { machineId: 'remote-a' },
+      ),
+    ).toMatchObject({
       agentType: 'claude-code',
       providerInstanceId: 'claude-tech-team',
       providerSessionId: 'claude-session',
@@ -80,9 +90,11 @@ describe('fork source execution projection', () => {
   })
 
   it('rejects an unsupported persisted provider or runtime mode instead of silently migrating it', () => {
-    expect(() => projectForkSourceExecution({ ...source, agent_type: 'mystery' }, { machineId: 'local' }))
-      .toThrow('unsupported provider')
-    expect(() => projectForkSourceExecution({ ...source, runtime_mode: 'root-everything' }, { machineId: 'local' }))
-      .toThrow('unsupported runtime mode')
+    expect(() => projectForkSourceExecution({ ...source, agent_type: 'mystery' }, { machineId: 'local' })).toThrow(
+      'unsupported provider',
+    )
+    expect(() =>
+      projectForkSourceExecution({ ...source, runtime_mode: 'root-everything' }, { machineId: 'local' }),
+    ).toThrow('unsupported runtime mode')
   })
 })

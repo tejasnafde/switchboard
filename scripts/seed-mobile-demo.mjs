@@ -61,9 +61,14 @@ const MESSAGES = [
   {
     role: 'assistant',
     content:
-      "It is a two-file demo: a README and an index.js that logs a line. Nothing is wrong with it as such, though `console.log` as the only entry point means there is no way to import it as a module - there are no exports.",
+      'It is a two-file demo: a README and an index.js that logs a line. Nothing is wrong with it as such, though `console.log` as the only entry point means there is no way to import it as a module - there are no exports.',
     toolCalls: [
-      { id: 'demo-tool-1', name: 'Read', input: JSON.stringify({ file_path: 'index.js' }), output: "console.log('hello from the demo repo')" },
+      {
+        id: 'demo-tool-1',
+        name: 'Read',
+        input: JSON.stringify({ file_path: 'index.js' }),
+        output: "console.log('hello from the demo repo')",
+      },
     ],
   },
   { role: 'user', content: 'Add a test for it.' },

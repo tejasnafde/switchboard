@@ -8,13 +8,7 @@
  * whether it exists - the per-model row is routinely false.
  */
 
-import {
-  buildWindow,
-  isoToMs,
-  toPercent,
-  type UsageOverage,
-  type UsageWindow,
-} from './provider-usage'
+import { buildWindow, isoToMs, toPercent, type UsageOverage, type UsageWindow } from './provider-usage'
 
 /**
  * Keys that prove the body is a usage payload rather than an error page or
@@ -73,9 +67,8 @@ function readMoney(value: unknown): string | null {
   if (typeof minor !== 'number' || !Number.isFinite(minor)) return null
   // Clamped because toFixed throws a RangeError outside 0-100, and `exponent`
   // comes straight off the wire.
-  const rawExponent = typeof value.exponent === 'number' && Number.isFinite(value.exponent)
-    ? Math.trunc(value.exponent)
-    : 0
+  const rawExponent =
+    typeof value.exponent === 'number' && Number.isFinite(value.exponent) ? Math.trunc(value.exponent) : 0
   const exponent = Math.min(20, Math.max(0, rawExponent))
   const currency = typeof value.currency === 'string' ? value.currency : ''
   const amount = minor / 10 ** exponent
@@ -110,32 +103,34 @@ export function parseClaudeUsage(raw: unknown): ClaudeUsageParse {
 
   // Session window. `five_hour` is authoritative; the `limits[]` entry with
   // kind "session" is the same number and is only a fallback.
-  const fiveHour = readBucket(raw.five_hour)
-    ?? bucketFromLimit(limits.find((l) => l.kind === 'session'))
+  const fiveHour = readBucket(raw.five_hour) ?? bucketFromLimit(limits.find((l) => l.kind === 'session'))
   if (fiveHour) {
-    windows.push(buildWindow({
-      id: 'five_hour',
-      label: '5-hour session',
-      kind: 'session',
-      percent: fiveHour.percent,
-      resetsAtMs: fiveHour.resetsAtMs,
-      windowMinutes: 300,
-      ...(fiveHour.detail ? { detail: fiveHour.detail } : {}),
-    }))
+    windows.push(
+      buildWindow({
+        id: 'five_hour',
+        label: '5-hour session',
+        kind: 'session',
+        percent: fiveHour.percent,
+        resetsAtMs: fiveHour.resetsAtMs,
+        windowMinutes: 300,
+        ...(fiveHour.detail ? { detail: fiveHour.detail } : {}),
+      }),
+    )
   }
 
-  const sevenDay = readBucket(raw.seven_day)
-    ?? bucketFromLimit(limits.find((l) => l.kind === 'weekly_all'))
+  const sevenDay = readBucket(raw.seven_day) ?? bucketFromLimit(limits.find((l) => l.kind === 'weekly_all'))
   if (sevenDay) {
-    windows.push(buildWindow({
-      id: 'seven_day',
-      label: 'Weekly',
-      kind: 'weekly',
-      percent: sevenDay.percent,
-      resetsAtMs: sevenDay.resetsAtMs,
-      windowMinutes: 10080,
-      ...(sevenDay.detail ? { detail: sevenDay.detail } : {}),
-    }))
+    windows.push(
+      buildWindow({
+        id: 'seven_day',
+        label: 'Weekly',
+        kind: 'weekly',
+        percent: sevenDay.percent,
+        resetsAtMs: sevenDay.resetsAtMs,
+        windowMinutes: 10080,
+        ...(sevenDay.detail ? { detail: sevenDay.detail } : {}),
+      }),
+    )
   }
 
   // Per-model weekly limits. This is where the top-tier-model row lives on
@@ -143,14 +138,16 @@ export function parseClaudeUsage(raw: unknown): ClaudeUsageParse {
   limits
     .filter((l) => l.kind === 'weekly_scoped')
     .forEach((entry, index) => {
-      windows.push(buildWindow({
-        id: `weekly_scoped_${index}`,
-        label: scopedLabel(entry.scope),
-        kind: 'model',
-        percent: entry.percent,
-        resetsAtMs: isoToMs(entry.resets_at),
-        windowMinutes: 10080,
-      }))
+      windows.push(
+        buildWindow({
+          id: `weekly_scoped_${index}`,
+          label: scopedLabel(entry.scope),
+          kind: 'model',
+          percent: entry.percent,
+          resetsAtMs: isoToMs(entry.resets_at),
+          windowMinutes: 10080,
+        }),
+      )
     })
 
   return { ok: true, windows, overage: readOverage(raw) }
@@ -166,15 +163,9 @@ function readOverage(raw: Record<string, unknown>): UsageOverage[] {
   const spend = raw.spend
   if (!isRecord(extra) && !isRecord(spend)) return []
 
-  const enabled = isRecord(extra)
-    ? extra.is_enabled === true
-    : isRecord(spend) && spend.enabled === true
+  const enabled = isRecord(extra) ? extra.is_enabled === true : isRecord(spend) && spend.enabled === true
 
-  const percent = isRecord(extra)
-    ? toPercent(extra.utilization)
-    : isRecord(spend)
-      ? toPercent(spend.percent)
-      : null
+  const percent = isRecord(extra) ? toPercent(extra.utilization) : isRecord(spend) ? toPercent(spend.percent) : null
 
   const detail = spendDetail(extra, spend)
 
@@ -183,18 +174,18 @@ function readOverage(raw: Record<string, unknown>): UsageOverage[] {
   // "no plan limits reported" case upstream.
   if (!enabled && percent === null && !detail) return []
 
-  const blockedReason = isRecord(extra) && typeof extra.disabled_reason === 'string'
-    ? extra.disabled_reason
-    : null
+  const blockedReason = isRecord(extra) && typeof extra.disabled_reason === 'string' ? extra.disabled_reason : null
 
-  return [{
-    id: 'extra_usage',
-    label: 'Extra usage',
-    enabled,
-    usedPercent: percent,
-    ...(detail ? { detail } : {}),
-    blockedReason,
-  }]
+  return [
+    {
+      id: 'extra_usage',
+      label: 'Extra usage',
+      enabled,
+      usedPercent: percent,
+      ...(detail ? { detail } : {}),
+      blockedReason,
+    },
+  ]
 }
 
 function spendDetail(extra: unknown, spend: unknown): string | undefined {

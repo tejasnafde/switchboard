@@ -15,10 +15,7 @@
  * format stays stable under refactor.
  */
 import { describe, it, expect } from 'vitest'
-import {
-  formatFileViewerContext,
-  formatChatMessageContext,
-} from '../../src/renderer/services/context-formatters'
+import { formatFileViewerContext, formatChatMessageContext } from '../../src/renderer/services/context-formatters'
 
 describe('formatFileViewerContext', () => {
   it('emits pill marker + fenced block', () => {

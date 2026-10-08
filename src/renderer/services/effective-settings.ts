@@ -53,9 +53,12 @@ export async function newChatDefaultsFor(
 ): Promise<{ runtimeMode: RuntimeMode | undefined; envMode: SessionEnvMode }> {
   const [globalEnvMode, known] = await Promise.all([getDefaultSessionEnvMode(), ensureProjectOverrides(projectPath)])
   if (!known) {
-    log.warn(`overrides for ${projectPath} are unknown: the new chat uses the global environment and lets the backend pick its mode`)
+    log.warn(
+      `overrides for ${projectPath} are unknown: the new chat uses the global environment and lets the backend pick its mode`,
+    )
     return { runtimeMode: carriedMode, envMode: globalEnvMode }
   }
-  const envMode = effectiveLocalSetting(SETTING_SESSION_ENV_MODE, projectPath, globalEnvMode) === 'worktree' ? 'worktree' : 'local'
+  const envMode =
+    effectiveLocalSetting(SETTING_SESSION_ENV_MODE, projectPath, globalEnvMode) === 'worktree' ? 'worktree' : 'local'
   return { runtimeMode: projectRuntimeModeOverride(projectPath) ? undefined : carriedMode, envMode }
 }

@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../../src/main/db/database', () => ({
   createKanbanCard: state.createPlainCard,
-  listKanbanCards: vi.fn(() => state.card ? [state.card] : []),
+  listKanbanCards: vi.fn(() => (state.card ? [state.card] : [])),
   updateKanbanCard: vi.fn(),
   deleteKanbanCard: vi.fn(),
   getKanbanCard: vi.fn(() => state.card),
@@ -109,11 +109,13 @@ describe('Kanban worktree transaction compatibility handlers', () => {
     const host = new FakeHost()
     registerKanbanHandlers(host, { createCardId: () => 'card-1' })
 
-    await expect(host.handlers.get(KanbanChannels.CREATE)!({
-      projectPath: '/repo',
-      title: 'Atomic card',
-      withWorktree: true,
-    })).rejects.toThrow('transaction is unavailable')
+    await expect(
+      host.handlers.get(KanbanChannels.CREATE)!({
+        projectPath: '/repo',
+        title: 'Atomic card',
+        withWorktree: true,
+      }),
+    ).rejects.toThrow('transaction is unavailable')
 
     expect(state.createPlainCard).not.toHaveBeenCalled()
   })
@@ -133,7 +135,7 @@ describe('Kanban worktree transaction compatibility handlers', () => {
     })
 
     const create = host.handlers.get(KanbanChannels.CREATE)!
-    const result = await create({
+    const result = (await create({
       projectPath: '/repo',
       title: 'Atomic card',
       description: 'Preserve this draft.',
@@ -146,7 +148,7 @@ describe('Kanban worktree transaction compatibility handlers', () => {
         baseRef: 'main',
         setupPolicy: 'skip',
       },
-    }) as KanbanCard & { worktreeCreation: WorktreeCreationSnapshot }
+    })) as KanbanCard & { worktreeCreation: WorktreeCreationSnapshot }
 
     expect(state.createPlainCard).not.toHaveBeenCalled()
     expect(submitted).toMatchObject({
@@ -195,7 +197,7 @@ describe('Kanban worktree transaction compatibility handlers', () => {
     const getWorktreeCreation = vi.fn(async () => failed)
     registerKanbanHandlers(host, { getWorktreeCreation })
 
-    const result = await host.handlers.get(KanbanChannels.LIST)!('/repo') as Array<
+    const result = (await host.handlers.get(KanbanChannels.LIST)!('/repo')) as Array<
       KanbanCard & { worktreeCreation?: WorktreeCreationSnapshot }
     >
 
@@ -226,11 +228,11 @@ describe('Kanban worktree transaction compatibility handlers', () => {
     })
 
     const attach = host.handlers.get(KanbanChannels.CREATE_WORKTREE)!
-    const result = await attach('card-1', {
+    const result = (await attach('card-1', {
       creationId: 'creation-attach-1',
       machineId: 'machine-1',
       requestedAt: 750,
-    }) as KanbanCard & { worktreeCreation: WorktreeCreationSnapshot }
+    })) as KanbanCard & { worktreeCreation: WorktreeCreationSnapshot }
 
     expect(submitted).toMatchObject({
       creationId: 'creation-attach-1',
@@ -319,17 +321,22 @@ describe('Kanban worktree transaction compatibility handlers', () => {
       worktreeBranch: 'kanban/card-1',
     })
     state.creationKey = { machineId: 'machine-1', creationId: 'creation-1' }
-    const getWorktreeCreation = vi.fn(async () => snapshot({
-      ...({} as WorktreeCreationRequest),
-      creationId: 'creation-1',
-      repository: { projectPath: '/repo', machineId: 'machine-1' },
-      checkout: { baseRef: 'main', branch: { namespace: 'kanban', seed: 'card-1' } },
-      owner: { kind: 'kanban-card', cardId: 'card-1', expectedRevision: 700 },
-      purpose: 'kanban',
-      setup: { policy: 'skip' },
-      provenance: { surface: 'desktop', machineId: 'machine-1', requestedAt: 1 },
-      schemaVersion: 1,
-    }, { revision: 9, status: 'ready', phase: 'ready' }))
+    const getWorktreeCreation = vi.fn(async () =>
+      snapshot(
+        {
+          ...({} as WorktreeCreationRequest),
+          creationId: 'creation-1',
+          repository: { projectPath: '/repo', machineId: 'machine-1' },
+          checkout: { baseRef: 'main', branch: { namespace: 'kanban', seed: 'card-1' } },
+          owner: { kind: 'kanban-card', cardId: 'card-1', expectedRevision: 700 },
+          purpose: 'kanban',
+          setup: { policy: 'skip' },
+          provenance: { surface: 'desktop', machineId: 'machine-1', requestedAt: 1 },
+          schemaVersion: 1,
+        },
+        { revision: 9, status: 'ready', phase: 'ready' },
+      ),
+    )
     const actOnWorktreeCreation = vi.fn(async () => {
       state.card = card()
       return { cleanupDisposition: 'removed' } as WorktreeCreationSnapshot
@@ -356,8 +363,9 @@ describe('Kanban worktree transaction compatibility handlers', () => {
     state.creationKey = null
     registerKanbanHandlers(host)
 
-    await expect(host.handlers.get(KanbanChannels.REMOVE_WORKTREE)!('card-1', { force: true }))
-      .rejects.toThrow(/canonical worktree identity/i)
+    await expect(host.handlers.get(KanbanChannels.REMOVE_WORKTREE)!('card-1', { force: true })).rejects.toThrow(
+      /canonical worktree identity/i,
+    )
 
     expect(state.removeWorktree).not.toHaveBeenCalled()
   })

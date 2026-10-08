@@ -13,7 +13,10 @@ const TEXTAREA =
 export function DiffExcerpt({ lines }: { lines: HostWriteDiffLine[] }) {
   if (lines.length === 0) return null
   return (
-    <div data-host-write-excerpt className="mt-1 overflow-hidden rounded-[4px] border border-[var(--border)] font-[family-name:var(--font-mono)] text-[11px] leading-[1.45]">
+    <div
+      data-host-write-excerpt
+      className="mt-1 overflow-hidden rounded-[4px] border border-[var(--border)] font-[family-name:var(--font-mono)] text-[11px] leading-[1.45]"
+    >
       {lines.map((l, i) => (
         <div
           key={i}
@@ -24,9 +27,15 @@ export function DiffExcerpt({ lines }: { lines: HostWriteDiffLine[] }) {
             l.kind === 'del' && 'bg-[var(--diff-del-bg,rgba(248,81,73,0.15))]',
           )}
         >
-          <span className="w-[4ch] shrink-0 text-right text-[var(--text-muted)] select-none">{l.kind === 'del' ? l.oldLine : l.newLine}</span>
-          <span className="w-[1ch] shrink-0 text-[var(--text-muted)] select-none">{l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}</span>
-          <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] text-[var(--text-primary)]">{l.text || ' '}</span>
+          <span className="w-[4ch] shrink-0 text-right text-[var(--text-muted)] select-none">
+            {l.kind === 'del' ? l.oldLine : l.newLine}
+          </span>
+          <span className="w-[1ch] shrink-0 text-[var(--text-muted)] select-none">
+            {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}
+          </span>
+          <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] text-[var(--text-primary)]">
+            {l.text || ' '}
+          </span>
         </div>
       ))}
     </div>
@@ -63,7 +72,9 @@ export function ReviewDraftFields({ review, draft, editable, onChange }: ReviewD
       />
       {review.comments.length > 0 && (
         <div className="mt-2 mb-1 text-[11px] text-[var(--text-muted)]">
-          {kept === review.comments.length ? `${kept} line comments` : `${kept} of ${review.comments.length} line comments kept`}
+          {kept === review.comments.length
+            ? `${kept} line comments`
+            : `${kept} of ${review.comments.length} line comments kept`}
         </div>
       )}
       <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
@@ -72,9 +83,21 @@ export function ReviewDraftFields({ review, draft, editable, onChange }: ReviewD
           if (!state) return null
           const where = lineLocation(c)
           return (
-            <li key={c.id} data-review-comment={c.id} data-removed={state.removed || undefined} className="rounded-md border border-[var(--border)] px-2 py-1.5">
+            <li
+              key={c.id}
+              data-review-comment={c.id}
+              data-removed={state.removed || undefined}
+              className="rounded-md border border-[var(--border)] px-2 py-1.5"
+            >
               <div className="flex items-center gap-2">
-                <span className={cn('min-w-0 flex-1 font-[family-name:var(--font-mono)] text-[11px] [overflow-wrap:anywhere] text-[var(--text-secondary)]', state.removed && 'line-through')}>{where}</span>
+                <span
+                  className={cn(
+                    'min-w-0 flex-1 font-[family-name:var(--font-mono)] text-[11px] [overflow-wrap:anywhere] text-[var(--text-secondary)]',
+                    state.removed && 'line-through',
+                  )}
+                >
+                  {where}
+                </span>
                 {/* Stays after the decision, disabled, so the rows keep their height. */}
                 <Button
                   size="sm"
@@ -125,14 +148,31 @@ export function CreatePrFields({ create, draft, editable, onChange, onSubmit }: 
     <div className="px-3 pb-2">
       {create.localPath && (
         <div data-host-write-local-path className="mb-1 text-[11px] text-[var(--text-muted)]">
-          From <span className="font-[family-name:var(--font-mono)] [overflow-wrap:anywhere] text-[var(--text-secondary)]">{create.localPath}</span> in this project
+          From{' '}
+          <span className="font-[family-name:var(--font-mono)] [overflow-wrap:anywhere] text-[var(--text-secondary)]">
+            {create.localPath}
+          </span>{' '}
+          in this project
         </div>
       )}
-      <div data-host-write-branches className="mb-2 flex flex-wrap items-center gap-1.5 font-[family-name:var(--font-mono)] text-[11.5px] text-[var(--text-primary)]">
-        <span className="min-w-0 [overflow-wrap:anywhere] rounded-[4px] border border-[var(--border)] px-1.5 py-px">{create.sourceBranch}</span>
-        <span aria-label="into" className="text-[var(--text-muted)]">→</span>
-        <span className="min-w-0 [overflow-wrap:anywhere] rounded-[4px] border border-[var(--border)] px-1.5 py-px">{create.targetBranch}</span>
-        {create.draft && <span className="rounded-[4px] bg-[var(--bg-tertiary)] px-1.5 py-px [font-family:inherit] text-[11px] text-[var(--text-secondary)]">Draft</span>}
+      <div
+        data-host-write-branches
+        className="mb-2 flex flex-wrap items-center gap-1.5 font-[family-name:var(--font-mono)] text-[11.5px] text-[var(--text-primary)]"
+      >
+        <span className="min-w-0 [overflow-wrap:anywhere] rounded-[4px] border border-[var(--border)] px-1.5 py-px">
+          {create.sourceBranch}
+        </span>
+        <span aria-label="into" className="text-[var(--text-muted)]">
+          →
+        </span>
+        <span className="min-w-0 [overflow-wrap:anywhere] rounded-[4px] border border-[var(--border)] px-1.5 py-px">
+          {create.targetBranch}
+        </span>
+        {create.draft && (
+          <span className="rounded-[4px] bg-[var(--bg-tertiary)] px-1.5 py-px [font-family:inherit] text-[11px] text-[var(--text-secondary)]">
+            Draft
+          </span>
+        )}
       </div>
       <div className="mb-1 text-[11px] text-[var(--text-muted)]">{editable ? 'Title, editable' : 'Title'}</div>
       <input
@@ -143,7 +183,9 @@ export function CreatePrFields({ create, draft, editable, onChange, onSubmit }: 
         onKeyDown={submitOnModEnter}
         className={cn(TEXTAREA, 'resize-none')}
       />
-      <div className="mt-2 mb-1 text-[11px] text-[var(--text-muted)]">{editable ? 'Description, editable' : 'Description'}</div>
+      <div className="mt-2 mb-1 text-[11px] text-[var(--text-muted)]">
+        {editable ? 'Description, editable' : 'Description'}
+      </div>
       <textarea
         aria-label="Pull request description"
         value={draft.description}
@@ -165,12 +207,29 @@ export function CreatePrFields({ create, draft, editable, onChange, onSubmit }: 
               const removed = draft.removedReviewers.includes(r.id)
               const label = reviewerLabel(r)
               return (
-                <li key={r.id} data-create-reviewer={r.id} data-removed={removed || undefined} className="flex items-center gap-2 rounded-md border border-[var(--border)] py-0.5 pr-0.5 pl-2">
-                  <span className={cn('min-w-0 flex-1 text-[12px] [overflow-wrap:anywhere] text-[var(--text-primary)]', removed && 'text-[var(--text-muted)] line-through')}>
-                    {label}{r.kind === 'team' && <span className="ml-1.5 text-[11px] text-[var(--text-muted)]">team</span>}
+                <li
+                  key={r.id}
+                  data-create-reviewer={r.id}
+                  data-removed={removed || undefined}
+                  className="flex items-center gap-2 rounded-md border border-[var(--border)] py-0.5 pr-0.5 pl-2"
+                >
+                  <span
+                    className={cn(
+                      'min-w-0 flex-1 text-[12px] [overflow-wrap:anywhere] text-[var(--text-primary)]',
+                      removed && 'text-[var(--text-muted)] line-through',
+                    )}
+                  >
+                    {label}
+                    {r.kind === 'team' && <span className="ml-1.5 text-[11px] text-[var(--text-muted)]">team</span>}
                   </span>
                   {/* Stays after the decision, disabled, so the rows keep their height. */}
-                  <Button size="sm" variant="ghost" disabled={!editable} aria-label={`${removed ? 'Restore' : 'Remove'} reviewer ${label}`} onClick={() => onChange(toggleReviewer(draft, r.id))}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!editable}
+                    aria-label={`${removed ? 'Restore' : 'Remove'} reviewer ${label}`}
+                    onClick={() => onChange(toggleReviewer(draft, r.id))}
+                  >
                     {removed ? 'Restore' : 'Remove'}
                   </Button>
                 </li>

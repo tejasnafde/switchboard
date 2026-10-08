@@ -19,7 +19,15 @@ import {
   reviewEventsFor,
   type ReviewEvent,
 } from '@shared/pull-request-writes'
-import { HOST_CAPABILITIES, PR_HOST_LABEL, prKey, repoKey, type MergeStrategy, type PrDetail, type PrSummary } from '@shared/pull-requests'
+import {
+  HOST_CAPABILITIES,
+  PR_HOST_LABEL,
+  prKey,
+  repoKey,
+  type MergeStrategy,
+  type PrDetail,
+  type PrSummary,
+} from '@shared/pull-requests'
 import { useReviewStore } from '../../stores/review-store'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
@@ -31,7 +39,8 @@ import { declineConfirmCopy, mergeConfirmCopy } from './review-states'
 import { Icon } from './review-ui'
 import { useWriteAction, WriteError } from './review-writes'
 
-const MENU = 'sb-floating-surface z-[1200] min-w-[220px] rounded-[10px] border border-[var(--border-strong,var(--border))] p-1 shadow-[0_12px_30px_rgba(0,0,0,0.35)]'
+const MENU =
+  'sb-floating-surface z-[1200] min-w-[220px] rounded-[10px] border border-[var(--border-strong,var(--border))] p-1 shadow-[0_12px_30px_rgba(0,0,0,0.35)]'
 
 function MenuItem({ checked, onSelect, children }: { checked: boolean; onSelect: () => void; children: string }) {
   return (
@@ -42,7 +51,9 @@ function MenuItem({ checked, onSelect, children }: { checked: boolean; onSelect:
       onClick={onSelect}
       className="flex w-full cursor-pointer items-center gap-2 rounded-[6px] border-none bg-transparent px-2 py-[6px] text-left text-[12.5px] text-[var(--text-primary)] hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)] focus-visible:outline-none"
     >
-      <span className={cn('w-[14px]', !checked && 'invisible')}><Icon name="ok" size={12} /></span>
+      <span className={cn('w-[14px]', !checked && 'invisible')}>
+        <Icon name="ok" size={12} />
+      </span>
       {children}
     </button>
   )
@@ -60,7 +71,9 @@ function menuKeys(e: KeyboardEvent<HTMLDivElement>) {
 function focusChecked(e: Event) {
   e.preventDefault()
   const menu = e.currentTarget as HTMLElement
-  ;(menu.querySelector<HTMLElement>('[aria-checked="true"]') ?? menu.querySelector<HTMLElement>('[role^="menuitem"]'))?.focus()
+  ;(
+    menu.querySelector<HTMLElement>('[aria-checked="true"]') ?? menu.querySelector<HTMLElement>('[role^="menuitem"]')
+  )?.focus()
 }
 
 function mergeTitle(detail: PrDetail | null, strategy: MergeStrategy | null): string {
@@ -97,7 +110,8 @@ function MergeSplitButton({ pr, detail }: { pr: PrSummary; detail: PrDetail | nu
           title={title}
           onClick={() => void merge()}
         >
-          <Icon name="merge" />{write.pending ? 'Merging…' : 'Merge'}
+          <Icon name="merge" />
+          {write.pending ? 'Merging…' : 'Merge'}
         </Button>
         <Popover open={menu} onOpenChange={setMenu}>
           <PopoverTrigger asChild>
@@ -143,9 +157,16 @@ function ReviewSplitButton({ pr, detail }: { pr: PrSummary; detail: PrDetail | n
   const reviewPr = detail ?? pr
 
   return (
-    <ReviewFormPopover pr={reviewPr} open={view === 'form'} event={event} onOpenChange={(open) => setView(open ? 'form' : 'closed')}>
+    <ReviewFormPopover
+      pr={reviewPr}
+      open={view === 'form'}
+      event={event}
+      onOpenChange={(open) => setView(open ? 'form' : 'closed')}
+    >
       <div className="flex" data-review-button>
-        <Button size="sm" className="rounded-r-none" disabled={!detail} onClick={() => setView('form')}>Review</Button>
+        <Button size="sm" className="rounded-r-none" disabled={!detail} onClick={() => setView('form')}>
+          Review
+        </Button>
         <Popover open={view === 'menu'} onOpenChange={(open) => setView(open ? 'menu' : 'closed')}>
           <PopoverTrigger asChild>
             <Button
@@ -180,7 +201,17 @@ function ReviewSplitButton({ pr, detail }: { pr: PrSummary; detail: PrDetail | n
   )
 }
 
-function ActionItem({ onSelect, title, detail, danger }: { onSelect: () => void; title: string; detail: string; danger?: boolean }) {
+function ActionItem({
+  onSelect,
+  title,
+  detail,
+  danger,
+}: {
+  onSelect: () => void
+  title: string
+  detail: string
+  danger?: boolean
+}) {
   return (
     <button
       type="button"
@@ -188,7 +219,9 @@ function ActionItem({ onSelect, title, detail, danger }: { onSelect: () => void;
       onClick={onSelect}
       className="block w-full cursor-pointer rounded-[6px] border-none bg-transparent px-2 py-[6px] text-left hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)] focus-visible:outline-none"
     >
-      <span className={cn('block text-[12.5px]', danger ? 'text-[var(--error)]' : 'text-[var(--text-primary)]')}>{title}</span>
+      <span className={cn('block text-[12.5px]', danger ? 'text-[var(--error)]' : 'text-[var(--text-primary)]')}>
+        {title}
+      </span>
       <span className="block text-[11.5px] text-[var(--text-muted)]">{detail}</span>
     </button>
   )
@@ -222,15 +255,32 @@ function PrMoreMenu({ pr, detail }: { pr: PrSummary; detail: PrDetail | null }) 
     <div className="flex flex-col items-end">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="sm" className="px-[6px]" aria-label="More actions" aria-haspopup="menu" disabled={write.pending}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="px-[6px]"
+            aria-label="More actions"
+            aria-haspopup="menu"
+            disabled={write.pending}
+          >
             <Icon name="more" />
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className={cn(MENU, 'w-[280px]')} onOpenAutoFocus={focusFirst}>
           <div role="menu" aria-label="More actions" onKeyDown={menuKeys}>
-            {hidden
-              ? <ActionItem onSelect={() => void toggleHidden()} title="Show in Reviews" detail="Lists it again with the others." />
-              : <ActionItem onSelect={() => void toggleHidden()} title="Hide from Reviews" detail="Only in Switchboard. It comes back when it changes and needs you." />}
+            {hidden ? (
+              <ActionItem
+                onSelect={() => void toggleHidden()}
+                title="Show in Reviews"
+                detail="Lists it again with the others."
+              />
+            ) : (
+              <ActionItem
+                onSelect={() => void toggleHidden()}
+                title="Hide from Reviews"
+                detail="Only in Switchboard. It comes back when it changes and needs you."
+              />
+            )}
             {canDecline && (
               <ActionItem
                 danger
@@ -242,7 +292,11 @@ function PrMoreMenu({ pr, detail }: { pr: PrSummary; detail: PrDetail | null }) 
           </div>
         </PopoverContent>
       </Popover>
-      {hideError && <div role="alert" className="mt-1 max-w-[260px] text-right text-[12px] text-[var(--error)]">{hideError}</div>}
+      {hideError && (
+        <div role="alert" className="mt-1 max-w-[260px] text-right text-[12px] text-[var(--error)]">
+          {hideError}
+        </div>
+      )}
       <WriteError error={write.error} className="mt-1 max-w-[260px] text-right" />
     </div>
   )
@@ -254,7 +308,12 @@ export function PrHeaderActions({ pr }: { pr: PrSummary }) {
   const detail = value?.status === 'ok' ? value.data : null
   return (
     <>
-      {pr.state === 'open' && (pr.viewer.isAuthor ? <MergeSplitButton pr={pr} detail={detail} /> : <ReviewSplitButton pr={pr} detail={detail} />)}
+      {pr.state === 'open' &&
+        (pr.viewer.isAuthor ? (
+          <MergeSplitButton pr={pr} detail={detail} />
+        ) : (
+          <ReviewSplitButton pr={pr} detail={detail} />
+        ))}
       <PrMoreMenu pr={pr} detail={detail} />
     </>
   )

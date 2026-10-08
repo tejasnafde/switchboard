@@ -16,13 +16,27 @@ import { splitSyntheticUserText } from '../../src/shared/synthetic-message'
 const FORK_AT = 1_000
 const fork = { title: 'try sqlite paging', sentBefore: false }
 
-function msg(id: string, role: ChatMessage['role'], content: string, timestamp: number, extra: Partial<ChatMessage> = {}): ChatMessage {
+function msg(
+  id: string,
+  role: ChatMessage['role'],
+  content: string,
+  timestamp: number,
+  extra: Partial<ChatMessage> = {},
+): ChatMessage {
   return { id, role, content, timestamp, ...extra }
 }
 
 function fileRow(id: string, relPath: string, timestamp: number): ChatMessage {
   return msg(id, 'assistant', '', timestamp, {
-    fileDiff: { fileEditId: `t:${relPath}`, repoRoot: '/repo', relPath, changeKind: 'modify', oldContent: 'a', newContent: 'b', status: 'pending' },
+    fileDiff: {
+      fileEditId: `t:${relPath}`,
+      repoRoot: '/repo',
+      relPath,
+      changeKind: 'modify',
+      oldContent: 'a',
+      newContent: 'b',
+      status: 'pending',
+    },
   })
 }
 
@@ -55,9 +69,15 @@ describe('buildMergeBackSummary', () => {
   })
 
   it('names the worktree when the fork has one', () => {
-    const summary = buildMergeBackSummary(history, { at: FORK_AT, ids: [] }, {
-      ...fork, worktreePath: '/repo/.switchboard/worktrees/x', worktreeBranch: 'fork/x',
-    })!
+    const summary = buildMergeBackSummary(
+      history,
+      { at: FORK_AT, ids: [] },
+      {
+        ...fork,
+        worktreePath: '/repo/.switchboard/worktrees/x',
+        worktreeBranch: 'fork/x',
+      },
+    )!
     expect(summary.text).toContain('Location: worktree /repo/.switchboard/worktrees/x (branch fork/x)')
   })
 
@@ -81,7 +101,11 @@ describe('buildMergeBackSummary', () => {
     const first = buildMergeBackSummary(history, { at: FORK_AT, ids: [] }, fork)!
     expect(buildMergeBackSummary(history, first.through, { ...fork, sentBefore: true })).toBeNull()
     // A notice or an empty tool row is not a turn either.
-    const quiet = [...history, msg('s1', 'system', '[[sb:instance-rotated]] A → B', 3_000), msg('t1', 'assistant', '', 3_100)]
+    const quiet = [
+      ...history,
+      msg('s1', 'system', '[[sb:instance-rotated]] A → B', 3_000),
+      msg('t1', 'assistant', '', 3_100),
+    ]
     expect(buildMergeBackSummary(quiet, first.through, { ...fork, sentBefore: true })).toBeNull()
   })
 

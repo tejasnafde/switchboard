@@ -7,18 +7,30 @@ import { describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
 const { spans } = vi.hoisted(() => ({ spans: [] as Array<{ name: string; end: ReturnType<typeof vi.fn> }> }))
-vi.mock('../../src/main/perf', () => ({ perfSpan: (name: string) => {
-  const span = { name, end: vi.fn() }
-  spans.push(span)
-  return span
-} }))
+vi.mock('../../src/main/perf', () => ({
+  perfSpan: (name: string) => {
+    const span = { name, end: vi.fn() }
+    spans.push(span)
+    return span
+  },
+}))
 
 vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({
-    id: id ?? 'work', agentType, displayName: 'Work', enabled: true, env: {}, oauthDir: null,
+    id: id ?? 'work',
+    agentType,
+    displayName: 'Work',
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
   getProviderInstanceFull: (id: string) => ({
-    id, agentType: 'claude-code', displayName: 'Work', enabled: true, env: {}, oauthDir: null,
+    id,
+    agentType: 'claude-code',
+    displayName: 'Work',
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
   listOauthDirsForAgent: () => [],
 }))
@@ -40,7 +52,9 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationTitle: () => null,
   resolveRootThreadId: (id: string) => id,
   getConversationRuntimeMode: () => null,
-  setConversationRuntimeMode: (id: string, mode: string) => { savedModes.push([id, mode]) },
+  setConversationRuntimeMode: (id: string, mode: string) => {
+    savedModes.push([id, mode])
+  },
   getConversationModel: () => null,
   getConversationAgentType: () => null,
   getConversationProviderInstanceId: () => null,
@@ -87,9 +101,23 @@ class ModeAdapter implements ProviderAdapter {
   private onEvent: (e: RuntimeEvent) => void = () => {}
   async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     this.onEvent = onEvent
-    return { threadId: opts.threadId, provider: 'claude', status: 'idle', runtimeMode: this.mode, cwd: opts.cwd, createdAt: 0 }
+    return {
+      threadId: opts.threadId,
+      provider: 'claude',
+      status: 'idle',
+      runtimeMode: this.mode,
+      cwd: opts.cwd,
+      createdAt: 0,
+    }
   }
-  async sendTurn(threadId: string, _message: string, runtimeMode?: RuntimeMode, _images?: unknown, delivery?: TurnDelivery, queuedId?: string): Promise<void> {
+  async sendTurn(
+    threadId: string,
+    _message: string,
+    runtimeMode?: RuntimeMode,
+    _images?: unknown,
+    delivery?: TurnDelivery,
+    queuedId?: string,
+  ): Promise<void> {
     if (this.sendError) throw this.sendError
     if (delivery === 'queue' && this.running && queuedId) {
       this.held.push({ id: queuedId, mode: runtimeMode })
@@ -131,7 +159,13 @@ const passThroughSubmission = {
   async submit(_input: UserTurnSubmissionV1, context: AtomicUserTurnContext) {
     await context.prepare()
     await context.dispatch()
-    return { status: 'accepted' as const, accepted: true as const, duplicate: false, state: 'completed' as const, acceptedAt: 1 }
+    return {
+      status: 'accepted' as const,
+      accepted: true as const,
+      duplicate: false,
+      state: 'completed' as const,
+      acceptedAt: 1,
+    }
   },
 }
 
@@ -145,9 +179,15 @@ async function setup(submission: Pick<AtomicUserTurnSubmission, 'submit'> = pass
   await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
   const published: RuntimeEvent[] = []
   registry.bus.subscribe((e) => published.push(e))
-  const submit = (origin: string, runtimeMode?: RuntimeMode, delivery?: TurnDelivery) => host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
-    version: 1, threadId: 't1', origin, providerText: 'hi', ...(runtimeMode ? { runtimeMode } : {}), ...(delivery ? { delivery } : {}),
-  })
+  const submit = (origin: string, runtimeMode?: RuntimeMode, delivery?: TurnDelivery) =>
+    host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+      version: 1,
+      threadId: 't1',
+      origin,
+      providerText: 'hi',
+      ...(runtimeMode ? { runtimeMode } : {}),
+      ...(delivery ? { delivery } : {}),
+    })
   const announced = () => published.flatMap((e) => (e.type === 'session.provider' && e.runtimeMode ? [e] : []))
   return { host, adapter, submit, announced }
 }
@@ -167,7 +207,14 @@ describe('runtime mode sync across clients', () => {
     expect(t.adapter.mode).toBe('auto')
     expect(savedModes).toEqual([['t1', 'auto']])
     expect(t.announced()).toEqual([
-      { type: 'session.provider', threadId: 't1', provider: 'claude', instanceId: 'work', instanceName: 'Work', runtimeMode: 'auto' },
+      {
+        type: 'session.provider',
+        threadId: 't1',
+        provider: 'claude',
+        instanceId: 'work',
+        instanceName: 'Work',
+        runtimeMode: 'auto',
+      },
     ])
   })
 
@@ -217,23 +264,33 @@ describe('runtime mode sync across clients', () => {
 })
 
 describe('first-content timing ownership', () => {
-  it.each(['rejected', 'throw'] as const)('keeps the first span when a second atomic submission fails (%s)', async (failure) => {
-    let calls = 0
-    const t = await setup({
-      async submit(input, context) {
-        if (++calls === 1) return passThroughSubmission.submit(input, context)
-        if (failure === 'throw') throw new Error('second submission failed')
-        return { status: 'rejected', accepted: false, state: 'rejected', duplicate: false, retryable: false, reason: 'second submission rejected' }
-      },
-    })
-    await t.submit('first')
-    const span = spans.find((s) => s.name === 'turn.first-content')!
-    if (failure === 'throw') await expect(t.submit('second')).rejects.toThrow('second submission failed')
-    else await t.submit('second')
-    expect(span.end).not.toHaveBeenCalled()
-    t.adapter.emitContent('t1')
-    expect(span.end).toHaveBeenCalledExactlyOnceWith({ outcome: 'content' })
-  })
+  it.each(['rejected', 'throw'] as const)(
+    'keeps the first span when a second atomic submission fails (%s)',
+    async (failure) => {
+      let calls = 0
+      const t = await setup({
+        async submit(input, context) {
+          if (++calls === 1) return passThroughSubmission.submit(input, context)
+          if (failure === 'throw') throw new Error('second submission failed')
+          return {
+            status: 'rejected',
+            accepted: false,
+            state: 'rejected',
+            duplicate: false,
+            retryable: false,
+            reason: 'second submission rejected',
+          }
+        },
+      })
+      await t.submit('first')
+      const span = spans.find((s) => s.name === 'turn.first-content')!
+      if (failure === 'throw') await expect(t.submit('second')).rejects.toThrow('second submission failed')
+      else await t.submit('second')
+      expect(span.end).not.toHaveBeenCalled()
+      t.adapter.emitContent('t1')
+      expect(span.end).toHaveBeenCalledExactlyOnceWith({ outcome: 'content' })
+    },
+  )
   it('keeps the first span when a second originless send throws', async () => {
     const t = await setup()
     await t.host.invoke(ProviderChannels.SEND_TURN, 't1', 'first')

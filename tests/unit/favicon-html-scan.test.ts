@@ -14,10 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import {
-  findFaviconHrefInHtml,
-  resolveFaviconViaHtml,
-} from '../../src/main/projects/favicon-html-scan'
+import { findFaviconHrefInHtml, resolveFaviconViaHtml } from '../../src/main/projects/favicon-html-scan'
 
 let tmp: string
 

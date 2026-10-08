@@ -13,9 +13,7 @@ import type { ChatMessage } from '@shared/types'
 export const SEND_TO_USAGE = 'Use /send-to <session>: <message>'
 export const SEND_TO_EMPTY_MESSAGE = `Nothing to send. ${SEND_TO_USAGE}`
 
-export type SendToParse =
-  | { ok: true; target: string; text: string }
-  | { ok: false; error: string }
+export type SendToParse = { ok: true; target: string; text: string } | { ok: false; error: string }
 
 export interface SendToSession {
   id: string
@@ -24,9 +22,7 @@ export interface SendToSession {
   machineId?: string
 }
 
-export type SendToTarget =
-  | { ok: true; id: string; title: string }
-  | { ok: false; error: string }
+export type SendToTarget = { ok: true; id: string; title: string } | { ok: false; error: string }
 
 /**
  * Split a composer body into target and message, or null when the body is not
@@ -112,10 +108,7 @@ export function resolveSendToTarget(
  * render the delivery twice. `ownLabel` supplies the half of the sender
  * marker's `<from> → <to>` shape the event does not carry.
  */
-export function peerMessageToChatMessage(
-  event: RuntimePeerMessageEvent,
-  ownLabel: string,
-): ChatMessage {
+export function peerMessageToChatMessage(event: RuntimePeerMessageEvent, ownLabel: string): ChatMessage {
   if (event.direction === 'sent') {
     return {
       id: `peer_${event.messageId}`,
@@ -204,8 +197,9 @@ export interface SendToPickerSession {
 /** Chats a `/send-to` from `fromSessionId` can reach: same backend, started, not itself. */
 function pickerPeers<T extends SendToPickerSession>(sessions: ReadonlyArray<T>, fromSessionId: string): T[] {
   const from = sessions.find((s) => s.id === fromSessionId)
-  return sessions.filter((s) =>
-    s.id !== fromSessionId && !s.draft && (s.machineId ?? 'local') === (from?.machineId ?? 'local'))
+  return sessions.filter(
+    (s) => s.id !== fromSessionId && !s.draft && (s.machineId ?? 'local') === (from?.machineId ?? 'local'),
+  )
 }
 
 /**
@@ -220,13 +214,12 @@ export function sendToPickerItems(
   sessions: ReadonlyArray<SendToPickerSession>,
   fromSessionId: string,
 ): SendToPickerItem[] {
-  const rows = pickerPeers(sessions, fromSessionId)
-    .map((s) => ({
-      id: s.id,
-      // Both separators: a Windows projectPath left whole by a `/`-only split
-      // put the entire C:\Users\...\project string in the label.
-      base: `${s.title ?? s.id} · ${s.projectPath?.split(/[\\/]/).filter(Boolean).pop() ?? 'unknown'}`,
-    }))
+  const rows = pickerPeers(sessions, fromSessionId).map((s) => ({
+    id: s.id,
+    // Both separators: a Windows projectPath left whole by a `/`-only split
+    // put the entire C:\Users\...\project string in the label.
+    base: `${s.title ?? s.id} · ${s.projectPath?.split(/[\\/]/).filter(Boolean).pop() ?? 'unknown'}`,
+  }))
   const counts = new Map<string, number>()
   for (const r of rows) counts.set(r.base, (counts.get(r.base) ?? 0) + 1)
   return rows.map((r) => ({

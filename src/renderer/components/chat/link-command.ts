@@ -9,7 +9,8 @@
 import { parsePeerLinkDuration, peerLinkBudgetProblem, peerLinkWindowProblem } from '@shared/peer-links'
 import { resolveSendToTarget, type SendToSession, type SendToTarget } from './send-to-command'
 
-export const LINK_USAGE = 'Use /link <session> [messages] [time], for example /link Worker A 50 4h, to let this chat and another one message each other.'
+export const LINK_USAGE =
+  'Use /link <session> [messages] [time], for example /link Worker A 50 4h, to let this chat and another one message each other.'
 
 /** One way to read the text after `/link`: a target, and the options the words after it would be. */
 export interface LinkSplit {
@@ -22,16 +23,16 @@ export interface LinkSplit {
 
 export type LinkCommand =
   | {
-    ok: true
-    kind: 'link'
-    /** Everything after `/link`. */
-    target: string
-    /**
-     * Readings with trailing options peeled off, fewest peeled first: `[time]`,
-     * then `[messages] [time]` or `[messages]`. Empty when nothing trails.
-     */
-    splits: LinkSplit[]
-  }
+      ok: true
+      kind: 'link'
+      /** Everything after `/link`. */
+      target: string
+      /**
+       * Readings with trailing options peeled off, fewest peeled first: `[time]`,
+       * then `[messages] [time]` or `[messages]`. Empty when nothing trails.
+       */
+      splits: LinkSplit[]
+    }
   /** No target means every link of this chat. */
   | { ok: true; kind: 'unlink'; target: string | null }
   | { ok: false; error: string }
@@ -58,7 +59,12 @@ export function parseLinkCommand(body: string): LinkCommand | null {
   const counted = /^(.*\S)\s+(\d+)$/s.exec(rest)
   if (counted) {
     const tail = windowMs === undefined ? counted[2] : `${counted[2]} ${splits[0].tail}`
-    splits.push({ target: counted[1], messages: Number(counted[2]), ...(windowMs !== undefined ? { windowMs } : {}), tail })
+    splits.push({
+      target: counted[1],
+      messages: Number(counted[2]),
+      ...(windowMs !== undefined ? { windowMs } : {}),
+      tail,
+    })
   }
   return { ok: true, kind: 'link', target, splits }
 }

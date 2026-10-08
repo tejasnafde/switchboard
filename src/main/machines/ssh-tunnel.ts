@@ -61,11 +61,14 @@ function assertIapMachine(machine: Machine): asserts machine is Machine & {
  * sshHostArgs is unaffected - that guard only vets the alias/host/user values.
  */
 export const SSH_COMMON_OPTS = [
-  '-o', 'BatchMode=yes',
-  '-o', 'StrictHostKeyChecking=accept-new',
+  '-o',
+  'BatchMode=yes',
+  '-o',
+  'StrictHostKeyChecking=accept-new',
   // Fail a dead/black-holed host in 10s instead of the OS TCP timeout (~75s);
   // applies to the tunnel, the probe, and every provisioning command.
-  '-o', 'ConnectTimeout=10',
+  '-o',
+  'ConnectTimeout=10',
 ]
 
 /**
@@ -114,12 +117,17 @@ export function buildMachineRemoteCommand(
     return {
       command: 'gcloud',
       args: [
-        'compute', 'ssh', machine.iapInstance,
-        '--zone', machine.iapZone,
-        '--project', machine.iapProject,
+        'compute',
+        'ssh',
+        machine.iapInstance,
+        '--zone',
+        machine.iapZone,
+        '--project',
+        machine.iapProject,
         '--tunnel-through-iap',
         '--quiet',
-        '--command', remoteCommand,
+        '--command',
+        remoteCommand,
         ...asGcloudSshFlags(sshFlags),
       ],
     }
@@ -136,10 +144,14 @@ export function buildTunnelCommand(machine: Machine, opts: TunnelOpts): { comman
     ...SSH_COMMON_OPTS,
     // 15s x 2 missed keepalives = a dead tunnel is noticed in ~30s, not the
     // OpenSSH default 30s x 3 = 90s.
-    '-o', 'ServerAliveInterval=15',
-    '-o', 'ServerAliveCountMax=2',
-    '-o', 'ExitOnForwardFailure=yes',
-    '-L', `${opts.localPort}:127.0.0.1:${opts.remotePort}`,
+    '-o',
+    'ServerAliveInterval=15',
+    '-o',
+    'ServerAliveCountMax=2',
+    '-o',
+    'ExitOnForwardFailure=yes',
+    '-L',
+    `${opts.localPort}:127.0.0.1:${opts.remotePort}`,
     ...(opts.extraForwards ?? []).flatMap((f) => ['-L', `${f.localPort}:127.0.0.1:${f.remotePort}`]),
   ]
   return buildMachineRemoteCommand(machine, asUserScript(machine.remoteUser, opts.remoteCommand), sshFlags)

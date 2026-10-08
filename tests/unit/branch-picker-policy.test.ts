@@ -37,13 +37,7 @@ describe('rankAndFilterRefs - ordering', () => {
     const out = rankAndFilterRefs(refs, '')
     // First the current `main`, then locals alphabetical (feat/bar, feat/foo),
     // then remotes alphabetical (origin/feature, origin/main).
-    expect(out.map((r) => r.name)).toEqual([
-      'main',
-      'feat/bar',
-      'feat/foo',
-      'origin/feature',
-      'origin/main',
-    ])
+    expect(out.map((r) => r.name)).toEqual(['main', 'feat/bar', 'feat/foo', 'origin/feature', 'origin/main'])
   })
 })
 
@@ -75,16 +69,32 @@ describe('rankAndFilterRefs - filtering', () => {
 
 describe('decideSwitchAction', () => {
   const localNoWorktree: Ref = {
-    name: 'feat/x', sha: 'a', current: false, isRemote: false, worktreePath: null,
+    name: 'feat/x',
+    sha: 'a',
+    current: false,
+    isRemote: false,
+    worktreePath: null,
   }
   const localWithWorktree: Ref = {
-    name: 'feat/y', sha: 'b', current: false, isRemote: false, worktreePath: '/wt/y',
+    name: 'feat/y',
+    sha: 'b',
+    current: false,
+    isRemote: false,
+    worktreePath: '/wt/y',
   }
   const currentBranch: Ref = {
-    name: 'main', sha: 'c', current: true, isRemote: false, worktreePath: null,
+    name: 'main',
+    sha: 'c',
+    current: true,
+    isRemote: false,
+    worktreePath: null,
   }
   const remote: Ref = {
-    name: 'origin/feat', sha: 'd', current: false, isRemote: true, worktreePath: null,
+    name: 'origin/feat',
+    sha: 'd',
+    current: false,
+    isRemote: true,
+    worktreePath: null,
   }
 
   it('returns noop when picking the already-checked-out current branch', () => {

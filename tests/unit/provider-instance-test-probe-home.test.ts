@@ -29,19 +29,21 @@ vi.mock('../../src/main/db/provider-instances', () => ({
 vi.mock('../../src/main/provider/instance-env', () => ({ resolveInstanceEnv: mocks.env }))
 
 vi.mock('child_process', () => ({
-  execFile: vi.fn((
-    _bin: string,
-    _args: string[],
-    _opts: unknown,
-    cb: (err: (Error & { code?: number }) | null, stdout: string, stderr: string) => void,
-  ) => {
-    if (mocks.exit === 0) cb(null, '', '')
-    else {
-      const err = new Error('failed') as Error & { code?: number }
-      err.code = mocks.exit
-      cb(err, '', 'Not logged in')
-    }
-  }),
+  execFile: vi.fn(
+    (
+      _bin: string,
+      _args: string[],
+      _opts: unknown,
+      cb: (err: (Error & { code?: number }) | null, stdout: string, stderr: string) => void,
+    ) => {
+      if (mocks.exit === 0) cb(null, '', '')
+      else {
+        const err = new Error('failed') as Error & { code?: number }
+        err.code = mocks.exit
+        cb(err, '', 'Not logged in')
+      }
+    },
+  ),
 }))
 
 vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/switchboard-vitest') } }))
@@ -61,7 +63,9 @@ import type { BackendHost } from '../../src/main/backend/host'
 
 class FakeHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
-  handle(channel: string, fn: (...args: unknown[]) => unknown): void { this.handlers.set(channel, fn) }
+  handle(channel: string, fn: (...args: unknown[]) => unknown): void {
+    this.handlers.set(channel, fn)
+  }
   on(): void {}
   emit(): void {}
   async invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -80,8 +84,17 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
 
 function instance(over: Record<string, unknown>) {
   return {
-    id: 'x', agentType: 'codex', displayName: 'X', accentColor: null, authMode: 'env',
-    env: {}, oauthDir: null, configJson: null, enabled: true, createdAt: 0, updatedAt: 0,
+    id: 'x',
+    agentType: 'codex',
+    displayName: 'X',
+    accentColor: null,
+    authMode: 'env',
+    env: {},
+    oauthDir: null,
+    configJson: null,
+    enabled: true,
+    createdAt: 0,
+    updatedAt: 0,
     ...over,
   }
 }
@@ -104,9 +117,12 @@ describe('Settings Test probe - login hint names the tested home (behavior 2)', 
   })
 
   it('points a failing legacy env-mode claude profile at its overlay home', async () => {
-    mocks.full.mockReturnValue(instance({
-      agentType: 'claude-code', env: { CLAUDE_CONFIG_DIR: '/tmp/legacy-claude' },
-    }))
+    mocks.full.mockReturnValue(
+      instance({
+        agentType: 'claude-code',
+        env: { CLAUDE_CONFIG_DIR: '/tmp/legacy-claude' },
+      }),
+    )
     mocks.env.mockReturnValue({ CLAUDE_CONFIG_DIR: '/tmp/legacy-claude' })
 
     const { ok, message } = await testInstance('x')

@@ -27,17 +27,20 @@ describe('Settings pages', () => {
 
   // Both lists are built at import from the platform, so each one re-imports
   // with navigator.platform pinned (the macOS-only terminal keys differ).
-  it.each(['MacIntel', 'Linux x86_64', 'Win32'])('binds every row that has a default, and nothing else, on %s', async (platform) => {
-    vi.resetModules()
-    vi.stubGlobal('navigator', { platform })
-    try {
-      const rows = await import('../../src/renderer/components/settings/settings-rows')
-      const values = await import('../../src/renderer/components/settings/setting-values')
-      const withDefault = rows.SETTING_ROWS.filter((row) => row.defaultValue !== undefined).map((row) => row.id)
-      expect([...values.SETTING_BINDING_IDS].sort()).toEqual(withDefault.sort())
-      expect(withDefault.includes('keyboard.terminal.kill-word')).toBe(platform === 'MacIntel')
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
+  it.each(['MacIntel', 'Linux x86_64', 'Win32'])(
+    'binds every row that has a default, and nothing else, on %s',
+    async (platform) => {
+      vi.resetModules()
+      vi.stubGlobal('navigator', { platform })
+      try {
+        const rows = await import('../../src/renderer/components/settings/settings-rows')
+        const values = await import('../../src/renderer/components/settings/setting-values')
+        const withDefault = rows.SETTING_ROWS.filter((row) => row.defaultValue !== undefined).map((row) => row.id)
+        expect([...values.SETTING_BINDING_IDS].sort()).toEqual(withDefault.sort())
+        expect(withDefault.includes('keyboard.terminal.kill-word')).toBe(platform === 'MacIntel')
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    },
+  )
 })

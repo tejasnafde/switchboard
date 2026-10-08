@@ -84,8 +84,7 @@ export function resolveSessionDefaults(tiers: {
   const { requested, conversation, machine } = tiers
   // Per tier, so a bad mode from a client falls through instead of poisoning.
   const runtimeMode =
-    [requested.runtimeMode, conversation.runtimeMode, machine.runtimeMode].find(isRuntimeMode) ??
-    FALLBACK_RUNTIME_MODE
+    [requested.runtimeMode, conversation.runtimeMode, machine.runtimeMode].find(isRuntimeMode) ?? FALLBACK_RUNTIME_MODE
 
   return {
     runtimeMode,

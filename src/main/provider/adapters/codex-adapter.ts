@@ -25,12 +25,7 @@ import { decidePermission, denialMessage } from '../policy'
 import { parseCodexTodoItems, parseCodexTodoMarkdown } from './codex-todo'
 import { markAgentSpawnEnv } from '../agent-spawn-env'
 import { applyEnvOverlay } from '../env-overlay'
-import {
-  createExecutableCache,
-  executableIdentity,
-  managedPath,
-  preferManagedExecutable,
-} from '../managed-bin'
+import { createExecutableCache, executableIdentity, managedPath, preferManagedExecutable } from '../managed-bin'
 import { commitCatalog, reconcileSelectedModel, shouldRefreshCatalog, type CatalogCache } from '../model-catalog'
 import { applyCodexHome, canonicalCodexHome } from '../codex-home'
 import { peekShellEnv } from '../../shell-env'
@@ -53,26 +48,26 @@ import { codexSwitchboardMcpArgs, isSwitchboardCodexElicitation } from '../../mc
  * mapping is best-effort for Codex to bias its own asking behavior.
  */
 const RUNTIME_MODE_TO_CODEX_POLICY: Record<RuntimeMode, string> = {
-  'plan': 'untrusted',
-  'sandbox': 'on-request',
+  plan: 'untrusted',
+  sandbox: 'on-request',
   'accept-edits': 'on-request',
-  'auto': 'on-request',
+  auto: 'on-request',
   'full-access': 'never',
 }
 
 const RUNTIME_MODE_TO_CODEX_THREAD_SANDBOX: Record<RuntimeMode, string> = {
-  'plan': 'read-only',
-  'sandbox': 'read-only',
+  plan: 'read-only',
+  sandbox: 'read-only',
   'accept-edits': 'workspace-write',
-  'auto': 'workspace-write',
+  auto: 'workspace-write',
   'full-access': 'danger-full-access',
 }
 
 const RUNTIME_MODE_TO_CODEX_TURN_SANDBOX: Record<RuntimeMode, { type: string }> = {
-  'plan': { type: 'readOnly' },
-  'sandbox': { type: 'readOnly' },
+  plan: { type: 'readOnly' },
+  sandbox: { type: 'readOnly' },
   'accept-edits': { type: 'workspaceWrite' },
-  'auto': { type: 'workspaceWrite' },
+  auto: { type: 'workspaceWrite' },
   'full-access': { type: 'dangerFullAccess' },
 }
 
@@ -161,10 +156,7 @@ interface ToolOutputAccumulator {
   totalChars: number
 }
 
-function appendToolOutput(
-  current: ToolOutputAccumulator | undefined,
-  delta: string,
-): ToolOutputAccumulator {
+function appendToolOutput(current: ToolOutputAccumulator | undefined, delta: string): ToolOutputAccumulator {
   const half = MAX_TOOL_OUTPUT_CHARS / 2
   if (!current) {
     if (delta.length <= MAX_TOOL_OUTPUT_CHARS) {
@@ -232,7 +224,12 @@ interface ActiveSession {
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
   /** Messages sent with delivery 'queue' while a turn ran, oldest first. */
-  queuedTurns: Array<{ id?: string; message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
+  queuedTurns: Array<{
+    id?: string
+    message: string
+    runtimeMode?: RuntimeMode
+    images?: Array<{ url: string; mimeType?: string }>
+  }>
   /** Nothing queued starts until the user resumes: a turn failed (see holdQueue). */
   queueHeld: boolean
   /** Active codex turn id (from turn/start response or turn/started); null
@@ -245,7 +242,7 @@ interface ActiveSession {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' ? value as Record<string, unknown> : null
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
 }
 
 function stringifyMaybe(value: unknown): string | undefined {
@@ -283,9 +280,8 @@ type ParsedMcpElicitation =
     }
 
 function mcpElicitationToolName(request: Record<string, unknown>): string {
-  const serverName = typeof request.serverName === 'string' && request.serverName.trim()
-    ? request.serverName.trim()
-    : null
+  const serverName =
+    typeof request.serverName === 'string' && request.serverName.trim() ? request.serverName.trim() : null
   const message = typeof request.message === 'string' ? request.message : ''
   const messageTool = message.match(/\brun tool "([^"]+)"/i)?.[1]?.trim()
   if (serverName && messageTool) return `${serverName}.${messageTool}`
@@ -317,36 +313,39 @@ function parseMcpElicitation(params: unknown): ParsedMcpElicitation | null {
     }
 
     fields.push({ id, type })
-    const enumValues = type === 'array'
-      ? asRecord(property.items)?.enum
-      : property.enum
-    const labels = Array.isArray(enumValues)
-      ? enumValues.map(String)
-      : type === 'boolean' ? ['Yes', 'No'] : []
+    const enumValues = type === 'array' ? asRecord(property.items)?.enum : property.enum
+    const labels = Array.isArray(enumValues) ? enumValues.map(String) : type === 'boolean' ? ['Yes', 'No'] : []
 
-    return [{
-      id,
-      header: typeof property.title === 'string' ? property.title : id,
-      question: typeof property.description === 'string'
-        ? property.description
-        : typeof request.message === 'string' ? request.message : id,
-      options: labels.map((label) => ({ label })),
-      multiSelect: type === 'array',
-    }]
+    return [
+      {
+        id,
+        header: typeof property.title === 'string' ? property.title : id,
+        question:
+          typeof property.description === 'string'
+            ? property.description
+            : typeof request.message === 'string'
+              ? request.message
+              : id,
+        options: labels.map((label) => ({ label })),
+        multiSelect: type === 'array',
+      },
+    ]
   })
 
   return fields.length > 0 ? { kind: 'form', fields, questions } : null
 }
 
 function mcpFormContent(fields: McpElicitationField[], answers: string[][]): Record<string, unknown> {
-  return Object.fromEntries(fields.map((field, index) => {
-    const values = answers[index] ?? []
-    const first = values[0] ?? ''
-    if (field.type === 'boolean') return [field.id, first.toLowerCase() === 'yes' || first === 'true']
-    if (field.type === 'number' || field.type === 'integer') return [field.id, Number(first)]
-    if (field.type === 'array') return [field.id, values]
-    return [field.id, first]
-  }))
+  return Object.fromEntries(
+    fields.map((field, index) => {
+      const values = answers[index] ?? []
+      const first = values[0] ?? ''
+      if (field.type === 'boolean') return [field.id, first.toLowerCase() === 'yes' || first === 'true']
+      if (field.type === 'number' || field.type === 'integer') return [field.id, Number(first)]
+      if (field.type === 'array') return [field.id, values]
+      return [field.id, first]
+    }),
+  )
 }
 
 function codexFileEdits(item: Record<string, unknown>): Array<{
@@ -396,20 +395,22 @@ function codexFileChangeOutput(status: unknown): string {
   return 'Finished'
 }
 
-export function parseCodexModels(input: unknown): Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> {
+export function parseCodexModels(
+  input: unknown,
+): Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> {
   const root = asRecord(input)
   const entries = Array.isArray(root?.data) ? root.data : []
   return entries.flatMap((entry) => {
     const model = asRecord(entry)
-    const id = typeof model?.id === 'string'
-      ? model.id
-      : (typeof model?.model === 'string' ? model.model : null)
+    const id = typeof model?.id === 'string' ? model.id : typeof model?.model === 'string' ? model.model : null
     if (!id || model?.hidden === true) return []
-    return [{
-      id,
-      label: typeof model?.displayName === 'string' ? model.displayName : id,
-      tier: inferModelTier(id),
-    }]
+    return [
+      {
+        id,
+        label: typeof model?.displayName === 'string' ? model.displayName : id,
+        tier: inferModelTier(id),
+      },
+    ]
   })
 }
 
@@ -509,9 +510,12 @@ export function parseCodexSkills(input: unknown): ProviderSkill[] {
     const name = rawName.replace(/^\$/, '').replace(/^\//, '').trim()
     if (!name) continue
     const description = typeof obj.description === 'string' ? obj.description : undefined
-    const argumentHint = typeof obj.argumentHint === 'string'
-      ? obj.argumentHint
-      : (typeof obj.argument_hint === 'string' ? obj.argument_hint : undefined)
+    const argumentHint =
+      typeof obj.argumentHint === 'string'
+        ? obj.argumentHint
+        : typeof obj.argument_hint === 'string'
+          ? obj.argument_hint
+          : undefined
     out.push({
       name,
       ...(description ? { description } : {}),
@@ -636,10 +640,7 @@ export class CodexAdapter implements ProviderAdapter {
     return codexExecutable.refresh() !== null
   }
 
-  async startSession(
-    opts: SessionStartOpts,
-    onEvent: (event: RuntimeEvent) => void,
-  ): Promise<ProviderSession> {
+  async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
     const executable = codexExecutable.refresh()
     if (!executable) {
       throw new Error('Codex CLI not found. Install with: npm install -g @openai/codex')
@@ -671,7 +672,9 @@ export class CodexAdapter implements ProviderAdapter {
       threadId: resumeThreadId,
       switchboardMcp: !!opts.switchboardMcp,
       skills: null,
-      models: opts.knownModels?.length ? { models: opts.knownModels, identity: codexExecutable.current()?.identity ?? null } : null,
+      models: opts.knownModels?.length
+        ? { models: opts.knownModels, identity: codexExecutable.current()?.identity ?? null }
+        : null,
       turnStartedAt: null,
       queuedTurns: [],
       queueHeld: false,
@@ -814,7 +817,10 @@ export class CodexAdapter implements ProviderAdapter {
         try {
           active.child.kill('SIGTERM')
         } catch (killErr) {
-          log.debug(`SIGTERM on codex child failed during init cleanup, likely already dead`, { threadId: opts.threadId, killErr })
+          log.debug(`SIGTERM on codex child failed during init cleanup, likely already dead`, {
+            threadId: opts.threadId,
+            killErr,
+          })
         }
         active.child = null
       }
@@ -901,7 +907,9 @@ export class CodexAdapter implements ProviderAdapter {
     // catalog after the renderer's first listModels() call.
     const reconciledModel = reconcileSelectedModel(active.session.model, active.models)
     if (active.session.model && !reconciledModel) {
-      log.warn(`codex model ${active.session.model} is no longer in the live catalog for ${threadId} - clearing it so the CLI default takes over`)
+      log.warn(
+        `codex model ${active.session.model} is no longer in the live catalog for ${threadId} - clearing it so the CLI default takes over`,
+      )
       active.onEvent({ type: 'model.unavailable', threadId, model: active.session.model })
     }
     active.session.model = reconciledModel
@@ -938,11 +946,12 @@ export class CodexAdapter implements ProviderAdapter {
     // status/timestamp; steering leaves the in-flight turn's clock alone.
     const activeTurnId = active.activeTurnId
     if (activeTurnId) {
-      const steer = (expectedTurnId: string) => this.sendRpc(active, 'turn/steer', {
-        threadId: active.threadId,
-        input: content,
-        expectedTurnId,
-      })
+      const steer = (expectedTurnId: string) =>
+        this.sendRpc(active, 'turn/steer', {
+          threadId: active.threadId,
+          input: content,
+          expectedTurnId,
+        })
       try {
         const steered = await steer(activeTurnId)
         // Track the (possibly advanced) turn id so a follow-up steer targets
@@ -1019,7 +1028,9 @@ export class CodexAdapter implements ProviderAdapter {
           await startTurn()
         } catch (err) {
           if (!isMissingThreadError(err)) throw err
-          log.warn(`codex thread disappeared, retrying turn on a fresh thread: ${err instanceof Error ? err.message : String(err)}`)
+          log.warn(
+            `codex thread disappeared, retrying turn on a fresh thread: ${err instanceof Error ? err.message : String(err)}`,
+          )
           active.threadId = null
           active.session.sessionId = undefined
           await ensureThread()
@@ -1105,15 +1116,18 @@ export class CodexAdapter implements ProviderAdapter {
     const next = active.queuedTurns.shift()
     if (!next) return
     if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'started' })
-    this.deliverTurn(threadId, next.message, next.runtimeMode, next.images, undefined, undefined, true).catch((err: unknown) => {
-      const reason = err instanceof Error ? err.message : String(err)
-      log.warn(`queued codex turn failed to start for ${threadId}: ${reason}`)
-      active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
-      if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'failed', error: reason })
-      active.onEvent({ type: 'turn.completed', threadId })
-      // The next one would most likely fail the same way.
-      this.holdQueue(threadId, active, 'A queued message could not be sent.')
-    })
+    this.deliverTurn(threadId, next.message, next.runtimeMode, next.images, undefined, undefined, true).catch(
+      (err: unknown) => {
+        const reason = err instanceof Error ? err.message : String(err)
+        log.warn(`queued codex turn failed to start for ${threadId}: ${reason}`)
+        active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
+        if (next.id)
+          active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'failed', error: reason })
+        active.onEvent({ type: 'turn.completed', threadId })
+        // The next one would most likely fail the same way.
+        this.holdQueue(threadId, active, 'A queued message could not be sent.')
+      },
+    )
   }
 
   /**
@@ -1186,7 +1200,9 @@ export class CodexAdapter implements ProviderAdapter {
       // No runtime mode: the steer joins the running turn, whose mode stands.
       await this.deliverTurn(threadId, turn.message, undefined, turn.images, 'steer', undefined, true)
     } catch (err) {
-      log.warn(`could not steer queued message into ${threadId}, keeping it queued: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `could not steer queued message into ${threadId}, keeping it queued: ${err instanceof Error ? err.message : String(err)}`,
+      )
       active.queuedTurns.splice(Math.min(index, active.queuedTurns.length), 0, turn)
       if (!active.activeTurnId && !active.turnStartPromise) this.drainQueued(threadId, active)
       throw err
@@ -1229,11 +1245,7 @@ export class CodexAdapter implements ProviderAdapter {
     active.onEvent({ type: 'status', threadId, status: 'idle' })
   }
 
-  async respondToRequest(
-    threadId: string,
-    requestId: string,
-    decision: ApprovalDecision,
-  ): Promise<void> {
+  async respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.child) return
 
@@ -1305,12 +1317,12 @@ export class CodexAdapter implements ProviderAdapter {
           _meta: null,
         }
       : pending.questionIds
-      ? {
-          answers: Object.fromEntries(
-            pending.questionIds.map((id, index) => [id, { answers: answers[index] ?? [] }]),
-          ),
-        }
-      : { answers }
+        ? {
+            answers: Object.fromEntries(
+              pending.questionIds.map((id, index) => [id, { answers: answers[index] ?? [] }]),
+            ),
+          }
+        : { answers }
     // Respond to the server's original userInput request with the answers.
     this.writeMessage(active, {
       jsonrpc: '2.0',
@@ -1378,12 +1390,16 @@ export class CodexAdapter implements ProviderAdapter {
     })
   }
 
-  private handleItemLifecycle(threadId: string, active: ActiveSession, notification: { method: string; params?: unknown }): void {
+  private handleItemLifecycle(
+    threadId: string,
+    active: ActiveSession,
+    notification: { method: string; params?: unknown },
+  ): void {
     const params = asRecord(notification.params)
     const item = asRecord(params?.item)
     if (!item) return
 
-    const itemId = typeof item.id === 'string' ? item.id : (typeof params?.itemId === 'string' ? params.itemId : null)
+    const itemId = typeof item.id === 'string' ? item.id : typeof params?.itemId === 'string' ? params.itemId : null
     if (!itemId) return
 
     const itemType = typeof item.type === 'string' ? item.type : ''
@@ -1474,9 +1490,10 @@ export class CodexAdapter implements ProviderAdapter {
 
     if (notification.method === 'item/completed') {
       const completeOutput = codexToolOutput(item)
-      const output = completeOutput !== undefined
-        ? boundedToolOutput(completeOutput)
-        : accumulatedToolOutput(active.toolOutputText.get(itemId))
+      const output =
+        completeOutput !== undefined
+          ? boundedToolOutput(completeOutput)
+          : accumulatedToolOutput(active.toolOutputText.get(itemId))
       active.onEvent({
         type: 'tool.completed',
         threadId,
@@ -1530,7 +1547,8 @@ export class CodexAdapter implements ProviderAdapter {
     if (method === 'mcpServer/elicitation/request') {
       const elicitation = parseMcpElicitation(request.params)
       if (!elicitation) {
-        const message = 'Unsupported Codex MCP elicitation request. The tool call was cancelled because Switchboard cannot render this request shape.'
+        const message =
+          'Unsupported Codex MCP elicitation request. The tool call was cancelled because Switchboard cannot render this request shape.'
         // Shape only: the message and field values can carry user data.
         const params = asRecord(request.params)
         const fieldNames = Object.keys(asRecord(asRecord(params?.requestedSchema)?.properties) ?? {})
@@ -1626,7 +1644,7 @@ export class CodexAdapter implements ProviderAdapter {
       const toolName: string = method.includes('commandExecution')
         ? 'shell'
         : (request.params?.toolName ?? request.params?.path ?? 'tool')
-      const requestType = method.includes('commandExecution') ? 'command' as const : 'file' as const
+      const requestType = method.includes('commandExecution') ? ('command' as const) : ('file' as const)
       const currentMode = active.session.runtimeMode
       const policy = decidePermission(currentMode, toolName)
 
@@ -1679,7 +1697,11 @@ export class CodexAdapter implements ProviderAdapter {
     // AskUserQuestion equivalent - Codex may surface interactive questions
     // under a different method name. If observed, route through the same
     // question.asked flow so QuestionCard renders for Codex too.
-    if (method === 'item/tool/requestUserInput' || method === 'item/userInput/request' || method === 'askUserQuestion') {
+    if (
+      method === 'item/tool/requestUserInput' ||
+      method === 'item/userInput/request' ||
+      method === 'askUserQuestion'
+    ) {
       const requestId = `q_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const params = request.params ?? {}
       const questions = Array.isArray(params.questions)
@@ -1721,7 +1743,10 @@ export class CodexAdapter implements ProviderAdapter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw JSON-RPC notification from codex app-server; method-dependent payload shape
   private handleNotification(threadId: string, active: ActiveSession, notification: any): void {
     const method = notification.method as string
-    if (WIRE_LOG) log.debug(`handling codex notification ${method}: ${truncateLogPayload(JSON.stringify(notification.params ?? {}))}`)
+    if (WIRE_LOG)
+      log.debug(
+        `handling codex notification ${method}: ${truncateLogPayload(JSON.stringify(notification.params ?? {}))}`,
+      )
 
     // App-server multiplexes foreground and delegated threads over one stdio
     // connection. A notification carrying a different native thread belongs
@@ -1729,11 +1754,12 @@ export class CodexAdapter implements ProviderAdapter {
     // Foreground identity is established only by correlated start/resume RPCs.
     const notificationParams = asRecord(notification.params) ?? {}
     const notificationThread = asRecord(notificationParams.thread) ?? {}
-    const nativeThreadId = typeof notificationParams.threadId === 'string'
-      ? notificationParams.threadId
-      : typeof notificationThread.id === 'string'
-        ? notificationThread.id
-        : null
+    const nativeThreadId =
+      typeof notificationParams.threadId === 'string'
+        ? notificationParams.threadId
+        : typeof notificationThread.id === 'string'
+          ? notificationThread.id
+          : null
     if (method === 'thread/started' || (nativeThreadId && active.threadId && nativeThreadId !== active.threadId)) {
       return
     }
@@ -1769,10 +1795,7 @@ export class CodexAdapter implements ProviderAdapter {
         })
       }
     } else if (method === 'item/agentMessage/delta') {
-      const text = notification.params?.delta
-        || notification.params?.text
-        || notification.params?.content
-        || ''
+      const text = notification.params?.delta || notification.params?.text || notification.params?.content || ''
       if (text) {
         const messageId = notification.params?.itemId ?? `msg_${Date.now()}`
         // `delta` is an increment; `text`/`content` are whole-body forms that
@@ -1793,12 +1816,8 @@ export class CodexAdapter implements ProviderAdapter {
         })
       }
     } else if (method === 'error') {
-      const message = notification.params?.error?.message
-        ?? notification.params?.message
-        ?? 'Codex reported an error'
-      const turnId = typeof notification.params?.turnId === 'string'
-        ? notification.params.turnId
-        : active.activeTurnId
+      const message = notification.params?.error?.message ?? notification.params?.message ?? 'Codex reported an error'
+      const turnId = typeof notification.params?.turnId === 'string' ? notification.params.turnId : active.activeTurnId
       if (notification.params?.willRetry) {
         log.warn(`codex retry notification: ${message}`, notification.params ?? {})
         active.onEvent({
@@ -1848,9 +1867,7 @@ export class CodexAdapter implements ProviderAdapter {
         active.onEvent({
           type: 'turn.completed',
           threadId,
-          ...(typeof notification.params?.turn?.id === 'string'
-            ? { turnId: notification.params.turn.id }
-            : {}),
+          ...(typeof notification.params?.turn?.id === 'string' ? { turnId: notification.params.turn.id } : {}),
           costUsd: notification.params?.totalCostUsd,
           numTurns: notification.params?.numTurns,
           ...(durationMs !== undefined ? { durationMs } : {}),
@@ -1933,9 +1950,9 @@ export class CodexAdapter implements ProviderAdapter {
         })
       }
     } else if (
-      method === 'account/rateLimits/updated'
-      || method === 'remoteControl/status/changed'
-      || method === 'mcpServer/startupStatus/updated'
+      method === 'account/rateLimits/updated' ||
+      method === 'remoteControl/status/changed' ||
+      method === 'mcpServer/startupStatus/updated'
     ) {
       // Telemetry-only notifications from newer codex builds.
       // Keep them out of "unhandled" logs to reduce noise.

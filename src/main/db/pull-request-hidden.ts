@@ -40,20 +40,27 @@ export function unhidePullRequestKeys(keys: readonly string[]): void {
 
 /** `prKey` -> when it was hidden. */
 export function listHiddenPullRequests(): Map<string, number> {
-  const rows = getDb().prepare('SELECT pr_key, hidden_at FROM pull_request_hidden').all() as Array<{ pr_key: string; hidden_at: number }>
+  const rows = getDb().prepare('SELECT pr_key, hidden_at FROM pull_request_hidden').all() as Array<{
+    pr_key: string
+    hidden_at: number
+  }>
   return new Map(rows.map((r) => [r.pr_key, r.hidden_at]))
 }
 
 export function hidePullRequestRepos(repos: readonly RepoRef[], now = Date.now()): void {
   const db = getDb()
   const put = db.prepare('INSERT OR REPLACE INTO pull_request_hidden_repos (repo_key, hidden_at) VALUES (?, ?)')
-  db.transaction(() => { for (const repo of repos) put.run(repoKey(repo), now) })()
+  db.transaction(() => {
+    for (const repo of repos) put.run(repoKey(repo), now)
+  })()
 }
 
 export function unhidePullRequestRepos(repos: readonly RepoRef[]): void {
   const db = getDb()
   const del = db.prepare('DELETE FROM pull_request_hidden_repos WHERE repo_key = ?')
-  db.transaction(() => { for (const repo of repos) del.run(repoKey(repo)) })()
+  db.transaction(() => {
+    for (const repo of repos) del.run(repoKey(repo))
+  })()
 }
 
 /** `repoKey`s hidden from Reviews. */

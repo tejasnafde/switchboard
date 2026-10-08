@@ -18,7 +18,15 @@ const plan: PendingBlockingEvent = { type: 'plan.proposed', threadId: 't1', plan
 describe('shownPendingKeys', () => {
   it('collects requestId from approval/question items and planId from a plan item', () => {
     const items: FeedItem[] = [
-      { kind: 'approval', id: 'a-r1', requestId: 'r1', toolName: 'Bash', detail: 'ls', requestType: 'command', state: 'pending' },
+      {
+        kind: 'approval',
+        id: 'a-r1',
+        requestId: 'r1',
+        toolName: 'Bash',
+        detail: 'ls',
+        requestType: 'command',
+        state: 'pending',
+      },
       { kind: 'question', id: 'q-q1', requestId: 'q1', questions: [] },
       { kind: 'plan', id: 'p-p1', planId: 'p1', markdown: '# Plan' },
       { kind: 'text', id: 't-1', text: 'hi', stream: 'assistant', done: true },
@@ -35,7 +43,15 @@ describe('shownPendingKeys', () => {
 describe('missingPendingFeedItems', () => {
   it('drops pending events already represented in the feed', () => {
     const items: FeedItem[] = [
-      { kind: 'approval', id: 'a-r1', requestId: 'r1', toolName: 'Bash', detail: 'ls', requestType: 'command', state: 'pending' },
+      {
+        kind: 'approval',
+        id: 'a-r1',
+        requestId: 'r1',
+        toolName: 'Bash',
+        detail: 'ls',
+        requestType: 'command',
+        state: 'pending',
+      },
     ]
     expect(missingPendingFeedItems([approval, question, plan], items)).toEqual([question, plan])
   })
@@ -49,8 +65,25 @@ describe('expiredOpenRequests', () => {
   it('names open cards the backend no longer holds, never one that opened during the call', async () => {
     const { expiredOpenRequests, openRequestIds } = await import('../../apps/mobile/src/lib/pending-request-recovery')
     const feed: FeedItem[] = [
-      { kind: 'approval', id: 'a-r1', requestId: 'r1', toolName: 'Bash', detail: 'ls', requestType: 'command', state: 'pending' },
-      { kind: 'approval', id: 'a-r2', requestId: 'r2', toolName: 'Bash', detail: 'ls', requestType: 'command', state: 'approve', closed: true },
+      {
+        kind: 'approval',
+        id: 'a-r1',
+        requestId: 'r1',
+        toolName: 'Bash',
+        detail: 'ls',
+        requestType: 'command',
+        state: 'pending',
+      },
+      {
+        kind: 'approval',
+        id: 'a-r2',
+        requestId: 'r2',
+        toolName: 'Bash',
+        detail: 'ls',
+        requestType: 'command',
+        state: 'approve',
+        closed: true,
+      },
       { kind: 'question', id: 'q-q1', requestId: 'q1', questions: [] },
       { kind: 'question', id: 'q-q2', requestId: 'q2', questions: [], answers: [['a']] },
     ]

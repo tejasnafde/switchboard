@@ -82,9 +82,7 @@ export function KanbanView(): React.ReactElement {
 
   // 5px activation distance keeps clicks (open edit modal) distinct
   // from drags. Without it every mousedown becomes a drag.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  )
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   // Hydrate projects + workspaces once on mount. The renderer doesn't
   // have a project-list store yet (sidebar fetches its own copy on
@@ -109,12 +107,19 @@ export function KanbanView(): React.ReactElement {
     const off = window.api.app.onConversationsChanged(() => {
       fetchProjects().catch((err) => log.warn('getProjects failed on conversations-changed', err))
     })
-    return () => { cancelled = true; off() }
+    return () => {
+      cancelled = true
+      off()
+    }
   }, [])
 
-  useEffect(() => window.api.worktreeCreation.onProgress((event) => {
-    void reconcileWorktreeProgress(event)
-  }), [reconcileWorktreeProgress])
+  useEffect(
+    () =>
+      window.api.worktreeCreation.onProgress((event) => {
+        void reconcileWorktreeProgress(event)
+      }),
+    [reconcileWorktreeProgress],
+  )
 
   // Projects in scope of the current workspace filter.
   const scopedProjects = useMemo(() => {
@@ -136,9 +141,7 @@ export function KanbanView(): React.ReactElement {
   // narrows to that project; otherwise unions cards across all scoped
   // projects.
   const allCards: KanbanCard[] = useMemo(() => {
-    const inScope = projectFilter
-      ? scopedProjects.filter((p) => p.path === projectFilter)
-      : scopedProjects
+    const inScope = projectFilter ? scopedProjects.filter((p) => p.path === projectFilter) : scopedProjects
     const out: KanbanCard[] = []
     for (const p of inScope) {
       const list = byProject[p.path]
@@ -150,10 +153,11 @@ export function KanbanView(): React.ReactElement {
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase()
     if (!q) return allCards
-    return allCards.filter((c) =>
-      c.title.toLowerCase().includes(q) ||
-      c.description.toLowerCase().includes(q) ||
-      c.tags.some((t) => t.toLowerCase().includes(q))
+    return allCards.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        c.description.toLowerCase().includes(q) ||
+        c.tags.some((t) => t.toLowerCase().includes(q)),
     )
   }, [allCards, filter])
 
@@ -216,7 +220,7 @@ export function KanbanView(): React.ReactElement {
     [move, setAppView, hydrate],
   )
 
-  const editingCard = editingId ? allCards.find((c) => c.id === editingId) ?? null : null
+  const editingCard = editingId ? (allCards.find((c) => c.id === editingId) ?? null) : null
   // "+ New card" needs a project to attach to. We seed the modal with
   // the most specific guess available (project filter, or the only
   // project in scope), and pass the full scoped list so the modal can
@@ -231,17 +235,20 @@ export function KanbanView(): React.ReactElement {
 
   // Droppable id is the column's status (see useDroppable below), so
   // we can map directly from drop target → new status.
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    setDraggingId(null)
-    const cardId = String(event.active.id)
-    const overId = event.over?.id != null ? String(event.over.id) : null
-    if (!overId || !KANBAN_COLUMNS.some((c) => c.id === overId)) return
-    const card = allCards.find((c) => c.id === cardId)
-    if (!card || card.status === overId) return
-    void move(cardId, overId as KanbanStatus)
-  }, [allCards, move])
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setDraggingId(null)
+      const cardId = String(event.active.id)
+      const overId = event.over?.id != null ? String(event.over.id) : null
+      if (!overId || !KANBAN_COLUMNS.some((c) => c.id === overId)) return
+      const card = allCards.find((c) => c.id === cardId)
+      if (!card || card.status === overId) return
+      void move(cardId, overId as KanbanStatus)
+    },
+    [allCards, move],
+  )
 
-  const draggingCard = draggingId ? allCards.find((c) => c.id === draggingId) ?? null : null
+  const draggingCard = draggingId ? (allCards.find((c) => c.id === draggingId) ?? null) : null
 
   return (
     <div style={paneStyle}>
@@ -255,7 +262,9 @@ export function KanbanView(): React.ReactElement {
         >
           <option value="">All workspaces</option>
           {workspaces.map((w) => (
-            <option key={w.id} value={w.id}>{w.name}</option>
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
           ))}
           <option value={UNGROUPED}>Ungrouped</option>
         </select>
@@ -267,7 +276,9 @@ export function KanbanView(): React.ReactElement {
         >
           <option value="">All projects ({scopedProjects.length})</option>
           {scopedProjects.map((p) => (
-            <option key={p.path} value={p.path}>{p.name}</option>
+            <option key={p.path} value={p.path}>
+              {p.name}
+            </option>
           ))}
         </select>
         <input
@@ -300,11 +311,7 @@ export function KanbanView(): React.ReactElement {
         >
           ＋ New card
         </button>
-        <button
-          onClick={() => setAppView('chats')}
-          style={secondaryBtnStyle}
-          title="Back to chats (⌘⇧K)"
-        >
+        <button onClick={() => setAppView('chats')} style={secondaryBtnStyle} title="Back to chats (⌘⇧K)">
           ✕ Close
         </button>
       </div>
@@ -312,7 +319,9 @@ export function KanbanView(): React.ReactElement {
       {launchError && (
         <div style={launchErrStyle}>
           <span style={{ flex: 1 }}>{launchError}</span>
-          <button onClick={() => setLaunchError(null)} style={closeErrBtnStyle} title="Dismiss">✕</button>
+          <button onClick={() => setLaunchError(null)} style={closeErrBtnStyle} title="Dismiss">
+            ✕
+          </button>
         </div>
       )}
 
@@ -326,8 +335,12 @@ export function KanbanView(): React.ReactElement {
               cards={filtered.filter((c) => c.status === col.id)}
               projectByPath={projectByPath}
               onOpen={(id) => setEditingId(id)}
-              onStart={(c) => { void startCardBackground(c) }}
-              onStartAndOpen={(c) => { void startCardAndOpen(c) }}
+              onStart={(c) => {
+                void startCardBackground(c)
+              }}
+              onStartAndOpen={(c) => {
+                void startCardAndOpen(c)
+              }}
               showProjectChip={!projectFilter}
               draggingId={draggingId}
             />
@@ -337,7 +350,9 @@ export function KanbanView(): React.ReactElement {
           {draggingCard && (
             <CardTilePresentation
               card={draggingCard}
-              projectName={projectByPath.get(draggingCard.projectPath)?.name ?? draggingCard.projectPath.split('/').pop() ?? ''}
+              projectName={
+                projectByPath.get(draggingCard.projectPath)?.name ?? draggingCard.projectPath.split('/').pop() ?? ''
+              }
               storedStatusLine={storedStatusLine(projectByPath, draggingCard)}
               showProjectChip={!projectFilter}
               isOverlay
@@ -365,7 +380,10 @@ export function KanbanView(): React.ReactElement {
       {managingWorktrees && projectFilter && (
         <WorktreeManagerModal
           projectPath={projectFilter}
-          onClose={() => { setManagingWorktrees(false); void hydrate(projectFilter) }}
+          onClose={() => {
+            setManagingWorktrees(false)
+            void hydrate(projectFilter)
+          }}
         />
       )}
     </div>
@@ -421,9 +439,7 @@ function Column({
           />
         ))}
         {cards.length === 0 && (
-          <div style={{ opacity: 0.4, fontSize: 11, padding: 8, textAlign: 'center' }}>
-            (drop cards here)
-          </div>
+          <div style={{ opacity: 0.4, fontSize: 11, padding: 8, textAlign: 'center' }}>(drop cards here)</div>
         )}
       </div>
     </div>
@@ -433,7 +449,9 @@ function Column({
 /** The backend's stored line for a card's chat, shown until its messages load. */
 export function storedStatusLine(projectByPath: Map<string, Project>, card: KanbanCard): string | undefined {
   if (!card.conversationId) return undefined
-  return projectByPath.get(card.projectPath)?.sessions.find((s) => s.id === card.conversationId)?.statusLine ?? undefined
+  return (
+    projectByPath.get(card.projectPath)?.sessions.find((s) => s.id === card.conversationId)?.statusLine ?? undefined
+  )
 }
 
 /**
@@ -468,7 +486,12 @@ function DraggableCardTile({
       role="button"
       tabIndex={0}
       onClick={onOpen}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
     >
       <CardTilePresentation
         card={card}
@@ -506,23 +529,20 @@ function CardTilePresentation({
   const actOnWorktree = useKanbanStore((s) => s.actOnWorktree)
   // Subscribed only when a session is linked, so cardless tiles skip the lookup.
   const liveStatus = useAgentStore((s) =>
-    card.conversationId
-      ? s.sessions.find((x) => x.id === card.conversationId)?.status
-      : undefined,
+    card.conversationId ? s.sessions.find((x) => x.id === card.conversationId)?.status : undefined,
   )
   const unread = useAgentStore((s) =>
-    card.conversationId
-      ? s.sessions.find((x) => x.id === card.conversationId)?.unreadCount ?? 0
-      : 0,
+    card.conversationId ? (s.sessions.find((x) => x.id === card.conversationId)?.unreadCount ?? 0) : 0,
   )
   // Digest when the agent reported one, else a raw truncated fallback - same
   // rule as the sidebar Recents row: live from loaded messages, else the
   // line the backend stored when the last turn ended.
-  const previewLine = useAgentStore((s) =>
-    card.conversationId
-      ? sessionPreviewLine(s.sessions.find((x) => x.id === card.conversationId)?.messages ?? [])
-      : undefined,
-  ) ?? storedStatusLine
+  const previewLine =
+    useAgentStore((s) =>
+      card.conversationId
+        ? sessionPreviewLine(s.sessions.find((x) => x.id === card.conversationId)?.messages ?? [])
+        : undefined,
+    ) ?? storedStatusLine
 
   const overBudget = card.costCapUsd != null && card.costUsedUsd != null && card.costUsedUsd >= card.costCapUsd
   const hasSession = !!card.conversationId
@@ -554,7 +574,10 @@ function CardTilePresentation({
                 <button
                   onMouseDown={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => { e.stopPropagation(); onStartAndOpen() }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onStartAndOpen()
+                  }}
                   title="Jump to linked chat"
                   style={startBtnStyle}
                 >
@@ -567,7 +590,10 @@ function CardTilePresentation({
                   <button
                     onMouseDown={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); onStart() }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onStart()
+                    }}
                     title="Start (background) - kicks off the agent without leaving the board"
                     style={startBtnStyle}
                   >
@@ -578,7 +604,10 @@ function CardTilePresentation({
                   <button
                     onMouseDown={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); onStartAndOpen() }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onStartAndOpen()
+                    }}
                     title="Start and open chat"
                     style={startBtnStyle}
                   >
@@ -591,11 +620,17 @@ function CardTilePresentation({
         )}
       </div>
       {previewLine && (
-        <div style={tilePreviewStyle} title={previewLine}>{previewLine}</div>
+        <div style={tilePreviewStyle} title={previewLine}>
+          {previewLine}
+        </div>
       )}
       {card.tags.length > 0 && (
         <div style={tagsRowStyle}>
-          {card.tags.map((t) => <span key={t} style={tagStyle}>{t}</span>)}
+          {card.tags.map((t) => (
+            <span key={t} style={tagStyle}>
+              {t}
+            </span>
+          ))}
         </div>
       )}
       <div style={tileMetaRowStyle}>
@@ -606,13 +641,19 @@ function CardTilePresentation({
           </span>
         )}
         {showProjectChip && <span style={projectChipStyle}>{projectName}</span>}
-        {card.worktreePath && <span title={card.worktreePath} style={badgeStyle}>⎇ worktree</span>}
+        {card.worktreePath && (
+          <span title={card.worktreePath} style={badgeStyle}>
+            ⎇ worktree
+          </span>
+        )}
         {worktreeCreation && (
           <span title={worktreeCreation.detail} style={{ display: 'inline-flex', gap: 4 }}>
-            <span style={{
-              ...badgeStyle,
-              color: worktreeCreation.tone === 'error' ? 'var(--red, #d73a49)' : undefined,
-            }}>
+            <span
+              style={{
+                ...badgeStyle,
+                color: worktreeCreation.tone === 'error' ? 'var(--red, #d73a49)' : undefined,
+              }}
+            >
               {worktreeCreation.label}
             </span>
             {card.worktreeCreation?.recoveryActions.map((action) => (
@@ -648,13 +689,20 @@ function CardTilePresentation({
 
 function worktreeActionLabel(action: WorktreeCreationRecoveryAction): string {
   switch (action) {
-    case 'choose_setup_run': return 'Run setup'
-    case 'choose_setup_skip': return 'Skip setup'
-    case 'retain': return 'Keep'
-    case 'remove': return 'Remove'
-    case 'cancel': return 'Cancel'
-    case 'start_in_project': return 'Use project'
-    default: return 'Retry'
+    case 'choose_setup_run':
+      return 'Run setup'
+    case 'choose_setup_skip':
+      return 'Skip setup'
+    case 'retain':
+      return 'Keep'
+    case 'remove':
+      return 'Remove'
+    case 'cancel':
+      return 'Cancel'
+    case 'start_in_project':
+      return 'Use project'
+    default:
+      return 'Retry'
   }
 }
 
@@ -664,7 +712,8 @@ function Spinner(): React.ReactElement {
       aria-label="Launching"
       style={{
         display: 'inline-block',
-        width: 10, height: 10,
+        width: 10,
+        height: 10,
         border: '2px solid var(--border)',
         borderTopColor: 'var(--accent, #2563eb)',
         borderRadius: '50%',
@@ -695,42 +744,89 @@ function SessionLiveness({ status }: { status: AgentStatus | undefined }): React
   )
 }
 
-const paneStyle: CSSProperties = { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, background: 'var(--bg)' }
+const paneStyle: CSSProperties = {
+  flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  minWidth: 0,
+  minHeight: 0,
+  background: 'var(--bg)',
+}
 const toolbarStyle: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
-  borderBottom: '1px solid var(--border)', background: 'var(--bg-elev1, transparent)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '8px 12px',
+  borderBottom: '1px solid var(--border)',
+  background: 'var(--bg-elev1, transparent)',
 }
 const inputStyle: CSSProperties = {
-  fontSize: 12, padding: '4px 8px', background: 'var(--bg)', color: 'var(--fg)',
-  border: '1px solid var(--border)', borderRadius: 4, width: 200,
+  fontSize: 12,
+  padding: '4px 8px',
+  background: 'var(--bg)',
+  color: 'var(--fg)',
+  border: '1px solid var(--border)',
+  borderRadius: 4,
+  width: 200,
 }
 const selectStyle: CSSProperties = {
-  fontSize: 12, padding: '4px 8px', background: 'var(--bg)', color: 'var(--fg)',
-  border: '1px solid var(--border)', borderRadius: 4,
+  fontSize: 12,
+  padding: '4px 8px',
+  background: 'var(--bg)',
+  color: 'var(--fg)',
+  border: '1px solid var(--border)',
+  borderRadius: 4,
 }
 const primaryBtnStyle: CSSProperties = {
-  fontSize: 12, padding: '4px 12px', background: 'var(--accent, #2563eb)', color: 'white',
-  border: 'none', borderRadius: 4, cursor: 'pointer',
+  fontSize: 12,
+  padding: '4px 12px',
+  background: 'var(--accent, #2563eb)',
+  color: 'white',
+  border: 'none',
+  borderRadius: 4,
+  cursor: 'pointer',
 }
 const secondaryBtnStyle: CSSProperties = {
-  fontSize: 12, padding: '4px 10px', background: 'transparent', color: 'var(--fg)',
-  border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer',
+  fontSize: 12,
+  padding: '4px 10px',
+  background: 'transparent',
+  color: 'var(--fg)',
+  border: '1px solid var(--border)',
+  borderRadius: 4,
+  cursor: 'pointer',
 }
 const launchErrStyle: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
-  fontSize: 12, color: 'var(--red, #d73a49)',
-  borderBottom: '1px solid var(--border)', background: 'rgba(215,58,73,0.08)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '6px 12px',
+  fontSize: 12,
+  color: 'var(--red, #d73a49)',
+  borderBottom: '1px solid var(--border)',
+  background: 'rgba(215,58,73,0.08)',
 }
 const closeErrBtnStyle: CSSProperties = {
-  background: 'transparent', border: 'none', color: 'var(--red, #d73a49)',
-  cursor: 'pointer', fontSize: 12, padding: 0,
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--red, #d73a49)',
+  cursor: 'pointer',
+  fontSize: 12,
+  padding: 0,
 }
 const columnsStyle: CSSProperties = {
-  flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, padding: 12, overflow: 'auto',
+  flex: 1,
+  display: 'grid',
+  gridTemplateColumns: 'repeat(4, 1fr)',
+  gap: 10,
+  padding: 12,
+  overflow: 'auto',
 }
 const colStyle: CSSProperties = {
-  display: 'flex', flexDirection: 'column', minHeight: 0,
-  background: 'var(--bg-elev1, rgba(0,0,0,0.03))', borderRadius: 6,
+  display: 'flex',
+  flexDirection: 'column',
+  minHeight: 0,
+  background: 'var(--bg-elev1, rgba(0,0,0,0.03))',
+  borderRadius: 6,
   border: '1px solid var(--border)',
   transition: 'border-color 120ms ease, box-shadow 120ms ease',
 }
@@ -739,17 +835,36 @@ const colDropTargetStyle: CSSProperties = {
   boxShadow: '0 0 0 1px var(--accent, #2563eb), 0 0 12px rgba(37,99,235,0.18)',
 }
 const colHeaderStyle: CSSProperties = {
-  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  padding: '8px 12px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
-  letterSpacing: 0.5, opacity: 0.85, borderBottom: '1px solid var(--border)',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  padding: '8px 12px',
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: 0.5,
+  opacity: 0.85,
+  borderBottom: '1px solid var(--border)',
 }
 const colBodyStyle: CSSProperties = {
-  flex: 1, overflow: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6,
+  flex: 1,
+  overflow: 'auto',
+  padding: 8,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
 }
 const tileStyle: CSSProperties = {
-  textAlign: 'left', padding: '8px 10px', borderRadius: 4,
-  border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)',
-  cursor: 'grab', display: 'flex', flexDirection: 'column', gap: 4,
+  textAlign: 'left',
+  padding: '8px 10px',
+  borderRadius: 4,
+  border: '1px solid var(--border)',
+  background: 'var(--bg)',
+  color: 'var(--fg)',
+  cursor: 'grab',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
   userSelect: 'none',
 }
 const tileOverlayStyle: CSSProperties = {
@@ -759,37 +874,73 @@ const tileOverlayStyle: CSSProperties = {
   borderColor: 'var(--accent, #2563eb)',
 }
 const tileHeaderRowStyle: CSSProperties = {
-  display: 'flex', alignItems: 'flex-start', gap: 6, justifyContent: 'space-between',
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 6,
+  justifyContent: 'space-between',
 }
 const tileTitleStyle: CSSProperties = { fontSize: 13, lineHeight: 1.3, fontWeight: 500, flex: 1, minWidth: 0 }
 const tilePreviewStyle: CSSProperties = {
-  fontSize: 11, lineHeight: 1.3, color: 'var(--text-muted, #888)',
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  fontSize: 11,
+  lineHeight: 1.3,
+  color: 'var(--text-muted, #888)',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
 }
 const tileActionsStyle: CSSProperties = { display: 'flex', gap: 4, flexShrink: 0 }
 const startBtnStyle: CSSProperties = {
-  fontSize: 11, lineHeight: 1, padding: '2px 6px', borderRadius: 3,
-  background: 'transparent', color: 'var(--fg)',
-  border: '1px solid var(--border)', cursor: 'pointer',
+  fontSize: 11,
+  lineHeight: 1,
+  padding: '2px 6px',
+  borderRadius: 3,
+  background: 'transparent',
+  color: 'var(--fg)',
+  border: '1px solid var(--border)',
+  cursor: 'pointer',
 }
 const tagsRowStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 4 }
 const tagStyle: CSSProperties = {
-  fontSize: 10, padding: '1px 6px', borderRadius: 8,
-  background: 'var(--bg-elev2, rgba(0,0,0,0.06))', color: 'var(--fg)',
+  fontSize: 10,
+  padding: '1px 6px',
+  borderRadius: 8,
+  background: 'var(--bg-elev2, rgba(0,0,0,0.06))',
+  color: 'var(--fg)',
 }
-const tileMetaRowStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10, opacity: 0.85, alignItems: 'center' }
+const tileMetaRowStyle: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 6,
+  fontSize: 10,
+  opacity: 0.85,
+  alignItems: 'center',
+}
 const badgeStyle: CSSProperties = { fontSize: 10, opacity: 0.8 }
 const projectChipStyle: CSSProperties = {
-  fontSize: 10, padding: '1px 6px', borderRadius: 8,
-  background: 'rgba(37,99,235,0.12)', color: 'var(--accent, #2563eb)', fontFamily: 'monospace',
+  fontSize: 10,
+  padding: '1px 6px',
+  borderRadius: 8,
+  background: 'rgba(37,99,235,0.12)',
+  color: 'var(--accent, #2563eb)',
+  fontFamily: 'monospace',
 }
 const livenessRowStyle: CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 4,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
 }
 const livenessPipStyle: CSSProperties = {
-  width: 7, height: 7, borderRadius: '50%', display: 'inline-block',
+  width: 7,
+  height: 7,
+  borderRadius: '50%',
+  display: 'inline-block',
 }
 const unreadBadgeStyle: CSSProperties = {
-  fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 8,
-  background: 'var(--accent, #2563eb)', color: 'white', letterSpacing: 0.2,
+  fontSize: 9,
+  fontWeight: 600,
+  padding: '1px 6px',
+  borderRadius: 8,
+  background: 'var(--accent, #2563eb)',
+  color: 'white',
+  letterSpacing: 0.2,
 }

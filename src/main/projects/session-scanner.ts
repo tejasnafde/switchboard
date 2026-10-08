@@ -59,15 +59,15 @@ export async function scanClaudeCodeSessions(
   const preferred = new Map<string, ClaudeSessionCopy>()
   for (const copy of copies) {
     const current = preferred.get(copy.summary.id)
-    if (!current
-      || copy.size > current.size
-      || (copy.size === current.size && copy.summary.startedAt > current.summary.startedAt)) {
+    if (
+      !current ||
+      copy.size > current.size ||
+      (copy.size === current.size && copy.summary.startedAt > current.summary.startedAt)
+    ) {
       preferred.set(copy.summary.id, copy)
     }
   }
-  return [...preferred.values()]
-    .map((copy) => copy.summary)
-    .sort((a, b) => b.startedAt - a.startedAt)
+  return [...preferred.values()].map((copy) => copy.summary).sort((a, b) => b.startedAt - a.startedAt)
 }
 
 interface ClaudeSessionCopy {
@@ -94,23 +94,25 @@ async function scanClaudeProjectsDir(
     const index = JSON.parse(indexContent)
 
     if (Array.isArray(index)) {
-      const indexedCopies = await Promise.all(index.map(async (entry): Promise<ClaudeSessionCopy> => {
-        const id: string = entry.id ?? entry.sessionId ?? basename(entry.path ?? '')
-        const filePath = join(projectDir, entry.path ?? `${entry.id}.jsonl`)
-        const fileStat = await stat(filePath).catch(() => null)
-        return {
-          summary: {
-            id,
-            source: 'claude-code',
-            title: entry.title ?? entry.summary ?? `Session ${copies.length + 1}`,
-            startedAt: entry.startedAt ?? entry.timestamp ?? fileStat?.mtimeMs ?? Date.now(),
-            messageCount: entry.messageCount ?? 0,
-            filePath,
-            nativeRole: 'foreground',
-          },
-          size: fileStat?.size ?? 0,
-        }
-      }))
+      const indexedCopies = await Promise.all(
+        index.map(async (entry): Promise<ClaudeSessionCopy> => {
+          const id: string = entry.id ?? entry.sessionId ?? basename(entry.path ?? '')
+          const filePath = join(projectDir, entry.path ?? `${entry.id}.jsonl`)
+          const fileStat = await stat(filePath).catch(() => null)
+          return {
+            summary: {
+              id,
+              source: 'claude-code',
+              title: entry.title ?? entry.summary ?? `Session ${copies.length + 1}`,
+              startedAt: entry.startedAt ?? entry.timestamp ?? fileStat?.mtimeMs ?? Date.now(),
+              messageCount: entry.messageCount ?? 0,
+              filePath,
+              nativeRole: 'foreground',
+            },
+            size: fileStat?.size ?? 0,
+          }
+        }),
+      )
       copies.push(...indexedCopies)
     }
   } catch {
@@ -136,14 +138,18 @@ async function scanClaudeProjectsDir(
             log.debug('skipping unparseable head line', { filePath, err })
             continue
           }
-          if (!(obj.type === 'human' || obj.type === 'user') || obj.isMeta === true || obj.isCompactSummary === true) continue
+          if (!(obj.type === 'human' || obj.type === 'user') || obj.isMeta === true || obj.isCompactSummary === true)
+            continue
           const content = obj.message?.content
-          const raw = typeof content === 'string' ? content
-            : Array.isArray(content) ? content
-                .filter((b: { type?: string; text?: string }) => b.type === 'text')
-                .map((b: { type?: string; text?: string }) => b.text ?? '')
-                .join('\n')
-            : ''
+          const raw =
+            typeof content === 'string'
+              ? content
+              : Array.isArray(content)
+                ? content
+                    .filter((b: { type?: string; text?: string }) => b.type === 'text')
+                    .map((b: { type?: string; text?: string }) => b.text ?? '')
+                    .join('\n')
+                : ''
           // A background-task notification or interrupt marker is not a title.
           const text = userTypedText(raw)
           if (!text) continue
@@ -230,24 +236,26 @@ export function parseCodexSessionMetaRecord(event: unknown): CodexSessionMeta | 
   if (record.type !== 'session_meta' || !record.payload || typeof record.payload !== 'object') return null
   const payload = record.payload as { id?: unknown; cwd?: unknown; source?: unknown; originator?: unknown }
   if (typeof payload.id !== 'string' || !payload.id || typeof payload.cwd !== 'string' || !payload.cwd) return null
-  const source = payload.source && typeof payload.source === 'object'
-    ? payload.source as Record<string, unknown>
-    : null
-  const subagent = source?.subagent && typeof source.subagent === 'object'
-    ? source.subagent as Record<string, unknown>
-    : source?.subAgent && typeof source.subAgent === 'object'
-      ? source.subAgent as Record<string, unknown>
-      : null
-  const spawn = subagent?.thread_spawn && typeof subagent.thread_spawn === 'object'
-    ? subagent.thread_spawn as Record<string, unknown>
-    : subagent?.threadSpawn && typeof subagent.threadSpawn === 'object'
-      ? subagent.threadSpawn as Record<string, unknown>
-      : null
-  const parentSessionId = typeof spawn?.parent_thread_id === 'string'
-    ? spawn.parent_thread_id
-    : typeof spawn?.parentThreadId === 'string'
-      ? spawn.parentThreadId
-      : null
+  const source =
+    payload.source && typeof payload.source === 'object' ? (payload.source as Record<string, unknown>) : null
+  const subagent =
+    source?.subagent && typeof source.subagent === 'object'
+      ? (source.subagent as Record<string, unknown>)
+      : source?.subAgent && typeof source.subAgent === 'object'
+        ? (source.subAgent as Record<string, unknown>)
+        : null
+  const spawn =
+    subagent?.thread_spawn && typeof subagent.thread_spawn === 'object'
+      ? (subagent.thread_spawn as Record<string, unknown>)
+      : subagent?.threadSpawn && typeof subagent.threadSpawn === 'object'
+        ? (subagent.threadSpawn as Record<string, unknown>)
+        : null
+  const parentSessionId =
+    typeof spawn?.parent_thread_id === 'string'
+      ? spawn.parent_thread_id
+      : typeof spawn?.parentThreadId === 'string'
+        ? spawn.parentThreadId
+        : null
   const depth = typeof spawn?.depth === 'number' ? spawn.depth : null
   return {
     id: payload.id,

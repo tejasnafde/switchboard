@@ -7,10 +7,7 @@ import type {
   WorktreeCreationPhase,
   WorktreeCreationStatus,
 } from '../../shared/worktree-creation'
-import {
-  SqliteConversationForkStore,
-  type CommitCompletedConversationForkInput,
-} from './conversation-fork'
+import { SqliteConversationForkStore, type CommitCompletedConversationForkInput } from './conversation-fork'
 
 export interface WorktreeCreationRecord {
   machineId: string
@@ -124,9 +121,7 @@ export type KanbanOwnerConflictReason =
   | 'card_already_linked'
   | 'card_has_conversation'
 
-export type CheckKanbanOwnerResult =
-  | { kind: 'ready' }
-  | { kind: 'owner_conflict'; reason: KanbanOwnerConflictReason }
+export type CheckKanbanOwnerResult = { kind: 'ready' } | { kind: 'owner_conflict'; reason: KanbanOwnerConflictReason }
 
 export interface ReserveKanbanOwnerInput extends ReserveWorktreeCreationInput {
   owner: KanbanCreationOwner
@@ -267,9 +262,11 @@ export function ensureWorktreeCreationSchema(db: Database.Database): void {
   }
 
   for (const table of ['conversations', 'kanban_cards']) {
-    const exists = db.prepare(`
+    const exists = db
+      .prepare(`
       SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?
-    `).get(table)
+    `)
+      .get(table)
     if (!exists) continue
     const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
     if (!columns.some((column) => column.name === 'worktree_id')) {
@@ -301,14 +298,18 @@ function backfillLegacyWorktrees(db: Database.Database): void {
     ownerKind: LegacyProjection['owner_kind']
     createdAt: string
   }> = []
-  const conversationTable = db.prepare(`
+  const conversationTable = db
+    .prepare(`
     SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'conversations'
-  `).get()
+  `)
+    .get()
   if (conversationTable) {
     const columns = db.prepare('PRAGMA table_info(conversations)').all() as Array<{ name: string }>
     const createdAt = columns.some((column) => column.name === 'created_at') ? 'created_at' : '0 AS created_at'
     projectionTables.push({ name: 'conversations', ownerKind: 'conversation', createdAt })
-    projections.push(...db.prepare(`
+    projections.push(
+      ...(db
+        .prepare(`
       SELECT 'conversation' AS owner_kind, id AS owner_id, project_path,
              worktree_path, worktree_branch, ${createdAt}
         FROM conversations
@@ -316,16 +317,22 @@ function backfillLegacyWorktrees(db: Database.Database): void {
          AND worktree_id IS NULL
          AND worktree_creation_id IS NULL
        ORDER BY created_at, id
-    `).all() as LegacyProjection[])
+    `)
+        .all() as LegacyProjection[]),
+    )
   }
-  const kanbanTable = db.prepare(`
+  const kanbanTable = db
+    .prepare(`
     SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'kanban_cards'
-  `).get()
+  `)
+    .get()
   if (kanbanTable) {
     const columns = db.prepare('PRAGMA table_info(kanban_cards)').all() as Array<{ name: string }>
     const createdAt = columns.some((column) => column.name === 'created_at') ? 'created_at' : '0 AS created_at'
     projectionTables.push({ name: 'kanban_cards', ownerKind: 'kanban-card', createdAt })
-    projections.push(...db.prepare(`
+    projections.push(
+      ...(db
+        .prepare(`
       SELECT 'kanban-card' AS owner_kind, id AS owner_id, project_path,
              worktree_path, worktree_branch, ${createdAt}
         FROM kanban_cards
@@ -333,17 +340,24 @@ function backfillLegacyWorktrees(db: Database.Database): void {
          AND worktree_id IS NULL
          AND worktree_creation_id IS NULL
        ORDER BY created_at, id
-    `).all() as LegacyProjection[])
+    `)
+        .all() as LegacyProjection[]),
+    )
   }
 
   const aliasesFor = (projectPath: string, worktreePath: string): LegacyProjection[] =>
-    projectionTables.flatMap(({ name, ownerKind, createdAt }) => db.prepare(`
+    projectionTables.flatMap(
+      ({ name, ownerKind, createdAt }) =>
+        db
+          .prepare(`
       SELECT ? AS owner_kind, id AS owner_id, project_path,
              worktree_path, worktree_branch, ${createdAt}
         FROM ${name}
        WHERE project_path = ? AND worktree_path = ?
        ORDER BY created_at, id
-    `).all(ownerKind, projectPath, worktreePath) as LegacyProjection[])
+    `)
+          .all(ownerKind, projectPath, worktreePath) as LegacyProjection[],
+    )
 
   const canonicalContainment = (projectPath: string, worktreePath: string) => {
     const containmentRoot = resolve(projectPath)
@@ -351,11 +365,11 @@ function backfillLegacyWorktrees(db: Database.Database): void {
     const normalizedWorktreePath = resolve(worktreePath)
     const relativePath = relative(managedRoot, normalizedWorktreePath)
     if (
-      normalizedWorktreePath !== worktreePath
-      || relativePath.length === 0
-      || relativePath === '..'
-      || relativePath.startsWith(`..${sep}`)
-      || isAbsolute(relativePath)
+      normalizedWorktreePath !== worktreePath ||
+      relativePath.length === 0 ||
+      relativePath === '..' ||
+      relativePath.startsWith(`..${sep}`) ||
+      isAbsolute(relativePath)
     ) {
       return null
     }
@@ -365,16 +379,20 @@ function backfillLegacyWorktrees(db: Database.Database): void {
   const applyBackfill = () => {
     for (const projection of projections) {
       const repositoryId = `legacy:${projection.project_path}`
-      const existing = db.prepare(`
+      const existing = db
+        .prepare(`
         SELECT id FROM managed_worktrees
          WHERE machine_id = 'local' AND project_path = ? AND worktree_path = ?
          ORDER BY CASE management_origin WHEN 'legacy' THEN 0 ELSE 1 END, created_at
          LIMIT 1
-      `).get(projection.project_path, projection.worktree_path) as { id: string } | undefined
-      const worktreeId = existing?.id ?? `legacy_${createHash('sha256')
-        .update(`local\0${projection.project_path}\0${projection.worktree_path}`)
-        .digest('hex')
-        .slice(0, 32)}`
+      `)
+        .get(projection.project_path, projection.worktree_path) as { id: string } | undefined
+      const worktreeId =
+        existing?.id ??
+        `legacy_${createHash('sha256')
+          .update(`local\0${projection.project_path}\0${projection.worktree_path}`)
+          .digest('hex')
+          .slice(0, 32)}`
       if (!existing) {
         db.prepare(`
           INSERT OR IGNORE INTO managed_worktrees (
@@ -403,13 +421,15 @@ function backfillLegacyWorktrees(db: Database.Database): void {
           projection.created_at,
         )
       }
-      const catalog = db.prepare(`
+      const catalog = db
+        .prepare(`
         SELECT repository_id, project_path, worktree_path, branch,
                requested_base_ref, resolved_base_commit, management_origin,
                created_at
           FROM managed_worktrees
          WHERE id = ? AND machine_id = 'local'
-      `).get(worktreeId) as {
+      `)
+        .get(worktreeId) as {
         repository_id: string
         project_path: string
         worktree_path: string
@@ -420,32 +440,36 @@ function backfillLegacyWorktrees(db: Database.Database): void {
         created_at: number
       }
       let creationId: string | null = null
-      const legacyCatalog = catalog.management_origin === 'legacy'
-        || catalog.management_origin === 'legacy_unknown'
+      const legacyCatalog = catalog.management_origin === 'legacy' || catalog.management_origin === 'legacy_unknown'
       const aliases = aliasesFor(catalog.project_path, catalog.worktree_path)
       const branches = new Set(aliases.map((alias) => alias.worktree_branch))
       const observedBranch = branches.size === 1 ? [...branches][0] : null
       const containment = canonicalContainment(catalog.project_path, catalog.worktree_path)
-      const cleanupIdentityIsProvable = legacyCatalog
-        && containment !== null
-        && typeof observedBranch === 'string'
-        && observedBranch.length > 0
-        && observedBranch === catalog.branch
+      const cleanupIdentityIsProvable =
+        legacyCatalog &&
+        containment !== null &&
+        typeof observedBranch === 'string' &&
+        observedBranch.length > 0 &&
+        observedBranch === catalog.branch
       const syntheticCreationId = `legacy_cleanup_${createHash('sha256')
         .update(`local\0${worktreeId}`)
         .digest('hex')
         .slice(0, 32)}`
       if (cleanupIdentityIsProvable) {
         creationId = syntheticCreationId
-        const owner = projection.owner_kind === 'kanban-card'
-          ? { kind: 'kanban-card' as const, cardId: projection.owner_id }
-          : {
-              kind: 'conversation' as const,
-              conversationId: projection.owner_id,
-              agentType: ((db.prepare(`SELECT agent_type FROM conversations WHERE id = ?`)
-                .get(projection.owner_id) as { agent_type?: string } | undefined)?.agent_type ?? 'terminal') as 'terminal',
-            }
-        const purpose = projection.owner_kind === 'kanban-card' ? 'kanban' as const : 'new-chat' as const
+        const owner =
+          projection.owner_kind === 'kanban-card'
+            ? { kind: 'kanban-card' as const, cardId: projection.owner_id }
+            : {
+                kind: 'conversation' as const,
+                conversationId: projection.owner_id,
+                agentType: ((
+                  db.prepare(`SELECT agent_type FROM conversations WHERE id = ?`).get(projection.owner_id) as
+                    | { agent_type?: string }
+                    | undefined
+                )?.agent_type ?? 'terminal') as 'terminal',
+              }
+        const purpose = projection.owner_kind === 'kanban-card' ? ('kanban' as const) : ('new-chat' as const)
         const requestedAt = Math.max(1, catalog.created_at)
         const request: WorktreeCreationRequest = {
           schemaVersion: 1,
@@ -534,17 +558,16 @@ function backfillLegacyWorktrees(db: Database.Database): void {
   else applyBackfill()
 }
 
-export function listOwnedWorktreePaths(
-  db: Database.Database,
-  projectPath: string,
-): Set<string> {
+export function listOwnedWorktreePaths(db: Database.Database, projectPath: string): Set<string> {
   const paths = new Set<string>()
-  const reservations = db.prepare(`
+  const reservations = db
+    .prepare(`
     SELECT reserved_path, request_json
       FROM worktree_creations
      WHERE reserved_path IS NOT NULL
        AND status NOT IN ('rolled_back', 'cancelled')
-  `).all() as Array<{ reserved_path: string; request_json: string }>
+  `)
+    .all() as Array<{ reserved_path: string; request_json: string }>
   for (const reservation of reservations) {
     try {
       const request = JSON.parse(reservation.request_json) as Partial<WorktreeCreationRequest>
@@ -555,23 +578,29 @@ export function listOwnedWorktreePaths(
       paths.add(reservation.reserved_path)
     }
   }
-  const catalogRows = db.prepare(`
+  const catalogRows = db
+    .prepare(`
     SELECT worktree_path
       FROM managed_worktrees
      WHERE project_path = ? AND lifecycle != 'removed'
-  `).all(projectPath) as Array<{ worktree_path: string }>
+  `)
+    .all(projectPath) as Array<{ worktree_path: string }>
   for (const row of catalogRows) paths.add(row.worktree_path)
 
   for (const table of ['conversations', 'kanban_cards'] as const) {
-    const exists = db.prepare(`
+    const exists = db
+      .prepare(`
       SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?
-    `).get(table)
+    `)
+      .get(table)
     if (!exists) continue
-    const rows = db.prepare(`
+    const rows = db
+      .prepare(`
       SELECT worktree_path
         FROM ${table}
        WHERE project_path = ? AND worktree_path IS NOT NULL
-    `).all(projectPath) as Array<{ worktree_path: string }>
+    `)
+      .all(projectPath) as Array<{ worktree_path: string }>
     for (const row of rows) paths.add(row.worktree_path)
   }
   return paths
@@ -581,7 +610,8 @@ export function getKanbanWorktreeCreationKey(
   db: Database.Database,
   cardId: string,
 ): { machineId: string; creationId: string } | null {
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     SELECT wc.machine_id AS machineId, wc.creation_id AS creationId
       FROM kanban_cards k
       JOIN worktree_creations wc ON wc.creation_id = k.worktree_creation_id
@@ -590,7 +620,8 @@ export function getKanbanWorktreeCreationKey(
          k.worktree_id IS NULL
          OR k.worktree_id = wc.worktree_id
        )
-  `).get(cardId) as { machineId: string; creationId: string } | undefined
+  `)
+    .get(cardId) as { machineId: string; creationId: string } | undefined
   return row ?? null
 }
 
@@ -637,28 +668,30 @@ export class SqliteWorktreeCreationStore {
           : { kind: 'conflict', record: existing }
       }
 
-      this.db.prepare(`
+      this.db
+        .prepare(`
         INSERT INTO worktree_creations (
           machine_id, creation_id, schema_version, request_json, payload_hash,
           phase, status, revision, worktree_id, reserved_path, reserved_branch,
           requested_base_ref, resolved_base_commit, materialization_plan_json,
           warnings_json, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, 'pending', 'pending', 1, ?, ?, ?, ?, ?, ?, '[]', ?, ?)
-      `).run(
-        input.machineId,
-        input.creationId,
-        input.schemaVersion,
-        input.requestJson,
-        input.payloadHash,
-        input.worktreeId ?? null,
-        input.reservedPath ?? null,
-        input.reservedBranch ?? null,
-        input.requestedBaseRef ?? null,
-        input.resolvedBaseCommit ?? null,
-        input.materializationPlanJson ?? null,
-        input.now,
-        input.now,
-      )
+      `)
+        .run(
+          input.machineId,
+          input.creationId,
+          input.schemaVersion,
+          input.requestJson,
+          input.payloadHash,
+          input.worktreeId ?? null,
+          input.reservedPath ?? null,
+          input.reservedBranch ?? null,
+          input.requestedBaseRef ?? null,
+          input.resolvedBaseCommit ?? null,
+          input.materializationPlanJson ?? null,
+          input.now,
+          input.now,
+        )
 
       const record = this.get({
         machineId: input.machineId,
@@ -670,39 +703,44 @@ export class SqliteWorktreeCreationStore {
   }
 
   get(key: { machineId: string; creationId: string }): WorktreeCreationRecord | null {
-    const row = this.db.prepare(`
+    const row = this.db
+      .prepare(`
       SELECT *
         FROM worktree_creations
        WHERE machine_id = ? AND creation_id = ?
-    `).get(key.machineId, key.creationId) as WorktreeCreationRow | undefined
+    `)
+      .get(key.machineId, key.creationId) as WorktreeCreationRow | undefined
     return row ? fromRow(row) : null
   }
 
   listRecoverable(): WorktreeCreationRecord[] {
-    const rows = this.db.prepare(`
+    const rows = this.db
+      .prepare(`
       SELECT *
         FROM worktree_creations
        WHERE status = 'pending'
        ORDER BY created_at, machine_id, creation_id
-    `).all() as WorktreeCreationRow[]
+    `)
+      .all() as WorktreeCreationRow[]
     return rows.map(fromRow)
   }
 
-  checkKanbanOwner(
-    owner: KanbanCreationOwner,
-    projectPath: string,
-  ): CheckKanbanOwnerResult {
-    const card = this.db.prepare(`
+  checkKanbanOwner(owner: KanbanCreationOwner, projectPath: string): CheckKanbanOwnerResult {
+    const card = this.db
+      .prepare(`
       SELECT project_path, updated_at, conversation_id, worktree_id, worktree_creation_id
         FROM kanban_cards
        WHERE id = ?
-    `).get(owner.cardId) as {
-      project_path: string
-      updated_at: number
-      conversation_id: string | null
-      worktree_id: string | null
-      worktree_creation_id: string | null
-    } | undefined
+    `)
+      .get(owner.cardId) as
+      | {
+          project_path: string
+          updated_at: number
+          conversation_id: string | null
+          worktree_id: string | null
+          worktree_creation_id: string | null
+        }
+      | undefined
 
     if (owner.create) return card ? { kind: 'owner_conflict', reason: 'card_exists' } : { kind: 'ready' }
     if (!card || card.project_path !== projectPath) return { kind: 'owner_conflict', reason: 'card_missing' }
@@ -728,27 +766,30 @@ export class SqliteWorktreeCreationStore {
 
       if (input.owner.create) {
         const draft = input.owner.create
-        this.db.prepare(`
+        this.db
+          .prepare(`
           INSERT INTO kanban_cards (
             id, project_path, title, description, tags, status, runtime_mode, cost_cap_usd,
             worktree_creation_id, created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          input.owner.cardId,
-          input.projectPath,
-          draft.title,
-          draft.description ?? '',
-          JSON.stringify(draft.tags ?? []),
-          draft.status ?? 'backlog',
-          // '' is an unset mode (see UNSET_RUNTIME_MODE in db/kanban.ts).
-          draft.runtimeMode ?? '',
-          draft.costCapUsd ?? null,
-          input.creationId,
-          input.now,
-          input.now,
-        )
+        `)
+          .run(
+            input.owner.cardId,
+            input.projectPath,
+            draft.title,
+            draft.description ?? '',
+            JSON.stringify(draft.tags ?? []),
+            draft.status ?? 'backlog',
+            // '' is an unset mode (see UNSET_RUNTIME_MODE in db/kanban.ts).
+            draft.runtimeMode ?? '',
+            draft.costCapUsd ?? null,
+            input.creationId,
+            input.now,
+            input.now,
+          )
       } else {
-        const linked = this.db.prepare(`
+        const linked = this.db
+          .prepare(`
           UPDATE kanban_cards
              SET worktree_creation_id = ?
            WHERE id = ?
@@ -756,12 +797,8 @@ export class SqliteWorktreeCreationStore {
              AND updated_at = ?
              AND worktree_id IS NULL
              AND worktree_creation_id IS NULL
-        `).run(
-          input.creationId,
-          input.owner.cardId,
-          input.projectPath,
-          input.owner.expectedRevision,
-        )
+        `)
+          .run(input.creationId, input.owner.cardId, input.projectPath, input.owner.expectedRevision)
         if (linked.changes !== 1) throw new Error('kanban owner precondition changed during reservation')
       }
       return reservation
@@ -769,7 +806,8 @@ export class SqliteWorktreeCreationStore {
   }
 
   isConversationOwnerCommitted(key: { machineId: string; creationId: string }): boolean {
-    const row = this.db.prepare(`
+    const row = this.db
+      .prepare(`
       SELECT 1
         FROM worktree_creations wc
         JOIN managed_worktrees mw ON mw.id = wc.worktree_id
@@ -778,12 +816,14 @@ export class SqliteWorktreeCreationStore {
          AND c.worktree_creation_id = wc.creation_id
        WHERE wc.machine_id = ? AND wc.creation_id = ?
        LIMIT 1
-    `).get(key.machineId, key.creationId)
+    `)
+      .get(key.machineId, key.creationId)
     return row !== undefined
   }
 
   isKanbanOwnerCommitted(key: { machineId: string; creationId: string }): boolean {
-    const row = this.db.prepare(`
+    const row = this.db
+      .prepare(`
       SELECT 1
         FROM worktree_creations wc
         JOIN managed_worktrees mw ON mw.id = wc.worktree_id
@@ -792,12 +832,14 @@ export class SqliteWorktreeCreationStore {
          AND k.worktree_creation_id = wc.creation_id
        WHERE wc.machine_id = ? AND wc.creation_id = ?
        LIMIT 1
-    `).get(key.machineId, key.creationId)
+    `)
+      .get(key.machineId, key.creationId)
     return row !== undefined
   }
 
   isForkOwnerCommitted(key: { machineId: string; creationId: string }): boolean {
-    const row = this.db.prepare(`
+    const row = this.db
+      .prepare(`
       SELECT 1
         FROM worktree_creations wc
         JOIN managed_worktrees mw
@@ -808,28 +850,22 @@ export class SqliteWorktreeCreationStore {
          AND c.worktree_creation_id = wc.creation_id
        WHERE wc.machine_id = ? AND wc.creation_id = ?
        LIMIT 1
-    `).get(key.machineId, key.creationId)
+    `)
+      .get(key.machineId, key.creationId)
     return row !== undefined
   }
 
   transition(input: TransitionWorktreeCreationInput): TransitionWorktreeCreationResult {
-    const updated = this.db.prepare(`
+    const updated = this.db
+      .prepare(`
       UPDATE worktree_creations
          SET phase = ?, status = ?, revision = revision + 1, updated_at = ?
        WHERE machine_id = ? AND creation_id = ? AND revision = ?
-    `).run(
-      input.phase,
-      input.status,
-      input.now,
-      input.machineId,
-      input.creationId,
-      input.expectedRevision,
-    )
+    `)
+      .run(input.phase, input.status, input.now, input.machineId, input.creationId, input.expectedRevision)
     const record = this.get({ machineId: input.machineId, creationId: input.creationId })
     if (!record) return { kind: 'missing' }
-    return updated.changes === 1
-      ? { kind: 'updated', record }
-      : { kind: 'stale', record }
+    return updated.changes === 1 ? { kind: 'updated', record } : { kind: 'stale', record }
   }
 
   updateProgress(input: UpdateWorktreeCreationProgressInput): TransitionWorktreeCreationResult {
@@ -837,7 +873,8 @@ export class SqliteWorktreeCreationStore {
       const current = this.get(input)
       if (!current) return { kind: 'missing' }
       if (current.revision !== input.expectedRevision) return { kind: 'stale', record: current }
-      const updated = this.db.prepare(`
+      const updated = this.db
+        .prepare(`
         UPDATE worktree_creations
            SET phase = ?, status = ?, revision = revision + 1, updated_at = ?,
                external_boundary = COALESCE(?, external_boundary),
@@ -847,24 +884,26 @@ export class SqliteWorktreeCreationStore {
                error_json = CASE WHEN ? THEN NULL ELSE COALESCE(?, error_json) END,
                recovery_json = COALESCE(?, recovery_json)
          WHERE machine_id = ? AND creation_id = ? AND revision = ?
-      `).run(
-        input.phase,
-        input.status,
-        input.now,
-        input.externalBoundary ?? null,
-        input.sparseReceiptJson ?? null,
-        input.setupReceiptJson ?? null,
-        input.startupReceiptJson ?? null,
-        input.clearError ? 1 : 0,
-        input.errorJson ?? null,
-        input.recoveryJson ?? null,
-        input.machineId,
-        input.creationId,
-        input.expectedRevision,
-      )
+      `)
+        .run(
+          input.phase,
+          input.status,
+          input.now,
+          input.externalBoundary ?? null,
+          input.sparseReceiptJson ?? null,
+          input.setupReceiptJson ?? null,
+          input.startupReceiptJson ?? null,
+          input.clearError ? 1 : 0,
+          input.errorJson ?? null,
+          input.recoveryJson ?? null,
+          input.machineId,
+          input.creationId,
+          input.expectedRevision,
+        )
       if (updated.changes !== 1) throw new Error('worktree progress revision constraint failed')
       if (current.worktreeId) {
-        this.db.prepare(`
+        this.db
+          .prepare(`
           UPDATE managed_worktrees
              SET sparse_receipt_json = COALESCE(?, sparse_receipt_json),
                  setup_receipt_json = COALESCE(?, setup_receipt_json),
@@ -872,16 +911,17 @@ export class SqliteWorktreeCreationStore {
                  error_json = CASE WHEN ? THEN NULL ELSE COALESCE(?, error_json) END,
                  updated_at = ?
            WHERE id = ? AND machine_id = ?
-        `).run(
-          input.sparseReceiptJson ?? null,
-          input.setupReceiptJson ?? null,
-          input.startupReceiptJson ?? null,
-          input.clearError ? 1 : 0,
-          input.errorJson ?? null,
-          input.now,
-          current.worktreeId,
-          input.machineId,
-        )
+        `)
+          .run(
+            input.sparseReceiptJson ?? null,
+            input.setupReceiptJson ?? null,
+            input.startupReceiptJson ?? null,
+            input.clearError ? 1 : 0,
+            input.errorJson ?? null,
+            input.now,
+            current.worktreeId,
+            input.machineId,
+          )
       }
       const record = this.get(input)
       if (!record) throw new Error('worktree creation disappeared during progress update')
@@ -897,11 +937,13 @@ export class SqliteWorktreeCreationStore {
       const lifecycle = input.disposition === 'removed' ? 'removed' : 'retained'
 
       if (current.worktreeId) {
-        this.db.prepare(`
+        this.db
+          .prepare(`
           UPDATE managed_worktrees
              SET lifecycle = ?, updated_at = ?
            WHERE id = ? AND machine_id = ?
-        `).run(lifecycle, input.now, current.worktreeId, input.machineId)
+        `)
+          .run(lifecycle, input.now, current.worktreeId, input.machineId)
       }
 
       if (input.disposition === 'removed') {
@@ -920,18 +962,20 @@ export class SqliteWorktreeCreationStore {
         }
       }
 
-      const updated = this.db.prepare(`
+      const updated = this.db
+        .prepare(`
         UPDATE worktree_creations
            SET status = ?, revision = revision + 1, recovery_json = ?, updated_at = ?
          WHERE machine_id = ? AND creation_id = ? AND revision = ?
-      `).run(
-        input.disposition === 'removed' ? 'rolled_back' : 'cleanup_required',
-        JSON.stringify({ disposition: input.disposition }),
-        input.now,
-        input.machineId,
-        input.creationId,
-        input.expectedRevision,
-      )
+      `)
+        .run(
+          input.disposition === 'removed' ? 'rolled_back' : 'cleanup_required',
+          JSON.stringify({ disposition: input.disposition }),
+          input.now,
+          input.machineId,
+          input.creationId,
+          input.expectedRevision,
+        )
       if (updated.changes !== 1) throw new Error('worktree cleanup revision constraint failed')
       const record = this.get(input)
       if (!record) throw new Error('worktree creation disappeared during cleanup')
@@ -946,62 +990,62 @@ export class SqliteWorktreeCreationStore {
       if (current.revision !== input.expectedRevision) return { kind: 'stale', record: current }
 
       const request = JSON.parse(current.requestJson) as WorktreeCreationRequest
-      this.db.prepare(`
+      this.db
+        .prepare(`
         INSERT INTO managed_worktrees (
           id, machine_id, repository_id, project_path, worktree_path, branch,
           requested_base_ref, resolved_base_commit, management_origin, lifecycle,
           initial_owner_kind, initial_owner_id, purpose, provenance_json,
           lineage_json, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'managed', 'active', ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        input.worktree.id,
-        input.machineId,
-        input.worktree.repositoryId,
-        input.worktree.projectPath,
-        input.worktree.worktreePath,
-        input.worktree.branch,
-        input.worktree.requestedBaseRef,
-        input.worktree.resolvedBaseCommit,
-        request.owner.kind,
-        input.conversation.id,
-        request.purpose,
-        JSON.stringify(request.provenance),
-        request.lineage ? JSON.stringify(request.lineage) : null,
-        input.now,
-        input.now,
-      )
+      `)
+        .run(
+          input.worktree.id,
+          input.machineId,
+          input.worktree.repositoryId,
+          input.worktree.projectPath,
+          input.worktree.worktreePath,
+          input.worktree.branch,
+          input.worktree.requestedBaseRef,
+          input.worktree.resolvedBaseCommit,
+          request.owner.kind,
+          input.conversation.id,
+          request.purpose,
+          JSON.stringify(request.provenance),
+          request.lineage ? JSON.stringify(request.lineage) : null,
+          input.now,
+          input.now,
+        )
 
-      this.db.prepare(`
+      this.db
+        .prepare(`
         INSERT INTO conversations (
           id, project_path, agent_type, title, created_at, updated_at,
           worktree_path, worktree_branch, worktree_id, worktree_creation_id,
           sidebar_role
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed')
-      `).run(
-        input.conversation.id,
-        input.conversation.projectPath,
-        input.conversation.agentType,
-        input.conversation.title,
-        input.now,
-        input.now,
-        input.worktree.worktreePath,
-        input.worktree.branch,
-        input.worktree.id,
-        input.creationId,
-      )
+      `)
+        .run(
+          input.conversation.id,
+          input.conversation.projectPath,
+          input.conversation.agentType,
+          input.conversation.title,
+          input.now,
+          input.now,
+          input.worktree.worktreePath,
+          input.worktree.branch,
+          input.worktree.id,
+          input.creationId,
+        )
 
-      const transition = this.db.prepare(`
+      const transition = this.db
+        .prepare(`
         UPDATE worktree_creations
            SET worktree_id = ?, phase = 'linking', status = 'pending',
                revision = revision + 1, updated_at = ?
          WHERE machine_id = ? AND creation_id = ? AND revision = ?
-      `).run(
-        input.worktree.id,
-        input.now,
-        input.machineId,
-        input.creationId,
-        input.expectedRevision,
-      )
+      `)
+        .run(input.worktree.id, input.now, input.machineId, input.creationId, input.expectedRevision)
       if (transition.changes !== 1) throw new Error('worktree creation revision constraint failed')
 
       const record = this.get({ machineId: input.machineId, creationId: input.creationId })
@@ -1020,99 +1064,98 @@ export class SqliteWorktreeCreationStore {
       if (request.owner.kind !== 'kanban-card' || request.owner.cardId !== input.cardId) {
         throw new Error('worktree creation journal does not match the Kanban owner')
       }
-      this.db.prepare(`
+      this.db
+        .prepare(`
         INSERT INTO managed_worktrees (
           id, machine_id, repository_id, project_path, worktree_path, branch,
           requested_base_ref, resolved_base_commit, management_origin, lifecycle,
           initial_owner_kind, initial_owner_id, purpose, provenance_json,
           lineage_json, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'managed', 'active', ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        input.worktree.id,
-        input.machineId,
-        input.worktree.repositoryId,
-        input.worktree.projectPath,
-        input.worktree.worktreePath,
-        input.worktree.branch,
-        input.worktree.requestedBaseRef,
-        input.worktree.resolvedBaseCommit,
-        request.owner.kind,
-        input.cardId,
-        request.purpose,
-        JSON.stringify(request.provenance),
-        request.lineage ? JSON.stringify(request.lineage) : null,
-        input.now,
-        input.now,
-      )
+      `)
+        .run(
+          input.worktree.id,
+          input.machineId,
+          input.worktree.repositoryId,
+          input.worktree.projectPath,
+          input.worktree.worktreePath,
+          input.worktree.branch,
+          input.worktree.requestedBaseRef,
+          input.worktree.resolvedBaseCommit,
+          request.owner.kind,
+          input.cardId,
+          request.purpose,
+          JSON.stringify(request.provenance),
+          request.lineage ? JSON.stringify(request.lineage) : null,
+          input.now,
+          input.now,
+        )
 
-      const card = this.db.prepare(`
+      const card = this.db
+        .prepare(`
         UPDATE kanban_cards
            SET worktree_path = ?, worktree_branch = ?, worktree_id = ?,
                worktree_creation_id = ?, updated_at = ?
          WHERE id = ?
            AND worktree_creation_id = ?
            AND worktree_id IS NULL
-      `).run(
-        input.worktree.worktreePath,
-        input.worktree.branch,
-        input.worktree.id,
-        input.creationId,
-        input.now,
-        input.cardId,
-        input.creationId,
-      )
+      `)
+        .run(
+          input.worktree.worktreePath,
+          input.worktree.branch,
+          input.worktree.id,
+          input.creationId,
+          input.now,
+          input.cardId,
+          input.creationId,
+        )
       if (card.changes !== 1) throw new Error('kanban card owner projection changed before commit')
 
       if (input.conversation) {
-        const cardTitle = this.db.prepare(`SELECT title FROM kanban_cards WHERE id = ?`)
-          .get(input.cardId) as { title: string } | undefined
+        const cardTitle = this.db.prepare(`SELECT title FROM kanban_cards WHERE id = ?`).get(input.cardId) as
+          | { title: string }
+          | undefined
         if (!cardTitle) throw new Error('kanban card disappeared before conversation linkage')
-        this.db.prepare(`
+        this.db
+          .prepare(`
           INSERT INTO conversations (
             id, project_path, agent_type, title, created_at, updated_at,
             worktree_path, worktree_branch, worktree_id, worktree_creation_id,
             sidebar_role
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed')
-        `).run(
-          input.conversation.id,
-          input.worktree.projectPath,
-          input.conversation.agentType,
-          cardTitle.title,
-          input.now,
-          input.now,
-          input.worktree.worktreePath,
-          input.worktree.branch,
-          input.worktree.id,
-          input.creationId,
-        )
-        const conversationLink = this.db.prepare(`
+        `)
+          .run(
+            input.conversation.id,
+            input.worktree.projectPath,
+            input.conversation.agentType,
+            cardTitle.title,
+            input.now,
+            input.now,
+            input.worktree.worktreePath,
+            input.worktree.branch,
+            input.worktree.id,
+            input.creationId,
+          )
+        const conversationLink = this.db
+          .prepare(`
           UPDATE kanban_cards
              SET conversation_id = ?, status = 'in_progress', updated_at = ?
            WHERE id = ? AND worktree_id = ? AND worktree_creation_id = ?
-        `).run(
-          input.conversation.id,
-          input.now,
-          input.cardId,
-          input.worktree.id,
-          input.creationId,
-        )
+        `)
+          .run(input.conversation.id, input.now, input.cardId, input.worktree.id, input.creationId)
         if (conversationLink.changes !== 1) {
           throw new Error('kanban card changed before conversation linkage')
         }
       }
 
-      const transition = this.db.prepare(`
+      const transition = this.db
+        .prepare(`
         UPDATE worktree_creations
            SET worktree_id = ?, phase = 'linking', status = 'pending',
                revision = revision + 1, updated_at = ?
          WHERE machine_id = ? AND creation_id = ? AND revision = ?
-      `).run(
-        input.worktree.id,
-        input.now,
-        input.machineId,
-        input.creationId,
-        input.expectedRevision,
-      )
+      `)
+        .run(input.worktree.id, input.now, input.machineId, input.creationId, input.expectedRevision)
       if (transition.changes !== 1) throw new Error('worktree creation revision constraint failed')
 
       const record = this.get({ machineId: input.machineId, creationId: input.creationId })
@@ -1129,10 +1172,10 @@ export class SqliteWorktreeCreationStore {
 
       const request = JSON.parse(current.requestJson) as WorktreeCreationRequest
       if (
-        request.owner.kind !== 'fork'
-        || request.owner.requestId !== input.fork.requestId
-        || request.owner.conversationId !== input.fork.conversation.id
-        || request.owner.parentConversationId !== input.fork.conversation.parentConversationId
+        request.owner.kind !== 'fork' ||
+        request.owner.requestId !== input.fork.requestId ||
+        request.owner.conversationId !== input.fork.conversation.id ||
+        request.owner.parentConversationId !== input.fork.conversation.parentConversationId
       ) {
         throw new Error('worktree creation journal does not match the fork owner')
       }
@@ -1140,51 +1183,48 @@ export class SqliteWorktreeCreationStore {
         throw new Error('fork conversation must retain the canonical parent project path')
       }
 
-      this.db.prepare(`
+      this.db
+        .prepare(`
         INSERT INTO managed_worktrees (
           id, machine_id, repository_id, project_path, worktree_path, branch,
           requested_base_ref, resolved_base_commit, management_origin, lifecycle,
           initial_owner_kind, initial_owner_id, purpose, provenance_json,
           lineage_json, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'managed', 'active', 'fork', ?, ?, ?, ?, ?, ?)
-      `).run(
-        input.worktree.id,
-        input.machineId,
-        input.worktree.repositoryId,
-        input.worktree.projectPath,
-        input.worktree.worktreePath,
-        input.worktree.branch,
-        input.worktree.requestedBaseRef,
-        input.worktree.resolvedBaseCommit,
-        input.fork.conversation.id,
-        request.purpose,
-        JSON.stringify(request.provenance),
-        request.lineage ? JSON.stringify(request.lineage) : null,
-        input.now,
-        input.now,
-      )
+      `)
+        .run(
+          input.worktree.id,
+          input.machineId,
+          input.worktree.repositoryId,
+          input.worktree.projectPath,
+          input.worktree.worktreePath,
+          input.worktree.branch,
+          input.worktree.requestedBaseRef,
+          input.worktree.resolvedBaseCommit,
+          input.fork.conversation.id,
+          request.purpose,
+          JSON.stringify(request.provenance),
+          request.lineage ? JSON.stringify(request.lineage) : null,
+          input.now,
+          input.now,
+        )
 
-      const forkCommit = new SqliteConversationForkStore(this.db)
-        .commitCompletedInCurrentTransaction({
-          ...input.fork,
-          worktreeCreationId: input.creationId,
-        })
+      const forkCommit = new SqliteConversationForkStore(this.db).commitCompletedInCurrentTransaction({
+        ...input.fork,
+        worktreeCreationId: input.creationId,
+      })
       if (forkCommit.kind !== 'committed') {
         throw new Error('fork operation changed before worktree owner commit')
       }
 
-      const transition = this.db.prepare(`
+      const transition = this.db
+        .prepare(`
         UPDATE worktree_creations
            SET worktree_id = ?, phase = 'linking', status = 'pending',
                revision = revision + 1, updated_at = ?
          WHERE machine_id = ? AND creation_id = ? AND revision = ?
-      `).run(
-        input.worktree.id,
-        input.now,
-        input.machineId,
-        input.creationId,
-        input.expectedRevision,
-      )
+      `)
+        .run(input.worktree.id, input.now, input.machineId, input.creationId, input.expectedRevision)
       if (transition.changes !== 1) throw new Error('worktree creation revision constraint failed')
 
       const record = this.get({ machineId: input.machineId, creationId: input.creationId })

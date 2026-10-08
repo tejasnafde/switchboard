@@ -7,11 +7,7 @@
  * The refresh token this mints IS the real credential and is never stored here.
  */
 import { getSetting, setSetting } from '../db/database'
-import {
-  resolveClientConfig,
-  type ClientConfig,
-  type PartialClientConfig,
-} from '@shared/google-oauth'
+import { resolveClientConfig, type ClientConfig, type PartialClientConfig } from '@shared/google-oauth'
 
 const SETTING_CLIENT_ID = 'google.clientId'
 const SETTING_CLIENT_SECRET = 'google.clientSecret'

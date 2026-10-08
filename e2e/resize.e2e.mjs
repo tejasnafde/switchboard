@@ -32,7 +32,13 @@ if (!existsSync(join(repoRoot, 'out/main/index.js'))) {
 
 const userDataDir = mkdtempSync(join(tmpdir(), 'sb-resize-e2e-'))
 // MANDATORY cleanup (see CLAUDE.md - e2e temp dirs have filled the disk before).
-process.on('exit', () => { try { rmSync(userDataDir, { recursive: true, force: true }) } catch { /* ignore */ } })
+process.on('exit', () => {
+  try {
+    rmSync(userDataDir, { recursive: true, force: true })
+  } catch {
+    /* ignore */
+  }
+})
 
 let failures = 0
 const check = (cond, msg) => {

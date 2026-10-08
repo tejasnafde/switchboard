@@ -120,7 +120,11 @@ interface TerminalStore {
 
   // Window management (spatial)
   addWindow: (sessionId: string, options: PaneOptions) => { windowId: string; paneId: string }
-  splitActiveWindow: (sessionId: string, direction: SplitDirection, options: PaneOptions) => { windowId: string; paneId: string } | null
+  splitActiveWindow: (
+    sessionId: string,
+    direction: SplitDirection,
+    options: PaneOptions,
+  ) => { windowId: string; paneId: string } | null
   removeWindow: (sessionId: string, windowId: string) => void
   setActiveWindow: (sessionId: string, windowId: string) => void
   focusWindowByIndex: (sessionId: string, index: number) => void
@@ -230,7 +234,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       } else {
         // Add to last row
         rows = prev.rows.map((r, i) =>
-          i === prev.rows.length - 1 ? { ...r, windowIds: [...r.windowIds, windowId] } : r
+          i === prev.rows.length - 1 ? { ...r, windowIds: [...r.windowIds, windowId] } : r,
         )
       }
 
@@ -455,9 +459,8 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       }
 
       // Window survives - update activePaneId if we removed the active one
-      const newActive = win.activePaneId === paneId
-        ? remainingPanes[Math.max(0, win.paneIds.indexOf(paneId) - 1)]
-        : win.activePaneId
+      const newActive =
+        win.activePaneId === paneId ? remainingPanes[Math.max(0, win.paneIds.indexOf(paneId) - 1)] : win.activePaneId
 
       return {
         layouts: {
@@ -506,9 +509,10 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     const win = layout.windows[layout.activeWindowId]
     if (!win || win.paneIds.length < 2) return
     const currentIdx = win.paneIds.indexOf(win.activePaneId)
-    const nextIdx = dir === 'next'
-      ? (currentIdx + 1) % win.paneIds.length
-      : (currentIdx - 1 + win.paneIds.length) % win.paneIds.length
+    const nextIdx =
+      dir === 'next'
+        ? (currentIdx + 1) % win.paneIds.length
+        : (currentIdx - 1 + win.paneIds.length) % win.paneIds.length
     get().setActivePane(sessionId, win.paneIds[nextIdx])
   },
 

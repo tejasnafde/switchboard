@@ -12,7 +12,11 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { getStoreDefaultRuntimeMode, setStoreDefaultRuntimeMode } from '../../stores/agent-store'
 import { useThemeStore, type ThemeName } from '../../stores/theme-store'
 import { areNotificationsEnabled, setNotificationsEnabled } from '../../services/notifications'
-import { getDefaultSessionEnvMode, setDefaultSessionEnvMode, type SessionEnvMode } from '../../services/session-env-mode'
+import {
+  getDefaultSessionEnvMode,
+  setDefaultSessionEnvMode,
+  type SessionEnvMode,
+} from '../../services/session-env-mode'
 import { isAssistantStreamingEnabled, setAssistantStreamingEnabled } from '../../services/streaming-pref'
 import { isAnalyticsEnabled, setAnalyticsEnabled } from '../../services/analytics-pref'
 import {
@@ -102,13 +106,21 @@ const BINDINGS: Record<string, Binding> = {
     write: (v) => window.api.settings.set('tour.autoplay', v),
   },
   // Same platform filter as the rows: the macOS-only terminal keys have no row elsewhere.
-  ...Object.fromEntries(shortcutsFor(currentPlatform(), SHORTCUTS).filter(isRebindable).map((c): [string, Binding] => [`keyboard.${c.id}`, {
-    read: async () => {
-      await loadKeyboardOverrides()
-      return shortcutValue(getShortcut(c.id).bindings)
-    },
-    write: (v) => setKeyboardOverride(c.id, v === shortcutValue(c.bindings) ? null : v.split(' ').filter(Boolean)),
-  }])),
+  ...Object.fromEntries(
+    shortcutsFor(currentPlatform(), SHORTCUTS)
+      .filter(isRebindable)
+      .map((c): [string, Binding] => [
+        `keyboard.${c.id}`,
+        {
+          read: async () => {
+            await loadKeyboardOverrides()
+            return shortcutValue(getShortcut(c.id).bindings)
+          },
+          write: (v) =>
+            setKeyboardOverride(c.id, v === shortcutValue(c.bindings) ? null : v.split(' ').filter(Boolean)),
+        },
+      ]),
+  ),
 }
 
 export interface SettingValues {
@@ -125,7 +137,8 @@ export function useSettingValues(): SettingValues {
     let cancelled = false
     const readAll = () => {
       for (const [id, binding] of Object.entries(BINDINGS)) {
-        binding.read()
+        binding
+          .read()
           .then((value) => {
             if (!cancelled && !touched.current.has(id)) setValues((prev) => ({ ...prev, [id]: value }))
           })
@@ -156,7 +169,8 @@ export function useSettingValues(): SettingValues {
     Promise.resolve(binding.write(value)).catch((err) => {
       log.warn(`writing ${id} failed`, err)
       // Show what is actually stored, not the value that failed to save.
-      binding.read()
+      binding
+        .read()
         .then((stored) => setValues((prev) => ({ ...prev, [id]: stored })))
         .catch((readErr) => log.warn(`re-reading ${id} failed`, readErr))
     })

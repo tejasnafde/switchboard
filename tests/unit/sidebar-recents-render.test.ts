@@ -24,11 +24,13 @@ const item: RecentSessionItem = {
 
 describe('RecentSessionsSection', () => {
   it('renders a two-line row with a labelled dot and no blinking status', () => {
-    const markup = renderToStaticMarkup(createElement(RecentSessionsSection, {
-      items: [item],
-      activeSessionId: null,
-      onSelect: () => {},
-    }))
+    const markup = renderToStaticMarkup(
+      createElement(RecentSessionsSection, {
+        items: [item],
+        activeSessionId: null,
+        onSelect: () => {},
+      }),
+    )
 
     expect(markup).toContain('<button')
     expect(markup).toContain('Fix auth retry race')
@@ -41,15 +43,27 @@ describe('RecentSessionsSection', () => {
   })
 
   it('heads each group with its label and counts only the urgent ones', () => {
-    const markup = renderToStaticMarkup(createElement(RecentSessionsSection, {
-      items: [
-        item,
-        { ...item, session: { ...item.session, id: 'working', title: 'Working chat' }, status: 'working', statusLine: 'Writing tests' },
-        { ...item, session: { ...item.session, id: 'idle', title: 'Idle chat' }, status: undefined, statusLine: 'repo' },
-      ],
-      activeSessionId: null,
-      onSelect: () => {},
-    }))
+    const markup = renderToStaticMarkup(
+      createElement(RecentSessionsSection, {
+        items: [
+          item,
+          {
+            ...item,
+            session: { ...item.session, id: 'working', title: 'Working chat' },
+            status: 'working',
+            statusLine: 'Writing tests',
+          },
+          {
+            ...item,
+            session: { ...item.session, id: 'idle', title: 'Idle chat' },
+            status: undefined,
+            statusLine: 'repo',
+          },
+        ],
+        activeSessionId: null,
+        onSelect: () => {},
+      }),
+    )
 
     expect(markup.indexOf('Needs you')).toBeLessThan(markup.indexOf('>Working<'))
     expect(markup.indexOf('>Working<')).toBeLessThan(markup.indexOf('Done recently'))
@@ -65,12 +79,14 @@ describe('RecentSessionsSection', () => {
       status: undefined,
       statusLine: 'repo',
     }))
-    const markup = renderToStaticMarkup(createElement(RecentSessionsSection, {
-      items,
-      initialLimit: 4,
-      activeSessionId: null,
-      onSelect: () => {},
-    }))
+    const markup = renderToStaticMarkup(
+      createElement(RecentSessionsSection, {
+        items,
+        initialLimit: 4,
+        activeSessionId: null,
+        onSelect: () => {},
+      }),
+    )
 
     expect(markup).toContain('Session 3')
     expect(markup).not.toContain('Session 4')

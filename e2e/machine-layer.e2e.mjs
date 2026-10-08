@@ -37,11 +37,13 @@ try {
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
   // The first-run tour and analytics notice both read their setting on
   // mount, and the notice sits over the sidebar footer: set them, then reload.
-  await win.evaluate(() => Promise.all([
-    window.api.settings.set('tour.autoplay', 'false'),
-    window.api.settings.set('analytics.enabled', 'false'),
-    window.api.settings.set('analytics.noticeSeen', 'true'),
-  ]))
+  await win.evaluate(() =>
+    Promise.all([
+      window.api.settings.set('tour.autoplay', 'false'),
+      window.api.settings.set('analytics.enabled', 'false'),
+      window.api.settings.set('analytics.noticeSeen', 'true'),
+    ]),
+  )
   await win.reload()
 
   const firstMachine = win.locator('.sidebar-machine-name').first()
@@ -53,7 +55,14 @@ try {
   check(await newMachine.isVisible(), 'Create menu offers New machine')
 
   await newMachine.click()
-  check(await win.getByText('Add machine', { exact: true }).waitFor({ timeout: 5_000 }).then(() => true).catch(() => false), 'Add-machine modal opens')
+  check(
+    await win
+      .getByText('Add machine', { exact: true })
+      .waitFor({ timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false),
+    'Add-machine modal opens',
+  )
 } catch (err) {
   console.error('✗ harness error:', err?.message ?? err)
   failures++

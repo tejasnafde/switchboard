@@ -16,7 +16,15 @@ export type ShortcutPlatform = 'mac' | 'other'
  * every other scope; the rest only overlap themselves.
  */
 export type ShortcutScope =
-  | 'global' | 'menu' | 'composer' | 'terminal' | 'pane' | 'search-bar' | 'approval' | 'question' | 'card-modal'
+  | 'global'
+  | 'menu'
+  | 'composer'
+  | 'terminal'
+  | 'pane'
+  | 'search-bar'
+  | 'approval'
+  | 'question'
+  | 'card-modal'
 
 export type ShortcutGroup = 'App' | 'Navigation' | 'Chat' | 'Panels' | 'Terminal' | 'Search'
 
@@ -46,58 +54,238 @@ const digits = (prefix: string) => Array.from({ length: 9 }, (_, i) => `${prefix
 
 export const SHORTCUTS: readonly ShortcutCommand[] = [
   // Handled in the renderer's window keydown listener (global-keybindings.ts)
-  { id: 'app.toggle-sidebar', label: 'Toggle sidebar', group: 'Panels', scope: 'global', bindings: ['Mod+B', 'Mod+Shift+B'] },
+  {
+    id: 'app.toggle-sidebar',
+    label: 'Toggle sidebar',
+    group: 'Panels',
+    scope: 'global',
+    bindings: ['Mod+B', 'Mod+Shift+B'],
+  },
   { id: 'app.toggle-terminal', label: 'Toggle terminal', group: 'Panels', scope: 'global', bindings: ['Mod+J'] },
-  { id: 'app.toggle-data-science', label: 'Data science layout (workbench center, chat right)', group: 'Panels', scope: 'global', bindings: ['Mod+Shift+J'] },
-  { id: 'app.toggle-right-pane', label: 'Switch right pane (terminal / IDE)', group: 'Panels', scope: 'global', bindings: ['Mod+Shift+E'] },
-  { id: 'app.toggle-board', label: 'Toggle kanban board', group: 'Navigation', scope: 'global', bindings: ['Mod+Shift+K'] },
-  { id: 'app.command-palette', label: 'Command palette', group: 'Navigation', scope: 'global', bindings: ['Mod+Shift+P'] },
+  {
+    id: 'app.toggle-data-science',
+    label: 'Data science layout (workbench center, chat right)',
+    group: 'Panels',
+    scope: 'global',
+    bindings: ['Mod+Shift+J'],
+  },
+  {
+    id: 'app.toggle-right-pane',
+    label: 'Switch right pane (terminal / IDE)',
+    group: 'Panels',
+    scope: 'global',
+    bindings: ['Mod+Shift+E'],
+  },
+  {
+    id: 'app.toggle-board',
+    label: 'Toggle kanban board',
+    group: 'Navigation',
+    scope: 'global',
+    bindings: ['Mod+Shift+K'],
+  },
+  {
+    id: 'app.command-palette',
+    label: 'Command palette',
+    group: 'Navigation',
+    scope: 'global',
+    bindings: ['Mod+Shift+P'],
+  },
   { id: 'app.search', label: 'Search across chats', group: 'Navigation', scope: 'global', bindings: ['Mod+Shift+F'] },
   { id: 'chat.new', label: 'New chat', group: 'Chat', scope: 'global', bindings: ['Mod+Shift+O'] },
   { id: 'chat.dual', label: 'Toggle dual-chat panel', group: 'Chat', scope: 'global', bindings: ['Mod+Shift+\\'] },
-  { id: 'chat.interrupt', label: 'Stop agent (when running)', group: 'Chat', scope: 'global', bindings: ['Mod+Backspace'] },
+  {
+    id: 'chat.interrupt',
+    label: 'Stop agent (when running)',
+    group: 'Chat',
+    scope: 'global',
+    bindings: ['Mod+Backspace'],
+  },
   { id: 'chat.context-bridge', label: 'Send selection to chat', group: 'Chat', scope: 'global', bindings: ['Mod+L'] },
   { id: 'chat.quick-prompt', label: 'Quick prompt', group: 'Chat', scope: 'global', bindings: ['Mod+K'] },
-  { id: 'terminal.new-window-right', label: 'New terminal window (right)', group: 'Terminal', scope: 'global', bindings: ['Mod+T'] },
-  { id: 'terminal.new-window-below', label: 'New terminal window (below)', group: 'Terminal', scope: 'global', bindings: ['Mod+Shift+T'] },
-  { id: 'terminal.new-tab', label: 'New tab in active window', group: 'Terminal', scope: 'global', bindings: ['Mod+\\'] },
+  {
+    id: 'terminal.new-window-right',
+    label: 'New terminal window (right)',
+    group: 'Terminal',
+    scope: 'global',
+    bindings: ['Mod+T'],
+  },
+  {
+    id: 'terminal.new-window-below',
+    label: 'New terminal window (below)',
+    group: 'Terminal',
+    scope: 'global',
+    bindings: ['Mod+Shift+T'],
+  },
+  {
+    id: 'terminal.new-tab',
+    label: 'New tab in active window',
+    group: 'Terminal',
+    scope: 'global',
+    bindings: ['Mod+\\'],
+  },
   { id: 'terminal.next-tab', label: 'Next tab', group: 'Terminal', scope: 'global', bindings: ['Mod+Shift+]'] },
   { id: 'terminal.prev-tab', label: 'Previous tab', group: 'Terminal', scope: 'global', bindings: ['Mod+Shift+['] },
-  { id: 'terminal.focus-left', label: 'Focus window left', group: 'Terminal', scope: 'global', bindings: ['Mod+Alt+ArrowLeft'] },
-  { id: 'terminal.focus-right', label: 'Focus window right', group: 'Terminal', scope: 'global', bindings: ['Mod+Alt+ArrowRight'] },
-  { id: 'terminal.focus-up', label: 'Focus window above', group: 'Terminal', scope: 'global', bindings: ['Mod+Alt+ArrowUp'] },
-  { id: 'terminal.focus-down', label: 'Focus window below', group: 'Terminal', scope: 'global', bindings: ['Mod+Alt+ArrowDown'] },
-  { id: 'terminal.focus-window', label: 'Focus window N', group: 'Terminal', scope: 'global', bindings: digits('Mod+'), range: true },
+  {
+    id: 'terminal.focus-left',
+    label: 'Focus window left',
+    group: 'Terminal',
+    scope: 'global',
+    bindings: ['Mod+Alt+ArrowLeft'],
+  },
+  {
+    id: 'terminal.focus-right',
+    label: 'Focus window right',
+    group: 'Terminal',
+    scope: 'global',
+    bindings: ['Mod+Alt+ArrowRight'],
+  },
+  {
+    id: 'terminal.focus-up',
+    label: 'Focus window above',
+    group: 'Terminal',
+    scope: 'global',
+    bindings: ['Mod+Alt+ArrowUp'],
+  },
+  {
+    id: 'terminal.focus-down',
+    label: 'Focus window below',
+    group: 'Terminal',
+    scope: 'global',
+    bindings: ['Mod+Alt+ArrowDown'],
+  },
+  {
+    id: 'terminal.focus-window',
+    label: 'Focus window N',
+    group: 'Terminal',
+    scope: 'global',
+    bindings: digits('Mod+'),
+    range: true,
+  },
   // Main process before-input-event (src/main/index.ts), routed by focus in App
   { id: 'terminal.close-tab', label: 'Close active tab', group: 'Terminal', scope: 'global', bindings: ['Mod+W'] },
-  { id: 'terminal.close-window', label: 'Close active window', group: 'Terminal', scope: 'global', bindings: ['Mod+Shift+W'] },
+  {
+    id: 'terminal.close-window',
+    label: 'Close active window',
+    group: 'Terminal',
+    scope: 'global',
+    bindings: ['Mod+Shift+W'],
+  },
   // Electron app menu accelerators (src/main/index.ts)
   { id: 'app.settings', label: 'Open or close settings', group: 'App', scope: 'menu', bindings: ['Mod+,'] },
   { id: 'app.reload', label: 'Reload window', group: 'App', scope: 'menu', bindings: ['Mod+R'] },
   { id: 'app.force-reload', label: 'Force reload window', group: 'App', scope: 'menu', bindings: ['Mod+Shift+R'] },
   // Chat composer (RichChatTextarea)
   { id: 'composer.send', label: 'Send message', group: 'Chat', scope: 'composer', bindings: ['Enter'], fixed: true },
-  { id: 'composer.newline', label: 'New line in message', group: 'Chat', scope: 'composer', bindings: ['Shift+Enter'], fixed: true },
-  { id: 'composer.send-other', label: 'Send the other way (queue / steer)', group: 'Chat', scope: 'composer', bindings: ['Alt+Enter'], fixed: true },
-  { id: 'approval.commit-note', label: 'Approve / deny with note', group: 'Chat', scope: 'approval', bindings: ['Mod+Enter'] },
+  {
+    id: 'composer.newline',
+    label: 'New line in message',
+    group: 'Chat',
+    scope: 'composer',
+    bindings: ['Shift+Enter'],
+    fixed: true,
+  },
+  {
+    id: 'composer.send-other',
+    label: 'Send the other way (queue / steer)',
+    group: 'Chat',
+    scope: 'composer',
+    bindings: ['Alt+Enter'],
+    fixed: true,
+  },
+  {
+    id: 'approval.commit-note',
+    label: 'Approve / deny with note',
+    group: 'Chat',
+    scope: 'approval',
+    bindings: ['Mod+Enter'],
+  },
   { id: 'question.pick', label: 'Pick answer N', group: 'Chat', scope: 'question', bindings: digits(''), range: true },
   { id: 'kanban.card-submit', label: 'Save card', group: 'Navigation', scope: 'card-modal', bindings: ['Mod+Enter'] },
   // In-pane find (TerminalPane, useChatSearch, InPaneSearchBar)
   { id: 'pane.find', label: 'Find in pane', group: 'Search', scope: 'pane', bindings: ['Mod+F'] },
-  { id: 'search.next', label: 'Next match', group: 'Search', scope: 'search-bar', bindings: ['Enter', 'ArrowDown', 'F3', 'Mod+G'], fixed: true },
-  { id: 'search.prev', label: 'Previous match', group: 'Search', scope: 'search-bar', bindings: ['Shift+Enter', 'ArrowUp', 'Shift+F3', 'Mod+Shift+G'], fixed: true },
+  {
+    id: 'search.next',
+    label: 'Next match',
+    group: 'Search',
+    scope: 'search-bar',
+    bindings: ['Enter', 'ArrowDown', 'F3', 'Mod+G'],
+    fixed: true,
+  },
+  {
+    id: 'search.prev',
+    label: 'Previous match',
+    group: 'Search',
+    scope: 'search-bar',
+    bindings: ['Shift+Enter', 'ArrowUp', 'Shift+F3', 'Mod+Shift+G'],
+    fixed: true,
+  },
   { id: 'search.close', label: 'Close find', group: 'Search', scope: 'search-bar', bindings: ['Escape'], fixed: true },
   // Terminal line editing (terminal-registry custom key handler), macOS only
-  { id: 'terminal.kill-line', label: 'Delete line', group: 'Terminal', scope: 'terminal', bindings: ['Mod+Backspace'], macOnly: true },
-  { id: 'terminal.line-start', label: 'Start of line', group: 'Terminal', scope: 'terminal', bindings: ['Mod+ArrowLeft'], macOnly: true },
-  { id: 'terminal.line-end', label: 'End of line', group: 'Terminal', scope: 'terminal', bindings: ['Mod+ArrowRight'], macOnly: true },
-  { id: 'terminal.clear', label: 'Clear terminal', group: 'Terminal', scope: 'terminal', bindings: ['Mod+K'], macOnly: true },
-  { id: 'terminal.kill-word', label: 'Delete word', group: 'Terminal', scope: 'terminal', bindings: ['Alt+Backspace'], macOnly: true },
-  { id: 'terminal.word-left', label: 'Word left', group: 'Terminal', scope: 'terminal', bindings: ['Alt+ArrowLeft'], macOnly: true },
-  { id: 'terminal.word-right', label: 'Word right', group: 'Terminal', scope: 'terminal', bindings: ['Alt+ArrowRight'], macOnly: true },
+  {
+    id: 'terminal.kill-line',
+    label: 'Delete line',
+    group: 'Terminal',
+    scope: 'terminal',
+    bindings: ['Mod+Backspace'],
+    macOnly: true,
+  },
+  {
+    id: 'terminal.line-start',
+    label: 'Start of line',
+    group: 'Terminal',
+    scope: 'terminal',
+    bindings: ['Mod+ArrowLeft'],
+    macOnly: true,
+  },
+  {
+    id: 'terminal.line-end',
+    label: 'End of line',
+    group: 'Terminal',
+    scope: 'terminal',
+    bindings: ['Mod+ArrowRight'],
+    macOnly: true,
+  },
+  {
+    id: 'terminal.clear',
+    label: 'Clear terminal',
+    group: 'Terminal',
+    scope: 'terminal',
+    bindings: ['Mod+K'],
+    macOnly: true,
+  },
+  {
+    id: 'terminal.kill-word',
+    label: 'Delete word',
+    group: 'Terminal',
+    scope: 'terminal',
+    bindings: ['Alt+Backspace'],
+    macOnly: true,
+  },
+  {
+    id: 'terminal.word-left',
+    label: 'Word left',
+    group: 'Terminal',
+    scope: 'terminal',
+    bindings: ['Alt+ArrowLeft'],
+    macOnly: true,
+  },
+  {
+    id: 'terminal.word-right',
+    label: 'Word right',
+    group: 'Terminal',
+    scope: 'terminal',
+    bindings: ['Alt+ArrowRight'],
+    macOnly: true,
+  },
 ]
 
-export interface ParsedBinding { mod: boolean; ctrl: boolean; shift: boolean; alt: boolean; key: string }
+export interface ParsedBinding {
+  mod: boolean
+  ctrl: boolean
+  shift: boolean
+  alt: boolean
+  key: string
+}
 
 /**
  * Range commands (⌘1…9, answer 1…9) are a whole row of keys, not one chord.
@@ -130,14 +318,31 @@ export function currentPlatform(): ShortcutPlatform {
   return g.process?.platform === 'darwin' ? 'mac' : 'other'
 }
 
-export interface ShortcutKeyInput { key: string; code?: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }
+export interface ShortcutKeyInput {
+  key: string
+  code?: string
+  metaKey: boolean
+  ctrlKey: boolean
+  shiftKey: boolean
+  altKey: boolean
+}
 
 // US-layout Shift symbols, so `Mod+Shift+]` matches the `}` the browser reports.
 const UNSHIFTED: Record<string, string> = { '}': ']', '{': '[', '|': '\\' }
 
 const CODE_KEYS: Record<string, string> = {
-  BracketLeft: '[', BracketRight: ']', Backslash: '\\', Comma: ',', Period: '.', Slash: '/',
-  Semicolon: ';', Quote: "'", Backquote: '`', Minus: '-', Equal: '=', Space: 'space',
+  BracketLeft: '[',
+  BracketRight: ']',
+  Backslash: '\\',
+  Comma: ',',
+  Period: '.',
+  Slash: '/',
+  Semicolon: ';',
+  Quote: "'",
+  Backquote: '`',
+  Minus: '-',
+  Equal: '=',
+  Space: 'space',
 }
 
 /** The unmodified key a physical key code stands for (`KeyK` → `k`), or null. */
@@ -148,7 +353,11 @@ function keyFromCode(code: string | undefined): string | null {
   return CODE_KEYS[code] ?? null
 }
 
-export function matchesBinding(e: ShortcutKeyInput, binding: string, platform: ShortcutPlatform = currentPlatform()): boolean {
+export function matchesBinding(
+  e: ShortcutKeyInput,
+  binding: string,
+  platform: ShortcutPlatform = currentPlatform(),
+): boolean {
   const b = parseBinding(binding)
   if (!b) return false
   const wantMeta = platform === 'mac' && b.mod
@@ -168,7 +377,7 @@ export function matchesBinding(e: ShortcutKeyInput, binding: string, platform: S
  */
 export function eventKey(e: Pick<ShortcutKeyInput, 'key' | 'code' | 'shiftKey' | 'altKey'>): string {
   // Chromium autofill can dispatch a keydown with no key.
-  const typed = e.key === ' ' ? 'space' : e.key?.toLowerCase() ?? ''
+  const typed = e.key === ' ' ? 'space' : (e.key?.toLowerCase() ?? '')
   const letter = typed.length === 1 && typed !== typed.toUpperCase()
   if (typed.length === 1 && !e.altKey && (!e.shiftKey || letter)) return typed
   const physical = keyFromCode(e.code)
@@ -194,16 +403,24 @@ export function applyShortcutOverrides(
   commands: readonly ShortcutCommand[] = SHORTCUTS,
   platform: ShortcutPlatform = currentPlatform(),
 ): ResolvedShortcuts {
-  const map = overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides as Record<string, unknown> : {}
+  const map =
+    overrides && typeof overrides === 'object' && !Array.isArray(overrides)
+      ? (overrides as Record<string, unknown>)
+      : {}
   const byId = new Map(commands.map((c) => [c.id, c]))
   const ignored = Object.keys(map).filter((id) => {
     const c = byId.get(id)
     const o = map[id]
-    return !c || !isRebindable(c) || !Array.isArray(o)
-      || !o.every((b) => typeof b === 'string' && parseBinding(b) && !reservedShortcutReason(b, platform))
+    return (
+      !c ||
+      !isRebindable(c) ||
+      !Array.isArray(o) ||
+      !o.every((b) => typeof b === 'string' && parseBinding(b) && !reservedShortcutReason(b, platform))
+    )
   })
   const kept = Object.keys(map).filter((id) => !ignored.includes(id))
-  const withOverrides = (ids: string[]) => commands.map((c) => (ids.includes(c.id) ? { ...c, bindings: map[c.id] as string[] } : c))
+  const withOverrides = (ids: string[]) =>
+    commands.map((c) => (ids.includes(c.id) ? { ...c, bindings: map[c.id] as string[] } : c))
   // Clashes are judged against the whole result, not in stored order: swapping
   // two keys in Settings stores an order that is only clash-free once both apply.
   // A dropped override brings its default back, which can clash with an
@@ -212,7 +429,9 @@ export function applyShortcutOverrides(
   const clashing: string[] = []
   for (;;) {
     const applied = withOverrides(remaining)
-    const round = remaining.filter((id) => (map[id] as string[]).some((b) => shortcutClashesFor(id, b, platform, applied).length > 0))
+    const round = remaining.filter((id) =>
+      (map[id] as string[]).some((b) => shortcutClashesFor(id, b, platform, applied).length > 0),
+    )
     if (round.length === 0) break
     clashing.push(...round)
     remaining = remaining.filter((id) => !round.includes(id))
@@ -250,7 +469,10 @@ export function setShortcutCapture(on: boolean): void {
 
 export const isShortcutCaptureActive = (): boolean => capturing
 
-export function shortcutsFor(platform: ShortcutPlatform, commands: readonly ShortcutCommand[] = active): ShortcutCommand[] {
+export function shortcutsFor(
+  platform: ShortcutPlatform,
+  commands: readonly ShortcutCommand[] = active,
+): ShortcutCommand[] {
   return commands.filter((c) => platform === 'mac' || !c.macOnly)
 }
 
@@ -272,11 +494,33 @@ export function matchShortcut(
   return c.bindings.findIndex((b) => matchesBinding(e, b, platform))
 }
 
-export const matchesShortcut = (e: ShortcutKeyInput, id: string, platform?: ShortcutPlatform, commands?: readonly ShortcutCommand[]): boolean =>
-  matchShortcut(e, id, platform, commands) >= 0
+export const matchesShortcut = (
+  e: ShortcutKeyInput,
+  id: string,
+  platform?: ShortcutPlatform,
+  commands?: readonly ShortcutCommand[],
+): boolean => matchShortcut(e, id, platform, commands) >= 0
 
-const MAC_KEYS: Record<string, string> = { space: 'Space', backspace: '⌫', enter: 'Enter', escape: 'Esc', arrowleft: '←', arrowright: '→', arrowup: '↑', arrowdown: '↓' }
-const OTHER_KEYS: Record<string, string> = { space: 'Space', backspace: 'Backspace', enter: 'Enter', escape: 'Esc', arrowleft: 'Left', arrowright: 'Right', arrowup: 'Up', arrowdown: 'Down' }
+const MAC_KEYS: Record<string, string> = {
+  space: 'Space',
+  backspace: '⌫',
+  enter: 'Enter',
+  escape: 'Esc',
+  arrowleft: '←',
+  arrowright: '→',
+  arrowup: '↑',
+  arrowdown: '↓',
+}
+const OTHER_KEYS: Record<string, string> = {
+  space: 'Space',
+  backspace: 'Backspace',
+  enter: 'Enter',
+  escape: 'Esc',
+  arrowleft: 'Left',
+  arrowright: 'Right',
+  arrowup: 'Up',
+  arrowdown: 'Down',
+}
 
 export function formatBinding(binding: string, platform: ShortcutPlatform = currentPlatform()): string {
   const b = parseBinding(binding)
@@ -309,8 +553,15 @@ export function shortcutAccelerator(id: string, commands: readonly ShortcutComma
   const first = getShortcut(id, commands).bindings[0]
   if (!first) return undefined
   const b = parseBinding(first)!
-  const key = b.key.length === 1 ? b.key.toUpperCase() : b.key === 'space' ? 'Space' : b.key.replace(/^arrow/, '').replace(/^./, (ch) => ch.toUpperCase())
-  return [b.mod ? 'CmdOrCtrl' : '', b.ctrl ? 'Ctrl' : '', b.shift ? 'Shift' : '', b.alt ? 'Alt' : '', key].filter(Boolean).join('+')
+  const key =
+    b.key.length === 1
+      ? b.key.toUpperCase()
+      : b.key === 'space'
+        ? 'Space'
+        : b.key.replace(/^arrow/, '').replace(/^./, (ch) => ch.toUpperCase())
+  return [b.mod ? 'CmdOrCtrl' : '', b.ctrl ? 'Ctrl' : '', b.shift ? 'Shift' : '', b.alt ? 'Alt' : '', key]
+    .filter(Boolean)
+    .join('+')
 }
 
 function scopesOverlap(a: ShortcutScope, b: ShortcutScope): boolean {
@@ -327,7 +578,11 @@ function bindingKey(binding: string, platform: ShortcutPlatform): string | null 
   return `${meta ? 'M' : ''}${ctrl ? 'C' : ''}${b.shift ? 'S' : ''}${b.alt ? 'A' : ''}+${UNSHIFTED[b.key] ?? b.key}`
 }
 
-export interface ShortcutClash { binding: string; a: string; b: string }
+export interface ShortcutClash {
+  binding: string
+  a: string
+  b: string
+}
 
 /** Pairs of commands that share a binding in overlapping scopes on `platform`. */
 export function findShortcutClashes(
@@ -366,7 +621,22 @@ export function chordFromEvent(e: ShortcutKeyInput, platform: ShortcutPlatform =
 }
 
 // Keys a text field or list needs for itself, so a bare press cannot be a shortcut.
-const TYPING_KEYS = new Set(['enter', 'tab', 'backspace', 'delete', 'escape', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'home', 'end', 'pageup', 'pagedown', 'space'])
+const TYPING_KEYS = new Set([
+  'enter',
+  'tab',
+  'backspace',
+  'delete',
+  'escape',
+  'arrowleft',
+  'arrowright',
+  'arrowup',
+  'arrowdown',
+  'home',
+  'end',
+  'pageup',
+  'pagedown',
+  'space',
+])
 
 const EDITING = 'Cut, copy, paste, select all and undo belong to text editing.'
 const RESERVED: Record<ShortcutPlatform, Record<string, string>> = {
@@ -383,14 +653,23 @@ const RESERVED: Record<ShortcutPlatform, Record<string, string>> = {
     'Mod+Shift+3': 'macOS takes a screenshot with ⌘⇧3.',
     'Mod+Shift+4': 'macOS takes a screenshot with ⌘⇧4.',
     'Mod+Shift+5': 'macOS opens the screenshot tool with ⌘⇧5.',
-    'Mod+C': EDITING, 'Mod+V': EDITING, 'Mod+X': EDITING, 'Mod+A': EDITING, 'Mod+Z': EDITING, 'Mod+Shift+Z': EDITING,
+    'Mod+C': EDITING,
+    'Mod+V': EDITING,
+    'Mod+X': EDITING,
+    'Mod+A': EDITING,
+    'Mod+Z': EDITING,
+    'Mod+Shift+Z': EDITING,
   },
   other: {
     'Alt+F4': 'The window manager closes the window with Alt+F4.',
     'Alt+Tab': 'The window manager switches apps with Alt+Tab.',
     'Mod+C': 'Ctrl+C copies text and interrupts the program in a terminal.',
     'Mod+D': 'Ctrl+D ends input in a terminal.',
-    'Mod+V': EDITING, 'Mod+X': EDITING, 'Mod+A': EDITING, 'Mod+Z': EDITING, 'Mod+Y': EDITING,
+    'Mod+V': EDITING,
+    'Mod+X': EDITING,
+    'Mod+A': EDITING,
+    'Mod+Z': EDITING,
+    'Mod+Y': EDITING,
   },
 }
 
@@ -405,7 +684,10 @@ export function reservedShortcutReason(binding: string, platform: ShortcutPlatfo
   const printable = b.key.length === 1
   if (platform === 'mac' && b.ctrl && !b.mod) return 'On macOS, Ctrl keys belong to the terminal and text editing.'
   if (!b.mod && !b.ctrl && (printable || (!b.alt && TYPING_KEYS.has(b.key)))) {
-    if (!b.alt) return printable ? 'A key without ⌘ or Ctrl types text. Add a modifier.' : 'Typing and lists need this key. Add a modifier.'
+    if (!b.alt)
+      return printable
+        ? 'A key without ⌘ or Ctrl types text. Add a modifier.'
+        : 'Typing and lists need this key. Add a modifier.'
     if (platform === 'mac') return '⌥ with a letter types a special character on macOS. Add ⌘.'
   }
   return null

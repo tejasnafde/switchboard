@@ -94,9 +94,13 @@ describe('resolveInstanceEnv - claude ambient CLAUDE_CONFIG_DIR (behavior 1)', (
   it.skipIf(process.platform === 'win32')('an explicit oauth_dir still wins over the ambient value', async () => {
     process.env.CLAUDE_CONFIG_DIR = '/tmp/some-ambient-claude-home'
     const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
-    const env = resolveInstanceEnv(row({
-      id: 'claude-code-work', authMode: 'oauth_dir', oauthDir: '/tmp/claude-work',
-    }))
+    const env = resolveInstanceEnv(
+      row({
+        id: 'claude-code-work',
+        authMode: 'oauth_dir',
+        oauthDir: '/tmp/claude-work',
+      }),
+    )
     expect(env.CLAUDE_CONFIG_DIR).toBe('/tmp/claude-work')
   })
 
@@ -112,9 +116,7 @@ describe('resolveInstanceEnv - claude ambient CLAUDE_CONFIG_DIR (behavior 1)', (
     const work = resolveInstanceEnv(row({ id: 'a', authMode: 'oauth_dir', oauthDir: '/tmp/claude-work' }))
     const personal = resolveInstanceEnv(row({ id: 'b', authMode: 'oauth_dir', oauthDir: '/tmp/claude-personal' }))
     const fallback = resolveInstanceEnv(row({}))
-    expect(new Set([
-      work.CLAUDE_CONFIG_DIR, personal.CLAUDE_CONFIG_DIR, fallback.CLAUDE_CONFIG_DIR,
-    ]).size).toBe(3)
+    expect(new Set([work.CLAUDE_CONFIG_DIR, personal.CLAUDE_CONFIG_DIR, fallback.CLAUDE_CONFIG_DIR]).size).toBe(3)
     expect(fallback.CLAUDE_CONFIG_DIR).toBe(CANONICAL_CLAUDE)
   })
 
@@ -141,31 +143,43 @@ describe('resolveInstanceEnv - credential-home precedence (behavior 3)', () => {
   })
 
   // Same POSIX-literal-fixture caveat as above.
-  it.skipIf(process.platform === 'win32')('an env-overlay CLAUDE_CONFIG_DIR beats the default but loses to oauth_dir', async () => {
-    process.env.CLAUDE_CONFIG_DIR = '/tmp/ambient'
-    const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
+  it.skipIf(process.platform === 'win32')(
+    'an env-overlay CLAUDE_CONFIG_DIR beats the default but loses to oauth_dir',
+    async () => {
+      process.env.CLAUDE_CONFIG_DIR = '/tmp/ambient'
+      const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
 
-    // Legacy env-mode profile: the structural var lives in the overlay. It
-    // must keep running against the dir it was logged into - silently moving
-    // it to ~/.claude would switch the user's account without telling them.
-    const overlayOnly = resolveInstanceEnv(row({
-      id: 'legacy', env: { CLAUDE_CONFIG_DIR: '/tmp/legacy-claude' },
-    }))
-    expect(overlayOnly.CLAUDE_CONFIG_DIR).toBe('/tmp/legacy-claude')
+      // Legacy env-mode profile: the structural var lives in the overlay. It
+      // must keep running against the dir it was logged into - silently moving
+      // it to ~/.claude would switch the user's account without telling them.
+      const overlayOnly = resolveInstanceEnv(
+        row({
+          id: 'legacy',
+          env: { CLAUDE_CONFIG_DIR: '/tmp/legacy-claude' },
+        }),
+      )
+      expect(overlayOnly.CLAUDE_CONFIG_DIR).toBe('/tmp/legacy-claude')
 
-    const both = resolveInstanceEnv(row({
-      id: 'both', authMode: 'oauth_dir', oauthDir: '/tmp/explicit-claude',
-      env: { CLAUDE_CONFIG_DIR: '/tmp/legacy-claude' },
-    }))
-    expect(both.CLAUDE_CONFIG_DIR).toBe('/tmp/explicit-claude')
-  })
+      const both = resolveInstanceEnv(
+        row({
+          id: 'both',
+          authMode: 'oauth_dir',
+          oauthDir: '/tmp/explicit-claude',
+          env: { CLAUDE_CONFIG_DIR: '/tmp/legacy-claude' },
+        }),
+      )
+      expect(both.CLAUDE_CONFIG_DIR).toBe('/tmp/explicit-claude')
+    },
+  )
 
   it('canonicalizes an env-overlay home the same way an oauth_dir is canonicalized', async () => {
     const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
-    expect(resolveInstanceEnv(row({ env: { CLAUDE_CONFIG_DIR: '~/.claude-legacy/' } })).CLAUDE_CONFIG_DIR)
-      .toBe(join(homedir(), '.claude-legacy'))
-    expect(resolveInstanceEnv(row({ agentType: 'codex', env: { CODEX_HOME: '~/.codex-legacy/' } })).CODEX_HOME)
-      .toBe(join(homedir(), '.codex-legacy'))
+    expect(resolveInstanceEnv(row({ env: { CLAUDE_CONFIG_DIR: '~/.claude-legacy/' } })).CLAUDE_CONFIG_DIR).toBe(
+      join(homedir(), '.claude-legacy'),
+    )
+    expect(resolveInstanceEnv(row({ agentType: 'codex', env: { CODEX_HOME: '~/.codex-legacy/' } })).CODEX_HOME).toBe(
+      join(homedir(), '.codex-legacy'),
+    )
   })
 
   // Same POSIX-literal-fixture caveat as above.
@@ -175,20 +189,27 @@ describe('resolveInstanceEnv - credential-home precedence (behavior 3)', () => {
     const codexRow = (o: Partial<ProviderInstanceRow>) => row({ agentType: 'codex', ...o })
 
     expect(resolveInstanceEnv(codexRow({})).CODEX_HOME).toBe(CANONICAL_CODEX)
-    expect(resolveInstanceEnv(codexRow({ env: { CODEX_HOME: '/tmp/legacy-codex' } })).CODEX_HOME)
-      .toBe('/tmp/legacy-codex')
-    expect(resolveInstanceEnv(codexRow({
-      authMode: 'oauth_dir', oauthDir: '/tmp/explicit-codex', env: { CODEX_HOME: '/tmp/legacy-codex' },
-    })).CODEX_HOME).toBe('/tmp/explicit-codex')
+    expect(resolveInstanceEnv(codexRow({ env: { CODEX_HOME: '/tmp/legacy-codex' } })).CODEX_HOME).toBe(
+      '/tmp/legacy-codex',
+    )
+    expect(
+      resolveInstanceEnv(
+        codexRow({
+          authMode: 'oauth_dir',
+          oauthDir: '/tmp/explicit-codex',
+          env: { CODEX_HOME: '/tmp/legacy-codex' },
+        }),
+      ).CODEX_HOME,
+    ).toBe('/tmp/explicit-codex')
   })
 
   it('does not let a claude instance overlay leak a CODEX_HOME identity (and vice versa)', async () => {
     const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
     // A stray cross-kind var in an overlay is ordinary env, not this
     // instance's credential home: it must not change the home we resolve.
-    expect(resolveInstanceEnv(row({ env: { CODEX_HOME: '/tmp/not-mine' } })).CLAUDE_CONFIG_DIR)
-      .toBe(CANONICAL_CLAUDE)
-    expect(resolveInstanceEnv(row({ agentType: 'codex', env: { CLAUDE_CONFIG_DIR: '/tmp/not-mine' } })).CODEX_HOME)
-      .toBe(CANONICAL_CODEX)
+    expect(resolveInstanceEnv(row({ env: { CODEX_HOME: '/tmp/not-mine' } })).CLAUDE_CONFIG_DIR).toBe(CANONICAL_CLAUDE)
+    expect(
+      resolveInstanceEnv(row({ agentType: 'codex', env: { CLAUDE_CONFIG_DIR: '/tmp/not-mine' } })).CODEX_HOME,
+    ).toBe(CANONICAL_CODEX)
   })
 })

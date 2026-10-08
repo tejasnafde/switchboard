@@ -15,11 +15,7 @@ import { scanCodexSessionCopies } from '../projects/session-scanner'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import { mergeConversationMessages } from '../agent/dedupe-messages'
 import { enrichMessagesWithDisplayBody } from '../ipc/enrich-display-body'
-import {
-  isForkableCanonicalMessage,
-  type CanonicalForkMessage,
-  type ForkMessageProvenance,
-} from './fork-anchor'
+import { isForkableCanonicalMessage, type CanonicalForkMessage, type ForkMessageProvenance } from './fork-anchor'
 
 export interface ConversationHistory {
   messages: ChatMessage[]
@@ -34,7 +30,17 @@ export async function loadConversationHistory(
   conversationId: string,
   _projectPath: string,
 ): Promise<ConversationHistory> {
-  const timing: ChatLoadTiming = { readMs: 0, parseMs: 0, diskMs: 0, dbMs: 0, mergeMs: 0, enrichMs: 0, diskBytes: 0, diskLines: 0, cacheHits: 0 }
+  const timing: ChatLoadTiming = {
+    readMs: 0,
+    parseMs: 0,
+    diskMs: 0,
+    dbMs: 0,
+    mergeMs: 0,
+    enrichMs: 0,
+    diskBytes: 0,
+    diskLines: 0,
+    cacheHits: 0,
+  }
   const metadataStart = performance.now()
   const familyIds = threadFamilyIds(conversationId)
   const legacySessionHints = conversationSessionHints(conversationId)
@@ -50,9 +56,7 @@ export async function loadConversationHistory(
   const claudeIds = new Set([
     ...familyIds,
     ...legacySessionHints,
-    ...segments
-      .filter((segment) => segment.provider === 'claude-code')
-      .map((segment) => segment.provider_session_id),
+    ...segments.filter((segment) => segment.provider === 'claude-code').map((segment) => segment.provider_session_id),
   ])
   timing.dbMs += performance.now() - metadataStart
   const diskStart = performance.now()
@@ -77,15 +81,14 @@ export async function loadConversationHistory(
   const codexSessions = await scanCodexSessionCopies(knownSessionIds, codexCandidateDirs())
   // A native Codex fork's rollout starts with a copy of the parent's prefix,
   // stamped with the fork time; the fork's stored messages already hold it.
-  const forkReceipt = codexSessions.length > 0
-    ? getNativeForkResume(conversationId)
-    : undefined
+  const forkReceipt = codexSessions.length > 0 ? getNativeForkResume(conversationId) : undefined
   for (const session of codexSessions) {
     if (!knownSessionIds.has(session.id) || !session.filePath) continue
     const loaded = await loadJsonlCached(session.filePath, 'codex', timing)
-    const messages = loaded && forkReceipt?.provider === 'codex' && forkReceipt.sessionId === session.id
-      ? loaded.slice(forkReceipt.copiedMessageCount ?? 0)
-      : loaded
+    const messages =
+      loaded && forkReceipt?.provider === 'codex' && forkReceipt.sessionId === session.id
+        ? loaded.slice(forkReceipt.copiedMessageCount ?? 0)
+        : loaded
     if (messages) {
       diskMessages.push(...messages)
       for (const message of messages) {
@@ -100,9 +103,7 @@ export async function loadConversationHistory(
 
   timing.diskMs = performance.now() - diskStart
   const dbStart = performance.now()
-  const databaseMessages = familyIds.flatMap((id) =>
-    messageRowsToChatMessages(getMessagesForConversation(id))
-  )
+  const databaseMessages = familyIds.flatMap((id) => messageRowsToChatMessages(getMessagesForConversation(id)))
   const enrichments = new Map()
   for (const id of familyIds) {
     for (const [content, enrichment] of getDisplayBodyEnrichments(id)) {
@@ -123,9 +124,7 @@ export async function loadConversationHistory(
     forkMessages: messages.map((message) => ({
       message,
       forkable: isForkableCanonicalMessage(message),
-      ...(provenanceByMessageId.has(message.id)
-        ? { provenance: provenanceByMessageId.get(message.id) }
-        : {}),
+      ...(provenanceByMessageId.has(message.id) ? { provenance: provenanceByMessageId.get(message.id) } : {}),
     })),
     familyIds,
     diskMessageCount: diskMessages.length,

@@ -5,7 +5,10 @@ import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { applyKanbanArchiveSideEffect } from '@shared/kanban-archive'
 import type { RuntimeMode } from '@shared/provider-events'
 import { isRuntimeMode } from '@shared/session-defaults'
-import { getKanbanWorktreeCreationKey as getKanbanWorktreeCreationKeyFromDb, listOwnedWorktreePaths } from './worktree-creation'
+import {
+  getKanbanWorktreeCreationKey as getKanbanWorktreeCreationKeyFromDb,
+  listOwnedWorktreePaths,
+} from './worktree-creation'
 import { getDb } from './database'
 import { archiveConversation, unarchiveConversation } from './conversations'
 
@@ -74,10 +77,21 @@ function rowToCard(r: KanbanRow): KanbanCard {
 export function createKanbanCard(id: string, input: KanbanCardCreate): KanbanCard {
   const tagsJson = JSON.stringify(input.tags ?? [])
   const runtimeMode = input.runtimeMode ?? UNSET_RUNTIME_MODE
-  getDb().prepare(`
+  getDb()
+    .prepare(`
     INSERT INTO kanban_cards (id, project_path, title, description, tags, status, cost_cap_usd, runtime_mode)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, input.projectPath, input.title, input.description ?? '', tagsJson, input.status ?? 'backlog', input.costCapUsd ?? null, runtimeMode)
+  `)
+    .run(
+      id,
+      input.projectPath,
+      input.title,
+      input.description ?? '',
+      tagsJson,
+      input.status ?? 'backlog',
+      input.costCapUsd ?? null,
+      runtimeMode,
+    )
   return getKanbanCard(id)!
 }
 
@@ -87,9 +101,9 @@ export function getKanbanCard(id: string): KanbanCard | null {
 }
 
 export function listKanbanCards(projectPath: string): KanbanCard[] {
-  const rows = getDb().prepare(
-    'SELECT * FROM kanban_cards WHERE project_path = ? ORDER BY status, updated_at DESC'
-  ).all(projectPath) as KanbanRow[]
+  const rows = getDb()
+    .prepare('SELECT * FROM kanban_cards WHERE project_path = ? ORDER BY status, updated_at DESC')
+    .all(projectPath) as KanbanRow[]
   return rows.map(rowToCard)
 }
 
@@ -97,24 +111,36 @@ export function updateKanbanCard(id: string, patch: KanbanCardUpdate): KanbanCar
   const existing = getKanbanCard(id)
   if (!existing) return null
   const next = { ...existing, ...patch }
-  const completedAt = patch.status === 'done' && existing.status !== 'done'
-    ? Date.now()
-    : patch.status && patch.status !== 'done' ? null : existing.completedAt
+  const completedAt =
+    patch.status === 'done' && existing.status !== 'done'
+      ? Date.now()
+      : patch.status && patch.status !== 'done'
+        ? null
+        : existing.completedAt
   // Card row + archive side effect run atomically so a Done transition
   // can't leave the row updated while the conversation archive write
   // fails (or vice versa).
   getDb().transaction(() => {
-    getDb().prepare(`
+    getDb()
+      .prepare(`
       UPDATE kanban_cards SET
         title = ?, description = ?, tags = ?, status = ?,
         cost_cap_usd = ?, cost_used_usd = ?, conversation_id = ?,
         updated_at = ?, completed_at = ?
       WHERE id = ?
-    `).run(
-      next.title, next.description, JSON.stringify(next.tags), next.status,
-      next.costCapUsd, next.costUsedUsd, next.conversationId,
-      Date.now(), completedAt, id,
-    )
+    `)
+      .run(
+        next.title,
+        next.description,
+        JSON.stringify(next.tags),
+        next.status,
+        next.costCapUsd,
+        next.costUsedUsd,
+        next.conversationId,
+        Date.now(),
+        completedAt,
+        id,
+      )
     // "Done" column doubles as an archive trigger: moving a linked card
     // into Done archives its conversation; moving back out unarchives.
     applyKanbanArchiveSideEffect(

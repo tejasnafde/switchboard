@@ -92,6 +92,11 @@ jobs:
       - name: Install mobile dependencies
         run: npm ci --prefix apps/mobile
 
+      # Pinned oxfmt (.oxfmtrc.json). Fix locally with `npm run format`.
+      - name: Formatting
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run format:check
+
       - name: Typecheck
         run: npm run typecheck
 

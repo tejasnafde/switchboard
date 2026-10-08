@@ -43,9 +43,7 @@ export async function mobileForkRequest(input: {
       timestamp: input.message.timestamp,
       contentDigest,
     },
-    checkout: input.withWorktree
-      ? { kind: 'new-worktree', basePolicy: 'source-head' }
-      : { kind: 'shared-checkout' },
+    checkout: input.withWorktree ? { kind: 'new-worktree', basePolicy: 'source-head' } : { kind: 'shared-checkout' },
     provenance: { surface: 'react-native', requestedAt: input.requestedAt ?? Date.now() },
   }
 }

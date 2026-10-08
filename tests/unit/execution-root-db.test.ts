@@ -47,21 +47,27 @@ vi.mock('better-sqlite3', () => {
             const threadId = threadSessions.get(args[0] as string)
             return threadId !== undefined ? { thread_id: threadId } : undefined
           }
-          if (/SELECT worktree_path, worktree_branch, execution_root_revision, project_path FROM conversations WHERE id = \?/.test(sql)) {
+          if (
+            /SELECT worktree_path, worktree_branch, execution_root_revision, project_path FROM conversations WHERE id = \?/.test(
+              sql,
+            )
+          ) {
             const row = conversations.get(args[0] as string)
             return row
               ? {
-                worktree_path: row.worktree_path ?? null,
-                worktree_branch: row.worktree_branch ?? null,
-                execution_root_revision: row.execution_root_revision ?? null,
-                project_path: row.project_path ?? null,
-              }
+                  worktree_path: row.worktree_path ?? null,
+                  worktree_branch: row.worktree_branch ?? null,
+                  execution_root_revision: row.execution_root_revision ?? null,
+                  project_path: row.project_path ?? null,
+                }
               : undefined
           }
           return undefined
         },
         run: (...args: unknown[]) => {
-          if (/UPDATE conversations SET worktree_path = \?, worktree_branch = \?, execution_root_revision =/.test(sql)) {
+          if (
+            /UPDATE conversations SET worktree_path = \?, worktree_branch = \?, execution_root_revision =/.test(sql)
+          ) {
             const [path, branch, , id] = args as [string | null, string | null, number, string]
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
@@ -70,7 +76,9 @@ vi.mock('better-sqlite3', () => {
             row.execution_root_revision = (row.execution_root_revision ?? 0) + 1
             return { changes: 1 }
           }
-          if (/UPDATE conversations SET worktree_path = \?, worktree_branch = \?, updated_at = \? WHERE id = \?/.test(sql)) {
+          if (
+            /UPDATE conversations SET worktree_path = \?, worktree_branch = \?, updated_at = \? WHERE id = \?/.test(sql)
+          ) {
             const [path, branch, , id] = args as [string | null, string | null, number, string]
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
@@ -89,12 +97,8 @@ vi.mock('better-sqlite3', () => {
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/sb-execution-root-db-test' } }))
 
-const {
-  getConversationExecutionRoot,
-  commitConversationExecutionRoot,
-  setConversationWorktree,
-  recordThreadSession,
-} = await import('../../src/main/db/database')
+const { getConversationExecutionRoot, commitConversationExecutionRoot, setConversationWorktree, recordThreadSession } =
+  await import('../../src/main/db/database')
 
 beforeEach(() => {
   threadSessions.clear()
@@ -103,7 +107,12 @@ beforeEach(() => {
 
 describe('getConversationExecutionRoot', () => {
   it('reads the stored pointer and revision', () => {
-    conversations.set('c1', { project_path: '/repo/app', worktree_path: '/wt/a', worktree_branch: 'sb/a', execution_root_revision: 3 })
+    conversations.set('c1', {
+      project_path: '/repo/app',
+      worktree_path: '/wt/a',
+      worktree_branch: 'sb/a',
+      execution_root_revision: 3,
+    })
     expect(getConversationExecutionRoot('c1')).toMatchObject({
       worktreePath: '/wt/a',
       worktreeBranch: 'sb/a',
@@ -112,7 +121,12 @@ describe('getConversationExecutionRoot', () => {
   })
 
   it('reports revision 0 for a row written before the column existed', () => {
-    conversations.set('c1', { project_path: '/repo/app', worktree_path: null, worktree_branch: null, execution_root_revision: null })
+    conversations.set('c1', {
+      project_path: '/repo/app',
+      worktree_path: null,
+      worktree_branch: null,
+      execution_root_revision: null,
+    })
     expect(getConversationExecutionRoot('c1')?.revision).toBe(0)
   })
 
@@ -121,7 +135,12 @@ describe('getConversationExecutionRoot', () => {
   })
 
   it('resolves a rotated Claude session id back to its root conversation', () => {
-    conversations.set('agent_1', { project_path: '/repo/app', worktree_path: '/wt/a', worktree_branch: 'sb/a', execution_root_revision: 2 })
+    conversations.set('agent_1', {
+      project_path: '/repo/app',
+      worktree_path: '/wt/a',
+      worktree_branch: 'sb/a',
+      execution_root_revision: 2,
+    })
     threadSessions.set('uuid-rotated', 'agent_1')
     expect(getConversationExecutionRoot('uuid-rotated')?.revision).toBe(2)
   })
@@ -150,7 +169,12 @@ describe('commitConversationExecutionRoot', () => {
   })
 
   it('bumps the revision when returning to the parent checkout', () => {
-    conversations.set('c1', { project_path: '/repo/app', worktree_path: '/wt/a', worktree_branch: 'sb/a', execution_root_revision: 4 })
+    conversations.set('c1', {
+      project_path: '/repo/app',
+      worktree_path: '/wt/a',
+      worktree_branch: 'sb/a',
+      execution_root_revision: 4,
+    })
     expect(commitConversationExecutionRoot('c1', null, null)).toBe(5)
     expect(conversations.get('c1')?.worktree_path).toBeNull()
   })

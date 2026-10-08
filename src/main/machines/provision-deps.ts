@@ -31,10 +31,16 @@ export const execProc: ProcRunner['exec'] = (command, args, stdin, timeoutMs = E
     let outLen = 0
     let errLen = 0
     child.stdout.on('data', (d: Buffer) => {
-      if (outLen < MAX_CAPTURE) { out.push(d); outLen += d.length }
+      if (outLen < MAX_CAPTURE) {
+        out.push(d)
+        outLen += d.length
+      }
     })
     child.stderr.on('data', (d: Buffer) => {
-      if (errLen < MAX_CAPTURE) { err.push(d); errLen += d.length }
+      if (errLen < MAX_CAPTURE) {
+        err.push(d)
+        errLen += d.length
+      }
     })
     let done = false
     const finish = (code: number, stderrOverride?: string) => {

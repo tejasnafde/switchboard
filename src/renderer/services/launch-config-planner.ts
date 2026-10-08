@@ -43,7 +43,10 @@ export function resolveCwd(cwd: string | undefined, projectPath: string | undefi
   return `${projectPath}/${cwd}`
 }
 
-function makeOpts(t: { label: string; cwd?: string; on_start?: string; wait_for?: string }, projectPath: string | undefined): SpawnOpts {
+function makeOpts(
+  t: { label: string; cwd?: string; on_start?: string; wait_for?: string },
+  projectPath: string | undefined,
+): SpawnOpts {
   return {
     label: t.label,
     cwd: resolveCwd(t.cwd, projectPath),
@@ -92,10 +95,12 @@ export function planLaunchConfigSpawn(launchConfig: LaunchConfig, projectPath: s
   }
 
   // Empty launchConfig - emit one default pane so the strip isn't blank.
-  return [{
-    kind: 'addWindow',
-    opts: { label: 'Terminal 1', cwd: projectPath, command: undefined, wait_for: undefined },
-  }]
+  return [
+    {
+      kind: 'addWindow',
+      opts: { label: 'Terminal 1', cwd: projectPath, command: undefined, wait_for: undefined },
+    },
+  ]
 }
 
 // ─── Hot-reload fallback ──────────────────────────────────────────

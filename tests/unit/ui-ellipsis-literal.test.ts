@@ -42,7 +42,7 @@ describe('UI ellipsis rendering', () => {
       const fs = await import('fs/promises')
       const source = await fs.readFile(
         new URL('../../src/renderer/components/chat/MessageBubble.tsx', import.meta.url),
-        'utf-8'
+        'utf-8',
       )
       // Ensure we don't have the escape sequence representation
       expect(source).not.toMatch(/['"]Sending\\u2026['"]/)
@@ -52,7 +52,7 @@ describe('UI ellipsis rendering', () => {
       const fs = await import('fs/promises')
       const source = await fs.readFile(
         new URL('../../src/renderer/components/chat/ChatPanel.tsx', import.meta.url),
-        'utf-8'
+        'utf-8',
       )
       // Ensure no literal … in status strings
       expect(source).not.toMatch(/['"](?:thinking|sending|Sending|Thinking|Working|Queue).*\\u2026['"]/)
@@ -62,7 +62,7 @@ describe('UI ellipsis rendering', () => {
       const fs = await import('fs/promises')
       const source = await fs.readFile(
         new URL('../../src/renderer/components/chat/ApprovalCard.tsx', import.meta.url),
-        'utf-8'
+        'utf-8',
       )
       // Ensure no literal … in approval strings
       expect(source).not.toMatch(/['"](?:Approving|Denying|Yes, and|No, do).*\\u2026['"]/)
@@ -72,7 +72,7 @@ describe('UI ellipsis rendering', () => {
       const fs = await import('fs/promises')
       const source = await fs.readFile(
         new URL('../../src/renderer/components/settings/LaunchConfigsPanel.tsx', import.meta.url),
-        'utf-8'
+        'utf-8',
       )
       // Ensure no literal … in save status
       expect(source).not.toMatch(/['"]Saving\\u2026['"]/)
@@ -82,7 +82,7 @@ describe('UI ellipsis rendering', () => {
       const fs = await import('fs/promises')
       const source = await fs.readFile(
         new URL('../../src/renderer/components/sidebar/Sidebar.tsx', import.meta.url),
-        'utf-8'
+        'utf-8',
       )
       // Ensure no literal … in scanning status
       expect(source).not.toMatch(/['"]Scanning\\u2026['"]/)
@@ -105,28 +105,28 @@ describe('UI ellipsis rendering', () => {
       ]
 
       for (const filePath of filesToCheck) {
-        const source = await fs.readFile(
-          new URL(filePath, import.meta.url),
-          'utf-8'
-        )
+        const source = await fs.readFile(new URL(filePath, import.meta.url), 'utf-8')
         // Match any quoted string (single or double quotes) containing a backslash-u pattern
         // BUT exclude \x00-\x1f (control characters) which are legitimate for non-display uses
         // Focus on catching UI characters like … (ellipsis), ⌘ (command symbol), etc.
         const matches = source.match(/(['"])[^'"]*\\u([0-9A-Fa-f]{4})[^'"]*\1/g)
         if (matches) {
           // Filter out control characters (0000-001F) which have legitimate non-display uses
-          const uiCharMatches = matches.filter(m => {
+          const uiCharMatches = matches.filter((m) => {
             const code = m.match(/\\u([0-9A-Fa-f]{4})/)?.[1]
             if (!code) return false
             const codeNum = parseInt(code, 16)
             // Exclude control characters (0000-001F, 007F, 0080-009F)
             return !(
-              (codeNum >= 0x0000 && codeNum <= 0x001F) ||
-              codeNum === 0x007F ||
-              (codeNum >= 0x0080 && codeNum <= 0x009F)
+              (codeNum >= 0x0000 && codeNum <= 0x001f) ||
+              codeNum === 0x007f ||
+              (codeNum >= 0x0080 && codeNum <= 0x009f)
             )
           })
-          expect(uiCharMatches, `File ${path.basename(filePath)} should not contain literal \\uXXXX escape sequences for UI characters in quoted strings`).toHaveLength(0)
+          expect(
+            uiCharMatches,
+            `File ${path.basename(filePath)} should not contain literal \\uXXXX escape sequences for UI characters in quoted strings`,
+          ).toHaveLength(0)
         }
       }
     })
@@ -197,7 +197,7 @@ describe('UI ellipsis rendering', () => {
         const matches = source.match(new RegExp(BARE_JSX_TEXT_ESCAPE.source, 'g'))
         expect(
           matches,
-          `File ${path.basename(filePath)} should not contain a literal \\uXXXX escape in bare JSX text`
+          `File ${path.basename(filePath)} should not contain a literal \\uXXXX escape in bare JSX text`,
         ).toBeNull()
       }
     })

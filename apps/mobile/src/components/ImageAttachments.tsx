@@ -33,7 +33,11 @@ type Shrunk = { ok: true; payload: ImagePayload } | { ok: false; reason: ImageRe
  * Scale and re-encode one picked image to fit `remaining` bytes. The decoder
  * applies EXIF orientation, and the re-encoded file carries no EXIF.
  */
-async function shrinkAsset(asset: ImagePicker.ImagePickerAsset, sourceType: string, remaining: number): Promise<Shrunk> {
+async function shrinkAsset(
+  asset: ImagePicker.ImagePickerAsset,
+  sourceType: string,
+  remaining: number,
+): Promise<Shrunk> {
   const attempts = resizeAttempts(sourceType)
   if (!attempts) {
     // A GIF goes as is: re-encoding would drop its animation.
@@ -98,7 +102,9 @@ export const AttachButton = memo(function AttachButton({
         const sourceType = resizeSourceType(asset)
         let shrunk: Shrunk
         try {
-          shrunk = sourceType ? await shrinkAsset(asset, sourceType, remaining) : { ok: false, reason: 'unsupported-type' }
+          shrunk = sourceType
+            ? await shrinkAsset(asset, sourceType, remaining)
+            : { ok: false, reason: 'unsupported-type' }
         } catch (err) {
           log.warn('image resize failed', { name, err })
           shrunk = { ok: false, reason: 'unreadable' }

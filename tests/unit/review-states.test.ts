@@ -25,14 +25,36 @@ import type { PrError, PrErrorKind, PrListData, PrSummary, RepoRef } from '../..
 
 const gh: RepoRef = { host: 'github', owner: 'o', name: 'switchboard' }
 const bb: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'bot' }
-const err = (kind: PrErrorKind, host: PrError['host'] = 'bitbucket', message = 'x'): PrError => ({ kind, host, message })
-const data = (over: Partial<PrListData>): PrListData => ({ prs: [], sources: [], unsupportedProjects: [], fetchedAt: 0, hidden: [], ...over })
+const err = (kind: PrErrorKind, host: PrError['host'] = 'bitbucket', message = 'x'): PrError => ({
+  kind,
+  host,
+  message,
+})
+const data = (over: Partial<PrListData>): PrListData => ({
+  prs: [],
+  sources: [],
+  unsupportedProjects: [],
+  fetchedAt: 0,
+  hidden: [],
+  ...over,
+})
 
 describe('describePrError', () => {
   it('gives every error kind one line and one fix', () => {
     const kinds: PrErrorKind[] = [
-      'no_account', 'unsupported_repo', 'token_rejected', 'rate_limited', 'offline', 'needs_desktop', 'gh_missing', 'not_found',
-      'forbidden', 'conflict', 'stale', 'invalid', 'unknown',
+      'no_account',
+      'unsupported_repo',
+      'token_rejected',
+      'rate_limited',
+      'offline',
+      'needs_desktop',
+      'gh_missing',
+      'not_found',
+      'forbidden',
+      'conflict',
+      'stale',
+      'invalid',
+      'unknown',
     ]
     for (const kind of kinds) {
       const n = describePrError(err(kind))
@@ -54,13 +76,22 @@ describe('describePrError', () => {
 
 describe('write copy', () => {
   it('shows the host reason for a refused write and the fix for account or network trouble', () => {
-    expect(writeErrorText(err('stale', 'github', 'New commits were pushed since you looked.'))).toBe('New commits were pushed since you looked.')
-    expect(writeErrorText(err('forbidden', 'bitbucket', 'You cannot approve your own pull request'))).toBe('You cannot approve your own pull request')
-    expect(writeErrorText(err('offline', 'github'))).toBe('Could not reach github.com. Check the connection, then retry.')
+    expect(writeErrorText(err('stale', 'github', 'New commits were pushed since you looked.'))).toBe(
+      'New commits were pushed since you looked.',
+    )
+    expect(writeErrorText(err('forbidden', 'bitbucket', 'You cannot approve your own pull request'))).toBe(
+      'You cannot approve your own pull request',
+    )
+    expect(writeErrorText(err('offline', 'github'))).toBe(
+      'Could not reach github.com. Check the connection, then retry.',
+    )
   })
 
   it('names the target branch and the strategy in the merge confirm', () => {
-    const copy = mergeConfirmCopy({ ref: { ...gh, number: 159 }, title: 'Retry settings.json', sourceBranch: 'fix/win', targetBranch: 'main' }, 'merge_commit')
+    const copy = mergeConfirmCopy(
+      { ref: { ...gh, number: 159 }, title: 'Retry settings.json', sourceBranch: 'fix/win', targetBranch: 'main' },
+      'merge_commit',
+    )
     expect(copy.title).toBe('Merge #159 into main?')
     expect(copy.body).toContain('merges fix/win into main on GitHub. Strategy: merge commit.')
     expect(copy.confirmLabel).toBe('Merge')
@@ -76,7 +107,9 @@ describe('write copy', () => {
   })
 
   it('counts the conflicted files when the host names them', () => {
-    expect(conflictPhrase({ targetBranch: 'main', conflictedFiles: ['a.py', 'b.py'] })).toBe('Conflicts with main in 2 files')
+    expect(conflictPhrase({ targetBranch: 'main', conflictedFiles: ['a.py', 'b.py'] })).toBe(
+      'Conflicts with main in 2 files',
+    )
     expect(conflictPhrase({ targetBranch: 'main', conflictedFiles: ['a.py'] })).toBe('Conflicts with main in 1 file')
     expect(conflictPhrase({ targetBranch: 'develop', conflictedFiles: [] })).toBe('Conflicts with develop')
   })
@@ -84,7 +117,9 @@ describe('write copy', () => {
   it('says why a failed check has no Re-run', () => {
     expect(rerunUnavailable({ ref: { ...gh, number: 1 } }, { rerunId: '42' })).toBeNull()
     expect(rerunUnavailable({ ref: { ...gh, number: 1 } }, { rerunId: null })).toContain('Only GitHub Actions runs')
-    expect(rerunUnavailable({ ref: { ...bb, number: 1 } }, { rerunId: '42' })).toContain("Bitbucket's API cannot re-run")
+    expect(rerunUnavailable({ ref: { ...bb, number: 1 } }, { rerunId: '42' })).toContain(
+      "Bitbucket's API cannot re-run",
+    )
   })
 })
 
@@ -101,43 +136,63 @@ describe('reviewListState', () => {
   })
 
   it('blocks on one shared failure, and shows notices beside the rows otherwise', () => {
-    expect(reviewListState(data({ sources: [{ repo: bb, projectPaths: [], error: err('no_account') }] }), null))
-      .toMatchObject({ kind: 'blocked', notice: { id: 'bitbucket:no_account' } })
-    const mixed = reviewListState(data({
-      sources: [
-        { repo: gh, projectPaths: [], error: null },
-        { repo: bb, projectPaths: [], error: err('no_account') },
-        { repo: { ...bb, name: 'other' }, projectPaths: [], error: err('no_account') },
-      ],
-    }), null)
+    expect(
+      reviewListState(data({ sources: [{ repo: bb, projectPaths: [], error: err('no_account') }] }), null),
+    ).toMatchObject({ kind: 'blocked', notice: { id: 'bitbucket:no_account' } })
+    const mixed = reviewListState(
+      data({
+        sources: [
+          { repo: gh, projectPaths: [], error: null },
+          { repo: bb, projectPaths: [], error: err('no_account') },
+          { repo: { ...bb, name: 'other' }, projectPaths: [], error: err('no_account') },
+        ],
+      }),
+      null,
+    )
     expect(mixed).toMatchObject({ kind: 'ready', notices: [{ id: 'bitbucket:no_account' }] })
   })
 
   it('names the repositories an account cannot see in one card per host and reason, with a hide action', () => {
     const staging = (name: string): RepoRef => ({ host: 'bitbucket', owner: 'geoiq-staging', name })
-    const state = reviewListState(data({
-      sources: [
-        { repo: bb, projectPaths: [], error: null },
-        { repo: staging('geoiq_broker_app_stg'), projectPaths: [], error: err('not_found') },
-        { repo: staging('geoiqcore_stg'), projectPaths: [], error: err('not_found') },
-        { repo: staging('geoiq_retailiq_admin_fe_in_stg'), projectPaths: [], error: err('not_found') },
-        { repo: { ...bb, name: 'slow' }, projectPaths: [], error: err('rate_limited') },
-      ],
-    }), null)
+    const state = reviewListState(
+      data({
+        sources: [
+          { repo: bb, projectPaths: [], error: null },
+          { repo: staging('geoiq_broker_app_stg'), projectPaths: [], error: err('not_found') },
+          { repo: staging('geoiqcore_stg'), projectPaths: [], error: err('not_found') },
+          { repo: staging('geoiq_retailiq_admin_fe_in_stg'), projectPaths: [], error: err('not_found') },
+          { repo: { ...bb, name: 'slow' }, projectPaths: [], error: err('rate_limited') },
+        ],
+      }),
+      null,
+    )
     if (state.kind !== 'ready') throw new Error('expected ready')
     expect(state.notices.map((n) => n.id)).toEqual(['bitbucket:rate_limited', 'bitbucket:not_found'])
     const card = state.notices[1]
-    expect(card.line).toBe('Cannot see 3 repositories in geoiq-staging: geoiq_broker_app_stg, geoiqcore_stg, geoiq_retailiq_admin_fe_in_stg.')
+    expect(card.line).toBe(
+      'Cannot see 3 repositories in geoiq-staging: geoiq_broker_app_stg, geoiqcore_stg, geoiq_retailiq_admin_fe_in_stg.',
+    )
     expect(card.fix).toBe("The API token's account needs access to that workspace, or hide these repositories.")
     expect(card).toMatchObject({ action: 'hide-repos', actionLabel: 'Hide these repositories' })
-    expect(card.repos?.map((r) => r.name)).toEqual(['geoiq_broker_app_stg', 'geoiqcore_stg', 'geoiq_retailiq_admin_fe_in_stg'])
+    expect(card.repos?.map((r) => r.name)).toEqual([
+      'geoiq_broker_app_stg',
+      'geoiqcore_stg',
+      'geoiq_retailiq_admin_fe_in_stg',
+    ])
     // The rate limit is not offered for hiding.
     expect(state.notices[0].action).toBe('retry')
   })
 
   it('blocks on the named card when every repository failed that way', () => {
     const state = reviewListState(data({ sources: [{ repo: bb, projectPaths: [], error: err('not_found') }] }), null)
-    expect(state).toMatchObject({ kind: 'blocked', notice: { id: 'bitbucket:not_found', line: 'Cannot see 1 repository in geoiq: bot.', actionLabel: 'Hide this repository' } })
+    expect(state).toMatchObject({
+      kind: 'blocked',
+      notice: {
+        id: 'bitbucket:not_found',
+        line: 'Cannot see 1 repository in geoiq: bot.',
+        actionLabel: 'Hide this repository',
+      },
+    })
   })
 
   it('shows an empty list, not "No projects yet", when every repository is hidden', () => {
@@ -180,7 +235,10 @@ describe('restorableHiddenRepos', () => {
     const state = reviewListState(data({ sources: [{ repo: bb, projectPaths: [], error: err('no_account') }] }), null)
     expect(state.kind).toBe('blocked')
     // Any PR in the list makes it ready, so a hidden PR is never stuck behind a blocking notice.
-    const withPr = data({ sources: [{ repo: bb, projectPaths: [], error: err('no_account') }], prs: [{ ref: { ...bb, number: 1 } } as PrSummary] })
+    const withPr = data({
+      sources: [{ repo: bb, projectPaths: [], error: err('no_account') }],
+      prs: [{ ref: { ...bb, number: 1 } } as PrSummary],
+    })
     expect(reviewListState(withPr, null).kind).toBe('ready')
   })
 })
@@ -191,15 +249,26 @@ describe('repository failure copy', () => {
     const notice = describeRepoFailures({
       host: 'github',
       kind: 'not_found',
-      owners: [{ owner: 'acme', names }, { owner: 'side', names: ['one'] }],
-      repos: [...names.map((name) => ({ host: 'github' as const, owner: 'acme', name })), { host: 'github', owner: 'side', name: 'one' }],
+      owners: [
+        { owner: 'acme', names },
+        { owner: 'side', names: ['one'] },
+      ],
+      repos: [
+        ...names.map((name) => ({ host: 'github' as const, owner: 'acme', name })),
+        { host: 'github', owner: 'side', name: 'one' },
+      ],
     })
     expect(notice.line).toBe('Cannot see 8 repositories in acme: r0, r1, r2, r3, r4, r5 and 2 more; 1 in side: one.')
     expect(notice.fix).toBe('The gh account needs access to those owners, or hide these repositories.')
   })
 
   it('says a refused organisation needs authorizing', () => {
-    const notice = describeRepoFailures({ host: 'github', kind: 'forbidden', owners: [{ owner: 'acme', names: ['app'] }], repos: [{ host: 'github', owner: 'acme', name: 'app' }] })
+    const notice = describeRepoFailures({
+      host: 'github',
+      kind: 'forbidden',
+      owners: [{ owner: 'acme', names: ['app'] }],
+      repos: [{ host: 'github', owner: 'acme', name: 'app' }],
+    })
     expect(notice.line).toBe('Not allowed to read 1 repository in acme: app.')
     expect(notice.fix).toContain('authorize it, or hide this repository')
   })
@@ -230,13 +299,20 @@ describe('times and subtitles', () => {
     const pr = { ref: { ...bb, number: 612 }, state: 'open', mergedAt: null } as PrSummary
     expect(rowSubtitle(pr, 'build failed', NOW)).toBe('bot · #612 · build failed')
     expect(rowSubtitle(pr, '', NOW)).toBe('bot · #612')
-    expect(rowSubtitle({ ...pr, state: 'merged', mergedAt: NOW - 2 * 86_400_000 }, '', NOW)).toBe('bot · #612 · 2 days ago')
+    expect(rowSubtitle({ ...pr, state: 'merged', mergedAt: NOW - 2 * 86_400_000 }, '', NOW)).toBe(
+      'bot · #612 · 2 days ago',
+    )
   })
 })
 
 describe('groupFilesByDir', () => {
   it('groups by directory in first-seen order with root files last', () => {
-    const groups = groupFilesByDir([{ path: 'README.md' }, { path: 'sync/worker.py' }, { path: 'tests/t.py' }, { path: 'sync/backoff.py' }])
+    const groups = groupFilesByDir([
+      { path: 'README.md' },
+      { path: 'sync/worker.py' },
+      { path: 'tests/t.py' },
+      { path: 'sync/backoff.py' },
+    ])
     expect(groups.map((g) => [g.dir, g.files.map((f) => f.path)])).toEqual([
       ['sync/', ['sync/worker.py', 'sync/backoff.py']],
       ['tests/', ['tests/t.py']],
@@ -288,7 +364,9 @@ describe('unified diff', () => {
   })
 
   it('reads quoted paths with spaces and a pure rename', () => {
-    const files = splitGitDiff('diff --git "a/x y.md" "b/z w.md"\nsimilarity index 100%\nrename from x y.md\nrename to z w.md\n')
+    const files = splitGitDiff(
+      'diff --git "a/x y.md" "b/z w.md"\nsimilarity index 100%\nrename from x y.md\nrename to z w.md\n',
+    )
     expect(files).toEqual([{ oldPath: 'x y.md', newPath: 'z w.md', binary: false, patch: '' }])
   })
 })

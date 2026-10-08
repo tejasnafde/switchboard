@@ -14,11 +14,7 @@ export interface SearchResult {
   worktreeBranch: string | null
 }
 
-export function searchMessagesInDatabase(
-  database: Database.Database,
-  query: string,
-  limit = 50,
-): SearchResult[] {
+export function searchMessagesInDatabase(database: Database.Database, query: string, limit = 50): SearchResult[] {
   const sanitized = query.replace(/['"]/g, ' ').trim()
   if (!sanitized) return []
   const boundedLimit = Math.max(1, Math.min(limit, 50))
@@ -28,7 +24,8 @@ export function searchMessagesInDatabase(
   const notStoredNotice = `substr(m.id, 1, ${STORED_TASK_NOTICE_PREFIX.length}) != '${STORED_TASK_NOTICE_PREFIX}'`
 
   try {
-    return database.prepare(`
+    return database
+      .prepare(`
       SELECT
         m.id as messageId,
         COALESCE(root.id, m.conversation_id) as conversationId,
@@ -51,9 +48,11 @@ export function searchMessagesInDatabase(
         AND ${notStoredNotice}
       ORDER BY rank
       LIMIT ?
-    `).all(sanitized, boundedLimit) as SearchResult[]
+    `)
+      .all(sanitized, boundedLimit) as SearchResult[]
   } catch {
-    return database.prepare(`
+    return database
+      .prepare(`
       SELECT
         m.id as messageId,
         COALESCE(root.id, m.conversation_id) as conversationId,
@@ -74,6 +73,7 @@ export function searchMessagesInDatabase(
         AND COALESCE(root.archived, c.archived) = 0
         AND ${notStoredNotice}
       LIMIT ?
-    `).all(sanitized, `%${sanitized}%`, boundedLimit) as SearchResult[]
+    `)
+      .all(sanitized, `%${sanitized}%`, boundedLimit) as SearchResult[]
   }
 }

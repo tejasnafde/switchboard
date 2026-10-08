@@ -170,13 +170,11 @@ describe('ExecFileGitWorktreeAdapter', () => {
       worktreePath: plan.worktreePath,
       reason: 'branch_exists',
     })
-    const relatedBranches = (await git(
-      fixture.repositoryPath,
-      'branch',
-      '--list',
-      `${plan.branch}*`,
-      '--format=%(refname:short)',
-    )).split('\n').filter(Boolean)
+    const relatedBranches = (
+      await git(fixture.repositoryPath, 'branch', '--list', `${plan.branch}*`, '--format=%(refname:short)')
+    )
+      .split('\n')
+      .filter(Boolean)
     expect(relatedBranches).toEqual([plan.branch])
   })
 
@@ -217,14 +215,18 @@ describe('ExecFileGitWorktreeAdapter', () => {
       headCommit: plan.resolvedBaseCommit,
     }
 
-    expect(await adapter.inspectMaterialization({
-      ...plan,
-      worktreePath: `${plan.worktreePath}-different`,
-    })).toEqual({ kind: 'mismatch', reason: 'path_mismatch', observed })
-    expect(await adapter.inspectMaterialization({
-      ...plan,
-      branch: `${plan.branch}-different`,
-    })).toEqual({ kind: 'mismatch', reason: 'branch_mismatch', observed })
+    expect(
+      await adapter.inspectMaterialization({
+        ...plan,
+        worktreePath: `${plan.worktreePath}-different`,
+      }),
+    ).toEqual({ kind: 'mismatch', reason: 'path_mismatch', observed })
+    expect(
+      await adapter.inspectMaterialization({
+        ...plan,
+        branch: `${plan.branch}-different`,
+      }),
+    ).toEqual({ kind: 'mismatch', reason: 'branch_mismatch', observed })
   })
 
   it('configures normalized cone sparse directories before later provisioning', async () => {
@@ -242,19 +244,14 @@ describe('ExecFileGitWorktreeAdapter', () => {
     const plan = await adapter.planMaterialization(materializationInput(repository))
     await adapter.materialize(plan)
 
-    const receipt = await adapter.configureSparse(plan, [
-      'src/renderer/',
-      'src//main',
-      'src/main',
-    ])
+    const receipt = await adapter.configureSparse(plan, ['src/renderer/', 'src//main', 'src/main'])
 
     expect(receipt).toEqual({
       mode: 'cone',
       directories: ['src/main', 'src/renderer'],
       status: 'configured',
     })
-    expect((await git(plan.worktreePath, 'sparse-checkout', 'list')).split('\n'))
-      .toEqual(['src/main', 'src/renderer'])
+    expect((await git(plan.worktreePath, 'sparse-checkout', 'list')).split('\n')).toEqual(['src/main', 'src/renderer'])
     expect(await pathExists(join(plan.worktreePath, 'src', 'main', 'main.ts'))).toBe(true)
     expect(await pathExists(join(plan.worktreePath, 'src', 'renderer', 'renderer.ts'))).toBe(true)
     expect(await pathExists(join(plan.worktreePath, 'docs', 'internal.md'))).toBe(false)
@@ -265,12 +262,7 @@ describe('ExecFileGitWorktreeAdapter', () => {
     const adapter = new ExecFileGitWorktreeAdapter()
     const repository = await adapter.resolveRepository(fixture.repositoryPath)
     const plan = await adapter.planMaterialization(materializationInput(repository))
-    const unsafePath = join(
-      fixture.repositoryPath,
-      '.switchboard',
-      'worktrees-elsewhere',
-      basename(plan.worktreePath),
-    )
+    const unsafePath = join(fixture.repositoryPath, '.switchboard', 'worktrees-elsewhere', basename(plan.worktreePath))
 
     const result = await adapter.materialize({ ...plan, worktreePath: unsafePath })
 
@@ -281,13 +273,9 @@ describe('ExecFileGitWorktreeAdapter', () => {
       reason: 'unsafe_path',
     })
     expect(await pathExists(unsafePath)).toBe(false)
-    expect(await gitSucceeds(
-      fixture.repositoryPath,
-      'show-ref',
-      '--verify',
-      '--quiet',
-      `refs/heads/${plan.branch}`,
-    )).toBe(false)
+    expect(
+      await gitSucceeds(fixture.repositoryPath, 'show-ref', '--verify', '--quiet', `refs/heads/${plan.branch}`),
+    ).toBe(false)
   })
 
   it.skipIf(process.platform === 'win32')('rejects a managed-root symlink escape', async () => {
@@ -327,10 +315,12 @@ describe('ExecFileGitWorktreeAdapter', () => {
     expect(await pathExists(plan.worktreePath)).toBe(true)
 
     await rm(join(plan.worktreePath, 'uncommitted.txt'))
-    expect(await adapter.rollbackMaterialization({
-      ...plan,
-      branch: `${plan.branch}-different`,
-    })).toEqual({
+    expect(
+      await adapter.rollbackMaterialization({
+        ...plan,
+        branch: `${plan.branch}-different`,
+      }),
+    ).toEqual({
       kind: 'refused',
       reason: 'identity_mismatch',
     })
@@ -346,13 +336,9 @@ describe('ExecFileGitWorktreeAdapter', () => {
 
     expect(await adapter.rollbackMaterialization(plan)).toEqual({ kind: 'removed' })
     expect(await pathExists(plan.worktreePath)).toBe(false)
-    expect(await gitSucceeds(
-      fixture.repositoryPath,
-      'show-ref',
-      '--verify',
-      '--quiet',
-      `refs/heads/${plan.branch}`,
-    )).toBe(false)
+    expect(
+      await gitSucceeds(fixture.repositoryPath, 'show-ref', '--verify', '--quiet', `refs/heads/${plan.branch}`),
+    ).toBe(false)
   })
 
   it('refuses automatic compensation after the managed worktree advances but permits explicit removal', async () => {
@@ -381,13 +367,9 @@ describe('ExecFileGitWorktreeAdapter', () => {
 
     expect(await adapter.rollbackMaterialization(plan, 'explicit_remove')).toEqual({ kind: 'removed' })
     expect(await pathExists(plan.worktreePath)).toBe(false)
-    expect(await gitSucceeds(
-      fixture.repositoryPath,
-      'show-ref',
-      '--verify',
-      '--quiet',
-      `refs/heads/${plan.branch}`,
-    )).toBe(true)
+    expect(
+      await gitSucceeds(fixture.repositoryPath, 'show-ref', '--verify', '--quiet', `refs/heads/${plan.branch}`),
+    ).toBe(true)
   })
 
   it('removes a branch-only partial materialization only at the reserved base commit', async () => {
@@ -398,13 +380,9 @@ describe('ExecFileGitWorktreeAdapter', () => {
     await git(fixture.repositoryPath, 'branch', plan.branch, plan.resolvedBaseCommit)
 
     expect(await adapter.rollbackMaterialization(plan)).toEqual({ kind: 'removed' })
-    expect(await gitSucceeds(
-      fixture.repositoryPath,
-      'show-ref',
-      '--verify',
-      '--quiet',
-      `refs/heads/${plan.branch}`,
-    )).toBe(false)
+    expect(
+      await gitSucceeds(fixture.repositoryPath, 'show-ref', '--verify', '--quiet', `refs/heads/${plan.branch}`),
+    ).toBe(false)
 
     await writeFile(join(fixture.repositoryPath, 'README.md'), 'advanced main\n', 'utf8')
     await git(fixture.repositoryPath, 'add', 'README.md')
@@ -415,21 +393,13 @@ describe('ExecFileGitWorktreeAdapter', () => {
       kind: 'refused',
       reason: 'identity_mismatch',
     })
-    expect(await gitSucceeds(
-      fixture.repositoryPath,
-      'show-ref',
-      '--verify',
-      '--quiet',
-      `refs/heads/${plan.branch}`,
-    )).toBe(true)
+    expect(
+      await gitSucceeds(fixture.repositoryPath, 'show-ref', '--verify', '--quiet', `refs/heads/${plan.branch}`),
+    ).toBe(true)
 
     expect(await adapter.rollbackMaterialization(plan, 'explicit_remove')).toEqual({ kind: 'removed' })
-    expect(await gitSucceeds(
-      fixture.repositoryPath,
-      'show-ref',
-      '--verify',
-      '--quiet',
-      `refs/heads/${plan.branch}`,
-    )).toBe(true)
+    expect(
+      await gitSucceeds(fixture.repositoryPath, 'show-ref', '--verify', '--quiet', `refs/heads/${plan.branch}`),
+    ).toBe(true)
   })
 })

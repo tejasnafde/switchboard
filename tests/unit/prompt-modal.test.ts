@@ -22,7 +22,14 @@ describe('PromptModal', () => {
     document.body.append(container)
     root = createRoot(container)
     await act(async () => {
-      root!.render(createElement(PromptModal, { title: 'Rename chat', initialValue: 'Old title', onSubmit: vi.fn(), onCancel: vi.fn() }))
+      root!.render(
+        createElement(PromptModal, {
+          title: 'Rename chat',
+          initialValue: 'Old title',
+          onSubmit: vi.fn(),
+          onCancel: vi.fn(),
+        }),
+      )
     })
     const input = document.querySelector<HTMLInputElement>('[role="dialog"] input')
     expect(input).not.toBeNull()

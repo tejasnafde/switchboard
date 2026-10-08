@@ -21,9 +21,7 @@ export function VariantChips({
   model: string
   onChange: (model: string) => void
 }) {
-  const session = useAgentStore((s) =>
-    sessionId ? s.sessions.find((x) => x.id === sessionId) : undefined,
-  )
+  const session = useAgentStore((s) => (sessionId ? s.sessions.find((x) => x.id === sessionId) : undefined))
   const available = session?.availableVariants ?? []
   const current = session?.currentVariant ?? ''
   if (available.length === 0) return null
@@ -65,10 +63,7 @@ export function VariantChips({
  *
  * Exported for unit tests.
  */
-export function splitModelVariant(
-  id: string,
-  variants: string[],
-): { base: string; variant: string } {
+export function splitModelVariant(id: string, variants: string[]): { base: string; variant: string } {
   for (const v of variants) {
     if (v && id.endsWith(`/${v}`)) {
       return { base: id.slice(0, -v.length - 1), variant: v }

@@ -76,10 +76,10 @@ beforeEach(() => {
 describe('getOrCreateTerminal - loginInstance identity forwarding', () => {
   it('forwards a codex loginInstance identity to window.api.terminal.create', () => {
     const { create } = makeApiStub()
-    getOrCreateTerminal(
-      'login-test-1', '/projects/foo', 'codex', undefined, undefined, undefined,
-      { agentType: 'codex', instanceId: 'codex-work' },
-    )
+    getOrCreateTerminal('login-test-1', '/projects/foo', 'codex', undefined, undefined, undefined, {
+      agentType: 'codex',
+      instanceId: 'codex-work',
+    })
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'login-test-1',
@@ -90,10 +90,10 @@ describe('getOrCreateTerminal - loginInstance identity forwarding', () => {
 
   it('never puts CODEX_HOME/CLAUDE_CONFIG_DIR into env itself when forwarding a loginInstance', () => {
     const { create } = makeApiStub()
-    getOrCreateTerminal(
-      'login-test-2', '/projects/foo', 'claude', undefined, undefined, undefined,
-      { agentType: 'claude-code', instanceId: undefined },
-    )
+    getOrCreateTerminal('login-test-2', '/projects/foo', 'claude', undefined, undefined, undefined, {
+      agentType: 'claude-code',
+      instanceId: undefined,
+    })
     const call = create.mock.calls[0][0]
     expect(call.env).toBeUndefined()
     expect(call.loginInstance).toEqual({ agentType: 'claude-code', instanceId: undefined })

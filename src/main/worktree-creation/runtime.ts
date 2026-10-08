@@ -11,14 +11,8 @@ import {
 } from '../ipc/worktree-creation'
 import { userDataDir } from '../runtime'
 import { ExecFileGitWorktreeAdapter } from './git-adapter'
-import {
-  startWorktreeCreationService,
-  type WorktreeCreationProgressSink,
-} from './worktree-creation-service'
-import {
-  LaunchConfigWorktreeSetupConfig,
-  ProcessWorktreeSetupRunner,
-} from './setup-adapters'
+import { startWorktreeCreationService, type WorktreeCreationProgressSink } from './worktree-creation-service'
+import { LaunchConfigWorktreeSetupConfig, ProcessWorktreeSetupRunner } from './setup-adapters'
 import {
   ProviderWorktreeStartupLauncher,
   WorktreeLaunchConfigTerminalProvisioner,
@@ -26,10 +20,7 @@ import {
 } from './startup-launcher'
 import { readLaunchConfig } from '../launch-config/launch-config-store'
 import { getManagedTerminalRuntime } from '../ipc/terminal'
-import {
-  ConversationForkWorktreePort,
-  ForkWorktreeOwnerAdapter,
-} from '../conversations/fork-worktree-owner'
+import { ConversationForkWorktreePort, ForkWorktreeOwnerAdapter } from '../conversations/fork-worktree-owner'
 import { DefaultProviderForkArtifacts } from '../conversations/fork-provider-artifacts'
 import { createNativeForkRunners } from '../conversations/native-fork-runners'
 import { configureConversationForkWorktreePort } from '../conversations/conversation-fork-runtime'
@@ -57,16 +48,12 @@ export function createWorktreeCreationRuntime(
   initialHost: BackendHost,
   createService: WorktreeCreationServiceFactory,
 ): WorktreeCreationRuntime {
-  const progressSink: RetargetableWorktreeCreationProgressSink =
-    createWorktreeCreationProgressSink(initialHost)
+  const progressSink: RetargetableWorktreeCreationProgressSink = createWorktreeCreationProgressSink(initialHost)
   const service = createService(progressSink)
   const api: WorktreeCreationApi = {
-    createWorktreeTransaction: async (input) =>
-      (await service).createWorktreeTransaction(input),
-    getWorktreeCreation: async (input) =>
-      (await service).getWorktreeCreation(input),
-    actOnWorktreeCreation: async (input) =>
-      (await service).actOnWorktreeCreation(input),
+    createWorktreeTransaction: async (input) => (await service).createWorktreeTransaction(input),
+    getWorktreeCreation: async (input) => (await service).getWorktreeCreation(input),
+    actOnWorktreeCreation: async (input) => (await service).actOnWorktreeCreation(input),
   }
   const registerHost = (host: BackendHost): void => {
     progressSink.registerHost(host)
@@ -96,14 +83,18 @@ export function createDefaultWorktreeCreationRuntime(
       native: createNativeForkRunners(),
       listCompatibleSessionIds: (conversationId, providerInstanceId) => {
         const ids = listConversationSegments(conversationId)
-          .filter((segment) => segment.provider === 'claude-code'
-            && segment.provider_instance_id === providerInstanceId)
+          .filter(
+            (segment) => segment.provider === 'claude-code' && segment.provider_instance_id === providerInstanceId,
+          )
           .map((segment) => segment.provider_session_id)
         const row = getConversationById(conversationId)
-        if (row?.agent_type === 'claude-code'
-          && row.provider_instance_id === providerInstanceId
-          && row.session_id
-          && !ids.includes(row.session_id)) ids.push(row.session_id)
+        if (
+          row?.agent_type === 'claude-code' &&
+          row.provider_instance_id === providerInstanceId &&
+          row.session_id &&
+          !ids.includes(row.session_id)
+        )
+          ids.push(row.session_id)
         return ids
       },
     })
@@ -116,10 +107,7 @@ export function createDefaultWorktreeCreationRuntime(
       setupRunner: new ProcessWorktreeSetupRunner(),
       startupLauncher: new ProviderWorktreeStartupLauncher(
         getProviderRegistry,
-        new WorktreeLaunchConfigTerminalProvisioner(
-          readLaunchConfig,
-          getManagedTerminalRuntime(),
-        ),
+        new WorktreeLaunchConfigTerminalProvisioner(readLaunchConfig, getManagedTerminalRuntime()),
       ),
       forkOwner: new ForkWorktreeOwnerAdapter(store, forks, providerArtifacts),
     })

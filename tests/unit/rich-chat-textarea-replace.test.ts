@@ -18,7 +18,10 @@ function extractReplaceRangeBody(src: string): string {
   const re = /replaceRange:\s*\([^)]*\)\s*=>\s*\{/g
   let m: RegExpExecArray | null
   let start = -1
-  while ((m = re.exec(src)) !== null) { start = m.index; break }
+  while ((m = re.exec(src)) !== null) {
+    start = m.index
+    break
+  }
   if (start === -1) throw new Error('replaceRange impl not found')
   // Find the matching closing brace of the arrow body. `replaceRange:
   // (start, end, replacement) => { ... }` - brace-count from the first
@@ -44,9 +47,7 @@ describe('RichChatTextarea.replaceRange shape', () => {
   it('does NOT call setValue - that re-render races with editor.update and resets the caret', () => {
     // Allow the substring inside comments (we mention the bug there) but
     // forbid the actual call expression.
-    const stripComments = body
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/\/\/.*$/gm, '')
+    const stripComments = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
     expect(stripComments).not.toMatch(/\bsetValue\s*\(/)
   })
 

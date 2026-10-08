@@ -190,8 +190,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
           })
           transport.onReconnectNeeded = () => get().connect(id)
           transport.onResumeGap = () => reseed(id, config.label)
-          transport.onStateChange = (state) =>
-            get().setStatus(id, state === 'connected' ? 'connected' : 'disconnected')
+          transport.onStateChange = (state) => get().setStatus(id, state === 'connected' ? 'connected' : 'disconnected')
           client = new SwitchboardClient(transport)
         } else {
           // Prefer the device session; fall back to the shared token only for

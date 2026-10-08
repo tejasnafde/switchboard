@@ -16,9 +16,7 @@ import { useLayoutStore } from '../stores/layout-store'
  */
 export function StatusBar() {
   const activeSessionId = useLayoutStore((s) =>
-    s.focusedChatSlot === 'secondary' && s.secondarySessionId
-      ? s.secondarySessionId
-      : s.primarySessionId,
+    s.focusedChatSlot === 'secondary' && s.secondarySessionId ? s.secondarySessionId : s.primarySessionId,
   )
   const session = useAgentStore((s) => s.sessions.find((x) => x.id === activeSessionId))
   const terminalSessionId = useTerminalStore((s) => s.activeSessionId)
@@ -26,7 +24,11 @@ export function StatusBar() {
     const sid = terminalSessionId
     if (!sid) return 0
     // getAllPaneIds walks rows → windows → panes
-    try { return s.getAllPaneIds(sid).length } catch { return 0 }
+    try {
+      return s.getAllPaneIds(sid).length
+    } catch {
+      return 0
+    }
   })
 
   const projectName = session?.projectPath?.split('/').pop() ?? ''
@@ -62,9 +64,7 @@ export function StatusBar() {
       {/* Cumulative session cost (ACP adapters only - currently OpenCode).
           Hidden when zero or undefined so Claude/Codex sessions stay clean. */}
       {typeof session?.costUsd === 'number' && session.costUsd > 0 && (
-        <span title="Cumulative session cost reported by the agent">
-          {formatCostUsd(session.costUsd)}
-        </span>
+        <span title="Cumulative session cost reported by the agent">{formatCostUsd(session.costUsd)}</span>
       )}
 
       {typeof session?.costUsd === 'number' && session.costUsd > 0 && terminalPaneCount > 0 && (

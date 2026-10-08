@@ -4,7 +4,12 @@ import { McpTokens } from '../../src/main/mcp/mcp-tokens'
 
 function session(tools: McpTool[]) {
   const sent: Array<Record<string, unknown>> = []
-  const s = new McpSession({ serverName: 'switchboard', serverVersion: '1.0.0', tools, send: (m) => sent.push(m as Record<string, unknown>) })
+  const s = new McpSession({
+    serverName: 'switchboard',
+    serverVersion: '1.0.0',
+    tools,
+    send: (m) => sent.push(m as Record<string, unknown>),
+  })
   return { s, sent }
 }
 
@@ -31,7 +36,11 @@ describe('McpSession', () => {
   it('lists tools with their annotations', () => {
     const { s, sent } = session([echo])
     s.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
-    expect(sent[0].result).toEqual({ tools: [{ name: 'echo', description: 'Echo', inputSchema: echo.inputSchema, annotations: { readOnlyHint: true } }] })
+    expect(sent[0].result).toEqual({
+      tools: [
+        { name: 'echo', description: 'Echo', inputSchema: echo.inputSchema, annotations: { readOnlyHint: true } },
+      ],
+    })
   })
 
   it('dispatches a call to its tool', async () => {
@@ -50,7 +59,14 @@ describe('McpSession', () => {
   })
 
   it('turns a throwing tool into isError output', async () => {
-    const { s, sent } = session([{ ...echo, call: async () => { throw new Error('boom') } }])
+    const { s, sent } = session([
+      {
+        ...echo,
+        call: async () => {
+          throw new Error('boom')
+        },
+      },
+    ])
     s.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo' } })
     await tick()
     expect((sent[0].result as { isError: boolean }).isError).toBe(true)
@@ -59,7 +75,15 @@ describe('McpSession', () => {
   it('aborts a cancelled call and sends it no response', async () => {
     let signal: AbortSignal | null = null
     let finish: () => void = () => {}
-    const slow: McpTool = { ...echo, call: (_args, ctx) => { signal = ctx.signal; return new Promise((resolve) => { finish = () => resolve(toolText('late')) }) } }
+    const slow: McpTool = {
+      ...echo,
+      call: (_args, ctx) => {
+        signal = ctx.signal
+        return new Promise((resolve) => {
+          finish = () => resolve(toolText('late'))
+        })
+      },
+    }
     const { s, sent } = session([slow])
     s.handle({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'echo' } })
     s.handle({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 9 } })
@@ -71,7 +95,15 @@ describe('McpSession', () => {
 
   it('aborts every call still running when the connection closes', () => {
     const signals: AbortSignal[] = []
-    const { s } = session([{ ...echo, call: (_a, ctx) => { signals.push(ctx.signal); return new Promise(() => {}) } }])
+    const { s } = session([
+      {
+        ...echo,
+        call: (_a, ctx) => {
+          signals.push(ctx.signal)
+          return new Promise(() => {})
+        },
+      },
+    ])
     s.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo' } })
     s.handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'echo' } })
     s.close()
@@ -80,12 +112,26 @@ describe('McpSession', () => {
 
   it('reports progress on a waiting call that carries a progress token, and stops when it ends', async () => {
     let finish: () => void = () => {}
-    const slow: McpTool = { ...echo, call: () => new Promise((resolve) => { finish = () => resolve(toolText('done')) }) }
+    const slow: McpTool = {
+      ...echo,
+      call: () =>
+        new Promise((resolve) => {
+          finish = () => resolve(toolText('done'))
+        }),
+    }
     const sent: Array<Record<string, unknown>> = []
-    const s = new McpSession({ serverName: 's', serverVersion: '1', tools: [slow], send: (m) => sent.push(m as Record<string, unknown>), progressIntervalMs: 5 })
+    const s = new McpSession({
+      serverName: 's',
+      serverVersion: '1',
+      tools: [slow],
+      send: (m) => sent.push(m as Record<string, unknown>),
+      progressIntervalMs: 5,
+    })
     s.handle({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'echo', _meta: { progressToken: 'p1' } } })
     await new Promise((resolve) => setTimeout(resolve, 30))
-    const progress = sent.filter((m) => m.method === 'notifications/progress').map((m) => m.params as { progressToken: string; progress: number })
+    const progress = sent
+      .filter((m) => m.method === 'notifications/progress')
+      .map((m) => m.params as { progressToken: string; progress: number })
     expect(progress.length).toBeGreaterThan(1)
     expect(progress.every((p) => p.progressToken === 'p1')).toBe(true)
     expect(progress.map((p) => p.progress)).toEqual([...progress.keys()].map((i) => i + 1))
@@ -99,7 +145,13 @@ describe('McpSession', () => {
 
   it('sends no progress for a call without a token', async () => {
     const sent: unknown[] = []
-    const s = new McpSession({ serverName: 's', serverVersion: '1', tools: [{ ...echo, call: () => new Promise(() => {}) }], send: (m) => sent.push(m), progressIntervalMs: 5 })
+    const s = new McpSession({
+      serverName: 's',
+      serverVersion: '1',
+      tools: [{ ...echo, call: () => new Promise(() => {}) }],
+      send: (m) => sent.push(m),
+      progressIntervalMs: 5,
+    })
     s.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo' } })
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(sent).toEqual([])
@@ -124,7 +176,7 @@ describe('McpTokens', () => {
     expect(tokens.resolve(token)).toBeNull()
   })
 
-  it('replaces a chat\'s token when it is minted again', () => {
+  it("replaces a chat's token when it is minted again", () => {
     const tokens = new McpTokens()
     const first = tokens.mint('chat-1')
     const second = tokens.mint('chat-1')

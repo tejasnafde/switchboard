@@ -8,9 +8,17 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
 
-import { BITBUCKET_CREDENTIAL_FILE, BITBUCKET_METADATA_FILE, BitbucketCredentialStore, CredentialStoreError, validateBitbucketInput } from '../../src/main/pull-requests/credentials'
+import {
+  BITBUCKET_CREDENTIAL_FILE,
+  BITBUCKET_METADATA_FILE,
+  BitbucketCredentialStore,
+  CredentialStoreError,
+  validateBitbucketInput,
+} from '../../src/main/pull-requests/credentials'
 import { FILE_SETTINGS } from '../../src/shared/settings-file'
 
 const dirs: string[] = []
@@ -36,7 +44,10 @@ const creds = { email: 'me@example.com', apiToken: 'ATATT3xFfGF0-secret' }
 describe('BitbucketCredentialStore', () => {
   it('stores the token encrypted and reports only the email', () => {
     const root = tempDir()
-    const store = new BitbucketCredentialStore(() => root, () => fakeCrypto)
+    const store = new BitbucketCredentialStore(
+      () => root,
+      () => fakeCrypto,
+    )
     expect(store.status()).toEqual({ state: 'unconfigured' })
     store.save(creds)
     const onDisk = readFileSync(join(root, BITBUCKET_CREDENTIAL_FILE))
@@ -45,12 +56,20 @@ describe('BitbucketCredentialStore', () => {
     expect(store.status()).toEqual({ state: 'configured', email: 'me@example.com' })
     expect(JSON.stringify(store.status())).not.toContain('ATATT')
     // A fresh store (a relaunch) reads it back.
-    expect(new BitbucketCredentialStore(() => root, () => fakeCrypto).read()).toEqual(creds)
+    expect(
+      new BitbucketCredentialStore(
+        () => root,
+        () => fakeCrypto,
+      ).read(),
+    ).toEqual(creds)
   })
 
   it('removes the file', () => {
     const root = tempDir()
-    const store = new BitbucketCredentialStore(() => root, () => fakeCrypto)
+    const store = new BitbucketCredentialStore(
+      () => root,
+      () => fakeCrypto,
+    )
     store.save(creds)
     store.remove()
     expect(existsSync(join(root, BITBUCKET_CREDENTIAL_FILE))).toBe(false)
@@ -60,28 +79,51 @@ describe('BitbucketCredentialStore', () => {
 
   it('refuses to store anything without safeStorage, rather than writing plaintext', () => {
     const root = tempDir()
-    const headless = new BitbucketCredentialStore(() => root, () => null)
+    const headless = new BitbucketCredentialStore(
+      () => root,
+      () => null,
+    )
     expect(headless.status()).toEqual({ state: 'needs_desktop' })
     expect(() => headless.save(creds)).toThrow('Bitbucket needs the desktop app in this release.')
     expect(existsSync(join(root, BITBUCKET_CREDENTIAL_FILE))).toBe(false)
 
-    const noKeyring = new BitbucketCredentialStore(() => root, () => ({ ...fakeCrypto, isEncryptionAvailable: () => false }))
+    const noKeyring = new BitbucketCredentialStore(
+      () => root,
+      () => ({ ...fakeCrypto, isEncryptionAvailable: () => false }),
+    )
     expect(() => noKeyring.save(creds)).toThrow()
   })
 
   it('treats an unreadable file as no credentials when a request needs them', () => {
     const root = tempDir()
-    new BitbucketCredentialStore(() => root, () => fakeCrypto).save(creds)
-    const broken = new BitbucketCredentialStore(() => root, () => ({ ...fakeCrypto, decryptString: () => { throw new Error('bad key') } }))
+    new BitbucketCredentialStore(
+      () => root,
+      () => fakeCrypto,
+    ).save(creds)
+    const broken = new BitbucketCredentialStore(
+      () => root,
+      () => ({
+        ...fakeCrypto,
+        decryptString: () => {
+          throw new Error('bad key')
+        },
+      }),
+    )
     expect(broken.read()).toBeNull()
   })
 
   it('status never decrypts, even in a fresh process', () => {
     const root = tempDir()
-    new BitbucketCredentialStore(() => root, () => fakeCrypto).save(creds)
+    new BitbucketCredentialStore(
+      () => root,
+      () => fakeCrypto,
+    ).save(creds)
     const decryptString = vi.fn(fakeCrypto.decryptString)
     const isEncryptionAvailable = vi.fn(() => true)
-    const relaunched = new BitbucketCredentialStore(() => root, () => ({ ...fakeCrypto, decryptString, isEncryptionAvailable }))
+    const relaunched = new BitbucketCredentialStore(
+      () => root,
+      () => ({ ...fakeCrypto, decryptString, isEncryptionAvailable }),
+    )
     expect(relaunched.status()).toEqual({ state: 'configured', email: 'me@example.com' })
     expect(relaunched.status()).toEqual({ state: 'configured', email: 'me@example.com' })
     expect(decryptString).not.toHaveBeenCalled()
@@ -93,19 +135,31 @@ describe('BitbucketCredentialStore', () => {
 
   it('decrypts a file saved before the metadata existed once, then never for status', () => {
     const root = tempDir()
-    new BitbucketCredentialStore(() => root, () => fakeCrypto).save(creds)
+    new BitbucketCredentialStore(
+      () => root,
+      () => fakeCrypto,
+    ).save(creds)
     rmSync(join(root, BITBUCKET_METADATA_FILE))
     const decryptString = vi.fn(fakeCrypto.decryptString)
     const crypto = () => ({ ...fakeCrypto, decryptString })
-    expect(new BitbucketCredentialStore(() => root, crypto).status()).toEqual({ state: 'configured', email: 'me@example.com' })
-    expect(new BitbucketCredentialStore(() => root, crypto).status()).toEqual({ state: 'configured', email: 'me@example.com' })
+    expect(new BitbucketCredentialStore(() => root, crypto).status()).toEqual({
+      state: 'configured',
+      email: 'me@example.com',
+    })
+    expect(new BitbucketCredentialStore(() => root, crypto).status()).toEqual({
+      state: 'configured',
+      email: 'me@example.com',
+    })
     expect(decryptString).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('validateBitbucketInput', () => {
   it('trims and checks the shape', () => {
-    expect(validateBitbucketInput({ email: ' me@example.com ', apiToken: ' tok-12345678 ' })).toEqual({ email: 'me@example.com', apiToken: 'tok-12345678' })
+    expect(validateBitbucketInput({ email: ' me@example.com ', apiToken: ' tok-12345678 ' })).toEqual({
+      email: 'me@example.com',
+      apiToken: 'tok-12345678',
+    })
     expect(() => validateBitbucketInput({ email: 'nope', apiToken: 'tok-12345678' })).toThrow('email')
     expect(() => validateBitbucketInput({ email: 'me@example.com', apiToken: 'short' })).toThrow('token')
     expect(() => validateBitbucketInput(null)).toThrow()
@@ -122,7 +176,10 @@ describe('settings.json', () => {
 
     function savedStore() {
       const root = tempDir()
-      const store = new BitbucketCredentialStore(() => root, () => fakeCrypto)
+      const store = new BitbucketCredentialStore(
+        () => root,
+        () => fakeCrypto,
+      )
       store.save(creds)
       const blob = readFileSync(join(root, BITBUCKET_CREDENTIAL_FILE))
       const meta = readFileSync(join(root, BITBUCKET_METADATA_FILE))
@@ -135,7 +192,12 @@ describe('settings.json', () => {
       expect(existsSync(join(root, `${BITBUCKET_CREDENTIAL_FILE}.tmp`))).toBe(false)
       expect(store.read()).toEqual(creds)
       expect(store.status()).toEqual({ state: 'configured', email: 'me@example.com' })
-      expect(new BitbucketCredentialStore(() => root, () => fakeCrypto).read()).toEqual(creds)
+      expect(
+        new BitbucketCredentialStore(
+          () => root,
+          () => fakeCrypto,
+        ).read(),
+      ).toEqual(creds)
     }
 
     it('when the metadata temp file cannot be written', () => {
@@ -145,22 +207,28 @@ describe('settings.json', () => {
       expectUnchanged(root, store, blob, meta)
     })
 
-    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('refuses to save, and deletes nothing, when an existing file cannot be read', () => {
-      const { root, store } = savedStore()
-      const file = join(root, BITBUCKET_CREDENTIAL_FILE)
-      chmodSync(file, 0o000)
-      try {
-        expect(() => store.save(next)).toThrow(CredentialStoreError)
-        expect(existsSync(file)).toBe(true)
-      } finally {
-        chmodSync(file, 0o600)
-      }
-      expect(store.read()).toEqual(creds)
-    })
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+      'refuses to save, and deletes nothing, when an existing file cannot be read',
+      () => {
+        const { root, store } = savedStore()
+        const file = join(root, BITBUCKET_CREDENTIAL_FILE)
+        chmodSync(file, 0o000)
+        try {
+          expect(() => store.save(next)).toThrow(CredentialStoreError)
+          expect(existsSync(file)).toBe(true)
+        } finally {
+          chmodSync(file, 0o600)
+        }
+        expect(store.read()).toEqual(creds)
+      },
+    )
 
     it('when the metadata rename fails after the token was already replaced', () => {
       const root = tempDir()
-      const store = new BitbucketCredentialStore(() => root, () => fakeCrypto)
+      const store = new BitbucketCredentialStore(
+        () => root,
+        () => fakeCrypto,
+      )
       store.save(creds)
       const blob = readFileSync(join(root, BITBUCKET_CREDENTIAL_FILE))
       rmSync(join(root, BITBUCKET_METADATA_FILE))

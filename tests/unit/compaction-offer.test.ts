@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { COMPACTION_OFFER_MIN_IDLE_MS, COMPACTION_OFFER_MIN_TOKENS, shouldOfferCompaction } from '@shared/compaction-offer'
+import {
+  COMPACTION_OFFER_MIN_IDLE_MS,
+  COMPACTION_OFFER_MIN_TOKENS,
+  shouldOfferCompaction,
+} from '@shared/compaction-offer'
 
 const now = 1_800_000_000_000
 const base = {

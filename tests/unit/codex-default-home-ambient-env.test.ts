@@ -20,7 +20,10 @@ import type { ProviderInstanceRow } from '../../src/main/db/provider-instances'
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => '/usr/local/bin/codex\n'),
-  execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => cb(new Error('not mocked'), '', '')),
+  execFile: vi.fn(
+    (_cmd: string, _args: string[], _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) =>
+      cb(new Error('not mocked'), '', ''),
+  ),
   spawnSync: vi.fn(() => ({ status: 0, stdout: '/usr/local/bin/codex\n', stderr: '', error: undefined })),
   spawn: vi.fn(),
 }))
@@ -86,21 +89,34 @@ describe('resolveInstanceEnv - codex ambient CODEX_HOME (behaviors 1 & 3)', () =
   // POSIX-literal string round-trip, which only holds on a POSIX host - skip
   // on win32 rather than assert a separator style no real Windows install
   // would produce either (see oauth-path.ts).
-  it.skipIf(process.platform === 'win32')('regression: two oauth_dir instances plus a third ambient-home instance never collapse onto one CODEX_HOME', async () => {
-    process.env.CODEX_HOME = '/tmp/third-ambient-home'
-    const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
+  it.skipIf(process.platform === 'win32')(
+    'regression: two oauth_dir instances plus a third ambient-home instance never collapse onto one CODEX_HOME',
+    async () => {
+      process.env.CODEX_HOME = '/tmp/third-ambient-home'
+      const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
 
-    const work = resolveInstanceEnv(codexRow({
-      id: 'codex-work', displayName: 'Work', authMode: 'oauth_dir', oauthDir: '/tmp/codex-work',
-    }))
-    const personal = resolveInstanceEnv(codexRow({
-      id: 'codex-personal', displayName: 'Personal', authMode: 'oauth_dir', oauthDir: '/tmp/codex-personal',
-    }))
-    const ambientDefault = resolveInstanceEnv(codexRow({}))
+      const work = resolveInstanceEnv(
+        codexRow({
+          id: 'codex-work',
+          displayName: 'Work',
+          authMode: 'oauth_dir',
+          oauthDir: '/tmp/codex-work',
+        }),
+      )
+      const personal = resolveInstanceEnv(
+        codexRow({
+          id: 'codex-personal',
+          displayName: 'Personal',
+          authMode: 'oauth_dir',
+          oauthDir: '/tmp/codex-personal',
+        }),
+      )
+      const ambientDefault = resolveInstanceEnv(codexRow({}))
 
-    expect(work.CODEX_HOME).toBe('/tmp/codex-work')
-    expect(personal.CODEX_HOME).toBe('/tmp/codex-personal')
-    expect(ambientDefault.CODEX_HOME).toBe(join(homedir(), '.codex'))
-    expect(new Set([work.CODEX_HOME, personal.CODEX_HOME, ambientDefault.CODEX_HOME]).size).toBe(3)
-  })
+      expect(work.CODEX_HOME).toBe('/tmp/codex-work')
+      expect(personal.CODEX_HOME).toBe('/tmp/codex-personal')
+      expect(ambientDefault.CODEX_HOME).toBe(join(homedir(), '.codex'))
+      expect(new Set([work.CODEX_HOME, personal.CODEX_HOME, ambientDefault.CODEX_HOME]).size).toBe(3)
+    },
+  )
 })

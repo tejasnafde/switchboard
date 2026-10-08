@@ -4,11 +4,7 @@
  * worth shipping at all. Pure, so the I/O-heavy hook stays thin.
  */
 import { describe, it, expect } from 'vitest'
-import {
-  audioMimeType,
-  refineSkipReason,
-  resolveTranscriptSwap,
-} from '../../apps/mobile/src/lib/transcript'
+import { audioMimeType, refineSkipReason, resolveTranscriptSwap } from '../../apps/mobile/src/lib/transcript'
 import { MAX_STT_AUDIO_BYTES, MAX_STT_AUDIO_DURATION_MS } from '../../src/shared/stt'
 
 describe('resolveTranscriptSwap', () => {

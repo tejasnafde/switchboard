@@ -17,7 +17,10 @@ const WORKTREES: WorktreeRef[] = [
 ]
 
 function watcher() {
-  return new DriftWatcher(async () => WORKTREES, async (p) => p)
+  return new DriftWatcher(
+    async () => WORKTREES,
+    async (p) => p,
+  )
 }
 
 describe('DriftWatcher.onSessionMoved', () => {
@@ -43,7 +46,7 @@ describe('DriftWatcher.onSessionMoved', () => {
     expect(event).toMatchObject({ worktreePath: '/repo', branch: 'main' })
   })
 
-  it('leaves another thread\'s pending evidence alone', async () => {
+  it("leaves another thread's pending evidence alone", async () => {
     const w = watcher()
     await w.onToolStarted('t2', '/repo', 'Bash', {
       command: 'cd /repo/.switchboard/worktrees/feat',

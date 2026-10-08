@@ -45,7 +45,9 @@ async function probeClaude(env: Record<string, string>): Promise<ModelOption[]> 
   const claudeBin = findClaudeBin()
   // A prompt that never yields: the CLI starts and answers control requests,
   // but no user turn is ever sent.
-  const prompt = (async function* () { await new Promise<never>(() => {}) })()
+  const prompt = (async function* () {
+    await new Promise<never>(() => {})
+  })()
   const query = sdk.query({
     prompt,
     options: { cwd: homedir(), env, ...(claudeBin ? { pathToClaudeCodeExecutable: claudeBin } : {}) },
@@ -68,7 +70,11 @@ async function probeCodex(env: Record<string, string>): Promise<ModelOption[]> {
   if (!bin) throw new Error('codex binary not found')
   const probe = new CodexProbeSession(bin, env)
   try {
-    await probe.send('initialize', { clientInfo: { name: 'switchboard', title: 'Switchboard', version: '0.1.0' } }, PROBE_TIMEOUT_MS)
+    await probe.send(
+      'initialize',
+      { clientInfo: { name: 'switchboard', title: 'Switchboard', version: '0.1.0' } },
+      PROBE_TIMEOUT_MS,
+    )
     probe.notify('initialized')
     return parseCodexModels(await probe.send('model/list', { limit: 100, includeHidden: false }, PROBE_TIMEOUT_MS))
   } finally {
@@ -87,7 +93,10 @@ async function probeOpencode(instanceEnv: Record<string, string>): Promise<Model
   return new Promise((resolve, reject) => {
     execFile(bin, ['models'], { env, timeout: PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (err, stdout) => {
       if (err) return reject(err)
-      const ids = stdout.split('\n').map((line) => line.trim()).filter((line) => /^[\w.-]+\/\S+$/.test(line))
+      const ids = stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => /^[\w.-]+\/\S+$/.test(line))
       resolve(ids.map((id) => ({ id, label: formatOpencodeModelLabel(id), tier: inferModelTier(id) })))
     })
   })
@@ -104,7 +113,11 @@ interface ProbeTarget {
  * rows, so the desktop forwards the profile's config-dir basename, exactly as
  * startSession does, and the probe uses that dir's credential home.
  */
-function probeTarget(agentType: AgentProvider, instanceId: string | null | undefined, remoteConfigDir?: string): ProbeTarget {
+function probeTarget(
+  agentType: AgentProvider,
+  instanceId: string | null | undefined,
+  remoteConfigDir?: string,
+): ProbeTarget {
   if (remoteConfigDir && agentType !== 'opencode') {
     const dir = remoteProviderConfigDir(agentType, remoteConfigDir)
     const env = agentType === 'claude-code' ? buildClaudeCliEnv() : buildCodexCliEnv()
@@ -120,12 +133,20 @@ function probeTarget(agentType: AgentProvider, instanceId: string | null | undef
   }
   const env = instance
     ? resolveInstanceEnv(instance)
-    : agentType === 'codex' ? buildCodexCliEnv() : agentType === 'claude-code' ? buildClaudeCliEnv() : { ...(process.env as Record<string, string>) }
+    : agentType === 'codex'
+      ? buildCodexCliEnv()
+      : agentType === 'claude-code'
+        ? buildClaudeCliEnv()
+        : { ...(process.env as Record<string, string>) }
   return { key: `${agentType}:${instance?.id ?? 'default'}`, env, instanceEnv: instance?.env ?? {} }
 }
 
 /** A cached catalog if one is fresh; never spawns. Seeds a session's first turn. */
-export function peekCatalog(agentType: AgentProvider, instanceId?: string | null, remoteConfigDir?: string): ModelOption[] | undefined {
+export function peekCatalog(
+  agentType: AgentProvider,
+  instanceId?: string | null,
+  remoteConfigDir?: string,
+): ModelOption[] | undefined {
   try {
     const hit = cache.get(probeTarget(agentType, instanceId, remoteConfigDir).key)
     return hit && Date.now() - hit.at < TTL_MS ? hit.models : undefined
@@ -136,7 +157,11 @@ export function peekCatalog(agentType: AgentProvider, instanceId?: string | null
 }
 
 /** Live catalog for an instance, or [] when it cannot be probed (no binary, signed out). */
-export function probeCatalog(agentType: AgentProvider, instanceId?: string | null, remoteConfigDir?: string): Promise<ModelOption[]> {
+export function probeCatalog(
+  agentType: AgentProvider,
+  instanceId?: string | null,
+  remoteConfigDir?: string,
+): Promise<ModelOption[]> {
   const target = probeTarget(agentType, instanceId, remoteConfigDir)
   const key = target.key
   const hit = cache.get(key)
@@ -146,11 +171,12 @@ export function probeCatalog(agentType: AgentProvider, instanceId?: string | nul
 
   const task = (async () => {
     try {
-      const models = agentType === 'claude-code'
-        ? await probeClaude(target.env)
-        : agentType === 'codex'
-          ? await probeCodex(target.env)
-          : await probeOpencode(target.instanceEnv)
+      const models =
+        agentType === 'claude-code'
+          ? await probeClaude(target.env)
+          : agentType === 'codex'
+            ? await probeCodex(target.env)
+            : await probeOpencode(target.instanceEnv)
       // An empty answer is not cached, so the next ask retries.
       if (models.length > 0) cache.set(key, { models, at: Date.now() })
       return models

@@ -4,10 +4,7 @@
  * share - see that module for why the ambient value never survives.
  */
 
-import {
-  applyCredentialHome,
-  canonicalCredentialHome,
-} from './credential-home'
+import { applyCredentialHome, canonicalCredentialHome } from './credential-home'
 
 /** Claude's own default credential dir: `~/.claude`, absolute, always. */
 export function canonicalClaudeHome(): string {

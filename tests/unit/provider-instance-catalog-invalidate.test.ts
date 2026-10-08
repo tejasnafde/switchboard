@@ -9,7 +9,12 @@ const invalidateCatalog = vi.hoisted(() => vi.fn())
 vi.mock('../../src/main/db/provider-instances', () => ({
   listProviderInstances: vi.fn(() => []),
   resolveEffectiveOauthDir: vi.fn(),
-  upsertProviderInstance: vi.fn((input: { id?: string }) => ({ id: input.id ?? 'new', agentType: 'claude-code', authMode: 'env', oauthDir: null })),
+  upsertProviderInstance: vi.fn((input: { id?: string }) => ({
+    id: input.id ?? 'new',
+    agentType: 'claude-code',
+    authMode: 'env',
+    oauthDir: null,
+  })),
   deleteProviderInstance: vi.fn(() => true),
   getProviderInstanceFull: vi.fn(() => null),
 }))
@@ -33,7 +38,9 @@ import { registerProviderInstanceHandlers } from '../../src/main/ipc/provider-in
 
 class FakeHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
-  handle(channel: string, fn: (...args: unknown[]) => unknown): void { this.handlers.set(channel, fn) }
+  handle(channel: string, fn: (...args: unknown[]) => unknown): void {
+    this.handlers.set(channel, fn)
+  }
   on(): void {}
   emit(): void {}
   async invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -43,7 +50,11 @@ class FakeHost implements BackendHost {
 
 describe('provider instance edits invalidate the model catalog', () => {
   it.each([
-    ['upsert', ProviderInstanceChannels.UPSERT, { id: 'claude-work', agentType: 'claude-code', displayName: 'work', authMode: 'env' }],
+    [
+      'upsert',
+      ProviderInstanceChannels.UPSERT,
+      { id: 'claude-work', agentType: 'claude-code', displayName: 'work', authMode: 'env' },
+    ],
     ['delete', ProviderInstanceChannels.DELETE, 'claude-work'],
   ] as const)('on %s', async (_name, channel, arg) => {
     const host = new FakeHost()

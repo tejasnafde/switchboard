@@ -89,9 +89,7 @@ describe('ensureWhisperModel', () => {
     const payload = 'ggml-bytes'
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        new Response(payload, { headers: { 'content-length': String(payload.length) } }),
-      ),
+      vi.fn(async () => new Response(payload, { headers: { 'content-length': String(payload.length) } })),
     )
     const seen: Array<number | null> = []
     const path = await ensureWhisperModel(root, 'ggml-test.bin', (pct) => seen.push(pct))
@@ -114,7 +112,10 @@ describe('ensureWhisperModel', () => {
   })
 
   it('propagates HTTP failure and leaves no partial file', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 404 })))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 404 })),
+    )
     await expect(ensureWhisperModel(root, 'ggml-test.bin')).rejects.toThrow('HTTP 404')
     expect(readdirSync(join(root, 'whisper', 'models'))).toEqual([])
   })

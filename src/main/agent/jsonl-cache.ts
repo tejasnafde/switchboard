@@ -91,7 +91,7 @@ async function loadJsonlSnapshot(
   // Metadata alone misses a same-size rewrite that keeps the old mtime (seen
   // on Windows), so a hit also re-hashes the bytes. That skips the parse,
   // which is most of the cost.
-  if (hit && sameState(hit, st) && await fileDigest(filePath) === hit.digest) {
+  if (hit && sameState(hit, st) && (await fileDigest(filePath)) === hit.digest) {
     const now = await statOrNull(filePath)
     if (!now) return null
     if (sameState(hit, now)) {
@@ -148,7 +148,16 @@ async function loadJsonlSnapshot(
     totalBytes -= prev.retainedBytes
   }
   const retainedBytes = retainedJsonBytes(messages)
-  cache.set(key, { retainedBytes, mtimeMs: st.mtimeMs, size: st.size, ctimeMs: st.ctimeMs, ino: st.ino, dev: st.dev, digest, messages })
+  cache.set(key, {
+    retainedBytes,
+    mtimeMs: st.mtimeMs,
+    size: st.size,
+    ctimeMs: st.ctimeMs,
+    ino: st.ino,
+    dev: st.dev,
+    digest,
+    messages,
+  })
   totalBytes += retainedBytes
   evict()
   return messages
@@ -165,7 +174,8 @@ async function statOrNull(filePath: string): Promise<FileState | null> {
   try {
     return await stat(filePath)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') log.info('session jsonl removed after its cache check', { filePath })
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT')
+      log.info('session jsonl removed after its cache check', { filePath })
     else log.warn('stat failed for session jsonl', { filePath, err })
     return null
   }

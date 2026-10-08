@@ -9,20 +9,13 @@
  * trailing newline, so the file is reconstructed by joining with the empty
  * string - not '\n'.
  */
-import {
-  parseDiffFromFile,
-  diffAcceptRejectHunk,
-  type FileDiffMetadata,
-} from '@pierre/diffs'
+import { parseDiffFromFile, diffAcceptRejectHunk, type FileDiffMetadata } from '@pierre/diffs'
 
 export type { FileDiffMetadata }
 
 /** Build diff metadata from the baseline + the agent's new content. */
 export function buildFileDiff(relPath: string, oldContent: string, newContent: string): FileDiffMetadata {
-  return parseDiffFromFile(
-    { name: relPath, contents: oldContent },
-    { name: relPath, contents: newContent },
-  )
+  return parseDiffFromFile({ name: relPath, contents: oldContent }, { name: relPath, contents: newContent })
 }
 
 /** Accept or reject a hunk (whole-hunk or block-level), returning new metadata. */

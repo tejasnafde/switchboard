@@ -19,8 +19,14 @@ import { openLandingProjectPicker } from './lib/new-chat.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
-const mk = (prefix) => { const dir = mkdtempSync(join(tmpdir(), prefix)); scratch.push(dir); return dir }
-process.on('exit', () => { for (const dir of scratch) rmSync(dir, { recursive: true, force: true }) })
+const mk = (prefix) => {
+  const dir = mkdtempSync(join(tmpdir(), prefix))
+  scratch.push(dir)
+  return dir
+}
+process.on('exit', () => {
+  for (const dir of scratch) rmSync(dir, { recursive: true, force: true })
+})
 
 const userData = mk('sb-scopes-ud-')
 const alpha = realpathSync(mk('sb-scopes-alpha-'))
@@ -31,17 +37,21 @@ const q = (sql) => execFileSync('sqlite3', [db, sql]).toString().trim()
 
 async function launch() {
   const app = await electron.launch({
-    args: ['.'], cwd: repoRoot, timeout: 30_000,
+    args: ['.'],
+    cwd: repoRoot,
+    timeout: 30_000,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SHELL: '/bin/sh' },
   })
   const win = await app.firstWindow({ timeout: 20_000 })
   win.on('pageerror', (e) => console.error('pageerror', e.message))
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
-  await win.evaluate(() => Promise.all([
-    window.api.settings.set('tour.autoplay', 'false'),
-    window.api.settings.set('analytics.enabled', 'false'),
-    window.api.settings.set('analytics.noticeSeen', 'true'),
-  ]))
+  await win.evaluate(() =>
+    Promise.all([
+      window.api.settings.set('tour.autoplay', 'false'),
+      window.api.settings.set('analytics.enabled', 'false'),
+      window.api.settings.set('analytics.noticeSeen', 'true'),
+    ]),
+  )
   return { app, win }
 }
 
@@ -55,7 +65,10 @@ q(`INSERT OR REPLACE INTO settings (key, value) VALUES ('project:${gamma}:chat.d
 ;({ app, win } = await launch())
 
 const results = []
-const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`) }
+const check = (name, ok, detail = '') => {
+  results.push(ok)
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`)
+}
 const overrideRow = () => q(`SELECT value FROM settings WHERE key = 'project:${alpha}:chat.defaultRuntimeMode';`)
 
 try {
@@ -91,16 +104,24 @@ try {
   await win.getByTitle('Settings').waitFor({ state: 'visible', timeout: 20_000 })
   await openChatPage()
   await pickScope('alpha')
-  check('the scope note names the project', await settings.getByTestId('settings-scope-note').getByText('alpha').isVisible())
-  check('a row that is not scopable is disabled with its reason',
-    await settings.locator('[data-setting-row="chat.streaming"]').getByText('Applies to all projects.').isVisible())
+  check(
+    'the scope note names the project',
+    await settings.getByTestId('settings-scope-note').getByText('alpha').isVisible(),
+  )
+  check(
+    'a row that is not scopable is disabled with its reason',
+    await settings.locator('[data-setting-row="chat.streaming"]').getByText('Applies to all projects.').isVisible(),
+  )
 
   await runtimeRow.getByRole('combobox', { name: 'Runtime mode' }).click()
   await win.getByRole('option', { name: 'Plan' }).click()
   await runtimeRow.getByText('Overridden').waitFor({ timeout: 3000 })
   check('the row shows Overridden', true)
   check('the override is stored for the project', overrideRow() === 'plan', overrideRow())
-  check('the global default is untouched', q(`SELECT count(*) FROM settings WHERE key = 'chat.defaultRuntimeMode' AND value = 'plan';`) === '0')
+  check(
+    'the global default is untouched',
+    q(`SELECT count(*) FROM settings WHERE key = 'chat.defaultRuntimeMode' AND value = 'plan';`) === '0',
+  )
 
   await pickScope('All projects')
   check('All projects shows no override marker', !(await runtimeRow.getByText('Overridden').isVisible()))
@@ -113,9 +134,16 @@ try {
   await openChatPage()
   await settings.getByRole('button', { name: /^Projects/ }).click()
   const alphaRow = settings.locator(`[data-project-row="${alpha}"]`)
-  check('the Projects page counts the override', /1 override/.test((await alphaRow.textContent()) ?? ''), (await alphaRow.textContent()) ?? '')
+  check(
+    'the Projects page counts the override',
+    /1 override/.test((await alphaRow.textContent()) ?? ''),
+    (await alphaRow.textContent()) ?? '',
+  )
   await alphaRow.getByRole('button', { name: 'Open alpha overrides' }).click()
-  check('Open shows that project\'s scope', await settings.getByTestId('settings-scope-note').getByText('alpha').isVisible())
+  check(
+    "Open shows that project's scope",
+    await settings.getByTestId('settings-scope-note').getByText('alpha').isVisible(),
+  )
 
   await runtimeRow.getByRole('button', { name: 'Reset Runtime mode override' }).click()
   await runtimeRow.getByText('Overridden').waitFor({ state: 'hidden', timeout: 3000 })

@@ -50,8 +50,7 @@ describe('pickPillCandidates', () => {
   })
 
   it('matches multiple paths in one body', () => {
-    const html =
-      '<p><code>src/a.ts</code> and <code>src/b/c.py:10</code></p>'
+    const html = '<p><code>src/a.ts</code> and <code>src/b/c.py:10</code></p>'
     const out = pickPillCandidates(html)
     expect(out.map((c) => c.text)).toEqual(['src/a.ts', 'src/b/c.py:10'])
   })

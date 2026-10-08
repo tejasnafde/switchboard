@@ -6,12 +6,27 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { prKey, repoKey, type PrSummary, type RepoRef } from '@shared/pull-requests'
-import { filterPullRequests, groupPullRequests, groupPullRequestsByRepo, prRowStatus, type PrGroup, type PrGroupBy, type PrRowStatus } from '@shared/pull-request-groups'
+import {
+  filterPullRequests,
+  groupPullRequests,
+  groupPullRequestsByRepo,
+  prRowStatus,
+  type PrGroup,
+  type PrGroupBy,
+  type PrRowStatus,
+} from '@shared/pull-request-groups'
 import { nextRefreshDelay, PR_REFRESH_INTERVAL_MS } from '@shared/pull-request-refresh'
 import { findSummary, useReviewStore } from '../../stores/review-store'
 import { cn } from '../../lib/utils'
 import { PrDetailPane } from './PrDetailPane'
-import { hiddenReposLabel, hideReposConfirmCopy, restorableHiddenRepos, reviewListState, rowSubtitle, type ReviewNotice } from './review-states'
+import {
+  hiddenReposLabel,
+  hideReposConfirmCopy,
+  restorableHiddenRepos,
+  reviewListState,
+  rowSubtitle,
+  type ReviewNotice,
+} from './review-states'
 import { Icon, NoticeView, ROW_ICON } from './review-ui'
 import { AskChatDialog } from './PrLinkedChats'
 import { confirm } from '../ui/confirm'
@@ -36,7 +51,17 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
   const groupBy = useReviewStore((s) => s.groupBy)
   const collapsedRepos = useReviewStore((s) => s.collapsedRepos)
   const showHidden = useReviewStore((s) => s.showHidden)
-  const { setVisible, setFilter, select, refresh, setGroupBy, toggleRepo, setShowHidden, setReposHidden, hydrateSettings } = useReviewStore.getState()
+  const {
+    setVisible,
+    setFilter,
+    select,
+    refresh,
+    setGroupBy,
+    toggleRepo,
+    setShowHidden,
+    setReposHidden,
+    hydrateSettings,
+  } = useReviewStore.getState()
 
   // Mounted only while the view is shown, so mounted means visible.
   useEffect(() => {
@@ -64,16 +89,32 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
   const state = reviewListState(list, listError)
   const hiddenRepos = restorableHiddenRepos(state, list)
   const hidden = useMemo(() => new Set(list?.hidden ?? []), [list])
-  const hiddenCount = useMemo(() => (list ? list.prs.filter((pr) => hidden.has(prKey(pr.ref)) && prRowStatus(pr, now)).length : 0), [list, hidden, now])
+  const hiddenCount = useMemo(
+    () => (list ? list.prs.filter((pr) => hidden.has(prKey(pr.ref)) && prRowStatus(pr, now)).length : 0),
+    [list, hidden, now],
+  )
   const shown = useMemo(() => {
     if (!list) return []
     const prs = showHidden ? list.prs : list.prs.filter((pr) => !hidden.has(prKey(pr.ref)))
     return filterPullRequests(prs, filter)
   }, [list, hidden, showHidden, filter])
   const sections = useMemo<ListSection[]>(
-    () => (groupBy === 'repository'
-      ? groupPullRequestsByRepo(shown, now, collapsedRepos, filter.trim() !== '').map((r) => ({ id: r.key, label: r.label, count: r.count, collapsed: r.collapsed, prs: r.prs }))
-      : groupPullRequests(shown, now).map((g) => ({ id: g.id, label: g.label, count: g.prs.length, collapsed: null, prs: g.prs }))),
+    () =>
+      groupBy === 'repository'
+        ? groupPullRequestsByRepo(shown, now, collapsedRepos, filter.trim() !== '').map((r) => ({
+            id: r.key,
+            label: r.label,
+            count: r.count,
+            collapsed: r.collapsed,
+            prs: r.prs,
+          }))
+        : groupPullRequests(shown, now).map((g) => ({
+            id: g.id,
+            label: g.label,
+            count: g.prs.length,
+            collapsed: null,
+            prs: g.prs,
+          })),
     [groupBy, shown, now, collapsedRepos, filter],
   )
   const firstRow = sections.find((sec) => sec.prs.length > 0)?.prs[0]
@@ -100,7 +141,10 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
   const selected = findSummary(list, selectedKey)
 
   return (
-    <div data-reviews-view className="flex min-w-0 flex-1 bg-[var(--bg-primary)] text-[13px] text-[var(--text-primary)]">
+    <div
+      data-reviews-view
+      className="flex min-w-0 flex-1 bg-[var(--bg-primary)] text-[13px] text-[var(--text-primary)]"
+    >
       <aside className="flex w-[264px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-secondary)]">
         <div className="px-[10px] pt-3 pb-2">
           <label className="flex h-7 items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-primary)] px-2 text-[var(--text-muted)]">
@@ -116,18 +160,32 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
           <GroupByToggle value={groupBy} onChange={setGroupBy} />
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-[6px] pb-[10px]" aria-busy={loading && !list}>
-          {state.kind === 'loading' && <div className="px-2 py-3 text-[12px] text-[var(--text-muted)]">Loading pull requests…</div>}
-          {state.kind === 'blocked' && <div className="px-1 pt-1"><NoticeView notice={state.notice} onAction={onNotice} compact /></div>}
+          {state.kind === 'loading' && (
+            <div className="px-2 py-3 text-[12px] text-[var(--text-muted)]">Loading pull requests…</div>
+          )}
+          {state.kind === 'blocked' && (
+            <div className="px-1 pt-1">
+              <NoticeView notice={state.notice} onAction={onNotice} compact />
+            </div>
+          )}
           {state.kind === 'ready' && (
             <>
-              {state.notices.map((n) => <div key={n.id} className="px-1 pt-1"><NoticeView notice={n} onAction={onNotice} compact /></div>)}
+              {state.notices.map((n) => (
+                <div key={n.id} className="px-1 pt-1">
+                  <NoticeView notice={n} onAction={onNotice} compact />
+                </div>
+              ))}
               {sections.length === 0 && (
                 <div className="px-2 py-3 text-[12px] text-[var(--text-muted)]">
                   {filter ? 'No pull requests match the filter.' : 'Nothing open that involves you.'}
                 </div>
               )}
               {sections.map((section) => (
-                <section key={section.id} data-pr-group={groupBy === 'status' ? section.id : undefined} data-pr-repo={groupBy === 'repository' ? section.id : undefined}>
+                <section
+                  key={section.id}
+                  data-pr-group={groupBy === 'status' ? section.id : undefined}
+                  data-pr-repo={groupBy === 'repository' ? section.id : undefined}
+                >
                   {section.collapsed === null ? (
                     <h3 className="m-0 flex justify-between px-2 pt-3 pb-1 text-[11px] font-[600] text-[var(--text-muted)]">
                       <span>{section.label}</span>
@@ -141,40 +199,58 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
                         onClick={() => toggleRepo(section.id)}
                         className="flex w-full cursor-pointer items-center gap-[6px] rounded-[6px] border-none bg-transparent px-2 py-1 text-left text-[11.5px] font-[600] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                       >
-                        <Icon name="chev" size={12} className={cn('text-[var(--text-muted)] transition-transform', section.collapsed && '-rotate-90')} />
+                        <Icon
+                          name="chev"
+                          size={12}
+                          className={cn(
+                            'text-[var(--text-muted)] transition-transform',
+                            section.collapsed && '-rotate-90',
+                          )}
+                        />
                         <span className="min-w-0 flex-1 truncate">{section.label}</span>
                         <span className="font-[400] text-[var(--text-muted)] tabular-nums">{section.count}</span>
                       </button>
                     </h3>
                   )}
                   {section.prs.map(({ pr, status }) => (
-                    <PrRow key={prKey(pr.ref)} pr={pr} status={status} now={now} active={prKey(pr.ref) === selectedKey} hidden={hidden.has(prKey(pr.ref))} onSelect={select} />
+                    <PrRow
+                      key={prKey(pr.ref)}
+                      pr={pr}
+                      status={status}
+                      now={now}
+                      active={prKey(pr.ref) === selectedKey}
+                      hidden={hidden.has(prKey(pr.ref))}
+                      onSelect={select}
+                    />
                   ))}
                 </section>
               ))}
               {hiddenCount > 0 && (
-                <div data-pr-hidden-row className="flex items-center gap-[6px] px-2 pt-3 text-[12px] text-[var(--text-muted)]">
+                <div
+                  data-pr-hidden-row
+                  className="flex items-center gap-[6px] px-2 pt-3 text-[12px] text-[var(--text-muted)]"
+                >
                   <span className="tabular-nums">{hiddenCount} hidden</span>
                   <span aria-hidden="true">·</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowHidden(!showHidden)}
-                    className={HIDDEN_LINK}
-                  >
+                  <button type="button" onClick={() => setShowHidden(!showHidden)} className={HIDDEN_LINK}>
                     {showHidden ? 'Hide them' : 'Show'}
                   </button>
                 </div>
               )}
             </>
           )}
-          {hiddenRepos.length > 0 && <HiddenReposRow repos={hiddenRepos} onShow={(repos) => setReposHidden(repos, false)} />}
+          {hiddenRepos.length > 0 && (
+            <HiddenReposRow repos={hiddenRepos} onShow={(repos) => setReposHidden(repos, false)} />
+          )}
         </div>
       </aside>
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         {selected ? (
           <PrDetailPane key={prKey(selected.ref)} summary={selected} now={now} />
         ) : (
-          <div className="m-auto text-[12.5px] text-[var(--text-muted)]">{state.kind === 'loading' ? '' : 'Pick a pull request.'}</div>
+          <div className="m-auto text-[12.5px] text-[var(--text-muted)]">
+            {state.kind === 'loading' ? '' : 'Pick a pull request.'}
+          </div>
         )}
       </main>
       <AskChatDialog />
@@ -182,7 +258,8 @@ export function ReviewsView({ onOpenSettings }: { onOpenSettings: () => void }) 
   )
 }
 
-const HIDDEN_LINK = 'cursor-pointer border-none bg-transparent p-0 text-[12px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline'
+const HIDDEN_LINK =
+  'cursor-pointer border-none bg-transparent p-0 text-[12px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline'
 
 /** "3 repositories hidden · Show": the list of hidden repositories, each shown again on its own or all at once. */
 function HiddenReposRow({ repos, onShow }: { repos: RepoRef[]; onShow: (repos: RepoRef[]) => Promise<string | null> }) {
@@ -197,9 +274,17 @@ function HiddenReposRow({ repos, onShow }: { repos: RepoRef[]; onShow: (repos: R
     <div data-pr-hidden-repos className="flex items-center gap-[6px] px-2 pt-2 text-[12px] text-[var(--text-muted)]">
       <span className="tabular-nums">{hiddenReposLabel(repos.length)}</span>
       <span aria-hidden="true">·</span>
-      <Popover open={open} onOpenChange={(next) => { setOpen(next); setError(null) }}>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next)
+          setError(null)
+        }}
+      >
         <PopoverTrigger asChild>
-          <button type="button" className={HIDDEN_LINK}>Show</button>
+          <button type="button" className={HIDDEN_LINK}>
+            Show
+          </button>
         </PopoverTrigger>
         <PopoverContent
           align="start"
@@ -208,17 +293,40 @@ function HiddenReposRow({ repos, onShow }: { repos: RepoRef[]; onShow: (repos: R
         >
           <div className="flex items-center justify-between px-1 pb-1 text-[11.5px] font-[600] text-[var(--text-muted)]">
             <span>Hidden from Reviews</span>
-            {repos.length > 1 && <button type="button" className={HIDDEN_LINK} onClick={() => void show(repos)}>Show all</button>}
+            {repos.length > 1 && (
+              <button type="button" className={HIDDEN_LINK} onClick={() => void show(repos)}>
+                Show all
+              </button>
+            )}
           </div>
           <ul className="m-0 max-h-[240px] list-none overflow-auto p-0">
             {repos.map((repo) => (
-              <li key={repoKey(repo)} className="flex items-center gap-2 rounded-[6px] px-1 py-[3px] hover:bg-[var(--bg-hover)]">
-                <span className="min-w-0 flex-1 truncate text-[var(--text-primary)]" title={`${repo.owner}/${repo.name}`}>{repo.owner}/{repo.name}</span>
-                <button type="button" className={HIDDEN_LINK} aria-label={`Show ${repo.owner}/${repo.name}`} onClick={() => void show([repo])}>Show</button>
+              <li
+                key={repoKey(repo)}
+                className="flex items-center gap-2 rounded-[6px] px-1 py-[3px] hover:bg-[var(--bg-hover)]"
+              >
+                <span
+                  className="min-w-0 flex-1 truncate text-[var(--text-primary)]"
+                  title={`${repo.owner}/${repo.name}`}
+                >
+                  {repo.owner}/{repo.name}
+                </span>
+                <button
+                  type="button"
+                  className={HIDDEN_LINK}
+                  aria-label={`Show ${repo.owner}/${repo.name}`}
+                  onClick={() => void show([repo])}
+                >
+                  Show
+                </button>
               </li>
             ))}
           </ul>
-          {error && <div role="alert" className="px-1 pt-1 text-[12px] text-[var(--error)]">{error}</div>}
+          {error && (
+            <div role="alert" className="px-1 pt-1 text-[12px] text-[var(--error)]">
+              {error}
+            </div>
+          )}
         </PopoverContent>
       </Popover>
     </div>
@@ -226,9 +334,16 @@ function HiddenReposRow({ repos, onShow }: { repos: RepoRef[]; onShow: (repos: R
 }
 
 function GroupByToggle({ value, onChange }: { value: PrGroupBy; onChange: (value: PrGroupBy) => void }) {
-  const options: Array<{ id: PrGroupBy; label: string }> = [{ id: 'status', label: 'By status' }, { id: 'repository', label: 'By repository' }]
+  const options: Array<{ id: PrGroupBy; label: string }> = [
+    { id: 'status', label: 'By status' },
+    { id: 'repository', label: 'By repository' },
+  ]
   return (
-    <div role="group" aria-label="Group pull requests" className="mt-2 flex rounded-[6px] border border-[var(--border)] bg-[var(--bg-primary)] p-[2px]">
+    <div
+      role="group"
+      aria-label="Group pull requests"
+      className="mt-2 flex rounded-[6px] border border-[var(--border)] bg-[var(--bg-primary)] p-[2px]"
+    >
       {options.map((o) => (
         <button
           key={o.id}
@@ -237,7 +352,9 @@ function GroupByToggle({ value, onChange }: { value: PrGroupBy; onChange: (value
           onClick={() => onChange(o.id)}
           className={cn(
             'flex-1 cursor-pointer rounded-[4px] border-none px-2 py-[3px] text-[11.5px]',
-            value === o.id ? 'bg-[var(--bg-active)] text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+            value === o.id
+              ? 'bg-[var(--bg-active)] text-[var(--text-primary)]'
+              : 'bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
           )}
         >
           {o.label}
@@ -247,7 +364,21 @@ function GroupByToggle({ value, onChange }: { value: PrGroupBy; onChange: (value
   )
 }
 
-function PrRow({ pr, status, now, active, hidden, onSelect }: { pr: PrSummary; status: PrRowStatus; now: number; active: boolean; hidden: boolean; onSelect: (key: string) => void }) {
+function PrRow({
+  pr,
+  status,
+  now,
+  active,
+  hidden,
+  onSelect,
+}: {
+  pr: PrSummary
+  status: PrRowStatus
+  now: number
+  active: boolean
+  hidden: boolean
+  onSelect: (key: string) => void
+}) {
   const key = prKey(pr.ref)
   const icon = ROW_ICON[status.icon]
   const subtitle = rowSubtitle(pr, status.phrase, now)
@@ -263,10 +394,16 @@ function PrRow({ pr, status, now, active, hidden, onSelect }: { pr: PrSummary; s
         hidden && 'opacity-60',
       )}
     >
-      <span className="mt-[2px]" title={icon.label}><Icon name={icon.name} tone={icon.tone} /></span>
+      <span className="mt-[2px]" title={icon.label}>
+        <Icon name={icon.name} tone={icon.tone} />
+      </span>
       <span className="min-w-0">
-        <span className={cn('block truncate font-[500]', pr.state === 'merged' && 'text-[var(--text-secondary)]')}>{pr.title}</span>
-        <span className="block truncate text-[12px] text-[var(--text-secondary)]">{hidden ? `${subtitle} · hidden` : subtitle}</span>
+        <span className={cn('block truncate font-[500]', pr.state === 'merged' && 'text-[var(--text-secondary)]')}>
+          {pr.title}
+        </span>
+        <span className="block truncate text-[12px] text-[var(--text-secondary)]">
+          {hidden ? `${subtitle} · hidden` : subtitle}
+        </span>
       </span>
     </button>
   )

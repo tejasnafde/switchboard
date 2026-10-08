@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { approvalActions, offersQuiet, quietLabel, quietly } from '../../apps/mobile/src/lib/approval-actions'
 import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '../../src/shared/agent-approval-cards'
-import { approvalChoiceOnly, HOST_WRITE_PHONE_APPROVAL_CAPABILITY, hostWritePreview, hostWriteShownDigest } from '../../src/shared/host-write-phone'
+import {
+  approvalChoiceOnly,
+  HOST_WRITE_PHONE_APPROVAL_CAPABILITY,
+  hostWritePreview,
+  hostWriteShownDigest,
+} from '../../src/shared/host-write-phone'
 import { BACKEND_CAPABILITIES } from '../../src/shared/ws-protocol'
 import type { HostWriteCard } from '../../src/shared/agent-host-writes'
 import type { FeedItem } from '../../apps/mobile/src/stores/chat'
@@ -9,17 +14,33 @@ import type { FeedItem } from '../../apps/mobile/src/stores/chat'
 type Approval = Extract<FeedItem, { kind: 'approval' }>
 
 const card: HostWriteCard = {
-  action: 'comment', agentLabel: 'Codex', host: 'github', prLabel: 'app #1', target: { repository: 'acme/app', number: 1 }, url: null,
-  location: 'a.ts:3', quote: null, replyText: 'Log it.', maxChars: 8000,
+  action: 'comment',
+  agentLabel: 'Codex',
+  host: 'github',
+  prLabel: 'app #1',
+  target: { repository: 'acme/app', number: 1 },
+  url: null,
+  location: 'a.ts:3',
+  quote: null,
+  replyText: 'Log it.',
+  maxChars: 8000,
 }
 const item = (over: Partial<Approval> = {}): Approval => ({
-  kind: 'approval', id: 'a-1', requestId: 'sbmcp_1', toolName: 'x', detail: 'd', requestType: 'tool', state: 'pending', ...over,
+  kind: 'approval',
+  id: 'a-1',
+  requestId: 'sbmcp_1',
+  toolName: 'x',
+  detail: 'd',
+  requestType: 'tool',
+  state: 'pending',
+  ...over,
 })
 
 describe('approvalActions', () => {
   it('approves a pull request write only on a backend that takes a phone approval', () => {
     expect(approvalActions(item({ hostWrite: card }), true)).toMatchObject({
-      kind: 'host-write', buttons: [{ label: 'Post comment', primary: true, response: { shown: hostWriteShownDigest('sbmcp_1', card) } }],
+      kind: 'host-write',
+      buttons: [{ label: 'Post comment', primary: true, response: { shown: hostWriteShownDigest('sbmcp_1', card) } }],
     })
     expect(approvalActions(item({ hostWrite: card }), false)).toEqual({ kind: 'deny-only' })
   })
@@ -60,24 +81,52 @@ describe('hostWritePreview', () => {
   it('holds every word a review posts, uncapped, each comment under its place', () => {
     const text = 'y'.repeat(2_000)
     const preview = hostWritePreview({
-      ...card, action: 'review', location: null, replyText: undefined,
-      review: { summary: 'Sum.', verdicts: ['comment'], comments: [{ id: 'c1', path: 'a.ts', side: 'old', line: 9, startLine: 4, text, excerpt: [] }] },
+      ...card,
+      action: 'review',
+      location: null,
+      replyText: undefined,
+      review: {
+        summary: 'Sum.',
+        verdicts: ['comment'],
+        comments: [{ id: 'c1', path: 'a.ts', side: 'old', line: 9, startLine: 4, text, excerpt: [] }],
+      },
     })
-    expect(preview).toEqual({ long: true, sections: [{ label: 'Summary', text: 'Sum.' }, { label: 'a.ts:4-9 (old)', text }] })
+    expect(preview).toEqual({
+      long: true,
+      sections: [
+        { label: 'Summary', text: 'Sum.' },
+        { label: 'a.ts:4-9 (old)', text },
+      ],
+    })
   })
 
-  it('shows a pull request\'s title and whole description, and a short reply open', () => {
+  it("shows a pull request's title and whole description, and a short reply open", () => {
     const description = 'd'.repeat(900)
-    expect(hostWritePreview({
-      ...card, action: 'create', replyText: undefined,
-      create: { repoLabel: 'acme/app', sourceBranch: 'feat', targetBranch: 'main', title: 'Add it', description, draft: false },
-    })?.sections).toEqual([
+    expect(
+      hostWritePreview({
+        ...card,
+        action: 'create',
+        replyText: undefined,
+        create: {
+          repoLabel: 'acme/app',
+          sourceBranch: 'feat',
+          targetBranch: 'main',
+          title: 'Add it',
+          description,
+          draft: false,
+        },
+      })?.sections,
+    ).toEqual([
       { label: 'Branches', text: 'acme/app: feat -> main' },
       { label: 'Title', text: 'Add it' },
       { label: 'Description', text: description },
     ])
     expect(hostWritePreview({ ...card, quote: { author: 'rev', body: 'Why?' } })).toEqual({
-      long: false, sections: [{ label: 'rev wrote', text: 'Why?' }, { label: 'Comment', text: 'Log it.' }],
+      long: false,
+      sections: [
+        { label: 'rev wrote', text: 'Why?' },
+        { label: 'Comment', text: 'Log it.' },
+      ],
     })
   })
 
@@ -94,19 +143,43 @@ describe('hostWriteShownDigest', () => {
   // the Android HostWriteCardsTest, so the TS and Kotlin ports cannot drift.
   // The values were also computed independently (FNV-1a 64 over UTF-16LE).
   const reply: HostWriteCard = {
-    action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'app #612', target: { repository: 'acme/app', number: 612 },
-    url: null, location: 'a.ts:3', quote: { author: 'rév', body: 'Why? 🙂' }, replyText: 'Because.\nSee a.ts.', maxChars: 8000,
+    action: 'reply',
+    agentLabel: 'Codex',
+    host: 'github',
+    prLabel: 'app #612',
+    target: { repository: 'acme/app', number: 612 },
+    url: null,
+    location: 'a.ts:3',
+    quote: { author: 'rév', body: 'Why? 🙂' },
+    replyText: 'Because.\nSee a.ts.',
+    maxChars: 8000,
   }
   const create: HostWriteCard = {
-    action: 'create', agentLabel: 'Codex', host: 'bitbucket', prLabel: 'acme/app', target: { repository: 'acme/app', number: null },
-    url: null, location: null, quote: null, maxChars: 8000,
-    create: { repoLabel: 'acme/app', sourceBranch: 'feat/x', targetBranch: 'main', title: 'Add it', description: 'Line one.\nLine two.', draft: false },
+    action: 'create',
+    agentLabel: 'Codex',
+    host: 'bitbucket',
+    prLabel: 'acme/app',
+    target: { repository: 'acme/app', number: null },
+    url: null,
+    location: null,
+    quote: null,
+    maxChars: 8000,
+    create: {
+      repoLabel: 'acme/app',
+      sourceBranch: 'feat/x',
+      targetBranch: 'main',
+      title: 'Add it',
+      description: 'Line one.\nLine two.',
+      draft: false,
+    },
   }
 
   const withReviewers: HostWriteCard = {
-    ...create, host: 'github',
+    ...create,
+    host: 'github',
     create: {
-      ...create.create!, description: 'Line one.',
+      ...create.create!,
+      description: 'Line one.',
       reviewers: [
         { id: 'jdoe', login: 'jdoe', displayName: 'Jane Doé', kind: 'user' },
         { id: 'team:platform', login: 'team:platform', displayName: 'platform', kind: 'team' },
@@ -122,13 +195,27 @@ describe('hostWriteShownDigest', () => {
   })
 
   it('covers the reviewers a create asks, so a phone that did not show them cannot approve', () => {
-    expect(hostWritePreview(withReviewers)?.sections.at(-1)).toEqual({ label: 'Reviewers', text: 'Jane Doé (jdoe)\nplatform (team:platform)\nrk' })
+    expect(hostWritePreview(withReviewers)?.sections.at(-1)).toEqual({
+      label: 'Reviewers',
+      text: 'Jane Doé (jdoe)\nplatform (team:platform)\nrk',
+    })
     const base = hostWriteShownDigest('sbmcp_44', withReviewers)
-    const fewer = { ...withReviewers, create: { ...withReviewers.create!, reviewers: withReviewers.create!.reviewers!.slice(1) } }
+    const fewer = {
+      ...withReviewers,
+      create: { ...withReviewers.create!, reviewers: withReviewers.create!.reviewers!.slice(1) },
+    }
     expect(hostWriteShownDigest('sbmcp_44', fewer)).not.toBe(base)
-    expect(hostWriteShownDigest('sbmcp_44', { ...withReviewers, create: { ...withReviewers.create!, reviewers: undefined } })).not.toBe(base)
+    expect(
+      hostWriteShownDigest('sbmcp_44', {
+        ...withReviewers,
+        create: { ...withReviewers.create!, reviewers: undefined },
+      }),
+    ).not.toBe(base)
     // A reviewer the phone cannot label: it cannot show everything the approval asks.
-    const broken = { ...withReviewers, create: { ...withReviewers.create!, reviewers: [{ id: 'x' }] } } as unknown as HostWriteCard
+    const broken = {
+      ...withReviewers,
+      create: { ...withReviewers.create!, reviewers: [{ id: 'x' }] },
+    } as unknown as HostWriteCard
     expect(hostWritePreview(broken)).toBeNull()
     expect(hostWriteShownDigest('sbmcp_44', broken)).toBeNull()
   })
@@ -136,17 +223,25 @@ describe('hostWriteShownDigest', () => {
   it('does not match the same text on another card, pull request, repository, host or branch', () => {
     const base = hostWriteShownDigest('sbmcp_42', reply)
     expect(hostWriteShownDigest('sbmcp_99', reply)).not.toBe(base)
-    expect(hostWriteShownDigest('sbmcp_42', { ...reply, target: { repository: 'acme/app', number: 613 } })).not.toBe(base)
-    expect(hostWriteShownDigest('sbmcp_42', { ...reply, target: { repository: 'acme/other', number: 612 } })).not.toBe(base)
+    expect(hostWriteShownDigest('sbmcp_42', { ...reply, target: { repository: 'acme/app', number: 613 } })).not.toBe(
+      base,
+    )
+    expect(hostWriteShownDigest('sbmcp_42', { ...reply, target: { repository: 'acme/other', number: 612 } })).not.toBe(
+      base,
+    )
     expect(hostWriteShownDigest('sbmcp_42', { ...reply, host: 'bitbucket' })).not.toBe(base)
     const created = hostWriteShownDigest('sbmcp_43', create)
-    expect(hostWriteShownDigest('sbmcp_43', { ...create, create: { ...create.create!, targetBranch: 'develop' } })).not.toBe(created)
+    expect(
+      hostWriteShownDigest('sbmcp_43', { ...create, create: { ...create.create!, targetBranch: 'develop' } }),
+    ).not.toBe(created)
   })
 
   it('changes with what the preview shows and nothing else', () => {
     const base = hostWriteShownDigest('sbmcp_42', reply)
     expect(hostWriteShownDigest('sbmcp_42', { ...reply, replyText: 'Because.\nSee b.ts.' })).not.toBe(base)
-    expect(hostWriteShownDigest('sbmcp_42', { ...reply, agentLabel: 'Claude Code', maxChars: 10, prLabel: 'renamed' })).toBe(base)
+    expect(
+      hostWriteShownDigest('sbmcp_42', { ...reply, agentLabel: 'Claude Code', maxChars: 10, prLabel: 'renamed' }),
+    ).toBe(base)
   })
 
   it('is null without a preview or a target', () => {
@@ -157,9 +252,18 @@ describe('hostWriteShownDigest', () => {
 
 describe('approvalChoiceOnly', () => {
   it('keeps the choice and drops replacement content', () => {
-    expect(approvalChoiceOnly({
-      text: 't', resolve: true, verdict: 'approve', summary: 's', comments: [{ id: 'c1', text: 'x' }], title: 'T', description: 'D', shown: 'abc',
-    })).toEqual({ resolve: true, verdict: 'approve', shown: 'abc' })
+    expect(
+      approvalChoiceOnly({
+        text: 't',
+        resolve: true,
+        verdict: 'approve',
+        summary: 's',
+        comments: [{ id: 'c1', text: 'x' }],
+        title: 'T',
+        description: 'D',
+        shown: 'abc',
+      }),
+    ).toEqual({ resolve: true, verdict: 'approve', shown: 'abc' })
     expect(approvalChoiceOnly({ text: 't' })).toEqual({})
   })
 })

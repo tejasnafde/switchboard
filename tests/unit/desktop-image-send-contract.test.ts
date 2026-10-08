@@ -74,17 +74,17 @@ describe('Desktop atomic user-turn submission', () => {
 
     const result = await submitDesktopUserTurn(envelope(images), {
       startSession: vi.fn(async () => {}),
-      submit: (turn) => backend.submit(turn, {
-        clientScope: 'desktop',
-        prepare: async () => {},
-        dispatch,
-      }),
+      submit: (turn) =>
+        backend.submit(turn, {
+          clientScope: 'desktop',
+          prepare: async () => {},
+          dispatch,
+        }),
     })
 
     expect(result).toMatchObject({ accepted: true, delivery: 'accepted' })
     expect(dispatch).toHaveBeenCalledTimes(1)
-    expect(db.prepare("SELECT COUNT(*) AS count FROM messages WHERE role = 'user'").get())
-      .toEqual({ count: 1 })
+    expect(db.prepare("SELECT COUNT(*) AS count FROM messages WHERE role = 'user'").get()).toEqual({ count: 1 })
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({ displayBody: '[[pill:file-1]] explain these' })
   })
@@ -92,10 +92,12 @@ describe('Desktop atomic user-turn submission', () => {
   it('rejects an aggregate above 3 MiB before startup and retains the attempt', async () => {
     const startSession = vi.fn(async () => {})
     const submit = vi.fn()
-    const turn = envelope([{
-      url: `data:image/png;base64,${'A'.repeat(3 * 1024 * 1024)}`,
-      mimeType: 'image/png',
-    }])
+    const turn = envelope([
+      {
+        url: `data:image/png;base64,${'A'.repeat(3 * 1024 * 1024)}`,
+        mimeType: 'image/png',
+      },
+    ])
 
     const result = await submitDesktopUserTurn(turn, { startSession, submit })
 
@@ -104,14 +106,15 @@ describe('Desktop atomic user-turn submission', () => {
     expect(result.error).toContain('3 MiB')
     expect(startSession).not.toHaveBeenCalled()
     expect(submit).not.toHaveBeenCalled()
-    expect(db.prepare("SELECT COUNT(*) AS count FROM messages WHERE role = 'user'").get())
-      .toEqual({ count: 0 })
+    expect(db.prepare("SELECT COUNT(*) AS count FROM messages WHERE role = 'user'").get()).toEqual({ count: 0 })
   })
 
   it('treats provider startup rejection as definitely unsent', async () => {
     const submit = vi.fn()
     const result = await submitDesktopUserTurn(envelope(undefined), {
-      startSession: async () => { throw new Error('authentication failed') },
+      startSession: async () => {
+        throw new Error('authentication failed')
+      },
       submit,
     })
 
@@ -126,7 +129,9 @@ describe('Desktop atomic user-turn submission', () => {
   it('a start the user stopped is unsent and says so plainly', async () => {
     const submit = vi.fn()
     const result = await submitDesktopUserTurn(envelope(undefined), {
-      startSession: async () => { throw new Error(`Error invoking remote method 'provider:start-session': Error: ${SESSION_START_STOPPED}`) },
+      startSession: async () => {
+        throw new Error(`Error invoking remote method 'provider:start-session': Error: ${SESSION_START_STOPPED}`)
+      },
       submit,
     })
 
@@ -141,7 +146,9 @@ describe('Desktop atomic user-turn submission', () => {
   it('keeps an acknowledgement transport failure ambiguous', async () => {
     const result = await submitDesktopUserTurn(envelope(undefined), {
       startSession: async () => {},
-      submit: async () => { throw new Error('socket closed') },
+      submit: async () => {
+        throw new Error('socket closed')
+      },
     })
 
     expect(result).toEqual({
@@ -177,7 +184,9 @@ describe('Desktop atomic user-turn submission', () => {
   it('definitely rejects an older backend without the atomic channel', async () => {
     const result = await submitDesktopUserTurn(envelope(undefined), {
       startSession: async () => {},
-      submit: async () => { throw new Error('No handler: provider:submit-user-turn') },
+      submit: async () => {
+        throw new Error('No handler: provider:submit-user-turn')
+      },
     })
 
     expect(result).toEqual({
@@ -215,15 +224,14 @@ describe('Desktop atomic user-turn submission', () => {
   it('returns a rejected programmatic turn to an explicit recovery surface', async () => {
     const recover = vi.fn()
 
-    await expect(submitProgrammaticTurn(
-      'approval note',
-      async () => ({ accepted: false, error: 'Conversation is not durably available yet' }),
-      recover,
-    )).resolves.toBe(false)
+    await expect(
+      submitProgrammaticTurn(
+        'approval note',
+        async () => ({ accepted: false, error: 'Conversation is not durably available yet' }),
+        recover,
+      ),
+    ).resolves.toBe(false)
 
-    expect(recover).toHaveBeenCalledWith(
-      'approval note',
-      'Conversation is not durably available yet',
-    )
+    expect(recover).toHaveBeenCalledWith('approval note', 'Conversation is not durably available yet')
   })
 })

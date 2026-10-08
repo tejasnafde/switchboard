@@ -93,14 +93,17 @@ async function start(
 ) {
   const { OpencodeAcpAdapter } = await import('../../src/main/provider/adapters/opencode-acp-adapter')
   const adapter = new OpencodeAcpAdapter()
-  await adapter.startSession({
-    threadId: 't1',
-    provider: 'opencode',
-    cwd,
-    runtimeMode,
-    resolvedEnv,
-    ...(withServer ? { switchboardMcp: launch } : {}),
-  }, onEvent)
+  await adapter.startSession(
+    {
+      threadId: 't1',
+      provider: 'opencode',
+      cwd,
+      runtimeMode,
+      resolvedEnv,
+      ...(withServer ? { switchboardMcp: launch } : {}),
+    },
+    onEvent,
+  )
   return { adapter, onEvent }
 }
 
@@ -140,16 +143,18 @@ afterEach(async () => {
 describe('OpenCode registration', () => {
   it('passes the server to session/new', async () => {
     await start(true)
-    expect(newSessionCalls[0].mcpServers).toEqual([{
-      name: 'switchboard',
-      command: launch.command,
-      args: launch.args,
-      env: [
-        { name: 'ELECTRON_RUN_AS_NODE', value: '1' },
-        { name: 'SWITCHBOARD_MCP_PORT', value: '5000' },
-        { name: 'SWITCHBOARD_MCP_TOKEN', value: 'tok' },
-      ],
-    }])
+    expect(newSessionCalls[0].mcpServers).toEqual([
+      {
+        name: 'switchboard',
+        command: launch.command,
+        args: launch.args,
+        env: [
+          { name: 'ELECTRON_RUN_AS_NODE', value: '1' },
+          { name: 'SWITCHBOARD_MCP_PORT', value: '5000' },
+          { name: 'SWITCHBOARD_MCP_TOKEN', value: 'tok' },
+        ],
+      },
+    ])
   })
 
   it('passes none when the backend opened none', async () => {
@@ -159,7 +164,8 @@ describe('OpenCode registration', () => {
 
   it('injects MCP permission rules into the spawned OpenCode environment', async () => {
     await start(true, vi.fn(), 'accept-edits', {
-      OPENCODE_CONFIG_CONTENT: '{"permission":{"bash":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+      OPENCODE_CONFIG_CONTENT:
+        '{"permission":{"bash":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
     })
     expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!)).toEqual({
       permission: {
@@ -178,7 +184,8 @@ describe('OpenCode registration', () => {
 
   it('keeps a scalar user deny as the effective MCP permission', async () => {
     await start(true, vi.fn(), 'sandbox', {
-      OPENCODE_CONFIG_CONTENT: '{"permission":"deny","mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+      OPENCODE_CONFIG_CONTENT:
+        '{"permission":"deny","mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
     })
     const permission = JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission
     expect(permission).toBe('deny')
@@ -186,7 +193,8 @@ describe('OpenCode registration', () => {
 
   it('does not emit a generated ask over an inline tool deny', async () => {
     await start(false, vi.fn(), 'sandbox', {
-      OPENCODE_CONFIG_CONTENT: '{"permission":{"github_delete":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+      OPENCODE_CONFIG_CONTENT:
+        '{"permission":{"github_delete":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
     })
     const permission = JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission
     expect(permission).toEqual({
@@ -196,7 +204,8 @@ describe('OpenCode registration', () => {
 
   it('does not overwrite existing user permission keys', async () => {
     await start(true, vi.fn(), 'sandbox', {
-      OPENCODE_CONFIG_CONTENT: '{"permission":{"github_*":"deny","switchboard_*":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+      OPENCODE_CONFIG_CONTENT:
+        '{"permission":{"github_*":"deny","switchboard_*":"deny"},"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
     })
     const permission = JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission
     expect(permission).toEqual({
@@ -273,7 +282,9 @@ describe('OpenCode registration', () => {
       OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
     })
 
-    expect(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT).toBe('{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}')
+    expect(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT).toBe(
+      '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    )
   })
 
   it('does not emit a generated ask over a project .opencode tool deny', async () => {
@@ -281,9 +292,15 @@ describe('OpenCode registration', () => {
     await fs.mkdir(join(dir, '.opencode'), { recursive: true })
     await fs.writeFile(join(dir, '.opencode', 'opencode.json'), '{"permission":{"github_delete":"deny"}}')
 
-    await start(false, vi.fn(), 'sandbox', {
-      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
-    }, dir)
+    await start(
+      false,
+      vi.fn(),
+      'sandbox',
+      {
+        OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+      },
+      dir,
+    )
 
     expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toBeUndefined()
   })
@@ -295,9 +312,15 @@ describe('OpenCode registration', () => {
     await fs.mkdir(project, { recursive: true })
     await fs.writeFile(join(root, '.opencode', 'opencode.jsonc'), '{"permission":{"github_delete":"deny"}}')
 
-    await start(false, vi.fn(), 'sandbox', {
-      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
-    }, project)
+    await start(
+      false,
+      vi.fn(),
+      'sandbox',
+      {
+        OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+      },
+      project,
+    )
 
     expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toBeUndefined()
   })
@@ -307,10 +330,16 @@ describe('OpenCode registration', () => {
     const config = join(dir, 'custom-opencode.json')
     await fs.writeFile(config, '{"permission":{"github_delete":"deny"}}')
 
-    await start(false, vi.fn(), 'sandbox', {
-      OPENCODE_CONFIG: config,
-      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
-    }, dir)
+    await start(
+      false,
+      vi.fn(),
+      'sandbox',
+      {
+        OPENCODE_CONFIG: config,
+        OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+      },
+      dir,
+    )
 
     expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toBeUndefined()
   })
@@ -321,10 +350,16 @@ describe('OpenCode registration', () => {
     await fs.mkdir(configDir, { recursive: true })
     await fs.writeFile(join(configDir, 'opencode.json'), '{"permission":{"github_delete":"deny"}}')
 
-    await start(false, vi.fn(), 'sandbox', {
-      OPENCODE_CONFIG_DIR: configDir,
-      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
-    }, dir)
+    await start(
+      false,
+      vi.fn(),
+      'sandbox',
+      {
+        OPENCODE_CONFIG_DIR: configDir,
+        OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+      },
+      dir,
+    )
 
     expect(JSON.parse(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT!).permission).toBeUndefined()
   })
@@ -334,11 +369,19 @@ describe('OpenCode registration', () => {
     await fs.mkdir(join(dir, '.opencode'), { recursive: true })
     await fs.writeFile(join(dir, '.opencode', 'opencode.json'), '{"permission":')
 
-    await start(true, vi.fn(), 'sandbox', {
-      OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
-    }, dir)
+    await start(
+      true,
+      vi.fn(),
+      'sandbox',
+      {
+        OPENCODE_CONFIG_CONTENT: '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+      },
+      dir,
+    )
 
-    expect(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT).toBe('{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}')
+    expect(spawnedEnvs[0].OPENCODE_CONFIG_CONTENT).toBe(
+      '{"mcp":{"github":{"type":"local","command":["node","server.mjs"]}}}',
+    )
   })
 
   it('cleans fixture dirs under the OS temp dir', async () => {
@@ -359,7 +402,7 @@ describe('OpenCode permission requests', () => {
     expect(onEvent.mock.calls.map(([e]) => e.type)).not.toContain('request.opened')
   })
 
-  it('still asks for another server\'s tool', async () => {
+  it("still asks for another server's tool", async () => {
     const { onEvent } = await start(true)
     void client!.requestPermission(permission('github_create_issue'))
     await new Promise((resolve) => setImmediate(resolve))
@@ -404,16 +447,22 @@ describe('OpenCode permission requests', () => {
   it('allows the diff, line comment and review tools without a card', async () => {
     const { onEvent } = await start(true)
     for (const tool of ['switchboard_get_pr_diff', 'switchboard_comment_on_line', 'switchboard_draft_review']) {
-      expect(await client!.requestPermission(permission(tool))).toEqual({ outcome: { outcome: 'selected', optionId: 'once' } })
+      expect(await client!.requestPermission(permission(tool))).toEqual({
+        outcome: { outcome: 'selected', optionId: 'once' },
+      })
     }
     expect(onEvent.mock.calls.map(([e]) => e.type)).not.toContain('request.opened')
   })
 
   it('in plan mode, allows get_pr_diff but denies comment_on_line and draft_review', async () => {
     await start(true, vi.fn(), 'plan')
-    expect(await client!.requestPermission(permission('switchboard_get_pr_diff'))).toEqual({ outcome: { outcome: 'selected', optionId: 'once' } })
+    expect(await client!.requestPermission(permission('switchboard_get_pr_diff'))).toEqual({
+      outcome: { outcome: 'selected', optionId: 'once' },
+    })
     for (const tool of ['switchboard_comment_on_line', 'switchboard_draft_review']) {
-      expect(await client!.requestPermission(permission(tool))).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } })
+      expect(await client!.requestPermission(permission(tool))).toEqual({
+        outcome: { outcome: 'selected', optionId: 'reject' },
+      })
     }
   })
 
@@ -429,11 +478,13 @@ describe('OpenCode permission requests', () => {
     const { onEvent } = await start(true, vi.fn(), 'plan')
     const answer = await client!.requestPermission(permission('github_create_issue'))
     expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } })
-    expect(onEvent.mock.calls.map(([e]) => e)).toContainEqual(expect.objectContaining({
-      type: 'tool.denied',
-      toolName: 'github_create_issue',
-      mode: 'plan',
-    }))
+    expect(onEvent.mock.calls.map(([e]) => e)).toContainEqual(
+      expect.objectContaining({
+        type: 'tool.denied',
+        toolName: 'github_create_issue',
+        mode: 'plan',
+      }),
+    )
   })
 
   it('allows an MCP tool in full access', async () => {

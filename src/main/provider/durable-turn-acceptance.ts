@@ -32,7 +32,10 @@ export type TurnAcceptanceResult =
  * the turn's result: the provider already has the turn, so a throw here would
  * report a delivered message as failed and invite a duplicate send.
  */
-function notifyCommit(dispatched: { afterCommit?: (committed: boolean) => void } | undefined | null, committed: boolean): void {
+function notifyCommit(
+  dispatched: { afterCommit?: (committed: boolean) => void } | undefined | null,
+  committed: boolean,
+): void {
   try {
     dispatched?.afterCommit?.(committed)
   } catch (err) {
@@ -227,9 +230,13 @@ export class AtomicUserTurnSubmission {
     context: Pick<AtomicUserTurnContext, 'clientScope' | 'conversationId'>,
   ): UserTurnResolutionResult {
     if (
-      !input || input.version !== 1 || input.action !== 'abandon' ||
-      typeof input.threadId !== 'string' || input.threadId.length === 0 ||
-      typeof input.origin !== 'string' || input.origin.length === 0
+      !input ||
+      input.version !== 1 ||
+      input.action !== 'abandon' ||
+      typeof input.threadId !== 'string' ||
+      input.threadId.length === 0 ||
+      typeof input.origin !== 'string' ||
+      input.origin.length === 0
     ) {
       throw new Error('invalid user-turn resolution')
     }
@@ -260,9 +267,10 @@ export class AtomicUserTurnSubmission {
     return {
       status: 'not_found',
       changed: false,
-      reason: result.state === 'not_found'
-        ? 'No matching turn delivery was found'
-        : 'Turn delivery is not eligible for resolution',
+      reason:
+        result.state === 'not_found'
+          ? 'No matching turn delivery was found'
+          : 'Turn delivery is not eligible for resolution',
     }
   }
 
@@ -391,9 +399,11 @@ function canonicalEvent(key: TurnAcceptanceKey, row: CanonicalUserTurnRow): Runt
     origin: key.origin,
     at: row.eventAt,
     ...(row.conversationTitle ? { conversationTitle: row.conversationTitle } : {}),
-    ...(envelope?.handoff ? {
-      handoffMarker: { id: envelope.handoff.markerId, text: envelope.handoff.markerText },
-    } : {}),
+    ...(envelope?.handoff
+      ? {
+          handoffMarker: { id: envelope.handoff.markerId, text: envelope.handoff.markerText },
+        }
+      : {}),
   }
 }
 

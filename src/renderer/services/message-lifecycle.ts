@@ -53,10 +53,7 @@ export function prepareRuntimeEventLifecycle(
   flushThread(event.threadId)
 }
 
-export function finishRuntimeEventLifecycle(
-  event: RuntimeEvent,
-  tracker: MessageLifecycleTracker,
-): void {
+export function finishRuntimeEventLifecycle(event: RuntimeEvent, tracker: MessageLifecycleTracker): void {
   if (
     event.type === 'turn.completed' ||
     event.type === 'error' ||
@@ -70,7 +67,7 @@ export const messageLifecycle = createMessageLifecycleTracker()
 
 export function useMessageMutable(threadId: string | undefined, messageId: string): boolean {
   const getSnapshot = useCallback(
-    () => threadId ? messageLifecycle.isMutable(threadId, messageId) : false,
+    () => (threadId ? messageLifecycle.isMutable(threadId, messageId) : false),
     [messageId, threadId],
   )
   return useSyncExternalStore(messageLifecycle.subscribe, getSnapshot, () => false)

@@ -25,11 +25,10 @@ function img(id: string): ImageAttachment {
   return { id, file: { name: `${id}.png` } as File, previewUrl: `blob:${id}` }
 }
 
-const imagesFor = (session: string): ImageAttachment[] =>
-  useDraftStore.getState().imagesBySession[session] ?? []
+const imagesFor = (session: string): ImageAttachment[] => useDraftStore.getState().imagesBySession[session] ?? []
 
 describe('imagesBySession', () => {
-  it('keeps one session\'s attachments out of another', () => {
+  it("keeps one session's attachments out of another", () => {
     useDraftStore.getState().addImages('session-a', [img('1')])
 
     expect(imagesFor('session-a')).toHaveLength(1)

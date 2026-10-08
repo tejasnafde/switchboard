@@ -45,9 +45,11 @@ function blockText(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
   return content
-    .map((block) => (block && typeof block === 'object' && typeof (block as { text?: unknown }).text === 'string'
-      ? (block as { text: string }).text
-      : ''))
+    .map((block) =>
+      block && typeof block === 'object' && typeof (block as { text?: unknown }).text === 'string'
+        ? (block as { text: string }).text
+        : '',
+    )
     .filter(Boolean)
     .join('\n')
 }
@@ -70,12 +72,16 @@ function droppedToolParts(event: Record<string, unknown>, source: JsonlSource): 
     if (typeof input === 'string') parts.push(['toolInput', input])
   } else if (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') {
     const output = payload.output
-    parts.push(['toolOutput', typeof output === 'string' ? output : blockText((output as { content?: unknown } | undefined)?.content)])
+    parts.push([
+      'toolOutput',
+      typeof output === 'string' ? output : blockText((output as { content?: unknown } | undefined)?.content),
+    ])
   }
   return parts
 }
 
-const MAY_HOLD_DROPPED_TOOL_PART = /"(?:tool_result|function_call|function_call_output|custom_tool_call|custom_tool_call_output)"/
+const MAY_HOLD_DROPPED_TOOL_PART =
+  /"(?:tool_result|function_call|function_call_output|custom_tool_call|custom_tool_call_output)"/
 
 /** Streams one transcript into `visit`. Returns false once `visit` asked to stop; throws on a read failure other than a missing file. */
 export async function readJsonlHistory(filePath: string, source: JsonlSource, visit: HistoryVisitor): Promise<boolean> {
@@ -118,7 +124,7 @@ function parseToolCalls(json: string | null): ToolCall[] {
   if (!json) return []
   try {
     const calls: unknown = JSON.parse(json)
-    return Array.isArray(calls) ? calls as ToolCall[] : []
+    return Array.isArray(calls) ? (calls as ToolCall[]) : []
   } catch (err) {
     log.debug('stored tool calls did not parse', { err: String(err) })
     return []
@@ -144,7 +150,13 @@ export async function readConversationHistory(conversationId: string, visit: His
   const familyIds = threadFamilyIds(conversationId)
   for (const id of familyIds) {
     for (const row of iterateMessageTextForConversation(id)) {
-      const message = { id: '', role: 'assistant', timestamp: 0, content: row.content, toolCalls: parseToolCalls(row.tool_calls) } as ChatMessage
+      const message = {
+        id: '',
+        role: 'assistant',
+        timestamp: 0,
+        content: row.content,
+        toolCalls: parseToolCalls(row.tool_calls),
+      } as ChatMessage
       if (!visitMessage(message, visit)) return
     }
   }

@@ -3,11 +3,17 @@ import { selectionToRestore } from '../../src/renderer/services/composer-selecti
 
 describe('selectionToRestore', () => {
   it('keeps the caret when the text did not change', () => {
-    expect(selectionToRestore({ anchor: 6, focus: 6, body: 'hello world' }, 'hello world')).toEqual({ anchor: 6, focus: 6 })
+    expect(selectionToRestore({ anchor: 6, focus: 6, body: 'hello world' }, 'hello world')).toEqual({
+      anchor: 6,
+      focus: 6,
+    })
   })
 
   it('keeps a selected range, backward included', () => {
-    expect(selectionToRestore({ anchor: 11, focus: 6, body: 'hello world' }, 'hello world')).toEqual({ anchor: 11, focus: 6 })
+    expect(selectionToRestore({ anchor: 11, focus: 6, body: 'hello world' }, 'hello world')).toEqual({
+      anchor: 11,
+      focus: 6,
+    })
   })
 
   it('keeps the caret when text was added after it', () => {
@@ -24,7 +30,10 @@ describe('selectionToRestore', () => {
   })
 
   it('goes to the end when the old position now falls inside a pill token', () => {
-    expect(selectionToRestore({ anchor: 3, focus: 3, body: 'abcdef' }, 'a[[pill:p1]]')).toEqual({ anchor: 12, focus: 12 })
+    expect(selectionToRestore({ anchor: 3, focus: 3, body: 'abcdef' }, 'a[[pill:p1]]')).toEqual({
+      anchor: 12,
+      focus: 12,
+    })
   })
 
   it('keeps a position on a pill boundary', () => {

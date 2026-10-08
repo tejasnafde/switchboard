@@ -15,10 +15,15 @@ vi.mock('better-sqlite3', () => {
   class FakeDb {
     pragma() {}
     exec() {}
-    transaction(fn: () => void) { return fn }
+    transaction(fn: () => void) {
+      return fn
+    }
     prepare(sql: string) {
       return {
-        run: (...args: unknown[]) => { runCalls.push({ sql, args }); return { changes: 1 } },
+        run: (...args: unknown[]) => {
+          runCalls.push({ sql, args })
+          return { changes: 1 }
+        },
         get: () => undefined,
         all: () => [],
       }
@@ -32,7 +37,9 @@ const { renameProject, removeProject } = await import('../../src/main/db/databas
 // One migrate()-full of statements fires on first getDb(); ignore those.
 const projectWrites = () => runCalls.filter((c) => /\b(UPDATE|DELETE FROM) projects\b/.test(c.sql))
 
-beforeEach(() => { runCalls.length = 0 })
+beforeEach(() => {
+  runCalls.length = 0
+})
 
 describe('projects rename/remove SQL', () => {
   it('renameProject binds (name, path) in that order', () => {

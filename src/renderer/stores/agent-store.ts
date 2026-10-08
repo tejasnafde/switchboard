@@ -9,17 +9,25 @@ import type { ReasoningEffort } from '@shared/models'
 import { createRendererLogger } from '../logger'
 import { mergeLiveSessions, settleSessionsNotLive, toAgentStatus, toAgentType } from './live-session-merge'
 import type { LiveSessionSummary } from '@shared/live-sessions'
-import { PENDING_REQUEST_EVENT_TYPES, applyPendingRequestEvent, type PendingBlockingEvent } from '@shared/pending-requests'
+import {
+  PENDING_REQUEST_EVENT_TYPES,
+  applyPendingRequestEvent,
+  type PendingBlockingEvent,
+} from '@shared/pending-requests'
 import type { RuntimeEvent } from '@shared/provider-events'
-import { NO_QUEUED_TURNS, applyQueuedTurnEvent, queuedRowRemoved, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
+import {
+  NO_QUEUED_TURNS,
+  applyQueuedTurnEvent,
+  queuedRowRemoved,
+  seedQueuedTurns,
+  type QueuedTurnsByMessage,
+} from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { FollowSuggestionMode } from '@shared/follow-suggestions'
 import { isRuntimeMode, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
 import { effectiveLocalSetting, projectOverride } from './project-settings-store'
 import { isDraftSessionId, type DraftChatOptions } from '@shared/new-chat-draft'
-import type {
-  ForkLineageMetadata,
-} from '@shared/conversation-fork'
+import type { ForkLineageMetadata } from '@shared/conversation-fork'
 
 const log = createRendererLogger('store:agent')
 
@@ -68,7 +76,9 @@ export function initialRuntimeMode(
 }
 
 /** The mode to send to the backend: none while the session's mode is unresolved, so the backend decides. */
-export function runtimeModeToSend(session: Pick<AgentSession, 'runtimeMode' | 'runtimeModeUnresolved'> | undefined): RuntimeMode | undefined {
+export function runtimeModeToSend(
+  session: Pick<AgentSession, 'runtimeMode' | 'runtimeModeUnresolved'> | undefined,
+): RuntimeMode | undefined {
   if (!session || session.runtimeModeUnresolved) return undefined
   return session.runtimeMode
 }
@@ -240,12 +250,20 @@ interface AgentStore {
    * store only the timestamp (no message id at save time), so timestamp is
    * the fallback match key. `stamp` is a re-click rerun counter.
    */
-  pendingScrollToMessage:
-    | { sessionId: string; messageId?: string; messageTimestamp?: number; stamp: number; query?: string }
-    | null
+  pendingScrollToMessage: {
+    sessionId: string
+    messageId?: string
+    messageTimestamp?: number
+    stamp: number
+    query?: string
+  } | null
 
   /** `runtimeMode` only when someone chose it; absent, the session is unresolved (`initialRuntimeMode`). */
-  addSession: (session: Omit<AgentSession, 'messages' | 'unreadCount' | 'runtimeMode' | 'runtimeModeUnresolved'> & { runtimeMode?: RuntimeMode }) => void
+  addSession: (
+    session: Omit<AgentSession, 'messages' | 'unreadCount' | 'runtimeMode' | 'runtimeModeUnresolved'> & {
+      runtimeMode?: RuntimeMode
+    },
+  ) => void
   removeSession: (id: string) => void
   setActiveSession: (id: string) => void
   /** Clear the badge without focusing the session - a `thread.read` from
@@ -308,11 +326,7 @@ interface AgentStore {
    */
   setDriftSuggestion: (sessionId: string, suggestion: DriftSuggestion | null) => void
   setFollowNoticeDismissed: (sessionId: string, dismissed: boolean) => void
-  setWorktree: (
-    sessionId: string,
-    worktreePath: string | null,
-    worktreeBranch: string | null,
-  ) => void
+  setWorktree: (sessionId: string, worktreePath: string | null, worktreeBranch: string | null) => void
   /**
    * Apply a root COMMITTED by the backend. Ignores a revision at or below the
    * one already held, which is what lets several clients converge.
@@ -375,10 +389,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       const remaining = state.sessions.filter((s) => s.id !== id)
       return {
         sessions: remaining,
-        activeSessionId:
-          state.activeSessionId === id
-            ? remaining[0]?.id ?? null
-            : state.activeSessionId,
+        activeSessionId: state.activeSessionId === id ? (remaining[0]?.id ?? null) : state.activeSessionId,
       }
     })
   },
@@ -387,24 +398,18 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     if (selectRuntimeChatSession(id)) return
     set((state) => ({
       activeSessionId: id,
-      sessions: state.sessions.map((s) =>
-        s.id === id ? { ...s, unreadCount: 0 } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === id ? { ...s, unreadCount: 0 } : s)),
     }))
   },
 
   markSessionRead: (id) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === id && s.unreadCount !== 0 ? { ...s, unreadCount: 0 } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === id && s.unreadCount !== 0 ? { ...s, unreadCount: 0 } : s)),
     })),
 
   updateStatus: (id, status) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === id ? { ...s, status } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === id ? { ...s, status } : s)),
     })),
 
   resetRunningSessionsForMachine: (machineId) =>
@@ -419,8 +424,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   settleSessionsNotLive: (live, machineId) =>
     set((state) => ({
-      sessions: settleSessionsNotLive(state.sessions, live, (s) =>
-        s.type !== 'terminal' && (machineId === null ? !s.machineId || s.machineId === 'local' : s.machineId === machineId)),
+      sessions: settleSessionsNotLive(
+        state.sessions,
+        live,
+        (s) =>
+          s.type !== 'terminal' &&
+          (machineId === null ? !s.machineId || s.machineId === 'local' : s.machineId === machineId),
+      ),
     })),
 
   adoptLiveSessions: (live, machineId) =>
@@ -459,9 +469,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         return {
           ...s,
           messages: [...s.messages, message],
-          unreadCount: !isChatSessionDisplayed(sessionId) && message.role === 'assistant'
-            ? s.unreadCount + 1
-            : s.unreadCount,
+          unreadCount:
+            !isChatSessionDisplayed(sessionId) && message.role === 'assistant' ? s.unreadCount + 1 : s.unreadCount,
         }
       }),
     })),
@@ -472,11 +481,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         s.id === sessionId
           ? {
               ...s,
-              messages: s.messages.map((m) =>
-                m.id === messageId ? { ...m, ...updates } : m
-              ),
+              messages: s.messages.map((m) => (m.id === messageId ? { ...m, ...updates } : m)),
             }
-          : s
+          : s,
       ),
     })),
 
@@ -485,40 +492,38 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       sessions: state.sessions.map((session) =>
         session.id === sessionId
           ? { ...session, messages: session.messages.filter((message) => message.id !== messageId) }
-          : session
+          : session,
       ),
     })),
 
   setMessages: (sessionId, messages) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, messages } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, messages } : s)),
     })),
 
   clearMessages: (sessionId) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, messages: [] } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, messages: [] } : s)),
     })),
 
   setConversationId: (sessionId, conversationId) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, conversationId } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, conversationId } : s)),
     })),
 
   setQueuedTurns: (sessionId, turns) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, queuedTurns: seedQueuedTurns(turns) } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, queuedTurns: seedQueuedTurns(turns) } : s)),
     })),
 
   trackQueuedTurnEvent: (event) => {
-    if (event.type !== 'turn.queued' && event.type !== 'turn.dequeued' && event.type !== 'turn.queue-held' && event.type !== 'status') return
+    if (
+      event.type !== 'turn.queued' &&
+      event.type !== 'turn.dequeued' &&
+      event.type !== 'turn.queue-held' &&
+      event.type !== 'status'
+    )
+      return
     set((state) => {
       let changed = false
       const sessions = state.sessions.map((s) => {
@@ -528,8 +533,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         const next = applyQueuedTurnEvent(current, event)
         // A cancelled or dropped message never reached the agent, so its row
         // goes too, on every client (the backend replaced the stored copy).
-        const cancelled = event.type === 'turn.dequeued' && queuedRowRemoved(event.reason)
-          && s.messages.some((m) => m.id === event.messageId)
+        const cancelled =
+          event.type === 'turn.dequeued' &&
+          queuedRowRemoved(event.reason) &&
+          s.messages.some((m) => m.id === event.messageId)
         if (next === current && !cancelled && revision === s.queuedTurnRevision) return s
         changed = true
         return {
@@ -545,9 +552,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   setPendingRequests: (sessionId, pending) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, pendingRequests: pending } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, pendingRequests: pending } : s)),
     })),
 
   trackPendingRequestEvent: (event) => {
@@ -575,52 +580,40 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   setTitle: (sessionId, title) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, title } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, title } : s)),
     })),
 
   setRuntimeMode: (sessionId, mode) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, runtimeMode: mode, runtimeModeUnresolved: undefined } : s
+        s.id === sessionId ? { ...s, runtimeMode: mode, runtimeModeUnresolved: undefined } : s,
       ),
     })),
 
   setModel: (sessionId, model) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, model } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, model } : s)),
     })),
 
   setResolvedModel: (sessionId, resolvedModel) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, resolvedModel } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, resolvedModel } : s)),
     })),
 
   setReasoningEffort: (sessionId, effort) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, reasoningEffort: effort } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, reasoningEffort: effort } : s)),
     })),
 
   setCostUsd: (sessionId, costUsd) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, costUsd } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, costUsd } : s)),
     })),
 
   setVariants: (sessionId, available, current) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.id === sessionId
-          ? { ...s, availableVariants: available, currentVariant: current }
-          : s
+        s.id === sessionId ? { ...s, availableVariants: available, currentVariant: current } : s,
       ),
     })),
 
@@ -637,7 +630,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
                 maxTokens: usage.maxTokens ?? s.tokenUsage?.maxTokens ?? null,
               },
             }
-          : s
+          : s,
       ),
     })),
 
@@ -655,8 +648,15 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         // session-id namespaces differ across kinds (Claude UUID vs.
         // Codex rollout id) - there's no migration path.
         s.id === sessionId
-          ? { ...s, type, model: undefined, resolvedModel: undefined, instanceId: undefined, resumeSessionId: undefined }
-          : s
+          ? {
+              ...s,
+              type,
+              model: undefined,
+              resolvedModel: undefined,
+              instanceId: undefined,
+              resumeSessionId: undefined,
+            }
+          : s,
       ),
     })),
 
@@ -708,24 +708,18 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   syncExecutionRootRevision: (sessionId, revision) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.id === sessionId && (s.executionRootRevision ?? 0) < revision
-          ? { ...s, executionRootRevision: revision }
-          : s,
+        s.id === sessionId && (s.executionRootRevision ?? 0) < revision ? { ...s, executionRootRevision: revision } : s,
       ),
     })),
 
   setDriftSuggestion: (sessionId, suggestion) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, driftSuggestion: suggestion } : s,
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, driftSuggestion: suggestion } : s)),
     })),
 
   setFollowNoticeDismissed: (sessionId, dismissed) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, followNoticeDismissed: dismissed } : s,
-      ),
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, followNoticeDismissed: dismissed } : s)),
     })),
 
   requestScrollToMessage: (sessionId, messageId, query) =>

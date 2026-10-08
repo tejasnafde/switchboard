@@ -22,9 +22,13 @@ function useChatLinks(sessionId: string): PrLink[] {
   const [links, setLinks] = useState<PrLink[]>([])
   useEffect(() => {
     let live = true
-    const load = () => window.api.pullRequests.links(sessionId)
-      .then((next) => { if (live) setLinks(next) })
-      .catch((err) => log.warn('reading linked pull requests failed', err))
+    const load = () =>
+      window.api.pullRequests
+        .links(sessionId)
+        .then((next) => {
+          if (live) setLinks(next)
+        })
+        .catch((err) => log.warn('reading linked pull requests failed', err))
     void load()
     const stop = window.api.pullRequests.onLinksChanged(() => void load())
     return () => {
@@ -39,7 +43,10 @@ function useChatLinks(sessionId: string): PrLink[] {
 function linkRow(link: PrLink, list: PrListData | null): { link: PrLink; pr: PrSummary | null; state: PrState | null } {
   const listed = findSummary(list, prKey(link.ref))
   const state = linkHeaderState(link, listed?.state ?? null, list?.fetchedAt ?? null)
-  const pr = listed && state && state !== listed.state ? { ...listed, state, mergedAt: listed.mergedAt ?? link.stateAt ?? null } : listed
+  const pr =
+    listed && state && state !== listed.state
+      ? { ...listed, state, mergedAt: listed.mergedAt ?? link.stateAt ?? null }
+      : listed
   return { link, pr, state }
 }
 
@@ -50,7 +57,11 @@ function rowPhrase({ pr, state }: { pr: PrSummary | null; state: PrState | null 
 
 function PrStatusIcon({ pr, state }: { pr: PrSummary | null; state: PrState | null }) {
   const status = pr ? prRowStatus(pr, Date.now()) : null
-  const icon = status ? ROW_ICON[status.icon] : state === 'merged' ? ROW_ICON.merged : { name: 'pr' as const, tone: 'dim' as const, label: 'Pull request' }
+  const icon = status
+    ? ROW_ICON[status.icon]
+    : state === 'merged'
+      ? ROW_ICON.merged
+      : { name: 'pr' as const, tone: 'dim' as const, label: 'Pull request' }
   return <Icon name={icon.name} tone={icon.tone} size={13} />
 }
 
@@ -100,7 +111,10 @@ export function LinkedPrControl({ sessionId }: { sessionId: string }) {
           <Icon name="chev" size={11} tone="dim" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="sb-floating-surface z-[1200] w-[340px] overflow-hidden rounded-[8px] border border-[var(--border)] p-1 text-[12.5px] text-[var(--text-primary)]">
+      <PopoverContent
+        align="end"
+        className="sb-floating-surface z-[1200] w-[340px] overflow-hidden rounded-[8px] border border-[var(--border)] p-1 text-[12.5px] text-[var(--text-primary)]"
+      >
         {rows.map((row) => {
           const { link, pr } = row
           const key = prKey(link.ref)
@@ -109,10 +123,14 @@ export function LinkedPrControl({ sessionId }: { sessionId: string }) {
             <div key={key} className="flex items-center gap-2 rounded-[6px] px-2 py-[6px]">
               <PrStatusIcon pr={pr} state={row.state} />
               <div className="min-w-0 flex-1">
-                <div className="truncate"><b className="font-[500]">#{link.ref.number}</b> {pr?.title ?? `${link.ref.owner}/${link.ref.name}`}</div>
+                <div className="truncate">
+                  <b className="font-[500]">#{link.ref.number}</b> {pr?.title ?? `${link.ref.owner}/${link.ref.name}`}
+                </div>
                 <div className="truncate text-[12px] text-[var(--text-secondary)]">{detail}</div>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => openInReviews(key)}>Open in Reviews</Button>
+              <Button variant="ghost" size="sm" onClick={() => openInReviews(key)}>
+                Open in Reviews
+              </Button>
             </div>
           )
         })}

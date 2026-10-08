@@ -3,11 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  loadCursorConversation,
-  parseCursorJsonValue,
-  scanCursorSessions,
-} from '../../src/main/cursor/store'
+import { loadCursorConversation, parseCursorJsonValue, scanCursorSessions } from '../../src/main/cursor/store'
 import { scanAllSessions } from '../../src/main/projects/session-scanner'
 
 const roots: string[] = []
@@ -65,21 +61,25 @@ describe('Cursor conversation stores', () => {
         { bubbleId: 'a1', type: 2, text: 'hi back', createdAt: 120 },
       ],
     }
-    legacy.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)')
+    legacy
+      .prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)')
       .run('composer.composerData', JSON.stringify({ allComposers: [composer] }))
-    ignored.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)')
+    ignored
+      .prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)')
       .run('composer.composerData', JSON.stringify({ allComposers: [{ ...composer, composerId: 'wrong' }] }))
     legacy.close()
     ignored.close()
 
     const candidates = await scanCursorSessions(project, userDir)
-    expect(candidates).toEqual([expect.objectContaining({
-      id: 'legacy-1',
-      source: 'cursor',
-      title: 'Legacy conversation',
-      startedAt: 200,
-      messageCount: 2,
-    })])
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        id: 'legacy-1',
+        source: 'cursor',
+        title: 'Legacy conversation',
+        startedAt: 200,
+        messageCount: 2,
+      }),
+    ])
 
     const loaded = await loadCursorConversation(project, 'legacy-1', userDir)
     expect(loaded?.messages).toEqual([
@@ -96,11 +96,13 @@ describe('Cursor conversation stores', () => {
     db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)').run(
       'composer.composerData',
       JSON.stringify({
-        allComposers: [{
-          composerId,
-          name: 'Header-only legacy',
-          fullConversationHeadersOnly: [{ bubbleId: 'u1', type: 1 }],
-        }],
+        allComposers: [
+          {
+            composerId,
+            name: 'Header-only legacy',
+            fullConversationHeadersOnly: [{ bubbleId: 'u1', type: 1 }],
+          },
+        ],
       }),
     )
     const insert = db.prepare('INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)')
@@ -132,8 +134,17 @@ describe('Cursor conversation stores', () => {
     `)
     db.prepare(`INSERT INTO composerHeaders
       (composerId, workspaceId, createdAt, lastUpdatedAt, isArchived, isSubagent, recency, checkpointAt, value)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run('current-1', 'workspace-hash', 1000, 2000, 0, 0, 1, 0, JSON.stringify({ name: 'Current conversation' }))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      'current-1',
+      'workspace-hash',
+      1000,
+      2000,
+      0,
+      0,
+      1,
+      0,
+      JSON.stringify({ name: 'Current conversation' }),
+    )
     db.prepare('INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)').run(
       'composerData:current-1',
       JSON.stringify({
@@ -148,19 +159,24 @@ describe('Cursor conversation stores', () => {
     )
     const insert = db.prepare('INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)')
     insert.run('bubbleId:current-1:a2', JSON.stringify({ bubbleId: 'a2', type: 2, text: 'answer', createdAt: '2200' }))
-    insert.run('bubbleId:current-1:u2', JSON.stringify({ bubbleId: 'u2', type: 1, text: 'question', createdAt: '2100' }))
+    insert.run(
+      'bubbleId:current-1:u2',
+      JSON.stringify({ bubbleId: 'u2', type: 1, text: 'question', createdAt: '2100' }),
+    )
     insert.run('bubbleId:current-1:empty', JSON.stringify({ bubbleId: 'empty', type: 2, text: '' }))
     insert.run('bubbleId:current-1:tool', JSON.stringify({ bubbleId: 'tool', type: 3, text: 'hidden' }))
     db.close()
 
     const candidates = await scanCursorSessions(project, userDir)
-    expect(candidates).toEqual([expect.objectContaining({
-      id: 'current-1',
-      source: 'cursor',
-      title: 'Current conversation',
-      startedAt: 2000,
-      messageCount: 4,
-    })])
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        id: 'current-1',
+        source: 'cursor',
+        title: 'Current conversation',
+        startedAt: 2000,
+        messageCount: 4,
+      }),
+    ])
 
     const loaded = await loadCursorConversation(project, 'current-1', userDir)
     expect(loaded?.complete).toBe(true)
@@ -187,14 +203,20 @@ describe('Cursor conversation stores', () => {
       VALUES (?, 'workspace-hash', 1, 2, 0, 0, 1, 0, '{}')`)
     const insertKv = db.prepare('INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)')
     insertHeader.run('tool-only')
-    insertKv.run('composerData:tool-only', JSON.stringify({
-      fullConversationHeadersOnly: [{ bubbleId: 't1', type: 3 }],
-    }))
+    insertKv.run(
+      'composerData:tool-only',
+      JSON.stringify({
+        fullConversationHeadersOnly: [{ bubbleId: 't1', type: 3 }],
+      }),
+    )
     insertKv.run('bubbleId:tool-only:t1', JSON.stringify({ bubbleId: 't1', type: 3, text: 'tool call' }))
     insertHeader.run('missing-user')
-    insertKv.run('composerData:missing-user', JSON.stringify({
-      fullConversationHeadersOnly: [{ bubbleId: 'u1', type: 1 }],
-    }))
+    insertKv.run(
+      'composerData:missing-user',
+      JSON.stringify({
+        fullConversationHeadersOnly: [{ bubbleId: 'u1', type: 1 }],
+      }),
+    )
     db.close()
 
     await expect(loadCursorConversation(project, 'tool-only', userDir)).resolves.toMatchObject({
@@ -229,12 +251,7 @@ describe('Cursor conversation stores', () => {
     )
     db.close()
 
-    const sessions = await scanAllSessions(
-      project,
-      [join(root, 'no-claude')],
-      [join(root, 'no-codex')],
-      userDir,
-    )
+    const sessions = await scanAllSessions(project, [join(root, 'no-claude')], [join(root, 'no-codex')], userDir)
     expect(sessions).toEqual([expect.objectContaining({ id: 'cursor-only', source: 'cursor' })])
   })
 })

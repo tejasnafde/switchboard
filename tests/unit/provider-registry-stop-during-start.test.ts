@@ -11,7 +11,12 @@ vi.mock('../../src/main/db/provider-instances', () => ({
     oauthDir: null,
   }),
   getProviderInstanceFull: (id: string) => ({
-    id, agentType: 'claude-code', displayName: id, enabled: true, env: {}, oauthDir: null,
+    id,
+    agentType: 'claude-code',
+    displayName: id,
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
   listOauthDirsForAgent: () => [],
 }))
@@ -20,7 +25,6 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/main/provider/remote-gate')>()
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
-
 
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
@@ -70,7 +74,9 @@ class FakeHost implements BackendHost {
 class SlowAdapter implements ProviderAdapter {
   readonly provider = 'claude' as const
   release!: () => void
-  readonly started = new Promise<void>((resolve) => { this.release = resolve })
+  readonly started = new Promise<void>((resolve) => {
+    this.release = resolve
+  })
   onEvent?: (e: RuntimeEvent) => void
   stopped: string[] = []
   interrupted: string[] = []
@@ -78,14 +84,27 @@ class SlowAdapter implements ProviderAdapter {
   async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     this.onEvent = onEvent
     await this.started
-    return { threadId: opts.threadId, provider: 'claude', status: 'idle', runtimeMode: 'sandbox', cwd: opts.cwd, createdAt: 0 }
+    return {
+      threadId: opts.threadId,
+      provider: 'claude',
+      status: 'idle',
+      runtimeMode: 'sandbox',
+      cwd: opts.cwd,
+      createdAt: 0,
+    }
   }
   async sendTurn(): Promise<void> {}
   async respondToRequest(): Promise<void> {}
-  async interruptTurn(threadId: string): Promise<void> { this.interrupted.push(threadId) }
-  async stopSession(threadId: string): Promise<void> { this.stopped.push(threadId) }
+  async interruptTurn(threadId: string): Promise<void> {
+    this.interrupted.push(threadId)
+  }
+  async stopSession(threadId: string): Promise<void> {
+    this.stopped.push(threadId)
+  }
   async setRuntimeMode(): Promise<void> {}
-  async isAvailable(): Promise<boolean> { return true }
+  async isAvailable(): Promise<boolean> {
+    return true
+  }
 }
 
 function setup() {
@@ -100,7 +119,10 @@ function setup() {
 describe('Stop while a session is starting', () => {
   it('Stop during the start cancels the start and stops the new session', async () => {
     const { host, adapter, start } = setup()
-    const startResult = start.then(() => 'started', (err: Error) => err.message)
+    const startResult = start.then(
+      () => 'started',
+      (err: Error) => err.message,
+    )
     await vi.waitFor(() => expect(adapter.onEvent).toBeDefined())
 
     expect(await host.invoke(ProviderChannels.INTERRUPT, 't1')).toEqual({ live: false })

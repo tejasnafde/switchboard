@@ -23,7 +23,11 @@ import { registerSttHandlers } from '../main/ipc/stt'
 import { registerKanbanHandlers } from '../main/ipc/kanban'
 import { registerWorktreeManagerHandlers } from '../main/ipc/worktree-manager'
 import { registerProviderInstanceHandlers } from '../main/ipc/provider-instances'
-import { attachPullRequestAutoLink, registerPullRequestHandlers, startPullRequestHistoryScan } from '../main/ipc/pull-requests'
+import {
+  attachPullRequestAutoLink,
+  registerPullRequestHandlers,
+  startPullRequestHistoryScan,
+} from '../main/ipc/pull-requests'
 import { registerTerminalHandlers } from '../main/ipc/terminal'
 import { ProviderRegistry } from '../main/provider/provider-registry'
 import { disposeUsageProbes } from '../main/provider/usage'
@@ -196,9 +200,7 @@ async function printPairingInfo(): Promise<void> {
   if (isLoopback) {
     // Silently binding loopback looks healthy while being unreachable from a
     // phone, which reads as a network fault. Say so.
-    log.warn(
-      `listening on ${bindHost} only - phones cannot reach this. Restart with HOST=0.0.0.0 to pair a device.`,
-    )
+    log.warn(`listening on ${bindHost} only - phones cannot reach this. Restart with HOST=0.0.0.0 to pair a device.`)
     return
   }
   if (!token) return

@@ -26,68 +26,67 @@ export function createConversation(
 ): boolean {
   const now = Date.now()
   const catalogued = worktreePath
-    ? getDb().prepare(`
+    ? (getDb()
+        .prepare(`
         SELECT id FROM managed_worktrees
          WHERE machine_id = 'local' AND project_path = ? AND worktree_path = ?
            AND lifecycle != 'removed'
          ORDER BY CASE management_origin WHEN 'legacy' THEN 0 ELSE 1 END, created_at
          LIMIT 1
-      `).get(projectPath, worktreePath) as { id: string } | undefined
+      `)
+        .get(projectPath, worktreePath) as { id: string } | undefined)
     : undefined
-  const info = getDb().prepare(
-    `INSERT OR IGNORE INTO conversations (
+  const info = getDb()
+    .prepare(
+      `INSERT OR IGNORE INTO conversations (
        id, project_path, agent_type, title, created_at, updated_at,
        worktree_path, worktree_branch, worktree_id, sidebar_role
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed')`
-  ).run(
-    id,
-    projectPath,
-    agentType,
-    title ?? 'New conversation',
-    now,
-    now,
-    worktreePath ?? null,
-    worktreeBranch ?? null,
-    catalogued?.id ?? null,
-  )
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed')`,
+    )
+    .run(
+      id,
+      projectPath,
+      agentType,
+      title ?? 'New conversation',
+      now,
+      now,
+      worktreePath ?? null,
+      worktreeBranch ?? null,
+      catalogued?.id ?? null,
+    )
   return info.changes > 0
 }
 
-export function promoteConversationToManaged(
-  id: string,
-  projectPath: string,
-  agentType: string,
-  title: string,
-): void {
+export function promoteConversationToManaged(id: string, projectPath: string, agentType: string, title: string): void {
   const database = getDb()
   createConversation(id, projectPath, agentType, title)
-  database.prepare(
-    `UPDATE conversations
+  database
+    .prepare(
+      `UPDATE conversations
      SET sidebar_role = 'managed', archived = 0, agent_type = ?, title = ?,
          session_id = COALESCE(session_id, ?), updated_at = ?
-     WHERE id = ? AND project_path = ?`
-  ).run(agentType, title, id, Date.now(), id, projectPath)
+     WHERE id = ? AND project_path = ?`,
+    )
+    .run(agentType, title, id, Date.now(), id, projectPath)
 }
 
 export type RecoveryReviveResult = 'revived' | 'missing' | 'project-mismatch'
 
 /** Restore an existing logical conversation without changing how it resumes. */
-export function reviveConversationForRecovery(
-  id: string,
-  projectPath: string,
-  title: string,
-): RecoveryReviveResult {
+export function reviveConversationForRecovery(id: string, projectPath: string, title: string): RecoveryReviveResult {
   const database = getDb()
-  const existing = database.prepare(
-    'SELECT project_path FROM conversations WHERE id = ?'
-  ).get(id) as { project_path: string } | undefined
+  const existing = database.prepare('SELECT project_path FROM conversations WHERE id = ?').get(id) as
+    | { project_path: string }
+    | undefined
   if (!existing) return 'missing'
   if (existing.project_path !== projectPath) return 'project-mismatch'
-  const result = database.prepare(
-    `UPDATE conversations
+  const result = database
+    .prepare(
+      `UPDATE conversations
      SET sidebar_role = 'managed', archived = 0, title = ?, updated_at = ?
-     WHERE id = ? AND project_path = ?`
-  ).run(title, Date.now(), id, projectPath)
+     WHERE id = ? AND project_path = ?`,
+    )
+    .run(title, Date.now(), id, projectPath)
   return result.changes > 0 ? 'revived' : 'missing'
 }
 
@@ -96,14 +95,14 @@ export function getRecoveryConversationTitles(nativeSessionId: string): {
   rootTitle: string | null
 } {
   const database = getDb()
-  const native = database.prepare(
-    'SELECT title FROM conversations WHERE id = ?'
-  ).get(nativeSessionId) as { title: string } | undefined
+  const native = database.prepare('SELECT title FROM conversations WHERE id = ?').get(nativeSessionId) as
+    | { title: string }
+    | undefined
   const rootId = resolveRootThreadId(nativeSessionId)
-  const root = rootId === nativeSessionId
-    ? native
-    : database.prepare('SELECT title FROM conversations WHERE id = ?')
-      .get(rootId) as { title: string } | undefined
+  const root =
+    rootId === nativeSessionId
+      ? native
+      : (database.prepare('SELECT title FROM conversations WHERE id = ?').get(rootId) as { title: string } | undefined)
   return {
     nativeTitle: native?.title ?? null,
     rootTitle: root?.title ?? null,
@@ -115,19 +114,15 @@ export function getRecoveryConversationTitles(nativeSessionId: string): {
  * branch picker when the user picks a branch that already has a
  * worktree on disk.
  */
-export function setConversationWorktree(
-  id: string,
-  worktreePath: string | null,
-  worktreeBranch: string | null,
-): void {
+export function setConversationWorktree(id: string, worktreePath: string | null, worktreeBranch: string | null): void {
   // `resolveRootThreadId` for the reason recorded in CLAUDE.md: Claude
   // rotates a chat's session id mid-conversation, the sidebar then hands that
   // rotated id back as `session.id`, and a raw `WHERE id = ?` updates zero
   // rows in silence. This setter shipped without the fallback and so could
   // persist nothing at all after a rotation.
-  getDb().prepare(
-    `UPDATE conversations SET worktree_path = ?, worktree_branch = ?, updated_at = ? WHERE id = ?`
-  ).run(worktreePath, worktreeBranch, Date.now(), resolveRootThreadId(id))
+  getDb()
+    .prepare(`UPDATE conversations SET worktree_path = ?, worktree_branch = ?, updated_at = ? WHERE id = ?`)
+    .run(worktreePath, worktreeBranch, Date.now(), resolveRootThreadId(id))
 }
 
 export interface StoredExecutionRoot {
@@ -140,14 +135,18 @@ export interface StoredExecutionRoot {
 
 /** The committed execution root for a conversation, or null if there is no row. */
 export function getConversationExecutionRoot(id: string): StoredExecutionRoot | null {
-  const row = getDb().prepare(
-    'SELECT worktree_path, worktree_branch, execution_root_revision, project_path FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as {
-    worktree_path: string | null
-    worktree_branch: string | null
-    execution_root_revision: number | null
-    project_path: string | null
-  } | undefined
+  const row = getDb()
+    .prepare(
+      'SELECT worktree_path, worktree_branch, execution_root_revision, project_path FROM conversations WHERE id = ?',
+    )
+    .get(resolveRootThreadId(id)) as
+    | {
+        worktree_path: string | null
+        worktree_branch: string | null
+        execution_root_revision: number | null
+        project_path: string | null
+      }
+    | undefined
   if (!row) return null
   return {
     projectPath: row.project_path ?? null,
@@ -175,28 +174,28 @@ export function commitConversationExecutionRoot(
   worktreeBranch: string | null,
 ): number | null {
   const rootId = resolveRootThreadId(id)
-  const info = getDb().prepare(
-    `UPDATE conversations
+  const info = getDb()
+    .prepare(
+      `UPDATE conversations
         SET worktree_path = ?, worktree_branch = ?,
             execution_root_revision = COALESCE(execution_root_revision, 0) + 1,
             updated_at = ?
-      WHERE id = ?`
-  ).run(worktreePath, worktreeBranch, Date.now(), rootId)
+      WHERE id = ?`,
+    )
+    .run(worktreePath, worktreeBranch, Date.now(), rootId)
   if (info.changes === 0) return null
   return getConversationExecutionRoot(rootId)?.revision ?? null
 }
 
 export function updateConversationSessionId(id: string, sessionId: string): void {
-  getDb().prepare(
-    'UPDATE conversations SET session_id = ?, updated_at = ? WHERE id = ?'
-  ).run(sessionId, Date.now(), id)
+  getDb().prepare('UPDATE conversations SET session_id = ?, updated_at = ? WHERE id = ?').run(sessionId, Date.now(), id)
 }
 
 /** Returns false when the title was already this, so callers can skip a broadcast. */
 export function updateConversationTitle(id: string, title: string): boolean {
-  const info = getDb().prepare(
-    'UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND title IS NOT ?'
-  ).run(title, Date.now(), resolveRootThreadId(id), title)
+  const info = getDb()
+    .prepare('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND title IS NOT ?')
+    .run(title, Date.now(), resolveRootThreadId(id), title)
   return info.changes > 0
 }
 
@@ -208,16 +207,16 @@ export function updateConversationTitle(id: string, title: string): boolean {
  * UUID would otherwise read nothing and label the chat with a raw id.
  */
 export function getConversationTitle(id: string): string | null {
-  const row = getDb().prepare(
-    'SELECT title FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as { title: string } | undefined
+  const row = getDb().prepare('SELECT title FROM conversations WHERE id = ?').get(resolveRootThreadId(id)) as
+    | { title: string }
+    | undefined
   return row?.title ?? null
 }
 
 export function getConversationsForProject(projectPath: string): ConversationRow[] {
-  return getDb().prepare(
-    'SELECT * FROM conversations WHERE project_path = ? ORDER BY updated_at DESC'
-  ).all(projectPath) as ConversationRow[]
+  return getDb()
+    .prepare('SELECT * FROM conversations WHERE project_path = ? ORDER BY updated_at DESC')
+    .all(projectPath) as ConversationRow[]
 }
 
 const MANAGED_ROOT_PREDICATE = `
@@ -233,8 +232,9 @@ const MANAGED_ROOT_PREDICATE = `
 `
 
 export function getManagedRootConversationsForProject(projectPath: string): ConversationRow[] {
-  return getDb().prepare(
-    `SELECT c.*,
+  return getDb()
+    .prepare(
+      `SELECT c.*,
             wc.status AS worktree_creation_status,
             wc.recovery_json AS worktree_creation_recovery_json
        FROM conversations c
@@ -252,8 +252,9 @@ export function getManagedRootConversationsForProject(projectPath: string): Conv
            END = 'retained'
          )
        )
-     ORDER BY c.updated_at DESC`
-  ).all(projectPath) as ConversationRow[]
+     ORDER BY c.updated_at DESC`,
+    )
+    .all(projectPath) as ConversationRow[]
 }
 
 export function getManagedRootConversationsForProjects(projectPaths: string[]): Map<string, ConversationRow[]> {
@@ -264,8 +265,9 @@ export function getManagedRootConversationsForProjects(projectPaths: string[]): 
   for (let offset = 0; offset < projectPaths.length; offset += chunkSize) {
     const chunk = projectPaths.slice(offset, offset + chunkSize)
     const placeholders = chunk.map(() => '?').join(',')
-    const rows = database.prepare(
-      `SELECT c.*,
+    const rows = database
+      .prepare(
+        `SELECT c.*,
               wc.status AS worktree_creation_status,
               wc.recovery_json AS worktree_creation_recovery_json
          FROM conversations c
@@ -283,8 +285,9 @@ export function getManagedRootConversationsForProjects(projectPaths: string[]): 
              END = 'retained'
            )
          )
-       ORDER BY c.updated_at DESC`
-    ).all(...chunk) as ConversationRow[]
+       ORDER BY c.updated_at DESC`,
+      )
+      .all(...chunk) as ConversationRow[]
     for (const row of rows) result.get(row.project_path)?.push(row)
   }
   return result
@@ -340,9 +343,7 @@ export interface ConversationRow {
 /** Look up a single conversation by id. Used by search navigation to
  *  hydrate a session the user jumped into from ⌘⇧F. */
 export function getConversationById(id: string): ConversationRow | undefined {
-  return getDb().prepare(
-    'SELECT * FROM conversations WHERE id = ?'
-  ).get(id) as ConversationRow | undefined
+  return getDb().prepare('SELECT * FROM conversations WHERE id = ?').get(id) as ConversationRow | undefined
 }
 
 /** Resolve a provider-rotated session UUID to Switchboard's durable thread row. */
@@ -391,13 +392,11 @@ export function recordThreadSession(claudeSessionId: string, threadId: string): 
   db.transaction(() => {
     // Set claudeSessionId → root
     db.prepare(
-      'INSERT OR REPLACE INTO thread_sessions (claude_session_id, thread_id, recorded_at) VALUES (?, ?, ?)'
+      'INSERT OR REPLACE INTO thread_sessions (claude_session_id, thread_id, recorded_at) VALUES (?, ?, ?)',
     ).run(claudeSessionId, root, now)
     // Re-parent anything that previously pointed at claudeSessionId so
     // they all point at the new root (chain flattening).
-    db.prepare(
-      'UPDATE thread_sessions SET thread_id = ? WHERE thread_id = ?'
-    ).run(root, claudeSessionId)
+    db.prepare('UPDATE thread_sessions SET thread_id = ? WHERE thread_id = ?').run(root, claudeSessionId)
   })()
 }
 
@@ -407,9 +406,7 @@ export function recordThreadSession(claudeSessionId: string, threadId: string): 
  * from before `recordThreadSession` flattened on insert.
  */
 export function resolveRootThreadId(claudeSessionId: string): string {
-  const stmt = getDb().prepare(
-    'SELECT thread_id FROM thread_sessions WHERE claude_session_id = ?'
-  )
+  const stmt = getDb().prepare('SELECT thread_id FROM thread_sessions WHERE claude_session_id = ?')
   let cur = claudeSessionId
   const seen = new Set<string>()
   while (true) {
@@ -455,7 +452,7 @@ export function conversationSessionHints(id: string): string[] {
 export function listSessionIdsForThread(threadId: string): string[] {
   const db = getDb()
   const directStmt = db.prepare(
-    'SELECT claude_session_id, recorded_at FROM thread_sessions WHERE thread_id = ? ORDER BY recorded_at ASC'
+    'SELECT claude_session_id, recorded_at FROM thread_sessions WHERE thread_id = ? ORDER BY recorded_at ASC',
   )
   const result: string[] = [threadId]
   const visited = new Set<string>([threadId])
@@ -498,44 +495,52 @@ export function recordConversationSegment(input: {
   const conversationId = resolveRootThreadId(input.conversationId)
   const now = Date.now()
   database.transaction(() => {
-    const existing = database.prepare(
-      `SELECT id FROM conversation_segments
-       WHERE conversation_id = ? AND provider = ? AND provider_session_id = ?`
-    ).get(conversationId, input.provider, input.providerSessionId) as { id: string } | undefined
+    const existing = database
+      .prepare(
+        `SELECT id FROM conversation_segments
+       WHERE conversation_id = ? AND provider = ? AND provider_session_id = ?`,
+      )
+      .get(conversationId, input.provider, input.providerSessionId) as { id: string } | undefined
     if (existing) {
-      database.prepare(
-        `UPDATE conversation_segments
+      database
+        .prepare(
+          `UPDATE conversation_segments
          SET provider_instance_id = COALESCE(?, provider_instance_id), updated_at = ?
-         WHERE id = ?`
-      ).run(input.providerInstanceId ?? null, now, existing.id)
+         WHERE id = ?`,
+        )
+        .run(input.providerInstanceId ?? null, now, existing.id)
       return
     }
-    const next = database.prepare(
-      'SELECT COALESCE(MAX(ordinal), -1) + 1 AS ordinal FROM conversation_segments WHERE conversation_id = ?'
-    ).get(conversationId) as { ordinal: number }
-    database.prepare(
-      `INSERT INTO conversation_segments (
+    const next = database
+      .prepare('SELECT COALESCE(MAX(ordinal), -1) + 1 AS ordinal FROM conversation_segments WHERE conversation_id = ?')
+      .get(conversationId) as { ordinal: number }
+    database
+      .prepare(
+        `INSERT INTO conversation_segments (
          id, conversation_id, provider, provider_session_id,
          provider_instance_id, ordinal, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      `${conversationId}:${input.provider}:${input.providerSessionId}`,
-      conversationId,
-      input.provider,
-      input.providerSessionId,
-      input.providerInstanceId ?? null,
-      next.ordinal,
-      now,
-      now,
-    )
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        `${conversationId}:${input.provider}:${input.providerSessionId}`,
+        conversationId,
+        input.provider,
+        input.providerSessionId,
+        input.providerInstanceId ?? null,
+        next.ordinal,
+        now,
+        now,
+      )
   })()
 }
 
 export function listConversationSegments(conversationId: string): ConversationSegmentRow[] {
-  return getDb().prepare(
-    `SELECT * FROM conversation_segments
-     WHERE conversation_id = ? ORDER BY ordinal ASC, created_at ASC`
-  ).all(resolveRootThreadId(conversationId)) as ConversationSegmentRow[]
+  return getDb()
+    .prepare(
+      `SELECT * FROM conversation_segments
+     WHERE conversation_id = ? ORDER BY ordinal ASC, created_at ASC`,
+    )
+    .all(resolveRootThreadId(conversationId)) as ConversationSegmentRow[]
 }
 
 /** Resolve an explicitly managed root that already owns a native session.
@@ -546,16 +551,18 @@ export function findManagedConversationForNativeSession(
   providerSessionId: string,
   promotedOnly = false,
 ): string | null {
-  const row = getDb().prepare(
-    `SELECT c.id
+  const row = getDb()
+    .prepare(
+      `SELECT c.id
      FROM conversation_segments s
      JOIN conversations c ON c.id = s.conversation_id
      WHERE s.provider = ? AND s.provider_session_id = ?
        AND c.sidebar_role = 'managed'
        AND (? = 0 OR c.id LIKE 'import\_%' ESCAPE '\')
      ORDER BY s.ordinal DESC
-     LIMIT 1`
-  ).get(provider, providerSessionId, promotedOnly ? 1 : 0) as { id: string } | undefined
+     LIMIT 1`,
+    )
+    .get(provider, providerSessionId, promotedOnly ? 1 : 0) as { id: string } | undefined
   return row?.id ?? null
 }
 
@@ -596,9 +603,9 @@ export function selectResumeSegment(
  * back. `resolveRootThreadId` no-ops when `id` was never rotated.
  */
 export function getConversationRuntimeMode(id: string): string | null {
-  const row = getDb().prepare(
-    'SELECT runtime_mode FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as { runtime_mode: string | null } | undefined
+  const row = getDb().prepare('SELECT runtime_mode FROM conversations WHERE id = ?').get(resolveRootThreadId(id)) as
+    | { runtime_mode: string | null }
+    | undefined
   return row?.runtime_mode ?? null
 }
 
@@ -612,9 +619,9 @@ export function getConversationRuntimeMode(id: string): string | null {
  * row the getter will read from, instead of a stray row keyed by the UUID.
  */
 export function setConversationRuntimeMode(id: string, mode: string): void {
-  getDb().prepare(
-    'UPDATE conversations SET runtime_mode = ?, updated_at = ? WHERE id = ?'
-  ).run(mode, Date.now(), resolveRootThreadId(id))
+  getDb()
+    .prepare('UPDATE conversations SET runtime_mode = ?, updated_at = ? WHERE id = ?')
+    .run(mode, Date.now(), resolveRootThreadId(id))
 }
 
 export interface ConversationFollowSuggestions {
@@ -641,13 +648,15 @@ function parseWorkedWorktrees(value: string | null | undefined): readonly string
  * `resolveRootThreadId` like every per-conversation setting (see AGENTS.md).
  */
 export function getConversationFollowSuggestions(id: string): ConversationFollowSuggestions {
-  const row = getDb().prepare(
-    'SELECT follow_suggestions, follow_notice_dismissed, worked_worktrees FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as {
-    follow_suggestions: string | null
-    follow_notice_dismissed: number | null
-    worked_worktrees: string | null
-  } | undefined
+  const row = getDb()
+    .prepare('SELECT follow_suggestions, follow_notice_dismissed, worked_worktrees FROM conversations WHERE id = ?')
+    .get(resolveRootThreadId(id)) as
+    | {
+        follow_suggestions: string | null
+        follow_notice_dismissed: number | null
+        worked_worktrees: string | null
+      }
+    | undefined
   return {
     mode: parseFollowSuggestionMode(row?.follow_suggestions),
     noticeDismissed: row?.follow_notice_dismissed === 1,
@@ -661,16 +670,19 @@ export function getConversationFollowSuggestions(id: string): ConversationFollow
  * reorder the sidebar.
  */
 export function setConversationFollowSuggestions(id: string, mode: FollowSuggestionMode): boolean {
-  return getDb().prepare(
-    'UPDATE conversations SET follow_suggestions = ?, follow_notice_dismissed = NULL WHERE id = ?'
-  ).run(mode === 'auto' ? null : mode, resolveRootThreadId(id)).changes > 0
+  return (
+    getDb()
+      .prepare('UPDATE conversations SET follow_suggestions = ?, follow_notice_dismissed = NULL WHERE id = ?')
+      .run(mode === 'auto' ? null : mode, resolveRootThreadId(id)).changes > 0
+  )
 }
 
 /** The x on the "Follow suggestions are off" notice. */
 export function setConversationFollowNoticeDismissed(id: string): boolean {
-  return getDb().prepare(
-    'UPDATE conversations SET follow_notice_dismissed = 1 WHERE id = ?'
-  ).run(resolveRootThreadId(id)).changes > 0
+  return (
+    getDb().prepare('UPDATE conversations SET follow_notice_dismissed = 1 WHERE id = ?').run(resolveRootThreadId(id))
+      .changes > 0
+  )
 }
 
 /** Add the worktrees a drift check saw the agent in; returns the new state. */
@@ -678,9 +690,9 @@ export function recordConversationWorkedWorktrees(id: string, paths: readonly st
   const current = getConversationFollowSuggestions(id)
   const worked = paths.reduce(recordWorkedWorktree, current.workedWorktrees)
   if (worked !== current.workedWorktrees) {
-    getDb().prepare(
-      'UPDATE conversations SET worked_worktrees = ? WHERE id = ?'
-    ).run(JSON.stringify(worked), resolveRootThreadId(id))
+    getDb()
+      .prepare('UPDATE conversations SET worked_worktrees = ? WHERE id = ?')
+      .run(JSON.stringify(worked), resolveRootThreadId(id))
   }
   return { ...current, workedWorktrees: worked }
 }
@@ -724,9 +736,9 @@ export function setConversationLastRead(id: string, at: number): boolean {
 }
 
 export function getConversationLastRead(id: string): number | null {
-  const row = getDb().prepare(
-    'SELECT last_read_at FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as { last_read_at: number | null } | undefined
+  const row = getDb().prepare('SELECT last_read_at FROM conversations WHERE id = ?').get(resolveRootThreadId(id)) as
+    | { last_read_at: number | null }
+    | undefined
   return row?.last_read_at ?? null
 }
 
@@ -743,9 +755,9 @@ export function getConversationLastRead(id: string): number | null {
  * reopened from the sidebar arrives here keyed by its rotated Claude UUID.
  */
 export function getConversationProviderInstanceId(id: string): string | null {
-  const row = getDb().prepare(
-    'SELECT provider_instance_id FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as { provider_instance_id: string | null } | undefined
+  const row = getDb()
+    .prepare('SELECT provider_instance_id FROM conversations WHERE id = ?')
+    .get(resolveRootThreadId(id)) as { provider_instance_id: string | null } | undefined
   return row?.provider_instance_id ?? null
 }
 
@@ -757,9 +769,9 @@ export function setConversationProviderInstanceId(id: string, instanceId: string
   // Resolved through `resolveRootThreadId` so a pick made against a rotated
   // id lands on the same row the getter above reads from, instead of a
   // stray row keyed by the UUID that the getter would never see.
-  getDb().prepare(
-    'UPDATE conversations SET provider_instance_id = ?, updated_at = ? WHERE id = ?'
-  ).run(instanceId, Date.now(), resolveRootThreadId(id))
+  getDb()
+    .prepare('UPDATE conversations SET provider_instance_id = ?, updated_at = ? WHERE id = ?')
+    .run(instanceId, Date.now(), resolveRootThreadId(id))
 }
 
 export function commitConversationProviderSwitch(input: {
@@ -785,9 +797,9 @@ export function commitConversationProviderSwitch(input: {
  * Claude UUID still finds the pin saved under its original id.
  */
 export function getConversationModel(id: string): string | null {
-  const row = getDb().prepare(
-    'SELECT model FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as { model: string | null } | undefined
+  const row = getDb().prepare('SELECT model FROM conversations WHERE id = ?').get(resolveRootThreadId(id)) as
+    | { model: string | null }
+    | undefined
   return row?.model ?? null
 }
 
@@ -798,22 +810,22 @@ export function getConversationModel(id: string): string | null {
  * Same `resolveRootThreadId` fallback as the other per-conversation getters.
  */
 export function getConversationAgentType(id: string): string | null {
-  const row = getDb().prepare(
-    'SELECT agent_type FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as { agent_type: string | null } | undefined
+  const row = getDb().prepare('SELECT agent_type FROM conversations WHERE id = ?').get(resolveRootThreadId(id)) as
+    | { agent_type: string | null }
+    | undefined
   return row?.agent_type ?? null
 }
 
 export function setConversationModel(id: string, model: string): void {
-  getDb().prepare(
-    'UPDATE conversations SET model = ?, updated_at = ? WHERE id = ?'
-  ).run(model, Date.now(), resolveRootThreadId(id))
+  getDb()
+    .prepare('UPDATE conversations SET model = ?, updated_at = ? WHERE id = ?')
+    .run(model, Date.now(), resolveRootThreadId(id))
 }
 
 export function setConversationReasoningEffort(id: string, effort: string): void {
-  getDb().prepare(
-    'UPDATE conversations SET reasoning_effort = ?, updated_at = ? WHERE id = ?'
-  ).run(effort, Date.now(), resolveRootThreadId(id))
+  getDb()
+    .prepare('UPDATE conversations SET reasoning_effort = ?, updated_at = ? WHERE id = ?')
+    .run(effort, Date.now(), resolveRootThreadId(id))
 }
 
 /**
@@ -832,14 +844,16 @@ export function setConversationProviderSelection(
   const rootId = resolveRootThreadId(id)
   // ponytail: read then write with no transaction - better-sqlite3 is
   // synchronous on one connection, so nothing can run between the two.
-  const row = db.prepare(
-    'SELECT agent_type, model, reasoning_effort, provider_options_json FROM conversations WHERE id = ?'
-  ).get(rootId) as {
-    agent_type: string | null
-    model: string | null
-    reasoning_effort: string | null
-    provider_options_json: string | null
-  } | undefined
+  const row = db
+    .prepare('SELECT agent_type, model, reasoning_effort, provider_options_json FROM conversations WHERE id = ?')
+    .get(rootId) as
+    | {
+        agent_type: string | null
+        model: string | null
+        reasoning_effort: string | null
+        provider_options_json: string | null
+      }
+    | undefined
   let stored: unknown = null
   if (row?.provider_options_json) {
     try {
@@ -850,12 +864,16 @@ export function setConversationProviderSelection(
   }
   const next = switchProviderOptions(
     normalizeProviderOptionMemory(stored),
-    { agentType: row?.agent_type ?? null, model: row?.model ?? null, reasoningEffort: isReasoningEffort(row?.reasoning_effort) ? row.reasoning_effort : null },
+    {
+      agentType: row?.agent_type ?? null,
+      model: row?.model ?? null,
+      reasoningEffort: isReasoningEffort(row?.reasoning_effort) ? row.reasoning_effort : null,
+    },
     agentType,
   )
   db.prepare(
     `UPDATE conversations SET agent_type = ?, model = ?, reasoning_effort = ?, provider_options_json = ?, provider_instance_id = ?,
-     session_id = NULL, updated_at = ? WHERE id = ?`
+     session_id = NULL, updated_at = ? WHERE id = ?`,
   ).run(agentType, next.model, next.reasoningEffort, JSON.stringify(next.memory), instanceId, Date.now(), rootId)
   return { model: next.model, reasoningEffort: next.reasoningEffort }
 }
@@ -871,16 +889,16 @@ export function setConversationProviderSelection(
  * a rotated id would never be consumed (or would re-inject after reload).
  */
 export function getConversationPendingHandoff(id: string): string | null {
-  const row = getDb().prepare(
-    'SELECT pending_handoff_from FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as { pending_handoff_from: string | null } | undefined
+  const row = getDb()
+    .prepare('SELECT pending_handoff_from FROM conversations WHERE id = ?')
+    .get(resolveRootThreadId(id)) as { pending_handoff_from: string | null } | undefined
   return row?.pending_handoff_from ?? null
 }
 
 export function setConversationPendingHandoff(id: string, from: string | null): void {
-  getDb().prepare(
-    'UPDATE conversations SET pending_handoff_from = ?, updated_at = ? WHERE id = ?'
-  ).run(from, Date.now(), resolveRootThreadId(id))
+  getDb()
+    .prepare('UPDATE conversations SET pending_handoff_from = ?, updated_at = ? WHERE id = ?')
+    .run(from, Date.now(), resolveRootThreadId(id))
 }
 
 export function archiveConversation(id: string): void {
@@ -901,9 +919,15 @@ function setConversationArchived(id: string, archived: 0 | 1): void {
   for (const memberId of threadFamilyIds(id)) stmt.run(archived, now, memberId)
 }
 
-export function getArchivedConversations(): Array<{ id: string; project_path: string; title: string; updated_at: number }> {
-  return getDb().prepare(
-    `SELECT c.id, c.project_path, c.title, c.updated_at
+export function getArchivedConversations(): Array<{
+  id: string
+  project_path: string
+  title: string
+  updated_at: number
+}> {
+  return getDb()
+    .prepare(
+      `SELECT c.id, c.project_path, c.title, c.updated_at
      FROM conversations c
      WHERE c.archived = 1 AND c.sidebar_role = 'managed'
        AND NOT EXISTS (
@@ -914,14 +938,15 @@ export function getArchivedConversations(): Array<{ id: string; project_path: st
            AND ts.thread_id != c.id
            AND root.sidebar_role = 'managed'
        )
-     ORDER BY c.updated_at DESC`
-  ).all() as Array<{ id: string; project_path: string; title: string; updated_at: number }>
+     ORDER BY c.updated_at DESC`,
+    )
+    .all() as Array<{ id: string; project_path: string; title: string; updated_at: number }>
 }
 
 export function isConversationArchived(id: string): boolean {
-  const row = getDb().prepare(
-    'SELECT archived FROM conversations WHERE id = ?'
-  ).get(resolveRootThreadId(id)) as { archived: number } | undefined
+  const row = getDb().prepare('SELECT archived FROM conversations WHERE id = ?').get(resolveRootThreadId(id)) as
+    | { archived: number }
+    | undefined
   return row?.archived === 1
 }
 
@@ -932,9 +957,7 @@ export function isConversationArchived(id: string): boolean {
  * (can happen when sessions bleed across projects that share path prefixes).
  */
 export function getArchivedConversationIds(): Set<string> {
-  const rows = getDb().prepare(
-    'SELECT id FROM conversations WHERE archived = 1'
-  ).all() as Array<{ id: string }>
+  const rows = getDb().prepare('SELECT id FROM conversations WHERE archived = 1').all() as Array<{ id: string }>
   return new Set(rows.map((r) => r.id))
 }
 
@@ -957,7 +980,7 @@ export function bulkSaveMessages(
 
   const insert = db.prepare(
     `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, timestamp)
-     VALUES (?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?)`,
   )
 
   const tx = db.transaction(() => {

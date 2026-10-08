@@ -59,12 +59,7 @@ export function managedToolsMarker(desired: ManagedToolVersions): string {
   return `claude-${safe(desired.claudeSdkVersion)}_codex-${safe(desired.codexVersion)}`
 }
 
-function decide(
-  label: string,
-  installed: string | null,
-  resolvedBin: string | null,
-  wanted: string,
-): ToolDecision {
+function decide(label: string, installed: string | null, resolvedBin: string | null, wanted: string): ToolDecision {
   if (!installed && !resolvedBin) return { action: 'install', reason: `${label} is not installed` }
   if (installed && installed !== wanted) {
     return { action: 'upgrade', reason: `${label} ${installed} != pinned ${wanted}` }

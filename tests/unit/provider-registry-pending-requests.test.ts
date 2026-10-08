@@ -21,7 +21,12 @@ vi.mock('../../src/main/db/provider-instances', () => ({
     oauthDir: null,
   }),
   getProviderInstanceFull: (id: string) => ({
-    id, agentType: 'claude-code', displayName: id, enabled: true, env: {}, oauthDir: null,
+    id,
+    agentType: 'claude-code',
+    displayName: id,
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
   listOauthDirsForAgent: () => [],
 }))
@@ -135,15 +140,36 @@ describe('ProviderRegistry pending-request recovery', () => {
 
   it('records an approval on request.opened and returns the original event', async () => {
     const { adapter, getPending } = await setup()
-    adapter.emit('t1', { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' })
+    adapter.emit('t1', {
+      type: 'request.opened',
+      threadId: 't1',
+      requestId: 'r1',
+      requestType: 'command',
+      toolName: 'Bash',
+      detail: 'ls',
+    })
     expect(await getPending('t1')).toEqual([
-      { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' },
+      {
+        type: 'request.opened',
+        threadId: 't1',
+        requestId: 'r1',
+        requestType: 'command',
+        toolName: 'Bash',
+        detail: 'ls',
+      },
     ])
   })
 
   it('clears the approval on request.closed', async () => {
     const { adapter, getPending } = await setup()
-    adapter.emit('t1', { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' })
+    adapter.emit('t1', {
+      type: 'request.opened',
+      threadId: 't1',
+      requestId: 'r1',
+      requestType: 'command',
+      toolName: 'Bash',
+      detail: 'ls',
+    })
     adapter.emit('t1', { type: 'request.closed', threadId: 't1', requestId: 'r1', decision: 'approve' })
     expect(await getPending('t1')).toEqual([])
   })
@@ -152,9 +178,7 @@ describe('ProviderRegistry pending-request recovery', () => {
     const { adapter, getPending } = await setup()
     const questions = [{ id: 'q1', header: 'H', question: 'Pick one', options: [{ label: 'a' }], multiSelect: false }]
     adapter.emit('t1', { type: 'question.asked', threadId: 't1', requestId: 'q1', questions })
-    expect(await getPending('t1')).toEqual([
-      { type: 'question.asked', threadId: 't1', requestId: 'q1', questions },
-    ])
+    expect(await getPending('t1')).toEqual([{ type: 'question.asked', threadId: 't1', requestId: 'q1', questions }])
     adapter.emit('t1', { type: 'question.answered', threadId: 't1', requestId: 'q1', answers: [['a']] })
     expect(await getPending('t1')).toEqual([])
   })
@@ -189,7 +213,12 @@ describe('ProviderRegistry pending-request recovery', () => {
     // waiting for its own request.closed.
     const { adapter, host, getPending } = await setup()
     adapter.emit('t1', {
-      type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'tool', toolName: 'Write', detail: 'x',
+      type: 'request.opened',
+      threadId: 't1',
+      requestId: 'r1',
+      requestType: 'tool',
+      toolName: 'Write',
+      detail: 'x',
     })
     adapter.emit('t1', { type: 'plan.proposed', threadId: 't1', planId: 'p1', planMarkdown: '# Plan' })
     // First send starts a turn that never completes (RecordingAdapter.sendTurn
@@ -204,7 +233,14 @@ describe('ProviderRegistry pending-request recovery', () => {
 
   it('clears every open card when the provider reports it died', async () => {
     const { adapter, getPending } = await setup()
-    adapter.emit('t1', { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'tool', toolName: 'Write', detail: 'x' })
+    adapter.emit('t1', {
+      type: 'request.opened',
+      threadId: 't1',
+      requestId: 'r1',
+      requestType: 'tool',
+      toolName: 'Write',
+      detail: 'x',
+    })
     adapter.emit('t1', { type: 'status', threadId: 't1', status: 'error' })
     expect(await getPending('t1')).toEqual([])
   })

@@ -8,11 +8,11 @@ import { describe, it, expect } from 'vitest'
 
 // Sequences our custom key handler sends to the PTY
 const HANDLED_SEQUENCES = {
-  'Cmd+Backspace': '\x15',       // Ctrl+U: kill whole line
-  'Cmd+Left': '\x1bOH',          // Home key (xterm application mode)
-  'Cmd+Right': '\x1bOF',         // End key (xterm application mode)
-  'Cmd+K': '\x0c',               // Ctrl+L: clear screen
-  'Option+Backspace': '\x17',    // Ctrl+W: backward kill word
+  'Cmd+Backspace': '\x15', // Ctrl+U: kill whole line
+  'Cmd+Left': '\x1bOH', // Home key (xterm application mode)
+  'Cmd+Right': '\x1bOF', // End key (xterm application mode)
+  'Cmd+K': '\x0c', // Ctrl+L: clear screen
+  'Option+Backspace': '\x17', // Ctrl+W: backward kill word
 }
 
 describe('terminal keybinding sequences', () => {
@@ -39,10 +39,7 @@ describe('terminal keybinding sequences', () => {
   // Regression: sendToPty must be defined before use
   it('sendToPty function is defined before use in terminal-registry', () => {
     const fs = require('fs')
-    const source = fs.readFileSync(
-      'src/renderer/services/terminal-registry.ts',
-      'utf-8'
-    )
+    const source = fs.readFileSync('src/renderer/services/terminal-registry.ts', 'utf-8')
     const defLine = source.indexOf('const sendToPty')
     const firstUse = source.indexOf('sendToPty(')
     expect(defLine).toBeGreaterThan(-1)
@@ -52,10 +49,7 @@ describe('terminal keybinding sequences', () => {
   // Regression: Option+Arrow must not intercept Delete key
   it('custom handler does not intercept bare Delete key', () => {
     const fs = require('fs')
-    const source = fs.readFileSync(
-      'src/renderer/services/terminal-registry.ts',
-      'utf-8'
-    )
+    const source = fs.readFileSync('src/renderer/services/terminal-registry.ts', 'utf-8')
     // Should not have e.key === 'Delete' in the handler
     const handlerStart = source.indexOf('attachCustomKeyEventHandler')
     const handlerEnd = source.indexOf('return true', handlerStart)
@@ -63,4 +57,3 @@ describe('terminal keybinding sequences', () => {
     expect(handlerBody).not.toContain("e.key === 'Delete'")
   })
 })
-

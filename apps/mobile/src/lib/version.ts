@@ -44,8 +44,6 @@ export function compareVersions(latest: string, current: string): boolean {
 /** `mobile-v0.2.0` and the legacy `v0.2.0` both read as `0.2.0`. */
 export function versionFromTag(tag: string): string {
   const trimmed = tag.trim()
-  const withoutPrefix = trimmed.startsWith(MOBILE_TAG_PREFIX)
-    ? trimmed.slice(MOBILE_TAG_PREFIX.length)
-    : trimmed
+  const withoutPrefix = trimmed.startsWith(MOBILE_TAG_PREFIX) ? trimmed.slice(MOBILE_TAG_PREFIX.length) : trimmed
   return withoutPrefix.replace(/^v/, '')
 }

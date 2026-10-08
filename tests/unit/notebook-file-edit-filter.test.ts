@@ -35,16 +35,17 @@ describe('filterNotebookFileEdits', () => {
 describe('NotebookManager.explainsFileEdit', () => {
   const noWatch: NotebookWatchFactory = () => ({ add: () => {}, close: () => {} })
 
-  const nbJson = JSON.stringify(
-    {
-      cells: [{ id: 'a', cell_type: 'code', source: ['x = 1'], metadata: {}, outputs: [], execution_count: null }],
-      metadata: {},
-      nbformat: 4,
-      nbformat_minor: 5,
-    },
-    null,
-    1
-  ) + '\n'
+  const nbJson =
+    JSON.stringify(
+      {
+        cells: [{ id: 'a', cell_type: 'code', source: ['x = 1'], metadata: {}, outputs: [], execution_count: null }],
+        metadata: {},
+        nbformat: 4,
+        nbformat_minor: 5,
+      },
+      null,
+      1,
+    ) + '\n'
 
   it('explains mirror-path events, engine-written .ipynb content, and nothing else', () => {
     const repo = mkdtempSync(join(tmpdir(), 'sb-nbfilter-test-'))
@@ -59,7 +60,7 @@ describe('NotebookManager.explainsFileEdit', () => {
       // Engine-written .ipynb content: covered (agent edited the mirror).
       writeFileSync(
         join(repo, '.switchboard/notebooks/nb.py'),
-        readFileSync(join(repo, '.switchboard/notebooks/nb.py'), 'utf-8').replace('x = 1', 'x = 2')
+        readFileSync(join(repo, '.switchboard/notebooks/nb.py'), 'utf-8').replace('x = 1', 'x = 2'),
       )
       manager.beginTurn('t1')
       manager.drainTurnEdits('t1') // sweep applies the mirror edit
@@ -77,7 +78,7 @@ describe('NotebookManager.explainsFileEdit', () => {
     }
   })
 
-  it('maps a subfolder session\'s folder-relative paths onto the toplevel mirror map', () => {
+  it("maps a subfolder session's folder-relative paths onto the toplevel mirror map", () => {
     const root = mkdtempSync(join(tmpdir(), 'sb-nbfilter-root-'))
     try {
       const sub = join(root, 'analysis')
@@ -88,8 +89,13 @@ describe('NotebookManager.explainsFileEdit', () => {
       manager.attach('t1', sub, root)
       expect(manager.rootFor('t1')).toBe(root)
 
-      const mirror = join(root, '.switchboard/notebooks', readdirSync(join(root, '.switchboard/notebooks'), { recursive: true })
-        .map(String).find((f) => f.endsWith('.py'))!)
+      const mirror = join(
+        root,
+        '.switchboard/notebooks',
+        readdirSync(join(root, '.switchboard/notebooks'), { recursive: true })
+          .map(String)
+          .find((f) => f.endsWith('.py'))!,
+      )
       writeFileSync(mirror, readFileSync(mirror, 'utf-8').replace('x = 1', 'x = 2'))
       manager.beginTurn('t1')
       manager.drainTurnEdits('t1')

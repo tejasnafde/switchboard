@@ -8,8 +8,15 @@ import type { Machine } from '@shared/machines'
 import { AppChannels } from '@shared/ipc-channels'
 
 const mk = (id: string, sortOrder: number): Machine => ({
-  id, name: id, sshAlias: null, sshHost: `${id}.host`, sshUser: null,
-  sshPort: 22, sortOrder, createdAt: sortOrder, updatedAt: sortOrder,
+  id,
+  name: id,
+  sshAlias: null,
+  sshHost: `${id}.host`,
+  sshUser: null,
+  sshPort: 22,
+  sortOrder,
+  createdAt: sortOrder,
+  updatedAt: sortOrder,
 })
 
 let stored: Machine[] = []
@@ -28,7 +35,13 @@ let statusCb: ((id: string, status: string, url: string | null, reason?: string)
 const connectMachine = vi.fn()
 const disconnectMachine = vi.fn()
 const bind = vi.fn()
-const invokeOn = vi.fn(async () => [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1', source: 'codex', startedAt: 0, messageCount: 1, filePath: '/x' }] }])
+const invokeOn = vi.fn(async () => [
+  {
+    path: '/r/api',
+    name: 'api',
+    sessions: [{ id: 's1', title: 't1', source: 'codex', startedAt: 0, messageCount: 1, filePath: '/x' }],
+  },
+])
 const saveSnapshot = vi.fn(async () => ({ ok: true as const }))
 let liveStatuses: Record<string, { status: string; url: string | null }> = {}
 const getStatuses = vi.fn(async () => liveStatuses)
@@ -60,7 +73,17 @@ beforeEach(() => {
     },
   }
   liveStatuses = {}
-  useMachineStore.setState({ remotes: [], connections: {}, activeMachineId: 'local', collapsed: new Set(), sshHosts: [], snapshots: {}, lastError: {}, progress: {}, reconnecting: {} })
+  useMachineStore.setState({
+    remotes: [],
+    connections: {},
+    activeMachineId: 'local',
+    collapsed: new Set(),
+    sshHosts: [],
+    snapshots: {},
+    lastError: {},
+    progress: {},
+    reconnecting: {},
+  })
   vi.clearAllMocks()
 })
 
@@ -149,7 +172,9 @@ describe('machine-store', () => {
     expect(invokeOn).toHaveBeenCalledWith('m1', 'app:get-projects')
     expect(saveSnapshot).toHaveBeenCalled()
     const snap = useMachineStore.getState().snapshots.m1
-    expect(snap.projects).toEqual([{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1', agentType: 'codex' }] }])
+    expect(snap.projects).toEqual([
+      { path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1', agentType: 'codex' }] },
+    ])
     expect(bind).toHaveBeenCalledWith('/r/api', 'm1')
   })
 
@@ -167,8 +192,7 @@ describe('machine-store', () => {
       { path: '/r/two', workspaceId: 'work' },
       { path: '/r/one', workspaceId: null },
     ])
-    expect(useMachineStore.getState().projects.m1.map((project) => project.path))
-      .toEqual(['/r/two', '/r/one'])
+    expect(useMachineStore.getState().projects.m1.map((project) => project.path)).toEqual(['/r/two', '/r/one'])
   })
 
   it('subscribeStatus does not register a transport while still connecting', () => {
@@ -219,8 +243,10 @@ describe('machine-store', () => {
   })
 
   it('connect records the rejection reason in lastError instead of a bare error pip', async () => {
-    ;(window as unknown as { api: { machines: { connect: unknown } } }).api.machines.connect =
-      vi.fn(async () => ({ ok: false, error: 'unknown machine' }))
+    ;(window as unknown as { api: { machines: { connect: unknown } } }).api.machines.connect = vi.fn(async () => ({
+      ok: false,
+      error: 'unknown machine',
+    }))
     await useMachineStore.getState().connect('m1')
     expect(useMachineStore.getState().connections.m1).toBe('error')
     expect(useMachineStore.getState().lastError.m1).toBe('unknown machine')
@@ -259,19 +285,13 @@ describe('machine-store', () => {
     await useMachineStore.getState().hydrate()
 
     expect(useMachineStore.getState().collapsed).toEqual(new Set(['local', 'b']))
-    expect(setSetting).toHaveBeenCalledWith(
-      'sidebar.collapsed.machines',
-      JSON.stringify(['local', 'b']),
-    )
+    expect(setSetting).toHaveBeenCalledWith('sidebar.collapsed.machines', JSON.stringify(['local', 'b']))
   })
 
   it('persists disclosure changes by machine id', () => {
     useMachineStore.getState().toggleCollapsed('b')
 
-    expect(setSetting).toHaveBeenCalledWith(
-      'sidebar.collapsed.machines',
-      JSON.stringify(['b']),
-    )
+    expect(setSetting).toHaveBeenCalledWith('sidebar.collapsed.machines', JSON.stringify(['b']))
   })
 
   it('ignores malformed persisted disclosure state', async () => {
@@ -287,8 +307,16 @@ describe('machine-store', () => {
     useMachineStore.setState((s) => ({
       snapshots: {
         ...s.snapshots,
-        m1: { syncedAt: 0, projects: [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 'New conversation', agentType: null }] }] },
-        m2: { syncedAt: 0, projects: [{ path: '/r/web', name: 'web', sessions: [{ id: 's2', title: 'keep me', agentType: null }] }] },
+        m1: {
+          syncedAt: 0,
+          projects: [
+            { path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 'New conversation', agentType: null }] },
+          ],
+        },
+        m2: {
+          syncedAt: 0,
+          projects: [{ path: '/r/web', name: 'web', sessions: [{ id: 's2', title: 'keep me', agentType: null }] }],
+        },
       },
     }))
     useMachineStore.getState().renameSnapshotSession('s1', 'create a claude.local.md')
@@ -309,7 +337,16 @@ describe('machine-store', () => {
         ...s.snapshots,
         m1: {
           syncedAt: 0,
-          projects: [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 'a', agentType: null }, { id: 's2', title: 'b', agentType: null }] }],
+          projects: [
+            {
+              path: '/r/api',
+              name: 'api',
+              sessions: [
+                { id: 's1', title: 'a', agentType: null },
+                { id: 's2', title: 'b', agentType: null },
+              ],
+            },
+          ],
         },
       },
     }))

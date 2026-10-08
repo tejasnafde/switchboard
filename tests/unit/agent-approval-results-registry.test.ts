@@ -10,8 +10,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import './helpers/registry-session-mocks'
 
 vi.mock('../../src/main/db/provider-instances', () => ({
-  resolveProviderInstance: (agentType: string, id?: string) => ({ id: id ?? `${agentType}-default`, agentType, displayName: id ?? `${agentType}-default`, enabled: true, env: {}, oauthDir: null }),
-  getProviderInstanceFull: (id: string) => ({ id, agentType: 'claude-code', displayName: id, enabled: true, env: {}, oauthDir: null }),
+  resolveProviderInstance: (agentType: string, id?: string) => ({
+    id: id ?? `${agentType}-default`,
+    agentType,
+    displayName: id ?? `${agentType}-default`,
+    enabled: true,
+    env: {},
+    oauthDir: null,
+  }),
+  getProviderInstanceFull: (id: string) => ({
+    id,
+    agentType: 'claude-code',
+    displayName: id,
+    enabled: true,
+    env: {},
+    oauthDir: null,
+  }),
   listOauthDirsForAgent: () => [],
 }))
 
@@ -83,9 +97,16 @@ class SwitchingAdapter implements ProviderAdapter {
 
   holdNextTarget(): () => void {
     let entered!: () => void
-    this.targetEntered = new Promise((resolve) => { entered = resolve })
-    const gate = new Promise<void>((resolve) => { this.release = resolve })
-    this.onTarget = async () => { entered(); await gate }
+    this.targetEntered = new Promise((resolve) => {
+      entered = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      this.release = resolve
+    })
+    this.onTarget = async () => {
+      entered()
+      await gate
+    }
     return () => this.release?.()
   }
   private onTarget: () => Promise<void> = async () => {}
@@ -96,7 +117,14 @@ class SwitchingAdapter implements ProviderAdapter {
       if (this.failTarget) throw new Error('target auth failed')
     }
     this.emit.set(opts.threadId, onEvent)
-    return { threadId: opts.threadId, provider: 'claude', status: 'ready', runtimeMode: opts.runtimeMode ?? 'sandbox', cwd: opts.cwd, createdAt: 0 }
+    return {
+      threadId: opts.threadId,
+      provider: 'claude',
+      status: 'ready',
+      runtimeMode: opts.runtimeMode ?? 'sandbox',
+      cwd: opts.cwd,
+      createdAt: 0,
+    }
   }
   async sendTurn(threadId: string, message: string): Promise<void> {
     this.turns.push({ threadId, message })
@@ -122,9 +150,22 @@ class RecordingAdapter implements ProviderAdapter {
 
   async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     this.emit.set(opts.threadId, onEvent)
-    return { threadId: opts.threadId, provider: 'claude', status: 'ready', runtimeMode: opts.runtimeMode ?? 'sandbox', cwd: opts.cwd, createdAt: 0 }
+    return {
+      threadId: opts.threadId,
+      provider: 'claude',
+      status: 'ready',
+      runtimeMode: opts.runtimeMode ?? 'sandbox',
+      cwd: opts.cwd,
+      createdAt: 0,
+    }
   }
-  async sendTurn(threadId: string, message: string, _mode?: unknown, _images?: unknown, delivery?: string): Promise<void> {
+  async sendTurn(
+    threadId: string,
+    message: string,
+    _mode?: unknown,
+    _images?: unknown,
+    delivery?: string,
+  ): Promise<void> {
     this.turns.push({ threadId, message, ...(delivery ? { delivery } : {}) })
     if (!this.hangTurn) this.emit.get(threadId)?.({ type: 'turn.completed', threadId })
   }
@@ -150,22 +191,32 @@ function setup(store: ApprovalCardStore<AgentWritePlan> = memoryApprovalCardStor
   saved.length = 0
   const broker = (registry as unknown as { agentApprovals: AgentApprovalBroker }).agentApprovals
   const start = async (...ids: string[]) => {
-    for (const threadId of ids) await host.invoke(ProviderChannels.START_SESSION, { threadId, provider: 'claude', cwd: '/tmp' })
+    for (const threadId of ids)
+      await host.invoke(ProviderChannels.START_SESSION, { threadId, provider: 'claude', cwd: '/tmp' })
   }
   /** A card the agent in `from` opened to message `to`. */
   const openCard = (from: string, to: string, message = 'the migration landed') => {
     const opened = broker.open({
-      threadId: from, chatId: from, toolName: 'mcp__switchboard__send_agent_message', detail: 'd',
+      threadId: from,
+      chatId: from,
+      toolName: 'mcp__switchboard__send_agent_message',
+      detail: 'd',
       plan: { kind: 'peer-send', sessionId: to, message },
     })
     if (!opened.ok) throw new Error(opened.message)
     return opened.requestId
   }
-  const answer = (threadId: string, requestId: string, decision: 'approve' | 'deny', response: Record<string, unknown> = {}) =>
-    host.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision, response)
+  const answer = (
+    threadId: string,
+    requestId: string,
+    decision: 'approve' | 'deny',
+    response: Record<string, unknown> = {},
+  ) => host.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision, response)
   /** Result turns Switchboard sent into `threadId`. */
-  const resultTurns = (threadId: string) => adapter.turns.filter((t) => t.threadId === threadId && t.message.startsWith(`<${APPROVAL_RESULT_TAG}>`))
-  const rows = (chatId: string) => saved.filter((m) => m.conversationId === chatId).flatMap((m) => parseApprovalResultMarker(m.content) ?? [])
+  const resultTurns = (threadId: string) =>
+    adapter.turns.filter((t) => t.threadId === threadId && t.message.startsWith(`<${APPROVAL_RESULT_TAG}>`))
+  const rows = (chatId: string) =>
+    saved.filter((m) => m.conversationId === chatId).flatMap((m) => parseApprovalResultMarker(m.content) ?? [])
   return { host, adapter, registry, broker, start, openCard, answer, resultTurns, rows }
 }
 
@@ -180,7 +231,9 @@ describe('an approved card', () => {
     const s = setup()
     await s.start('hub', 'w1')
     const id = s.openCard('hub', 'w1')
-    expect(await s.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'hub')).toMatchObject([{ type: 'request.opened', requestId: id }])
+    expect(await s.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'hub')).toMatchObject([
+      { type: 'request.opened', requestId: id },
+    ])
     await s.answer('hub', id, 'approve')
     await settle()
 
@@ -192,8 +245,12 @@ describe('an approved card', () => {
     expect(turn.message).toContain('Delivered to session w1')
     // Every surface drops the turn from the transcript; the row is what the user reads.
     expect(splitSyntheticUserText(turn.message)).toEqual({ parts: [], userText: '' })
-    expect(s.rows('hub')).toEqual([expect.objectContaining({ requestId: id, outcome: 'done', delivery: 'turn', title: 'Message another session' })])
-    expect(s.host.events).toContainEqual(expect.objectContaining({ type: 'approval.result', threadId: 'hub', requestId: id, messageId: `apr_${id}` }))
+    expect(s.rows('hub')).toEqual([
+      expect.objectContaining({ requestId: id, outcome: 'done', delivery: 'turn', title: 'Message another session' }),
+    ])
+    expect(s.host.events).toContainEqual(
+      expect.objectContaining({ type: 'approval.result', threadId: 'hub', requestId: id, messageId: `apr_${id}` }),
+    )
     expect(await s.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'hub')).toEqual([])
   })
 
@@ -212,7 +269,12 @@ describe('an approved card', () => {
     const s = setup()
     await s.start('hub', 'w1')
     s.adapter.hangTurn = true
-    await s.registry.deliverPeerMessage({ fromThreadId: 'w1', targetThreadId: 'hub', text: 'busy work', initiator: 'user' })
+    await s.registry.deliverPeerMessage({
+      fromThreadId: 'w1',
+      targetThreadId: 'hub',
+      text: 'busy work',
+      initiator: 'user',
+    })
     const id = s.openCard('hub', 'w1')
     await s.answer('hub', id, 'deny')
     await settle()
@@ -250,9 +312,14 @@ describe('a result turn is not the user speaking', () => {
     await s.start('hub', 'w1', 'w2', 'w3')
     await s.host.invoke(ProviderChannels.LINK_PEER, { threadId: 'hub', peerThreadId: 'w1', messages: 5 })
     // One message along the link, then a peer message from an agent, which puts the hub at hop depth 1.
-    expect((await createPeerToolHandlers(s.registry, 'hub').sendMessage({ sessionId: 'w1', message: 'linked' })).isError).toBeFalsy()
-    expect((await createPeerToolHandlers(s.registry, 'w2').sendMessage({ sessionId: 'hub', message: 'from w2' })).isError).toBeFalsy()
-    const used = async () => ((await s.host.invoke(ProviderChannels.LIST_PEER_LINKS, { threadId: 'hub' })) as PeerLinkView[])[0].used
+    expect(
+      (await createPeerToolHandlers(s.registry, 'hub').sendMessage({ sessionId: 'w1', message: 'linked' })).isError,
+    ).toBeFalsy()
+    expect(
+      (await createPeerToolHandlers(s.registry, 'w2').sendMessage({ sessionId: 'hub', message: 'from w2' })).isError,
+    ).toBeFalsy()
+    const used = async () =>
+      ((await s.host.invoke(ProviderChannels.LIST_PEER_LINKS, { threadId: 'hub' })) as PeerLinkView[])[0].used
     expect(await used()).toBe(1)
 
     const id = s.openCard('hub', 'w3')
@@ -262,11 +329,19 @@ describe('a result turn is not the user speaking', () => {
 
     // A user turn would have reset both. The result turn did not.
     expect(await used()).toBe(1)
-    const unlinked = await createPeerToolHandlers(s.registry, 'hub').sendMessage({ sessionId: 'w3', message: 'outside the link' })
+    const unlinked = await createPeerToolHandlers(s.registry, 'hub').sendMessage({
+      sessionId: 'w3',
+      message: 'outside the link',
+    })
     expect(unlinked.isError).toBe(true)
     expect(unlinked.content[0].text).toMatch(/peer message|acting on|hop/i)
     // The control: the user's own send along the edge does renew it.
-    await s.registry.deliverPeerMessage({ fromThreadId: 'hub', targetThreadId: 'w1', text: 'from the user', initiator: 'user' })
+    await s.registry.deliverPeerMessage({
+      fromThreadId: 'hub',
+      targetThreadId: 'w1',
+      text: 'from the user',
+      initiator: 'user',
+    })
     expect(await used()).toBe(0)
   })
 })
@@ -295,7 +370,9 @@ describe('a chat that is not running, and a restart', () => {
 
     const after = setup(store)
     await after.start('hub', 'w1')
-    expect(await after.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'hub')).toMatchObject([{ type: 'request.opened', requestId: id }])
+    expect(await after.host.invoke(ProviderChannels.GET_PENDING_REQUESTS, 'hub')).toMatchObject([
+      { type: 'request.opened', requestId: id },
+    ])
     await after.answer('hub', id, 'approve')
     await settle()
     expect(after.adapter.turns.filter((t) => t.threadId === 'w1')).toHaveLength(1)
@@ -308,18 +385,37 @@ describe('a card answered while the session is changing profiles', () => {
     const host = new FakeHost()
     const adapter = new SwitchingAdapter()
     adapter.failTarget = failTarget
-    const registry = new ProviderRegistry(host, new Map([['claude', adapter]]), undefined, undefined, null, memoryApprovalCardStore())
+    const registry = new ProviderRegistry(
+      host,
+      new Map([['claude', adapter]]),
+      undefined,
+      undefined,
+      null,
+      memoryApprovalCardStore(),
+    )
     registry.registerIpcHandlers()
     registries.push(registry)
     saved.length = 0
     const broker = (registry as unknown as { agentApprovals: AgentApprovalBroker }).agentApprovals
-    await host.invoke(ProviderChannels.START_SESSION, { threadId: 'hub', provider: 'claude', cwd: '/tmp', instanceId: 'claude-work' })
-    const opened = broker.open({ threadId: 'hub', chatId: 'hub', toolName: 'x', detail: 'd', plan: { kind: 'peer-send', sessionId: 'nobody', message: 'm' } })
+    await host.invoke(ProviderChannels.START_SESSION, {
+      threadId: 'hub',
+      provider: 'claude',
+      cwd: '/tmp',
+      instanceId: 'claude-work',
+    })
+    const opened = broker.open({
+      threadId: 'hub',
+      chatId: 'hub',
+      toolName: 'x',
+      detail: 'd',
+      plan: { kind: 'peer-send', sessionId: 'nobody', message: 'm' },
+    })
     if (!opened.ok) throw new Error(opened.message)
 
     const release = adapter.holdNextTarget()
     const switched = host.invoke<{ ok: boolean; rolledBack?: boolean }>(ProviderChannels.SWITCH_INSTANCE, 'hub', {
-      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+      targetInstanceId: 'claude-personal',
+      expectedCurrentInstanceId: 'claude-work',
     })
     await adapter.targetEntered
     await host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 'hub', opened.requestId, 'deny', {})
@@ -347,4 +443,3 @@ describe('a card answered while the session is changing profiles', () => {
     expect(results).toHaveLength(1)
   })
 })
-

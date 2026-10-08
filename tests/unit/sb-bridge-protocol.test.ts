@@ -66,7 +66,9 @@ describe('selection intent (cmd+k quick edit)', () => {
 
   it('omits intent when not given and rejects unknown intents', () => {
     expect(buildSelection('a.ts', 1, 2, 'x')).not.toHaveProperty('intent')
-    expect(parseMessage('{"type":"selection","path":"a","startLine":1,"endLine":1,"text":"x","intent":"evil"}')).toBeNull()
+    expect(
+      parseMessage('{"type":"selection","path":"a","startLine":1,"endLine":1,"text":"x","intent":"evil"}'),
+    ).toBeNull()
   })
 })
 

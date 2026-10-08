@@ -35,8 +35,9 @@ describe('follow suggestions', () => {
     expect(followSuggestionView('on', 5, false)).toEqual({ kind: 'chip' })
   })
   it('says why it is off', () => {
-    expect(followOffNotice({ kind: 'off', reason: 'many-worktrees', count: 5 }))
-      .toBe('Follow suggestions are off for this chat: it has worked in 5 worktrees.')
+    expect(followOffNotice({ kind: 'off', reason: 'many-worktrees', count: 5 })).toBe(
+      'Follow suggestions are off for this chat: it has worked in 5 worktrees.',
+    )
     expect(followOffNotice({ kind: 'off', reason: 'muted' })).toBe('Follow suggestions are off for this chat.')
   })
   it('reads anything unknown as auto', () => {

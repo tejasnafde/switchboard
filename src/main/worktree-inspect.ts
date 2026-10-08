@@ -75,7 +75,7 @@ export async function inspectWorktreeGit(
 ): Promise<WorktreeGitState> {
   let uncommittedFiles = 0
   let ignored: string[] = []
-  if (!wt.prunable && await isDirectory(wt.path)) {
+  if (!wt.prunable && (await isDirectory(wt.path))) {
     const { stdout } = await runner(['status', '--porcelain'], wt.path)
     uncommittedFiles = stdout.split('\n').filter((line) => line.trim() !== '').length
     // `git worktree remove` deletes ignored files without --force, so an
@@ -105,7 +105,13 @@ export async function inspectWorktreeGit(
     // Exit 1 is git's "not an ancestor"; anything else is a real failure.
     if (exitCode(err) !== 1) throw err
   }
-  return { uncommittedFiles, ignoredFiles: ignored.length, ignoredSample: ignored.slice(0, IGNORED_SAMPLE_SIZE), unpushedCommits, merged }
+  return {
+    uncommittedFiles,
+    ignoredFiles: ignored.length,
+    ignoredSample: ignored.slice(0, IGNORED_SAMPLE_SIZE),
+    unpushedCommits,
+    merged,
+  }
 }
 
 // ─── Size on disk ────────────────────────────────────────────────────

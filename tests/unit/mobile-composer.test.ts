@@ -85,8 +85,12 @@ describe('holdHint', () => {
 
 describe('blockedSendReason', () => {
   it('explains a blocked tap while keeping the composer available for retry', () => {
-    expect(blockedSendReason('Loading conversation...', false)).toBe('Loading conversation... Message not sent. Your draft and attachments are kept; tap Send when ready.')
-    expect(blockedSendReason(null, true)).toBe('Switching provider... Message not sent. Your draft and attachments are kept; tap Send when ready.')
+    expect(blockedSendReason('Loading conversation...', false)).toBe(
+      'Loading conversation... Message not sent. Your draft and attachments are kept; tap Send when ready.',
+    )
+    expect(blockedSendReason(null, true)).toBe(
+      'Switching provider... Message not sent. Your draft and attachments are kept; tap Send when ready.',
+    )
     expect(blockedSendReason(null, false)).toBeNull()
   })
 })

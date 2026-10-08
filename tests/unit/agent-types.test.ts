@@ -6,13 +6,7 @@
  * and catch any label helper that's missing a branch for the new kind.
  */
 import { describe, it, expect } from 'vitest'
-import {
-  AGENT_TYPES,
-  isAgentType,
-  agentLabel,
-  agentShortLabel,
-  defaultInstanceId,
-} from '../../src/shared/types'
+import { AGENT_TYPES, isAgentType, agentLabel, agentShortLabel, defaultInstanceId } from '../../src/shared/types'
 import type { AgentType } from '../../src/shared/types'
 
 describe('AGENT_TYPES', () => {

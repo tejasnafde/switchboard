@@ -40,15 +40,11 @@ function clientFromSecretManager() {
   const gcloud = `${process.env.HOME}/Downloads/google-cloud-sdk/bin/gcloud`
   const out = execFileSync(
     gcloud,
-    [
-      '--configuration=personal',
-      'secrets',
-      'versions',
-      'access',
-      'latest',
-      `--secret=${SECRET_NAME}`,
-    ],
-    { encoding: 'utf8', env: { ...process.env, CLOUDSDK_PYTHON: `${process.env.HOME}/.config/gcloud/virtenv/bin/python3` } },
+    ['--configuration=personal', 'secrets', 'versions', 'access', 'latest', `--secret=${SECRET_NAME}`],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, CLOUDSDK_PYTHON: `${process.env.HOME}/.config/gcloud/virtenv/bin/python3` },
+    },
   )
   const parsed = JSON.parse(out)
   return { clientId: parsed.client_id, clientSecret: parsed.client_secret }

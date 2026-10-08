@@ -107,14 +107,32 @@ Host three
 describe('iapTransportForMachine', () => {
   it('repairs an existing plain-SSH machine by matching its saved alias', () => {
     const machine = {
-      id: 'm1', name: 'prod', sshAlias: 'prod', sshHost: 'prod', sshUser: 'stale-user',
-      sshPort: 22, remoteUser: 'ubuntu', transportKind: 'ssh', iapInstance: null,
-      iapProject: null, iapZone: null, sortOrder: 0, createdAt: 0, updatedAt: 0,
+      id: 'm1',
+      name: 'prod',
+      sshAlias: 'prod',
+      sshHost: 'prod',
+      sshUser: 'stale-user',
+      sshPort: 22,
+      remoteUser: 'ubuntu',
+      transportKind: 'ssh',
+      iapInstance: null,
+      iapProject: null,
+      iapZone: null,
+      sortOrder: 0,
+      createdAt: 0,
+      updatedAt: 0,
     } satisfies Machine
 
-    expect(iapTransportForMachine(machine, [{
-      alias: 'prod', instance: 'prod-instance', project: 'prod-project', zone: 'asia-south1-b',
-    }])).toEqual({
+    expect(
+      iapTransportForMachine(machine, [
+        {
+          alias: 'prod',
+          instance: 'prod-instance',
+          project: 'prod-project',
+          zone: 'asia-south1-b',
+        },
+      ]),
+    ).toEqual({
       transportKind: 'gcloud-iap',
       iapInstance: 'prod-instance',
       iapProject: 'prod-project',

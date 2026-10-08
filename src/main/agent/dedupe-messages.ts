@@ -1,6 +1,13 @@
 import type { ChatMessage, ToolCall } from '@shared/types'
 import { isActivityRow } from '@shared/turn-activity'
-import { STORED_TASK_NOTICE_PREFIX, TRANSCRIPT_NOTICE_SKEW_MS, sameTaskNotice, slashCommandRecordText, splitSyntheticUserText, type SyntheticUserPart } from '@shared/synthetic-message'
+import {
+  STORED_TASK_NOTICE_PREFIX,
+  TRANSCRIPT_NOTICE_SKEW_MS,
+  sameTaskNotice,
+  slashCommandRecordText,
+  splitSyntheticUserText,
+  type SyntheticUserPart,
+} from '@shared/synthetic-message'
 
 /**
  * Collapse the same message arriving from more than one source. `load-by-id`
@@ -54,10 +61,7 @@ const USER_COPY_SKEW_MS = 5_000
  * out-of-band agent completion cannot disappear merely because one JSONL
  * fragment survived.
  */
-export function mergeConversationMessages(
-  diskMessages: ChatMessage[],
-  mirroredMessages: ChatMessage[],
-): ChatMessage[] {
+export function mergeConversationMessages(diskMessages: ChatMessage[], mirroredMessages: ChatMessage[]): ChatMessage[] {
   // Stored task notices pair with a transcript line by task, not by text, and
   // must not open a turn below: the transcript's own line already does.
   const storedNotices = mirroredMessages.filter(isStoredTaskNotice)
@@ -117,17 +121,20 @@ export function mergeConversationMessages(
       if (diskIndex === undefined) {
         databaseOnly.push(message)
       } else {
-        disk[diskIndex] = { ...disk[diskIndex], toolCalls: withToolOutputs(disk[diskIndex].toolCalls ?? [], message.toolCalls ?? []) }
+        disk[diskIndex] = {
+          ...disk[diskIndex],
+          toolCalls: withToolOutputs(disk[diskIndex].toolCalls ?? [], message.toolCalls ?? []),
+        }
       }
       continue
     }
     const key = semanticMessageKey(message)
     const candidates = semanticCandidates.get(key) ?? []
     let cursor = candidateCursor.get(key) ?? 0
-    while (cursor < candidates.length && (
-      matchedDiskIndexes.has(candidates[cursor].index)
-      || candidates[cursor].timestamp < lowerBound
-    )) {
+    while (
+      cursor < candidates.length &&
+      (matchedDiskIndexes.has(candidates[cursor].index) || candidates[cursor].timestamp < lowerBound)
+    ) {
       cursor++
     }
     if (cursor < candidates.length && candidates[cursor].timestamp <= upperBound) {
@@ -141,8 +148,9 @@ export function mergeConversationMessages(
     databaseOnly.push(message)
   }
 
-  return [...disk, ...databaseOnly, ...noticesMissingFromTranscript(storedNotices, disk)]
-    .sort((a, b) => a.timestamp - b.timestamp)
+  return [...disk, ...databaseOnly, ...noticesMissingFromTranscript(storedNotices, disk)].sort(
+    (a, b) => a.timestamp - b.timestamp,
+  )
 }
 
 function isStoredTaskNotice(message: ChatMessage): boolean {
@@ -169,9 +177,11 @@ function noticesMissingFromTranscript(stored: ChatMessage[], disk: ChatMessage[]
   if (stored.length === 0) return []
   const lines = disk
     .filter((message) => message.role === 'user')
-    .flatMap((message) => (splitSyntheticUserText(message.content)?.parts ?? [])
-      .filter((part): part is TaskNoticePart => part.kind === 'task-notification')
-      .map((part) => ({ part, at: message.timestamp })))
+    .flatMap((message) =>
+      (splitSyntheticUserText(message.content)?.parts ?? [])
+        .filter((part): part is TaskNoticePart => part.kind === 'task-notification')
+        .map((part) => ({ part, at: message.timestamp })),
+    )
   const notices = collapseRepeatedNotices(stored)
   const pairs: Array<{ notice: number; line: number; distance: number }> = []
   notices.forEach((message, notice) => {
@@ -205,9 +215,14 @@ function collapseRepeatedNotices(stored: ChatMessage[]): ChatMessage[] {
   const kept: Array<{ message: ChatMessage; part: TaskNoticePart | undefined }> = []
   for (const message of [...stored].sort((a, b) => a.timestamp - b.timestamp)) {
     const part = taskNoticePart(message)
-    const repeat = part && kept.some((earlier) => earlier.part
-      && sameTaskNotice(earlier.part, part)
-      && message.timestamp - earlier.message.timestamp <= TRANSCRIPT_NOTICE_SKEW_MS)
+    const repeat =
+      part &&
+      kept.some(
+        (earlier) =>
+          earlier.part &&
+          sameTaskNotice(earlier.part, part) &&
+          message.timestamp - earlier.message.timestamp <= TRANSCRIPT_NOTICE_SKEW_MS,
+      )
     if (!repeat) kept.push({ message, part })
   }
   return kept.map(({ message }) => message)
@@ -238,17 +253,14 @@ function withToolOutputs(calls: ToolCall[], mirrored: ToolCall[]): ToolCall[] {
  * two makes them separate turns.
  */
 function userTurnStarts(messages: ChatMessage[]): Array<{ timestamp: number; turnStart: number }> {
-  const users = messages
-    .filter((message) => message.role === 'user')
-    .sort((a, b) => a.timestamp - b.timestamp)
+  const users = messages.filter((message) => message.role === 'user').sort((a, b) => a.timestamp - b.timestamp)
   const entries: Array<{ timestamp: number; turnStart: number }> = []
   users.forEach((message, index) => {
     const previous = users[index - 1]
-    const turnStart = previous
-      && previous.content === message.content
-      && message.timestamp - previous.timestamp <= USER_COPY_SKEW_MS
-      ? entries[index - 1].turnStart
-      : message.timestamp
+    const turnStart =
+      previous && previous.content === message.content && message.timestamp - previous.timestamp <= USER_COPY_SKEW_MS
+        ? entries[index - 1].turnStart
+        : message.timestamp
     entries.push({ timestamp: message.timestamp, turnStart })
   })
   return entries
@@ -269,9 +281,7 @@ function enrichDiskMessage(disk: ChatMessage, database: ChatMessage): ChatMessag
     ...(disk.displayBody === undefined && database.displayBody !== undefined
       ? { displayBody: database.displayBody }
       : {}),
-    ...(disk.pillsMeta === undefined && database.pillsMeta !== undefined
-      ? { pillsMeta: database.pillsMeta }
-      : {}),
+    ...(disk.pillsMeta === undefined && database.pillsMeta !== undefined ? { pillsMeta: database.pillsMeta } : {}),
   }
 }
 
@@ -300,14 +310,17 @@ function mergeImages(diskImages: ChatMessage['images'], databaseImages: ChatMess
 
 function semanticMessageKey(message: ChatMessage): string {
   // A transcript's slash-command record pairs with the `/name args` Switchboard stored.
-  const content = message.role === 'user' ? slashCommandRecordText(message.content) ?? message.content : message.content
+  const content =
+    message.role === 'user' ? (slashCommandRecordText(message.content) ?? message.content) : message.content
   return JSON.stringify([message.role, content])
 }
 
 /** Fields that decide whether two copies of one id are the same message. */
 function sameContent(a: ChatMessage, b: ChatMessage): boolean {
-  return a.role === b.role
-    && a.content === b.content
-    && a.timestamp === b.timestamp
-    && (a.toolCalls?.length ?? 0) === (b.toolCalls?.length ?? 0)
+  return (
+    a.role === b.role &&
+    a.content === b.content &&
+    a.timestamp === b.timestamp &&
+    (a.toolCalls?.length ?? 0) === (b.toolCalls?.length ?? 0)
+  )
 }

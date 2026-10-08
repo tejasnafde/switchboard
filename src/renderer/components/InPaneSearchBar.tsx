@@ -78,10 +78,13 @@ export function InPaneSearchBar({
         // Stop ALL keys from bubbling out of the search bar - otherwise
         // pressing arrow keys would also drive the chat textarea or the
         // terminal underneath.
-        const run = matchesShortcut(e, 'search.close') ? onClose
-          : matchesShortcut(e, 'search.next') ? onNext
-          : matchesShortcut(e, 'search.prev') ? onPrev
-          : null
+        const run = matchesShortcut(e, 'search.close')
+          ? onClose
+          : matchesShortcut(e, 'search.next')
+            ? onNext
+            : matchesShortcut(e, 'search.prev')
+              ? onPrev
+              : null
         if (run) {
           e.preventDefault()
           e.stopPropagation()
@@ -147,7 +150,10 @@ export function InPaneSearchBar({
         // mousedown.preventDefault keeps the input focused so subsequent
         // Enter / ↑ / ↓ continue navigating without re-clicking.
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => { onPrev(); inputRef.current?.focus() }}
+        onClick={() => {
+          onPrev()
+          inputRef.current?.focus()
+        }}
         title="Previous match (Shift+Enter / ↑)"
         style={iconBtn}
       >
@@ -156,7 +162,10 @@ export function InPaneSearchBar({
       <button
         type="button"
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => { onNext(); inputRef.current?.focus() }}
+        onClick={() => {
+          onNext()
+          inputRef.current?.focus()
+        }}
         title="Next match (Enter / ↓)"
         style={iconBtn}
       >

@@ -30,6 +30,7 @@ Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex 
 - `npm run build` - **gated build**: `prebuild` runs typecheck + test before the actual build fires; `postbuild` runs `scripts/smoke-test.mjs`
 - `npm run build:fast` - escape hatch, skips the gate
 - `npm run rebuild` - rebuild `node-pty` + `better-sqlite3` for Electron
+- `npm run format` - oxfmt (pinned, `.oxfmtrc.json`); the pre-commit hook formats staged files and CI checks the tree. A branch from before the repo-wide reformat takes it with `scripts/merge-format-commit.sh <format-commit>`, not a plain merge
 
 ## Shipping checklist (MANDATORY, 2026-07-21)
 

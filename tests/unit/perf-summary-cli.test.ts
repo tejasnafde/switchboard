@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const dirs: string[] = []
-afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'sb-perf-summary-test-'))
   dirs.push(dir)
@@ -13,7 +15,8 @@ function fixture() {
 }
 function run(dir: string, files: string[] = []) {
   return execFileSync(process.execPath, [resolve('scripts/perf-summary.mjs'), ...files], {
-    encoding: 'utf8', env: { ...process.env, SB_USER_DATA: dir, SWITCHBOARD_DATA_DIR: '' },
+    encoding: 'utf8',
+    env: { ...process.env, SB_USER_DATA: dir, SWITCHBOARD_DATA_DIR: '' },
   })
 }
 
@@ -32,7 +35,8 @@ describe('performance summary CLI discovery', () => {
     writeFileSync(join(desktop, 'logs', 'switchboard-desktop.log'), '[perf] desktop.span 450ms {}')
     writeFileSync(join(headless, 'logs', 'switchboard-headless.log'), '[perf] headless.span 600ms {}')
     const output = execFileSync(process.execPath, [resolve('scripts/perf-summary.mjs')], {
-      encoding: 'utf8', env: { ...process.env, SB_USER_DATA: desktop, SWITCHBOARD_DATA_DIR: headless },
+      encoding: 'utf8',
+      env: { ...process.env, SB_USER_DATA: desktop, SWITCHBOARD_DATA_DIR: headless },
     })
     expect(output).toContain('desktop.span: count=1 p50=450ms')
     expect(output).toContain('headless.span: count=1 p50=600ms')
@@ -47,14 +51,24 @@ describe('performance summary CLI discovery', () => {
   })
   it('does not count a log twice when desktop and headless directories alias', () => {
     const home = fixture()
-    const desktop = process.platform === 'darwin'
-      ? join(home, 'Library', 'Application Support', 'Switchboard')
-      : join(home, 'config', 'Switchboard')
+    const desktop =
+      process.platform === 'darwin'
+        ? join(home, 'Library', 'Application Support', 'Switchboard')
+        : join(home, 'config', 'Switchboard')
     mkdirSync(join(desktop, 'logs'), { recursive: true })
     writeFileSync(join(desktop, 'logs', 'switchboard-test.log'), '[perf] chat.open 450ms {}')
     symlinkSync(desktop, join(home, '.switchboard'), 'junction')
     const output = execFileSync(process.execPath, [resolve('scripts/perf-summary.mjs')], {
-      encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, APPDATA: join(home, 'config'), XDG_CONFIG_HOME: join(home, 'config'), SB_USER_DATA: '', SWITCHBOARD_DATA_DIR: '' },
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+        APPDATA: join(home, 'config'),
+        XDG_CONFIG_HOME: join(home, 'config'),
+        SB_USER_DATA: '',
+        SWITCHBOARD_DATA_DIR: '',
+      },
     })
     expect(output).toContain('chat.open: count=1 p50=450ms')
   })

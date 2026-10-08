@@ -10,12 +10,7 @@ const run = promisify(execFile)
 const roots: string[] = []
 
 function runGit(args: string[], cwd: string) {
-  const {
-    GIT_DIR: _gitDir,
-    GIT_INDEX_FILE: _gitIndexFile,
-    GIT_WORK_TREE: _gitWorkTree,
-    ...env
-  } = process.env
+  const { GIT_DIR: _gitDir, GIT_INDEX_FILE: _gitIndexFile, GIT_WORK_TREE: _gitWorkTree, ...env } = process.env
   return run('git', args, { cwd, env })
 }
 

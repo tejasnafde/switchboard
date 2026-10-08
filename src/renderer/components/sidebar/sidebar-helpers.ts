@@ -9,11 +9,7 @@ import type { Project, SessionSummary, Workspace } from '@shared/types'
 // projects the same way. Re-exported here to keep existing import sites valid.
 import type { WorkspaceGroup } from '@shared/project-grouping'
 
-export {
-  groupProjectsByWorkspace,
-  colorTokenForWorkspace,
-  type WorkspaceGroup,
-} from '@shared/project-grouping'
+export { groupProjectsByWorkspace, colorTokenForWorkspace, type WorkspaceGroup } from '@shared/project-grouping'
 
 /** Compact "now / 5m / 3h / 2d / 4w / 3mo" stamp for sidebar thread rows. */
 export { formatRelativeTime } from '@shared/format'
@@ -48,9 +44,7 @@ export function applySidebarFilter(query: string, groups: WorkspaceGroup[]): Fil
   for (const g of groups) {
     const filteredProjects: Project[] = []
     for (const p of g.projects) {
-      const sessions = p.sessions.filter((s: SessionSummary) =>
-        (s.title || '').toLowerCase().includes(q)
-      )
+      const sessions = p.sessions.filter((s: SessionSummary) => (s.title || '').toLowerCase().includes(q))
       if (sessions.length > 0) {
         matchCount += sessions.length
         expandProj.add(p.path)

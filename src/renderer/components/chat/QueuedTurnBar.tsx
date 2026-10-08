@@ -19,7 +19,11 @@ import { ArrowUpIcon, ClockIcon, CloseIcon } from './chat-icons'
 
 const log = createRendererLogger('chat:queued-turn')
 
-export function QueuedTurnBar({ sessionId, messageId, provider }: {
+export function QueuedTurnBar({
+  sessionId,
+  messageId,
+  provider,
+}: {
   sessionId: string
   messageId: string
   provider: string | undefined
@@ -41,9 +45,10 @@ export function QueuedTurnBar({ sessionId, messageId, provider }: {
         if (!resumed.ok) setError(resumed.message ?? 'Nothing is held for this chat.')
         return
       }
-      const result = action === 'promote'
-        ? await api.promoteQueuedTurn(sessionId, messageId)
-        : await api.cancelQueuedTurn(sessionId, messageId)
+      const result =
+        action === 'promote'
+          ? await api.promoteQueuedTurn(sessionId, messageId)
+          : await api.cancelQueuedTurn(sessionId, messageId)
       if (!result.ok) {
         setError(result.message)
         return
@@ -64,12 +69,17 @@ export function QueuedTurnBar({ sessionId, messageId, provider }: {
   const note = failed ?? (held ? 'the last turn failed; Resume sends the queue' : 'runs after this turn')
 
   return (
-    <div data-queued-turn={messageId} className="mt-[8px] flex items-center gap-[8px] text-[11px] text-[var(--text-muted)]">
+    <div
+      data-queued-turn={messageId}
+      className="mt-[8px] flex items-center gap-[8px] text-[11px] text-[var(--text-muted)]"
+    >
       <span className="inline-flex items-center gap-[4px] rounded-[4px] border border-[var(--border)] px-[6px] py-[1px] text-[var(--text-secondary)]">
         <ClockIcon size={11} />
         {label}
       </span>
-      <span role="status" aria-live="polite">{error ?? note}</span>
+      <span role="status" aria-live="polite">
+        {error ?? note}
+      </span>
       <span className="ml-auto inline-flex gap-[2px]">
         {held && (
           <Button
@@ -78,7 +88,9 @@ export function QueuedTurnBar({ sessionId, messageId, provider }: {
             aria-label="Resume"
             title="Resume: send the held messages in order"
             disabled={busy}
-            onClick={() => { void act('resume') }}
+            onClick={() => {
+              void act('resume')
+            }}
           >
             <ArrowUpIcon size={13} />
           </Button>
@@ -92,7 +104,9 @@ export function QueuedTurnBar({ sessionId, messageId, provider }: {
             // aria-disabled, not disabled, so the tooltip saying why still shows.
             aria-disabled={promoteBlocked !== null || undefined}
             disabled={busy}
-            onClick={() => { if (!promoteBlocked) void act('promote') }}
+            onClick={() => {
+              if (!promoteBlocked) void act('promote')
+            }}
           >
             <ArrowUpIcon size={13} />
           </Button>
@@ -103,7 +117,9 @@ export function QueuedTurnBar({ sessionId, messageId, provider }: {
           aria-label="Cancel"
           title="Cancel and return it to the composer"
           disabled={busy}
-          onClick={() => { void act('cancel') }}
+          onClick={() => {
+            void act('cancel')
+          }}
         >
           <CloseIcon size={13} />
         </Button>

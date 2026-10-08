@@ -106,7 +106,8 @@ class HistoryText {
 
   private addBbprCommand(input: string): void {
     const command = toolInputCommand(input)
-    if (command && bbprPullRequestNumbers(command).length > 0) this.bbprCommands.push({ command, cwd: toolInputCwd(input) })
+    if (command && bbprPullRequestNumbers(command).length > 0)
+      this.bbprCommands.push({ command, cwd: toolInputCwd(input) })
   }
 
   get text(): string {

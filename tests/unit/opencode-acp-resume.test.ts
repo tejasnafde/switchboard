@@ -35,7 +35,7 @@ vi.mock('../../src/main/provider/adapters/opencode/env', () => ({
 }))
 
 vi.mock('../../src/main/db/database', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../../src/main/db/database')>(),
+  ...(await importOriginal<typeof import('../../src/main/db/database')>()),
   resolveResumeSegment: () => state.segment,
 }))
 
@@ -64,13 +64,16 @@ vi.mock('@agentclientprotocol/sdk', async (importOriginal) => {
 async function start(instanceId: string | null = 'oc') {
   const { OpencodeAcpAdapter } = await import('../../src/main/provider/adapters/opencode-acp-adapter')
   const onEvent = vi.fn()
-  await new OpencodeAcpAdapter().startSession({
-    threadId: 'fork-1',
-    provider: 'opencode',
-    cwd: '/tmp/project',
-    runtimeMode: 'sandbox',
-    instanceId: instanceId ?? undefined,
-  }, onEvent)
+  await new OpencodeAcpAdapter().startSession(
+    {
+      threadId: 'fork-1',
+      provider: 'opencode',
+      cwd: '/tmp/project',
+      runtimeMode: 'sandbox',
+      instanceId: instanceId ?? undefined,
+    },
+    onEvent,
+  )
   return onEvent.mock.calls.map(([event]) => event)
 }
 
@@ -110,7 +113,12 @@ describe('OpenCode session resume', () => {
     state.resumeFails = true
     const events = await start()
     expect(state.calls).toEqual(['resume:ses_forked', 'new'])
-    expect(events).toContainEqual(expect.objectContaining({ type: 'error', message: expect.stringContaining('Could not resume OpenCode session ses_forked') }))
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringContaining('Could not resume OpenCode session ses_forked'),
+      }),
+    )
     expect(events).toContainEqual({ type: 'session', threadId: 'fork-1', sessionId: 'ses_new' })
   })
 })

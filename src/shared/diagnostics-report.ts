@@ -155,10 +155,7 @@ export function diagnosticsGist(d: DiagnosticsSnapshot): string {
  * anything at all if it was hand-edited, so it is parsed strictly and any
  * other value counts as "never answered".
  */
-export function diagnosticsDefaultExpanded(
-  d: DiagnosticsSnapshot | null,
-  stored: string | null,
-): boolean {
+export function diagnosticsDefaultExpanded(d: DiagnosticsSnapshot | null, stored: string | null): boolean {
   if (stored === 'true') return true
   if (stored === 'false') return false
   return Boolean(d?.translated)

@@ -39,14 +39,25 @@ beforeEach(() => {
     api: { settings: { get: settingsGet, set: settingsSet }, app: { setConversationModel } },
   }
   useAgentStore.setState({ sessions: [], activeSessionId: null })
-  useAgentStore.getState().addSession({ id: T, type: 'codex', status: 'running', title: 'My chat', projectPath: '/p/proj' })
+  useAgentStore
+    .getState()
+    .addSession({ id: T, type: 'codex', status: 'running', title: 'My chat', projectPath: '/p/proj' })
 })
 
 describe('reduceProviderEvent (desktop)', () => {
   it('user.message appends the accepted user bubble, a handoff marker, and emits activity/rename/accepted', () => {
-    const activity = vi.fn(); const rename = vi.fn(); const accepted = vi.fn()
+    const activity = vi.fn()
+    const rename = vi.fn()
+    const accepted = vi.fn()
     const off = [onSessionActivity(activity), onSessionRename(rename), onUserTurnAccepted(accepted)]
-    reduce({ type: 'user.message', text: 'hi', at: 1000, origin: 'o1', conversationTitle: 'Title', handoffMarker: { id: 'h1', text: 'handoff' } })
+    reduce({
+      type: 'user.message',
+      text: 'hi',
+      at: 1000,
+      origin: 'o1',
+      conversationTitle: 'Title',
+      handoffMarker: { id: 'h1', text: 'handoff' },
+    })
     off.forEach((f) => f())
     expect(messages().map((m) => [m.id, m.role, m.content])).toEqual([
       ['h1', 'system', 'handoff'],
@@ -71,7 +82,10 @@ describe('reduceProviderEvent (desktop)', () => {
 
   it('content with streaming on goes to the coalescer', () => {
     const push = vi.fn()
-    reduce({ type: 'content', messageId: 'm1', text: 'a', append: true }, { streamingEnabled: true, coalescer: { push } as unknown as ContentCoalescer })
+    reduce(
+      { type: 'content', messageId: 'm1', text: 'a', append: true },
+      { streamingEnabled: true, coalescer: { push } as unknown as ContentCoalescer },
+    )
     expect(push).toHaveBeenCalledWith(T, 'm1', { text: 'a', append: true })
     expect(messages()).toEqual([])
   })
@@ -92,7 +106,16 @@ describe('reduceProviderEvent (desktop)', () => {
   })
 
   it('peer.message renders the sent marker with the own session label', () => {
-    reduce({ type: 'peer.message', direction: 'sent', initiator: 'user', messageId: 'pm_1', peerThreadId: 't2', peerLabel: 'Other', text: 'x', at: 5 })
+    reduce({
+      type: 'peer.message',
+      direction: 'sent',
+      initiator: 'user',
+      messageId: 'pm_1',
+      peerThreadId: 't2',
+      peerLabel: 'Other',
+      text: 'x',
+      at: 5,
+    })
     expect(messages()).toHaveLength(1)
     expect(messages()[0]).toMatchObject({ id: 'peer_pm_1', role: 'system' })
     expect(messages()[0].content).toContain('My chat → Other')
@@ -100,7 +123,9 @@ describe('reduceProviderEvent (desktop)', () => {
 
   it('tool.started appends a tool bubble, and a repeat updates it in place', () => {
     reduce({ type: 'tool.started', toolId: 't1', toolName: 'Read', input: { a: 1 } })
-    expect(messages()).toMatchObject([{ id: `tool_${T}:t1`, role: 'assistant', toolCalls: [{ id: 't1', name: 'Read', input: '{\n  "a": 1\n}' }] }])
+    expect(messages()).toMatchObject([
+      { id: `tool_${T}:t1`, role: 'assistant', toolCalls: [{ id: 't1', name: 'Read', input: '{\n  "a": 1\n}' }] },
+    ])
     reduce({ type: 'tool.started', toolId: 't1', toolName: 'Write', input: 'raw' })
     expect(messages()).toHaveLength(1)
     expect(messages()[0].toolCalls).toEqual([{ id: 't1', name: 'Write', input: 'raw' }])
@@ -116,13 +141,20 @@ describe('reduceProviderEvent (desktop)', () => {
 
   it('tool.denied appends a denial pill', () => {
     reduce({ type: 'tool.denied', toolName: 'Write', reason: 'plan', mode: 'plan' })
-    expect(messages()[0]).toMatchObject({ role: 'system', content: '', denial: { toolName: 'Write', reason: 'plan', mode: 'plan' } })
+    expect(messages()[0]).toMatchObject({
+      role: 'system',
+      content: '',
+      denial: { toolName: 'Write', reason: 'plan', mode: 'plan' },
+    })
     expect(messages()[0].id).toMatch(/^denied_/)
   })
 
   it('request.opened / request.closed drive the approval card', () => {
     reduce({ type: 'request.opened', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' })
-    expect(messages()[0]).toMatchObject({ id: 'approval_r1', approval: { toolName: 'Bash', detail: 'ls', status: 'pending' } })
+    expect(messages()[0]).toMatchObject({
+      id: 'approval_r1',
+      approval: { toolName: 'Bash', detail: 'ls', status: 'pending' },
+    })
     reduce({ type: 'request.closed', requestId: 'r1', decision: 'approve' })
     expect(messages()[0].approval?.status).toBe('accepted')
     reduce({ type: 'request.opened', requestId: 'r2', requestType: 'command', toolName: 'Bash', detail: 'rm' })
@@ -139,9 +171,14 @@ describe('reduceProviderEvent (desktop)', () => {
     expect(messages().find((m) => m.id === 'a2')?.turnDurationMs).toBe(1234)
     expect(messages().find((m) => m.id === 'a1')?.turnDurationMs).toBeUndefined()
     expect(messages().some((m) => m.id === 'provider_retry')).toBe(false)
-    expect(notifyTurnCompleted).toHaveBeenCalledWith(expect.objectContaining({
-      sessionTitle: 'My chat', projectName: 'proj', agentLabel: 'Codex', threadId: T,
-    }))
+    expect(notifyTurnCompleted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionTitle: 'My chat',
+        projectName: 'proj',
+        agentLabel: 'Codex',
+        threadId: T,
+      }),
+    )
   })
 
   it('turn.retrying upserts one retry card', () => {
@@ -187,7 +224,9 @@ describe('reduceProviderEvent (desktop)', () => {
     expect(session().model).toBe('')
     expect(setConversationModel).toHaveBeenCalledWith(T, '')
     await vi.waitFor(() => expect(settingsSet).toHaveBeenCalledWith(expect.stringContaining('codex'), ''))
-    expect(messages().at(-1)?.content).toBe('old-model is not available on this account any more. This chat now uses the default model.')
+    expect(messages().at(-1)?.content).toBe(
+      'old-model is not available on this account any more. This chat now uses the default model.',
+    )
   })
 
   it('model.unavailable leaves a newer pick alone', () => {
@@ -211,15 +250,24 @@ describe('reduceProviderEvent (desktop)', () => {
     reduce({ type: 'todo.updated', todoId: 'l1', items: [{ text: 'a', status: 'pending' }] })
     reduce({ type: 'todo.updated', todoId: 'l1', items: [{ text: 'a', status: 'completed' }] })
     expect(messages()).toHaveLength(1)
-    expect(messages()[0]).toMatchObject({ id: 'todo_l1', todos: { id: 'l1', items: [{ text: 'a', status: 'completed' }] } })
+    expect(messages()[0]).toMatchObject({
+      id: 'todo_l1',
+      todos: { id: 'l1', items: [{ text: 'a', status: 'completed' }] },
+    })
   })
 
   it('question.asked / question.answered drive the question card and the linked kanban card', () => {
     const update = vi.fn(async () => {})
     let status = 'in_progress'
-    useKanbanStore.setState({ update, findByConversationId: (id: string) => (id === T ? { id: 'card', status } : undefined) } as never)
+    useKanbanStore.setState({
+      update,
+      findByConversationId: (id: string) => (id === T ? { id: 'card', status } : undefined),
+    } as never)
     reduce({ type: 'question.asked', requestId: 'q1', questions: [] })
-    expect(messages()[0]).toMatchObject({ id: 'question_q1', question: { requestId: 'q1', questions: [], status: 'pending' } })
+    expect(messages()[0]).toMatchObject({
+      id: 'question_q1',
+      question: { requestId: 'q1', questions: [], status: 'pending' },
+    })
     expect(update).toHaveBeenCalledWith('card', { status: 'needs_input' })
     status = 'needs_input'
     reduce({ type: 'question.answered', requestId: 'q1', answers: [['yes']] })
@@ -235,21 +283,42 @@ describe('reduceProviderEvent (desktop)', () => {
   })
 
   it('file.edited appends a pending diff card and coalesces re-edits', () => {
-    const base = { turnId: '1', fileEditId: 'f1', repoRoot: '/r', relPath: 'a.ts', changeKind: 'modify', oldContent: 'a' }
+    const base = {
+      turnId: '1',
+      fileEditId: 'f1',
+      repoRoot: '/r',
+      relPath: 'a.ts',
+      changeKind: 'modify',
+      oldContent: 'a',
+    }
     reduce({ type: 'file.edited', ...base, newContent: 'b' })
     reduce({ type: 'file.edited', ...base, newContent: 'c' })
     expect(messages()).toHaveLength(1)
-    expect(messages()[0]).toMatchObject({ id: 'filediff_f1', fileDiff: { relPath: 'a.ts', newContent: 'c', status: 'pending' } })
+    expect(messages()[0]).toMatchObject({
+      id: 'filediff_f1',
+      fileDiff: { relPath: 'a.ts', newContent: 'c', status: 'pending' },
+    })
   })
 
   it('session.execution-root-changed applies the committed root', () => {
-    reduce({ type: 'session.execution-root-changed', machineId: 'local', from: { path: '/p/proj', branch: 'main' }, to: { path: '/wt', branch: 'b', isWorktree: true }, revision: 1 })
+    reduce({
+      type: 'session.execution-root-changed',
+      machineId: 'local',
+      from: { path: '/p/proj', branch: 'main' },
+      to: { path: '/wt', branch: 'b', isWorktree: true },
+      revision: 1,
+    })
     expect(session()).toMatchObject({ worktreePath: '/wt', worktreeBranch: 'b' })
   })
 
   it('worktree.drift suggests a new worktree but not the one already followed', () => {
     reduce({ type: 'worktree.drift', worktreePath: '/wt', branch: 'b' })
-    expect(session().driftSuggestion).toEqual({ worktreePath: '/wt', branch: 'b', followSuggestions: 'auto', workedWorktrees: 0 })
+    expect(session().driftSuggestion).toEqual({
+      worktreePath: '/wt',
+      branch: 'b',
+      followSuggestions: 'auto',
+      workedWorktrees: 0,
+    })
     useAgentStore.getState().setDriftSuggestion(T, null)
     useAgentStore.getState().setWorktree(T, '/wt', 'b')
     reduce({ type: 'worktree.drift', worktreePath: '/wt', branch: 'b' })
@@ -258,9 +327,20 @@ describe('reduceProviderEvent (desktop)', () => {
 
   it('worktree.drift carries the chat setting and says nothing when muted', () => {
     reduce({ type: 'worktree.drift', worktreePath: '/wt2', branch: 'c', followSuggestions: 'on', workedWorktrees: 4 })
-    expect(session().driftSuggestion).toEqual({ worktreePath: '/wt2', branch: 'c', followSuggestions: 'on', workedWorktrees: 4 })
+    expect(session().driftSuggestion).toEqual({
+      worktreePath: '/wt2',
+      branch: 'c',
+      followSuggestions: 'on',
+      workedWorktrees: 4,
+    })
     // Muted elsewhere while this window still shows the chip: it goes.
-    reduce({ type: 'worktree.drift', worktreePath: '/wt3', branch: 'd', followSuggestions: 'muted', workedWorktrees: 1 })
+    reduce({
+      type: 'worktree.drift',
+      worktreePath: '/wt3',
+      branch: 'd',
+      followSuggestions: 'muted',
+      workedWorktrees: 1,
+    })
     expect(session().driftSuggestion ?? null).toBeNull()
   })
 
@@ -268,25 +348,60 @@ describe('reduceProviderEvent (desktop)', () => {
     reduce({ type: 'worktree.drift', worktreePath: '/wt2', branch: 'c', followSuggestions: 'auto', workedWorktrees: 3 })
     expect(session().driftSuggestion).toMatchObject({ workedWorktrees: 3 })
     for (const count of [3, 4, 7]) {
-      reduce({ type: 'worktree.drift', worktreePath: `/wt${count}`, branch: 'd', followSuggestions: 'auto', followNoticeDismissed: true, workedWorktrees: count })
+      reduce({
+        type: 'worktree.drift',
+        worktreePath: `/wt${count}`,
+        branch: 'd',
+        followSuggestions: 'auto',
+        followNoticeDismissed: true,
+        workedWorktrees: count,
+      })
       expect(session().driftSuggestion ?? null).toBeNull()
     }
     // "Turn back on" clears the dismissal on the backend, and the chip returns.
-    reduce({ type: 'worktree.drift', worktreePath: '/wt8', branch: 'e', followSuggestions: 'on', followNoticeDismissed: false, workedWorktrees: 8 })
+    reduce({
+      type: 'worktree.drift',
+      worktreePath: '/wt8',
+      branch: 'e',
+      followSuggestions: 'on',
+      followNoticeDismissed: false,
+      workedWorktrees: 8,
+    })
     expect(session().driftSuggestion).toMatchObject({ branch: 'e', followSuggestions: 'on' })
   })
 
   it('worktree.drift computed before the dismissal was saved does not bring the notice back', () => {
     useAgentStore.getState().setFollowNoticeDismissed(T, true)
-    reduce({ type: 'worktree.drift', worktreePath: '/wt4', branch: 'd', followSuggestions: 'auto', followNoticeDismissed: false, workedWorktrees: 4 })
+    reduce({
+      type: 'worktree.drift',
+      worktreePath: '/wt4',
+      branch: 'd',
+      followSuggestions: 'auto',
+      followNoticeDismissed: false,
+      workedWorktrees: 4,
+    })
     expect(session().driftSuggestion ?? null).toBeNull()
     expect(session().followNoticeDismissed).toBe(true)
     // Turned back on elsewhere: the chip shows and the local override ends.
-    reduce({ type: 'worktree.drift', worktreePath: '/wt5', branch: 'e', followSuggestions: 'on', followNoticeDismissed: false, workedWorktrees: 5 })
+    reduce({
+      type: 'worktree.drift',
+      worktreePath: '/wt5',
+      branch: 'e',
+      followSuggestions: 'on',
+      followNoticeDismissed: false,
+      workedWorktrees: 5,
+    })
     expect(session().driftSuggestion).toMatchObject({ branch: 'e' })
     expect(session().followNoticeDismissed).toBe(false)
     // Off again later, not closed since: the notice shows again.
-    reduce({ type: 'worktree.drift', worktreePath: '/wt6', branch: 'f', followSuggestions: 'auto', followNoticeDismissed: false, workedWorktrees: 6 })
+    reduce({
+      type: 'worktree.drift',
+      worktreePath: '/wt6',
+      branch: 'f',
+      followSuggestions: 'auto',
+      followNoticeDismissed: false,
+      workedWorktrees: 6,
+    })
     expect(session().driftSuggestion).toMatchObject({ branch: 'f' })
   })
 

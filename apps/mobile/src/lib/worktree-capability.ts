@@ -5,9 +5,7 @@ export function shouldOfferWorktreeCreation(
   state: MobileNewSessionCreationState,
 ): boolean {
   if (capabilitySupported === true) return true
-  return state.intent?.checkout.kind === 'worktree' &&
-    state.status !== 'idle' &&
-    state.status !== 'ready'
+  return state.intent?.checkout.kind === 'worktree' && state.status !== 'idle' && state.status !== 'ready'
 }
 
 export function restoredWorktreeForm(intent: MobileNewSessionIntent | undefined) {

@@ -121,7 +121,8 @@ export function waitForHealth(
     const recordFailure = (err: Error) => {
       tries++
       lastReason = err.message
-      if (tries === 1 || tries % 5 === 0) log.warn(`health attempt ${tries}/${attempts} failed`, { url, err: err.message })
+      if (tries === 1 || tries % 5 === 0)
+        log.warn(`health attempt ${tries}/${attempts} failed`, { url, err: err.message })
       if (tries >= attempts) {
         log.warn(`health gave up after ${attempts} attempts`, { url })
         resolve({ ok: false, reason: lastReason })

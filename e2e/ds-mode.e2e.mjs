@@ -93,7 +93,10 @@ try {
   const ds = await layoutProbe(win)
   check(ds?.rightGrow === '1', 'DS mode: workbench pane is the wide slot (flex-grow 1)')
   check(ds?.chatGrow === '0', 'DS mode: chat column is fixed width')
-  check(ds?.rightOrder === '1' && ds?.handleOrder === '2' && ds?.chatOrder === '3', 'DS mode: visual order is workbench | handle | chat')
+  check(
+    ds?.rightOrder === '1' && ds?.handleOrder === '2' && ds?.chatOrder === '3',
+    'DS mode: visual order is workbench | handle | chat',
+  )
 
   const persisted = await win.evaluate(() => window.api.settings.get('layout.dataScienceMode'))
   check(persisted === 'true', 'DS mode persisted to settings')
@@ -107,9 +110,12 @@ try {
     const entries = existsSync(extDir) ? readdirSync(extDir) : []
     check(
       entries.some((e) => e.startsWith('ms-toolsai.jupyter-')),
-      `jupyter extension seeded on boot (${entries.filter((e) => e.startsWith('ms-')).join(', ') || 'none'})`
+      `jupyter extension seeded on boot (${entries.filter((e) => e.startsWith('ms-')).join(', ') || 'none'})`,
     )
-    check(entries.some((e) => e.startsWith('ms-python.python-')), 'python extension seeded on boot')
+    check(
+      entries.some((e) => e.startsWith('ms-python.python-')),
+      'python extension seeded on boot',
+    )
   } else {
     console.log('  (skipped seed check - no local code-server binary to reuse)')
   }

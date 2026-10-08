@@ -33,7 +33,10 @@ const rotated = new Map<string, string>([
   // and that id resolves to an older root with no adapter of its own.
   ['target', 'agent_stale'],
 ])
-const titles = new Map<string, string>([['target', 'API refactor'], ['sender', 'Docs pass']])
+const titles = new Map<string, string>([
+  ['target', 'API refactor'],
+  ['sender', 'Docs pass'],
+])
 const saved: Array<{ id: string; conversationId: string; role: string; content: string; displayBody?: string }> = []
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
@@ -41,8 +44,12 @@ vi.mock('../../src/main/db/database', () => ({
   resolveRootThreadId: (id: string) => rotated.get(id) ?? id,
   getConversationTitle: (id: string) => titles.get(id) ?? null,
   saveMessageIfAbsent: (
-    id: string, conversationId: string, role: string, content: string,
-    _images?: string, displayBody?: string,
+    id: string,
+    conversationId: string,
+    role: string,
+    content: string,
+    _images?: string,
+    displayBody?: string,
   ) => {
     saved.push({ id, conversationId, role, content, displayBody })
     return true
@@ -75,7 +82,9 @@ import type { RuntimeEvent, RuntimePeerMessageEvent } from '../../src/shared/pro
 
 class RecordingAdapter implements ProviderAdapter {
   readonly provider: 'claude' | 'opencode'
-  constructor(kind: 'claude' | 'opencode' = 'claude') { this.provider = kind }
+  constructor(kind: 'claude' | 'opencode' = 'claude') {
+    this.provider = kind
+  }
   readonly turns: Array<{ threadId: string; message: string }> = []
   readonly responses: Array<{ threadId: string; requestId: string }> = []
   private emit = new Map<string, (e: RuntimeEvent) => void>()
@@ -178,16 +187,16 @@ describe('peer message delivery across the WebSocket boundary', () => {
     const out = await send()
     await flush()
 
-    expect(out.id).toBe(peerMessageId({
-      fromThreadId: 'sender',
-      targetThreadId: 'target',
-      text: 'the auth migration landed on main',
-    }))
+    expect(out.id).toBe(
+      peerMessageId({
+        fromThreadId: 'sender',
+        targetThreadId: 'target',
+        text: 'the auth migration landed on main',
+      }),
+    )
     expect(adapter.turns).toHaveLength(1)
     expect(adapter.turns[0].threadId).toBe('target')
-    expect(adapter.turns[0].message).toBe(
-      wrapPeerMessage('Docs pass', 'the auth migration landed on main'),
-    )
+    expect(adapter.turns[0].message).toBe(wrapPeerMessage('Docs pass', 'the auth migration landed on main'))
   })
 
   // The whole point of routing through sendTurn: a peer message is a turn, so
@@ -250,7 +259,6 @@ describe('peer message delivery across the WebSocket boundary', () => {
     expect(adapter.turns[0]?.threadId).toBe('target')
   })
 
-
   // End to end for the RENDERER contract: the events a real client receives
   // must produce a bubble on each side. Unit-testing only the backend hid a
   // real bug once - the delivery persisted but nothing rendered until reload.
@@ -270,7 +278,9 @@ describe('peer message delivery across the WebSocket boundary', () => {
     const senderBubble = peerMessageToChatMessage(sentEvent, 'Docs pass')
     expect(senderBubble.role).toBe('system')
     expect(parseRotationMarker(senderBubble.content)).toEqual({
-      kind: 'peer', fromName: 'Docs pass', toName: 'API refactor',
+      kind: 'peer',
+      fromName: 'Docs pass',
+      toName: 'API refactor',
     })
 
     const receiverBubble = peerMessageToChatMessage(recvEvent, 'API refactor')
@@ -282,7 +292,6 @@ describe('peer message delivery across the WebSocket boundary', () => {
     expect(saved.find((m) => m.id === receiverBubble.id)).toBeDefined()
     expect(saved.find((m) => m.id === senderBubble.id)).toBeDefined()
   })
-
 
   // A guard slot spent on a delivery that never happened would refuse the
   // user's retry as a duplicate for the next ten minutes.
@@ -309,7 +318,6 @@ describe('peer message delivery across the WebSocket boundary', () => {
     const received = saved.find((m) => m.conversationId === 'target' && m.role === 'user')
     expect(received?.displayBody).toBe('From "Docs pass": the auth migration landed on main')
   })
-
 
   // OpenCode ACP drops a mid-turn send instead of queueing it, so delivering
   // into a running turn would record a message the agent never received.

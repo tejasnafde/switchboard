@@ -3,7 +3,19 @@ import type { Machine } from '@shared/machines'
 import { buildProbeCommand, buildRemoteShellCommand, REMOTE_SERVER_DIR } from './provision-commands'
 import { parseProbeOutput } from './remote-probe'
 import { planProvision, type ProvisionAction } from './provision-plan'
-import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, codexEnsureScript, versionMarkerScript, managedToolsMarkerScript, codeServerEnsureScript, bridgeSeedScript, bridgeMarker, REMOTE_CODEX_VERSION, type BridgeFile } from './provision-setup'
+import {
+  remotePackageJson,
+  remoteInstallScript,
+  claudeSymlinkScript,
+  codexEnsureScript,
+  versionMarkerScript,
+  managedToolsMarkerScript,
+  codeServerEnsureScript,
+  bridgeSeedScript,
+  bridgeMarker,
+  REMOTE_CODEX_VERSION,
+  type BridgeFile,
+} from './provision-setup'
 import { planManagedTools, type ManagedToolPlan } from './managed-tool-plan'
 import { CODE_SERVER_VERSION } from '../ide/code-server-manager'
 import { asUserScript, asUserUpload } from './remote-exec'
@@ -14,7 +26,12 @@ export interface ProcRunner {
   // file to stream in (the server bundle, which is too large to buffer).
   // timeoutMs caps the whole command; the runner applies its own default when
   // omitted (long enough for npm install).
-  exec: (command: string, args: string[], stdin?: string | { file: string }, timeoutMs?: number) => Promise<{ code: number; stdout: string; stderr: string }>
+  exec: (
+    command: string,
+    args: string[],
+    stdin?: string | { file: string },
+    timeoutMs?: number,
+  ) => Promise<{ code: number; stdout: string; stderr: string }>
 }
 
 export interface ProvisionInputs {
@@ -89,7 +106,8 @@ export async function provisionRemote(
     onStep?.(label)
     const c = buildRemoteShellCommand(machine, remoteCommand)
     const res = await runner.exec(c.command, c.args, stdin)
-    if (res.code !== 0) throw new Error(`${label} failed (${res.code}): ${summarizeSshError(res.stderr) || remoteCommand}`)
+    if (res.code !== 0)
+      throw new Error(`${label} failed (${res.code}): ${summarizeSshError(res.stderr) || remoteCommand}`)
   }
 
   const u = machine.remoteUser
@@ -100,7 +118,9 @@ export async function provisionRemote(
     try {
       await run('ensure remote IDE (one-time download)', asUserScript(u, codeServerEnsureScript(CODE_SERVER_VERSION)))
     } catch (err) {
-      log?.(`provision ${machine.id}: remote IDE install failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      log?.(
+        `provision ${machine.id}: remote IDE install failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
     // Separate step from the binary install so a bridge-seed failure is retried
     // on the next connect rather than masked by an already-present code-server.
@@ -111,14 +131,18 @@ export async function provisionRemote(
     // on an IAP-tunneled host (measured - the penalty is per-upload, not per
     // byte), which would otherwise be added to every single connect.
     if (inputs.bridgeFiles.length === 0) {
-      log?.(`provision ${machine.id}: no bundled bridge extension found - remote workbench keybindings will not reach Switchboard`)
+      log?.(
+        `provision ${machine.id}: no bundled bridge extension found - remote workbench keybindings will not reach Switchboard`,
+      )
     } else if (probe.bridge === bridgeMarker(inputs.bridgeFiles)) {
       log?.(`provision ${machine.id}: bridge extension already current (${probe.bridge})`)
     } else {
       try {
         await run('seed workbench bridge extension', asUserScript(u, bridgeSeedScript(inputs.bridgeFiles)))
       } catch (err) {
-        log?.(`provision ${machine.id}: bridge extension seed failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+        log?.(
+          `provision ${machine.id}: bridge extension seed failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
     }
   }
@@ -161,14 +185,16 @@ export async function provisionRemote(
         allOk = false
         log?.(
           `provision ${machine.id}: claude needs ${toolPlan.claude.action} but a ready server can only relink an ` +
-          `already-installed SDK - leaving unconverged until a full reprovision installs ${inputs.claudeSdkVersion}`,
+            `already-installed SDK - leaving unconverged until a full reprovision installs ${inputs.claudeSdkVersion}`,
         )
       } else {
         try {
           await run('link claude CLI onto PATH', asUserScript(u, claudeSymlinkScript()))
         } catch (err) {
           allOk = false
-          log?.(`provision ${machine.id}: claude CLI symlink failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+          log?.(
+            `provision ${machine.id}: claude CLI symlink failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+          )
         }
       }
     }
@@ -178,7 +204,9 @@ export async function provisionRemote(
         await run('ensure Codex CLI', asUserScript(u, codexEnsureScript(codexVersion)))
       } catch (err) {
         allOk = false
-        log?.(`provision ${machine.id}: Codex install failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+        log?.(
+          `provision ${machine.id}: Codex install failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
     }
     // Marker last, and only when EVERY tool step succeeded: a partial repair
@@ -187,7 +215,9 @@ export async function provisionRemote(
     try {
       await run('write managed tools marker', asUserScript(u, managedToolsMarkerScript(toolPlan.marker)))
     } catch (err) {
-      log?.(`provision ${machine.id}: tools marker write failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      log?.(
+        `provision ${machine.id}: tools marker write failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
@@ -197,11 +227,17 @@ export async function provisionRemote(
   }
   if (plan.action === 'no-node') return plan
   await run('mkdir server dir', asUserScript(u, `mkdir -p ${REMOTE_SERVER_DIR}`))
-  await run('upload server bundle', asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), { file: inputs.bundlePath })
+  await run('upload server bundle', asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), {
+    file: inputs.bundlePath,
+  })
   await run(
     'upload package.json',
     asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/package.json`),
-    JSON.stringify(remotePackageJson(inputs.appVersion, inputs.betterSqliteVersion, inputs.claudeSdkVersion, codexVersion), null, 2),
+    JSON.stringify(
+      remotePackageJson(inputs.appVersion, inputs.betterSqliteVersion, inputs.claudeSdkVersion, codexVersion),
+      null,
+      2,
+    ),
   )
   await run('npm install (this can take a minute)', asUserScript(u, remoteInstallScript()))
 

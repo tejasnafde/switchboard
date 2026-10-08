@@ -144,7 +144,9 @@ export class BitbucketCredentialStore {
       for (const w of writes) writeFileSync(w.tmp, w.data, { mode: 0o600 })
       for (const w of writes) renameSync(w.tmp, w.path)
     } catch (err) {
-      log.error('saving Bitbucket credentials failed; restoring the previous files', { message: err instanceof Error ? err.message : String(err) })
+      log.error('saving Bitbucket credentials failed; restoring the previous files', {
+        message: err instanceof Error ? err.message : String(err),
+      })
       for (const w of writes) restoreFile(w.path, w.tmp, w.previous)
       throw new CredentialStoreError('Saving the Bitbucket account failed; the previous one is unchanged.')
     }
@@ -166,7 +168,10 @@ function fileBytesOrNull(path: string): Buffer | null {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     // Unknown prior contents: abort the save, or a rollback would delete a file it could not restore.
-    log.warn('could not snapshot a Bitbucket file before saving', { path, message: err instanceof Error ? err.message : String(err) })
+    log.warn('could not snapshot a Bitbucket file before saving', {
+      path,
+      message: err instanceof Error ? err.message : String(err),
+    })
     throw new CredentialStoreError('Saving the Bitbucket account failed; the previous one is unchanged.')
   }
 }
@@ -175,12 +180,18 @@ function restoreFile(path: string, tmp: string, previous: Buffer | null): void {
   try {
     rmSync(tmp, { force: true })
   } catch (err) {
-    log.warn('could not remove a Bitbucket temp file', { tmp, message: err instanceof Error ? err.message : String(err) })
+    log.warn('could not remove a Bitbucket temp file', {
+      tmp,
+      message: err instanceof Error ? err.message : String(err),
+    })
   }
   try {
     if (previous) writeFileSync(path, previous, { mode: 0o600 })
     else rmSync(path, { force: true })
   } catch (err) {
-    log.error('could not restore a Bitbucket file after a failed save', { path, message: err instanceof Error ? err.message : String(err) })
+    log.error('could not restore a Bitbucket file after a failed save', {
+      path,
+      message: err instanceof Error ? err.message : String(err),
+    })
   }
 }

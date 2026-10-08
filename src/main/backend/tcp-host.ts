@@ -14,7 +14,13 @@
 import { timeBackendHandler } from './perf-handler'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Server, Socket } from 'node:net'
-import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
+import {
+  BACKEND_CAPABILITIES,
+  encodeFrame,
+  decodeFrame,
+  isReplayableEventChannel,
+  type WsFrame,
+} from '@shared/ws-protocol'
 import { EventReplayBuffer, resumeFrom, type ReplayResult } from '@shared/event-replay-buffer'
 import {
   isChannelAllowed,
@@ -144,10 +150,7 @@ export class TcpHost implements BackendHost {
       }
       return
     }
-    if (
-      (frame.k === 'req' || frame.k === 'snd')
-      && !isSettingsFrameAllowed(this.deviceScopes, frame.ch, frame.args)
-    ) {
+    if ((frame.k === 'req' || frame.k === 'snd') && !isSettingsFrameAllowed(this.deviceScopes, frame.ch, frame.args)) {
       log.warn(`denied ${frame.ch} - protected settings key, outside this device's scopes`)
       if (frame.k === 'req') {
         this.write(client, { k: 'res', id: frame.id, ok: false, error: 'not permitted: protected setting' })
@@ -155,9 +158,9 @@ export class TcpHost implements BackendHost {
       return
     }
     if (
-      (frame.k === 'req' || frame.k === 'snd')
-      && (frame.ch === FilesChannels.WRITE_FILE || frame.ch === FilesChannels.DELETE_FILE)
-      && !isFileMutationAllowed(
+      (frame.k === 'req' || frame.k === 'snd') &&
+      (frame.ch === FilesChannels.WRITE_FILE || frame.ch === FilesChannels.DELETE_FILE) &&
+      !isFileMutationAllowed(
         this.deviceScopes,
         (frame.args as unknown[] | undefined)?.[0],
         (frame.args as unknown[] | undefined)?.[1],
@@ -191,18 +194,21 @@ export class TcpHost implements BackendHost {
       }
     } else if (frame.k === 'snd') {
       const fns = this.listeners.get(frame.ch)
-      if (fns) for (const fn of fns) {
-        withBackendRequestContext(
-          { clientScope: client.clientScope, transport: 'remote', deviceScopes: this.deviceScopes },
-          () => fn(...frame.args),
-        )
-      }
+      if (fns)
+        for (const fn of fns) {
+          withBackendRequestContext(
+            { clientScope: client.clientScope, transport: 'remote', deviceScopes: this.deviceScopes },
+            () => fn(...frame.args),
+          )
+        }
     } else if (frame.k === 'ping') {
       this.write(client, { k: 'pong', t: frame.t })
     } else if (frame.k === 'hello') {
       const result = resumeFrom(this.replay, this.epoch, frame)
       if (result.frames.length > 0 || result.gap) {
-        log.info(`client resumed from ${frame.since ?? 0}: ${result.gap ? 'gap, told to re-seed' : `replayed ${result.frames.length}`}`)
+        log.info(
+          `client resumed from ${frame.since ?? 0}: ${result.gap ? 'gap, told to re-seed' : `replayed ${result.frames.length}`}`,
+        )
       }
       this.writeReady(client, result)
     }

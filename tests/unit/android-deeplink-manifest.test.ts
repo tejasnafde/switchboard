@@ -6,9 +6,7 @@ const manifestPath = 'apps/android/app/src/main/AndroidManifest.xml'
 describe('native Android deep-link delivery', () => {
   test('reuses the single activity for warm external links', () => {
     const manifest = readFileSync(manifestPath, 'utf8')
-    const mainActivity = manifest.match(
-      /<activity\s+[\s\S]*?android:name="\.MainActivity"[\s\S]*?<\/activity>/,
-    )?.[0]
+    const mainActivity = manifest.match(/<activity\s+[\s\S]*?android:name="\.MainActivity"[\s\S]*?<\/activity>/)?.[0]
 
     expect(mainActivity).toBeDefined()
     expect(mainActivity).toContain('android:launchMode="singleTask"')

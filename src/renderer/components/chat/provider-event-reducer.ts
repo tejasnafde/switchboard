@@ -1,5 +1,9 @@
 import type { RuntimeEvent } from '@shared/provider-events'
-import { splitSyntheticUserText, taskNotificationText, transcriptShowsTaskNotification } from '@shared/synthetic-message'
+import {
+  splitSyntheticUserText,
+  taskNotificationText,
+  transcriptShowsTaskNotification,
+} from '@shared/synthetic-message'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
 import { fileDiffRowId, toolInputText, toolRowId } from '@shared/turn-activity'
 import { defaultModelSettingKey } from '@shared/session-defaults'
@@ -76,9 +80,10 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       }
       const acceptedMessage = acceptedDesktopUserMessage(event)
       if (acceptedMessage) {
-        const existing = useAgentStore.getState().sessions
-          .find((session) => session.id === tid)?.messages
-          .some((message) => message.id === acceptedMessage.id)
+        const existing = useAgentStore
+          .getState()
+          .sessions.find((session) => session.id === tid)
+          ?.messages.some((message) => message.id === acceptedMessage.id)
         if (existing) {
           updateMessage(tid, acceptedMessage.id, {
             ...acceptedMessage,
@@ -116,9 +121,16 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
     case 'peer.undelivered': {
       // Same id as the row the backend stored, so a reload or a replay lands on it.
       const content = formatUndeliveredMarker({
-        to: event.peerThreadId, toLabel: event.peerLabel, reason: event.reason, text: event.text, sent: event.sent,
+        to: event.peerThreadId,
+        toLabel: event.peerLabel,
+        reason: event.reason,
+        text: event.text,
+        sent: event.sent,
       })
-      const exists = useAgentStore.getState().sessions.find((s) => s.id === tid)?.messages.some((m) => m.id === event.messageId)
+      const exists = useAgentStore
+        .getState()
+        .sessions.find((s) => s.id === tid)
+        ?.messages.some((m) => m.id === event.messageId)
       if (exists) updateMessage(tid, event.messageId, { content })
       else appendMessage(tid, { id: event.messageId, role: 'system', content, timestamp: event.at })
       if (event.notify) {
@@ -134,8 +146,12 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
     }
     case 'approval.result': {
       // Same id and content as the row the backend stored, so a reload lands on it.
-      const exists = useAgentStore.getState().sessions.find((s) => s.id === tid)?.messages.some((m) => m.id === event.messageId)
-      if (!exists) appendMessage(tid, { id: event.messageId, role: 'system', content: event.content, timestamp: event.at })
+      const exists = useAgentStore
+        .getState()
+        .sessions.find((s) => s.id === tid)
+        ?.messages.some((m) => m.id === event.messageId)
+      if (!exists)
+        appendMessage(tid, { id: event.messageId, role: 'system', content: event.content, timestamp: event.at })
       break
     }
     case 'merge-back.row': {
@@ -150,7 +166,9 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       }
       const row = { id: event.messageId, role: 'system' as const, content: event.content, timestamp: event.at }
       const at = rest.findIndex((m) => m.timestamp > event.at)
-      useAgentStore.getState().setMessages(tid, at === -1 ? [...rest, row] : [...rest.slice(0, at), row, ...rest.slice(at)])
+      useAgentStore
+        .getState()
+        .setMessages(tid, at === -1 ? [...rest, row] : [...rest.slice(0, at), row, ...rest.slice(at)])
       break
     }
     case 'task.notification': {
@@ -161,18 +179,24 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
         .filter((m) => m.role === 'user' && !m.id.startsWith('task_'))
         .flatMap((m) => (splitSyntheticUserText(m.content)?.parts ?? []).map((part) => ({ part, at: m.timestamp })))
       if (transcriptShowsTaskNotification(transcriptRows, event)) break
-      appendMessage(tid, { id: event.messageId, role: 'user', content: taskNotificationText(event), timestamp: event.at })
+      appendMessage(tid, {
+        id: event.messageId,
+        role: 'user',
+        content: taskNotificationText(event),
+        timestamp: event.at,
+      })
       break
     }
     case 'tool.started': {
-      const existing = useAgentStore.getState().sessions
-        .find((s) => s.id === tid)?.messages
-        .find((m) => m.toolCalls?.some((tc) => tc.id === event.toolId))
+      const existing = useAgentStore
+        .getState()
+        .sessions.find((s) => s.id === tid)
+        ?.messages.find((m) => m.toolCalls?.some((tc) => tc.id === event.toolId))
       if (existing) {
         updateMessage(tid, existing.id, {
-          toolCalls: existing.toolCalls?.map((tc) => tc.id === event.toolId
-            ? { ...tc, name: event.toolName, input: toolInputText(event.input) }
-            : tc),
+          toolCalls: existing.toolCalls?.map((tc) =>
+            tc.id === event.toolId ? { ...tc, name: event.toolName, input: toolInputText(event.input) } : tc,
+          ),
         })
         break
       }
@@ -180,11 +204,13 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
         id: toolRowId(tid, event.toolId),
         role: 'assistant',
         content: '',
-        toolCalls: [{
-          id: event.toolId,
-          name: event.toolName,
-          input: toolInputText(event.input),
-        }],
+        toolCalls: [
+          {
+            id: event.toolId,
+            name: event.toolName,
+            input: toolInputText(event.input),
+          },
+        ],
         timestamp: Date.now(),
       })
       break
@@ -192,14 +218,10 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
     case 'tool.completed': {
       const sessions = useAgentStore.getState().sessions
       const session = sessions.find((s) => s.id === tid)
-      const toolMsg = session?.messages.find((m) =>
-        m.toolCalls?.some((tc) => tc.id === event.toolId)
-      )
+      const toolMsg = session?.messages.find((m) => m.toolCalls?.some((tc) => tc.id === event.toolId))
       if (toolMsg) {
         updateMessage(tid, toolMsg.id, {
-          toolCalls: toolMsg.toolCalls?.map((tc) =>
-            tc.id === event.toolId ? { ...tc, output: event.output } : tc
-          ),
+          toolCalls: toolMsg.toolCalls?.map((tc) => (tc.id === event.toolId ? { ...tc, output: event.output } : tc)),
         })
       }
       break
@@ -345,14 +367,19 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       const current = useAgentStore.getState().sessions.find((s) => s.id === tid)
       if (current?.model === event.model) {
         useAgentStore.getState().setModel(tid, '')
-        window.api.app.setConversationModel?.(tid, '').catch((err: unknown) => log.warn('clear retired model failed', err))
+        window.api.app
+          .setConversationModel?.(tid, '')
+          .catch((err: unknown) => log.warn('clear retired model failed', err))
       }
       // And the machine default, or every new chat would start on it again.
       if (current && current.type !== 'terminal') {
         const key = defaultModelSettingKey(current.type)
-        void window.api.settings?.get?.(key).then((stored: string | null) => {
-          if (stored === event.model) return window.api.settings?.set?.(key, '')
-        }).catch((err: unknown) => log.warn('clear retired default model failed', err))
+        void window.api.settings
+          ?.get?.(key)
+          .then((stored: string | null) => {
+            if (stored === event.model) return window.api.settings?.set?.(key, '')
+          })
+          .catch((err: unknown) => log.warn('clear retired default model failed', err))
       }
       appendMessage(tid, {
         id: `model_unavailable_${Date.now()}`,
@@ -383,8 +410,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       // every step change, so appending would stack a card per update.
       const todoMsgId = `todo_${event.todoId}`
       const store = useAgentStore.getState()
-      const has = store.sessions.find((s) => s.id === tid)?.messages
-        .some((m) => m.id === todoMsgId)
+      const has = store.sessions.find((s) => s.id === tid)?.messages.some((m) => m.id === todoMsgId)
       if (has) {
         updateMessage(tid, todoMsgId, { todos: { id: event.todoId, items: event.items } })
       } else {
@@ -489,7 +515,11 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       // another client: say nothing, and take down what this window still shows.
       const follow = event.followSuggestions ?? 'auto'
       const dismissedHere = drifted?.followNoticeDismissed ?? false
-      const view = followSuggestionView(follow, event.workedWorktrees ?? 0, (event.followNoticeDismissed ?? false) || dismissedHere)
+      const view = followSuggestionView(
+        follow,
+        event.workedWorktrees ?? 0,
+        (event.followNoticeDismissed ?? false) || dismissedHere,
+      )
       if (view.kind === 'chip' && dismissedHere) useAgentStore.getState().setFollowNoticeDismissed(tid, false)
       if (follow === 'muted' || view.kind === 'hidden') {
         useAgentStore.getState().setDriftSuggestion(tid, null)

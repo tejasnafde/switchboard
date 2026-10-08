@@ -102,7 +102,9 @@ function stripPrefix(path: string): string | null {
 /** Cut a multi-file `git diff` into files. Paths come from the ---/+++ lines, falling back to the `diff --git` line. */
 export function splitGitDiff(text: string): GitDiffFile[] {
   const files: GitDiffFile[] = []
-  const chunks = toLf(text).split(/^diff --git /m).slice(1)
+  const chunks = toLf(text)
+    .split(/^diff --git /m)
+    .slice(1)
   for (const chunk of chunks) {
     const lines = chunk.split('\n')
     // Either side of the header may be C-quoted on its own.

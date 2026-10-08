@@ -8,18 +8,21 @@ import {
 
 describe('provider auth formatting', () => {
   it('formats Claude auth status JSON into a compact status string', () => {
-    const status = formatClaudeAuthStatus(JSON.stringify({
-      loggedIn: true,
-      authMethod: 'claude.ai',
-      apiProvider: 'firstParty',
-      email: 'dev@example.com',
-      orgName: "dev@example.com's Organization",
-      subscriptionType: 'max',
-    }))
+    const status = formatClaudeAuthStatus(
+      JSON.stringify({
+        loggedIn: true,
+        authMethod: 'claude.ai',
+        apiProvider: 'firstParty',
+        email: 'dev@example.com',
+        orgName: "dev@example.com's Organization",
+        subscriptionType: 'max',
+      }),
+    )
 
     expect(status).toEqual({
       ok: true,
-      message: "Account: dev@example.com | Org: dev@example.com's Organization | Plan: max | Auth: claude.ai / firstParty",
+      message:
+        "Account: dev@example.com | Org: dev@example.com's Organization | Plan: max | Auth: claude.ai / firstParty",
     })
   })
 

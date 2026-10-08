@@ -10,7 +10,9 @@ import { OpencodeUnsupportedVersionError } from '../../src/main/provider/adapter
 const itWithPosixToolShims = process.platform === 'win32' ? it.skip : it
 
 const dirs: string[] = []
-afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
 function scratch(): string {
   const dir = mkdtempSync(join(tmpdir(), 'sb-native-fork-runner-'))
@@ -83,8 +85,9 @@ function runners(dir: string, mode = '', extra: Record<string, string> = {}) {
 describe('native fork runners', () => {
   itWithPosixToolShims('forks a Codex thread through a turn over app-server', async () => {
     const dir = scratch()
-    await expect(runners(dir).forkCodexThread('inst', { threadId: 't1', lastTurnId: 'turn-9', cwd: dir }))
-      .resolves.toEqual({ threadId: 'fork-of-t1-through-turn-9', path: '/codex/rollout.jsonl' })
+    await expect(
+      runners(dir).forkCodexThread('inst', { threadId: 't1', lastTurnId: 'turn-9', cwd: dir }),
+    ).resolves.toEqual({ threadId: 'fork-of-t1-through-turn-9', path: '/codex/rollout.jsonl' })
   })
 
   itWithPosixToolShims('surfaces a Codex without thread/fork as an unsupported method', async () => {
@@ -100,7 +103,8 @@ describe('native fork runners', () => {
     const sessions = join(dir, 'codex-home', 'sessions', '2026', '09', '24')
     mkdirSync(sessions, { recursive: true })
     const id = '01a0b488-0000-7000-8000-00000000abcd'
-    const content = JSON.stringify({ timestamp: '2026-09-24T10:00:00.000Z', type: 'session_meta', payload: { id, cwd: dir } }) + '\n'
+    const content =
+      JSON.stringify({ timestamp: '2026-09-24T10:00:00.000Z', type: 'session_meta', payload: { id, cwd: dir } }) + '\n'
     writeFileSync(join(sessions, `rollout-2026-09-24T10-00-00-${id}.jsonl`), content)
 
     await expect(runners(dir).readCodexRollout('inst', id)).resolves.toBe(content)
@@ -109,8 +113,9 @@ describe('native fork runners', () => {
 
   itWithPosixToolShims('forks an OpenCode session over ACP when the agent advertises session/fork', async () => {
     const dir = scratch()
-    await expect(runners(dir).forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir }))
-      .resolves.toBe('forked-ses_1')
+    await expect(runners(dir).forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir })).resolves.toBe(
+      'forked-ses_1',
+    )
   })
 
   itWithPosixToolShims('refuses an OpenCode 2.x before spawning acp', async () => {
@@ -146,7 +151,14 @@ describe('native fork runners', () => {
       .forkOpencodeSession('inst', { sessionId: 'ses_1', cwd: dir })
       .catch((error: unknown) => error)
     const pid = Number(readFileSync(pidFile, 'utf8'))
-    const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
+    const alive = () => {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
     expect(alive()).toBe(true)
     await new Promise((done) => setTimeout(done, 2500))
     expect(alive()).toBe(false)

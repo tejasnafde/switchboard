@@ -5,7 +5,22 @@
  */
 import { create } from 'zustand'
 import type { InlineCommentInput, PrResource } from '@shared/pull-request-writes'
-import { prKey, repoKey, type RepoRef, type MergeStrategy, type PrChangedFile, type PrCheck, type PrConversation, type PrDetail, type PrError, type PrListData, type PrRef, type PrResult, type PrReviewerCandidate, type PrSummary } from '@shared/pull-requests'
+import {
+  prKey,
+  repoKey,
+  type RepoRef,
+  type MergeStrategy,
+  type PrChangedFile,
+  type PrCheck,
+  type PrConversation,
+  type PrDetail,
+  type PrError,
+  type PrListData,
+  type PrRef,
+  type PrResult,
+  type PrReviewerCandidate,
+  type PrSummary,
+} from '@shared/pull-requests'
 import { pullRequestChanged, shouldRefreshPullRequests, type PrRefreshReason } from '@shared/pull-request-refresh'
 import { toggleCollapsed, type PrGroupBy } from '@shared/pull-request-groups'
 import type { PrLinkChat } from '@shared/pull-request-links'
@@ -158,7 +173,10 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
 
   hydrateSettings: async () => {
     try {
-      const [groupBy, collapsed] = await Promise.all([window.api.settings.get(GROUP_BY_KEY), window.api.settings.get(COLLAPSED_REPOS_KEY)])
+      const [groupBy, collapsed] = await Promise.all([
+        window.api.settings.get(GROUP_BY_KEY),
+        window.api.settings.get(COLLAPSED_REPOS_KEY),
+      ])
       const list: unknown = collapsed ? JSON.parse(collapsed) : []
       set({
         groupBy: groupBy === 'repository' ? 'repository' : 'status',
@@ -206,7 +224,9 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   setReposHidden: async (repos, hidden) => {
     let result: { ok: boolean; message?: string }
     try {
-      result = hidden ? await window.api.pullRequests.hideRepos(repos) : await window.api.pullRequests.unhideRepos(repos)
+      result = hidden
+        ? await window.api.pullRequests.hideRepos(repos)
+        : await window.api.pullRequests.unhideRepos(repos)
     } catch (err) {
       log.warn('hiding repositories failed', err)
       result = { ok: false, message: 'Could not save that; see the log.' }
@@ -241,7 +261,9 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       log.warn('reading reviewer candidates failed', err)
       result = { ok: false, error: toError(err) }
     }
-    const next: Loadable<PrReviewerCandidate[]> = result.ok ? { status: 'ok', data: result.data, version: Date.now() } : { status: 'error', error: result.error }
+    const next: Loadable<PrReviewerCandidate[]> = result.ok
+      ? { status: 'ok', data: result.data, version: Date.now() }
+      : { status: 'error', error: result.error }
     set((s) => ({ candidates: { ...s.candidates, [key]: next } }))
   },
 
@@ -273,7 +295,14 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   refresh: async (reason, opts = {}) => {
     const s = get()
     const visible = s.visible || opts.asHeader === true
-    if (!shouldRefreshPullRequests({ lastFetchAt: s.lastFetchAt, inFlight: s.loading, visible, stale: s.stale }, reason, Date.now())) return
+    if (
+      !shouldRefreshPullRequests(
+        { lastFetchAt: s.lastFetchAt, inFlight: s.loading, visible, stale: s.stale },
+        reason,
+        Date.now(),
+      )
+    )
+      return
     set({ loading: true, lastFetchAt: Date.now(), stale: false })
     const readNo = ++listReads
     let result: PrResult<PrListData>
@@ -354,15 +383,23 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
 
   removePendingComment: (ref, id) => {
     const key = prKey(ref)
-    set((s) => ({ pendingComments: { ...s.pendingComments, [key]: (s.pendingComments[key] ?? []).filter((c) => c.id !== id) } }))
+    set((s) => ({
+      pendingComments: { ...s.pendingComments, [key]: (s.pendingComments[key] ?? []).filter((c) => c.id !== id) },
+    }))
   },
 
   dropPendingComments: (ref, count) => {
     const key = prKey(ref)
-    set((s) => ({ pendingComments: { ...s.pendingComments, [key]: count === undefined ? [] : (s.pendingComments[key] ?? []).slice(count) } }))
+    set((s) => ({
+      pendingComments: {
+        ...s.pendingComments,
+        [key]: count === undefined ? [] : (s.pendingComments[key] ?? []).slice(count),
+      },
+    }))
   },
 
-  setMergeStrategy: (ref, strategy) => set((s) => ({ mergeStrategy: { ...s.mergeStrategy, [repoKey(ref)]: strategy } })),
+  setMergeStrategy: (ref, strategy) =>
+    set((s) => ({ mergeStrategy: { ...s.mergeStrategy, [repoKey(ref)]: strategy } })),
 
   setConversationResolved: (ref, id, resolved) => {
     const key = prKey(ref)

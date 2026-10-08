@@ -31,9 +31,7 @@ interface QuickPromptModalProps {
 export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }: QuickPromptModalProps) {
   const focusedSessionId = useLayoutStore(selectCompanionSessionId)
   const resolvedSessionId = targetSessionId ?? focusedSessionId
-  const activeSession = useAgentStore((s) =>
-    s.sessions.find((sess) => sess.id === resolvedSessionId),
-  )
+  const activeSession = useAgentStore((s) => s.sessions.find((sess) => sess.id === resolvedSessionId))
   const [value, setValue] = useState('')
   const [context, setContext] = useState<{ preview: string; full: string } | null>(null)
   const [status, setStatus] = useState<'idle' | 'sending' | 'error'>('idle')
@@ -61,7 +59,6 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
         setContext(null)
       }
     }
-
   }, [open, ideContext, resolvedSessionId])
 
   const agentLabel = useMemo(() => {
@@ -88,7 +85,12 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => {
@@ -100,9 +102,7 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
       >
         {/* Target session banner */}
         <div className="flex items-center gap-[8px] text-[10.5px] text-[var(--text-muted)]">
-          <DialogTitle className="text-[10.5px] font-[600] uppercase tracking-[0.7px]">
-            Quick prompt
-          </DialogTitle>
+          <DialogTitle className="text-[10.5px] font-[600] uppercase tracking-[0.7px]">Quick prompt</DialogTitle>
           {activeSession ? (
             <span>
               → <span className="text-[var(--text-secondary)]">{agentLabel}</span>
@@ -112,16 +112,24 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
               </span>
             </span>
           ) : (
-            <span className="text-[var(--error)]">
-              No active chat - open or create one first.
-            </span>
+            <span className="text-[var(--error)]">No active chat - open or create one first.</span>
           )}
         </div>
 
         {/* Context pill (if terminal selection was captured) */}
         {context && (
           <div className="flex items-center gap-[8px] rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[10px] py-[5px] text-[11.5px]">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="shrink-0"
+            >
               <polyline points="4 17 10 11 4 5" />
               <line x1="12" y1="19" x2="20" y2="19" />
             </svg>
@@ -156,24 +164,22 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
 
         {/* Footer */}
         <div className="flex items-center justify-between text-[10.5px] text-[var(--text-muted)]">
-          <span>
-            Enter to send · Shift+Enter newline · Esc to dismiss
-          </span>
+          <span>Enter to send · Shift+Enter newline · Esc to dismiss</span>
           <button
             onClick={handleSend}
             disabled={!canSend}
             className={cn(
               'rounded-[4px] border-0 px-[14px] py-[5px] text-[11.5px] font-[600]',
-              canSend ? 'cursor-pointer bg-[var(--accent)] text-[#fff]' : 'cursor-default bg-[var(--bg-tertiary)] text-[var(--text-muted)]',
+              canSend
+                ? 'cursor-pointer bg-[var(--accent)] text-[#fff]'
+                : 'cursor-default bg-[var(--bg-tertiary)] text-[var(--text-muted)]',
             )}
           >
             {status === 'sending' ? 'Sending…' : 'Send'}
           </button>
         </div>
 
-        {status === 'error' && errorMsg && (
-          <div className="text-[11px] text-[var(--error)]">{errorMsg}</div>
-        )}
+        {status === 'error' && errorMsg && <div className="text-[11px] text-[var(--error)]">{errorMsg}</div>}
       </DialogContent>
     </Dialog>
   )

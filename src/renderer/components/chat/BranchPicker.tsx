@@ -47,7 +47,14 @@ interface TriggerProps {
   onTurnFollowBackOn?: () => void
 }
 
-export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissing, followSessionId, onTurnFollowBackOn }: TriggerProps) {
+export function BranchPickerTrigger({
+  cwd,
+  onSwapWorktree,
+  onChanged,
+  onCwdMissing,
+  followSessionId,
+  onTurnFollowBackOn,
+}: TriggerProps) {
   const [open, setOpen] = useState(false)
   const [current, setCurrent] = useState<string | null>(null)
   const [isGitRepo, setIsGitRepo] = useState(true)
@@ -83,7 +90,9 @@ export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissi
     const offHeadChanged = api.onHeadChanged?.((changed) => {
       if (!disposed && changed === cwd) refresh()
     })
-    const timer = setInterval(() => { if (!document.hidden) refresh() }, 60_000)
+    const timer = setInterval(() => {
+      if (!document.hidden) refresh()
+    }, 60_000)
     return () => {
       disposed = true
       offHeadChanged?.()
@@ -112,15 +121,23 @@ export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissi
           title="Switch branch"
           className="inline-flex cursor-pointer items-center gap-[4px] rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] py-[3px] text-[11px] text-[var(--text-secondary)] outline-none"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="shrink-0"
+          >
             <line x1="6" y1="3" x2="6" y2="15" />
             <circle cx="18" cy="6" r="3" />
             <circle cx="6" cy="18" r="3" />
             <path d="M18 9a9 9 0 0 1-9 9" />
           </svg>
-          <span className="max-w-[140px] truncate">
-            {current ?? '(detached)'}
-          </span>
+          <span className="max-w-[140px] truncate">{current ?? '(detached)'}</span>
           <span className="text-[9px] opacity-60">▾</span>
         </button>
       </PopoverTrigger>
@@ -156,7 +173,14 @@ interface PopoverProps {
   onTurnFollowBackOn?: () => void
 }
 
-function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose, followSessionId, onTurnFollowBackOn }: PopoverProps) {
+function BranchPickerPopover({
+  cwd,
+  inputRef,
+  onSwapWorktree,
+  onClose,
+  followSessionId,
+  onTurnFollowBackOn,
+}: PopoverProps) {
   const [refs, setRefs] = useState<Ref[]>([])
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
@@ -188,7 +212,9 @@ function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose, followSes
     if (!followSessionId) return
     let cancelled = false
     window.api.app.getConversationFollowSuggestions(followSessionId).then(
-      (res) => { if (!cancelled) setFollowOff(followSuggestionsOff(res.mode, res.workedWorktrees)) },
+      (res) => {
+        if (!cancelled) setFollowOff(followSuggestionsOff(res.mode, res.workedWorktrees))
+      },
       (err: unknown) => log.warn('could not read the Follow suggestion setting', err),
     )
     return () => {
@@ -269,35 +295,39 @@ function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose, followSes
         {!loading && !error && filtered.length === 0 && (
           <div className={emptyRowClass}>No branches match "{query}"</div>
         )}
-        {!loading && !error && filtered.map((ref, i) => (
-          <button
-            key={`${ref.isRemote ? 'r' : 'l'}:${ref.name}`}
-            type="button"
-            onMouseEnter={() => setActiveIdx(i)}
-            onClick={() => select(ref)}
-            className={cn(
-              'flex w-full cursor-pointer items-center gap-[8px] border-0 px-[12px] py-[6px] text-left text-[12px] text-[var(--text-primary)]',
-              i === activeIdx ? 'bg-[var(--bg-active,var(--bg-tertiary))]' : 'bg-transparent',
-              switching && switching !== ref.name && 'opacity-50',
-            )}
-            disabled={switching !== null && switching !== ref.name}
-            role="option"
-            aria-selected={i === activeIdx}
-          >
-            <span className="flex-1 truncate">
-              <span className={ref.current ? 'font-[600]' : 'font-[400]'}>{ref.name}</span>
-            </span>
-            {ref.current && <span className={tagClass}>current</span>}
-            {ref.isRemote && <span className={tagClass}>remote</span>}
-            {ref.worktreePath && !ref.current && <span className={tagClass}>worktree</span>}
-          </button>
-        ))}
+        {!loading &&
+          !error &&
+          filtered.map((ref, i) => (
+            <button
+              key={`${ref.isRemote ? 'r' : 'l'}:${ref.name}`}
+              type="button"
+              onMouseEnter={() => setActiveIdx(i)}
+              onClick={() => select(ref)}
+              className={cn(
+                'flex w-full cursor-pointer items-center gap-[8px] border-0 px-[12px] py-[6px] text-left text-[12px] text-[var(--text-primary)]',
+                i === activeIdx ? 'bg-[var(--bg-active,var(--bg-tertiary))]' : 'bg-transparent',
+                switching && switching !== ref.name && 'opacity-50',
+              )}
+              disabled={switching !== null && switching !== ref.name}
+              role="option"
+              aria-selected={i === activeIdx}
+            >
+              <span className="flex-1 truncate">
+                <span className={ref.current ? 'font-[600]' : 'font-[400]'}>{ref.name}</span>
+              </span>
+              {ref.current && <span className={tagClass}>current</span>}
+              {ref.isRemote && <span className={tagClass}>remote</span>}
+              {ref.worktreePath && !ref.current && <span className={tagClass}>worktree</span>}
+            </button>
+          ))}
       </div>
       {followOff && onTurnFollowBackOn && (
         <button
           type="button"
           // Enter here is this button's, not the branch list's.
-          onKeyDown={(e) => { if (e.key === 'Enter') e.stopPropagation() }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.stopPropagation()
+          }}
           onClick={() => {
             onTurnFollowBackOn()
             onClose(false)

@@ -14,12 +14,16 @@ describe('queued turns on a client', () => {
     const queued = applyQueuedTurnEvent(NO_QUEUED_TURNS, { type: 'turn.queued', ...turn })
     expect(queued).toEqual({ remote_a: turn })
     for (const reason of ['started', 'promoted', 'cancelled', 'dropped'] as const) {
-      expect(applyQueuedTurnEvent(queued, { type: 'turn.dequeued', threadId: 't1', messageId: 'remote_a', reason })).toEqual({})
+      expect(
+        applyQueuedTurnEvent(queued, { type: 'turn.dequeued', threadId: 't1', messageId: 'remote_a', reason }),
+      ).toEqual({})
     }
   })
   it('keeps the same object when nothing changed, so stores can skip a render', () => {
     const queued = seedQueuedTurns([turn])
-    expect(applyQueuedTurnEvent(queued, { type: 'turn.dequeued', threadId: 't1', messageId: 'other', reason: 'started' })).toBe(queued)
+    expect(
+      applyQueuedTurnEvent(queued, { type: 'turn.dequeued', threadId: 't1', messageId: 'other', reason: 'started' }),
+    ).toBe(queued)
     expect(applyQueuedTurnEvent(queued, { type: 'status', threadId: 't1', status: 'running' })).toBe(queued)
   })
   it('forgets everything when the session stops, but keeps the rows after a failed turn', () => {
@@ -40,9 +44,20 @@ describe('queued turns on a client', () => {
     expect(queueIsHeld(state)).toBe(false)
     expect('held' in state.remote_a).toBe(false)
 
-    state = applyQueuedTurnEvent(state, { type: 'turn.dequeued', threadId: 't1', messageId: 'remote_a', reason: 'started' })
+    state = applyQueuedTurnEvent(state, {
+      type: 'turn.dequeued',
+      threadId: 't1',
+      messageId: 'remote_a',
+      reason: 'started',
+    })
     expect(state.remote_a).toBeUndefined()
-    state = applyQueuedTurnEvent(state, { type: 'turn.dequeued', threadId: 't1', messageId: 'remote_a', reason: 'failed', error: 'rate limited' })
+    state = applyQueuedTurnEvent(state, {
+      type: 'turn.dequeued',
+      threadId: 't1',
+      messageId: 'remote_a',
+      reason: 'failed',
+      error: 'rate limited',
+    })
     expect(state.remote_a).toMatchObject({ messageId: 'remote_a', failed: 'rate limited' })
     // A failed row never shows as held: it has left the queue.
     state = applyQueuedTurnEvent(state, { type: 'turn.queue-held', threadId: 't1', held: true })
@@ -61,7 +76,8 @@ describe('text a cancelled message puts back', () => {
     expect(queuedTurnComposerText('From "A": wrapped', 'wrapped', {})).toBe('wrapped')
   })
   it('is the expanded text when pills carried the content', () => {
-    expect(queuedTurnComposerText('see `a.ts`\n```\ncode\n```', 'see [[pill:p1]]', { p1: { label: 'a.ts', kind: 'file' } }))
-      .toBe('see `a.ts`\n```\ncode\n```')
+    expect(
+      queuedTurnComposerText('see `a.ts`\n```\ncode\n```', 'see [[pill:p1]]', { p1: { label: 'a.ts', kind: 'file' } }),
+    ).toBe('see `a.ts`\n```\ncode\n```')
   })
 })

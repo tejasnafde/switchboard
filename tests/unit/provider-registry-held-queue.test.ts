@@ -11,7 +11,12 @@ vi.mock('../../src/main/db/provider-instances', () => ({
     oauthDir: null,
   }),
   getProviderInstanceFull: (id: string) => ({
-    id, agentType: 'claude-code', displayName: id, enabled: true, env: {}, oauthDir: null,
+    id,
+    agentType: 'claude-code',
+    displayName: id,
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
   listOauthDirsForAgent: () => [],
 }))
@@ -20,7 +25,6 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/main/provider/remote-gate')>()
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
-
 
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
@@ -48,7 +52,6 @@ import type { BackendHost } from '../../src/main/backend/host'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
-
 class FakeHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
   handle(channel: string, fn: (...args: unknown[]) => unknown): void {
@@ -56,7 +59,9 @@ class FakeHost implements BackendHost {
   }
   on(): void {}
   emitted: unknown[][] = []
-  emit(...args: unknown[]): void { this.emitted.push(args) }
+  emit(...args: unknown[]): void {
+    this.emitted.push(args)
+  }
   async invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
     const fn = this.handlers.get(channel)
     if (!fn) throw new Error(`no handler registered for ${channel}`)
@@ -71,16 +76,30 @@ class Adapter implements ProviderAdapter {
   resumed: string[] = []
   async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     this.onEvent = onEvent
-    return { threadId: opts.threadId, provider: 'claude', status: 'idle', runtimeMode: 'sandbox', cwd: opts.cwd, createdAt: 0 }
+    return {
+      threadId: opts.threadId,
+      provider: 'claude',
+      status: 'idle',
+      runtimeMode: 'sandbox',
+      cwd: opts.cwd,
+      createdAt: 0,
+    }
   }
   async sendTurn(): Promise<void> {}
   async respondToRequest(): Promise<void> {}
   async interruptTurn(): Promise<void> {}
   async stopSession(): Promise<void> {}
   async setRuntimeMode(): Promise<void> {}
-  async isAvailable(): Promise<boolean> { return true }
-  async cancelQueuedTurn(): Promise<boolean> { throw new Error('the adapter no longer has it') }
-  async resumeQueuedTurns(threadId: string): Promise<boolean> { this.resumed.push(threadId); return true }
+  async isAvailable(): Promise<boolean> {
+    return true
+  }
+  async cancelQueuedTurn(): Promise<boolean> {
+    throw new Error('the adapter no longer has it')
+  }
+  async resumeQueuedTurns(threadId: string): Promise<boolean> {
+    this.resumed.push(threadId)
+    return true
+  }
 }
 
 describe('held queue in the registry', () => {
@@ -100,8 +119,14 @@ describe('held queue in the registry', () => {
       { threadId: 't1', messageId: 'remote_b', text: 'then this', queuedAt: 2, held: true },
       { threadId: 't1', messageId: 'remote_a', text: 'do it', queuedAt: 1, failed: 'limit' },
     ])
-    expect(await host.invoke(ProviderChannels.PROMOTE_QUEUED_TURN, 't1', 'remote_a')).toMatchObject({ ok: false, reason: 'failed' })
-    expect(await host.invoke(ProviderChannels.CANCEL_QUEUED_TURN, 't1', 'remote_a')).toMatchObject({ ok: true, turn: { text: 'do it' } })
+    expect(await host.invoke(ProviderChannels.PROMOTE_QUEUED_TURN, 't1', 'remote_a')).toMatchObject({
+      ok: false,
+      reason: 'failed',
+    })
+    expect(await host.invoke(ProviderChannels.CANCEL_QUEUED_TURN, 't1', 'remote_a')).toMatchObject({
+      ok: true,
+      turn: { text: 'do it' },
+    })
     const events = host.emitted.filter(([c]) => c === ProviderChannels.EVENT).map(([, e]) => e as RuntimeEvent)
     expect(events.at(-1)).toEqual({ type: 'turn.dequeued', threadId: 't1', messageId: 'remote_a', reason: 'cancelled' })
 

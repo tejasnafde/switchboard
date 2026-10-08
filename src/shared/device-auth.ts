@@ -101,14 +101,10 @@ export function isSettingsFrameAllowed(scopes: readonly DeviceScope[], channel: 
 
 /** Whether a session holding `scopes` may call `channel`. */
 export function isChannelAllowed(scopes: readonly DeviceScope[], channel: string): boolean {
-  for (const [scope, prefixes] of Object.entries(SCOPE_REQUIRED_PREFIXES) as Array<
-    [DeviceScope, readonly string[]]
-  >) {
+  for (const [scope, prefixes] of Object.entries(SCOPE_REQUIRED_PREFIXES) as Array<[DeviceScope, readonly string[]]>) {
     if (prefixes.some((prefix) => channel.startsWith(prefix)) && !scopes.includes(scope)) return false
   }
-  for (const [scope, channels] of Object.entries(SCOPE_REQUIRED_CHANNELS) as Array<
-    [DeviceScope, readonly string[]]
-  >) {
+  for (const [scope, channels] of Object.entries(SCOPE_REQUIRED_CHANNELS) as Array<[DeviceScope, readonly string[]]>) {
     if (channels.includes(channel) && !scopes.includes(scope)) return false
   }
   return true
@@ -118,7 +114,10 @@ function normalizedPath(path: string): string {
   const absolute = path.startsWith('/')
   const prefix = /^[A-Za-z]:[\\/]/.test(path) ? path.slice(0, 2).toLowerCase() : absolute ? '/' : ''
   const segments: string[] = []
-  for (const segment of path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '').split('/')) {
+  for (const segment of path
+    .replace(/\\/g, '/')
+    .replace(/^[A-Za-z]:/, '')
+    .split('/')) {
     if (!segment || segment === '.') continue
     if (segment === '..') segments.pop()
     else segments.push(segment)
@@ -135,11 +134,11 @@ export function isFileMutationAllowed(
   if (scopes.includes('terminal')) return true
   if (typeof repositoryPath !== 'string' || typeof subPath !== 'string') return true
   const root = normalizedPath(repositoryPath).replace(/\/$/, '')
-  const candidate = subPath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(subPath)
-    ? normalizedPath(subPath)
-    : normalizedPath(`${root}/${subPath}`)
-  return candidate !== `${root}/.switchboard/launch-config.yaml`
-    && candidate !== `${root}/.switchboard/workspace.yaml`
+  const candidate =
+    subPath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(subPath)
+      ? normalizedPath(subPath)
+      : normalizedPath(`${root}/${subPath}`)
+  return candidate !== `${root}/.switchboard/launch-config.yaml` && candidate !== `${root}/.switchboard/workspace.yaml`
 }
 
 export interface DeviceSession {

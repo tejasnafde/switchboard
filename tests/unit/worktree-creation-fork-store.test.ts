@@ -1,13 +1,7 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
-import {
-  ensureWorktreeCreationSchema,
-  SqliteWorktreeCreationStore,
-} from '../../src/main/db/worktree-creation'
-import {
-  ensureConversationForkSchema,
-  SqliteConversationForkStore,
-} from '../../src/main/db/conversation-fork'
+import { ensureWorktreeCreationSchema, SqliteWorktreeCreationStore } from '../../src/main/db/worktree-creation'
+import { ensureConversationForkSchema, SqliteConversationForkStore } from '../../src/main/db/conversation-fork'
 import type { WorktreeCreationRequest } from '../../src/shared/worktree-creation'
 import type { ForkConversationRequest, ForkConversationResult } from '../../src/shared/conversation-fork'
 
@@ -100,15 +94,21 @@ function fixture() {
   })
   if (reserved.kind !== 'reserved') throw new Error('fixture reservation failed')
   const materializing = store.transition({
-    machineId: 'local', creationId: request.creationId,
+    machineId: 'local',
+    creationId: request.creationId,
     expectedRevision: reserved.record.revision,
-    phase: 'materializing', status: 'pending', now: 101,
+    phase: 'materializing',
+    status: 'pending',
+    now: 101,
   })
   if (materializing.kind !== 'updated') throw new Error('fixture transition failed')
   const linking = store.transition({
-    machineId: 'local', creationId: request.creationId,
+    machineId: 'local',
+    creationId: request.creationId,
     expectedRevision: materializing.record.revision,
-    phase: 'linking', status: 'pending', now: 102,
+    phase: 'linking',
+    status: 'pending',
+    now: 102,
   })
   if (linking.kind !== 'updated') throw new Error('fixture transition failed')
   const forkRequest: ForkConversationRequest = {
@@ -117,45 +117,99 @@ function fixture() {
     sourceConversationId: 'parent-conversation-1',
     machineId: 'local',
     anchor: {
-      messageId: 'parent-message-2', role: 'assistant', timestamp: 20,
+      messageId: 'parent-message-2',
+      role: 'assistant',
+      timestamp: 20,
       contentDigest: 'a'.repeat(64),
     },
     checkout: { kind: 'new-worktree', basePolicy: 'source-head' },
     provenance: { surface: 'desktop', requestedAt: 100 },
   }
   new SqliteConversationForkStore(db).reserve({
-    machineId: 'local', request: forkRequest, requestJson: JSON.stringify(forkRequest),
-    requestHash: 'fork-hash', preparedJson: '{}', preparedHash: 'prepared-hash', now: 100,
+    machineId: 'local',
+    request: forkRequest,
+    requestJson: JSON.stringify(forkRequest),
+    requestHash: 'fork-hash',
+    preparedJson: '{}',
+    preparedHash: 'prepared-hash',
+    now: 100,
   })
   return { db, store, linking: linking.record }
 }
 
 function commitInput(expectedRevision: number) {
   const conversation: ForkConversationResult['conversation'] = {
-    id: 'fork-conversation-1', projectPath: '/repo',
+    id: 'fork-conversation-1',
+    projectPath: '/repo',
     worktreePath: '/repo/.switchboard/worktrees/fork-1',
-    worktreeBranch: 'fork/selected-turn', worktreeId: 'worktree-1',
-    machineId: 'local', agentType: 'claude-code', providerInstanceId: 'claude-work',
-    runtimeMode: 'sandbox', model: 'claude-sonnet-5', reasoningEffort: null,
-    launchConfigName: null, title: 'Parent chat · fork/selected-turn',
+    worktreeBranch: 'fork/selected-turn',
+    worktreeId: 'worktree-1',
+    machineId: 'local',
+    agentType: 'claude-code',
+    providerInstanceId: 'claude-work',
+    runtimeMode: 'sandbox',
+    model: 'claude-sonnet-5',
+    reasoningEffort: null,
+    launchConfigName: null,
+    title: 'Parent chat · fork/selected-turn',
     parentConversationId: 'parent-conversation-1',
     anchor: {
-      messageId: 'parent-message-2', role: 'assistant', timestamp: 20,
-      contentDigest: 'a'.repeat(64), canonicalIndex: 1, canonicalMessageCount: 2,
-      resolution: 'exact-id', provider: 'claude-code', providerSessionId: 'source',
+      messageId: 'parent-message-2',
+      role: 'assistant',
+      timestamp: 20,
+      contentDigest: 'a'.repeat(64),
+      canonicalIndex: 1,
+      canonicalMessageCount: 2,
+      resolution: 'exact-id',
+      provider: 'claude-code',
+      providerSessionId: 'source',
       providerEventId: 'parent-message-2',
     },
-    resumeMode: 'native', createdAt: 103,
+    resumeMode: 'native',
+    createdAt: 103,
   }
   const messages = [
-    { id: 'fork-conversation-1:0', conversationId: conversation.id, role: 'user', content: 'first', toolCallsJson: null, imagesJson: null, timestamp: 10, displayBody: null, pillsMetaJson: null, attachmentsJson: null },
-    { id: 'fork-conversation-1:1', conversationId: conversation.id, role: 'assistant', content: 'second', toolCallsJson: null, imagesJson: null, timestamp: 20, displayBody: null, pillsMetaJson: null, attachmentsJson: null },
+    {
+      id: 'fork-conversation-1:0',
+      conversationId: conversation.id,
+      role: 'user',
+      content: 'first',
+      toolCallsJson: null,
+      imagesJson: null,
+      timestamp: 10,
+      displayBody: null,
+      pillsMetaJson: null,
+      attachmentsJson: null,
+    },
+    {
+      id: 'fork-conversation-1:1',
+      conversationId: conversation.id,
+      role: 'assistant',
+      content: 'second',
+      toolCallsJson: null,
+      imagesJson: null,
+      timestamp: 20,
+      displayBody: null,
+      pillsMetaJson: null,
+      attachmentsJson: null,
+    },
   ]
   const result: ForkConversationResult = {
-    requestId: 'fork-request-1', conversation,
-    messages: messages.map((message) => ({ id: message.id, role: message.role as 'user' | 'assistant', content: message.content, timestamp: message.timestamp })),
+    requestId: 'fork-request-1',
+    conversation,
+    messages: messages.map((message) => ({
+      id: message.id,
+      role: message.role as 'user' | 'assistant',
+      content: message.content,
+      timestamp: message.timestamp,
+    })),
     nativeResume: { provider: 'claude', sessionId: conversation.id },
-    git: { baseSha: '0123456789abcdef0123456789abcdef01234567', path: conversation.worktreePath!, branch: conversation.worktreeBranch!, sourceDirty: false },
+    git: {
+      baseSha: '0123456789abcdef0123456789abcdef01234567',
+      path: conversation.worktreePath!,
+      branch: conversation.worktreeBranch!,
+      sourceDirty: false,
+    },
     warnings: [],
   }
   return {
@@ -172,9 +226,16 @@ function commitInput(expectedRevision: number) {
       resolvedBaseCommit: '0123456789abcdef0123456789abcdef01234567',
     },
     fork: {
-      machineId: 'local', requestId: 'fork-request-1', expectedRevision: 0,
-      conversation, sessionId: conversation.id, pendingHandoffFrom: null,
-      messages, result, worktreeCreationId: request.creationId, now: 103,
+      machineId: 'local',
+      requestId: 'fork-request-1',
+      expectedRevision: 0,
+      conversation,
+      sessionId: conversation.id,
+      pendingHandoffFrom: null,
+      messages,
+      result,
+      worktreeCreationId: request.creationId,
+      now: 103,
     },
     now: 103,
   }
@@ -187,7 +248,13 @@ describe('SqliteWorktreeCreationStore fork owner commit', () => {
       const result = h.store.commitForkOwner(commitInput(h.linking.revision))
 
       expect(result.kind).toBe('committed')
-      expect(h.db.prepare('SELECT project_path, worktree_path, worktree_branch, parent_conversation_id, session_id FROM conversations').get()).toEqual({
+      expect(
+        h.db
+          .prepare(
+            'SELECT project_path, worktree_path, worktree_branch, parent_conversation_id, session_id FROM conversations',
+          )
+          .get(),
+      ).toEqual({
         project_path: '/repo',
         worktree_path: '/repo/.switchboard/worktrees/fork-1',
         worktree_branch: 'fork/selected-turn',
@@ -211,7 +278,8 @@ describe('SqliteWorktreeCreationStore fork owner commit', () => {
   it('rolls back every projection when a copied-message insert fails', () => {
     const h = fixture()
     try {
-      h.db.prepare('INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)')
+      h.db
+        .prepare('INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)')
         .run('fork-conversation-1:1', 'other', 'user', 'collision', 1)
 
       expect(() => h.store.commitForkOwner(commitInput(h.linking.revision))).toThrow()

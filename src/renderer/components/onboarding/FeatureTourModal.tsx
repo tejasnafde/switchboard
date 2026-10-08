@@ -114,14 +114,24 @@ export function FeatureTourModal({ open, onClose, startAt = 0, onTryIt }: Featur
         }}
       >
         {/* Header */}
-        <div style={{
-          padding: '14px 20px',
-          borderBottom: '1px solid var(--border)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px', fontWeight: 600 }}>
+        <div
+          style={{
+            padding: '14px 20px',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '11px',
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.7px',
+              fontWeight: 600,
+            }}
+          >
             Step {idx + 1} of {total}
           </div>
           <button
@@ -140,14 +150,16 @@ export function FeatureTourModal({ open, onClose, startAt = 0, onTryIt }: Featur
         </div>
 
         {/* Video / fallback */}
-        <div style={{
-          background: 'var(--bg)',
-          aspectRatio: '16 / 9',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-        }}>
+        <div
+          style={{
+            background: 'var(--bg)',
+            aspectRatio: '16 / 9',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+          }}
+        >
           {!videoFailed ? (
             <video
               key={step.id}
@@ -161,13 +173,15 @@ export function FeatureTourModal({ open, onClose, startAt = 0, onTryIt }: Featur
               src={`sb-tour://${step.id}.mp4`}
             />
           ) : (
-            <div style={{
-              padding: '40px',
-              textAlign: 'center',
-              color: 'var(--text-muted)',
-              fontSize: '13px',
-              lineHeight: 1.6,
-            }}>
+            <div
+              style={{
+                padding: '40px',
+                textAlign: 'center',
+                color: 'var(--text-muted)',
+                fontSize: '13px',
+                lineHeight: 1.6,
+              }}
+            >
               <div style={{ fontSize: '32px', marginBottom: '10px', opacity: 0.5 }}>▶</div>
               <div>Clip not yet available - see description below.</div>
             </div>
@@ -176,19 +190,23 @@ export function FeatureTourModal({ open, onClose, startAt = 0, onTryIt }: Featur
 
         {/* Body */}
         <div style={{ padding: '20px 24px' }}>
-          <div style={{
-            fontSize: '17px',
-            fontWeight: 600,
-            color: 'var(--text-primary)',
-            marginBottom: '8px',
-          }}>
+          <div
+            style={{
+              fontSize: '17px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              marginBottom: '8px',
+            }}
+          >
             {step.title}
           </div>
-          <div style={{
-            fontSize: '13.5px',
-            color: 'var(--text-secondary)',
-            lineHeight: 1.55,
-          }}>
+          <div
+            style={{
+              fontSize: '13.5px',
+              color: 'var(--text-secondary)',
+              lineHeight: 1.55,
+            }}
+          >
             {step.description}
           </div>
 
@@ -218,14 +236,16 @@ export function FeatureTourModal({ open, onClose, startAt = 0, onTryIt }: Featur
         </div>
 
         {/* Footer */}
-        <div style={{
-          padding: '14px 20px',
-          borderTop: '1px solid var(--border)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '10px',
-        }}>
+        <div
+          style={{
+            padding: '14px 20px',
+            borderTop: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+          }}
+        >
           {/* Step dots */}
           <div style={{ display: 'flex', gap: '6px' }}>
             {FEATURE_TOUR_STEPS.map((s, i) => (

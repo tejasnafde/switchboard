@@ -13,7 +13,11 @@ const sectionTitleClass = 'mb-2 text-[11px] font-[600] uppercase tracking-[0.07e
  * Settings > Archive & data. "Review" swaps the page for the worktree
  * manager, with a link back, as its own screen rather than a dialog on top.
  */
-export function ArchiveDataPage({ meta, Anchor, onOpenProjects }: {
+export function ArchiveDataPage({
+  meta,
+  Anchor,
+  onOpenProjects,
+}: {
   meta: SettingsPage
   Anchor: Anchor
   onOpenProjects?: () => void
@@ -33,7 +37,8 @@ export function ArchiveDataPage({ meta, Anchor, onOpenProjects }: {
         </button>
         <h2 className="mb-1 text-[18px] font-[600]">Worktrees</h2>
         <p className="mb-[18px] text-[13px] text-[var(--text-secondary)]">
-          Remove what you no longer need. A worktree with uncommitted changes, ignored local files (such as a .env) or unpushed commits is never removed in a batch.
+          Remove what you no longer need. A worktree with uncommitted changes, ignored local files (such as a .env) or
+          unpushed commits is never removed in a batch.
         </p>
         <WorktreesPanel state={worktrees} onManageProtection={onOpenProjects} />
       </>
@@ -46,7 +51,9 @@ export function ArchiveDataPage({ meta, Anchor, onOpenProjects }: {
       <p className="mb-[18px] text-[13px] text-[var(--text-secondary)]">{meta.description}</p>
       <section className="mb-[18px]">
         <h3 className={sectionTitleClass}>{SETTING_ROW.archived.section}</h3>
-        <Anchor def={SETTING_ROW.archived}><ArchivedPanel /></Anchor>
+        <Anchor def={SETTING_ROW.archived}>
+          <ArchivedPanel />
+        </Anchor>
       </section>
       <section className="mb-[18px]">
         <h3 className={sectionTitleClass}>{SETTING_ROW.worktrees.section}</h3>
@@ -57,10 +64,12 @@ export function ArchiveDataPage({ meta, Anchor, onOpenProjects }: {
               <div className="mt-0.5 text-[12px] text-[var(--text-secondary)]">
                 {worktrees.inventory
                   ? inventorySummary(worktrees.inventory.rows)
-                  : worktrees.error ?? (worktrees.loading ? 'Reading worktrees…' : SETTING_ROW.worktrees.description)}
+                  : (worktrees.error ?? (worktrees.loading ? 'Reading worktrees…' : SETTING_ROW.worktrees.description))}
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setReviewing(true)}>Review</Button>
+            <Button variant="outline" size="sm" onClick={() => setReviewing(true)}>
+              Review
+            </Button>
           </div>
         </Anchor>
       </section>

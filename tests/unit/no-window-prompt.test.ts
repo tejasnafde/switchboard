@@ -28,11 +28,13 @@ describe('no window.prompt in renderer', () => {
   it('has no real window.prompt() calls (Electron no-ops it)', () => {
     const offenders: string[] = []
     for (const file of walk(RENDERER)) {
-      readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
-        if (!isComment(line) && line.includes('window.prompt(')) {
-          offenders.push(`${file}:${i + 1}`)
-        }
-      })
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .forEach((line, i) => {
+          if (!isComment(line) && line.includes('window.prompt(')) {
+            offenders.push(`${file}:${i + 1}`)
+          }
+        })
     }
     expect(offenders).toEqual([])
   })

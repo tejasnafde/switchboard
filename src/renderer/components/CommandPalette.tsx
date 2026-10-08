@@ -43,7 +43,7 @@ export function commandTargetSessionId(state: {
   focusedChatSlot: 'primary' | 'secondary'
 }): string | null {
   return state.focusedChatSlot === 'secondary'
-    ? state.secondarySessionId ?? state.primarySessionId
+    ? (state.secondarySessionId ?? state.primarySessionId)
     : state.primarySessionId
 }
 
@@ -76,34 +76,104 @@ function buildCommands(opts: {
 
   return [
     // ── Navigation ───────────────────────────────────────────────
-    { id: 'nav.toggle-sidebar', group: 'Navigation', label: 'Toggle Sidebar', shortcut: shortcutLabel('app.toggle-sidebar'),
-      run: () => { layout().toggleSidebar(); onClose() } },
-    { id: 'nav.toggle-terminal', group: 'Navigation', label: 'Toggle Terminal', shortcut: shortcutLabel('app.toggle-terminal'),
-      run: () => { layout().toggleTerminal(); onClose() } },
-    { id: 'nav.open-settings', group: 'Navigation', label: 'Open Settings', shortcut: shortcutLabel('app.settings'),
-      run: () => { onOpenSettings(); onClose() } },
-    { id: 'nav.search', group: 'Navigation', label: 'Search across chats', shortcut: shortcutLabel('app.search'),
+    {
+      id: 'nav.toggle-sidebar',
+      group: 'Navigation',
+      label: 'Toggle Sidebar',
+      shortcut: shortcutLabel('app.toggle-sidebar'),
+      run: () => {
+        layout().toggleSidebar()
+        onClose()
+      },
+    },
+    {
+      id: 'nav.toggle-terminal',
+      group: 'Navigation',
+      label: 'Toggle Terminal',
+      shortcut: shortcutLabel('app.toggle-terminal'),
+      run: () => {
+        layout().toggleTerminal()
+        onClose()
+      },
+    },
+    {
+      id: 'nav.open-settings',
+      group: 'Navigation',
+      label: 'Open Settings',
+      shortcut: shortcutLabel('app.settings'),
+      run: () => {
+        onOpenSettings()
+        onClose()
+      },
+    },
+    {
+      id: 'nav.search',
+      group: 'Navigation',
+      label: 'Search across chats',
+      shortcut: shortcutLabel('app.search'),
       available: () => !!onOpenSearch,
-      run: () => { onOpenSearch?.(); onClose() } },
-    { id: 'nav.dual-chat', group: 'Navigation', label: 'Open second chat panel (dual-chat)', shortcut: shortcutLabel('chat.dual'),
+      run: () => {
+        onOpenSearch?.()
+        onClose()
+      },
+    },
+    {
+      id: 'nav.dual-chat',
+      group: 'Navigation',
+      label: 'Open second chat panel (dual-chat)',
+      shortcut: shortcutLabel('chat.dual'),
       available: () => !!onOpenSessionPicker,
       run: () => {
         const l = layout()
-        if (l.secondarySessionId) { l.closeChatSlot('secondary'); onClose() }
-        else { onOpenSessionPicker?.(); onClose() }
-      } },
-    { id: 'nav.quick-prompt', group: 'Navigation', label: 'Quick prompt (context-aware one-shot)', shortcut: shortcutLabel('chat.quick-prompt'),
+        if (l.secondarySessionId) {
+          l.closeChatSlot('secondary')
+          onClose()
+        } else {
+          onOpenSessionPicker?.()
+          onClose()
+        }
+      },
+    },
+    {
+      id: 'nav.quick-prompt',
+      group: 'Navigation',
+      label: 'Quick prompt (context-aware one-shot)',
+      shortcut: shortcutLabel('chat.quick-prompt'),
       available: () => !!opts.onOpenQuickPrompt,
-      run: () => { opts.onOpenQuickPrompt?.(); onClose() } },
-    { id: 'nav.context-bridge', group: 'Navigation', label: 'Send terminal selection to chat', shortcut: shortcutLabel('chat.context-bridge'),
+      run: () => {
+        opts.onOpenQuickPrompt?.()
+        onClose()
+      },
+    },
+    {
+      id: 'nav.context-bridge',
+      group: 'Navigation',
+      label: 'Send terminal selection to chat',
+      shortcut: shortcutLabel('chat.context-bridge'),
       available: () => !!opts.onContextBridge,
-      run: () => { opts.onContextBridge?.(); onClose() } },
+      run: () => {
+        opts.onContextBridge?.()
+        onClose()
+      },
+    },
 
     // ── Chat ─────────────────────────────────────────────────────
-    { id: 'chat.new', group: 'Chat', label: 'New chat', shortcut: shortcutLabel('chat.new'),
+    {
+      id: 'chat.new',
+      group: 'Chat',
+      label: 'New chat',
+      shortcut: shortcutLabel('chat.new'),
       available: () => !!opts.onNewChat,
-      run: () => { opts.onNewChat?.(); onClose() } },
-    { id: 'chat.interrupt', group: 'Chat', label: 'Stop current turn', shortcut: shortcutLabel('chat.interrupt'),
+      run: () => {
+        opts.onNewChat?.()
+        onClose()
+      },
+    },
+    {
+      id: 'chat.interrupt',
+      group: 'Chat',
+      label: 'Stop current turn',
+      shortcut: shortcutLabel('chat.interrupt'),
       available: () => {
         const sid = commandTargetSessionId(layout())
         const s = sid ? agents().sessions.find((x) => x.id === sid) : null
@@ -113,55 +183,125 @@ function buildCommands(opts: {
         window.api.provider?.interrupt?.(sid).catch((err) => {
           log.debug(`command-palette interrupt failed for ${sid}`, err)
         })
-      }) },
-    { id: 'chat.clear', group: 'Chat', label: 'Clear all messages in active session',
-      run: withFocusedSession((sid) => { agents().clearMessages(sid) }) },
-    { id: 'chat.archive', group: 'Chat', label: 'Archive active session',
+      }),
+    },
+    {
+      id: 'chat.clear',
+      group: 'Chat',
+      label: 'Clear all messages in active session',
+      run: withFocusedSession((sid) => {
+        agents().clearMessages(sid)
+      }),
+    },
+    {
+      id: 'chat.archive',
+      group: 'Chat',
+      label: 'Archive active session',
       run: withFocusedSession((sid) => {
         const s = agents().sessions.find((x) => x.id === sid)
         window.api.app.archiveConversation(sid, s?.projectPath, s?.title).catch((err) => {
           log.warn(`archiveConversation failed for ${sid}`, err)
         })
         agents().removeSession(sid)
-      }) },
-    { id: 'chat.plan-mode', group: 'Chat', label: 'Runtime mode: Plan (no execution)',
-      run: withFocusedSession((sid) => { agents().setRuntimeMode(sid, 'plan') }) },
-    { id: 'chat.sandbox-mode', group: 'Chat', label: 'Runtime mode: Sandbox (ask every tool)',
-      run: withFocusedSession((sid) => { agents().setRuntimeMode(sid, 'sandbox') }) },
-    { id: 'chat.accept-edits', group: 'Chat', label: 'Runtime mode: Accept Edits',
-      run: withFocusedSession((sid) => { agents().setRuntimeMode(sid, 'accept-edits') }) },
-    { id: 'chat.auto-mode', group: 'Chat', label: 'Runtime mode: Auto (agent approves routine actions)',
-      run: withFocusedSession((sid) => { agents().setRuntimeMode(sid, 'auto') }) },
-    { id: 'chat.full-access', group: 'Chat', label: 'Runtime mode: Full Access',
-      run: withFocusedSession((sid) => { agents().setRuntimeMode(sid, 'full-access') }) },
+      }),
+    },
+    {
+      id: 'chat.plan-mode',
+      group: 'Chat',
+      label: 'Runtime mode: Plan (no execution)',
+      run: withFocusedSession((sid) => {
+        agents().setRuntimeMode(sid, 'plan')
+      }),
+    },
+    {
+      id: 'chat.sandbox-mode',
+      group: 'Chat',
+      label: 'Runtime mode: Sandbox (ask every tool)',
+      run: withFocusedSession((sid) => {
+        agents().setRuntimeMode(sid, 'sandbox')
+      }),
+    },
+    {
+      id: 'chat.accept-edits',
+      group: 'Chat',
+      label: 'Runtime mode: Accept Edits',
+      run: withFocusedSession((sid) => {
+        agents().setRuntimeMode(sid, 'accept-edits')
+      }),
+    },
+    {
+      id: 'chat.auto-mode',
+      group: 'Chat',
+      label: 'Runtime mode: Auto (agent approves routine actions)',
+      run: withFocusedSession((sid) => {
+        agents().setRuntimeMode(sid, 'auto')
+      }),
+    },
+    {
+      id: 'chat.full-access',
+      group: 'Chat',
+      label: 'Runtime mode: Full Access',
+      run: withFocusedSession((sid) => {
+        agents().setRuntimeMode(sid, 'full-access')
+      }),
+    },
 
     // ── Terminal ─────────────────────────────────────────────────
-    { id: 'term.new-tab', group: 'Terminal', label: 'New Terminal Tab', shortcut: shortcutLabel('terminal.new-tab'),
+    {
+      id: 'term.new-tab',
+      group: 'Terminal',
+      label: 'New Terminal Tab',
+      shortcut: shortcutLabel('terminal.new-tab'),
       run: withFocusedSession((sid) => {
         const ids = terms().getAllPaneIds(sid)
         const cwd = sessionExecutionRootPath(sid)
         terms().addPaneToActiveWindow(sid, { label: `Terminal ${ids.length + 1}`, cwd })
-      }) },
-    { id: 'term.new-window-right', group: 'Terminal', label: 'New Terminal Window (right)', shortcut: shortcutLabel('terminal.new-window-right'),
+      }),
+    },
+    {
+      id: 'term.new-window-right',
+      group: 'Terminal',
+      label: 'New Terminal Window (right)',
+      shortcut: shortcutLabel('terminal.new-window-right'),
       run: withFocusedSession((sid) => {
         const ids = terms().getAllWindowIds(sid)
         const cwd = sessionExecutionRootPath(sid)
         const label = `Terminal ${ids.length + 1}`
         if (ids.length === 0) terms().addWindow(sid, { label, cwd })
         else terms().splitActiveWindow(sid, 'row', { label, cwd })
-      }) },
-    { id: 'term.new-window-below', group: 'Terminal', label: 'New Terminal Window (below)', shortcut: shortcutLabel('terminal.new-window-below'),
+      }),
+    },
+    {
+      id: 'term.new-window-below',
+      group: 'Terminal',
+      label: 'New Terminal Window (below)',
+      shortcut: shortcutLabel('terminal.new-window-below'),
       run: withFocusedSession((sid) => {
         const ids = terms().getAllWindowIds(sid)
         const cwd = sessionExecutionRootPath(sid)
         const label = `Terminal ${ids.length + 1}`
         if (ids.length === 0) terms().addWindow(sid, { label, cwd })
         else terms().splitActiveWindow(sid, 'column', { label, cwd })
-      }) },
-    { id: 'term.cycle-next', group: 'Terminal', label: 'Next tab in active window', shortcut: shortcutLabel('terminal.next-tab'),
-      run: withFocusedSession((sid) => { terms().cyclePane(sid, 'next') }) },
-    { id: 'term.cycle-prev', group: 'Terminal', label: 'Previous tab in active window', shortcut: shortcutLabel('terminal.prev-tab'),
-      run: withFocusedSession((sid) => { terms().cyclePane(sid, 'prev') }) },
+      }),
+    },
+    {
+      id: 'term.cycle-next',
+      group: 'Terminal',
+      label: 'Next tab in active window',
+      shortcut: shortcutLabel('terminal.next-tab'),
+      run: withFocusedSession((sid) => {
+        terms().cyclePane(sid, 'next')
+      }),
+    },
+    {
+      id: 'term.cycle-prev',
+      group: 'Terminal',
+      label: 'Previous tab in active window',
+      shortcut: shortcutLabel('terminal.prev-tab'),
+      run: withFocusedSession((sid) => {
+        terms().cyclePane(sid, 'prev')
+      }),
+    },
   ]
 }
 
@@ -180,7 +320,16 @@ export function CommandPalette({
   const selectChatSession = useLayoutStore((s) => s.selectChatSession)
 
   const commands = useMemo(
-    () => buildCommands({ onClose, onOpenSettings, onOpenSearch, onOpenSessionPicker, onOpenQuickPrompt, onContextBridge, onNewChat }),
+    () =>
+      buildCommands({
+        onClose,
+        onOpenSettings,
+        onOpenSearch,
+        onOpenSessionPicker,
+        onOpenQuickPrompt,
+        onContextBridge,
+        onNewChat,
+      }),
     [onClose, onOpenSettings, onOpenSearch, onOpenSessionPicker, onOpenQuickPrompt, onContextBridge, onNewChat],
   )
 
@@ -198,7 +347,12 @@ export function CommandPalette({
   const groupHeadingClass = 'px-[8px] py-[4px] text-[10px] font-[600] text-[var(--text-muted)]'
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent
         asChild
         aria-describedby={undefined}
@@ -236,7 +390,10 @@ export function CommandPalette({
               {(['dark', 'light', 'translucent'] as ThemeName[]).map((t) => (
                 <PaletteItem
                   key={t}
-                  onSelect={() => { setTheme(t); onClose() }}
+                  onSelect={() => {
+                    setTheme(t)
+                    onClose()
+                  }}
                 >
                   Theme: {t.charAt(0).toUpperCase() + t.slice(1)}
                 </PaletteItem>
@@ -248,7 +405,10 @@ export function CommandPalette({
                 {sessions.map((s) => (
                   <PaletteItem
                     key={s.id}
-                    onSelect={() => { selectChatSession(s.id); onClose() }}
+                    onSelect={() => {
+                      selectChatSession(s.id)
+                      onClose()
+                    }}
                   >
                     Switch to: {s.title ?? s.projectPath?.split('/').pop() ?? s.id.slice(0, 12)}
                   </PaletteItem>

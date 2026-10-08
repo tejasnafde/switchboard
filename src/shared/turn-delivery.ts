@@ -54,7 +54,10 @@ export interface SendAction {
 export function sendAction(provider: string | undefined | null, running: boolean, preferred: TurnDelivery): SendAction {
   if (!running) return { label: 'Send', tooltip: 'Send (Enter) · Newline (Shift+Enter)' }
   if (!canSteer(provider)) {
-    return { label: 'Queue', tooltip: 'Queue (Enter): OpenCode cannot take a message mid-turn, so it runs after this turn' }
+    return {
+      label: 'Queue',
+      tooltip: 'Queue (Enter): OpenCode cannot take a message mid-turn, so it runs after this turn',
+    }
   }
   const other = followUpDelivery(preferred, true)
   return {
@@ -81,7 +84,11 @@ export function runningPlaceholder(provider: string | undefined | null, preferre
  * OpenCode refuses a mid-turn send that is not queued, so it never steers.
  * `provider` stays in the signature for callers and a provider that differs.
  */
-export function startsOwnProviderTurn(_provider: string, midTurn: boolean, delivery: TurnDelivery | undefined): boolean {
+export function startsOwnProviderTurn(
+  _provider: string,
+  midTurn: boolean,
+  delivery: TurnDelivery | undefined,
+): boolean {
   return !midTurn || delivery === 'queue'
 }
 

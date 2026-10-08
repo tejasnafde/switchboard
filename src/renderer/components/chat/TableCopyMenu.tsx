@@ -19,21 +19,31 @@ interface TableCopyMenuProps {
 
 export function TableCopyMenu({ findAnchor, open, onClose, onCopy }: TableCopyMenuProps) {
   const interactedOutsideRef = useRef(false)
-  const anchorRef = useMemo(() => ({
-    current: {
-      getBoundingClientRect: () => findAnchor()?.getBoundingClientRect() ?? new DOMRect(),
-    },
-  }), [findAnchor])
+  const anchorRef = useMemo(
+    () => ({
+      current: {
+        getBoundingClientRect: () => findAnchor()?.getBoundingClientRect() ?? new DOMRect(),
+      },
+    }),
+    [findAnchor],
+  )
 
   return (
-    <Popover open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
       <PopoverAnchor virtualRef={anchorRef} />
       <PopoverContent
         align="end"
         sideOffset={4}
         updatePositionStrategy="always"
         aria-label="Copy table as"
-        onOpenAutoFocus={() => { interactedOutsideRef.current = false }}
+        onOpenAutoFocus={() => {
+          interactedOutsideRef.current = false
+        }}
         onInteractOutside={(event) => {
           // The menu button toggles the menu itself on click.
           if (event.target instanceof Node && findAnchor()?.contains(event.target)) event.preventDefault()

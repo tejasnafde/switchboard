@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "oxfmt-format",
+  "summary": "Formatting only: oxfmt (pinned 0.72.0, .oxfmtrc.json) reformats the TypeScript and JavaScript tree, the pre-commit hook formats staged files and CI checks the tree. No behavior changes; six eslint-disable comments moved next to the catch they name.",
+  "surfaces": {
+    "desktop": { "status": "implemented", "evidence": ["src/renderer/components/chat/ChatWorkspacePanels.tsx", "src/renderer/components/layout/ResizeHandle.tsx"] },
+    "reactNativeIos": { "status": "implemented", "evidence": ["apps/mobile/src/lib/composer.ts"] },
+    "nativeAndroid": { "status": "not_applicable", "reason": "Kotlin is not formatted by oxfmt; apps/android is ignored." },
+    "sharedBackendApi": { "status": "implemented", "evidence": ["src/shared/provider-events.ts"] },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Formatting changes no stored data." },
+    "updateRelease": { "status": "implemented", "evidence": [".github/workflows/ci.yml"] }
+  },
+  "verification": {
+    "automated": ["typecheck, eslint and the full vitest suite (6,025 tests) pass after the reformat; npm run format:check is clean."],
+    "hardware": [],
+    "notExercised": ["Formatting only; no runtime change to exercise."]
+  }
+}

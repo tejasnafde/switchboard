@@ -26,10 +26,7 @@ import { useLayoutStore } from '../stores/layout-store'
 import { focusComposer } from './composer-registry'
 import { materializeDraft } from './draft-chat'
 import { isDraftSessionId } from '@shared/new-chat-draft'
-import {
-  getCommittedIdeWorkspaceBinding,
-  type IdeWorkspaceBinding,
-} from './ide-workspace-binding'
+import { getCommittedIdeWorkspaceBinding, type IdeWorkspaceBinding } from './ide-workspace-binding'
 
 // Cap on captured terminal output so a runaway selection doesn't blow
 // the agent's context window. Modern context windows are 200k+ so 4k was
@@ -41,9 +38,11 @@ const MAX_SELECTION_CHARS = 50_000
 
 function reportUnavailableContextTarget(sessionId: string): void {
   if (useAgentStore.getState().sessions.some((session) => session.id === sessionId)) return
-  window.dispatchEvent(new CustomEvent('sb-context-target-unavailable', {
-    detail: { sessionId },
-  }))
+  window.dispatchEvent(
+    new CustomEvent('sb-context-target-unavailable', {
+      detail: { sessionId },
+    }),
+  )
 }
 
 export interface TerminalContext {
@@ -86,7 +85,7 @@ export function formatTerminalContext(ctx: TerminalContext): string {
     // Truncate at a line boundary so we don't split mid-line.
     const slice = body.slice(0, MAX_SELECTION_CHARS)
     const lastNl = slice.lastIndexOf('\n')
-    body = (lastNl > MAX_SELECTION_CHARS * 0.7 ? slice.slice(0, lastNl) : slice)
+    body = lastNl > MAX_SELECTION_CHARS * 0.7 ? slice.slice(0, lastNl) : slice
     truncated = true
   }
 
@@ -114,11 +113,7 @@ export function getTerminalSelection(paneId: string): string | null {
  * Build a TerminalContext for the given pane + selection, pulling pane
  * metadata (label/command/cwd) from the terminal-store.
  */
-export function captureTerminalContext(
-  sessionId: string,
-  paneId: string,
-  selection: string,
-): TerminalContext {
+export function captureTerminalContext(sessionId: string, paneId: string, selection: string): TerminalContext {
   const pane = useTerminalStore.getState().getLayout(sessionId).panes[paneId]
   return {
     selection,
@@ -240,13 +235,9 @@ function getDomSelectionText(): string {
 export function captureSelection(): boolean {
   const sel = typeof window !== 'undefined' ? window.getSelection?.() : null
   const anchor = sel?.anchorNode
-  const anchorEl =
-    anchor instanceof Element
-      ? anchor
-      : (anchor?.parentElement ?? null)
-  const activeEl = typeof document !== 'undefined' && document.activeElement instanceof Element
-    ? document.activeElement
-    : null
+  const anchorEl = anchor instanceof Element ? anchor : (anchor?.parentElement ?? null)
+  const activeEl =
+    typeof document !== 'undefined' && document.activeElement instanceof Element ? document.activeElement : null
   const contextEl = contextElementForSelection(anchorEl, activeEl)
   const source = findContextSource(contextEl)
 

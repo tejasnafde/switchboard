@@ -39,25 +39,27 @@ vi.mock('node:child_process', () => ({
   execFileSync: vi.fn(() => {
     throw new Error('execFileSync blocks the event loop - the login probe must be async')
   }),
-  execFile: vi.fn((
-    _bin: string,
-    args: string[],
-    opts: Record<string, unknown>,
-    cb: (err: (Error & { code?: number | string }) | null, stdout: string, stderr: string) => void,
-  ) => {
-    probe.calls.push({ args, opts })
-    const finish = (): void => {
-      if (probe.exitCode === 0) cb(null, probe.stdout, '')
-      else {
-        const err = new Error(`exit ${probe.exitCode}`) as Error & { code?: number }
-        err.code = probe.exitCode ?? 1
-        cb(err, probe.stdout, 'Not logged in')
+  execFile: vi.fn(
+    (
+      _bin: string,
+      args: string[],
+      opts: Record<string, unknown>,
+      cb: (err: (Error & { code?: number | string }) | null, stdout: string, stderr: string) => void,
+    ) => {
+      probe.calls.push({ args, opts })
+      const finish = (): void => {
+        if (probe.exitCode === 0) cb(null, probe.stdout, '')
+        else {
+          const err = new Error(`exit ${probe.exitCode}`) as Error & { code?: number }
+          err.code = probe.exitCode ?? 1
+          cb(err, probe.stdout, 'Not logged in')
+        }
       }
-    }
-    if (probe.manual) probe.pending.push(finish)
-    else queueMicrotask(finish)
-    return { kill: vi.fn() }
-  }),
+      if (probe.manual) probe.pending.push(finish)
+      else queueMicrotask(finish)
+      return { kill: vi.fn() }
+    },
+  ),
 }))
 
 import {
@@ -131,10 +133,7 @@ describe('remote codex login probe - async, bounded, cached, deduped (behavior 4
     probe.manual = true
     const a = tmpDir()
     const b = tmpDir()
-    const inflight = Promise.all([
-      checkRemoteProviderAuth('codex', a),
-      checkRemoteProviderAuth('codex', b),
-    ])
+    const inflight = Promise.all([checkRemoteProviderAuth('codex', a), checkRemoteProviderAuth('codex', b)])
     await Promise.resolve()
     expect(probe.calls).toHaveLength(2)
     for (const done of probe.pending.splice(0)) done()
