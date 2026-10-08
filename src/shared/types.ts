@@ -188,9 +188,19 @@ export interface ToolCall {
   output?: string
 }
 
+export interface HistoryImageRef {
+  messageId: string
+  index: number
+  /** Decoded size of the image, for display before it loads. */
+  bytes: number
+}
+
 export interface MessageImage {
-  /** Data URL or object URL for rendering */
+  /** Data URL or object URL for rendering. Empty when `ref` is set. */
   url: string
+  /** A history image sent by reference (`history_image_refs_v1`); fetch the
+   *  bytes with `app:load-history-image`. */
+  ref?: HistoryImageRef
   /** Optional MIME type (e.g. image/png) */
   mimeType?: string
   /** Optional filename */

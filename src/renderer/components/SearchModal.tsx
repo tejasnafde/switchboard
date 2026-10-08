@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAgentStore } from '../stores/agent-store'
+import { ensureFullHistory } from '../services/history-loader'
 import { renderSnippetHtml } from './search-snippet'
 import { resolveSessionSelectTarget } from '../utils/session-eviction'
 import type { ChatMessage } from '@shared/types'
@@ -97,11 +98,20 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
       }
     }
 
+    // The hit can be older than the window a long chat opened with.
+    const complete = await ensureFullHistory(targetId)
     setActiveSession(targetId)
-    // Ask MessageList to jump the virtualizer to this message. The effect
-    // there retries until the message shows up in the turns array (gives
-    // setMessages a chance to land).
-    requestScrollToMessage(targetId, result.messageId)
+    const shown = useAgentStore.getState().sessions
+      .find((s) => s.id === targetId)?.messages.some((m) => m.id === result.messageId)
+    if (complete || shown) {
+      // Ask MessageList to jump the virtualizer to this message. The effect
+      // there retries until the message shows up in the turns array (gives
+      // setMessages a chance to land).
+      requestScrollToMessage(targetId, result.messageId)
+    } else {
+      // A jump would wait for a row that is not coming; open the chat only.
+      log.warn('search hit is older than the loaded history', { targetId })
+    }
     onClose()
   }, [setActiveSession, requestScrollToMessage, addSession, setMessages, onClose])
 

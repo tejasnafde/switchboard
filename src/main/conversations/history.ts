@@ -9,10 +9,10 @@ import {
   messageRowsToChatMessages,
   threadFamilyIds,
 } from '../db/database'
-import { listClaudeSessionCopies, claudeCandidateDirs } from '../provider/claude-session-migrate'
+import { compareSessionCopies, listClaudeSessionCopies, claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import { scanCodexSessionCopies } from '../projects/session-scanner'
-import { loadJsonlCached } from '../agent/jsonl-cache'
+import { loadJsonlCached, loadJsonlCopies } from '../agent/jsonl-cache'
 import { mergeConversationMessages } from '../agent/dedupe-messages'
 import { enrichMessagesWithDisplayBody } from '../ipc/enrich-display-body'
 import {
@@ -34,7 +34,7 @@ export async function loadConversationHistory(
   conversationId: string,
   _projectPath: string,
 ): Promise<ConversationHistory> {
-  const timing: ChatLoadTiming = { readMs: 0, parseMs: 0, diskMs: 0, dbMs: 0, mergeMs: 0, enrichMs: 0, diskBytes: 0, diskLines: 0, cacheHits: 0 }
+  const timing: ChatLoadTiming = { readMs: 0, parseMs: 0, diskMs: 0, dbMs: 0, mergeMs: 0, enrichMs: 0, diskBytes: 0, diskLines: 0, cacheHits: 0, prefixSkips: 0 }
   const metadataStart = performance.now()
   const familyIds = threadFamilyIds(conversationId)
   const legacySessionHints = conversationSessionHints(conversationId)
@@ -57,19 +57,19 @@ export async function loadConversationHistory(
   timing.dbMs += performance.now() - metadataStart
   const diskStart = performance.now()
   for (const sessionId of claudeIds) {
-    for (const baseDir of claudeCandidateDirs()) {
-      for (const copy of listClaudeSessionCopies(baseDir, sessionId)) {
-        const messages = await loadJsonlCached(copy.path, 'claude-code', timing)
-        if (messages) {
-          diskMessages.push(...messages)
-          for (const message of messages) {
-            provenanceByMessageId.set(message.id, {
-              provider: 'claude-code',
-              providerSessionId: sessionId,
-              providerEventId: message.id,
-            })
-          }
-        }
+    // Profile switches leave older copies that are byte prefixes of the
+    // newest one; loadJsonlCopies proves that by hash and parses one.
+    const copies = claudeCandidateDirs()
+      .flatMap((baseDir) => listClaudeSessionCopies(baseDir, sessionId))
+      .sort(compareSessionCopies)
+    for (const { messages } of await loadJsonlCopies(copies.map((copy) => copy.path), 'claude-code', timing)) {
+      diskMessages.push(...messages)
+      for (const message of messages) {
+        provenanceByMessageId.set(message.id, {
+          provider: 'claude-code',
+          providerSessionId: sessionId,
+          providerEventId: message.id,
+        })
       }
     }
   }

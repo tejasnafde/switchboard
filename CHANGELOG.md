@@ -4,6 +4,8 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Changed
+- **Long chats open fast on the desktop.** A chat opens with its newest 200 rows and loads older rows as you scroll up, keeping your place. Images in history load when they scroll into view instead of riding inside the chat load. The backend parses one profile copy of a session instead of every copy (the others are proven byte prefixes of it by hash), and a growing transcript parses only its new lines. On a copied 98 MB transcript held in five profiles, a reopen measured about 0.45 s and the load payload 130 KB; before, that chat took 3.7 to 7 s to open with a 58 MB payload. Search, export, fork and the handoff preamble still read the whole chat; when that full read fails, the handoff send is refused and a jump to an unloaded row is not attempted. Older rows keep loading after the oldest shown row disappears from the backend's history, and images that miss at the same moment share one history read. See `docs/feature-parity/desktop-history-window.json`.
 ### Fixed
 - **A project search finds the project by its name first.** Searching "projects" in the landing screen's project picker (and every other searchable picker) listed every project whose path contains the word in sidebar order, so the folder named Projects could be far down. Name matches now come first (exact, then starts with, then contains), then path-only matches, each in the old order.
 - **The chat header no longer says "thinking..." during a turn.** The Working... row in the chat already shows it.

@@ -3,6 +3,7 @@ import { IpcTransport, type Transport } from './transport'
 import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
+import type { HistoryLoadOptions } from '@shared/phone-history-window'
 import { RoutingTable } from './routing-table'
 import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels, SettingsFileChannels, PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
@@ -207,8 +208,10 @@ const api = {
       ),
     loadSession: (filePath: string, conversationId?: string, source?: 'claude-code' | 'codex') =>
       transport.invoke(AppChannels.LOAD_SESSION, filePath, conversationId, source),
-    loadSessionById: (conversationId: string) =>
-      transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId),
+    loadSessionById: (conversationId: string, opts?: HistoryLoadOptions) =>
+      transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId, opts),
+    loadHistoryImage: (conversationId: string, messageId: string, index: number) =>
+      transport.invoke(AppChannels.LOAD_HISTORY_IMAGE, conversationId, messageId, index) as Promise<{ url: string | null }>,
     attachToThread: (fragmentId: string, rootThreadId: string) =>
       transport.invoke(AppChannels.ATTACH_TO_THREAD, fragmentId, rootThreadId),
     relaunch: () => transport.invoke(AppChannels.RELAUNCH),

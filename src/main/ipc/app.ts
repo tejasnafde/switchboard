@@ -3,7 +3,9 @@ import type { BackendHost } from '../backend/host'
 import { stat } from 'fs/promises'
 import { notifyConversationArchived, notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
-import { historyWindow, type HistoryWindowRequest } from '@shared/phone-history-window'
+import { historyWindow, type HistoryLoadOptions } from '@shared/phone-history-window'
+import { imagesByReference } from '@shared/history-image-refs'
+import { rememberHistoryImage, rememberedHistoryImage } from '../conversations/history-images'
 import { historyTail } from '@shared/turn-activity'
 import { parseFollowSuggestionMode } from '@shared/follow-suggestions'
 import { createMainLogger as createLogger } from '../logger'
@@ -105,7 +107,21 @@ const log = createLogger('ipc:app')
  */
 function capTail<T extends { messages: ChatMessage[] }>(
   result: T,
-  opts?: HistoryWindowRequest & { window?: boolean },
+  opts?: HistoryLoadOptions,
+  imageThreadId?: string,
+): T & { total: number; truncated: boolean } {
+  const capped = capMessages(result, opts)
+  if (!opts?.imageRefs || !imageThreadId) return capped
+  return {
+    ...capped,
+    messages: imagesByReference(capped.messages, (messageId, index, url) =>
+      rememberHistoryImage(imageThreadId, messageId, index, url)),
+  }
+}
+
+function capMessages<T extends { messages: ChatMessage[] }>(
+  result: T,
+  opts?: HistoryLoadOptions,
 ): T & { total: number; truncated: boolean } {
   if (opts?.window) return { ...result, ...historyWindow(result.messages, opts) }
   const total = result.messages.length
@@ -434,7 +450,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   // in chronological order. One click in the sidebar → one coherent
   // conversation, regardless of how many .jsonl files it actually spans.
   host.handle(AppChannels.LOAD_SESSION_BY_ID, async (conversationId: string,
-    opts?: HistoryWindowRequest & { window?: boolean },
+    opts?: HistoryLoadOptions,
   ): Promise<{
     messages: ChatMessage[]
     meta: {
@@ -518,7 +534,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
         `(${history.diskMessageCount} disk, ${history.databaseMessageCount} DB) ` +
         `across ${history.familyIds.length} family id(s)`,
       )
-      const response = { ...capTail({ messages: history.messages, meta }, opts), timing: history.timing, loadStatus: 'loaded' as const }
+      const response = { ...capTail({ messages: history.messages, meta }, opts, rootThreadId), timing: history.timing, loadStatus: 'loaded' as const }
       span.end({
         ...history.timing,
         messages: history.messages.length,
@@ -532,6 +548,38 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       span.end({ outcome: 'error' })
       log.warn(`load-by-id failed for ${conversationId}: ${err}`)
       return { ...capTail({ messages: [], meta }, opts), loadStatus: 'error' }
+    }
+  })
+
+  // Full-history reads started for an image miss, by root thread, so a burst
+  // of thumbnails scrolling into view shares one read instead of one each.
+  const imageHistoryLoads = new Map<string, Promise<ChatMessage[]>>()
+  const historyForImages = (rootThreadId: string, conversationId: string, projectPath: string): Promise<ChatMessage[]> => {
+    const running = imageHistoryLoads.get(rootThreadId)
+    if (running) return running
+    const next = loadConversationHistory(conversationId, projectPath)
+      .then((history) => history.messages)
+      .finally(() => imageHistoryLoads.delete(rootThreadId))
+    imageHistoryLoads.set(rootThreadId, next)
+    return next
+  }
+
+  // The bytes of one image a windowed load sent by reference (`imageRefs`).
+  host.handle(AppChannels.LOAD_HISTORY_IMAGE, async (conversationId: string, messageId: string, index: number): Promise<{ url: string | null }> => {
+    if (typeof messageId !== 'string' || !Number.isInteger(index) || index < 0) return { url: null }
+    const row = getConversationById(conversationId)
+    if (!row) return { url: null }
+    const rootThreadId = resolveRootThreadId(row.id)
+    const remembered = rememberedHistoryImage(rootThreadId, messageId, index)
+    if (remembered) return { url: remembered }
+    try {
+      const messages = await historyForImages(rootThreadId, conversationId, row.project_path)
+      const url = messages.find((message) => message.id === messageId)?.images?.[index]?.url ?? null
+      if (url) rememberHistoryImage(rootThreadId, messageId, index, url)
+      return { url }
+    } catch (err) {
+      log.warn(`history image load failed for ${conversationId}: ${err}`)
+      return { url: null }
     }
   })
 
