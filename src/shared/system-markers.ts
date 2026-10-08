@@ -5,6 +5,7 @@
  * phones follow, ported to Android as `SystemMarkers.kt` with the same vectors.
  */
 import { approvalResultLabel, parseApprovalResultMarker } from './agent-approval-cards'
+import { mergeBackRowDetails, mergeBackRowTitle, parseMergeBackMarker } from './merge-back'
 import { parseUndeliveredMarker, type PeerUndelivered } from './peer-links'
 import { CONTEXT_HANDOFF_MARKER_PREFIX, parseRotationMarker, type RotationMarker } from './rotation-marker'
 
@@ -43,6 +44,9 @@ export function systemRowView(content: string): SystemRowView {
   if (undelivered) return { kind: 'peer-undelivered', row: undelivered }
   const approval = parseApprovalResultMarker(content)
   if (approval) return { kind: 'notice', title: approvalResultLabel(approval), body: approval.text }
+  // Read-only on a phone: the card's heading and bullets, not the whole summary.
+  const mergeBack = parseMergeBackMarker(content)
+  if (mergeBack) return { kind: 'notice', title: mergeBackRowTitle(mergeBack), body: mergeBackRowDetails(mergeBack).join('\n') }
   const rotation = parseRotationMarker(content)
   if (rotation) return { kind: 'notice', title: rotationMarkerText(rotation), body: '' }
   // The profile-restart handoff has no `<from> → <to>`, only a sentence.

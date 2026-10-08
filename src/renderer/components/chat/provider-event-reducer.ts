@@ -138,6 +138,21 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       if (!exists) appendMessage(tid, { id: event.messageId, role: 'system', content: event.content, timestamp: event.at })
       break
     }
+    case 'merge-back.row': {
+      // A fork's summary card: same id and content as the stored row; null once discarded.
+      // Delivered, it moves to just above the message that carried it, as a reload shows it.
+      const messages = useAgentStore.getState().sessions.find((s) => s.id === tid)?.messages
+      if (!messages) break
+      const rest = messages.filter((m) => m.id !== event.messageId)
+      if (event.content === null) {
+        if (rest.length !== messages.length) useAgentStore.getState().setMessages(tid, rest)
+        break
+      }
+      const row = { id: event.messageId, role: 'system' as const, content: event.content, timestamp: event.at }
+      const at = rest.findIndex((m) => m.timestamp > event.at)
+      useAgentStore.getState().setMessages(tid, at === -1 ? [...rest, row] : [...rest.slice(0, at), row, ...rest.slice(at)])
+      break
+    }
     case 'task.notification': {
       // The transcript's copy is a user line, so this is one too: MessageBubble
       // splits both into the same row, and a reload replaces this one. A replay

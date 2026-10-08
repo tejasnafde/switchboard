@@ -66,6 +66,10 @@ export const BACKEND_CAPABILITIES = [
    *  without waking it). `AGENT_ASYNC_APPROVAL_CAPABILITY` in
    *  shared/agent-approval-cards. */
   'agent_async_approval_v1',
+  /** A fork can send a summary back to its parent (`FORK_MERGE_BACK_CAPABILITY`
+   *  in shared/merge-back): the `provider:merge-back-*` channels and the
+   *  `merge-back.row` event. */
+  'fork_merge_back_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

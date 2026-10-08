@@ -147,6 +147,8 @@ interface ChatInputProps {
   onArchive?: () => void
   /** Show slash-command help overlay */
   onShowSlashHelp?: () => void
+  /** `/merge-back`: open the dialog that sends this fork's work to its parent. */
+  onMergeBack?: () => void
   /** Rendered first in the footer bar (the landing screen's project chip). */
   leadingControl?: ReactNode
 }
@@ -208,6 +210,7 @@ export function ChatInput({
   onClearMessages,
   onArchive,
   onShowSlashHelp,
+  onMergeBack,
   leadingControl,
 }: ChatInputProps) {
   // Static fallback list - used until a dynamic fetch returns (OpenCode
@@ -1243,11 +1246,12 @@ export function ChatInput({
       showHelp: () => onShowSlashHelp?.(),
       pickImage: () => filePickerRef.current?.click(),
       interrupt: () => onInterrupt?.(),
+      mergeBack: () => onMergeBack?.(),
     }
     cmd.run?.(ctx)
 
     requestAnimationFrame(() => richRef.current?.focus())
-  }, [sessionId, dismissSlash, onRuntimeModeChange, onClearMessages, onArchive, onShowSlashHelp, onInterrupt])
+  }, [sessionId, dismissSlash, onRuntimeModeChange, onClearMessages, onArchive, onShowSlashHelp, onInterrupt, onMergeBack])
 
   // Slash menu navigation. Bound at the wrapper-div level so it fires
   // BEFORE Lexical's own Enter-handler (we preventDefault to swallow).
