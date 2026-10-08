@@ -419,6 +419,7 @@ function SelectionMemoryPlugin(): null {
       rootEl?.addEventListener('pointerdown', onPointerDown)
     })
     window.addEventListener('pointerup', onPointerUp, true)
+    window.addEventListener('pointercancel', onPointerUp, true)
     const save = (offsets: ComposerSelection | null): void => {
       if (offsets) saved = { ...offsets, body: serializeEditorToBody(editor) }
     }
@@ -459,6 +460,7 @@ function SelectionMemoryPlugin(): null {
       removeBlur()
       removeFocus()
       window.removeEventListener('pointerup', onPointerUp, true)
+      window.removeEventListener('pointercancel', onPointerUp, true)
     }
   }, [editor])
   return null
