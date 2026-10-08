@@ -63,10 +63,17 @@ jobs:
       - id: scope
         run: |
           if [ "${{ github.event_name }}" = pull_request ]; then
-            # Any failure runs everything (see the test job's `if`): a skipped
-            # required check counts as passed.
-            git diff --name-only HEAD^1 HEAD | node scripts/ci-scope.mjs >> "$GITHUB_OUTPUT" \
-              || printf 'code=true\nvisual=true\n' >> "$GITHUB_OUTPUT"
+            changed=$(git diff --name-only HEAD^1 HEAD)
+            # A change to the scope rule or this workflow never decides its own
+            # scope: a broken script could otherwise skip the tests that catch it.
+            if printf '%s\n' "$changed" | grep -qxE 'scripts/ci-scope\.mjs|\.github/workflows/ci\.yml'; then
+              printf 'code=true\nvisual=true\n' >> "$GITHUB_OUTPUT"
+            else
+              # Any failure runs everything (see the test job's `if`): a skipped
+              # required check counts as passed.
+              printf '%s\n' "$changed" | node scripts/ci-scope.mjs >> "$GITHUB_OUTPUT" \
+                || printf 'code=true\nvisual=true\n' >> "$GITHUB_OUTPUT"
+            fi
           else
             printf 'code=true\nvisual=true\n' >> "$GITHUB_OUTPUT"
           fi
