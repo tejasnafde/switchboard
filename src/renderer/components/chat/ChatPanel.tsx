@@ -1424,16 +1424,15 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               </button>
             )}
 
-            {/* Status text */}
-            {hasSession && (
+            {/* Status text. A running turn has none: the chat's own
+                Working… row already says so. */}
+            {hasSession && (activeSession?.draft || (status !== 'running' && status !== 'thinking')) && (
               <span style={{ color: status === 'error' ? 'var(--error, #f85149)' : 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
                 {activeSession?.draft
                   ? status === 'running' ? 'creating…' : 'draft'
-                  : status === 'running'
-                    ? 'thinking…'
-                    : status === 'idle' && pendingDeliveryState === 'pending'
-                      ? 'sending…'
-                      : status === 'idle' ? 'ready' : status}
+                  : status === 'idle' && pendingDeliveryState === 'pending'
+                    ? 'sending…'
+                    : status === 'idle' ? 'ready' : status}
               </span>
             )}
           </div>
