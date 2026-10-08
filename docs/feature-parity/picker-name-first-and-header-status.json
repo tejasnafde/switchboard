@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "picker-name-first-and-header-status",
+  "summary": "Desktop: searchable pickers (the shared Combobox, including the landing screen's project picker) list name matches before path-only matches, keeping the given order within each tier; the chat header drops its 'thinking...' word during a running turn, since the in-chat Working... row shows it.",
+  "surfaces": {
+    "desktop": { "status": "implemented", "evidence": ["src/renderer/components/ui/combobox-options.ts", "src/renderer/components/chat/ChatPanel.tsx", "tests/unit/combobox-options.test.ts", "e2e/snapshots/queued-message-dark-darwin.png"] },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The phone has no landing-screen project picker and no chat header status word." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The phone has no landing-screen project picker and no chat header status word." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "Renderer-only ranking and display change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Nothing stored changes." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release." }
+  },
+  "verification": {
+    "automated": ["combobox-options test for name-first ranking fails without the fix. Visual screens: the running-turn screens (approval, queued message, host-write cards, create PR) updated in all three themes and inspected; the screens phase then passed with no further changes."],
+    "hardware": [],
+    "notExercised": ["Not clicked through in the installed app."]
+  }
+}

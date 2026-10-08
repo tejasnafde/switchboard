@@ -1,7 +1,9 @@
 package app.switchboard.mobile.domain.thread
 
+import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonCodec
+import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 
@@ -32,6 +34,7 @@ object SystemMarkers {
     private const val UNDELIVERED_PREFIX = "[[sb:peer-undelivered]]"
     private const val APPROVAL_RESULT_PREFIX = "[[sb:approval-result]]"
     private const val HANDOFF_PREFIX = "[[sb:context-handoff]]"
+    private const val MERGE_BACK_PREFIX = "[[sb:merge-back]]"
 
     private val REASONS = setOf("link-budget", "link-expired", "link-removed")
     private val OUTCOME_LABELS = mapOf(
@@ -61,6 +64,7 @@ object SystemMarkers {
     fun view(content: String): SystemRowView {
         undelivered(content)?.let { return SystemRowView.Undelivered(it) }
         approvalResult(content)?.let { return it }
+        mergeBack(content)?.let { return it }
         rotation(content)?.let { return SystemRowView.Notice(it, "") }
         if (content.startsWith(HANDOFF_PREFIX)) {
             return SystemRowView.Notice("Context handoff", content.removePrefix(HANDOFF_PREFIX).trim())
@@ -112,6 +116,39 @@ object SystemMarkers {
         return SystemRowView.Notice(listOf(title, outcome, delivery).filter(String::isNotEmpty).joinToString(" · "), text)
     }
 
+    /** A fork's merge-back card in its parent, read-only: heading and bullets (shared/merge-back.ts). */
+    private fun mergeBack(content: String): SystemRowView.Notice? {
+        val raw = payload(content, MERGE_BACK_PREFIX) ?: return null
+        if (raw.str("id") == null || raw.str("fork") == null || raw.str("text") == null) return null
+        val forkTitle = raw.str("forkTitle") ?: return null
+        val state = raw.str("state")?.takeIf { it == "pending" || it == "delivered" } ?: return null
+        val turns = raw.count("turns") ?: return null
+        val omitted = raw.count("omittedTurns") ?: return null
+        val moreFiles = raw.count("moreFiles") ?: return null
+        val filesRaw = raw.values["files"] as? JsonArray ?: return null
+        val files = filesRaw.values.map { (it as? JsonString)?.value ?: return null }
+        val location = raw.str("location")
+        val result = raw.str("result")
+        val title = if (state == "pending") {
+            "From fork \"$forkTitle\" (not sent yet)"
+        } else {
+            "From fork \"$forkTitle\" · Sent with your message"
+        }
+        val lines = mutableListOf(
+            "$turns turn${if (turns == 1L) "" else "s"} since the fork point or the last send" +
+                if (omitted > 0) " ($omitted left out to fit)" else "",
+        )
+        if (files.isNotEmpty()) {
+            lines += "Changed: ${files.joinToString(", ")}" +
+                (if (moreFiles > 0) ", and $moreFiles more" else "") +
+                (if (location != null) " (in $location)" else "")
+        } else if (location != null) {
+            lines += "In $location"
+        }
+        if (result != null) lines += "Result: $result"
+        return SystemRowView.Notice(title, lines.joinToString("\n"))
+    }
+
     private fun rotation(content: String): String? {
         val (prefix, kind) = ROTATION_PREFIXES.firstOrNull { content.startsWith(it.first) } ?: return null
         val rest = content.removePrefix(prefix).trim()
@@ -137,4 +174,8 @@ object SystemMarkers {
     }
 
     private fun JsonObject.str(key: String): String? = (values[key] as? JsonString)?.value
+
+    /** A non-negative whole number, as the TypeScript parser accepts it. */
+    private fun JsonObject.count(key: String): Long? =
+        (values[key] as? JsonNumber)?.source?.toLongOrNull()?.takeIf { it >= 0 }
 }

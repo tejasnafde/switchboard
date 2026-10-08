@@ -730,6 +730,19 @@ const api = {
     resumeQueuedTurns: (threadId: string): Promise<{ ok: boolean; message?: string }> =>
       transport.invoke(ProviderChannels.RESUME_QUEUED_TURNS, threadId),
 
+    /** What a fork would send back to its parent. See `ProviderChannels.MERGE_BACK_PREVIEW`. */
+    mergeBackPreview: (forkThreadId: string): Promise<import('@shared/merge-back').MergeBackPreview> =>
+      transport.invoke(ProviderChannels.MERGE_BACK_PREVIEW, forkThreadId),
+    /** Store the (edited) summary as a pending card in the parent. */
+    mergeBackSend: (forkThreadId: string, text: string, token: import('@shared/merge-back').MergeBackToken): Promise<import('@shared/merge-back').MergeBackActionResult> =>
+      transport.invoke(ProviderChannels.MERGE_BACK_SEND, forkThreadId, text, token),
+    /** Change the text of a pending card in the parent. */
+    mergeBackEdit: (parentThreadId: string, mergeBackId: string, text: string): Promise<import('@shared/merge-back').MergeBackActionResult> =>
+      transport.invoke(ProviderChannels.MERGE_BACK_EDIT, parentThreadId, mergeBackId, text),
+    /** Remove a pending card without sending it. */
+    mergeBackDiscard: (parentThreadId: string, mergeBackId: string): Promise<import('@shared/merge-back').MergeBackActionResult> =>
+      transport.invoke(ProviderChannels.MERGE_BACK_DISCARD, parentThreadId, mergeBackId),
+
     /**
      * Fetch the agent-defined slash commands/skills for a session
      * (Claude SDK's `init.commands`, Codex's `skills/list`). Returns `[]`

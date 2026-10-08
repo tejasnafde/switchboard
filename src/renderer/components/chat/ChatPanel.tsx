@@ -23,6 +23,7 @@ import { ChatInput, type ChatSendResult } from './ChatInput'
 import { chatIdentity } from './chat-identity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ForkLineageBanner } from './ForkLineageBanner'
+import { MergeBackDialog } from './MergeBackDialog'
 import { PeerLinkBanner } from './PeerLinkBanner'
 import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
@@ -150,6 +151,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const pendingNoteRef = useRef<{ sessionId: string; text: string } | null>(null)
   const agentStartedRef = useRef<Set<string>>(new Set())
   const [slashHelpOpen, setSlashHelpOpen] = useState(false)
+  // The fork the merge-back dialog was opened for; a session change closes it.
+  const [mergeBackFor, setMergeBackFor] = useState<string | null>(null)
 
 
   const messages = opening ? [] : activeSession?.messages ?? []
@@ -180,6 +183,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   }, [messages])
   const hasSession = activeSession !== undefined || opening !== undefined
   const sessionId = opening?.id ?? activeSession?.id ?? null
+  useEffect(() => { setMergeBackFor(null) }, [sessionId])
   const wait = useChatWaitStore((s) => sessionId ? s.waits[sessionId] : undefined)
   const followUpDefault = useFollowUpDefault(sessionId)
   const projectPath = opening?.projectPath ?? activeSession?.projectPath
@@ -1239,6 +1243,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           removeSession(sessionId)
         }}
         onShowSlashHelp={() => setSlashHelpOpen(true)}
+        onMergeBack={() => setMergeBackFor(sessionId ?? null)}
         leadingControl={landing?.composerLead}
       />
 
@@ -1424,22 +1429,24 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               </button>
             )}
 
-            {/* Status text */}
-            {hasSession && (
+            {/* Status text. A running turn has none: the chat's own
+                Working… row already says so. */}
+            {hasSession && (activeSession?.draft || (status !== 'running' && status !== 'thinking')) && (
               <span style={{ color: status === 'error' ? 'var(--error, #f85149)' : 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
                 {activeSession?.draft
                   ? status === 'running' ? 'creating…' : 'draft'
-                  : status === 'running'
-                    ? 'thinking…'
-                    : status === 'idle' && pendingDeliveryState === 'pending'
-                      ? 'sending…'
-                      : status === 'idle' ? 'ready' : status}
+                  : status === 'idle' && pendingDeliveryState === 'pending'
+                    ? 'sending…'
+                    : status === 'idle' ? 'ready' : status}
               </span>
             )}
           </div>
 
           {activeSession?.forkMetadata && (
-            <ForkLineageBanner metadata={activeSession.forkMetadata} />
+            <ForkLineageBanner
+              metadata={activeSession.forkMetadata}
+              onSendBack={sessionId && !activeSession.draft ? () => setMergeBackFor(sessionId) : undefined}
+            />
           )}
 
           {sessionId && !activeSession?.draft && <PeerLinkBanner sessionId={sessionId} />}
@@ -1471,6 +1478,12 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
 
           {composer}
         </>
+      )}
+      {mergeBackFor && mergeBackFor === sessionId && (
+        <MergeBackDialog
+          mode={{ kind: 'send', forkSessionId: mergeBackFor, parentTitle: activeSession?.forkMetadata?.parentTitle ?? 'the parent chat' }}
+          onClose={() => setMergeBackFor(null)}
+        />
       )}
       {slashHelpOpen && (
         <SlashHelpOverlay onClose={() => setSlashHelpOpen(false)} />

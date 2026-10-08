@@ -277,6 +277,20 @@ export interface RuntimeApprovalResultEvent {
   at: number
 }
 
+/**
+ * A fork's merge-back card in the parent chat changed: sent, edited, delivered
+ * with the parent's next message, or discarded (`content: null`).
+ * `content` is the stored system row (`shared/merge-back.ts`), under the same
+ * `messageId`, so a live client shows exactly what a reload shows.
+ */
+export interface RuntimeMergeBackRowEvent {
+  type: 'merge-back.row'
+  threadId: string
+  messageId: string
+  content: string | null
+  at: number
+}
+
 /** One entry of an agent's own progress checklist. */
 export type TodoStatus = 'pending' | 'in_progress' | 'completed'
 export interface TodoItem {
@@ -365,6 +379,7 @@ export type RuntimeEvent = (
   | RuntimePeerMessageEvent
   | RuntimePeerUndeliveredEvent
   | RuntimeApprovalResultEvent
+  | RuntimeMergeBackRowEvent
   | RuntimeTodoUpdatedEvent
   | RuntimeTaskNotificationEvent
 ) & {

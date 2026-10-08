@@ -145,5 +145,13 @@
     "id": "command-args-then-typed-prose",
     "text": "<command-name>/model</command-name>\n<command-args>x</command-args> and then <command-args>y</command-args>",
     "expected": null
+  },
+  {
+    "id": "fork-merge-back-before-user-text",
+    "text": "<switchboard-fork-merge-back>\nSwitchboard sends this on behalf of the user.\n\nFrom the fork \"x\": 1 turn since the fork point.\n</switchboard-fork-merge-back>\n\n<switchboard-fork-merge-back>\nsecond fork\n</switchboard-fork-merge-back>\n\nnow wire it in",
+    "expected": {
+      "rows": [],
+      "userText": "now wire it in"
+    }
   }
 ]
