@@ -178,7 +178,8 @@ export function claudeQueryEffort(
   models: readonly ModelOption[],
 ): ReasoningEffort | undefined {
   const row = model ? modelRowFor(models, model, claudeRowCovers) : models.find((m) => m.id === 'default')
-  return takenBy(effort, row)
+  if (!effort || (row?.effortLevels && !row.effortLevels.includes(effort))) return undefined
+  return effort
 }
 
 /**
@@ -194,10 +195,4 @@ export function codexWireEffort(
 ): ReasoningEffort | undefined {
   const levels = modelRowFor(models, model)?.effortLevels ?? CODEX_FALLBACK_LEVELS
   return effort && levels.includes(effort) ? effort : undefined
-}
-
-function takenBy(effort: ReasoningEffort | undefined, row: ModelOption | undefined): ReasoningEffort | undefined {
-  if (!effort) return undefined
-  if (row?.effortLevels && !row.effortLevels.includes(effort)) return undefined
-  return effort
 }
