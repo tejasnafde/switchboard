@@ -22,9 +22,7 @@ function exactRule(selector: string): string {
 
 function luminance(hex: string): number {
   const channels = hex.match(/[0-9a-f]{2}/gi)?.map((part) => parseInt(part, 16) / 255) ?? []
-  const [r, g, b] = channels.map((value) =>
-    value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4,
-  )
+  const [r, g, b] = channels.map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4))
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
@@ -74,7 +72,9 @@ describe('theme CSS contracts', () => {
     expect(translucent).toMatch(/--terminal-bg:\s*rgba\(0,\s*0,\s*0,\s*0\.03\)/)
     expect(exactRule('.theme-translucent .sidebar-root')).toMatch(/background:\s*transparent\s*!important/)
     expect(exactRule('.theme-translucent .titlebar-drag')).toMatch(/background:\s*transparent\s*!important/)
-    expect(css).toMatch(/\.sidebar-create-trigger,\s*\.sidebar-organize-btn\s*\{[^}]*background:\s*var\(--bg-tertiary\)/s)
+    expect(css).toMatch(
+      /\.sidebar-create-trigger,\s*\.sidebar-organize-btn\s*\{[^}]*background:\s*var\(--bg-tertiary\)/s,
+    )
   })
 
   it('does not turn Full Access into an amber glowing control', () => {
