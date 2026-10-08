@@ -165,6 +165,46 @@ async function commandPalette() {
   check('palette: closing Settings opened from it returns focus to the composer', await composerHasFocus())
 }
 
+// Focus that comes back to the composer from an overlay keeps the caret, and
+// a selected range, where the user left them; the browser alone would put
+// the caret at the start.
+async function composerSelectionSurvives() {
+  const editor = win.locator('.chat-composer [aria-label="Chat message"]').first()
+  const press = (shortcut) => () => win.keyboard.press(shortcut)
+  // Cmd+, is a native menu accelerator, which synthetic keys never reach, so
+  // send what its menu item sends.
+  const openSettings = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('app:open-settings'))
+  const overlays = [
+    ['settings', openSettings, win.getByRole('dialog', { name: 'Settings' })],
+    ['palette', press('ControlOrMeta+Shift+P'), win.getByRole('dialog', { name: 'Command Palette' })],
+    ['search', press('ControlOrMeta+Shift+F'), win.getByRole('dialog', { name: 'Search across all conversations' })],
+    ['quick prompt', press('ControlOrMeta+K'), win.getByRole('dialog', { name: 'Quick prompt' })],
+  ]
+  const roundTrip = async (open, dialog) => {
+    await open()
+    await dialog.waitFor({ state: 'visible' })
+    await win.keyboard.press('Escape')
+    await hidden(dialog)
+    return composerHasFocus()
+  }
+  for (const [name, open, dialog] of overlays) {
+    await editor.click()
+    await win.keyboard.press('ControlOrMeta+A')
+    await win.keyboard.press('Backspace')
+    await win.keyboard.type('hello world')
+    for (let i = 0; i < 5; i++) await win.keyboard.press('ArrowLeft')
+    const back = await roundTrip(open, dialog)
+    await win.keyboard.type('X')
+    check(`${name}: closing it keeps the composer caret`, back && await editor.textContent() === 'hello Xworld', await editor.textContent())
+    for (let i = 0; i < 5; i++) await win.keyboard.press('Shift+ArrowRight')
+    const backAgain = await roundTrip(open, dialog)
+    await win.keyboard.type('Y')
+    check(`${name}: closing it keeps a selected range`, backAgain && await editor.textContent() === 'hello XY', await editor.textContent())
+  }
+  await win.keyboard.press('ControlOrMeta+A')
+  await win.keyboard.press('Backspace')
+}
+
 async function sessionPicker() {
   // Open beside offers only chats that are already loaded.
   await openConversation('Compare retry strategies')
@@ -370,6 +410,7 @@ await openConversation('Debug auth callback')
 await providerPicker()
 await branchPicker()
 await commandPalette()
+await composerSelectionSurvives()
 await sessionPicker()
 await searchModal()
 await quickPrompt()
