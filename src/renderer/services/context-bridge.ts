@@ -257,8 +257,13 @@ export function captureSelection(): boolean {
 
   if (source === 'chat-message') {
     const role = closestAttribute(contextEl, 'data-message-role')
-    const text = role === 'user' && sel?.rangeCount
-      ? textWithPillLabels(sel.getRangeAt(0).cloneContents())
+    // Chips read as their labels only inside one user bubble; a selection
+    // across bubbles keeps the browser's text, which breaks lines between them.
+    const range = sel?.rangeCount ? sel.getRangeAt(0) : null
+    const ancestor = range?.commonAncestorContainer
+    const ancestorEl = ancestor instanceof Element ? ancestor : ancestor?.parentElement
+    const text = range && ancestorEl?.closest('[data-message-role="user"]')
+      ? textWithPillLabels(range.cloneContents())
       : getDomSelectionText()
     if (!text.trim()) return false
     const sid = sessionIdForContextElement(contextEl)
