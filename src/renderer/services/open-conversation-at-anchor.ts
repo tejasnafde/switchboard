@@ -59,7 +59,10 @@ export async function openConversationAtAnchor(metadata: ForkLineageMetadata): P
   }
 
   // The anchor can be older than the window an open chat holds.
-  await ensureFullHistory(parentId)
+  const complete = await ensureFullHistory(parentId)
+  const shown = useAgentStore.getState().sessions
+    .find((session) => session.id === parentId)?.messages.some((message) => message.id === metadata.anchor.messageId)
+  if (!complete && !shown) throw new Error('The parent conversation could not be fully loaded. Try again.')
   store.setActiveSession(parentId)
   store.requestScrollToMessage(parentId, metadata.anchor.messageId)
 }

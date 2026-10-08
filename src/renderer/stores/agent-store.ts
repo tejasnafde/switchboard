@@ -17,7 +17,7 @@ import type { FollowSuggestionMode } from '@shared/follow-suggestions'
 import { isRuntimeMode, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
 import { effectiveLocalSetting, projectOverride } from './project-settings-store'
 import { isDraftSessionId, type DraftChatOptions } from '@shared/new-chat-draft'
-import { prependOlder } from '../services/history-window'
+import { prependOlder, rebaseOnNewest } from '../services/history-window'
 import type {
   ForkLineageMetadata,
 } from '@shared/conversation-fork'
@@ -275,6 +275,8 @@ interface AgentStore {
   setMessages: (sessionId: string, messages: ChatMessage[], olderHistoryCursor?: string | null) => void
   /** Put an older window in front, only if `expectedCursor` is still current. */
   prependOlderMessages: (sessionId: string, expectedCursor: string, older: ChatMessage[], nextCursor: string | null) => boolean
+  /** Replace a window whose oldest row the backend lost with its newest window, keeping live rows; only if `expectedCursor` is still current. */
+  rebaseHistoryWindow: (sessionId: string, expectedCursor: string, newest: ChatMessage[], nextCursor: string | null) => boolean
   clearMessages: (sessionId: string) => void
   setConversationId: (sessionId: string, conversationId: string) => void
   setPendingRequests: (sessionId: string, pending: readonly PendingBlockingEvent[]) => void
@@ -509,6 +511,20 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         if (s.id !== sessionId || s.olderHistoryCursor !== expectedCursor) return s
         applied = true
         return { ...s, messages: prependOlder(s.messages, older), olderHistoryCursor: nextCursor }
+      }),
+    }))
+    return applied
+  },
+
+  rebaseHistoryWindow: (sessionId, expectedCursor, newest, nextCursor) => {
+    let applied = false
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId || s.olderHistoryCursor !== expectedCursor) return s
+        const messages = rebaseOnNewest(s.messages, newest)
+        if (!messages) return s
+        applied = true
+        return { ...s, messages, olderHistoryCursor: nextCursor }
       }),
     }))
     return applied

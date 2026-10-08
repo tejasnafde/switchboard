@@ -12,6 +12,20 @@ export function prependOlder(current: ChatMessage[], older: ChatMessage[]): Chat
   return fresh.length > 0 ? [...fresh, ...current] : current
 }
 
+/**
+ * The backend's newest window, followed by the shown rows newer than its last
+ * row (live rows the backend has not stored yet). Null when no shown row is in
+ * the window: nothing tells live rows from rows the backend no longer holds.
+ */
+export function rebaseOnNewest(current: ChatMessage[], newest: ChatMessage[]): ChatMessage[] | null {
+  const inWindow = new Set(newest.map((message) => message.id))
+  let lastShared = -1
+  for (let i = current.length - 1; i >= 0; i--) {
+    if (inWindow.has(current[i].id)) { lastShared = i; break }
+  }
+  return lastShared < 0 ? null : [...newest, ...current.slice(lastShared + 1)]
+}
+
 /** The rows of a full history that come before `firstShownId`, or null when it is not there. */
 export function olderThan(full: ChatMessage[], firstShownId: string): ChatMessage[] | null {
   const index = full.findIndex((message) => message.id === firstShownId)

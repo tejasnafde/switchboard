@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { holdsWholeHistory, olderThan, prependOlder, shouldLoadOlder, turnIndexHolding, LOAD_OLDER_THRESHOLD_PX } from '../../src/renderer/services/history-window'
+import { holdsWholeHistory, olderThan, prependOlder, rebaseOnNewest, shouldLoadOlder, turnIndexHolding, LOAD_OLDER_THRESHOLD_PX } from '../../src/renderer/services/history-window'
 import { historyWindow } from '../../src/shared/phone-history-window'
 import type { ChatMessage } from '../../src/shared/types'
 
@@ -47,5 +47,11 @@ describe('desktop history window', () => {
     expect(holdsWholeHistory({ messages: rows, olderHistoryCursor: 'm1' })).toBe(false)
     const ref = { ...rows[0], images: [{ url: '', ref: { messageId: 'm0', index: 0, bytes: 1 } }] }
     expect(holdsWholeHistory({ messages: [ref] })).toBe(false)
+  })
+
+  it('rebases on the newest window only when a shown row lines it up', () => {
+    const live = { id: 'live', role: 'assistant', content: '', timestamp: 999 } as ChatMessage
+    expect(rebaseOnNewest([rows[1], rows[2], live], [rows[0], rows[2]])).toEqual([rows[0], rows[2], live])
+    expect(rebaseOnNewest([rows[1], live], [rows[0], rows[2]])).toBeNull()
   })
 })

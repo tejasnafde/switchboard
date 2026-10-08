@@ -871,8 +871,14 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         log.warn('pending-handoff read failed, sending without preamble', err)
       }
       if (pendingHandoffFrom) {
-        // The preamble replays the whole chat, not just the open window.
-        await ensureFullHistory(sessionId)
+        // The preamble replays the whole chat, not just the open window, so
+        // a partial history must not reach the new agent as its context.
+        if (!(await ensureFullHistory(sessionId))) {
+          return {
+            accepted: false,
+            error: 'The full conversation could not be loaded for the context handoff. Your text and attachments are preserved; send again.',
+          }
+        }
         // Live read - the closure's `messages` lags in-place streamed edits.
         const history = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.messages ?? []
         const handoffSpan = perfSpan('handoff.build', { thread: sessionId, messages: history.length })

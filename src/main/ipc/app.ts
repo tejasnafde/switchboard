@@ -551,6 +551,19 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     }
   })
 
+  // Full-history reads started for an image miss, by root thread, so a burst
+  // of thumbnails scrolling into view shares one read instead of one each.
+  const imageHistoryLoads = new Map<string, Promise<ChatMessage[]>>()
+  const historyForImages = (rootThreadId: string, conversationId: string, projectPath: string): Promise<ChatMessage[]> => {
+    const running = imageHistoryLoads.get(rootThreadId)
+    if (running) return running
+    const next = loadConversationHistory(conversationId, projectPath)
+      .then((history) => history.messages)
+      .finally(() => imageHistoryLoads.delete(rootThreadId))
+    imageHistoryLoads.set(rootThreadId, next)
+    return next
+  }
+
   // The bytes of one image a windowed load sent by reference (`imageRefs`).
   host.handle(AppChannels.LOAD_HISTORY_IMAGE, async (conversationId: string, messageId: string, index: number): Promise<{ url: string | null }> => {
     if (typeof messageId !== 'string' || !Number.isInteger(index) || index < 0) return { url: null }
@@ -560,8 +573,8 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     const remembered = rememberedHistoryImage(rootThreadId, messageId, index)
     if (remembered) return { url: remembered }
     try {
-      const history = await loadConversationHistory(conversationId, row.project_path)
-      const url = history.messages.find((message) => message.id === messageId)?.images?.[index]?.url ?? null
+      const messages = await historyForImages(rootThreadId, conversationId, row.project_path)
+      const url = messages.find((message) => message.id === messageId)?.images?.[index]?.url ?? null
       if (url) rememberHistoryImage(rootThreadId, messageId, index, url)
       return { url }
     } catch (err) {

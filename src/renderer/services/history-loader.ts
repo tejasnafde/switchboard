@@ -18,15 +18,21 @@ interface HistoryResponse {
   cursorReset?: boolean
 }
 
-const inFlight = new Map<string, Promise<void>>()
+const inFlight = new Map<string, Promise<unknown>>()
 
 function cursorOf(sessionId: string): string | null {
   return useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.olderHistoryCursor ?? null
 }
 
-function once(key: string, run: () => Promise<void>): Promise<void> {
+/** The store holds every row of the chat: it is there and has no older window left. */
+function holdsAllRows(sessionId: string): boolean {
+  const session = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
+  return Boolean(session) && !session?.olderHistoryCursor
+}
+
+function once<T>(key: string, run: () => Promise<T>): Promise<T> {
   const running = inFlight.get(key)
-  if (running) return running
+  if (running) return running as Promise<T>
   const next = run().finally(() => inFlight.delete(key))
   inFlight.set(key, next)
   return next
@@ -41,11 +47,16 @@ export function loadOlderHistory(sessionId: string): Promise<void> {
     try {
       const resp = await window.api.app.loadSessionById(sessionId, { ...NEWEST_HISTORY_WINDOW, beforeId: cursor }) as HistoryResponse
       if (resp?.cursorReset) {
-        // The oldest shown row is gone from the backend's history; a fresh
-        // tail would not line up in front of it, so stop paging here.
+        // The oldest shown row is gone from the backend's history, and the
+        // answer is its newest window. Start over from that window (keeping
+        // live rows) so paging continues from a row the backend still has.
         log.warn('older history cursor no longer found', { sessionId })
-        useAgentStore.getState().prependOlderMessages(sessionId, cursor, [], null)
-        span.end({ outcome: 'cursor-reset' })
+        const store = useAgentStore.getState()
+        const newest = resp.messages ?? []
+        const rebased = store.rebaseHistoryWindow(sessionId, cursor, newest, resp.nextBeforeId ?? null)
+        // No shown row is in that window, so nothing lines up: stop paging.
+        if (!rebased) store.prependOlderMessages(sessionId, cursor, [], null)
+        span.end({ outcome: rebased ? 'cursor-reset' : 'cursor-reset-stopped', messages: newest.length })
         return
       }
       const older = resp?.messages ?? []
@@ -58,11 +69,15 @@ export function loadOlderHistory(sessionId: string): Promise<void> {
   })
 }
 
-/** Load every row older than the shown window, for search, export and handoff. */
-export function ensureFullHistory(sessionId: string): Promise<void> {
+/**
+ * Load every row older than the shown window, for search, export and handoff.
+ * Resolves true only when the store then holds the whole chat, so a caller
+ * that needs every row (a handoff preamble, a jump to an old row) can stop.
+ */
+export function ensureFullHistory(sessionId: string): Promise<boolean> {
   return once(`full:${sessionId}`, async () => {
     const cursor = cursorOf(sessionId)
-    if (!cursor) return
+    if (!cursor) return holdsAllRows(sessionId)
     const span = perfSpan('chat.load-full', { thread: sessionId })
     try {
       const resp = await window.api.app.loadSessionById(sessionId, { imageRefs: true }) as HistoryResponse
@@ -70,19 +85,21 @@ export function ensureFullHistory(sessionId: string): Promise<void> {
       const current = cursorOf(sessionId)
       if (!current) {
         span.end({ outcome: 'stale' })
-        return
+        return holdsAllRows(sessionId)
       }
       const older = olderThan(resp?.messages ?? [], current)
       if (!older) {
         log.warn('full history does not hold the oldest shown row', { sessionId })
         span.end({ outcome: 'cursor-missing' })
-        return
+        return false
       }
-      useAgentStore.getState().prependOlderMessages(sessionId, current, older, null)
-      span.end({ outcome: 'loaded', messages: older.length })
+      const applied = useAgentStore.getState().prependOlderMessages(sessionId, current, older, null)
+      span.end({ outcome: applied ? 'loaded' : 'stale', messages: older.length })
+      return holdsAllRows(sessionId)
     } catch (err) {
       span.end({ outcome: 'error' })
       log.warn('full history load failed', { sessionId, err })
+      return holdsAllRows(sessionId)
     }
   })
 }
