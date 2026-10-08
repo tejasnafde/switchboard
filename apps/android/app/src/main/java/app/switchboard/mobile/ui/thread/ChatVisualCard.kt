@@ -59,6 +59,7 @@ import app.switchboard.mobile.ui.theme.SurfaceSoft
 import app.switchboard.mobile.ui.theme.TextDim
 import app.switchboard.mobile.ui.theme.TextPrimary
 import java.io.ByteArrayInputStream
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -83,7 +84,13 @@ private suspend fun loadHostHtml(context: Context): String = hostHtml ?: withCon
     context.assets.open("visual-host.html").bufferedReader().use { it.readText() }
 }.also { hostHtml = it }
 
-private fun hex(color: Color) = String.format("#%06X", color.toArgb() and 0xFFFFFF)
+/**
+ * `#RRGGBB` for the page's theme. Locale.ROOT keeps the digits ASCII: the page's
+ * colour check rejects anything else, so a localised format would fail every visual.
+ */
+internal fun visualColorHex(argb: Int): String = String.format(Locale.ROOT, "#%06X", argb and 0xFFFFFF)
+
+private fun hex(color: Color) = visualColorHex(color.toArgb())
 
 /** The request the bundled page draws: the source travels as JSON data, never as markup. */
 private fun requestJson(kind: VisualKind, source: String): String = JsonCodec.encode(

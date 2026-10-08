@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Builds the phones' visual host: src/visual-host bundled with Mermaid and
  * DOMPurify into ONE self-contained HTML file, written to
@@ -8,6 +7,9 @@
  * The file is committed. tests/unit/visual-host-asset.test.ts fails when its
  * stamped input hash no longer matches the sources, so rerun this after a
  * change to any input: node scripts/build-visual-host.mjs
+ *
+ * No shebang: the test imports this file, and on a Windows checkout (CRLF) the
+ * test runner's transform does not strip one, so the import fails to parse.
  */
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -23,10 +25,13 @@ const INPUTS = [
   'scripts/build-visual-host.mjs',
 ]
 
-/** Hash of every input, including the bundled library versions. */
+/**
+ * Hash of every input, including the bundled library versions. Line endings are
+ * normalised so a Windows checkout (CRLF) hashes the same as the committed stamp.
+ */
 export function visualHostInputHash() {
   const hash = createHash('sha256')
-  for (const file of INPUTS) hash.update(readFileSync(join(root, file)))
+  for (const file of INPUTS) hash.update(readFileSync(join(root, file), 'utf8').replaceAll('\r\n', '\n'))
   for (const pkg of ['mermaid', 'dompurify']) {
     hash.update(JSON.parse(readFileSync(join(root, 'node_modules', pkg, 'package.json'), 'utf8')).version)
   }

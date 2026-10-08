@@ -47,6 +47,7 @@
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ChatVisualCard.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadRichTextRenderer.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ChatVisualsFixturesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ChatVisualColorTest.kt",
         "apps/android/app/build.gradle.kts"
       ]
     },
@@ -81,9 +82,9 @@
     "automated": [
       "tests/unit/chat-visuals.test.ts: every case of tests/fixtures/chart-spec-cases.json and tests/fixtures/visual-fence-cases.json, the size and count caps, escaping of every spec string in bar, line and table output, niceTicks and the copied data.",
       "tests/unit/diagram-sanitize.test.ts (jsdom): scripts, event handlers, links, images and foreignObject removed; url(#id) kept, external url() and @import dropped.",
-      "tests/unit/visual-host-asset.test.ts: the committed page is built from the current sources and library versions, and its CSP allows nothing outside the page.",
+      "tests/unit/visual-host-asset.test.ts: the committed page is built from the current sources and library versions, and its CSP allows nothing outside the page. The input hash ignores line endings, so a Windows (CRLF) checkout matches the stamp.",
       "apps/mobile jest ChatVisual.test.tsx: an invalid chart shows its error and source with no WebView, Source toggles the drawing, Copy writes the chart data, a diagram error falls back to the source, every navigation but the page is refused, and a streaming block stays code.",
-      "Android ChatVisualsFixturesTest runs both shared fixture files and the copied data format (./gradlew testDebugUnitTest).",
+      "Android ChatVisualsFixturesTest runs both shared fixture files and the copied data format, and ChatVisualColorTest formats the theme colours as ASCII hex under an Arabic default locale (./gradlew testDebugUnitTest).",
       "SB_E2E_BACKGROUND=1 SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new chat-diagram and chat-chart baselines in Dark, Light and Translucent, read; Open in pane and Close driven; two runs pass without updating.",
       "The built visual host page was loaded in a hidden Electron window with its CSP: a flowchart, a sequence diagram and a chart drew through both answer paths (window.ReactNativeWebView and a MessagePort), a click directive and HTML in a label left no link or script, a parse error came back as an error, and no request left the page.",
       "npm run typecheck, apps/mobile tsc and npm test pass."
