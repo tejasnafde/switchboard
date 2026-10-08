@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "model-catalog-fixture",
+  "summary": "Android's copy of the pre-session model catalogs is checked against a fixture generated from src/shared/models.ts; GPT-5.5 and GPT-5.4 now show the balanced tier on Android, as on the desktop.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "src/shared/models.ts is unchanged; the desktop already shows these tiers."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app imports src/shared/models.ts directly, so it cannot drift from it."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/NewSessionDecisions.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/remote/NewSessionDecisionsCatalogFixtureTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "tests/fixtures/model-catalog.json",
+        "tests/unit/model-catalog-fixture.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No persisted data changes; a stored model id is unaffected by its displayed tier."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Ships in the next Android build like any Kotlin change; no channel or packaging change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/model-catalog-fixture.test.ts",
+      "./gradlew :app:testDebugUnitTest --tests 'app.switchboard.mobile.domain.remote.NewSessionDecisions*'"
+    ],
+    "hardware": [],
+    "notExercised": ["The Android new-chat picker was not opened on a device; the change is two tier strings."]
+  }
+}

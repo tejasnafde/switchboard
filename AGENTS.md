@@ -540,6 +540,10 @@ Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file
 - `kanban-store.test.ts` / `card-launch.test.ts` / `kanban-archive-side-effect.test.ts` - kanban
 - `favicon-resolver.test.ts` / `favicon-html-scan.test.ts` / `favicon-protocol.test.ts` - favicons
 
+better-sqlite3 loads under vitest. For a test of the `db/*` modules, import `createMigratedDb` from `tests/unit/helpers/test-db.ts` (it makes every connection `:memory:`, so `getDb()` runs the real open path and `migrate()`) rather than writing a fake SQL matcher.
+
+`tests/fixtures/model-catalog.json` is `src/shared/models.ts`'s catalogs as data; `model-catalog-fixture.test.ts` keeps it equal (regenerate with `SB_UPDATE_FIXTURES=1`) and Android's `NewSessionDecisionsCatalogFixtureTest` checks its copy against it.
+
 ### Screenshot regression tests (every theme)
 
 `npm run test:e2e:visual` (after `npm run build:fast`) has two phases. The
