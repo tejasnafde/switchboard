@@ -1,6 +1,7 @@
 import { useChatWaitStore } from '../../stores/chat-wait-store'
 import { USER_MESSAGE_IMAGE_TYPES } from '@shared/provider-events'
-import { useState, useCallback, useMemo, useRef, useEffect, type DragEvent, type ReactNode } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect, type CSSProperties, type DragEvent, type ReactNode } from 'react'
+import { cn } from '../../lib/utils'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('chat:input')
@@ -152,14 +153,22 @@ interface ChatInputProps {
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
 
 /** The text-link buttons in the drift chip and its "off" line. */
-const driftLinkStyle = {
-  cursor: 'pointer',
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--accent, #4a7dff)',
-  padding: 0,
-  fontSize: 11,
-} as const
+const driftLinkClass = 'cursor-pointer border-0 bg-transparent p-0 text-[11px] text-[var(--accent,#4a7dff)]'
+
+/** The model-unavailable and spend-limit notes above the editor. */
+const composerWarningClass = 'mb-[6px] flex gap-[8px] rounded-[var(--radius)] border border-[var(--warning)] bg-[var(--bg-tertiary)] px-[9px] py-[7px] text-[11px] leading-[1.45] text-[var(--text-secondary)]'
+
+const bannerFocusClass = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]'
+
+const bannerDismissClass = cn(
+  'absolute top-[4px] right-[4px] h-[20px] w-[20px] cursor-pointer rounded-[4px] border-0 bg-transparent p-0 [color:inherit] [font-family:inherit] [font-size:inherit] [font-weight:inherit] [line-height:inherit] hover:bg-[color-mix(in_srgb,currentColor_10%,transparent)]',
+  bannerFocusClass,
+)
+
+const recoveryActionClass = cn(
+  'mt-[6px] min-h-[30px] cursor-pointer rounded-[5px] border border-current bg-transparent px-[10px] py-[5px] text-[11px] font-[600] [color:inherit] [font-family:inherit] [line-height:inherit] transition-[background-color,transform] duration-[120ms] ease-[ease-out] hover:bg-[color-mix(in_srgb,currentColor_10%,transparent)] active:[transform:scale(0.96)]',
+  bannerFocusClass,
+)
 
 // Stop/Send sit inside the input box at its bottom-right, inset so they are
 // centred on a one-line draft and stay pinned to the corner as it grows.
@@ -1345,14 +1354,8 @@ export function ChatInput({
 
   return (
     <div
-      className="chat-composer"
+      className="chat-composer shrink-0 border-t border-[var(--border)] bg-[var(--bg-secondary)] px-[12px] pt-[8px] pb-[10px]"
       data-runtime-mode={runtimeMode}
-      style={{
-        padding: '8px 12px 10px',
-        borderTop: '1px solid var(--border)',
-        background: 'var(--bg-secondary)',
-        flexShrink: 0,
-      }}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -1360,46 +1363,18 @@ export function ChatInput({
     >
       {/* Image previews */}
       {images.length > 0 && (
-        <div style={{
-          display: 'flex',
-          gap: '6px',
-          marginBottom: '6px',
-          flexWrap: 'wrap',
-        }}>
+        <div className="mb-[6px] flex flex-wrap gap-[6px]">
           {images.map((img) => (
-            <div key={img.id} style={{
-              position: 'relative',
-              width: '56px',
-              height: '56px',
-              borderRadius: '6px',
-              overflow: 'hidden',
-              border: '1px solid var(--border)',
-            }}>
+            <div key={img.id} className="relative h-[56px] w-[56px] overflow-hidden rounded-[6px] border border-[var(--border)]">
               <img
                 src={img.previewUrl}
                 alt="attachment"
                 onClick={() => setPreviewImage(img)}
-                style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                className="h-full w-full cursor-pointer object-cover"
               />
               <button
                 onClick={() => removeImage(img.id)}
-                style={{
-                  position: 'absolute',
-                  top: '2px',
-                  right: '2px',
-                  width: '16px',
-                  height: '16px',
-                  borderRadius: '50%',
-                  background: 'rgba(0,0,0,0.6)',
-                  color: '#fff',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: '10px',
-                  lineHeight: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+                className="absolute top-[2px] right-[2px] flex h-[16px] w-[16px] cursor-pointer items-center justify-center rounded-[50%] border-0 bg-[rgba(0,0,0,0.6)] text-[10px] leading-none text-[#fff]"
               >
                 x
               </button>
@@ -1413,31 +1388,22 @@ export function ChatInput({
           data-composer-send-error
           data-composer-recovery={recovery ? '' : undefined}
           role="alert"
-          style={{
-            position: 'relative',
-            marginBottom: '6px',
-            padding: '7px 9px',
-            border: `1px solid color-mix(in srgb, ${composerErrorColor} 45%, transparent)`,
-            borderRadius: '6px',
-            background: `color-mix(in srgb, ${composerErrorColor} 10%, transparent)`,
-            color: composerErrorColor,
-            fontSize: '12px',
-            lineHeight: 1.4,
-          }}
+          style={{ '--composer-error': composerErrorColor } as CSSProperties}
+          className="relative mb-[6px] rounded-[6px] border border-[color-mix(in_srgb,var(--composer-error)_45%,transparent)] bg-[color-mix(in_srgb,var(--composer-error)_10%,transparent)] px-[9px] py-[7px] text-[12px] leading-[1.4] text-[var(--composer-error)]"
         >
           <button
             type="button"
-            className="composer-banner-dismiss"
+            className={bannerDismissClass}
             aria-label="Dismiss"
             onClick={dismissBanner}
           >
             x
           </button>
-          <div style={{ paddingRight: '18px' }}>{bannerError}</div>
+          <div className="pr-[18px]">{bannerError}</div>
           {canRestore && (
             <button
               type="button"
-              className="composer-recovery-action"
+              className={recoveryActionClass}
               onClick={restoreRecovery}
             >
               Restore
@@ -1446,7 +1412,7 @@ export function ChatInput({
           {bannerError === SEND_TO_EMPTY_MESSAGE && (
             <button
               type="button"
-              className="composer-recovery-action"
+              className={recoveryActionClass}
               onClick={() => {
                 richRef.current?.replaceRange(value.length, value.length, '')
                 richRef.current?.focus()
@@ -1460,21 +1426,7 @@ export function ChatInput({
 
       {/* Drop overlay */}
       {isDragOver && (
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'rgba(var(--accent-rgb, 59, 130, 246), 0.08)',
-          border: '2px dashed var(--accent)',
-          borderRadius: 'var(--radius)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--accent)',
-          fontSize: '13px',
-          fontWeight: 500,
-          zIndex: 10,
-          pointerEvents: 'none',
-        }}>
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[var(--radius)] border-2 border-dashed border-[var(--accent)] bg-[rgba(var(--accent-rgb,59,130,246),0.08)] text-[13px] font-[500] text-[var(--accent)]">
           Drop image to attach
         </div>
       )}
@@ -1491,36 +1443,24 @@ export function ChatInput({
           if (filePickerRef.current) filePickerRef.current.value = ''
           richRef.current?.focus()
         }}
-        style={{ display: 'none' }}
+        className="hidden"
       />
 
       {/* Before the send: a retired pick would otherwise fall back silently. */}
       {pickUnavailable && (
         <div
           data-model-unavailable-warning
-          style={{
-            display: 'flex',
-            gap: '8px',
-            alignItems: 'center',
-            margin: '0 0 6px',
-            padding: '7px 9px',
-            fontSize: '11px',
-            lineHeight: 1.45,
-            color: 'var(--text-secondary)',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--warning)',
-            borderRadius: 'var(--radius)',
-          }}
+          className={cn(composerWarningClass, 'items-center')}
         >
-          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>!</span>
-          <span style={{ flex: 1, minWidth: 0 }}>
+          <span aria-hidden className="font-[600] text-[var(--warning)]">!</span>
+          <span className="min-w-0 flex-1">
             {model} is not available on this account any more. Your next message uses the default model, or pick another one.
           </span>
           {onModelChange && (
             <button
               type="button"
               onClick={() => onModelChange('')}
-              style={{ border: 0, background: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}
+              className="cursor-pointer whitespace-nowrap border-0 bg-transparent text-[11px] text-[var(--accent)]"
             >
               Use default
             </button>
@@ -1532,22 +1472,10 @@ export function ChatInput({
       {spendBlock && (
         <div
           data-spend-block-warning
-          style={{
-            display: 'flex',
-            gap: '8px',
-            alignItems: 'flex-start',
-            margin: '0 0 6px',
-            padding: '7px 9px',
-            fontSize: '11px',
-            lineHeight: 1.45,
-            color: 'var(--text-secondary)',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--warning)',
-            borderRadius: 'var(--radius)',
-          }}
+          className={cn(composerWarningClass, 'items-start')}
         >
-          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>!</span>
-          <span style={{ flex: 1, minWidth: 0 }}>{describeSpendBlock(spendBlock)}</span>
+          <span aria-hidden className="font-[600] text-[var(--warning)]">!</span>
+          <span className="min-w-0 flex-1">{describeSpendBlock(spendBlock)}</span>
         </div>
       )}
 
@@ -1556,7 +1484,7 @@ export function ChatInput({
           sees a plain string body with `[[pill:id]]` tokens; pillsById
           maps tokens to chip metadata + serialized content. */}
       <div
-        style={{ position: 'relative', display: 'flex' }}
+        className="relative flex"
         onKeyDownCapture={handleEditorKeyDown}
       >
         {/* Slash command popover - positioned above the editor */}
@@ -1600,7 +1528,7 @@ export function ChatInput({
             layout and let the inner ContentEditable size itself. */}
         <div
           data-chat-input-textarea
-          style={{ display: 'block', position: 'relative', flex: 1, minWidth: 0 }}
+          className="relative block min-w-0 flex-1"
           onBlur={() => { setTimeout(() => { dismissSlash(); dismissAt() }, 120) }}
         >
           <RichChatTextarea
@@ -1617,13 +1545,8 @@ export function ChatInput({
           />
           <div
             data-composer-actions
-            style={{
-              position: 'absolute',
-              right: COMPOSER_ACTION_INSET,
-              bottom: COMPOSER_ACTION_INSET,
-              display: 'flex',
-              gap: COMPOSER_ACTION_GAP,
-            }}
+            className="absolute flex"
+            style={{ right: COMPOSER_ACTION_INSET, bottom: COMPOSER_ACTION_INSET, gap: COMPOSER_ACTION_GAP }}
           >
             {showStop && (
               <Button
@@ -1652,17 +1575,7 @@ export function ChatInput({
       {/* Footer bar: agent selector + mode toggle + hints. Wraps instead of
           overflowing on a narrow pane; the policy drops the hint and shortens
           the mode labels first. */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '8px',
-          rowGap: '4px',
-          marginTop: '6px',
-          fontSize: '11px',
-        }}
-      >
+      <div className="mt-[6px] flex flex-wrap items-center gap-x-[8px] gap-y-[4px] text-[11px]">
         {leadingControl}
 
         {/* Unified provider/instance/model picker - single drop-up popover
@@ -1690,30 +1603,20 @@ export function ChatInput({
           <span
             data-drift-banner
             data-drift-view={driftView.kind}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              flexShrink: 0,
-              whiteSpace: 'nowrap',
-              maxWidth: '100%',
-              fontSize: 11,
-              color: driftView.kind === 'off' ? 'var(--text-muted)' : 'var(--text-secondary)',
-              background: 'var(--bg-tertiary)',
-              border: '1px solid var(--border)',
-              borderRadius: 4,
-              padding: '3px 8px',
-            }}
+            className={cn(
+              'inline-flex max-w-full shrink-0 items-center gap-[6px] whitespace-nowrap rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] py-[3px] text-[11px]',
+              driftView.kind === 'off' ? 'text-[var(--text-muted)]' : 'text-[var(--text-secondary)]',
+            )}
           >
             {driftView.kind === 'chip' ? (
               <>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <span className="overflow-hidden text-ellipsis">
                   Agent is working in <strong>{driftSuggestion.branch}</strong>
                 </span>
                 <button
                   type="button"
                   onClick={followDrift}
-                  style={{ cursor: 'pointer', border: 'none', background: 'var(--accent, #4a7dff)', color: '#fff', borderRadius: 3, padding: '2px 8px', fontSize: 11 }}
+                  className="cursor-pointer rounded-[3px] border-0 bg-[var(--accent,#4a7dff)] px-[8px] py-[2px] text-[11px] text-[#fff]"
                 >
                   Follow
                 </button>
@@ -1721,15 +1624,15 @@ export function ChatInput({
                   type="button"
                   title="Stop suggesting a branch to follow in this chat"
                   onClick={() => setFollowSuggestions('muted')}
-                  style={driftLinkStyle}
+                  className={driftLinkClass}
                 >
                   Not in this chat
                 </button>
               </>
             ) : (
               <>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{followOffNotice(driftView)}</span>
-                <button type="button" onClick={() => setFollowSuggestions('on')} style={driftLinkStyle}>
+                <span className="overflow-hidden text-ellipsis">{followOffNotice(driftView)}</span>
+                <button type="button" onClick={() => setFollowSuggestions('on')} className={driftLinkClass}>
                   Turn back on
                 </button>
               </>
@@ -1739,7 +1642,7 @@ export function ChatInput({
               title="Dismiss"
               aria-label="Dismiss"
               onClick={dismissDrift}
-              style={{ cursor: 'pointer', border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: 12 }}
+              className="cursor-pointer border-0 bg-transparent text-[12px] text-[var(--text-secondary)]"
             >
               ×
             </button>
@@ -1765,21 +1668,11 @@ export function ChatInput({
         {/* Runtime mode selector (per-session) */}
         {runtimeMode && onRuntimeModeChange && (
           <select
-            className="runtime-mode-select"
+            className="runtime-mode-select cursor-pointer rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[6px] py-[3px] text-[11px] text-[var(--text-secondary)] outline-none"
             data-runtime-mode={runtimeMode}
             title={RUNTIME_MODE_OPTIONS.find((m) => m.value === runtimeMode)?.detail}
             value={runtimeMode}
             onChange={(e) => onRuntimeModeChange(e.target.value as RuntimeMode)}
-            style={{
-              background: 'var(--bg-tertiary)',
-              color: 'var(--text-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: '4px',
-              padding: '3px 6px',
-              fontSize: '11px',
-              cursor: 'pointer',
-              outline: 'none',
-            }}
           >
             {RUNTIME_MODE_OPTIONS.map((m) => (
               <option key={m.value} value={m.value} title={m.detail}>{m.label}</option>
@@ -1837,39 +1730,16 @@ export function ChatInput({
             }
             setPreviewImage(null)
           }}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 1100,
-            background: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
+          className="fixed inset-0 z-[1100] flex cursor-pointer items-center justify-center bg-[rgba(0,0,0,0.7)]"
         >
-          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '80vh' }}>
+          <div className="relative max-h-[80vh] max-w-[90vw]">
             <img
               src={previewImage.previewUrl}
               alt="preview"
-              style={{
-                maxWidth: '90vw',
-                maxHeight: '80vh',
-                objectFit: 'contain',
-                borderRadius: '8px',
-                boxShadow: '0 16px 48px rgba(0, 0, 0, 0.5)',
-              }}
+              className="max-h-[80vh] max-w-[90vw] rounded-[8px] object-contain shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
               onClick={(e) => e.stopPropagation()}
             />
-            <div style={{
-              position: 'absolute',
-              bottom: '-32px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              color: 'rgba(255,255,255,0.6)',
-              fontSize: '11px',
-              whiteSpace: 'nowrap',
-            }}>
+            <div className="absolute bottom-[-32px] left-[50%] [transform:translateX(-50%)] whitespace-nowrap text-[11px] text-[rgba(255,255,255,0.6)]">
               Click backdrop to close · Right-click to copy
             </div>
           </div>

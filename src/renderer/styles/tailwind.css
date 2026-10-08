@@ -21,6 +21,7 @@
 @source '../components/chat/UnifiedProviderPicker.tsx';
 @source '../components/chat/EffortPicker.tsx';
 @source '../components/chat/ChatInput.tsx';
+@source '../components/chat/ChatPanel.tsx';
 @source '../components/terminal/TerminalStrip.tsx';
 @source '../components/chat/ChatLanding.tsx';
 @source '../components/chat/BranchPicker.tsx';
