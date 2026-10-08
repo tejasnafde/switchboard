@@ -18,10 +18,10 @@ jobs:
     runs-on: ${{ inputs.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           # 22 (not 20) - `@electron/rebuild@4` and `node-abi@4` both
           # require >=22.12.0. Node 20 emits EBADENGINE warnings and
@@ -40,7 +40,7 @@ jobs:
       # enough to ride out the typical hiccup without masking a real
       # dependency error.
       - name: Install dependencies
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 10
           max_attempts: 3
@@ -70,7 +70,7 @@ jobs:
 
       - name: Upload smoke-test minidumps
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: smoke-dumps-${{ inputs.os }}
           path: ${{ runner.temp }}/smoke-dumps
