@@ -56,6 +56,16 @@ export function formatCostUsd(usd: number): string {
   return `$${usd.toFixed(digits)}`
 }
 
+/** `1 terminal`, `2 terminals`: the pane count in the terminal pane header. */
+export function terminalCountLabel(count: number): string {
+  return `${count} ${count === 1 ? 'terminal' : 'terminals'}`
+}
+
+/** A session's running cost for the chat footer, or null when there is none to show. */
+export function sessionCostLabel(costUsd: number | undefined): string | null {
+  return typeof costUsd === 'number' && costUsd > 0 ? formatCostUsd(costUsd) : null
+}
+
 /** Share of the context window in use, 0-100; null while the limit is unknown. */
 export function contextPercent(used: number, max: number | null | undefined): number | null {
   if (!max || max <= 0) return null

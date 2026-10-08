@@ -2202,6 +2202,7 @@ export class ProviderRegistry implements PeerToolHost {
         runtimeMode: opts.runtimeMode,
         model: opts.model,
         instanceId: opts.instanceId,
+        reasoningEffort: opts.reasoningEffort,
       }, opts.cwd)
       opts = { ...opts, ...defaults }
 

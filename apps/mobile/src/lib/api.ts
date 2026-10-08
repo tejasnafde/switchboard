@@ -21,7 +21,7 @@ import type {
   UserTurnResolutionResult,
   InterruptResult,
 } from '@shared/provider-events'
-import type { ModelOption } from '@shared/models'
+import type { ModelOption, ReasoningEffort } from '@shared/models'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
 import type { QueuedTurnActionResult, QueuedTurnSummary } from '@shared/turn-delivery'
 import type { AgentType, Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
@@ -88,7 +88,7 @@ export interface LoadedSession {
     providerInstanceId?: string | null
     runtimeMode?: RuntimeMode | null
     model?: string | null
-    reasoningEffort?: 'low' | 'medium' | 'high' | null
+    reasoningEffort?: ReasoningEffort | null
     forkMetadata?: ForkLineageMetadata | null
   } | null
   /** Full message count on the backend, which may exceed `messages.length`. */

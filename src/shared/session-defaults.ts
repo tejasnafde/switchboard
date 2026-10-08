@@ -6,7 +6,9 @@
  *
  * Per FIELD, not per tier - the phone sends a mode and no model.
  */
+import type { ReasoningEffort } from './models'
 import { isRuntimeMode, type RuntimeMode } from './provider-events'
+import { isReasoningEffort } from './provider-option-memory'
 
 /** Shared: the desktop writes these, the backend reads them, the phone reads
  *  them over `settings:get`. Three places that must agree on a string. */
@@ -59,12 +61,14 @@ export interface SessionDefaults {
   runtimeMode?: string
   model?: string
   instanceId?: string
+  reasoningEffort?: string
 }
 
 export interface ResolvedSessionDefaults {
   runtimeMode: RuntimeMode
   model?: string
   instanceId?: string
+  reasoningEffort?: ReasoningEffort
 }
 
 /** Empty string means cleared, which is absent. */
@@ -91,5 +95,8 @@ export function resolveSessionDefaults(tiers: {
     runtimeMode,
     model: firstSet(requested.model, conversation.model, machine.model),
     instanceId: firstSet(requested.instanceId, conversation.instanceId, machine.instanceId),
+    // No machine tier: effort is chosen per chat, and an unset one leaves the
+    // provider's own default in effect.
+    reasoningEffort: [requested.reasoningEffort, conversation.reasoningEffort].find(isReasoningEffort),
   }
 }

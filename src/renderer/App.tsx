@@ -25,7 +25,6 @@ import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
-import { StatusBar } from './components/StatusBar'
 import { SessionPickerModal } from './components/SessionPickerModal'
 import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
@@ -63,6 +62,7 @@ import { focusComposer } from './services/composer-registry'
 import { useDraftStore } from './stores/draft-store'
 import { nextDualChatShortcutAction, shouldEvictReplacedSession } from './services/chat-workspace'
 import type { AgentProvider } from '@shared/types'
+import type { ReasoningEffort } from '@shared/models'
 import { recoverPendingRequests } from './services/pending-request-recovery'
 import { ProviderChannels } from '@shared/ipc-channels'
 import type { LiveSessionSummary } from '@shared/live-sessions'
@@ -1098,7 +1098,7 @@ export function App() {
             providerInstanceId?: string | null
             runtimeMode?: RuntimeMode | null
             model?: string | null
-            reasoningEffort?: 'low' | 'medium' | 'high' | null
+            reasoningEffort?: ReasoningEffort | null
             launchConfigName?: string | null
             forkMetadata?: import('@shared/conversation-fork').ForkLineageMetadata | null
           } | null
@@ -1723,9 +1723,6 @@ export function App() {
             shown, so nothing polls a host from a hidden view. */}
         {appView === 'reviews' && <ReviewsView onOpenSettings={() => setSettingsPage('accounts')} />}
       </div>
-
-      <StatusBar />
-
 
       {Object.values(worktreeCreationSnapshots).some((snapshot) => snapshot.status !== 'ready') && (
         <div style={{

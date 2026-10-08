@@ -18,13 +18,9 @@ import { followOffNotice, followSuggestionView, type FollowSuggestionMode } from
 import { useFollowUpDefault } from '../../services/effective-settings'
 import { RUNTIME_MODE_OPTIONS } from './runtime-mode-options'
 import { ArrowUpIcon, StopSquareIcon } from './chat-icons'
-import {
-  modelsForAgent,
-  REASONING_EFFORTS,
-  agentSupportsReasoningEffort,
-  type ModelOption,
-  type ReasoningEffort,
-} from '@shared/models'
+import { modelsForAgent, type ModelOption, type ReasoningEffort } from '@shared/models'
+import { effortControlFor, effortPick } from '@shared/effort'
+import { sessionCostLabel } from '@shared/format'
 import { defaultInstanceId, type AgentType, type ProviderSkill } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
 import { describeRelocationOutcome } from '../../services/execution-root-relocation'
@@ -35,7 +31,7 @@ import { useSpendBlockStore } from '../../stores/spend-block-store'
 import { describeSpendBlock, findSpendBlock } from '@shared/spend-block'
 import { SlashCommandMenu } from './SlashCommandMenu'
 import { resolvePickerKeydown } from './picker-keydown'
-import { VariantChips } from './model-variants'
+import { EffortPicker } from './EffortPicker'
 import {
   detectSlashTrigger,
   filterSlashCommands,
@@ -185,6 +181,7 @@ function composerActionsInset(showStop: boolean): string {
 // downstream memos invalidated.
 const EMPTY_PILLS: import('../../stores/draft-store').DraftPill[] = []
 const EMPTY_IMAGES: import('../../stores/draft-store').ImageAttachment[] = []
+const EMPTY_VARIANTS: string[] = []
 
 
 export function ChatInput({
@@ -294,6 +291,23 @@ export function ChatInput({
   }, [agentType, sessionId, sessionIsActive, persistDynamicModels])
 
   const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : staticModels
+
+  const costLabel = sessionCostLabel(useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.costUsd))
+  const availableVariants = useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.availableVariants ?? EMPTY_VARIANTS)
+  const currentVariant = useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.currentVariant ?? '')
+  const effortControl = useMemo(() => effortControlFor({
+    agentType,
+    model,
+    resolvedModel,
+    models,
+    reasoningEffort,
+    variants: { available: availableVariants, current: currentVariant },
+  }), [agentType, model, resolvedModel, models, reasoningEffort, availableVariants, currentVariant])
+  const pickEffort = useCallback((value: string) => {
+    const pick = effortPick(agentType, value, { model: model ?? '', available: availableVariants })
+    if (pick?.kind === 'model') onModelChange?.(pick.model)
+    else if (pick?.kind === 'effort') onReasoningEffortChange?.(pick.effort)
+  }, [agentType, model, availableVariants, onModelChange, onReasoningEffortChange])
   // Checked against the live (or last cached live) catalog only: the static
   // list is not evidence that a model was retired.
   const pickUnavailable = Boolean(model)
@@ -1668,36 +1682,8 @@ export function ChatInput({
           />
         )}
 
-        {/* Variant chips (OpenCode ACP only) - surfaced when the agent reports
-            `availableVariants` for the currently selected model. Clicking a
-            chip rewrites the model id to `<base>/<variant>` (or strips the
-            variant if "base" is selected). */}
-        {agentType === 'opencode' && onModelChange && (
-          <VariantChips sessionId={sessionId ?? null} model={model ?? ''} onChange={onModelChange} />
-        )}
-
-        {/* Reasoning-effort selector - Codex-only, mirrors the desktop app's
-            second dropdown next to the model picker. */}
-        {agentSupportsReasoningEffort(agentType) && onReasoningEffortChange && (
-          <select
-            value={reasoningEffort ?? 'medium'}
-            onChange={(e) => onReasoningEffortChange(e.target.value as ReasoningEffort)}
-            title="Reasoning effort (Codex)"
-            style={{
-              background: 'var(--bg-tertiary)',
-              color: 'var(--text-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: '4px',
-              padding: '3px 6px',
-              fontSize: '11px',
-              cursor: 'pointer',
-              outline: 'none',
-            }}
-          >
-            {REASONING_EFFORTS.map((r) => (
-              <option key={r.id} value={r.id}>{r.label}</option>
-            ))}
-          </select>
+        {effortControl && (
+          <EffortPicker control={effortControl} onPick={pickEffort} />
         )}
 
         {driftSuggestion && driftView && driftView.kind !== 'hidden' && (
@@ -1805,16 +1791,21 @@ export function ChatInput({
             and marginLeft auto keeps it right-aligned when a narrow footer
             wraps it onto a row of its own. flexShrink 0: this is the one
             footer item that must never be squeezed under the pane edge. */}
-        {contextUsage && (
+        {(contextUsage || costLabel) && (
           <span
+            className="inline-flex shrink-0 items-center gap-[8px]"
             style={{
-              flexShrink: 0,
-              display: 'inline-flex',
               marginLeft: 'auto',
               marginRight: `calc(${COMPOSER_ACTION_INSET} + (${COMPOSER_ACTION_SIZE} - 24px) / 2)`,
             }}
           >
-            <ContextWindowMeter usage={contextUsage} />
+            {/* What the agent reported this session has cost (OpenCode). */}
+            {costLabel && (
+              <span title="Session cost reported by the agent" className="text-[10.5px] [font-family:var(--font-mono)] text-[var(--text-muted)]">
+                {costLabel}
+              </span>
+            )}
+            {contextUsage && <ContextWindowMeter usage={contextUsage} />}
           </span>
         )}
       </div>

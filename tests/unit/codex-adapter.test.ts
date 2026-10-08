@@ -592,6 +592,46 @@ describe('CodexAdapter', () => {
     expect(turnStart.params.effort).toBe('high')
   })
 
+  it('never puts max, which Codex does not have, on a turn', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      runtimeMode: 'sandbox',
+      reasoningEffort: 'max',
+    }, vi.fn())
+
+    await adapter.sendTurn('thread-1', 'carried over from Claude')
+
+    const turnStart = writes.map((line) => JSON.parse(line)).find((message) => message.method === 'turn/start')
+    expect(turnStart.params).not.toHaveProperty('effort')
+  })
+
+  it('reads each model\'s effort levels and default from model/list', async () => {
+    const { parseCodexModels } = await import('../../src/main/provider/adapters/codex-adapter')
+    expect(parseCodexModels({
+      data: [
+        {
+          id: 'gpt-6-sol',
+          displayName: 'GPT-6 Sol',
+          supportedReasoningEfforts: [
+            { reasoningEffort: 'minimal', description: 'x' },
+            { reasoningEffort: 'high', description: 'x' },
+            { reasoningEffort: 'low', description: 'x' },
+            { reasoningEffort: 'xhigh', description: 'x' },
+          ],
+          defaultReasoningEffort: 'high',
+        },
+        { id: 'gpt-5.2', displayName: 'GPT-5.2' },
+      ],
+    })).toEqual([
+      { id: 'gpt-6-sol', label: 'GPT-6 Sol', tier: 'max', effortLevels: ['low', 'high', 'xhigh'], defaultEffort: 'high' },
+      { id: 'gpt-5.2', label: 'GPT-5.2', tier: 'balanced' },
+    ])
+  })
+
   it('routes approvals to codex auto_review in auto mode', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

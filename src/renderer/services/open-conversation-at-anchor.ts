@@ -1,4 +1,5 @@
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
+import type { ReasoningEffort } from '@shared/models'
 import type { AgentType, ChatMessage } from '@shared/types'
 import { useAgentStore } from '../stores/agent-store'
 import type { RuntimeMode } from '../../shared/provider-events'
@@ -17,7 +18,7 @@ interface LoadedConversation {
     providerInstanceId?: string | null
     runtimeMode?: RuntimeMode | null
     model?: string | null
-    reasoningEffort?: 'low' | 'medium' | 'high' | null
+    reasoningEffort?: ReasoningEffort | null
     forkMetadata?: ForkLineageMetadata | null
   } | null
 }

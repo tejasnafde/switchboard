@@ -309,7 +309,7 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
         maxTokens: event.maxTokens ?? null,
       })
       // ACP adapters (currently OpenCode) also forward cumulative cost
-      // here. Push it onto the session so StatusBar can display it.
+      // here. Push it onto the session for the composer footer.
       if (typeof event.costUsd === 'number') {
         useAgentStore.getState().setCostUsd(tid, event.costUsd)
       }

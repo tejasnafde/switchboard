@@ -9,7 +9,9 @@ import type { TurnDelivery } from '@shared/turn-delivery'
 import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
 import { takeTurnDuration } from '../turn-duration'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process'
-import { inferModelTier } from '@shared/models'
+import { inferModelTier, type ModelOption, type ReasoningEffort } from '@shared/models'
+import { codexWireEffort, parseEffortLevels } from '@shared/effort'
+import { isReasoningEffort } from '@shared/provider-option-memory'
 import { accessSync, constants } from 'fs'
 import { createInterface } from 'readline'
 import { createMainLogger as createLogger } from '../../logger'
@@ -396,7 +398,7 @@ function codexFileChangeOutput(status: unknown): string {
   return 'Finished'
 }
 
-export function parseCodexModels(input: unknown): Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> {
+export function parseCodexModels(input: unknown): ModelOption[] {
   const root = asRecord(input)
   const entries = Array.isArray(root?.data) ? root.data : []
   return entries.flatMap((entry) => {
@@ -409,6 +411,8 @@ export function parseCodexModels(input: unknown): Array<{ id: string; label: str
       id,
       label: typeof model?.displayName === 'string' ? model.displayName : id,
       tier: inferModelTier(id),
+      ...(Array.isArray(model?.supportedReasoningEfforts) ? { effortLevels: parseEffortLevels(model.supportedReasoningEfforts) } : {}),
+      ...(isReasoningEffort(model?.defaultReasoningEffort) ? { defaultEffort: model.defaultReasoningEffort } : {}),
     }]
   })
 }
@@ -969,7 +973,7 @@ export class CodexAdapter implements ProviderAdapter {
     active.onEvent({ type: 'status', threadId, status: 'running' })
 
     const approvalPolicy = RUNTIME_MODE_TO_CODEX_POLICY[active.session.runtimeMode] ?? 'on-request'
-    const reasoningEffort = active.session.reasoningEffort
+    const reasoningEffort = codexWireEffort(active.session.reasoningEffort, active.session.model, active.models?.models ?? [])
     const sandbox = RUNTIME_MODE_TO_CODEX_THREAD_SANDBOX[active.session.runtimeMode] ?? 'read-only'
     const sandboxPolicy = RUNTIME_MODE_TO_CODEX_TURN_SANDBOX[active.session.runtimeMode] ?? { type: 'readOnly' }
 
@@ -1201,7 +1205,7 @@ export class CodexAdapter implements ProviderAdapter {
     active.session.model = model
   }
 
-  async setReasoningEffort(threadId: string, effort: 'low' | 'medium' | 'high'): Promise<void> {
+  async setReasoningEffort(threadId: string, effort: ReasoningEffort): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
     active.session.reasoningEffort = effort

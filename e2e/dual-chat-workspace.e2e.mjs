@@ -670,10 +670,10 @@ try {
   assert((await secondaryComposer.textContent())?.includes('Independent draft B'), 'secondary draft is independent')
 
   await secondaryComposer.click()
-  await win.locator('[data-status-bar][data-session-id="dual-b"]').waitFor()
+  await win.locator('[data-terminal-strip][data-session-id="dual-b"]').waitFor({ state: 'attached' })
   assert(await secondary.getAttribute('data-focused') === 'true', 'composer focus establishes the secondary slot')
   assert(await primary.getAttribute('data-focused') === 'false', 'primary focus treatment clears when secondary is focused')
-  console.log('✓ status and companion surfaces bind to the focused secondary session')
+  console.log('✓ the terminal strip and companion surfaces bind to the focused secondary session')
 
   await emitProviderEvents([
     { type: 'content', threadId: 'dual-a', messageId: 'stream-a', text: 'STREAM-A-ONLY', streamKind: 'assistant' },

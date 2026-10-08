@@ -4,6 +4,7 @@ import { ChatSkeleton } from '../ui/chat-skeleton'
 import { perfSpan } from '../../perf'
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
+import type { ReasoningEffort } from '@shared/models'
 import { useAgentStore, adoptStartedRuntimeMode, runtimeModeToSend, type RuntimeMode } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
 import { useTerminalStore } from '../../stores/terminal-store'
@@ -267,7 +268,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     // one after a provider switch.
   }, [sessionId, agentType])
 
-  const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {
+  const handleReasoningEffortChange = useCallback((effort: ReasoningEffort) => {
     if (!sessionId) return
     changeReasoningEffort(sessionId, effort)
   }, [sessionId])
@@ -340,7 +341,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     } catch (err) {
       log.warn('failed to schedule context handoff', err)
     }
-    // Write-through to the store so other consumers (StatusBar, sidebar
+    // Write-through to the store so other consumers (sidebar
     // session badges, command-palette filters) see the new agent type
     // immediately. setAgentType also clears the stored `model` - a model
     // id from one provider almost never round-trips to another (e.g.

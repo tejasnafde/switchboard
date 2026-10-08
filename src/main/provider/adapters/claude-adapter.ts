@@ -13,7 +13,9 @@ import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { execSync, execFile } from 'child_process'
 import { randomUUID } from 'crypto'
-import { inferModelTier } from '@shared/models'
+import type { ModelOption, ReasoningEffort } from '@shared/models'
+import { claudeQueryEffort } from '@shared/effort'
+import { claudeModelOptions } from '../claude-models'
 import { accessSync, constants, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join, sep } from 'path'
@@ -729,6 +731,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       runtimeMode: opts.runtimeMode ?? 'sandbox',
       cwd: opts.cwd,
       sessionId: resumeId,
+      reasoningEffort: opts.reasoningEffort,
       createdAt: Date.now(),
       instanceId: opts.instanceId,
     }
@@ -1120,9 +1123,11 @@ export class ClaudeAdapter implements ProviderAdapter {
     const systemPrompt = [notebookPrompt, AGENT_DIGEST_PROMPT_RULE].filter(Boolean).join('\n\n')
 
     await this.dropUnavailableModel(threadId, active)
+    const effort = claudeQueryEffort(active.session.reasoningEffort, active.session.model, active.models?.models ?? [])
     const queryOptions: SDKOptions = {
       cwd: active.session.cwd,
       ...(active.session.model ? { model: active.session.model } : {}),
+      ...(effort ? { effort } : {}),
       ...(systemPrompt ? { systemPrompt } : {}),
       // Added to the user's own MCP servers, which the CLI still loads. The
       // token in its env is what binds the server's tools to this thread.
@@ -1149,7 +1154,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       },
     }
 
-    log.info(`starting query: cwd=${active.session.cwd} model=${active.session.model ?? 'default'} mode=${permissionMode} claudeBin=${claudeBin ?? 'auto'} resume=${active.session.sessionId ?? 'none'} CLAUDE_CONFIG_DIR=${env.CLAUDE_CONFIG_DIR ?? '(default ~/.claude)'} PATH=${env.PATH?.slice(0, 200)}`)
+    log.info(`starting query: cwd=${active.session.cwd} model=${active.session.model ?? 'default'} effort=${effort ?? 'default'} mode=${permissionMode} claudeBin=${claudeBin ?? 'auto'} resume=${active.session.sessionId ?? 'none'} CLAUDE_CONFIG_DIR=${env.CLAUDE_CONFIG_DIR ?? '(default ~/.claude)'} PATH=${env.PATH?.slice(0, 200)}`)
 
     active.session.status = 'running'
     active.onEvent({ type: 'status', threadId, status: 'running' })
@@ -1275,7 +1280,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     return active.skills
   }
 
-  async listModels(threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>> {
+  async listModels(threadId: string): Promise<ModelOption[]> {
     const active = this.sessions.get(threadId)
     if (!active) return []
     // The live SDK list is the source of truth - `supportedModels()` reflects
@@ -1286,17 +1291,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     const identity = claudeExecutableIdentity()
     if (active.query && shouldRefreshCatalog(active.models, identity)) {
       try {
-        const models = await active.query.supportedModels()
-        // `value` verbatim: a live row is an alias (`sonnet`, `opus[1m]`),
-        // and rewriting it to a full id would name a model the CLI did not.
-        // `resolvedModel` is the CLI's OWN mapping when it supplies one -
-        // reconcileSelectedModel uses it to recognise a persisted explicit id.
-        const mapped = models.map((m) => ({
-          id: m.value,
-          label: m.displayName,
-          tier: inferModelTier(m.value),
-          ...(m.resolvedModel ? { resolvedModel: m.resolvedModel } : {}),
-        }))
+        const mapped = claudeModelOptions(await active.query.supportedModels())
         // Empty is never committed, so a probe that raced session startup does
         // not pin this session to the static catalog for its whole life.
         active.models = commitCatalog(active.models, mapped, identity)
@@ -1526,6 +1521,22 @@ export class ClaudeAdapter implements ProviderAdapter {
       log.info(`model updated: ${threadId} → ${model}`)
     } catch (err) {
       log.warn(`failed to set model mid-session for ${threadId}: ${err}`)
+    }
+  }
+
+  /**
+   * Recorded for the next query start, and applied to a running query
+   * through the SDK's flag-settings layer, which takes effect from the next
+   * request. `max` is session-scoped there, which suits a per-chat choice.
+   */
+  async setReasoningEffort(threadId: string, effort: ReasoningEffort): Promise<void> {
+    const active = this.sessions.get(threadId)
+    if (!active) return
+    active.session.reasoningEffort = effort
+    try {
+      await active.query?.applyFlagSettings({ effortLevel: effort })
+    } catch (err) {
+      log.warn(`failed to set effort mid-session for ${threadId}, it applies at the next query start: ${err}`)
     }
   }
 

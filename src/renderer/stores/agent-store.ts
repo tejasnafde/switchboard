@@ -191,9 +191,9 @@ interface AgentSession {
    */
   instanceId?: string
   /**
-   * Reasoning effort tier for agents that expose it as a separate selector
-   * (currently Codex only). Maps to the `reasoningEffort` param on
-   * turn/start. Claude doesn't surface this as a UI control.
+   * Thinking effort for Claude and Codex (OpenCode carries it in the model id
+   * as a variant). Offered per model by the composer's effort control, see
+   * `shared/effort.ts`.
    */
   reasoningEffort?: ReasoningEffort
   /** PTY pane id in terminal-registry. Only set for type='terminal' sessions. */
@@ -202,14 +202,14 @@ interface AgentSession {
   /**
    * Cumulative session cost in USD reported by the agent. ACP-backed
    * adapters populate this from `usage_update.cost.amount`; other adapters
-   * leave it undefined. StatusBar shows it next to the context-window count.
+   * leave it undefined. The composer footer shows it next to the context-window ring.
    */
   costUsd?: number
   /**
    * Variants advertised by the agent for the currently selected model
    * (e.g. 'low' / 'medium' / 'high' / 'max'). Empty/undefined for models
-   * without variants. The renderer pairs this with `currentVariant` to
-   * render a thinking-budget chip group next to the model picker.
+   * without variants. The composer's effort control lists them as its levels
+   * and marks `currentVariant`.
    */
   availableVariants?: string[]
   currentVariant?: string
@@ -287,10 +287,9 @@ interface AgentStore {
   setTokenUsage: (sessionId: string, usage: { usedTokens: number; maxTokens: number | null }) => void
   /**
    * Switch the agent backend (claude-code / codex / opencode) for a
-   * session. Required so consumers like StatusBar - which read from the
-   * store rather than the chat-panel-local `agentType` state - see the
-   * change immediately. Without this, the bottom status bar lagged the
-   * dropdown by a full provider round-trip.
+   * session. Required so consumers such as the sidebar - which read from
+   * the store rather than the chat-panel-local `agentType` state - see the
+   * change immediately instead of a full provider round-trip later.
    */
   setAgentType: (sessionId: string, type: AgentType) => void
   /**
