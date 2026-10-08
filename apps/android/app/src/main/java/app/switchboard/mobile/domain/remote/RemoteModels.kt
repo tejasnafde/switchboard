@@ -49,6 +49,8 @@ data class MessageSearchResult(
     val worktreePath: String?,
     val worktreeBranch: String?,
     val raw: JsonObject,
+    /** Shown only when the query asked for archived chats; older backends never send it. */
+    val archived: Boolean = false,
 )
 
 data class Project(

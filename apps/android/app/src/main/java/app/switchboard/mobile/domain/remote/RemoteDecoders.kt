@@ -43,6 +43,7 @@ object RemoteDecoders {
                 worktreePath = raw.string("worktreePath"),
                 worktreeBranch = raw.string("worktreeBranch"),
                 raw = raw,
+                archived = raw.boolean("archived") ?: false,
             )
         }
 

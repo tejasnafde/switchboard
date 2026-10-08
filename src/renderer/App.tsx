@@ -26,6 +26,7 @@ import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
+import type { MachineSearchHit } from './services/message-search'
 import { StatusBar } from './components/StatusBar'
 import { SessionPickerModal } from './components/SessionPickerModal'
 import { QuickPromptModal } from './components/QuickPromptModal'
@@ -1282,6 +1283,18 @@ export function App() {
     return () => registerReviewChatOpener(null)
   }, [handleSessionSelect])
 
+  // A message search hit opens through the sidebar path too, on the machine
+  // that answered it, reusing the chat when it is already open.
+  const handleOpenSearchHit = useCallback(async (hit: MachineSearchHit) => {
+    const open = useAgentStore.getState().sessions.find((session) => session.id === hit.conversationId)
+    await handleSessionSelect(
+      { id: hit.conversationId, source: toAgentProvider(hit.agentType), title: hit.conversationTitle, startedAt: hit.timestamp ?? 0, messageCount: 0, filePath: '', agentType: hit.agentType, worktreePath: hit.worktreePath, worktreeBranch: hit.worktreeBranch },
+      open?.projectPath ?? hit.projectPath,
+      open?.machineId ?? hit.machineId,
+    )
+    return useLayoutStore.getState().focusedChatSessionId()
+  }, [handleSessionSelect])
+
   const handleOpenLoadedSessionBeside = useCallback(async (sessionId: string) => {
     const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)
     if (!session) {
@@ -1757,7 +1770,7 @@ export function App() {
       )}
 
       <SettingsPage page={settingsPage} onNavigate={setSettingsPage} onClose={() => setSettingsPage(null)} />
-      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} onOpenChat={handleOpenSearchHit} />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}

@@ -32,6 +32,28 @@ class MessageSearchPresentationTest {
     }
 
     @Test
+    fun `projection marks an archived chat`() {
+        val row = MessageSearchPresenter.row(
+            MessageSearchResult(
+                messageId = "message",
+                conversationId = "thread",
+                role = "assistant",
+                content = "full",
+                snippet = "old",
+                conversationTitle = "Old chat",
+                projectPath = "/repo",
+                agentType = "codex",
+                worktreePath = null,
+                worktreeBranch = null,
+                raw = JsonObject(linkedMapOf()),
+                archived = true,
+            ),
+        )
+
+        assertEquals("repo · Assistant · Archived", row.metadata)
+    }
+
+    @Test
     fun `projection caps pathological snippets`() {
         val snippet = MessageSearchPresenter.cleanSnippet("x".repeat(400))
         assertTrue(snippet.length <= 241)

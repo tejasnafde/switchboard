@@ -11,6 +11,7 @@ import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, is
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { shouldLoadOlder, turnIndexHolding } from '../../services/history-window'
 import { loadOlderHistory } from '../../services/history-loader'
+import { messageSearchTerms } from '@shared/message-search'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -662,7 +663,9 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
 // ─── In-chat search highlight helpers ──────────────────────────────
 // Walk the message bubble's text nodes and wrap the first occurrence
 // of `query` (case-insensitive) with <mark class="sb-search-mark active">.
-// Returns the wrapping <mark> so the caller can scroll it into view.
+// A message can match on its words alone (`textMatchesSearch`), so when the
+// query as typed is not in the text, the first of its words that is gets
+// the mark. Returns the wrapping <mark> so the caller can scroll it into view.
 //
 // We deliberately wrap only the FIRST match per bubble - the in-pane
 // search bar steps through one match at a time (each step scrolls to
@@ -671,6 +674,15 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
 function wrapSearchMatches(bubble: HTMLElement, query: string): HTMLElement | null {
   const q = query.trim()
   if (!q) return null
+  const needles = [q, ...messageSearchTerms(q)]
+  for (const needle of needles) {
+    const mark = wrapFirstOccurrence(bubble, needle)
+    if (mark) return mark
+  }
+  return null
+}
+
+function wrapFirstOccurrence(bubble: HTMLElement, needle: string): HTMLElement | null {
   // Use a TreeWalker rooted at the bubble. Skip <script>, <style>, and
   // anything inside an existing mark (don't double-wrap on consecutive
   // searches before clearSearchMarks runs).
@@ -684,7 +696,7 @@ function wrapSearchMatches(bubble: HTMLElement, query: string): HTMLElement | nu
       return NodeFilter.FILTER_ACCEPT
     },
   })
-  const lower = q.toLowerCase()
+  const lower = needle.toLowerCase()
   let textNode: Text | null = null
   let idx = -1
   while ((textNode = walker.nextNode() as Text | null)) {
@@ -694,8 +706,8 @@ function wrapSearchMatches(bubble: HTMLElement, query: string): HTMLElement | nu
   }
   if (!textNode || idx < 0) return null
   const before = textNode.nodeValue!.slice(0, idx)
-  const match = textNode.nodeValue!.slice(idx, idx + q.length)
-  const after = textNode.nodeValue!.slice(idx + q.length)
+  const match = textNode.nodeValue!.slice(idx, idx + needle.length)
+  const after = textNode.nodeValue!.slice(idx + needle.length)
   const mark = document.createElement('mark')
   mark.className = 'sb-search-mark active'
   mark.textContent = match
