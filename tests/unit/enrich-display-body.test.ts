@@ -139,3 +139,14 @@ describe('enrichMessagesWithDisplayBody (images)', () => {
     expect(out[0].images).toEqual([{ url: 'data:image/jpeg;base64,abc', mimeType: 'image/jpeg' }])
   })
 })
+
+describe('enrichMessagesWithDisplayBody with a repeated prompt', () => {
+  it('parses one stored row once for every message it matches', () => {
+    const enrichments = new Map<string, DisplayBodyEnrichment>([
+      ['again', { images: JSON.stringify([{ url: 'data:image/png;base64,AAAA' }]) }],
+    ])
+    const out = enrichMessagesWithDisplayBody([userMsg('a', 'again'), userMsg('b', 'again')], enrichments)
+    expect(out[0].images).toEqual([{ url: 'data:image/png;base64,AAAA' }])
+    expect(out[1].images).toBe(out[0].images)
+  })
+})

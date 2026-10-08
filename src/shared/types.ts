@@ -186,6 +186,9 @@ export interface ToolCall {
   name: string
   input: string
   output?: string
+  /** `input` and `output` are shortened (`history_tool_previews_v1`); fetch
+   *  the whole call with `app:load-tool-call`. */
+  preview?: true
 }
 
 export interface HistoryImageRef {

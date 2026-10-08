@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { imagesByReference } from '@shared/history-image-refs'
+import { toolCallsByPreview } from '@shared/history-tool-previews'
 import {
   digestForkMessage,
   isForkableForkMessage,
@@ -53,9 +54,14 @@ function matchesFingerprint(candidate: ChatMessage, anchor: ForkAnchor): boolean
   if (candidate.role !== anchor.role || candidate.timestamp !== anchor.timestamp) return false
   const digest = anchor.contentDigest.toLowerCase()
   if (digestForkMessage(candidate, sha256) === digest) return true
-  // A windowed desktop history carries its images by reference.
+  // A windowed desktop history carries its images by reference and its long
+  // tool calls as previews, each only when the backend was asked for it.
   const [byReference] = imagesByReference([candidate], () => {})
-  if (byReference !== candidate && digestForkMessage(byReference, sha256) === digest) return true
+  const [previewed] = toolCallsByPreview([candidate])
+  const [both] = toolCallsByPreview([byReference])
+  for (const variant of new Set([byReference, previewed, both])) {
+    if (variant !== candidate && digestForkMessage(variant, sha256) === digest) return true
+  }
   // A history loaded from an older backend holds a compact summary unwrapped.
   const legacy = unwrapCompactSummaryText(candidate.content)
   return legacy !== null && digestForkMessage({ ...candidate, content: legacy }, sha256) === digest

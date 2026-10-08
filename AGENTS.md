@@ -110,9 +110,9 @@ Three things beyond plain RPC, all driven by the phone case:
 
 **Remote machines / SSH** (`src/main/machines/`): `ssh-tunnel.ts` builds `ssh -L localPort:127.0.0.1:remotePort … <bootstrap>` (uses the system `ssh` binary - no `ssh2`/native deps; `BatchMode`, `accept-new`), `connection-manager.ts` owns connect/provision/health-probe/auto-reconnect, plus `provisioner.ts`/`remote-exec.ts`/`reconnectBackoff.ts`/`ssh-config.ts`. The renderer then connects to `ws://127.0.0.1:<localPort>` as if local. Docs: `docs/notes/ssh-remote-plan.md`, `docs/notes/remote-machines-handoff.md`. No mobile client and no cloud relay - the "remote client" is the desktop app pointed at a tunneled remote backend.
 
-### History windows (`history_window_v1`, `history_image_refs_v1`)
+### History windows (`history_window_v1`, `history_image_refs_v1`, `history_tool_previews_v1`)
 
-`app:load-session-by-id(id, { window: true, limit: 200, beforeId?, imageRefs? })`
+`app:load-session-by-id(id, { window: true, limit: 200, beforeId?, imageRefs?, toolPreviews? })`
 returns at most 200 chronological rows, `total`, `truncated`,
 `nextBeforeId` (the oldest returned id when more older rows exist, else null),
 and `cursorReset` (a removed cursor returns a fresh tail). Phones feature-detect
@@ -126,8 +126,32 @@ top, keeping the row in view in place. It also asks `imageRefs: true`: base64
 images come back as `MessageImage.ref` (message id, index, byte size, with
 `mimeType`) and `app:load-history-image` serves the bytes when a thumbnail
 scrolls into view. A fork anchor digested over a referenced image still
-matches (`fork-anchor.ts`). Phones do not ask for references, so they keep
-data URLs; an older backend ignores both options and answers in full.
+matches (`fork-anchor.ts`). It asks `toolPreviews: true` too: a tool call with
+more than 2,000 characters of input or output arrives shortened with
+`preview: true` (`shared/history-tool-previews.ts`; JSON input keeps its keys,
+each string cut to 200 characters, so the collapsed row reads the same), and
+`HistoryToolCall` loads the whole call through `app:load-tool-call` on the
+first click. A fork anchor digested over a preview matches too, and export
+reloads a chat that holds previews (`holdsWholeHistory`). Phones ask for
+neither, so they keep data URLs and whole tool calls; an older backend ignores
+these options and answers in full.
+
+`loadConversationHistory` keeps the merged history of up to 8 chats (200,000
+messages) and reuses it while the parse cache returns the same transcript
+arrays and `message_revisions` (one counter per conversation, bumped by
+SQLite triggers on every insert, update and delete of its `messages` rows)
+is unchanged. The revision is read before the rows, so a write in between
+leaves the memo stale-by-revision, never stale-by-content. A returned history
+is shared: never mutate it. `app:load-tool-call` reads a finished call from
+that memo without re-checking it.
+
+WsHost servers (`wsServerOptions`: the headless server and the phone
+endpoint) negotiate permessage-deflate for frames of 4 KiB or more, with no
+context takeover. Chromium and OkHttp (Android, Expo on Android) offer it;
+iOS's WebSocket does not and gets plain frames. OkHttp refuses a response
+naming `client_max_window_bits`, which `ws` sends only when the client offered
+it (`ws-host-deflate.test.ts` pins OkHttp's offer). TcpHost (IAP) is NDJSON
+and unchanged.
 
 Clean replay resumes reuse the in-memory history cache; disk restores and real
 gaps reload it. Android's ProtocolEventHub updates the cache synchronously
