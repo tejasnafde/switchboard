@@ -5,13 +5,12 @@
  *   - deleteProviderInstance refusing the last instance
  *   - upsertProviderInstance rejecting unknown agent kinds
  *
- * better-sqlite3's prebuilt binary is built against Electron's Node ABI
- * and does not load under the host Node that runs vitest, so this file
- * mocks `'../../src/main/db/database'` with a minimal in-memory store.
- * The mock implements only the prepared-statement shapes that
- * provider-instances.ts uses.
+ * Runs against a real in-memory database with the app's migrations, so the
+ * seeded default rows and every query are the production ones.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import type Database from 'better-sqlite3'
+import { createMigratedDb } from './helpers/test-db'
 
 // ─── safeStorage mock (via the runtime shim) ───────────────────
 let safeStorageAvailable = true
@@ -38,124 +37,10 @@ vi.mock('../../src/main/runtime', () => ({
       : null,
 }))
 
-// ─── tiny in-memory store ──────────────────────────────────────
-interface Row {
-  id: string
-  agent_type: string
-  display_name: string
-  accent_color: string | null
-  auth_mode: string
-  env_encrypted: Buffer | null
-  env_keys: string | null
-  oauth_dir: string | null
-  config_json: string | null
-  enabled: number
-  created_at: number
-  updated_at: number
-}
-
-const store = new Map<string, Row>()
-
-function seedDefaults() {
-  store.clear()
-  const t = Date.now()
-  for (const k of ['claude-code', 'codex', 'opencode']) {
-    store.set(`${k}-default`, {
-      id: `${k}-default`,
-      agent_type: k,
-      display_name: 'Default',
-      accent_color: null,
-      auth_mode: 'env',
-      env_encrypted: null,
-      env_keys: null,
-      oauth_dir: null,
-      config_json: null,
-      enabled: 1,
-      created_at: t,
-      updated_at: t,
-    })
-  }
-}
-
-// SQL pattern matcher - tied to provider-instances.ts queries.
-function prepare(sql: string) {
-  const norm = sql.replace(/\s+/g, ' ').trim()
-  return {
-    get: (...args: unknown[]) => {
-      if (norm.startsWith('SELECT * FROM provider_instances WHERE id = ?')) {
-        return store.get(args[0] as string)
-      }
-      if (norm.startsWith('SELECT agent_type FROM provider_instances WHERE id = ?')) {
-        const r = store.get(args[0] as string)
-        return r ? { agent_type: r.agent_type } : undefined
-      }
-      if (norm.startsWith('SELECT count(*) AS c FROM provider_instances WHERE agent_type = ? AND id != ?')) {
-        const c = [...store.values()].filter(
-          (r) => r.agent_type === args[0] && r.id !== args[1],
-        ).length
-        return { c }
-      }
-      if (norm.startsWith('SELECT * FROM provider_instances WHERE agent_type = ? AND enabled = 1 ORDER BY created_at ASC LIMIT 1')) {
-        return [...store.values()]
-          .filter((r) => r.agent_type === args[0] && r.enabled === 1)
-          .sort((a, b) => a.created_at - b.created_at)[0]
-      }
-      throw new Error(`mock get: unhandled SQL: ${norm}`)
-    },
-    all: (..._args: unknown[]) => {
-      if (norm.startsWith('SELECT * FROM provider_instances ORDER BY agent_type ASC, created_at ASC')) {
-        return [...store.values()].sort(
-          (a, b) =>
-            a.agent_type.localeCompare(b.agent_type) || a.created_at - b.created_at,
-        )
-      }
-      throw new Error(`mock all: unhandled SQL: ${norm}`)
-    },
-    run: (...args: unknown[]) => {
-      if (norm.startsWith('INSERT INTO provider_instances')) {
-        const [
-          id, agent_type, display_name, accent_color, auth_mode,
-          env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at,
-        ] = args as [string, string, string, string | null, string, Buffer | null, string | null, string | null, string | null, number, number, number]
-        store.set(id, {
-          id, agent_type, display_name, accent_color, auth_mode,
-          env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at,
-        })
-        return { changes: 1 }
-      }
-      if (norm.startsWith('UPDATE provider_instances SET display_name')) {
-        const [name, accent, auth, env, envKeys, oauthDir, config, enabled, updated, id] = args as [string, string | null, string, Buffer | null, string | null, string | null, string | null, number, number, string]
-        const r = store.get(id)
-        if (!r) return { changes: 0 }
-        Object.assign(r, {
-          display_name: name,
-          accent_color: accent,
-          auth_mode: auth,
-          env_encrypted: env,
-          env_keys: envKeys,
-          oauth_dir: oauthDir,
-          config_json: config,
-          enabled,
-          updated_at: updated,
-        })
-        return { changes: 1 }
-      }
-      if (norm.startsWith('DELETE FROM provider_instances WHERE id = ?')) {
-        const id = args[0] as string
-        const had = store.delete(id)
-        return { changes: had ? 1 : 0 }
-      }
-      throw new Error(`mock run: unhandled SQL: ${norm}`)
-    },
-  }
-}
-
-vi.mock('../../src/main/db/database', () => ({
-  getDb: () => ({ prepare }),
-}))
+let db: Database.Database
 
 beforeEach(() => {
-  seedDefaults()
+  db = createMigratedDb()
   safeStorageAvailable = true
   decryptCalls = 0
   delete process.env.SWITCHBOARD_SECRET
@@ -459,7 +344,7 @@ describe('resolveProviderInstance', () => {
   it('falls back to any enabled instance if the seed default is gone', async () => {
     const { upsertProviderInstance, resolveProviderInstance } = await loadModule()
     const other = upsertProviderInstance({ agentType: 'opencode', displayName: 'Custom' })
-    store.delete('opencode-default')
+    db.prepare("DELETE FROM provider_instances WHERE id = 'opencode-default'").run()
     expect(resolveProviderInstance('opencode', null)?.id).toBe(other.id)
   })
 
@@ -493,7 +378,7 @@ describe('deleteProviderInstance', () => {
   it('refuses to delete the last instance for an agent kind', async () => {
     const { deleteProviderInstance } = await loadModule()
     expect(deleteProviderInstance('codex-default')).toBe(false)
-    expect(store.has('codex-default')).toBe(true)
+    expect(db.prepare("SELECT id FROM provider_instances WHERE id = 'codex-default'").get()).toBeDefined()
   })
 
   it('allows deleting when at least one other instance remains', async () => {

@@ -27,6 +27,8 @@ object NewSessionDecisions {
         ProviderOption(ProviderKind.OpenCode, "OpenCode", "opencode"),
     )
 
+    // A copy of src/shared/models.ts; NewSessionDecisionsCatalogFixtureTest checks it
+    // against tests/fixtures/model-catalog.json.
     private val catalogs = mapOf(
         ProviderKind.Claude to listOf(
             model("claude-fable-5", "Claude Fable 5", "max"),
@@ -41,8 +43,8 @@ object NewSessionDecisions {
             model("gpt-5.6-sol", "GPT-5.6-Sol", "max"),
             model("gpt-5.6-terra", "GPT-5.6-Terra", "balanced"),
             model("gpt-5.6-luna", "GPT-5.6-Luna", "fast"),
-            model("gpt-5.5", "GPT-5.5", "max"),
-            model("gpt-5.4", "GPT-5.4", "max"),
+            model("gpt-5.5", "GPT-5.5", "balanced"),
+            model("gpt-5.4", "GPT-5.4", "balanced"),
             model("gpt-5.4-mini", "GPT-5.4-Mini", "fast"),
             model("gpt-5.2", "GPT-5.2", "balanced"),
         ),
