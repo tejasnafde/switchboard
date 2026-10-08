@@ -901,9 +901,18 @@ function setConversationArchived(id: string, archived: 0 | 1): void {
   for (const memberId of threadFamilyIds(id)) stmt.run(archived, now, memberId)
 }
 
-export function getArchivedConversations(): Array<{ id: string; project_path: string; title: string; updated_at: number }> {
+export interface ArchivedConversationRow {
+  id: string
+  project_path: string
+  title: string
+  updated_at: number
+  agent_type: string
+  origin_source: string | null
+}
+
+export function getArchivedConversations(): ArchivedConversationRow[] {
   return getDb().prepare(
-    `SELECT c.id, c.project_path, c.title, c.updated_at
+    `SELECT c.id, c.project_path, c.title, c.updated_at, c.agent_type, c.origin_source
      FROM conversations c
      WHERE c.archived = 1 AND c.sidebar_role = 'managed'
        AND NOT EXISTS (
@@ -915,7 +924,7 @@ export function getArchivedConversations(): Array<{ id: string; project_path: st
            AND root.sidebar_role = 'managed'
        )
      ORDER BY c.updated_at DESC`
-  ).all() as Array<{ id: string; project_path: string; title: string; updated_at: number }>
+  ).all() as ArchivedConversationRow[]
 }
 
 export function isConversationArchived(id: string): boolean {

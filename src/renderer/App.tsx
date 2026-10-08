@@ -28,6 +28,7 @@ import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
 import { StatusBar } from './components/StatusBar'
 import { SessionPickerModal } from './components/SessionPickerModal'
+import { GoToChatDialog } from './components/GoToChatDialog'
 import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { UpdateToast } from './components/UpdateToast'
@@ -150,6 +151,7 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
+  const [goToChatOpen, setGoToChatOpen] = useState(false)
   const [quickPromptOpen, setQuickPromptOpen] = useState(false)
   // Refs mirror modal-open state so the keybinding effect (which only
   // depends on toggle callbacks) reads fresh values without re-binding
@@ -1378,6 +1380,10 @@ export function App() {
           e.preventDefault()
           setSearchOpen((prev) => !prev)
           break
+        case 'go-to-chat':
+          e.preventDefault()
+          setGoToChatOpen((prev) => !prev)
+          break
         // On the landing screen the companion is its draft, so the terminal
         // opens in the project its chip shows.
         case 'new-terminal-window': {
@@ -1767,6 +1773,13 @@ export function App() {
         onOpenQuickPrompt={() => { setPaletteOpen(false); setQuickPromptOpen(true) }}
         onContextBridge={() => { setPaletteOpen(false); appendTerminalSelectionToDraft() }}
         onNewChat={() => { void showLandingScreen() }}
+      />
+      <GoToChatDialog
+        open={goToChatOpen}
+        onClose={() => setGoToChatOpen(false)}
+        onOpenChat={(item, placement) => {
+          void handleSessionSelect(item.session, item.projectPath, item.machineId, placement)
+        }}
       />
       <SessionPickerModal
         open={sessionPickerOpen}

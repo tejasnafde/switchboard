@@ -4,6 +4,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Added
+- **Go to chat (Mod+P).** A dialog lists the chats of every project, local and remote. With nothing typed it shows the 5 most recent chats, then all chats. Type to match chat titles (exact, then starts with, then contains) and then project names, newest first in each group; message text is not searched. Add the word "archived" to include archived chats. Enter opens the chat, Mod+Enter opens it beside the current one. The phones' chat-list search boxes rank with the same rules. See `docs/feature-parity/go-to-chat.json`.
+
 ### Changed
 - **Long chats open fast on the desktop.** A chat opens with its newest 200 rows and loads older rows as you scroll up, keeping your place. Images in history load when they scroll into view instead of riding inside the chat load. The backend parses one profile copy of a session instead of every copy (the others are proven byte prefixes of it by hash), and a growing transcript parses only its new lines. On a copied 98 MB transcript held in five profiles, a reopen measured about 0.45 s and the load payload 130 KB; before, that chat took 3.7 to 7 s to open with a 58 MB payload. Search, export, fork and the handoff preamble still read the whole chat; when that full read fails, the handoff send is refused and a jump to an unloaded row is not attempted. Older rows keep loading after the oldest shown row disappears from the backend's history, and images that miss at the same moment share one history read. See `docs/feature-parity/desktop-history-window.json`.
 ### Fixed
