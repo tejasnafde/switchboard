@@ -1475,6 +1475,9 @@ export class ProviderRegistry implements PeerToolHost {
     // inside a turn and nowhere else, unlike content, which also carries
     // notices sent while the chat is idle.
     if (event.type === 'tool.started' && !this.hasOutstandingTurn(event.threadId)) this.beginOutstandingTurn(event.threadId)
+    // A text-only one is marked by the adapter instead, and may start while a
+    // queued message is still counted, so it counts whatever the total.
+    if (event.type === 'status' && event.newTurn) this.beginOutstandingTurn(event.threadId)
     if (event.type === 'tool.started') this.checkpoints.noteToolStarted(event.threadId, event.toolId, event.toolName, event.input)
     if (event.type === 'tool.completed') this.checkpoints.noteToolCompleted(event.threadId, event.toolId, event.writtenPaths)
     if (event.type === 'turn.dequeued' && event.reason === 'started') this.checkpoints.startQueuedTurn(event.threadId)

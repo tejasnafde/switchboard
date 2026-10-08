@@ -1,14 +1,16 @@
 /**
  * Links chats from before PR linking existed: reads a chat's stored history
- * (`history-source.ts`) and applies the auto-link rule to its user text,
- * assistant text, tool inputs and tool output, plus bbpr's bare-number form
- * (`bbpr 605`) in a tool input for a Bitbucket project, when the command ran
- * in the chat's repository (`bbpr-targets.ts`). Runs once per chat in
- * the background after launch; later messages are the live auto-linker's
- * (`auto-link.ts`).
+ * (`history-source.ts`) and applies the live auto-linker's rule
+ * (`auto-link.ts`): the PR a tool's shell command works on
+ * (`shared/pr-command-links.ts`), the output of `gh pr create`, and bbpr's
+ * bare-number form (`bbpr 605`) in a tool input for a Bitbucket project, when
+ * the command ran in the chat's repository (`bbpr-targets.ts`). A PR only
+ * named in chat text or in other tool output is not linked. Runs once per
+ * chat in the background after launch.
  */
 import { projectPrRefs } from '@shared/pull-request-links'
 import { bbprPullRequestNumbers, bbprTargetsForInput, toolInputCommand, toolInputCwd } from '@shared/bbpr-command'
+import { prCommandLinks } from '@shared/pr-command-links'
 import type { PrRef, RepoRef } from '@shared/pull-requests'
 import type { ProjectRepos } from '@shared/project-repos'
 import type { HistoryPartKind, HistoryVisitor } from './history-source'
@@ -22,7 +24,6 @@ export const MAX_HISTORY_SCAN_CHARS = 250_000
 const DEFAULT_BATCH_SIZE = 50
 const DEFAULT_CONCURRENCY = 2
 const DEFAULT_YIELD_MS = 25
-const MENTIONS_HOST = /github\.com\/|bitbucket\.org\//i
 
 export interface PullRequestHistoryScanTarget {
   id: string
@@ -80,6 +81,11 @@ class HistoryText {
   private seen = new Set<string>()
   /** Shell commands of tool inputs that run bbpr, resolved against the chat's cwd once the read is done. */
   readonly bbprCommands: Array<{ command: string; cwd: string | null }> = []
+  /**
+   * `gh pr create` calls whose output has not been read yet. A transcript
+   * keeps a tool's output after its input, so the next outputs are theirs.
+   */
+  private creates = 0
   chars = 0
   capped = false
 
@@ -93,8 +99,11 @@ class HistoryText {
     this.seen.add(text)
     const remaining = MAX_HISTORY_SCAN_CHARS - this.chars
     const kept = text.length > remaining ? dropLastWord(text.slice(0, remaining)) : text
-    if (kind === 'toolInput') this.addBbprCommand(text.length > remaining ? kept : text)
-    this.parts.push(kept)
+    if (kind === 'toolInput') this.addToolInput(kept)
+    else if (kind === 'toolOutput' && this.creates > 0) {
+      this.creates--
+      this.parts.push(kept)
+    }
     if (text.length > remaining) {
       this.chars = MAX_HISTORY_SCAN_CHARS
       this.capped = true
@@ -104,9 +113,13 @@ class HistoryText {
     return true
   }
 
-  private addBbprCommand(input: string): void {
+  private addToolInput(input: string): void {
     const command = toolInputCommand(input)
-    if (command && bbprPullRequestNumbers(command).length > 0) this.bbprCommands.push({ command, cwd: toolInputCwd(input) })
+    if (!command) return
+    const { urls, creates } = prCommandLinks(command)
+    this.parts.push(...urls)
+    if (creates) this.creates++
+    if (bbprPullRequestNumbers(command).length > 0) this.bbprCommands.push({ command, cwd: toolInputCwd(input) })
   }
 
   get text(): string {
@@ -145,7 +158,7 @@ export async function scanPullRequestHistoryForConversation(
     throw new HistoryReadError(err)
   }
   let linked = 0
-  if (history.bbprCommands.length > 0 || MENTIONS_HOST.test(history.text)) {
+  if (history.bbprCommands.length > 0 || history.text) {
     const project = await deps.projectRepos(target.projectPath)
     const cwd = target.worktreePath || target.projectPath
     const targets = history.bbprCommands.flatMap((c) => bbprTargetsForInput(c.command, cwd, c.cwd))
