@@ -141,6 +141,51 @@
     }
   },
   {
+    "id": "merge-back-pending",
+    "content": "[[sb:merge-back]] {\"id\": \"mb_1\", \"fork\": \"agent_9\", \"forkTitle\": \"try sqlite paging\", \"state\": \"pending\", \"turns\": 2, \"omittedTurns\": 0, \"files\": [\"src/main/agent/jsonl-cache.ts\", \"tests/unit/jsonl-tail.test.ts\"], \"moreFiles\": 0, \"location\": \"worktree /repo/.switchboard/worktrees/fork-1 (branch fork/try-sqlite-paging)\", \"result\": \"Tail parse cuts chat.open from 4.3 s to 0.6 s.\", \"text\": \"From the fork \\\"try sqlite paging\\\": 2 turns since the fork point.\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "From fork \"try sqlite paging\" (not sent yet)",
+      "body": "2 turns since the fork point or the last send\nChanged: src/main/agent/jsonl-cache.ts, tests/unit/jsonl-tail.test.ts (in worktree /repo/.switchboard/worktrees/fork-1 (branch fork/try-sqlite-paging))\nResult: Tail parse cuts chat.open from 4.3 s to 0.6 s."
+    }
+  },
+  {
+    "id": "merge-back-delivered",
+    "content": "[[sb:merge-back]] {\"id\": \"mb_2\", \"fork\": \"agent_9\", \"forkTitle\": \"try sqlite paging\", \"state\": \"delivered\", \"turns\": 1, \"omittedTurns\": 3, \"files\": [], \"moreFiles\": 0, \"text\": \"From the fork \\\"try sqlite paging\\\": 2 turns since the fork point.\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "From fork \"try sqlite paging\" · Sent with your message",
+      "body": "1 turn since the fork point or the last send (3 left out to fit)"
+    }
+  },
+  {
+    "id": "merge-back-more-files",
+    "content": "[[sb:merge-back]] {\"id\": \"mb_3\", \"fork\": \"agent_9\", \"forkTitle\": \"try sqlite paging\", \"state\": \"pending\", \"turns\": 2, \"omittedTurns\": 0, \"files\": [\"a.ts\"], \"moreFiles\": 4, \"text\": \"From the fork \\\"try sqlite paging\\\": 2 turns since the fork point.\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "From fork \"try sqlite paging\" (not sent yet)",
+      "body": "2 turns since the fork point or the last send\nChanged: a.ts, and 4 more"
+    }
+  },
+  {
+    "id": "merge-back-bad-state",
+    "content": "[[sb:merge-back]] {\"id\": \"mb_1\", \"fork\": \"agent_9\", \"forkTitle\": \"try sqlite paging\", \"state\": \"sent\", \"turns\": 2, \"omittedTurns\": 0, \"files\": [\"src/main/agent/jsonl-cache.ts\", \"tests/unit/jsonl-tail.test.ts\"], \"moreFiles\": 0, \"location\": \"worktree /repo/.switchboard/worktrees/fork-1 (branch fork/try-sqlite-paging)\", \"result\": \"Tail parse cuts chat.open from 4.3 s to 0.6 s.\", \"text\": \"From the fork \\\"try sqlite paging\\\": 2 turns since the fork point.\"}",
+    "expected": {
+      "kind": "notice",
+      "title": "Switchboard notice",
+      "body": ""
+    }
+  },
+  {
+    "id": "merge-back-broken-json",
+    "content": "[[sb:merge-back]] {\"id\":",
+    "expected": {
+      "kind": "notice",
+      "title": "Switchboard notice",
+      "body": ""
+    }
+  },
+  {
     "id": "unknown-marker",
     "content": "[[sb:future-thing]] {\"secret\":\"payload\"}",
     "expected": {

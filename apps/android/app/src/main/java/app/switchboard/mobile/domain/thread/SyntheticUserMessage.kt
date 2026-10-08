@@ -92,6 +92,8 @@ object SyntheticUserMessage {
         Block("<skill>", "</skill>"),
         // A Switchboard approval result; the desktop shows its own row for it.
         Block("<switchboard-approval-result>", "</switchboard-approval-result>"),
+        // A fork's merge-back; the parent shows its own row for it.
+        Block("<switchboard-fork-merge-back>", "</switchboard-fork-merge-back>"),
         // The backend wraps a transcript's compact summary by its isCompactSummary flag.
         Block("<switchboard-compact-summary>", "</switchboard-compact-summary>") { inner ->
             SyntheticPart.Compacted(inner.trim())

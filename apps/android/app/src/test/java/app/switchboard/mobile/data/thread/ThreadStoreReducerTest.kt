@@ -3,6 +3,7 @@ package app.switchboard.mobile.data.thread
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.PeerUndelivered
 import app.switchboard.mobile.domain.thread.SystemMarkers
+import app.switchboard.mobile.domain.thread.SystemRowView
 import app.switchboard.mobile.domain.thread.SyntheticUserMessage
 import app.switchboard.mobile.domain.thread.ThreadEventDecoder
 import app.switchboard.mobile.domain.thread.ThreadEventScope
@@ -767,6 +768,22 @@ class ThreadStoreReducerTest {
         assertEquals(listOf("h-pu_1", "h-apr_1"), rows.map { it.id })
         assertTrue(rows.all { it.eventType == SystemMarkers.ROW_EVENT_TYPE })
         assertEquals(PeerUndelivered("agent_2", "Roadmap", "link-expired", "Found it", true), SystemMarkers.undelivered(rows[0].text))
+    }
+
+    @Test
+    fun aForkSummaryCardUpdatesInPlaceAndGoesAwayWhenDiscarded() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val pending = "[[sb:merge-back]] {\"id\":\"mb1\",\"fork\":\"f\",\"forkTitle\":\"paging\",\"state\":\"pending\",\"turns\":1,\"omittedTurns\":0,\"files\":[],\"moreFiles\":0,\"text\":\"x\"}"
+        val delivered = pending.replace("\"pending\"", "\"delivered\"")
+        state = ingest(state, "mac-a", 1, 1, event("merge-back.row", "messageId" to s("mergeback_mb1"), "content" to s(pending), "at" to n(1)))
+        state = ingest(state, "mac-a", 1, 2, event("merge-back.row", "messageId" to s("mergeback_mb1"), "content" to s(delivered), "at" to n(2)))
+
+        val rows = state.thread("mac-a", "thread-1")!!.feed.filterIsInstance<FeedItem.RawNotice>()
+        assertEquals(listOf("h-mergeback_mb1"), rows.map { it.id })
+        assertEquals(SystemRowView.Notice("From fork \"paging\" · Sent with your message", "1 turn since the fork point or the last send"), SystemMarkers.view(rows[0].text))
+
+        state = ingest(state, "mac-a", 1, 3, event("merge-back.row", "messageId" to s("mergeback_mb1"), "content" to JsonNull, "at" to n(3)))
+        assertTrue(state.thread("mac-a", "thread-1")!!.feed.none { it.id == "h-mergeback_mb1" })
     }
 
     private fun ingestUnsequenced(state: ThreadStoreState, connectionId: String, generation: Long, raw: JsonObject) =
