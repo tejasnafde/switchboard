@@ -402,14 +402,6 @@ const RUNTIME_MODE_TO_PERMISSION: Record<RuntimeMode, PermissionMode> = {
 }
 
 // Policy moved to `src/main/provider/policy.ts` so both adapters share it.
-// Re-exported here for backward compat with existing imports + tests.
-export {
-  PLAN_READ_ONLY_TOOLS,
-  CUSTOM_UI_TOOLS,
-  decidePermission,
-  denialMessage,
-  type PermissionDecision,
-} from '../policy'
 import { decidePermission, CUSTOM_UI_TOOLS, denialMessage, notebookWriteRedirect } from '../policy'
 import { notebookManager } from '../../notebooks/manager'
 import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'

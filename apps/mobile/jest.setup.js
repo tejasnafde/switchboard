@@ -67,3 +67,16 @@ jest.mock('./src/lib/voice', () => ({
   ensureVoicePermission: jest.fn(async () => true),
   startListening: jest.fn(() => ({ stop: jest.fn() })),
 }))
+
+// The chat visual's WebView, clipboard and bundled page: native, and the page
+// itself is checked in the root suite. The WebView stub renders nothing.
+jest.mock('react-native-webview', () => {
+  const React = require('react')
+  const { View } = require('react-native')
+  return { WebView: React.forwardRef((props, ref) => React.createElement(View, { testID: 'webview', ref, ...props })) }
+})
+jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }))
+jest.mock('expo-asset', () => ({
+  Asset: { fromModule: () => ({ downloadAsync: async () => undefined, localUri: 'file:///visual-host.html' }) },
+}))
+jest.mock('expo-file-system/legacy', () => ({ readAsStringAsync: jest.fn(async () => '<html></html>') }))
