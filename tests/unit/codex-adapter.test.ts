@@ -2249,6 +2249,67 @@ describe('CodexAdapter', () => {
     expect(frames.some((m) => m.method === 'turn/steer')).toBe(false)
   })
 
+  it('holds the queue on Stop instead of starting it when the stopped turn ends', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.sendTurn('thread-1', 'queued follow-up', undefined, undefined, 'queue', 'remote_q')
+    await adapter.interruptTurn('thread-1')
+    writes.length = 0
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'interrupted' } },
+    }) + '\n')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(onEvent).toHaveBeenCalledWith({ type: 'turn.queue-held', threadId: 'thread-1', held: true, reason: 'Stopped.' })
+    // The stopped turn still ends, which settles its count in the registry.
+    expect(onEvent.mock.calls.filter(([e]) => e.type === 'turn.completed' && e.turnId === 'turn-1')).toHaveLength(1)
+    expect(writes.map((w) => JSON.parse(w)).some((m) => m.method === 'turn/start')).toBe(false)
+  })
+
+  it('does not end the next turn when the stopped turn reports its end late', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.interruptTurn('thread-1')
+    await adapter.sendTurn('thread-1', 'do this instead')
+    // The mock names every turn turn-1; the new one is turn-2.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const active = (adapter as any).sessions.get('thread-1')
+    active.activeTurnId = 'turn-2'
+    await adapter.sendTurn('thread-1', 'queued behind the new turn', undefined, undefined, 'queue', 'remote_q')
+    onEvent.mockClear()
+    writes.length = 0
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'interrupted' } },
+    }) + '\n')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const types = onEvent.mock.calls.map(([e]) => e.type)
+    expect(types).not.toContain('turn.completed')
+    expect(types).not.toContain('turn.dequeued')
+    expect(onEvent).not.toHaveBeenCalledWith({ type: 'status', threadId: 'thread-1', status: 'idle' })
+    expect(active.activeTurnId).toBe('turn-2')
+    expect(writes.map((w) => JSON.parse(w)).some((m) => m.method === 'turn/start')).toBe(false)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { threadId: 'codex-thread-1', turn: { id: 'turn-2', items: [], status: 'completed' } },
+    }) + '\n')
+    await vi.waitFor(() => expect(onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q', reason: 'started' }))
+  })
+
   it('interrupts the active Codex turn by id and immediately returns the session to idle', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

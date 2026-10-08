@@ -1,0 +1,67 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "queue-steer-correctness",
+  "summary": "Stop holds queued messages on every agent instead of running them; a Codex turn end that arrives late no longer ends the next turn; a Claude queued turn shows as running, a late steer no longer starts the queued message early with its mode, and a crash or text-only late steer no longer leaves the busy count wrong. The desktop forks a chat whose last turn failed or whose session exited. Auto-linking links only PRs a chat works on, not PRs it mentions.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/QueuedTurnBar.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "tests/unit/fork-status-gate.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": ["apps/mobile/src/lib/held-turns.ts"]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": ["apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt"]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/codex-adapter.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/conversation-fork.ts",
+        "src/shared/pr-command-links.ts",
+        "src/main/pull-requests/auto-link.ts",
+        "src/main/pull-requests/history-scan.ts",
+        "tests/unit/codex-adapter.test.ts",
+        "tests/unit/claude-adapter-queue.test.ts",
+        "tests/unit/claude-adapter-query-crash.test.ts",
+        "tests/unit/opencode-acp-adapter.test.ts",
+        "tests/unit/provider-registry-queued-turns.test.ts",
+        "tests/unit/pr-command-links.test.ts",
+        "tests/unit/pull-request-links.test.ts",
+        "tests/unit/pull-request-history-scan.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Queue and turn state are in memory. Existing PR links stay; the narrower rule only stops new ones, and chats already scanned are not scanned again."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": ["CHANGELOG.md", "src/shared/provider-events.ts"],
+      "notes": "Additive wire change: an optional newTurn flag on a running status event, which older clients ignore. Phones already render a held queue from turn.queue-held and the queued list, so Stop holding needs no phone release; only the Held hint copy changes (OTA for Expo, next APK for Android)."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Vitest with fake adapters, a fake Codex app-server child and a mocked Claude SDK: Codex Stop holds the queue and a late turn/completed for the stopped turn neither ends the new turn nor starts the queue; Claude reports running while a queued turn runs, holds on Stop, resolves a late steer against a queued message from the first message_start stamp (and falls back to the queue head with no stamp), announces an unstarted turn with newTurn, and ends the running turn when the query crashes; OpenCode Stop holds; the registry counts a newTurn turn; forkBlockedByStatus allows error and exited; auto-link and the history scan link gh pr create output and acting gh pr or bbpr commands, and ignore prose, gh pr view, file reads and quoted bodies. Each fails without its fix."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live Claude, Codex or OpenCode CLI was run. That the bundled Claude CLI stamps user_message_uuid on the first message_start of a turn started by a steer is taken from the SDK type docs, not observed; without the stamp the old queue-head assumption applies.",
+      "Codex sending turn/completed with status interrupted after turn/interrupt is assumed from app-server v2, as in the existing tests.",
+      "The Held hint copy on the Expo and Android apps was not looked at on a device.",
+      "A Codex steer that just misses the turn end still returns ambiguous instead of being sent as a follow-up."
+    ]
+  }
+}

@@ -4,7 +4,7 @@
  * Cancel (take it back and put its text in the composer). The row itself
  * disappears on the backend's `turn.dequeued`, on every client.
  *
- * After a failed or usage-limited turn the queue is held: nothing starts
+ * After Stop, or a failed or usage-limited turn, the queue is held: nothing starts
  * until Resume. A message that could not start stays marked "Not sent" until
  * Cancel takes it back.
  */
@@ -61,7 +61,7 @@ export function QueuedTurnBar({ sessionId, messageId, provider }: {
   }
 
   const label = failed ? 'Not sent' : held ? 'Held' : 'Queued'
-  const note = failed ?? (held ? 'the last turn failed; Resume sends the queue' : 'runs after this turn')
+  const note = failed ?? (held ? 'held after a stop or a failed turn; Resume sends the queue' : 'runs after this turn')
 
   return (
     <div data-queued-turn={messageId} className="mt-[8px] flex items-center gap-[8px] text-[11px] text-[var(--text-muted)]">

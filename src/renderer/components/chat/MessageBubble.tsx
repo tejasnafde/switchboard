@@ -21,7 +21,7 @@ import { SkillChip } from './SkillChip'
 import {
   forkAndOpenSession,
 } from '../../services/fork-session'
-import { isForkableForkMessage } from '@shared/conversation-fork'
+import { forkBlockedByStatus, isForkableForkMessage } from '@shared/conversation-fork'
 import { parseRotationMarker } from '@shared/rotation-marker'
 import { parseUndeliveredMarker } from '@shared/peer-links'
 import { PeerUndeliveredRow } from './PeerUndeliveredRow'
@@ -343,7 +343,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     // Block forking mid-turn - Claude SDK can't safely truncate while it's
     // actively appending to the JSONL, and the user's freshly-typed reply
     // would race the fork's resume anchor.
-    if (session.status !== 'idle') {
+    if (forkBlockedByStatus(session.status)) {
       setForkError('Cannot fork while a turn is in flight')
       return
     }
