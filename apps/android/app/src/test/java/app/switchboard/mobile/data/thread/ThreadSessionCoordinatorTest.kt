@@ -1360,6 +1360,21 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `a late preview after the sheet reopened leaves the new sheet loading`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(FORK_MERGE_BACK_CAPABILITY))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession(fork = forkMetadata())))
+
+        coordinator.openSendBack()
+        coordinator.closeMergeBack()
+        coordinator.openSendBack()
+
+        remote.completeMergeBackPreviewAt(0, success("preview-1", MergeBackPreview.Empty("Parent", "Nothing new.")))
+        assertEquals(MergeBackSheetPhase.Loading, coordinator.state.value.mergeBack.sheet?.phase)
+    }
+
+    @Test
     fun `preview refused blocks the sheet`() {
         val remote = FakeThreadSessionRemote(scope)
         val coordinator = coordinator(remote, capabilities = setOf(FORK_MERGE_BACK_CAPABILITY))

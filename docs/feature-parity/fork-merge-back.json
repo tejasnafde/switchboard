@@ -68,8 +68,7 @@
         "src/main/db/turn-acceptance.ts",
         "tests/unit/merge-back-summary.test.ts",
         "tests/unit/merge-back-service.test.ts",
-        "tests/unit/merge-back-registry.test.ts",
-        "tests/unit/merge-back-summary.test.ts"
+        "tests/unit/merge-back-registry.test.ts"
       ]
     },
     "storageDataMigration": {

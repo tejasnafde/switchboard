@@ -489,7 +489,7 @@ export function MergeBackItem({
     <View style={styles.undeliveredCard} testID="merge-back-row">
       <Text style={styles.undeliveredTitle}>{mergeBackRowTitle(row)}</Text>
       {pending
-        ? mergeBackRowDetails(row).map((line) => <Text key={line} style={styles.undeliveredReason}>{line}</Text>)
+        ? mergeBackRowDetails(row).map((line, i) => <Text key={`${i}-${line}`} style={styles.undeliveredReason}>{line}</Text>)
         : (
           <>
             {expanded && <Text style={styles.undeliveredText} selectable>{row.text}</Text>}
