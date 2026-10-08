@@ -55,7 +55,7 @@
     },
     "updateRelease": {
       "status": "not_applicable",
-      "reason": "No native module, permission, package identity, signing or deep link change. The Expo change is JavaScript only, so it ships over the OTA lane; Android ships with its next APK. Every client uses calls an older backend already answers."
+      "reason": "No native module, permission, package identity, signing or deep link change. The Expo change is JavaScript only, so it ships over the OTA lane; Android ships with its next APK. Every client uses only calls that an older backend already answers."
     }
   },
   "verification": {
