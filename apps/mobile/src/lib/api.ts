@@ -28,6 +28,7 @@ import type { AgentType, Project, ConversationRow, CreateConversationParams, Cha
 import type { SshIapTarget } from '@shared/machines'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { PeerMessageInput } from '@shared/peer-messaging'
+import type { MergeBackActionResult, MergeBackPreview, MergeBackToken } from '@shared/merge-back'
 import type { PrLink, PrLinkResult } from '@shared/pull-request-links'
 import type { PrRef } from '@shared/pull-requests'
 import type {
@@ -379,6 +380,23 @@ export class SwitchboardClient {
   /** A user send to another session; with `undeliveredId` it sends a kept Not delivered row. */
   deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string }> {
     return this.transport.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, input)
+  }
+
+  /** Merge-back (`fork_merge_back_v1`): the summary a fork would send back to its parent. */
+  mergeBackPreview(forkThreadId: string): Promise<MergeBackPreview> {
+    return this.transport.invoke(ProviderChannels.MERGE_BACK_PREVIEW, forkThreadId)
+  }
+
+  mergeBackSend(forkThreadId: string, text: string, token: MergeBackToken): Promise<MergeBackActionResult> {
+    return this.transport.invoke(ProviderChannels.MERGE_BACK_SEND, forkThreadId, text, token)
+  }
+
+  mergeBackEdit(parentThreadId: string, id: string, text: string): Promise<MergeBackActionResult> {
+    return this.transport.invoke(ProviderChannels.MERGE_BACK_EDIT, parentThreadId, id, text)
+  }
+
+  mergeBackDiscard(parentThreadId: string, id: string): Promise<MergeBackActionResult> {
+    return this.transport.invoke(ProviderChannels.MERGE_BACK_DISCARD, parentThreadId, id)
   }
 
   /** The pull requests linked to a chat; open to a phone (`device-auth.ts`). */

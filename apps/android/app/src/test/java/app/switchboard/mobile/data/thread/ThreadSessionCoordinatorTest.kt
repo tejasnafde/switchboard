@@ -25,8 +25,12 @@ import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.SessionMeta
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.FORK_MERGE_BACK_CAPABILITY
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.domain.thread.MergeBackActionResult
+import app.switchboard.mobile.domain.thread.MergeBackPreview
+import app.switchboard.mobile.domain.remote.ForkLineageMetadata
 import app.switchboard.mobile.domain.thread.QueuedTurnActionResult
 import app.switchboard.mobile.domain.thread.QueuedTurnSummary
 import app.switchboard.mobile.domain.thread.TurnDelivery
@@ -1306,6 +1310,167 @@ class ThreadSessionCoordinatorTest {
         assertFalse(older.state.value.pendingActions.backendTakesPhoneApproval)
     }
 
+    @Test
+    fun `merge-back is unavailable without the capability and open does nothing`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession(fork = forkMetadata())))
+
+        assertFalse(coordinator.state.value.mergeBack.available)
+        coordinator.openSendBack()
+        assertTrue(remote.mergeBackPreviewThreadIds.isEmpty())
+        assertNull(coordinator.state.value.mergeBack.sheet)
+    }
+
+    @Test
+    fun `open send back fills the sheet once the preview is ready`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(FORK_MERGE_BACK_CAPABILITY))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession(fork = forkMetadata("Parent"))))
+
+        coordinator.openSendBack()
+        assertEquals(listOf("thread-1"), remote.mergeBackPreviewThreadIds)
+        assertTrue(coordinator.state.value.mergeBack.sheet?.phase is MergeBackSheetPhase.Loading)
+
+        val token = JsonObject(linkedMapOf("from" to JsonObject(linkedMapOf())))
+        remote.completeMergeBackPreviewAt(0, success("preview", readyPreview(text = "summary text", token = token)))
+
+        val sheet = coordinator.state.value.mergeBack.sheet
+        assertEquals("summary text", sheet?.text)
+        val phase = sheet?.phase as? MergeBackSheetPhase.Ready
+        assertEquals(token, phase?.token)
+        assertEquals(false, phase?.replacesPending)
+    }
+
+    @Test
+    fun `a late preview after the sheet closed is ignored`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(FORK_MERGE_BACK_CAPABILITY))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession(fork = forkMetadata())))
+
+        coordinator.openSendBack()
+        coordinator.closeMergeBack()
+        assertNull(coordinator.state.value.mergeBack.sheet)
+
+        remote.completeMergeBackPreviewAt(0, success("preview", MergeBackPreview.Empty("Parent", "Nothing new.")))
+        assertNull(coordinator.state.value.mergeBack.sheet)
+    }
+
+    @Test
+    fun `preview refused blocks the sheet`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(FORK_MERGE_BACK_CAPABILITY))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession(fork = forkMetadata())))
+
+        coordinator.openSendBack()
+        remote.completeMergeBackPreviewAt(0, success("preview", MergeBackPreview.Refused("The fork is still working.")))
+
+        assertEquals(
+            MergeBackSheetPhase.Blocked("The fork is still working."),
+            coordinator.state.value.mergeBack.sheet?.phase,
+        )
+    }
+
+    @Test
+    fun `send ok closes the sheet`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(FORK_MERGE_BACK_CAPABILITY))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession(fork = forkMetadata())))
+
+        coordinator.openSendBack()
+        val token = JsonObject(linkedMapOf())
+        remote.completeMergeBackPreviewAt(0, success("preview", readyPreview(token = token)))
+        coordinator.setMergeBackText("edited summary")
+        coordinator.submitMergeBack()
+
+        assertEquals(1, remote.mergeBackSends.size)
+        val (sentThreadId, sentText, sentToken) = remote.mergeBackSends.single()
+        assertEquals("thread-1", sentThreadId)
+        assertEquals("edited summary", sentText)
+        assertEquals(token, sentToken)
+
+        remote.completeMergeBackSend(success("send", MergeBackActionResult.Ok))
+        assertNull(coordinator.state.value.mergeBack.sheet)
+    }
+
+    @Test
+    fun `send refused keeps the sheet open with the error`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(FORK_MERGE_BACK_CAPABILITY))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession(fork = forkMetadata())))
+
+        coordinator.openSendBack()
+        remote.completeMergeBackPreviewAt(0, success("preview", readyPreview()))
+        coordinator.submitMergeBack()
+        remote.completeMergeBackSend(
+            success("send", MergeBackActionResult.Refused("The fork sent back since this summary was made.")),
+        )
+
+        val sheet = coordinator.state.value.mergeBack.sheet
+        assertEquals("The fork sent back since this summary was made.", sheet?.error)
+        assertFalse(sheet?.saving ?: true)
+    }
+
+    @Test
+    fun `edit sends the parents thread id and merge-back id`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(FORK_MERGE_BACK_CAPABILITY))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+
+        coordinator.openEditMergeBack("mb_1", "fork title", "original text")
+        coordinator.setMergeBackText("edited text")
+        coordinator.submitMergeBack()
+
+        assertEquals(listOf(Triple("thread-1", "mb_1", "edited text")), remote.mergeBackEdits)
+        remote.completeMergeBackEdit(success("edit", MergeBackActionResult.Ok))
+        assertNull(coordinator.state.value.mergeBack.sheet)
+    }
+
+    @Test
+    fun `discard is busy while in flight then surfaces a refusal`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, capabilities = setOf(FORK_MERGE_BACK_CAPABILITY))
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+
+        coordinator.discardMergeBack("mb_1")
+        assertTrue("mb_1" in coordinator.state.value.mergeBack.discardingIds)
+        coordinator.discardMergeBack("mb_1")
+        assertEquals(1, remote.mergeBackDiscards.size)
+
+        remote.completeMergeBackDiscard(
+            success("discard", MergeBackActionResult.Refused("This summary was already sent or discarded.")),
+        )
+        assertFalse("mb_1" in coordinator.state.value.mergeBack.discardingIds)
+        assertEquals(
+            "This summary was already sent or discarded.",
+            coordinator.state.value.mergeBack.rowErrors["mb_1"],
+        )
+    }
+
+    private fun readyPreview(
+        text: String = "summary",
+        token: JsonObject = JsonObject(linkedMapOf()),
+        replacesPending: Boolean = false,
+    ) = MergeBackPreview.Ready(
+        parentId = "parent-1",
+        parentTitle = "Parent",
+        text = text,
+        turns = 2,
+        omittedTurns = 0,
+        files = emptyList(),
+        moreFiles = 0,
+        replacesPending = replacesPending,
+        token = token,
+    )
+
     private fun coordinator(
         remote: FakeThreadSessionRemote,
         cached: ThreadState? = null,
@@ -1335,12 +1500,22 @@ class ThreadSessionCoordinatorTest {
         followUpDefault = followUpDefault,
     )
 
-    private fun loadedSession(vararg messages: ChatMessage) = LoadedSession(
+    private fun loadedSession(vararg messages: ChatMessage, fork: ForkLineageMetadata? = null) = LoadedSession(
         messages = messages.toList(),
-        meta = SessionMeta("thread-1", "Title", "/repo", "codex", null, emptyJson()),
+        meta = SessionMeta("thread-1", "Title", "/repo", "codex", null, emptyJson(), forkMetadata = fork),
         total = messages.size.toLong(),
         truncated = false,
         raw = emptyJson(),
+    )
+
+    private fun forkMetadata(parentTitle: String = "Parent chat") = ForkLineageMetadata(
+        parentConversationId = "parent-1",
+        parentTitle = parentTitle,
+        anchorMessageId = "m-1",
+        anchorPreview = "preview",
+        resumeMode = "native",
+        branch = null,
+        baseSha = null,
     )
 
     private fun message(id: String, role: String, content: String, at: Long) =
@@ -1800,6 +1975,65 @@ private class FakeThreadSessionRemote(
 
     fun completePendingRequestsAt(index: Int, response: RemoteResponse<List<JsonObject>>) {
         pendingRequestsCallbacks[index](response)
+    }
+
+    val mergeBackPreviewThreadIds = mutableListOf<String>()
+    val mergeBackPreviewCallbacks = mutableListOf<(RemoteResponse<MergeBackPreview>) -> Unit>()
+    val mergeBackSends = mutableListOf<Triple<String, String, app.switchboard.mobile.protocol.JsonValue>>()
+    val mergeBackSendCallbacks = mutableListOf<(RemoteResponse<MergeBackActionResult>) -> Unit>()
+    val mergeBackEdits = mutableListOf<Triple<String, String, String>>()
+    val mergeBackEditCallbacks = mutableListOf<(RemoteResponse<MergeBackActionResult>) -> Unit>()
+    val mergeBackDiscards = mutableListOf<Pair<String, String>>()
+    val mergeBackDiscardCallbacks = mutableListOf<(RemoteResponse<MergeBackActionResult>) -> Unit>()
+
+    override fun mergeBackPreview(threadId: String, callback: (RemoteResponse<MergeBackPreview>) -> Unit) {
+        mergeBackPreviewThreadIds += threadId
+        mergeBackPreviewCallbacks += callback
+    }
+
+    override fun mergeBackSend(
+        threadId: String,
+        text: String,
+        token: app.switchboard.mobile.protocol.JsonValue,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ) {
+        mergeBackSends += Triple(threadId, text, token)
+        mergeBackSendCallbacks += callback
+    }
+
+    override fun mergeBackEdit(
+        threadId: String,
+        mergeBackId: String,
+        text: String,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ) {
+        mergeBackEdits += Triple(threadId, mergeBackId, text)
+        mergeBackEditCallbacks += callback
+    }
+
+    override fun mergeBackDiscard(
+        threadId: String,
+        mergeBackId: String,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ) {
+        mergeBackDiscards += threadId to mergeBackId
+        mergeBackDiscardCallbacks += callback
+    }
+
+    fun completeMergeBackPreviewAt(index: Int, response: RemoteResponse<MergeBackPreview>) {
+        mergeBackPreviewCallbacks[index](response)
+    }
+
+    fun completeMergeBackSend(response: RemoteResponse<MergeBackActionResult>) {
+        mergeBackSendCallbacks.removeAt(0)(response)
+    }
+
+    fun completeMergeBackEdit(response: RemoteResponse<MergeBackActionResult>) {
+        mergeBackEditCallbacks.removeAt(0)(response)
+    }
+
+    fun completeMergeBackDiscard(response: RemoteResponse<MergeBackActionResult>) {
+        mergeBackDiscardCallbacks.removeAt(0)(response)
     }
 
     fun <T> RemoteResponse<T>.withScope(scope: ThreadEventScope) = copy(

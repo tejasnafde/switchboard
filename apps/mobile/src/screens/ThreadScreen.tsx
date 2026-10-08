@@ -80,7 +80,9 @@ import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
 import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '@shared/agent-approval-cards'
-import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PeerUndeliveredItem, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
+import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, MergeBackItem, PeerUndeliveredItem, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
+import { MergeBackSheet, type MergeBackSheetApi, type MergeBackSheetMode } from '../components/MergeBackSheet'
+import { FORK_MERGE_BACK_CAPABILITY } from '@shared/merge-back'
 import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
@@ -966,6 +968,46 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
   }, [connectionId, threadId])
 
+  // Merge-back (`fork_merge_back_v1`): Send back from a fork, Edit and Discard
+  // on the parent's card. An older backend has no handler, so no action shows.
+  const canMergeBack = getClient(connectionId)?.supportsCapability(FORK_MERGE_BACK_CAPABILITY) === true
+  const [mergeBackSheet, setMergeBackSheet] = useState<MergeBackSheetMode | null>(null)
+  // The client is looked up per call: a reconnect replaces it while the sheet is open.
+  const mergeBackApi = useMemo<MergeBackSheetApi>(() => {
+    const client = () => {
+      const found = getClient(connectionId)
+      if (!found) throw new Error('Not connected to this backend.')
+      return found
+    }
+    return {
+      preview: async (fork) => client().mergeBackPreview(fork),
+      send: async (fork, text, token) => client().mergeBackSend(fork, text, token),
+      edit: async (parent, id, text) => client().mergeBackEdit(parent, id, text),
+    }
+  }, [connectionId])
+  const [mergeBackDiscarding, setMergeBackDiscarding] = useState<ReadonlySet<string>>(new Set())
+  const [mergeBackErrors, setMergeBackErrors] = useState<Record<string, string | undefined>>({})
+  const discardMergeBack = useCallback(async (id: string) => {
+    const client = getClient(connectionId)
+    if (!client) return
+    setMergeBackErrors((current) => ({ ...current, [id]: undefined }))
+    setMergeBackDiscarding((current) => new Set(current).add(id))
+    try {
+      // The card goes on the backend's merge-back.row event.
+      const result = await client.mergeBackDiscard(threadId, id)
+      if (!result.ok) setMergeBackErrors((current) => ({ ...current, [id]: result.message }))
+    } catch (err) {
+      log.warn(`discarding merge-back ${id} failed`, err)
+      setMergeBackErrors((current) => ({ ...current, [id]: err instanceof Error ? err.message : String(err) }))
+    } finally {
+      setMergeBackDiscarding((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+    }
+  }, [connectionId, threadId])
+
   const renderItem = useCallback(
     ({ item }: { item: FeedRow }) => {
       switch (item.kind) {
@@ -1064,6 +1106,17 @@ export default function ThreadScreen({ route, navigation }: Props) {
               onSend={() => void sendUndelivered(item)}
             />
           )
+        case 'mergeBack':
+          return (
+            <MergeBackItem
+              item={item}
+              canAct={canMergeBack}
+              busy={mergeBackDiscarding.has(item.row.id)}
+              error={mergeBackErrors[item.row.id]}
+              onEdit={() => setMergeBackSheet({ kind: 'edit', parentThreadId: threadId, mergeBackId: item.row.id, forkTitle: item.row.forkTitle, text: item.row.text })}
+              onDiscard={() => void discardMergeBack(item.row.id)}
+            />
+          )
         case 'error':
           return <Text style={styles.errorText}>{item.message}</Text>
       }
@@ -1091,6 +1144,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
       undeliveredSending,
       undeliveredErrors,
       sendUndelivered,
+      canMergeBack,
+      mergeBackDiscarding,
+      mergeBackErrors,
+      discardMergeBack,
+      threadId,
     ],
   )
 
@@ -1223,6 +1281,16 @@ export default function ThreadScreen({ route, navigation }: Props) {
             {forkMetadata.resumeMode === 'native' ? 'native resume' : 'transcript handoff'}
             {forkMetadata.git ? ` · ${forkMetadata.git.branch} from ${forkMetadata.git.baseSha.slice(0, 8)}` : ''}
           </Text>
+          {canMergeBack && (
+            <Pressable
+              onPress={() => setMergeBackSheet({ kind: 'send', forkThreadId: threadId, parentTitle: forkMetadata.parentTitle })}
+              accessibilityRole="button"
+              hitSlop={8}
+              testID="fork-send-back"
+            >
+              <Text style={styles.compactAction} numberOfLines={1}>Send back to "{forkMetadata.parentTitle}"</Text>
+            </Pressable>
+          )}
         </View>
       )}
 
@@ -1298,6 +1366,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
         onPick={rotateProfile}
         onClose={() => setProfilePickerOpen(false)}
       />
+
+      {mergeBackSheet && (
+        <MergeBackSheet mode={mergeBackSheet} api={mergeBackApi} onClose={() => setMergeBackSheet(null)} />
+      )}
 
       <Modal visible={lightbox !== null} transparent animationType="fade" onRequestClose={() => setLightbox(null)}>
         <Pressable style={styles.lightbox} onPress={() => setLightbox(null)}>

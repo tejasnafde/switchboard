@@ -23,6 +23,28 @@ sealed interface SystemRowView {
 }
 
 /**
+ * A fork's merge-back card in its parent chat (`[[sb:merge-back]]`), shared by
+ * the read-only history view and the editable pending card. Port of
+ * `MergeBackRow` in src/shared/merge-back.ts.
+ */
+data class MergeBackRow(
+    val id: String,
+    /** Root id of the fork. */
+    val fork: String,
+    val forkTitle: String,
+    /** `pending` | `delivered`. */
+    val state: String,
+    val turns: Long,
+    val omittedTurns: Long,
+    val files: List<String>,
+    val moreFiles: Long,
+    val location: String? = null,
+    val result: String? = null,
+    /** What the parent's agent gets (or got), as the user left it. */
+    val text: String,
+)
+
+/**
  * Port of src/shared/system-markers.ts: how a stored system row shows. Both
  * suites run tests/fixtures/system-marker-cases.json.
  */
@@ -116,10 +138,15 @@ object SystemMarkers {
         return SystemRowView.Notice(listOf(title, outcome, delivery).filter(String::isNotEmpty).joinToString(" · "), text)
     }
 
-    /** A fork's merge-back card in its parent, read-only: heading and bullets (shared/merge-back.ts). */
-    private fun mergeBack(content: String): SystemRowView.Notice? {
+    /**
+     * A row the backend stored for `[[sb:merge-back]]`, with the same
+     * validation as `parseMergeBackMarker` in src/shared/merge-back.ts.
+     */
+    fun mergeBackRow(content: String): MergeBackRow? {
         val raw = payload(content, MERGE_BACK_PREFIX) ?: return null
-        if (raw.str("id") == null || raw.str("fork") == null || raw.str("text") == null) return null
+        val id = raw.str("id") ?: return null
+        val fork = raw.str("fork") ?: return null
+        val text = raw.str("text") ?: return null
         val forkTitle = raw.str("forkTitle") ?: return null
         val state = raw.str("state")?.takeIf { it == "pending" || it == "delivered" } ?: return null
         val turns = raw.count("turns") ?: return null
@@ -127,26 +154,49 @@ object SystemMarkers {
         val moreFiles = raw.count("moreFiles") ?: return null
         val filesRaw = raw.values["files"] as? JsonArray ?: return null
         val files = filesRaw.values.map { (it as? JsonString)?.value ?: return null }
-        val location = raw.str("location")
-        val result = raw.str("result")
-        val title = if (state == "pending") {
-            "From fork \"$forkTitle\" (not sent yet)"
-        } else {
-            "From fork \"$forkTitle\" · Sent with your message"
-        }
-        val lines = mutableListOf(
-            "$turns turn${if (turns == 1L) "" else "s"} since the fork point or the last send" +
-                if (omitted > 0) " ($omitted left out to fit)" else "",
+        return MergeBackRow(
+            id = id,
+            fork = fork,
+            forkTitle = forkTitle,
+            state = state,
+            turns = turns,
+            omittedTurns = omitted,
+            files = files,
+            moreFiles = moreFiles,
+            location = raw.str("location"),
+            result = raw.str("result"),
+            text = text,
         )
-        if (files.isNotEmpty()) {
-            lines += "Changed: ${files.joinToString(", ")}" +
-                (if (moreFiles > 0) ", and $moreFiles more" else "") +
-                (if (location != null) " (in $location)" else "")
-        } else if (location != null) {
-            lines += "In $location"
+    }
+
+    /** The card's heading, on every surface. Port of `mergeBackRowTitle`. */
+    fun title(row: MergeBackRow): String = if (row.state == "pending") {
+        "From fork \"${row.forkTitle}\" (not sent yet)"
+    } else {
+        "From fork \"${row.forkTitle}\" · Sent with your message"
+    }
+
+    /** The card's bullet lines, on every surface. Port of `mergeBackRowDetails`. */
+    fun details(row: MergeBackRow): List<String> {
+        val lines = mutableListOf(
+            "${row.turns} turn${if (row.turns == 1L) "" else "s"} since the fork point or the last send" +
+                if (row.omittedTurns > 0) " (${row.omittedTurns} left out to fit)" else "",
+        )
+        if (row.files.isNotEmpty()) {
+            lines += "Changed: ${row.files.joinToString(", ")}" +
+                (if (row.moreFiles > 0) ", and ${row.moreFiles} more" else "") +
+                (if (row.location != null) " (in ${row.location})" else "")
+        } else if (row.location != null) {
+            lines += "In ${row.location}"
         }
-        if (result != null) lines += "Result: $result"
-        return SystemRowView.Notice(title, lines.joinToString("\n"))
+        if (row.result != null) lines += "Result: ${row.result}"
+        return lines
+    }
+
+    /** A fork's merge-back card in its parent, read-only: heading and bullets (shared/merge-back.ts). */
+    private fun mergeBack(content: String): SystemRowView.Notice? {
+        val row = mergeBackRow(content) ?: return null
+        return SystemRowView.Notice(title(row), details(row).joinToString("\n"))
     }
 
     private fun rotation(content: String): String? {

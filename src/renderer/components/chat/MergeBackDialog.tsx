@@ -5,7 +5,7 @@
  * with the next message there. The same dialog edits that card.
  */
 import { useEffect, useRef, useState } from 'react'
-import type { MergeBackActionResult, MergeBackPreview, MergeBackToken } from '@shared/merge-back'
+import { mergeBackPreviewNote, type MergeBackActionResult, type MergeBackToken } from '@shared/merge-back'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 import { Button } from '../ui/button'
 import { createRendererLogger } from '../../logger'
@@ -28,13 +28,6 @@ type Load =
   | { kind: 'ready'; token: MergeBackToken | null; replacesPending: boolean; note: string | null }
   | { kind: 'blocked'; message: string }
 
-function describeReady(preview: Extract<MergeBackPreview, { status: 'ready' }>): string {
-  const turns = `${preview.turns} turn${preview.turns === 1 ? '' : 's'}`
-  const files = preview.files.length + preview.moreFiles
-  return `${turns}${preview.omittedTurns > 0 ? ` (${preview.omittedTurns} oldest left out to fit)` : ''}`
-    + ` · ${files} file${files === 1 ? '' : 's'} changed`
-}
-
 export function MergeBackDialog({ mode, onClose }: { mode: Mode; onClose: () => void }) {
   const [load, setLoad] = useState<Load>(() => mode.kind === 'edit'
     ? { kind: 'ready', token: null, replacesPending: false, note: null }
@@ -56,7 +49,7 @@ export function MergeBackDialog({ mode, onClose }: { mode: Mode; onClose: () => 
         return
       }
       setText(preview.text)
-      setLoad({ kind: 'ready', token: preview.token, replacesPending: preview.replacesPending, note: describeReady(preview) })
+      setLoad({ kind: 'ready', token: preview.token, replacesPending: preview.replacesPending, note: mergeBackPreviewNote(preview) })
       requestAnimationFrame(() => textRef.current?.focus())
     }).catch((err: unknown) => {
       log.warn('merge-back preview failed', err)

@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "fork-merge-back",
-  "summary": "A forked chat can send a summary of its work back to its parent chat, as context only (no git merge). The backend builds the summary from the fork's history after its cursor (the fork point on the first send, then the end of the last delivered send): the turns as compact user and agent text, the files its mirrored diff cards name, its worktree and branch, and its last reply, capped at 16 KiB with the newest whole turns kept and the number left out stated. The user edits it in a confirm dialog (desktop: 'Send back to <parent>' in the fork banner, or /merge-back). The parent stores it as a pending card (one per fork; a new send replaces it) with Edit and Discard. The parent's next non-queued user turn carries every pending card to its agent, wrapped in <switchboard-fork-merge-back> so the agent reads it as Switchboard context on the user's behalf; the turn's commit transaction marks it delivered once, by revision, and the card becomes a delivered row above that message. A failed or ambiguous dispatch leaves it pending. State survives a restart (fork_merge_backs, fork_merge_back_cursors). Channels provider:merge-back-preview/send/edit/discard, the merge-back.row event and the fork_merge_back_v1 capability. Phones render the card and the delivered row read-only; sending, editing and discarding from a phone are staged.",
+  "summary": "A forked chat can send a summary of its work back to its parent chat, as context only (no git merge). The backend builds the summary from the fork's history after its cursor (the fork point on the first send, then the end of the last delivered send): the turns as compact user and agent text, the files its mirrored diff cards name, its worktree and branch, and its last reply, capped at 16 KiB with the newest whole turns kept and the number left out stated. The user edits it in a confirm dialog (desktop: 'Send back to <parent>' in the fork banner, or /merge-back). The parent stores it as a pending card (one per fork; a new send replaces it) with Edit and Discard. The parent's next non-queued user turn carries every pending card to its agent, wrapped in <switchboard-fork-merge-back> so the agent reads it as Switchboard context on the user's behalf; the turn's commit transaction marks it delivered once, by revision, and the card becomes a delivered row above that message. A failed or ambiguous dispatch leaves it pending. State survives a restart (fork_merge_backs, fork_merge_back_cursors). Channels provider:merge-back-preview/send/edit/discard, the merge-back.row event and the fork_merge_back_v1 capability. Both phones render the card and the delivered row, and, when the backend advertises fork_merge_back_v1, offer Send back in a fork's banner (summary shown, editable, then sent) and Edit and Discard on a pending card in the parent. An older backend shows no action.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -16,28 +16,40 @@
         "src/renderer/components/chat/slash-commands.ts",
         "src/renderer/components/chat/provider-event-reducer.ts",
         "src/renderer/styles/tailwind.css",
-        "src/preload/index.ts"
+        "src/preload/index.ts",
+        "src/renderer/components/SessionPickerModal.tsx"
       ]
     },
     "reactNativeIos": {
-      "status": "staged",
-      "flag": "mobile_fork_merge_back",
-      "followUpRelease": "mobile-v0.6.0, for Send back from a forked chat and Edit / Discard on the parent's card. The read-only part ships now: the stored card and delivered row render through systemRowView (history) and the live merge-back.row event (apps/mobile/src/stores/chat.ts), and the merge-back block is dropped from the user's bubble by the shared synthetic split. No phone code calls a provider:merge-back-* channel, so nothing unfinished is reachable; the backend already allows them for the chat scope.",
+      "status": "implemented",
       "evidence": [
+        "apps/mobile/src/components/MergeBackSheet.tsx",
+        "apps/mobile/src/screens/ThreadFeedItems.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
         "apps/mobile/src/stores/chat.ts",
         "apps/mobile/src/lib/thread-history.ts",
-        "tests/unit/mobile-chat-store.test.ts",
-        "tests/fixtures/system-marker-cases.json"
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/components/__tests__/MergeBackSheet.test.tsx",
+        "apps/mobile/src/screens/__tests__/merge-back-item.test.tsx",
+        "tests/unit/mobile-chat-store.test.ts"
       ]
     },
     "nativeAndroid": {
-      "status": "staged",
-      "flag": "native_fork_merge_back",
-      "followUpRelease": "Native Android 0.6.0, for Send back and Edit / Discard. The read-only part ships in the next APK: SystemMarkers.kt renders the card and the delivered row from history and from the live merge-back.row event (ThreadStoreReducer.kt, which removes a discarded card), and SyntheticUserMessage.kt drops the merge-back block. An older APK shows the live event as an unsupported-event notice until reload, as with every event added before it. No Android code calls a merge-back channel.",
+      "status": "implemented",
       "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/MergeBack.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SystemMarkers.kt",
-        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SyntheticUserMessage.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSessionScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/MergeBackTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClientTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadPresentationTest.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt"
       ]
     },
@@ -56,7 +68,8 @@
         "src/main/db/turn-acceptance.ts",
         "tests/unit/merge-back-summary.test.ts",
         "tests/unit/merge-back-service.test.ts",
-        "tests/unit/merge-back-registry.test.ts"
+        "tests/unit/merge-back-registry.test.ts",
+        "tests/unit/merge-back-summary.test.ts"
       ]
     },
     "storageDataMigration": {
@@ -81,15 +94,20 @@
       "tests/unit/merge-back-service.test.ts against SQLite and the real AtomicUserTurnSubmission: pending card, edit (own parent only), discard; delivery with the next user turn exactly once (stored wrapped, shown as the user's words, delivered row just above the message); a refused turn leaves it pending and the next turn carries it; edit, discard and a second claim refused while a turn carries it; the next send carries only what is new; the preview token pins the range when the fork runs on; a second send replaces the pending card; a stale token after a delivery is refused; not a fork, a busy fork, an archived parent and empty text are refused; a pending card and the fork cursor survive a restart (serialized database).",
       "tests/unit/merge-back-registry.test.ts against the real ProviderRegistry: the pending card rides on the next user turn once and its delivered event comes after the user message; a queued message does not carry it and the next normal one does; a failed provider call leaves it pending and editable.",
       "tests/fixtures/system-marker-cases.json and synthetic-user-message-cases.json (vitest and the Android fixture tests): the pending and delivered rows, a long file list, a bad state and broken JSON; the merge-back block peeled off before the user's text.",
-      "tests/unit/mobile-chat-store.test.ts: the Expo store shows the card, updates it in place and removes it when discarded.",
-      "apps/android ThreadStoreReducerTest: the live event lands on the history row, turns delivered in place and is removed when discarded."
+      "apps/android ThreadStoreReducerTest: the live event lands on the history row, turns delivered in place and is removed when discarded.",
+      "tests/unit/mobile-chat-store.test.ts: the Expo store turns the history row and the live merge-back.row event into one merge-back card, updates it in place and removes it when discarded.",
+      "apps/mobile jest MergeBackSheet.test.tsx and merge-back-item.test.tsx: Send back loads the preview, sends the edited text with the preview token and closes; a refusal stays on the sheet; an empty preview shows its reason with no Send; Edit saves through the parent's id and refuses blank text; the card offers Edit and Discard only while pending on a backend with the capability, and shows a refusal.",
+      "tests/unit/merge-back-summary.test.ts: mergeBackPreviewNote counts turns, left-out turns and every changed file.",
+      "e2e/radix-overlays.e2e.mjs and tests/unit/session-picker-identity.test.ts: Open beside no longer offers the landing screen's unsent draft.",
+      "apps/android unit tests: ThreadSessionCoordinatorTest (no capability shows no action; the preview fills the sheet; a late preview after close or reopen is ignored; a refused preview blocks; send closes on ok and keeps the error on a refusal; edit uses the parent's id; discard is busy, then shows a refusal), SwitchboardRemoteClientTest (preview decoding, the token echoed back, positional args), MergeBackTest (row parser, title and details, preview note) and ThreadPresentationTest (a pending row maps to the merge-back card)."
     ],
     "hardware": [],
     "notExercised": [
       "The desktop banner button, the dialog and the parent card were not seen in a running app and have no visual baseline (no visual screen shows a fork). The fork banner moved from inline styles to Tailwind utilities with the same values; no screen covers it, so pixel equality is unverified.",
       "Not run against live Claude, Codex or OpenCode sessions: how each model treats the wrapped summary is untested; the adapters are fakes.",
       "Files are read from the mirrored diff cards, so a file whose diff was too large to mirror (MIRRORED_FILE_DIFF_MAX_CHARS) is not listed.",
-      "The originless legacy SEND_TURN path (clients from before durable turn origins) does not carry a pending summary; it stays pending for the next modern send."
+      "The originless legacy SEND_TURN path (clients from before durable turn origins) does not carry a pending summary; it stays pending for the next modern send.",
+      "Phone Send back, Edit and Discard were not run on a device or against a live backend; only component, store and coordinator tests cover them."
     ]
   }
 }
