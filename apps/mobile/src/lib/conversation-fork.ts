@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Crypto from 'expo-crypto'
-import { canonicalizeForkMessage, type ForkConversationRequest } from '@shared/conversation-fork'
+import {
+  buildForkConversationRequest,
+  canonicalizeForkMessage,
+  type ForkConversationRequest,
+} from '@shared/conversation-fork'
 import type { ChatMessage } from '@shared/types'
 
 const PREFIX = 'sb.conversation-fork.v1:'
@@ -22,7 +26,6 @@ export async function mobileForkRequest(input: {
   withWorktree: boolean
   requestedAt?: number
 }): Promise<ForkConversationRequest> {
-  const kind = input.withWorktree ? 'new-worktree' : 'shared-checkout'
   const key = intentKey({ ...input, messageId: input.message.id })
   let requestId = await AsyncStorage.getItem(key)
   if (!requestId) {
@@ -33,21 +36,15 @@ export async function mobileForkRequest(input: {
     Crypto.CryptoDigestAlgorithm.SHA256,
     canonicalizeForkMessage(input.message),
   )
-  return {
-    schemaVersion: 1,
+  return buildForkConversationRequest({
     requestId,
     sourceConversationId: input.sourceConversationId,
-    anchor: {
-      messageId: input.message.id,
-      role: input.message.role,
-      timestamp: input.message.timestamp,
-      contentDigest,
-    },
-    checkout: input.withWorktree
-      ? { kind: 'new-worktree', basePolicy: 'source-head' }
-      : { kind: 'shared-checkout' },
-    provenance: { surface: 'react-native', requestedAt: input.requestedAt ?? Date.now() },
-  }
+    message: input.message,
+    contentDigest,
+    withWorktree: input.withWorktree,
+    surface: 'react-native',
+    requestedAt: input.requestedAt ?? Date.now(),
+  })
 }
 
 export async function forgetMobileForkRequest(input: {

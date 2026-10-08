@@ -1,0 +1,20 @@
+# gitleaks rules: the default set, plus the known false positives below.
+# Every entry is scoped to one file and one match, so a real secret added
+# beside them is still caught. Run locally with `gitleaks git --redact`.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Bitbucket credential test fixtures: fake token values, not credentials"
+condition = "AND"
+paths = [
+  '''^tests/unit/source-control-credentials\.test\.ts$''',
+  '''^tests/unit/pull-requests-ipc\.test\.ts$''',
+]
+regexes = ['''ATATT3xFfGF0-secret''', '''tok-12345678''']
+
+[[allowlists]]
+description = "Firebase Android api_key: public by design (restricted by package name), committed for EAS Build"
+targetRules = ["gcp-api-key", "generic-api-key"]
+paths = ['''^apps/mobile/google-services\.json$''']

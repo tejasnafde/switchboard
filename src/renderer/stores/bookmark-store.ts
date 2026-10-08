@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { nanoid } from 'nanoid'
 import type { Bookmark } from '@shared/types'
 import { createRendererLogger } from '../logger'
 
@@ -52,7 +51,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     if (!api?.bookmarks?.save) return
     // Deduplicate: silently skip if already saved
     if (get().isBookmarked(sessionId, messageTimestamp)) return
-    const id = nanoid()
+    const id = crypto.randomUUID()
     const contentExcerpt = content.slice(0, 280)
     const savedAt = Date.now()
     const bookmark: Bookmark = {

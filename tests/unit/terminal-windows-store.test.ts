@@ -10,7 +10,6 @@ import { useTerminalStore } from '../../src/renderer/stores/terminal-store'
 function resetStore() {
   useTerminalStore.setState({
     layouts: {},
-    globalActivePaneId: null,
     activeSessionId: null,
   })
 }
