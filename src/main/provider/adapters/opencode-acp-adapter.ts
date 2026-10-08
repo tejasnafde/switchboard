@@ -1,94 +1,33 @@
 /**
- * OpenCode ACP adapter - speaks the Agent Client Protocol (Zed-led
- * standard) to a long-lived `opencode acp` child over JSON-RPC on stdio.
+ * OpenCode over the generic ACP adapter (`./acp/acp-adapter.ts`): the launch
+ * config for a long-lived `opencode acp` child, plus what only OpenCode
+ * needs: reading the user's opencode.json for MCP servers and permission
+ * rules, the inline config that lets Switchboard's own MCP tools through
+ * without a second prompt, the 1.x version gate, model variants, and the
+ * session summary the session scanner reads.
  *
- * Replaced the legacy shell-out adapter (deleted 2026-05-02), which
- * spawned `opencode run --format json` per turn with a 10–30s cold-boot.
- * The ACP child boots once per session, after which:
- *   - `session/prompt` returns first chunk in <1s
- *   - tool calls / reasoning / plans / token usage / cost stream live
- *   - permissions surface as a real `requestPermission` RPC
- *   - `available_commands_update` pushes the skill list (was a side
- *     `opencode debug skill` shell-out)
- *   - the model catalog arrives inline on `session/new` (was a side
- *     `opencode models` shell-out)
- *
- * Wire layer: uses the official `@agentclientprotocol/sdk` package, the
- * same one OpenCode itself depends on. We get `ClientSideConnection`
- * (RPC + notifications + types) and `ndJsonStream` (line framing) for
- * free. Node's Readable/Writable.toWeb() bridges child stdio into the
- * SDK's WhatWG-stream API.
+ * Replaced the legacy shell-out adapter (deleted 2026-05-02), which spawned
+ * `opencode run --format json` per turn with a 10-30s cold boot.
  */
 
-import type { TurnDelivery } from '@shared/turn-delivery'
-import { takeTurnDuration } from '../turn-duration'
-import { parseImageDataUrl } from '@shared/provider-events'
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
-import { existsSync } from 'fs'
-import { Readable, Writable } from 'stream'
-import { promises as fs } from 'fs'
-import { formatOpencodeModelLabel, inferModelTier, type ModelOption } from '@shared/models'
+import { existsSync, promises as fs } from 'fs'
 import { homedir } from 'os'
-import { TurnNotAcceptedError } from '../durable-turn-acceptance'
-import {
-  ClientSideConnection,
-  ndJsonStream,
-  RequestError,
-  type Agent,
-  type Client,
-  type SessionNotification,
-  type SessionUpdate,
-  type ContentBlock,
-  type RequestPermissionRequest,
-  type RequestPermissionResponse,
-  type ReadTextFileRequest,
-  type ReadTextFileResponse,
-  type WriteTextFileRequest,
-  type WriteTextFileResponse,
-  type NewSessionResponse,
-  type ModelInfo,
-  type AvailableCommand,
-} from '@agentclientprotocol/sdk'
-import { createMainLogger as createLogger } from '../../logger'
 import { dirname, join } from 'path'
+import { formatOpencodeModelLabel } from '@shared/models'
+import { createMainLogger as createLogger } from '../../logger'
 import { generateTitle } from '../../../shared/auto-title'
 import { encodeClaudeProjectPath } from '../../projects/session-scanner'
-import type {
-  ProviderAdapter,
-  ProviderSession,
-  SessionStartOpts,
-  RuntimeEvent,
-  RuntimeMode,
-  ApprovalDecision,
-} from '../types'
-import type { ProviderSkill, SessionSummary } from '@shared/types'
-import { decidePermission, denialMessage } from '../policy'
+import type { RuntimeMode } from '../types'
+import type { SessionSummary } from '@shared/types'
 import { findOpencodePath, buildOpencodeEnv } from './opencode/env'
 import { assertSupportedOpencode } from './opencode/version'
-import { resolveResumeSegment } from '../../db/database'
-import { acpSwitchboardMcpServer, isSwitchboardOpencodeReadTool, isSwitchboardOpencodeTool, SWITCHBOARD_OPENCODE_TOOLS } from '../../mcp/agent-registration'
-import { markAgentSpawnEnv } from '../agent-spawn-env'
+import { isSwitchboardOpencodeReadTool, isSwitchboardOpencodeTool, SWITCHBOARD_OPENCODE_TOOLS } from '../../mcp/agent-registration'
+import { AcpAdapter } from './acp/acp-adapter'
+import type { AcpLaunchConfig, AcpSessionPrep } from './acp/launch-config'
+
+export { mapSessionUpdate, mapAvailableCommands, pickPermissionOptions, parseImageInput } from './acp/acp-adapter'
 
 const log = createLogger('provider:opencode-acp')
-const LOG_PAYLOAD_LIMIT = 4000
-
-function truncate(v: string): string {
-  return v.length > LOG_PAYLOAD_LIMIT
-    ? `${v.slice(0, LOG_PAYLOAD_LIMIT)}…<truncated>`
-    : v
-}
-
-/**
- * Switchboard runtime mode → ACP mode.
- *
- * OpenCode ships only `build` and `plan`. The finer-grained modes
- * (`sandbox` / `accept-edits` / `full-access`) become local permission
- * policy on top of `requestPermission`; the agent-side mode stays
- * `build` and we let `decidePermission()` gate individual tools.
- */
-function runtimeModeToAcp(mode: RuntimeMode): string {
-  return mode === 'plan' ? 'plan' : 'build'
-}
 
 function opencodePermissionNamePart(name: string): string {
   return name.replace(/[^A-Za-z0-9_-]/g, '_')
@@ -459,268 +398,6 @@ function mergeOpencodeInlineConfig(existing: string | undefined, injected: strin
   })
 }
 
-interface PendingPermission {
-  /** Resolves the requestPermission RPC the agent is awaiting. */
-  resolve: (outcome: RequestPermissionResponse) => void
-  /** Original tool name (used by respondToRequest to log denial). */
-  toolName: string
-  /** Maps decision → optionId for the agent. */
-  allowOptionId: string | null
-  rejectOptionId: string | null
-}
-
-interface ActiveSession {
-  session: ProviderSession
-  onEvent: (event: RuntimeEvent) => void
-  child: ChildProcessWithoutNullStreams | null
-  connection: ClientSideConnection | null
-  /** ACP session id returned by `session/new`. */
-  sessionId: string | null
-  /** The Switchboard MCP server was registered on this session. */
-  switchboardMcp: boolean
-  /** Sanitized OpenCode MCP server names, longest first for flattened tool names. */
-  mcpServerNames: string[]
-  /** User permission rules Switchboard could see in OpenCode config sources. */
-  opencodePermissionRules: OpencodeUserPermissionRule[]
-  /** False when a visible OpenCode config source failed to parse or read. */
-  canTrustOpencodeUserConfig: boolean
-  /** Pending `requestPermission` calls awaiting user decision. */
-  pendingPermissions: Map<string, PendingPermission>
-  /** Cached skill list, kept fresh by `available_commands_update`. */
-  skills: ProviderSkill[]
-  /** Catalog from `session/new`'s `models.availableModels`. */
-  availableModels: ModelInfo[]
-  /** In-flight prompt promise (so we know a turn is active). */
-  inFlightPrompt: Promise<void> | null
-  /** True while drainQueued sets up the next queued prompt (the slot stays taken). */
-  drainingQueue: boolean
-  /** True while a send applies its mode, before its prompt is in flight. */
-  startingPrompt: boolean
-  /** Messages sent with delivery 'queue' while a prompt ran, oldest first. */
-  queuedTurns: Array<{ id?: string; message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
-  /** Nothing queued starts until the user resumes: a turn failed (see holdQueue). */
-  queueHeld: boolean
-  /** Wall-clock turn-start timestamp; null when no turn is in flight. */
-  turnStartedAt: number | null
-  /** Accumulates chunk deltas by messageId for text and reasoning blocks. */
-  assistantMessageText: Map<string, string>
-  /** The first user message of the turn, used to generate a title. */
-  firstUserMessage?: string
-}
-
-/**
- * Map an ACP `SessionUpdate` into zero or more Switchboard `RuntimeEvent`s.
- *
- * Pure / exported so the unit tests don't need a live `opencode acp`.
- * The adapter's `Client.sessionUpdate` handler consumes the result.
- */
-export function mapSessionUpdate(
-  threadId: string,
-  notification: SessionNotification,
-  assistantMessageText: Map<string, string>,
-): RuntimeEvent[] {
-  const update = notification.update
-  const events: RuntimeEvent[] = []
-
-  switch (update.sessionUpdate) {
-    case 'agent_message_chunk':
-    case 'agent_thought_chunk': {
-      const delta = textFromContent(update.content)
-      if (!delta) break
-      const fallbackIdKey = `__fallback_id:${update.sessionUpdate}`
-      let messageId = update.messageId
-      if (!messageId) {
-        messageId = assistantMessageText.get(fallbackIdKey)
-        if (!messageId) {
-          messageId = `acp_msg_${update.sessionUpdate}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-          assistantMessageText.set(fallbackIdKey, messageId)
-        }
-      }
-      
-      // The accumulated copy is kept for the fallback message id bookkeeping
-      // below; only the wire carries the increment, which is what keeps a long
-      // reply from costing O(n^2) bytes.
-      assistantMessageText.set(messageId, `${assistantMessageText.get(messageId) ?? ''}${delta}`)
-
-      events.push({
-        type: 'content',
-        threadId,
-        messageId,
-        text: delta,
-        append: true,
-        streamKind: update.sessionUpdate === 'agent_thought_chunk' ? 'reasoning' : 'assistant',
-      })
-      break
-    }
-
-    case 'tool_call': {
-      events.push({
-        type: 'tool.started',
-        threadId,
-        toolId: update.toolCallId,
-        toolName: update.title || update.kind || 'tool',
-        input: update.rawInput ?? null,
-      })
-      break
-    }
-
-    case 'tool_call_update': {
-      // Only emit `tool.completed` on terminal status. Intermediate status
-      // (`pending` / `in_progress`) keeps the user-visible state inside the
-      // already-emitted `tool.started` card.
-      if (update.status === 'completed' || update.status === 'failed') {
-        const output = stringifyOutput(update)
-        const writtenPaths = update.status === 'completed' ? acpEditPaths(update) : []
-        events.push({
-          type: 'tool.completed',
-          threadId,
-          toolId: update.toolCallId,
-          ...(output ? { output } : {}),
-          ...(writtenPaths.length > 0 ? { writtenPaths } : {}),
-        })
-      }
-      break
-    }
-
-    case 'plan': {
-      const planMarkdown = update.entries
-        .map((e) => `- [${e.status === 'completed' ? 'x' : ' '}] ${e.content}`)
-        .join('\n')
-      events.push({
-        type: 'plan.proposed',
-        threadId,
-        planId: `acp_plan_${Date.now()}`,
-        planMarkdown,
-      })
-      break
-    }
-
-    case 'usage_update': {
-      events.push({
-        type: 'context_window',
-        threadId,
-        usedTokens: update.used,
-        maxTokens: update.size,
-        ...(update.cost?.amount !== undefined ? { costUsd: update.cost.amount } : {}),
-      })
-      break
-    }
-
-    case 'available_commands_update':
-      // No RuntimeEvent for skill changes - adapter caches and the renderer
-      // re-fetches via listSkills(). Returning [] signals "consumed".
-      break
-
-    case 'current_mode_update':
-    case 'config_option_update':
-    case 'session_info_update':
-    case 'user_message_chunk':
-      // History replay during loadSession + state-only updates we don't yet
-      // surface to the renderer. Quietly consumed.
-      break
-
-    default:
-      // Forward as-is into the log so we notice new wire types.
-      log.debug(`unhandled sessionUpdate: ${(update as { sessionUpdate?: string }).sessionUpdate ?? 'unknown'}`)
-  }
-
-  return events
-}
-
-/** Files an ACP edit tool call wrote: its locations, plus the path its input names. */
-function acpEditPaths(update: SessionUpdate & { sessionUpdate: 'tool_call_update' }): string[] {
-  if (update.kind !== 'edit') return []
-  const input = (typeof update.rawInput === 'object' && update.rawInput !== null ? update.rawInput : {}) as Record<string, unknown>
-  return [
-    ...(update.locations ?? []).map((l) => l.path),
-    ...(typeof input.filePath === 'string' ? [input.filePath] : []),
-  ]
-}
-
-/** Pluck the displayable text out of an ACP ContentBlock. */
-function textFromContent(content: ContentBlock): string {
-  if (content.type === 'text') return content.text ?? ''
-  if (content.type === 'resource') {
-    const r = content.resource as { text?: string } | undefined
-    return r?.text ?? ''
-  }
-  return ''
-}
-
-/** Convert tool-call output blocks into a single string for the UI. */
-function stringifyOutput(update: SessionUpdate & { sessionUpdate: 'tool_call_update' }): string | null {
-  if (typeof update.rawOutput === 'string') return update.rawOutput
-  if (update.content && update.content.length > 0) {
-    const parts: string[] = []
-    for (const block of update.content) {
-      if (block.type === 'content' && block.content.type === 'text') {
-        parts.push(block.content.text)
-      } else if (block.type === 'diff') {
-        parts.push(block.newText ?? '')
-      }
-    }
-    if (parts.length > 0) return parts.join('\n')
-  }
-  if (update.rawOutput !== undefined && update.rawOutput !== null) {
-    try {
-      return JSON.stringify(update.rawOutput, null, 2)
-    } catch (err) {
-      log.debug('failed to stringify OpenCode tool output', { err })
-      return String(update.rawOutput)
-    }
-  }
-  return null
-}
-
-/**
- * Convert OpenCode's `available_commands_update` payload into Switchboard
- * skills. Exported pure for unit tests.
- */
-export function mapAvailableCommands(commands: AvailableCommand[]): ProviderSkill[] {
-  const out: ProviderSkill[] = []
-  const seen = new Set<string>()
-  for (const cmd of commands) {
-    const name = cmd.name?.replace(/^\$/, '').replace(/^\//, '').trim()
-    if (!name || seen.has(name.toLowerCase())) continue
-    seen.add(name.toLowerCase())
-    out.push({
-      name,
-      ...(cmd.description ? { description: cmd.description } : {}),
-      source: 'opencode',
-    })
-  }
-  return out
-}
-
-/**
- * Pick the allow/reject option ids out of an ACP permission request.
- * ACP describes options via `kind` ("allow_once" | "allow_always" |
- * "reject_once") so the client can render labels itself.
- */
-export function pickPermissionOptions(
-  options: RequestPermissionRequest['options'],
-): { allow: string | null; reject: string | null } {
-  let allow: string | null = null
-  let reject: string | null = null
-  for (const o of options) {
-    if (!allow && (o.kind === 'allow_once' || o.kind === 'allow_always')) {
-      allow = o.optionId
-    }
-    if (!reject && o.kind === 'reject_once') {
-      reject = o.optionId
-    }
-  }
-  // Fall back to first/last when kinds aren't tagged as expected.
-  if (!allow && options.length > 0) allow = options[0].optionId
-  if (!reject && options.length > 1) reject = options[options.length - 1].optionId
-  return { allow, reject }
-}
-
-/** Derive a stable tool name string from the agent's permission request. */
-function toolNameFromPermission(req: RequestPermissionRequest): string {
-  const tc = req.toolCall as { title?: string; kind?: string } | undefined
-  return tc?.title || tc?.kind || 'tool'
-}
 
 function displayToolName(toolName: string, mcpServerNames: readonly string[]): string {
   for (const server of mcpServerNames) {
@@ -734,752 +411,100 @@ function displayToolName(toolName: string, mcpServerNames: readonly string[]): s
   return `${toolName.slice(0, split)} · ${toolName.slice(split + 1)}`
 }
 
-export class OpencodeAcpAdapter implements ProviderAdapter {
-  readonly provider = 'opencode' as const
-  private sessions = new Map<string, ActiveSession>()
-
-  async isAvailable(): Promise<boolean> {
-    return findOpencodePath() !== null
+async function prepareOpencodeSession(input: {
+  cwd: string
+  env: Record<string, string>
+  runtimeMode: RuntimeMode
+  switchboardMcp: boolean
+}): Promise<AcpSessionPrep> {
+  const userConfig = await collectConfiguredOpencodeUserConfig(input.cwd, input.env)
+  const mcpServerNames = userConfig.mcpServerNames
+    .map((name) => opencodePermissionNamePart(name.trim()))
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+  const mcpPermissionContent = buildOpencodeMcpPermissionContent(
+    input.runtimeMode,
+    userConfig.mcpServerNames,
+    input.switchboardMcp,
+    {
+      permissionRules: userConfig.permissionRules,
+      userMcpServerNames: userConfig.mcpServerNames,
+      canTrustUserConfig: userConfig.canTrustUserConfig,
+    },
+  )
+  const env = mcpPermissionContent
+    ? { ...input.env, OPENCODE_CONFIG_CONTENT: mergeOpencodeInlineConfig(input.env.OPENCODE_CONFIG_CONTENT, mcpPermissionContent) }
+    : input.env
+  return {
+    env,
+    mcpServerNames,
+    // OpenCode asks about MCP tools only when the user's config says so. In
+    // plan mode only our read tools skip the prompt, so a write is denied here too.
+    autoAllowSwitchboardTool: (toolName, mode) =>
+      (mode !== 'plan' || isSwitchboardOpencodeReadTool(toolName))
+      && canAutoAllowSwitchboardOpencodeTool(toolName, mcpServerNames, userConfig.permissionRules, userConfig.canTrustUserConfig),
+    displayToolName: (toolName) => displayToolName(toolName, mcpServerNames),
   }
+}
 
-  async startSession(
-    opts: SessionStartOpts,
-    onEvent: (event: RuntimeEvent) => void,
-  ): Promise<ProviderSession> {
-    const binPath = findOpencodePath()
-    if (!binPath) {
-      throw new Error('OpenCode not found. Install: curl -fsSL https://opencode.ai/install | bash')
+/** Writes the summary that makes the session visible to the session scanner. */
+async function persistOpencodeSessionSummary(input: { sessionId: string; message: string; session: { cwd: string; createdAt: number } }): Promise<void> {
+  try {
+    const opencodeDir = join(homedir(), '.opencode', 'sessions')
+    const projectSessionsDir = join(opencodeDir, encodeClaudeProjectPath(input.session.cwd))
+    await fs.mkdir(projectSessionsDir, { recursive: true })
+    const summaryPath = join(projectSessionsDir, `${input.sessionId}.json`)
+    const summary: Pick<SessionSummary, 'id' | 'source' | 'title' | 'startedAt'> & { projectPath: string } = {
+      id: input.sessionId,
+      source: 'opencode',
+      title: generateTitle(input.message),
+      startedAt: input.session.createdAt,
+      projectPath: input.session.cwd,
     }
-
-    // OPENCODE_ENABLE_QUESTION_TOOL=1 enables the AskUserQuestion-style tool
-    // for ACP clients (off by default since not all clients support
-    // interactive question UIs). We do, so flip it on.
-    //
-    // Provider-instance env vars (NVIDIA_API_KEY, GEMINI_API_KEY, etc.)
-    // overlay on top of `buildOpencodeEnv`'s shell + settings-DB layers
-    // so per-instance keys win.
-    const overlay: Record<string, string> = { OPENCODE_ENABLE_QUESTION_TOOL: '1' }
-    for (const [k, v] of Object.entries(opts.resolvedEnv ?? {})) {
-      if (v.length > 0) overlay[k] = v
-    }
-    let env = buildOpencodeEnv(overlay)
-    // Before any session state exists, so a refused 2.x leaves nothing to clean up.
-    await assertSupportedOpencode(binPath, env, opts.cwd)
-
-    const session: ProviderSession = {
-      threadId: opts.threadId,
-      provider: 'opencode',
-      status: 'connecting',
-      model: opts.model,
-      runtimeMode: opts.runtimeMode ?? 'sandbox',
-      cwd: opts.cwd,
-      createdAt: Date.now(),
-      instanceId: opts.instanceId,
-    }
-
-    const active: ActiveSession = {
-      session,
-      onEvent,
-      child: null,
-      connection: null,
-      sessionId: null,
-      switchboardMcp: !!opts.switchboardMcp,
-      mcpServerNames: [],
-      opencodePermissionRules: [],
-      canTrustOpencodeUserConfig: true,
-      pendingPermissions: new Map(),
-      skills: [],
-      availableModels: [],
-      inFlightPrompt: null,
-      drainingQueue: false,
-      startingPrompt: false,
-      queuedTurns: [],
-      queueHeld: false,
-      turnStartedAt: null,
-      assistantMessageText: new Map(),
-    }
-    this.sessions.set(opts.threadId, active)
-
-    onEvent({ type: 'status', threadId: opts.threadId, status: 'connecting' })
-
-    const userConfig = await collectConfiguredOpencodeUserConfig(opts.cwd, env)
-    active.mcpServerNames = userConfig.mcpServerNames
-      .map((name) => opencodePermissionNamePart(name.trim()))
-      .filter(Boolean)
-      .sort((a, b) => b.length - a.length)
-    active.opencodePermissionRules = userConfig.permissionRules
-    active.canTrustOpencodeUserConfig = userConfig.canTrustUserConfig
-    const mcpPermissionContent = buildOpencodeMcpPermissionContent(
-      session.runtimeMode,
-      userConfig.mcpServerNames,
-      active.switchboardMcp,
-      {
-        permissionRules: userConfig.permissionRules,
-        userMcpServerNames: userConfig.mcpServerNames,
-        canTrustUserConfig: userConfig.canTrustUserConfig,
-      },
-    )
-    if (mcpPermissionContent) {
-      env = {
-        ...env,
-        OPENCODE_CONFIG_CONTENT: mergeOpencodeInlineConfig(env.OPENCODE_CONFIG_CONTENT, mcpPermissionContent),
-      }
-    }
-
-    const child = spawn(binPath, ['acp', '--cwd', opts.cwd], {
-      cwd: opts.cwd,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: markAgentSpawnEnv(env),
-    })
-    active.child = child
-    log.info(`spawned opencode acp pid=${child.pid} cwd=${opts.cwd}`)
-
-    child.stderr.on('data', (data: Buffer) => {
-      log.info(`opencode-acp stderr: ${truncate(data.toString())}`)
-    })
-
-    child.on('close', (code) => {
-      log.info(`opencode-acp exited: code=${code} threadId=${opts.threadId}`)
-      const wasActive = active.child !== null
-      active.child = null
-      active.connection = null
-      // Reject any pending permissions so the UI doesn't hang
-      for (const [reqId, pending] of active.pendingPermissions) {
-        pending.resolve({ outcome: { outcome: 'cancelled' } })
-        active.onEvent({ type: 'request.closed', threadId: opts.threadId, requestId: reqId, decision: 'deny' })
-      }
-      active.pendingPermissions.clear()
-      this.dropQueuedOnExit(opts.threadId, active)
-      if (wasActive) {
-        active.session.status = code === 0 ? 'stopped' : 'error'
-        onEvent({ type: 'status', threadId: opts.threadId, status: active.session.status })
-      }
-    })
-
-    child.on('error', (err) => {
-      log.error(`opencode-acp spawn error: ${err.message}`)
-      active.session.status = 'error'
-      onEvent({ type: 'error', threadId: opts.threadId, message: err.message })
-      onEvent({ type: 'status', threadId: opts.threadId, status: 'error' })
-    })
-
-    // Bridge child stdio → WhatWG streams the SDK expects.
-    const inputStream = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
-    const outputStream = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
-    const stream = ndJsonStream(inputStream, outputStream)
-
-    const client = this.makeClient(opts.threadId)
-    const connection = new ClientSideConnection(() => client, stream)
-    active.connection = connection
-
-    try {
-      const init = await connection.initialize({
-        protocolVersion: 1,
-        clientCapabilities: {
-          fs: { readTextFile: true, writeTextFile: true },
-        },
-      })
-      log.info(`acp initialize: protocolVersion=${init.protocolVersion} agent=${init.agentInfo?.name ?? 'unknown'} ${init.agentInfo?.version ?? ''}`)
-
-      // No agent-digest prompt rule here: ACP's `NewSessionRequest` carries
-      // only `cwd`/`mcpServers`/`additionalDirectories` (checked against
-      // @agentclientprotocol/sdk's types.gen.d.ts) - there is no
-      // system/developer instructions seam to append it to, and `prompt`
-      // content blocks are the user's own message, not an instructions
-      // channel. OpenCode sessions do not get the digest rule; previews
-      // for them fall back to today's behavior. See
-      // docs/feature-parity/agent-digest.json.
-      // OpenCode also loads the MCP servers in the user's own opencode.json.
-      const mcpServers = opts.switchboardMcp ? [acpSwitchboardMcpServer(opts.switchboardMcp)] : []
-      // The session this chat last ran (or a native fork's), when the agent
-      // can resume one; otherwise a new session, which starts without the
-      // chat's earlier context.
-      const resumeId = init.agentCapabilities?.sessionCapabilities?.resume ? this.resumeTarget(opts) : null
-      let newSession: Pick<NewSessionResponse, 'sessionId' | 'models'> | null = null
-      if (resumeId) {
-        try {
-          const resumed = await connection.resumeSession({ sessionId: resumeId, cwd: opts.cwd, mcpServers })
-          newSession = { sessionId: resumeId, models: resumed.models }
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : String(err)
-          log.warn(`acp resumeSession ${resumeId} failed, starting a new session: ${reason}`)
-          onEvent({
-            type: 'error',
-            threadId: opts.threadId,
-            message: `Could not resume OpenCode session ${resumeId}; this chat continues in a new session without its earlier context. ${reason}`,
-          })
-        }
-      }
-      newSession ??= await connection.newSession({ cwd: opts.cwd, mcpServers })
-      active.sessionId = newSession.sessionId
-      session.sessionId = newSession.sessionId
-      log.info(`acp ${resumeId === newSession.sessionId ? 'resumeSession' : 'newSession'}: ${newSession.sessionId}`)
-      onEvent({ type: 'session', threadId: opts.threadId, sessionId: newSession.sessionId })
-
-      // Capture initial model catalog
-      if (newSession.models?.availableModels) {
-        active.availableModels = newSession.models.availableModels
-      }
-
-      // If caller supplied a model, push it now so opencode uses it on the
-      // first prompt. setSessionModel returns _meta with variant info we
-      // forward to the renderer.
-      if (opts.model && opts.model.length > 0) {
-        try {
-          await this.applyModel(opts.threadId, opts.model)
-        } catch (err) {
-          log.warn(`acp setModel failed at start: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
-
-      // Push initial mode if non-default
-      const acpMode = runtimeModeToAcp(session.runtimeMode)
-      if (acpMode === 'plan') {
-        try {
-          await connection.setSessionMode({ sessionId: newSession.sessionId, modeId: acpMode })
-        } catch (err) {
-          log.warn(`acp setSessionMode failed: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
-
-      active.session.status = 'idle'
-      onEvent({ type: 'status', threadId: opts.threadId, status: 'idle' })
-    } catch (err) {
-      log.error(`acp init/newSession failed: ${err instanceof Error ? err.message : String(err)}`)
-      active.session.status = 'error'
-      const message = `OpenCode ACP init failed: ${err instanceof Error ? err.message : String(err)}`
-      onEvent({ type: 'error', threadId: opts.threadId, message })
-      onEvent({ type: 'status', threadId: opts.threadId, status: 'error' })
-      // Tear down the child so the user can retry cleanly
-      try {
-        child.kill('SIGTERM')
-      } catch (killErr) {
-        log.debug('SIGTERM on opencode child failed during init cleanup', { threadId: opts.threadId, killErr })
-      }
-      active.child = null
-      active.connection = null
-      this.sessions.delete(opts.threadId)
-      throw new Error(message)
-    }
-
-    return session
+    await fs.writeFile(summaryPath, JSON.stringify(summary, null, 2))
+    log.info(`persisted opencode session summary to ${summaryPath}`)
+  } catch (err) {
+    log.warn(`Failed to persist OpenCode session summary: ${err instanceof Error ? err.message : String(err)}`)
   }
+}
 
-  private resumeTarget(opts: SessionStartOpts): string | null {
-    try {
-      const segment = resolveResumeSegment(opts.threadId, 'opencode', opts.instanceId)
-      // Instances can keep sessions in different data dirs, so never cross one.
-      if (!segment || segment.provider_instance_id !== (opts.instanceId ?? null)) return null
-      return segment.provider_session_id
-    } catch (err) {
-      log.warn('resolveResumeSegment failed - starting a new OpenCode session', { threadId: opts.threadId, err })
-      return null
-    }
-  }
+type OpencodeModelMeta = { opencode?: { modelId?: string; variant?: string | null; availableVariants?: string[] } }
 
-  /**
-   * Start the oldest queued message. The slot stays reserved until its prompt
-   * is in flight; one that cannot start is reported and resolved with a
-   * turn.completed (which the registry counts), and the next one is tried.
-   */
-  private drainQueued(threadId: string, active: ActiveSession): void {
-    const next = active.queueHeld ? undefined : active.queuedTurns.shift()
-    if (!next) {
-      active.drainingQueue = false
-      return
-    }
-    active.drainingQueue = true
-    if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'started' })
-    this.deliverTurn(threadId, next.message, next.runtimeMode, next.images, undefined, undefined, true)
-      .then(() => { active.drainingQueue = false })
-      .catch((err: unknown) => {
-        const reason = err instanceof Error ? err.message : String(err)
-        log.warn(`queued opencode turn failed to start for ${threadId}: ${reason}`)
-        active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
-        if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'failed', error: reason })
-        active.onEvent({ type: 'turn.completed', threadId })
-        // The next one would most likely fail the same way.
-        this.holdQueue(threadId, active, 'A queued message could not be sent.')
-        this.drainQueued(threadId, active)
-      })
-  }
-
-  /**
-   * Stop starting queued messages after a failed turn: the next one would
-   * run straight into the same failure. The user resumes or cancels them.
-   */
-  private holdQueue(threadId: string, active: ActiveSession, reason: string): void {
-    if (active.queueHeld || active.queuedTurns.length === 0) return
-    active.queueHeld = true
-    log.info(`holding ${active.queuedTurns.length} queued message(s) on ${threadId}: ${reason}`)
-    active.onEvent({ type: 'turn.queue-held', threadId, held: true, reason })
-  }
-
-  async resumeQueuedTurns(threadId: string): Promise<boolean> {
-    const active = this.sessions.get(threadId)
-    if (!active?.queueHeld) return false
-    active.queueHeld = false
-    active.onEvent({ type: 'turn.queue-held', threadId, held: false })
-    if (active.inFlightPrompt === null && !active.startingPrompt && !active.drainingQueue) this.drainQueued(threadId, active)
-    return true
-  }
-
-  async sendTurn(
-    threadId: string,
-    message: string,
-    runtimeMode?: RuntimeMode,
-    images?: Array<{ url: string; mimeType?: string }>,
-    delivery?: TurnDelivery,
-    queuedId?: string,
-  ): Promise<void> {
-    return this.deliverTurn(threadId, message, runtimeMode, images, delivery, queuedId, false)
-  }
-
-  /**
-   * The process is gone, so nothing queued can run. Announce each message as
-   * dropped and end its accepted turn, so the registry does not wait on it.
-   */
-  private dropQueuedOnExit(threadId: string, active: ActiveSession): void {
-    const dropped = active.queuedTurns.splice(0)
-    if (dropped.length === 0) return
-    log.warn(`dropping ${dropped.length} queued message(s): the process exited before they ran`, { threadId })
-    active.onEvent({
-      type: 'error',
-      threadId,
-      message: `${dropped.length === 1 ? 'A queued message was' : `${dropped.length} queued messages were`} not sent because the session stopped. Send again.`,
-    })
-    for (const turn of dropped) {
-      if (turn.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: turn.id, reason: 'dropped' })
-      active.onEvent({ type: 'turn.completed', threadId })
-    }
-  }
-
-  /** OpenCode has no steer, so a queued message can only be taken back. */
-  async cancelQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
-    const active = this.sessions.get(threadId)
-    const index = active?.queuedTurns.findIndex((turn) => turn.id === queuedId) ?? -1
-    if (!active || index < 0) return false
-    active.queuedTurns.splice(index, 1)
-    active.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'cancelled' })
-    return true
-  }
-
-  private async deliverTurn(
-    threadId: string,
-    message: string,
-    runtimeMode: RuntimeMode | undefined,
-    images: Array<{ url: string; mimeType?: string }> | undefined,
-    delivery: TurnDelivery | undefined,
-    queuedId: string | undefined,
-    /** Set only by drainQueued, which already holds the prompt slot. */
-    fromQueue: boolean,
-  ): Promise<void> {
-    const active = this.sessions.get(threadId)
-    if (!active) throw new Error(`No OpenCode ACP session: ${threadId}`)
-    if (!active.connection || !active.sessionId) {
-      throw new Error('OpenCode ACP session not initialized')
-    }
-    // OpenCode cannot take a mid-turn message; a queued one waits here and
-    // is sent when the running prompt settles.
-    // While a queued message is being set up the slot counts as busy, or a
-    // new send could start a second prompt ahead of it.
-    const busy = active.inFlightPrompt !== null || active.startingPrompt || (active.drainingQueue && !fromQueue)
-    if (busy && delivery === 'queue') {
-      // A message joining an empty queue starts a new one, not held.
-      if (active.queuedTurns.length === 0) active.queueHeld = false
-      active.queuedTurns.push({ id: queuedId, message, runtimeMode, images })
-      if (queuedId) active.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
-      return
-    }
-    // Refused, not ignored: resolving here would store the message as sent
-    // while the agent never sees it.
-    if (busy) {
-      log.warn(`sendTurn refused while a turn is in progress for ${threadId}`)
-      throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
-    }
-    // Hold the slot across the mode await below, or a queued send arriving
-    // now would start its own prompt ahead of this one.
-    active.startingPrompt = true
-
-    if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
-      active.session.runtimeMode = runtimeMode
-      try {
-        await active.connection.setSessionMode({
-          sessionId: active.sessionId,
-          modeId: runtimeModeToAcp(runtimeMode),
-        })
-      } catch (err) {
-        log.warn(`acp setSessionMode failed: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
-
-    active.session.status = 'running'
-    active.turnStartedAt = Date.now()
-    active.assistantMessageText.clear()
-    active.onEvent({ type: 'status', threadId, status: 'running' })
-
-    const prompt: ContentBlock[] = []
-    if (message && message.length > 0) {
-      prompt.push({ type: 'text', text: message })
-    }
-    if (images && images.length > 0) {
-      for (const img of images) {
-        const { mimeType, data } = parseImageInput(img)
-        if (data) {
-          prompt.push({ type: 'image', mimeType: mimeType ?? 'image/png', data })
-        } else if (img.url) {
-          prompt.push({ type: 'image', mimeType: mimeType ?? 'image/png', uri: img.url, data: '' })
-        }
-      }
-    }
-
-    const sessionId = active.sessionId
-    let dispatchedPrompt: ReturnType<ClientSideConnection['prompt']>
-    try {
-      dispatchedPrompt = active.connection.prompt({ sessionId, prompt })
-    } catch (error) {
-      active.session.status = 'idle'
-      active.turnStartedAt = null
-      active.startingPrompt = false
-      active.onEvent({ type: 'status', threadId, status: 'idle' })
-      // Messages queued behind this prompt have no settle to wait for.
-      if (!fromQueue) this.drainQueued(threadId, active)
-      throw new TurnNotAcceptedError(
-        error instanceof Error ? error.message : 'OpenCode rejected the turn before dispatch',
-        { cause: error },
-      )
-    }
-
-    const promptPromise = dispatchedPrompt
-      .then((res) => {
-        active.session.status = 'idle'
-        const durationMs = takeTurnDuration(active)
-        active.onEvent({
-          type: 'turn.completed',
-          threadId,
-          ...(res?.usage?.totalTokens !== undefined ? { usedTokens: res.usage.totalTokens } : {}),
-          ...(durationMs !== undefined ? { durationMs } : {}),
-        })
-        active.onEvent({ type: 'status', threadId, status: 'idle' })
-      })
-      .catch((err: unknown) => {
-        // Cancellation surfaces as `cancelled` stopReason - the SDK still
-        // resolves cleanly, so this catch is for hard transport errors.
-        const msg = err instanceof RequestError
-          ? `${err.code}: ${err.message}`
-          : err instanceof Error
-            ? err.message
-            : String(err)
-        log.error(`acp prompt failed: ${msg}`)
-        active.session.status = 'error'
-        active.onEvent({ type: 'error', threadId, message: msg })
-        // The failed prompt still ends its turn, which the registry counts.
-        // The queue behind it is held, not started.
-        this.holdQueue(threadId, active, msg)
-        active.onEvent({ type: 'turn.completed', threadId })
-        active.onEvent({ type: 'status', threadId, status: 'error' })
-      })
-      .finally(() => {
-        active.inFlightPrompt = null
-        this.drainQueued(threadId, active)
-      })
-    active.inFlightPrompt = promptPromise
-    active.startingPrompt = false
-
-    // The summary makes the session visible to scanners, so it must not exist
-    // until the ACP connection has accepted the prompt invocation.
-    if (!active.firstUserMessage) {
-      active.firstUserMessage = message
-      try {
-        const opencodeDir = join(homedir(), '.opencode', 'sessions')
-        const projectSessionsDir = join(opencodeDir, encodeClaudeProjectPath(active.session.cwd))
-        await fs.mkdir(projectSessionsDir, { recursive: true })
-        const summaryPath = join(projectSessionsDir, `${sessionId}.json`)
-        const summary: Pick<SessionSummary, 'id' | 'source' | 'title' | 'startedAt'> & { projectPath: string } = {
-          id: sessionId,
-          source: 'opencode',
-          title: generateTitle(message),
-          startedAt: active.session.createdAt,
-          projectPath: active.session.cwd,
-        }
-        await fs.writeFile(summaryPath, JSON.stringify(summary, null, 2))
-        log.info(`persisted opencode session summary to ${summaryPath}`)
-      } catch (err) {
-        log.warn(`Failed to persist OpenCode session summary: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
-  }
-
-  async interruptTurn(threadId: string): Promise<void> {
-    const active = this.sessions.get(threadId)
-    if (!active?.connection || !active.sessionId) return
-    try {
-      await active.connection.cancel({ sessionId: active.sessionId })
-      log.info(`acp cancel sent: ${threadId}`)
-    } catch (err) {
-      log.warn(`acp cancel failed: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-
-  async respondToRequest(
-    threadId: string,
-    requestId: string,
-    decision: ApprovalDecision,
-  ): Promise<void> {
-    const active = this.sessions.get(threadId)
-    if (!active) return
-    const pending = active.pendingPermissions.get(requestId)
-    if (!pending) return
-    active.pendingPermissions.delete(requestId)
-
-    const optionId = decision === 'approve' ? pending.allowOptionId : pending.rejectOptionId
-    if (optionId) {
-      pending.resolve({ outcome: { outcome: 'selected', optionId } })
-    } else {
-      pending.resolve({ outcome: { outcome: 'cancelled' } })
-    }
-    active.onEvent({ type: 'request.closed', threadId, requestId, decision })
-  }
-
-  runtimeModeOf(threadId: string): RuntimeMode | undefined {
-    return this.sessions.get(threadId)?.session.runtimeMode
-  }
-
-  async setRuntimeMode(threadId: string, mode: RuntimeMode): Promise<void> {
-    const active = this.sessions.get(threadId)
-    if (!active) return
-    active.session.runtimeMode = mode
-    if (active.connection && active.sessionId) {
-      try {
-        await active.connection.setSessionMode({
-          sessionId: active.sessionId,
-          modeId: runtimeModeToAcp(mode),
-        })
-        log.info(`acp setSessionMode → ${mode} (${runtimeModeToAcp(mode)})`)
-      } catch (err) {
-        log.warn(`acp setSessionMode failed: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
-  }
-
-  async setModel(threadId: string, model: string): Promise<void> {
-    if (!model || model.length === 0) return
-    const active = this.sessions.get(threadId)
-    if (!active) return
-    active.session.model = model
-    if (active.connection && active.sessionId) {
-      await this.applyModel(threadId, model)
-    }
-  }
-
-  async stopSession(threadId: string): Promise<void> {
-    const active = this.sessions.get(threadId)
-    if (!active) return
-    if (active.child) {
-      try {
-        active.child.kill('SIGTERM')
-      } catch (killErr) {
-        log.debug('SIGTERM on opencode child failed during stopSession', { threadId, killErr })
-      }
-      active.child = null
-    }
-    for (const [, pending] of active.pendingPermissions) {
-      pending.resolve({ outcome: { outcome: 'cancelled' } })
-    }
-    active.pendingPermissions.clear()
-    for (const turn of active.queuedTurns.splice(0)) {
-      if (turn.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: turn.id, reason: 'dropped' })
-    }
-    this.sessions.delete(threadId)
-    log.info(`session stopped: ${threadId}`)
-  }
-
-  async listSkills(threadId: string): Promise<ProviderSkill[]> {
-    const active = this.sessions.get(threadId)
-    if (!active) return []
-    return active.skills
-  }
-
-  /**
-   * The catalog `session/new` returned, in the same shape the Claude and
-   * Codex adapters give LIST_MODELS, so every client (desktop, phone) reads
-   * OpenCode models through one channel. This thread's catalog first; any
-   * other session's otherwise, since the list belongs to the binary, not
-   * the cwd. Empty until a session has started; clients retry.
-   */
-  async listModels(threadId: string): Promise<ModelOption[]> {
-    const own = this.sessions.get(threadId)?.availableModels ?? []
-    const catalog = own.length > 0
-      ? own
-      : [...this.sessions.values()].find((s) => s.availableModels.length > 0)?.availableModels ?? []
-    return catalog.map((m) => ({
-      id: m.modelId,
-      label: formatOpencodeModelLabel(m.modelId),
-      tier: inferModelTier(m.modelId),
-    }))
-  }
-
-  // ── Internals ────────────────────────────────────────────────
-
-  private async applyModel(threadId: string, modelId: string): Promise<void> {
-    const active = this.sessions.get(threadId)
-    if (!active?.connection || !active.sessionId) return
-    try {
-      const res = await active.connection.unstable_setSessionModel({
-        sessionId: active.sessionId,
-        modelId,
-      })
-      const meta = (res?._meta as { opencode?: { modelId?: string; variant?: string | null; availableVariants?: string[] } } | undefined)?.opencode
-      if (meta) {
-        active.onEvent({
-          type: 'model.variants',
-          threadId,
-          modelId: meta.modelId ?? modelId,
-          availableVariants: Array.isArray(meta.availableVariants) ? meta.availableVariants : [],
-          currentVariant: typeof meta.variant === 'string' ? meta.variant : '',
-        })
-      }
-      log.info(`acp setSessionModel → ${modelId}${meta?.variant ? ` (variant=${meta.variant})` : ''}`)
-    } catch (err) {
-      log.warn(`acp setSessionModel(${modelId}) failed: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-
-  /** The Client interface we expose back to the agent over the connection. */
-  private makeClient(threadId: string): Client {
-    const adapter = this
+export const OPENCODE_ACP_LAUNCH: AcpLaunchConfig = {
+  provider: 'opencode',
+  label: 'OpenCode',
+  notFoundMessage: 'OpenCode not found. Install: curl -fsSL https://opencode.ai/install | bash',
+  signInHint: 'Run `opencode auth login` in a terminal, then try again.',
+  // OpenCode ships only `build` and `plan`. The finer-grained modes
+  // (`sandbox` / `accept-edits` / `full-access`) become local permission
+  // policy on top of `requestPermission`; the agent-side mode stays `build`.
+  modes: { kind: 'fixed', plan: 'plan', other: 'build' },
+  expectedCapabilities: ['resume', 'image'],
+  findBinary: findOpencodePath,
+  args: (cwd) => ['acp', '--cwd', cwd],
+  // OPENCODE_ENABLE_QUESTION_TOOL=1 enables the AskUserQuestion-style tool
+  // for ACP clients (off by default since not all clients support
+  // interactive question UIs). We do, so flip it on. Instance env vars
+  // overlay `buildOpencodeEnv`'s shell + settings-DB layers so per-instance
+  // keys win.
+  buildEnv: (overlay) => buildOpencodeEnv({ OPENCODE_ENABLE_QUESTION_TOOL: '1', ...overlay }),
+  preflight: assertSupportedOpencode,
+  prepareSession: prepareOpencodeSession,
+  modelLabel: (model) => formatOpencodeModelLabel(model.modelId),
+  modelVariants: (meta) => {
+    const variants = (meta as OpencodeModelMeta | null | undefined)?.opencode
+    if (!variants) return null
     return {
-      async sessionUpdate(params: SessionNotification): Promise<void> {
-        const active = adapter.sessions.get(threadId)
-        if (!active) return
-
-        // available_commands_update never produces a RuntimeEvent - handled
-        // adapter-side via the skills cache.
-        if (params.update.sessionUpdate === 'available_commands_update') {
-          active.skills = mapAvailableCommands(params.update.availableCommands ?? [])
-          log.info(`acp available_commands_update: ${active.skills.length} skill(s)`)
-          return
-        }
-
-        // Capture model catalog drift if it changes mid-session.
-        if (params.update.sessionUpdate === 'config_option_update') {
-          const opt = params.update as { configId?: string; configOptions?: unknown }
-          if (opt.configId === 'model' && Array.isArray(opt.configOptions)) {
-            // Best-effort: store option list when present
-            log.debug('config_option_update model list refreshed')
-          }
-        }
-
-        const events = mapSessionUpdate(threadId, params, active.assistantMessageText)
-        for (const ev of events) active.onEvent(ev)
-      },
-
-      async requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
-        const active = adapter.sessions.get(threadId)
-        if (!active) {
-          return { outcome: { outcome: 'cancelled' } }
-        }
-
-        const toolName = toolNameFromPermission(params)
-        const { allow, reject } = pickPermissionOptions(params.options)
-        // OpenCode asks about MCP tools only when the user's config says so.
-        // For ours the server already enforces plan mode and shows the card;
-        // in plan mode only our read tools skip the prompt, so a write is denied here too.
-        if (
-          active.switchboardMcp
-          && allow
-          && (active.session.runtimeMode !== 'plan' || isSwitchboardOpencodeReadTool(toolName))
-          && canAutoAllowSwitchboardOpencodeTool(
-            toolName,
-            active.mcpServerNames,
-            active.opencodePermissionRules,
-            active.canTrustOpencodeUserConfig,
-          )
-        ) {
-          return { outcome: { outcome: 'selected', optionId: allow } }
-        }
-        const policy = decidePermission(active.session.runtimeMode, toolName)
-
-        // Fast paths keep the user out of trivial decisions.
-        if (policy === 'allow' && allow) {
-          return { outcome: { outcome: 'selected', optionId: allow } }
-        }
-        if (policy === 'deny') {
-          active.onEvent({
-            type: 'tool.denied',
-            threadId,
-            toolName,
-            reason: denialMessage(active.session.runtimeMode, toolName),
-            mode: active.session.runtimeMode,
-          })
-          if (reject) {
-            return { outcome: { outcome: 'selected', optionId: reject } }
-          }
-          return { outcome: { outcome: 'cancelled' } }
-        }
-
-        // policy === 'prompt' - bubble up to the user via approval card.
-        const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-        const detail = JSON.stringify(
-          { tool: params.toolCall, options: params.options.map((o) => ({ id: o.optionId, name: o.name, kind: o.kind })) },
-          null, 2,
-        ).slice(0, 2000)
-
-        return new Promise<RequestPermissionResponse>((resolve) => {
-          active.pendingPermissions.set(requestId, {
-            resolve,
-            toolName,
-            allowOptionId: allow,
-            rejectOptionId: reject,
-          })
-          active.onEvent({
-            type: 'request.opened',
-            threadId,
-            requestId,
-            requestType: 'tool',
-            toolName: displayToolName(toolName, active.mcpServerNames),
-            detail,
-          })
-        })
-      },
-
-      async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
-        try {
-          const content = await fs.readFile(params.path, 'utf-8')
-          return { content }
-        } catch (err) {
-          throw new RequestError(-32603, `readTextFile failed: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      },
-
-      async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
-        try {
-          await fs.writeFile(params.path, params.content, 'utf-8')
-          return {}
-        } catch (err) {
-          throw new RequestError(-32603, `writeTextFile failed: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      },
+      modelId: variants.modelId,
+      availableVariants: Array.isArray(variants.availableVariants) ? variants.availableVariants : [],
+      variant: typeof variants.variant === 'string' ? variants.variant : '',
     }
+  },
+  onFirstPrompt: persistOpencodeSessionSummary,
+}
+
+export class OpencodeAcpAdapter extends AcpAdapter {
+  constructor() {
+    super(OPENCODE_ACP_LAUNCH)
   }
 }
-
-/**
- * Normalize a Switchboard image attachment for ACP.
- * Image attachments arrive from ChatPanel as a data URL (`data:image/png;base64,…`).
- * ACP wants raw base64 in `data` + a separate `mimeType` field.
- *
- * Exported for unit tests.
- */
-export function parseImageInput(
-  img: { url: string; mimeType?: string },
-): { mimeType: string | undefined; data: string | null } {
-  const parsed = img.url ? parseImageDataUrl(img.url) : null
-  return parsed ?? { mimeType: img.mimeType, data: null }
-}
-
-// ─── Avoid an `Agent` import warning when the Agent symbol is only used at types. ───
-// The SDK's Agent type appears in client constructor docs; importing it lets
-// future helpers reach for it without re-importing.
-const _AgentTypeBrand: Agent | null = null
-void _AgentTypeBrand

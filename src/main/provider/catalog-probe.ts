@@ -105,7 +105,7 @@ interface ProbeTarget {
  * startSession does, and the probe uses that dir's credential home.
  */
 function probeTarget(agentType: AgentProvider, instanceId: string | null | undefined, remoteConfigDir?: string): ProbeTarget {
-  if (remoteConfigDir && agentType !== 'opencode') {
+  if (remoteConfigDir && (agentType === 'claude-code' || agentType === 'codex')) {
     const dir = remoteProviderConfigDir(agentType, remoteConfigDir)
     const env = agentType === 'claude-code' ? buildClaudeCliEnv() : buildCodexCliEnv()
     applyCredentialHome(env, agentType, dir)

@@ -15,7 +15,8 @@ import { oauthInteractiveLoginCommand, shellQuoteDir } from '@shared/provider-au
 import { createMainLogger } from '../logger'
 import { managedPath } from './managed-bin'
 import type { ProviderKind } from './types'
-import type { AgentType } from '@shared/types'
+import { agentLabel, toAgentProvider, type AgentType } from '@shared/types'
+import { speaksAcp } from '@shared/acp-agents'
 
 const log = createMainLogger('provider:remote-gate')
 
@@ -25,8 +26,7 @@ const log = createMainLogger('provider:remote-gate')
  * IS_AVAILABLE gray-out.
  */
 export function remoteBlockedProviderLabel(provider: ProviderKind): string | null {
-  if (provider === 'opencode') return 'OpenCode'
-  return null
+  return speaksAcp(provider) ? agentLabel(toAgentProvider(provider)) : null
 }
 
 /**
