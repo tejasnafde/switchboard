@@ -187,16 +187,11 @@ export function transcriptShowsTaskNotification(
   return false
 }
 
-/** Equal task id, status and summary, by the transcript parser's rules. */
-export function sameTaskNotice(
-  a: { taskId?: string; status: string; summary: string },
-  b: { taskId?: string; status: string; summary: string },
-): boolean {
-  return taskNoticeKey(a) === taskNoticeKey(b)
-}
-
-/** The transcript parser's rules (`tag` trims, status defaults), applied to either side. */
-function taskNoticeKey(n: { taskId?: string; status: string; summary: string }): string {
+/**
+ * Equal keys mean equal task id, status and summary, by the transcript
+ * parser's rules (`tag` trims, status defaults), applied to either side.
+ */
+export function taskNoticeKey(n: { taskId?: string; status: string; summary: string }): string {
   return JSON.stringify([n.taskId?.trim() ?? '', n.status.trim() || 'completed', n.summary.trim()])
 }
 

@@ -7,6 +7,7 @@ const CODEX = 'codex-session'
 
 const dbMessages = new Map<string, ChatMessage[]>()
 const diskMessages = new Map<string, ChatMessage[]>()
+let revision = 0
 let nativeResume: { provider: string; sessionId: string; copiedMessageCount?: number } | undefined
 
 vi.mock('../../src/main/db/database', () => ({
@@ -14,6 +15,8 @@ vi.mock('../../src/main/db/database', () => ({
   conversationSessionHints: () => [CODEX],
   listConversationSegments: () => [],
   getMessagesForConversation: (id: string) => dbMessages.get(id) ?? [],
+  // A new revision per load, so the merged-history memo never serves a stale mock.
+  getMessageRevisions: (ids: string[]) => ids.map(() => ++revision),
   messageRowsToChatMessages: (rows: ChatMessage[]) => rows,
   getDisplayBodyEnrichments: () => new Map(),
   getNativeForkResume: () => nativeResume,

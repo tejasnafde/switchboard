@@ -3,7 +3,7 @@ import { MessageImages } from './MessageImages'
 import { createPortal } from 'react-dom'
 import { agentShortLabel, type ChatMessage } from '@shared/types'
 import { fmtDuration } from '@shared/format'
-import { ToolCallBlock } from './ToolCallBlock'
+import { HistoryToolCall } from './HistoryToolCall'
 import { ApprovalCard } from './ApprovalCard'
 import { HostWriteApprovalCard } from './HostWriteApprovalCard'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
@@ -518,7 +518,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
 
         {/* Tool calls */}
         {message.toolCalls?.map((tc) => (
-          <ToolCallBlock key={tc.id} toolCall={tc} />
+          <HistoryToolCall key={tc.id} toolCall={tc} sessionId={sessionId} messageId={message.id} />
         ))}
 
         {/* Approval request */}
