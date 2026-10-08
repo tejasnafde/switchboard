@@ -30,6 +30,7 @@ import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { HostWriteCard } from '@shared/agent-host-writes'
 import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-approval-cards'
 import type { PeerUndelivered } from '@shared/peer-links'
+import { systemRowView } from '@shared/system-markers'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -532,6 +533,18 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             row: { to: event.peerThreadId, toLabel: event.peerLabel, reason: event.reason, text: event.text, sent: event.sent },
           }
           const at = t.items.findIndex((i) => i.id === item.id)
+          return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
+        }
+        // A fork's summary card in this (parent) chat, read-only here: same id
+        // as the history row, so a reload and a live event land on one row,
+        // and a discarded card goes away.
+        case 'merge-back.row': {
+          const id = `h-${event.messageId}`
+          if (event.content === null) return { items: t.items.filter((i) => i.id !== id) }
+          const view = systemRowView(event.content)
+          if (view.kind !== 'notice') return {}
+          const item: FeedItem = { kind: 'notice', id, text: view.body ? `${view.title}: ${view.body}` : view.title }
+          const at = t.items.findIndex((i) => i.id === id)
           return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
         }
         // Read on another client. applyEvent already resolved the connection's

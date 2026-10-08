@@ -1,0 +1,95 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "fork-merge-back",
+  "summary": "A forked chat can send a summary of its work back to its parent chat, as context only (no git merge). The backend builds the summary from the fork's history after its cursor (the fork point on the first send, then the end of the last delivered send): the turns as compact user and agent text, the files its mirrored diff cards name, its worktree and branch, and its last reply, capped at 16 KiB with the newest whole turns kept and the number left out stated. The user edits it in a confirm dialog (desktop: 'Send back to <parent>' in the fork banner, or /merge-back). The parent stores it as a pending card (one per fork; a new send replaces it) with Edit and Discard. The parent's next non-queued user turn carries every pending card to its agent, wrapped in <switchboard-fork-merge-back> so the agent reads it as Switchboard context on the user's behalf; the turn's commit transaction marks it delivered once, by revision, and the card becomes a delivered row above that message. A failed or ambiguous dispatch leaves it pending. State survives a restart (fork_merge_backs, fork_merge_back_cursors). Channels provider:merge-back-preview/send/edit/discard, the merge-back.row event and the fork_merge_back_v1 capability. Phones render the card and the delivered row read-only; sending, editing and discarding from a phone are staged.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ForkLineageBanner.tsx",
+        "src/renderer/components/chat/MergeBackDialog.tsx",
+        "src/renderer/components/chat/MergeBackRow.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/slash-commands.ts",
+        "src/renderer/components/chat/provider-event-reducer.ts",
+        "src/renderer/styles/tailwind.css",
+        "src/preload/index.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_fork_merge_back",
+      "followUpRelease": "mobile-v0.6.0, for Send back from a forked chat and Edit / Discard on the parent's card. The read-only part ships now: the stored card and delivered row render through systemRowView (history) and the live merge-back.row event (apps/mobile/src/stores/chat.ts), and the merge-back block is dropped from the user's bubble by the shared synthetic split. No phone code calls a provider:merge-back-* channel, so nothing unfinished is reachable; the backend already allows them for the chat scope.",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts",
+        "apps/mobile/src/lib/thread-history.ts",
+        "tests/unit/mobile-chat-store.test.ts",
+        "tests/fixtures/system-marker-cases.json"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_fork_merge_back",
+      "followUpRelease": "Native Android 0.6.0, for Send back and Edit / Discard. The read-only part ships in the next APK: SystemMarkers.kt renders the card and the delivered row from history and from the live merge-back.row event (ThreadStoreReducer.kt, which removes a discarded card), and SyntheticUserMessage.kt drops the merge-back block. An older APK shows the live event as an unsupported-event notice until reload, as with every event added before it. No Android code calls a merge-back channel.",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SystemMarkers.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/SyntheticUserMessage.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/merge-back.ts",
+        "src/shared/system-markers.ts",
+        "src/shared/synthetic-message.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/ws-protocol.ts",
+        "src/main/conversations/merge-back.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/durable-turn-acceptance.ts",
+        "src/main/db/turn-acceptance.ts",
+        "tests/unit/merge-back-summary.test.ts",
+        "tests/unit/merge-back-service.test.ts",
+        "tests/unit/merge-back-registry.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/merge-backs.ts",
+        "src/main/db/database.ts",
+        "tests/unit/merge-back-service.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/ws-protocol.ts",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/merge-back-summary.test.ts: the first send starts at the fork point (the copied prefix is left out), turns, files, worktree and result are listed, the result is not repeated, a repeat send carries only what is new, nothing new gives no summary, a message sharing the cursor millisecond is kept, user text loses handoff preambles and generated blocks, the 16 KiB cap keeps the newest whole turns and states how many were left out, a single oversized turn is cut, the stored row round-trips, and the agent block sits after a handoff preamble, cannot be closed early by its text and leaves only the user's words visible.",
+      "tests/unit/merge-back-service.test.ts against SQLite and the real AtomicUserTurnSubmission: pending card, edit (own parent only), discard; delivery with the next user turn exactly once (stored wrapped, shown as the user's words, delivered row just above the message); a refused turn leaves it pending and the next turn carries it; edit, discard and a second claim refused while a turn carries it; the next send carries only what is new; the preview token pins the range when the fork runs on; a second send replaces the pending card; a stale token after a delivery is refused; not a fork, a busy fork, an archived parent and empty text are refused; a pending card and the fork cursor survive a restart (serialized database).",
+      "tests/unit/merge-back-registry.test.ts against the real ProviderRegistry: the pending card rides on the next user turn once and its delivered event comes after the user message; a queued message does not carry it and the next normal one does; a failed provider call leaves it pending and editable.",
+      "tests/fixtures/system-marker-cases.json and synthetic-user-message-cases.json (vitest and the Android fixture tests): the pending and delivered rows, a long file list, a bad state and broken JSON; the merge-back block peeled off before the user's text.",
+      "tests/unit/mobile-chat-store.test.ts: the Expo store shows the card, updates it in place and removes it when discarded.",
+      "apps/android ThreadStoreReducerTest: the live event lands on the history row, turns delivered in place and is removed when discarded."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The desktop banner button, the dialog and the parent card were not seen in a running app and have no visual baseline (no visual screen shows a fork). The fork banner moved from inline styles to Tailwind utilities with the same values; no screen covers it, so pixel equality is unverified.",
+      "Not run against live Claude, Codex or OpenCode sessions: how each model treats the wrapped summary is untested; the adapters are fakes.",
+      "Files are read from the mirrored diff cards, so a file whose diff was too large to mirror (MIRRORED_FILE_DIFF_MAX_CHARS) is not listed.",
+      "The originless legacy SEND_TURN path (clients from before durable turn origins) does not carry a pending summary; it stays pending for the next modern send."
+    ]
+  }
+}

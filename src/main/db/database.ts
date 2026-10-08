@@ -16,6 +16,7 @@ import { ensurePullRequestHiddenSchema } from './pull-request-hidden'
 import { ensureAgentApprovalCardSchema } from './agent-approval-cards'
 import { ensureQueuedTurnRowsSchema } from './queued-turn-rows'
 import { ensureTurnCheckpointSchema } from './turn-checkpoints'
+import { ensureMergeBackSchema } from './merge-backs'
 
 const log = createLogger('db')
 
@@ -628,6 +629,7 @@ function migrate(db: Database.Database): void {
   ensureAgentApprovalCardSchema(db)
   ensureQueuedTurnRowsSchema(db)
   ensureTurnCheckpointSchema(db)
+  ensureMergeBackSchema(db)
 
   log.info('database migrated')
 }
