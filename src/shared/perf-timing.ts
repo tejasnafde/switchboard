@@ -3,6 +3,7 @@ export const PERF_THRESHOLDS = {
   'chat.load': 300,
   'chat.load-older': 300,
   'chat.load-full': 1000,
+  'chat.load-tool-call': 200,
   'provider.switch': 1000,
   'provider.switch.action': 1000,
   'provider.switch.first-event': 1000,

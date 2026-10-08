@@ -181,6 +181,11 @@ function sameKey(a: unknown[], b: unknown[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index])
 }
 
+/** The last merged history of a conversation, unchecked: only for rows that do not change. */
+export function mergedHistoryMessages(conversationId: string): ChatMessage[] | undefined {
+  return mergedHistories.get(conversationId)?.history.messages
+}
+
 /** Test seam. */
 export function clearMergedHistories(): void {
   mergedHistories.clear()

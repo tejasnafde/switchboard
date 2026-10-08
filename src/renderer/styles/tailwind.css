@@ -29,6 +29,7 @@
 @source '../components/chat/ApprovalResultRow.tsx';
 @source '../components/chat/QueuedTurnBar.tsx';
 @source '../components/chat/MessageImages.tsx';
+@source '../components/chat/HistoryToolCall.tsx';
 @source '../components/CommandPalette.tsx';
 @source '../components/SessionPickerModal.tsx';
 @source '../components/SearchModal.tsx';

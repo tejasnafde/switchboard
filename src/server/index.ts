@@ -11,7 +11,7 @@ import { join, dirname } from 'node:path'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { WebSocketServer } from 'ws'
-import { MAX_FRAME_BYTES, WsHost } from '../main/backend/ws-host'
+import { WsHost, wsServerOptions } from '../main/backend/ws-host'
 import { TcpHost } from '../main/backend/tcp-host'
 import { MultiHost } from '../main/backend/multi-host'
 import { registerPushHandlers } from '../main/ipc/push'
@@ -109,7 +109,7 @@ function stableToken(): string {
 }
 
 const token = process.env.SWITCHBOARD_TOKEN ?? (isLoopback ? undefined : stableToken())
-const wss = new WebSocketServer({ port, host: bindHost, maxPayload: MAX_FRAME_BYTES })
+const wss = new WebSocketServer(wsServerOptions(port, bindHost))
 const wsHost = new WsHost(wss, token)
 
 // Second listener speaking newline-delimited JSON over raw TCP. This is what a

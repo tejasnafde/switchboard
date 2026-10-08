@@ -11,7 +11,7 @@ import type { MobilePairingStatus } from '@shared/types'
 import { getSetting } from '../db/database'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
-import { MAX_FRAME_BYTES, WsHost } from './ws-host'
+import { WsHost, wsServerOptions } from './ws-host'
 import { authenticateSession, redeemPairingCode, setRevocationListener } from './device-sessions'
 import { PHONE_SCOPES } from '@shared/device-auth'
 
@@ -105,7 +105,7 @@ export class MobileEndpoint implements BackendHost {
     // listener bound to every interface is an easy way for one connection to
     // pin memory. Nothing legitimate approaches this: the largest frames are
     // pasted images, which the chat path already bounds well below it.
-    const wss = new WebSocketServer({ port, host: '0.0.0.0', maxPayload: MAX_FRAME_BYTES })
+    const wss = new WebSocketServer(wsServerOptions(port, '0.0.0.0'))
     // The phone gets a device session scoped to chat only: the app has no
     // terminal UI at all, so granting it PTY spawn would mean a stolen
     // credential runs commands rather than merely reads conversations.
