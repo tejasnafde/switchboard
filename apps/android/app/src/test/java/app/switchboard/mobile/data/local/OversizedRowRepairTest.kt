@@ -1,5 +1,6 @@
 package app.switchboard.mobile.data.local
 
+import android.app.Application
 import android.content.Context
 import android.database.sqlite.SQLiteBlobTooBigException
 import android.database.sqlite.SQLiteDatabase
@@ -40,7 +41,10 @@ import org.robolectric.annotation.Config
  * CursorWindow as a phone, so the "Row too big" failure reproduces here.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+// A plain Application: SwitchboardApplication.onCreate starts the native runtime,
+// whose startup migration opens this same database file in the background and
+// can overwrite the checkpoint between the two execute() calls below.
+@Config(sdk = [35], application = Application::class)
 class OversizedRowRepairTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val huge = "x".repeat(3 * 1024 * 1024)
