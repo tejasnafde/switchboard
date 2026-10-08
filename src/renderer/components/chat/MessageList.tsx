@@ -12,6 +12,7 @@ import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, is
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { shouldLoadOlder, turnIndexHolding } from '../../services/history-window'
 import { loadOlderHistory } from '../../services/history-loader'
+import { cn } from '../../lib/utils'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -72,14 +73,8 @@ function MeasuredTurn({
       ref={setRowRef}
       data-index={index}
       data-virtual-turn
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        transform: `translateY(${start}px)`,
-        marginBottom: '4px',
-      }}
+      className="absolute top-0 left-0 w-full mb-[4px]"
+      style={{ transform: `translateY(${start}px)` }}
     >
       {children}
     </div>
@@ -538,20 +533,9 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
 
   if (turns.length === 0) {
     return (
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-muted)',
-          fontSize: '14px',
-          padding: '20px',
-          textAlign: 'center',
-        }}
-      >
+      <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-[14px] p-[20px] text-center">
         <div>
-          <div style={{ marginBottom: '12px', opacity: 0.4 }}>
+          <div className="mb-[12px] opacity-40">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
@@ -572,23 +556,17 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
       onScroll={handleScroll}
       onWheel={() => { programmaticScrollRef.current = false }}
       onPointerDown={() => { programmaticScrollRef.current = false }}
-      style={{
-        flex: 1,
-        overflowY: 'auto',
-        // NOTE: deliberately NOT using `contain: strict` - it creates a new
-        // containing block for `position: fixed` descendants, which breaks
-        // the MessageBubble image lightbox (clips to the scroll container
-        // instead of covering the viewport). The virtualizer alone provides
-        // enough perf without CSS containment.
-      }}
+      // NOTE: deliberately NOT using `contain: strict` - it creates a new
+      // containing block for `position: fixed` descendants, which breaks
+      // the MessageBubble image lightbox (clips to the scroll container
+      // instead of covering the viewport). The virtualizer alone provides
+      // enough perf without CSS containment.
+      className="flex-1 overflow-y-auto"
     >
       <div
         ref={contentRef}
-        style={{
-          height: `${totalSize}px`,
-          width: '100%',
-          position: 'relative',
-        }}
+        className="relative w-full"
+        style={{ height: `${totalSize}px` }}
       >
         {virtualItems.map((vi) => {
           const group = turns[vi.index]
@@ -627,13 +605,11 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
               measureElement={virtualizer.measureElement}
             >
               {/* Turn role label. A group of provider-generated user rows is not "You". */}
-              {!(isUser && group.every(isSyntheticOnlyMessage)) && <div style={{
-                padding: '4px 16px 0',
-                fontSize: '11px',
-                color: isSystem ? 'var(--warning)' : 'var(--text-muted)',
-                fontWeight: 500,
-                textAlign: isUser ? 'right' : 'left',
-              }}>
+              {!(isUser && group.every(isSyntheticOnlyMessage)) && <div className={cn(
+                'pt-[4px] px-[16px] pb-0 text-[11px] [font-weight:500]',
+                isSystem ? 'text-[var(--warning)]' : 'text-[var(--text-muted)]',
+                isUser ? 'text-right' : 'text-left',
+              )}>
                 {roleLabel(role, agentType)}
               </div>}
 
@@ -679,13 +655,10 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
               })}
 
               {/* Turn timestamp */}
-              <div className="turn-timestamp" style={{
-                padding: '0 16px',
-                fontSize: '10px',
-                color: 'var(--text-muted)',
-                opacity: 0.5,
-                textAlign: isUser ? 'right' : 'left',
-              }}>
+              <div className={cn(
+                'turn-timestamp py-0 px-[16px] text-[10px] text-[var(--text-muted)] opacity-50',
+                isUser ? 'text-right' : 'text-left',
+              )}>
                 {new Date(timestamp).toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
