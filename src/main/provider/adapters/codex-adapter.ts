@@ -917,26 +917,30 @@ export class CodexAdapter implements ProviderAdapter {
     active.session.model = reconciledModel
 
     // Build current Codex app-server v2 user input blocks.
-    const content: Array<Record<string, unknown>> = []
-    if (message) {
-      const skillMention = message.match(/^\s*\$([A-Za-z][\w-]*)(?:\s+([\s\S]*))?$/)
-      const skill = skillMention
-        ? active.skills?.find((candidate) => candidate.name.toLowerCase() === skillMention[1].toLowerCase())
-        : undefined
-      if (skill?.path) {
-        content.push({ type: 'skill', name: skill.name, path: skill.path })
-        const instruction = skillMention?.[2]?.trim()
-        if (instruction) content.push({ type: 'text', text: instruction })
-      } else {
-        content.push({ type: 'text', text: message })
+    const buildContent = (text: string): Array<Record<string, unknown>> => {
+      const blocks: Array<Record<string, unknown>> = []
+      if (text) {
+        const skillMention = text.match(/^\s*\$([A-Za-z][\w-]*)(?:\s+([\s\S]*))?$/)
+        const skill = skillMention
+          ? active.skills?.find((candidate) => candidate.name.toLowerCase() === skillMention[1].toLowerCase())
+          : undefined
+        if (skill?.path) {
+          blocks.push({ type: 'skill', name: skill.name, path: skill.path })
+          const instruction = skillMention?.[2]?.trim()
+          if (instruction) blocks.push({ type: 'text', text: instruction })
+        } else {
+          blocks.push({ type: 'text', text })
+        }
       }
-    }
-    if (images && images.length > 0) {
-      for (const img of images) {
-        // Codex accepts data URLs directly - no need to strip the prefix.
-        content.push({ type: 'image', url: img.url })
+      if (images && images.length > 0) {
+        for (const img of images) {
+          // Codex accepts data URLs directly - no need to strip the prefix.
+          blocks.push({ type: 'image', url: img.url })
+        }
       }
+      return blocks
     }
+    let content = buildContent(message)
 
     // A follow-up can arrive after turn/start was sent but before its response
     // provides activeTurnId. Wait through that narrow gap, then take the steer
@@ -1032,6 +1036,16 @@ export class CodexAdapter implements ProviderAdapter {
           log.warn(`codex thread disappeared, retrying turn on a fresh thread: ${err instanceof Error ? err.message : String(err)}`)
           active.threadId = null
           active.session.sessionId = undefined
+          if (active.resumed) {
+            // The thread this session natively resumed is the one that just
+            // went missing. The fresh thread below starts empty, so the
+            // retried turn must carry the visible conversation - the same
+            // fallback a failed native resume already uses - or everything
+            // before this turn is lost to the agent.
+            active.resumed = false
+            active.needsVisibleHistory = true
+            content = buildContent(await withVisibleHistory(active, threadId, message))
+          }
           await ensureThread()
           await startTurn()
         }
