@@ -48,22 +48,30 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import {
   $createLineBreakNode,
   $createParagraphNode,
+  $createRangeSelection,
+  $createRangeSelectionFromDom,
   $createTextNode,
   $getRoot,
   $getSelection,
   $insertNodes,
   $isRangeSelection,
+  $setSelection,
+  BLUR_COMMAND,
   COMMAND_PRIORITY_LOW,
   createCommand,
+  FOCUS_COMMAND,
   KEY_ENTER_COMMAND,
   PASTE_COMMAND,
+  type BaseSelection,
   type EditorState,
   type LexicalCommand,
   type LexicalEditor,
   type LexicalNode,
+  type PointType,
 } from 'lexical'
 import { $createPillNode, $isPillNode, PillNode } from './PillNode'
 import { parseBodyToSegments } from '../../../services/chat-input-body'
+import { selectionToRestore, type ComposerSelection, type SavedComposerSelection } from '../../../services/composer-selection'
 import type { DraftPill } from '../../../stores/draft-store'
 import { createRendererLogger } from '../../../logger'
 import { matchesShortcut } from '@shared/shortcuts'
@@ -174,121 +182,135 @@ function serializeEditorToBody(editor: LexicalEditor): string {
   return out
 }
 
-/**
- * Compute the caret as a 0-based offset into the plain-text body. We
- * walk the editor in DOM order, summing node lengths until we hit the
- * selection's anchor. Pills count as their token length (`[[pill:id]]`)
- * so the offset stays consistent with what the host's slash detector
- * sees.
- */
-function caretOffsetFromSelection(editor: LexicalEditor): number | null {
-  let caret: number | null = null
-  editor.getEditorState().read(() => {
-    const sel = $getSelection()
-    if (!$isRangeSelection(sel)) return
-    const anchor = sel.anchor
-    const targetNode = anchor.getNode()
-    let acc = 0
-    let found = false
-    const children = (node: LexicalNode): LexicalNode[] | null => {
-      const anyNode = node as LexicalNode & { getChildren?: () => LexicalNode[] }
-      return typeof anyNode.getChildren === 'function' ? anyNode.getChildren() : null
-    }
-    // Same traversal order and the same per-node lengths as
-    // serializeEditorToBody, so the offset indexes into the body string.
-    const lengthOf = (node: LexicalNode): number => {
-      if (node.getType() === 'linebreak') return 1
-      if ($isPillNode(node)) return node.getTextContent().length
-      const kids = children(node)
-      if (!kids) return node.getTextContent().length
-      let n = 0
-      for (const kid of kids) n += lengthOf(kid)
-      return n
-    }
-    // Depth-first walk that stops at the anchor node. The previous version
-    // only compared the anchor against the root's direct children, so a text
-    // node inside a paragraph (the normal case while typing) was never found
-    // and the caret read null; the one case that did resolve, a click on the
-    // empty paragraph, returned 0 and then poisoned the next keystroke's
-    // slash-menu detection.
-    const walk = (node: LexicalNode): void => {
-      if (found) return
-      if (node === targetNode) {
-        if (node.getType() === 'text') {
-          acc += anchor.offset
-        } else {
-          // Element anchor: offset is a child index, so count the children
-          // before it.
-          const kids = children(node) ?? []
-          for (let i = 0; i < anchor.offset && i < kids.length; i++) acc += lengthOf(kids[i])
-        }
-        found = true
-        return
-      }
-      if (node.getType() === 'linebreak' || $isPillNode(node)) {
-        acc += lengthOf(node)
-        return
-      }
-      const kids = children(node)
-      if (!kids) {
-        acc += node.getTextContent().length
-        return
-      }
-      for (const kid of kids) {
-        walk(kid)
-        if (found) return
-      }
-    }
-    for (const child of $getRoot().getChildren()) {
-      walk(child)
-      if (found) break
-    }
-    caret = found ? acc : null
-  })
-  return caret
+function childrenOf(node: LexicalNode): LexicalNode[] | null {
+  const anyNode = node as LexicalNode & { getChildren?: () => LexicalNode[] }
+  return typeof anyNode.getChildren === 'function' ? anyNode.getChildren() : null
+}
+
+/** A node's length in the plain-text body, by the rules of serializeEditorToBody. */
+function $bodyLength(node: LexicalNode): number {
+  if (node.getType() === 'linebreak') return 1
+  if ($isPillNode(node)) return node.getTextContent().length
+  const kids = childrenOf(node)
+  if (!kids) return node.getTextContent().length
+  let n = 0
+  for (const kid of kids) n += $bodyLength(kid)
+  return n
 }
 
 /**
- * Place the caret at a given plain-text offset, the inverse of
- * `caretOffsetFromSelection`. Walks descendants in DOM order summing
- * lengths; when a text node spans the offset, calls `select` on it with
- * the local offset. Linebreaks count for 1, pill tokens for their full
- * `[[pill:id]]` length. If the offset can't be reached inside a text
- * node (offset == end of doc, or lands on a pill boundary), falls back
- * to `root.selectEnd()`.
- *
- * Must be called inside `editor.update()`.
+ * A selection point as a 0-based offset into the plain-text body. Walks the
+ * editor in DOM order, summing node lengths until it reaches the point. Pills
+ * count as their token length (`[[pill:id]]`) so the offset stays consistent
+ * with what the host's slash detector sees. Must be called inside a read or
+ * update.
  */
-function $selectAtOffset(offset: number): void {
-  const root = $getRoot()
+function $offsetOfPoint(point: PointType): number | null {
+  const targetNode = point.getNode()
   let acc = 0
-  let placed = false
-  const visit = (node: LexicalNode): void => {
-    if (placed) return
-    if (node.getType() === 'linebreak') { acc += 1; return }
-    if ($isPillNode(node)) { acc += node.getTextContent().length; return }
-    if (node.getType() === 'text') {
-      const len = node.getTextContent().length
-      if (offset <= acc + len) {
-        const tn = node as LexicalNode & { select: (a: number, f: number) => void }
-        const local = Math.max(0, offset - acc)
-        tn.select(local, local)
-        placed = true
-        return
+  let found = false
+  // Depth-first walk that stops at the point's node. Comparing the point only
+  // against the root's direct children missed a text node inside a paragraph
+  // (the normal case while typing), so the caret read null.
+  const walk = (node: LexicalNode): void => {
+    if (found) return
+    if (node === targetNode) {
+      if (node.getType() === 'text') {
+        acc += point.offset
+      } else {
+        // Element point: offset is a child index, so count the children
+        // before it.
+        const kids = childrenOf(node) ?? []
+        for (let i = 0; i < point.offset && i < kids.length; i++) acc += $bodyLength(kids[i])
       }
-      acc += len
+      found = true
       return
     }
-    const anyNode = node as LexicalNode & { getChildren?: () => LexicalNode[] }
-    if (typeof anyNode.getChildren === 'function') {
-      for (const child of anyNode.getChildren()) visit(child)
+    const kids = node.getType() === 'linebreak' || $isPillNode(node) ? null : childrenOf(node)
+    if (!kids) {
+      acc += $bodyLength(node)
+      return
+    }
+    for (const kid of kids) {
+      walk(kid)
+      if (found) return
     }
   }
-  for (const child of root.getChildren()) {
-    visit(child)
-    if (placed) break
+  for (const child of $getRoot().getChildren()) {
+    walk(child)
+    if (found) break
   }
-  if (!placed) root.selectEnd()
+  return found ? acc : null
+}
+
+/** A selection (the current one by default) as body offsets, or null when it is not a range selection. */
+function $selectionOffsets(sel: BaseSelection | null = $getSelection()): ComposerSelection | null {
+  if (!$isRangeSelection(sel)) return null
+  const anchor = $offsetOfPoint(sel.anchor)
+  const focus = $offsetOfPoint(sel.focus)
+  return anchor === null || focus === null ? null : { anchor, focus }
+}
+
+function caretOffsetFromSelection(editor: LexicalEditor): number | null {
+  return editor.getEditorState().read(() => $selectionOffsets()?.anchor ?? null)
+}
+
+type PointSpec = { key: string; offset: number; type: 'text' | 'element' }
+
+/**
+ * The inverse of `$offsetOfPoint`. Inside a text node the point is a text
+ * point; before a pill or a linebreak, or at the end of a paragraph, it is an
+ * element point (a child index), so a position between two pills resolves
+ * too. Null when the offset is past the end of the body.
+ */
+function $pointAtOffset(offset: number): PointSpec | null {
+  let acc = 0
+  const visit = (node: LexicalNode): PointSpec | null => {
+    const kids = childrenOf(node)
+    if (!kids) return null
+    for (let i = 0; i < kids.length; i++) {
+      const kid = kids[i]
+      if (kid.getType() === 'text') {
+        const len = kid.getTextContent().length
+        if (offset <= acc + len) return { key: kid.getKey(), offset: offset - acc, type: 'text' }
+        acc += len
+      } else if (kid.getType() === 'linebreak' || $isPillNode(kid)) {
+        if (offset === acc) return { key: node.getKey(), offset: i, type: 'element' }
+        acc += $bodyLength(kid)
+      } else {
+        const inner = visit(kid)
+        if (inner) return inner
+      }
+    }
+    return offset === acc ? { key: node.getKey(), offset: kids.length, type: 'element' } : null
+  }
+  for (const child of $getRoot().getChildren()) {
+    const point = visit(child)
+    if (point) return point
+  }
+  return null
+}
+
+/**
+ * Select `[anchor, focus]` of the plain-text body; a collapsed range places
+ * the caret. An offset past the end of the body selects the end. Must be
+ * called inside `editor.update()`.
+ */
+function $selectOffsets({ anchor, focus }: ComposerSelection): void {
+  const a = $pointAtOffset(anchor)
+  const f = anchor === focus ? a : $pointAtOffset(focus)
+  if (!a || !f) {
+    $getRoot().selectEnd()
+    return
+  }
+  const sel = $createRangeSelection()
+  sel.anchor.set(a.key, a.offset, a.type)
+  sel.focus.set(f.key, f.offset, f.type)
+  $setSelection(sel)
+}
+
+function $selectAtOffset(offset: number): void {
+  $selectOffsets({ anchor: offset, focus: offset })
 }
 
 /**
@@ -371,6 +393,76 @@ function HydrationPlugin({
     })
   }, [value, pillsById, editor])
 
+  return null
+}
+
+/**
+ * Plugin: put the selection back when focus returns without a click. An
+ * overlay closing (Settings, the palette, search, quick prompt) or a panel
+ * refocusing its composer calls `element.focus()`, and the browser then puts
+ * the caret at the start. The selection is saved while the editor has focus
+ * and restored synchronously in the focus event, before the browser's
+ * `selectionchange` reaches Lexical. A pointer press keeps the browser's
+ * placement, since the click says where the caret goes.
+ */
+function SelectionMemoryPlugin(): null {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => {
+    let saved: SavedComposerSelection | null = null
+    let pointerDown = false
+    const onPointerDown = (): void => { pointerDown = true }
+    const onPointerUp = (): void => { pointerDown = false }
+    let rootEl: HTMLElement | null = null
+    const removeRoot = editor.registerRootListener((root) => {
+      rootEl?.removeEventListener('pointerdown', onPointerDown)
+      rootEl = root
+      rootEl?.addEventListener('pointerdown', onPointerDown)
+    })
+    window.addEventListener('pointerup', onPointerUp, true)
+    window.addEventListener('pointercancel', onPointerUp, true)
+    const save = (offsets: ComposerSelection | null): void => {
+      if (offsets) saved = { ...offsets, body: serializeEditorToBody(editor) }
+    }
+    const removeUpdate = editor.registerUpdateListener(({ editorState }) => {
+      const root = editor.getRootElement()
+      if (!root || document.activeElement !== root) return
+      editorState.read(() => save($selectionOffsets()))
+    })
+    // Lexical learns of a caret move only from a later `selectionchange`, so
+    // a shortcut pressed right after an arrow key can blur the editor first.
+    // The DOM selection is still current at blur: save from it.
+    const removeBlur = editor.registerCommand(
+      BLUR_COMMAND,
+      () => {
+        const dom = window.getSelection()
+        const root = editor.getRootElement()
+        if (dom && root?.contains(dom.anchorNode)) editor.read(() => save($selectionOffsets($createRangeSelectionFromDom(dom, editor))))
+        return false
+      },
+      COMMAND_PRIORITY_LOW,
+    )
+    const removeFocus = editor.registerCommand(
+      FOCUS_COMMAND,
+      () => {
+        if (pointerDown || !saved) return false
+        const target = selectionToRestore(saved, serializeEditorToBody(editor))
+        // Discrete: commit now, inside the focus event, so the DOM selection
+        // is ours before the browser's selectionchange is read.
+        editor.update(() => { $selectOffsets(target) }, { discrete: true })
+        return false
+      },
+      COMMAND_PRIORITY_LOW,
+    )
+    return () => {
+      removeRoot()
+      rootEl?.removeEventListener('pointerdown', onPointerDown)
+      removeUpdate()
+      removeBlur()
+      removeFocus()
+      window.removeEventListener('pointerup', onPointerUp, true)
+      window.removeEventListener('pointercancel', onPointerUp, true)
+    }
+  }, [editor])
   return null
 }
 
@@ -506,7 +598,7 @@ function onError(err: Error): void {
   log.error('Lexical editor error:', err)
 }
 
-/** One line of text plus padding and border, so the box has a known one-line height. */
+/** One line of text plus padding and border, so the box has a known one-line height. Keep in step with `min-h-[42px]` below. */
 export const RICH_TEXTAREA_MIN_HEIGHT = 42
 
 export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTextareaProps>(
@@ -526,6 +618,8 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
 
     const valueRef = useRef(value)
     valueRef.current = value
+    // The host computes the right inset, so it reaches the classes as a variable.
+    const insetStyle = { '--sb-rci-inset': trailingInset } as React.CSSProperties
 
     const initialConfig = useMemo(
       () => ({
@@ -564,43 +658,14 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
               spellCheck={false}
               aria-label="Chat message"
               data-placeholder={placeholder}
-              className="sb-rci-content"
-              style={{
-                flex: 1,
-                resize: 'none',
-                padding: `10px ${trailingInset} 10px 12px`,
-                borderRadius: 'var(--radius)',
-                border: '1px solid var(--border)',
-                background: 'var(--bg-primary)',
-                color: 'var(--text-primary)',
-                fontSize: '13px',
-                fontFamily: 'var(--font-sans)',
-                lineHeight: 1.5,
-                outline: 'none',
-                maxHeight: '200px',
-                overflowY: 'auto',
-                minHeight: `${RICH_TEXTAREA_MIN_HEIGHT}px`,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
+              className="sb-rci-content flex-1 resize-none py-[10px] pl-[12px] pr-[var(--sb-rci-inset)] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-[13px] [font-family:var(--font-sans)] leading-[1.5] outline-none max-h-[200px] overflow-y-auto min-h-[42px] whitespace-pre-wrap [word-break:break-word]"
+              style={insetStyle}
             />
           }
           placeholder={
             <div
-              className="sb-rci-placeholder"
-              style={{
-                position: 'absolute',
-                top: '10px',
-                left: '12px',
-                right: trailingInset,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                color: 'var(--text-muted)',
-                pointerEvents: 'none',
-                fontSize: '13px',
-                fontFamily: 'var(--font-sans)',
-              }}
+              className="sb-rci-placeholder absolute top-[10px] left-[12px] right-[var(--sb-rci-inset)] truncate text-[var(--text-muted)] pointer-events-none text-[13px] [font-family:var(--font-sans)]"
+              style={insetStyle}
             >
               {placeholder}
             </div>
@@ -613,6 +678,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
         <PasteFilesPlugin onPasteFiles={onPasteFiles} />
         <PasteTextPlugin pillsById={pillsById} />
         <PillInsertPlugin />
+        <SelectionMemoryPlugin />
         <ImperativeHandlePlugin
           ref={ref}
           pillsById={pillsById}

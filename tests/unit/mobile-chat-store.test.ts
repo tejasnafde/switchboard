@@ -4,6 +4,7 @@
  * coalescing that keeps a phone from rendering once per token.
  */
 import { formatApprovalResultMarker } from '../../src/shared/agent-approval-cards'
+import { formatMergeBackMarker, type MergeBackRow } from '../../src/shared/merge-back'
 import { echoMessageId } from '../../src/shared/provider-events'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
@@ -325,6 +326,25 @@ describe('an approval card that closed later', () => {
     expect(items().filter((i) => i.kind === 'notice')).toEqual([
       { kind: 'notice', id: 'apr_sbmcp_9', text: 'Re-run a failed check · Done · Sent to the agent: Re-running integration.' },
     ])
+  })
+})
+
+describe('a fork summary waiting in this chat', () => {
+  const row: MergeBackRow = { id: 'mb1', fork: 'f', forkTitle: 'paging', state: 'pending', turns: 2, omittedTurns: 0, files: ['a.ts'], moreFiles: 0, text: 'summary' }
+  const event = (content: string | null): RuntimeEvent => ({ type: 'merge-back.row', threadId: THREAD, messageId: 'mergeback_mb1', content, at: 1 })
+  const notices = () => items().filter((i) => i.kind === 'notice')
+
+  it('shows the card read-only, turns it delivered in place and removes it once discarded', () => {
+    ingest(event(formatMergeBackMarker(row)))
+    flushQueue()
+    expect(notices()).toEqual([{ kind: 'notice', id: 'h-mergeback_mb1', text: 'From fork "paging" (not sent yet): 2 turns since the fork point or the last send\nChanged: a.ts' }])
+    ingest(event(formatMergeBackMarker({ ...row, state: 'delivered' })))
+    flushQueue()
+    expect(notices()).toHaveLength(1)
+    expect(notices()[0]).toMatchObject({ text: expect.stringContaining('Sent with your message') })
+    ingest(event(null))
+    flushQueue()
+    expect(notices()).toEqual([])
   })
 })
 

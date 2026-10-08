@@ -37,6 +37,8 @@ export interface AcceptedUserTurnRecord {
     markerId: string
     markerText: string
   }
+  /** Runs inside the commit's transaction, so its writes land with the turn or not at all. */
+  commitInTransaction?: (db: Database.Database, acceptedAt: number) => void
 }
 
 export interface CanonicalUserTurnRow {
@@ -339,6 +341,7 @@ export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
       }
       db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?')
         .run(turn.acceptedAt, key.threadId)
+      turn.commitInTransaction?.(db, turn.acceptedAt)
       return { completed: true, ...(conversationTitle ? { conversationTitle } : {}) }
     })()
   }

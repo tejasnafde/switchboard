@@ -27,6 +27,19 @@ export type TurnAcceptanceResult =
   | { accepted: false; duplicate: boolean; state: 'pending' | 'ambiguous'; reason?: string }
 
 /** Only this error proves the provider did not accept the turn. */
+/**
+ * Tells the dispatcher whether the commit happened. Its hook must never change
+ * the turn's result: the provider already has the turn, so a throw here would
+ * report a delivered message as failed and invite a duplicate send.
+ */
+function notifyCommit(dispatched: { afterCommit?: (committed: boolean) => void } | undefined | null, committed: boolean): void {
+  try {
+    dispatched?.afterCommit?.(committed)
+  } catch (err) {
+    log.error('turn afterCommit hook failed', { committed, err: String(err) })
+  }
+}
+
 export class TurnNotAcceptedError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options)
@@ -76,6 +89,18 @@ export class DurableTurnAcceptance {
   }
 }
 
+/**
+ * What a dispatch changed about the turn it sent. `providerText` is what the
+ * provider actually got, stored as the transcript row so it matches the
+ * provider's own transcript. `commitInTransaction` joins the turn's commit;
+ * `afterCommit` hears whether that commit happened.
+ */
+export interface DispatchedUserTurn {
+  providerText?: string
+  commitInTransaction?: AcceptedUserTurnRecord['commitInTransaction']
+  afterCommit?: (committed: boolean) => void
+}
+
 export interface AtomicUserTurnContext {
   clientScope: string
   conversationId?: string
@@ -86,7 +111,7 @@ export interface AtomicUserTurnContext {
    * retry of the same origin is still recognised.
    */
   finalize?: (turn: UserTurnSubmissionV1) => Promise<UserTurnSubmissionV1>
-  dispatch: (turn: UserTurnSubmissionV1) => Promise<void>
+  dispatch: (turn: UserTurnSubmissionV1) => Promise<void | DispatchedUserTurn>
 }
 
 export class AtomicUserTurnSubmission {
@@ -262,10 +287,11 @@ export class AtomicUserTurnSubmission {
     key: TurnAcceptanceKey,
     payloadHash: string,
     messageId: string,
-    dispatch: (turn: UserTurnSubmissionV1) => Promise<void>,
+    dispatch: AtomicUserTurnContext['dispatch'],
   ): Promise<UserTurnSubmissionResult> {
+    let dispatched: DispatchedUserTurn | undefined
     try {
-      await dispatch(turn)
+      dispatched = (await dispatch(turn)) ?? undefined
     } catch (error) {
       if (error instanceof TurnNotAcceptedError) {
         log.warn(`provider definitely rejected turn ${turn.threadId}`, error)
@@ -285,18 +311,20 @@ export class AtomicUserTurnSubmission {
     const acceptedAt = this.now()
     const record: AcceptedUserTurnRecord = {
       messageId,
-      providerText: turn.providerText,
+      providerText: dispatched?.providerText ?? turn.providerText,
       imagesJson: turn.images ? JSON.stringify(turn.images) : undefined,
       displayBody: turn.displayBody,
       pillsMetaJson: turn.pillsMeta ? JSON.stringify(turn.pillsMeta) : undefined,
       acceptedAt,
       autoTitle: turn.autoTitleText ? generateTitle(turn.autoTitleText) : undefined,
       handoff: turn.handoff,
+      commitInTransaction: dispatched?.commitInTransaction,
     }
     let completion: { completed: boolean; conversationTitle?: string }
     try {
       completion = this.store.completeUserTurn(key, payloadHash, record)
     } catch (error) {
+      notifyCommit(dispatched, false)
       log.warn(`provider accepted turn but transcript commit failed for ${turn.threadId}`, error)
       return {
         status: 'ambiguous',
@@ -307,6 +335,7 @@ export class AtomicUserTurnSubmission {
       }
     }
     if (!completion.completed) {
+      notifyCommit(dispatched, false)
       return {
         status: 'ambiguous',
         accepted: false,
@@ -317,6 +346,7 @@ export class AtomicUserTurnSubmission {
     }
     const canonicalRow = this.store.readCanonicalUserTurn(key)
     if (!canonicalRow) {
+      notifyCommit(dispatched, true)
       return {
         status: 'ambiguous',
         accepted: false,
@@ -326,6 +356,8 @@ export class AtomicUserTurnSubmission {
       }
     }
     this.publish(canonicalEvent(key, canonicalRow))
+    // After the user's message, so a client places what rode on it above it.
+    notifyCommit(dispatched, true)
     return {
       status: 'accepted',
       accepted: true,

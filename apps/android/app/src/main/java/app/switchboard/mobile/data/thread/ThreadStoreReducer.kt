@@ -15,6 +15,7 @@ import app.switchboard.mobile.domain.thread.ThreadRuntimeEvent
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
 import app.switchboard.mobile.domain.thread.UserMessageVisibility
 import app.switchboard.mobile.protocol.JsonBoolean
+import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 
@@ -583,6 +584,11 @@ object ThreadStoreReducer {
 
     private fun appendRawNotice(thread: ThreadState, scoped: ScopedThreadEvent): ThreadState {
         val event = scoped.event
+        // A fork's summary card that was discarded: its row goes away.
+        if (event is ThreadRuntimeEvent.Extension && event.type == MERGE_BACK_ROW_EVENT && event.raw.values["content"] == JsonNull) {
+            val messageId = (event.raw.values["messageId"] as? JsonString)?.value ?: return thread
+            return thread.copy(feed = thread.feed.filterNot { it.id == "h-$messageId" })
+        }
         if (event is ThreadRuntimeEvent.Extension) systemRow(event)?.let { row ->
             return thread.copy(feed = upsert(thread.feed, row))
         }
@@ -600,7 +606,7 @@ object ThreadStoreReducer {
     }
 
     /**
-     * The two events that carry a stored system row, as that row: same id and
+     * The events that carry a stored system row, as that row: same id and
      * shape as the history load, so a reload and a live event land on one row
      * and a Not delivered row turns sent in place.
      */
@@ -609,7 +615,7 @@ object ThreadStoreReducer {
         fun str(key: String) = (raw.values[key] as? JsonString)?.value
         val messageId = str("messageId") ?: return null
         val content = when (event.type) {
-            "approval.result" -> str("content")
+            "approval.result", MERGE_BACK_ROW_EVENT -> str("content")
             "peer.undelivered" -> SystemMarkers.undeliveredMarker(
                 PeerUndelivered(
                     to = str("peerThreadId") ?: return null,
@@ -662,3 +668,6 @@ object ThreadStoreReducer {
         scoped.sequence?.let { "$prefix:seq:$it" }
             ?: "$prefix:${scoped.event.type}:${scoped.event.raw.hashCode()}:$arrival"
 }
+
+/** A fork's merge-back card in its parent (src/shared/merge-back.ts); `content` null once discarded. */
+private const val MERGE_BACK_ROW_EVENT = "merge-back.row"
