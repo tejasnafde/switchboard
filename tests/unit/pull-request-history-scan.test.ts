@@ -67,12 +67,17 @@ function pendingDeps(ids: string[], overrides: Partial<PullRequestHistoryScanDep
 }
 
 describe('pull request history scan', () => {
-  it('links a bbpr-style Bitbucket URL from stored tool output', async () => {
-    const d = deps([['toolInput', '{"command":"bbpr show"}'], ['toolOutput', `PR: ${BOT_605}`]])
+  it('links the PR gh pr create printed, and no other tool output', async () => {
+    const d = deps([
+      ['toolInput', '{"command":"cat CHANGELOG.md"}'],
+      ['toolOutput', '- fixed in https://github.com/tejasnafde/switchboard/pull/611'],
+      ['toolInput', '{"command":"gh pr create --fill"}'],
+      ['toolOutput', 'https://github.com/tejasnafde/switchboard/pull/612\n'],
+    ], SB)
 
     const result = await scanPullRequestHistoryForConversation(TARGET, d)
 
-    expect(d.linked).toEqual([{ ...BOT, number: 605 }])
+    expect(d.linked).toEqual([{ ...SB, number: 612 }])
     expect(d.notify).toHaveBeenCalledWith('agent_1')
     expect(d.markScanned).toHaveBeenCalledWith('agent_1')
     expect(result).toMatchObject({ linked: 1, capped: false })
@@ -130,15 +135,17 @@ describe('pull request history scan', () => {
     expect(github.link).not.toHaveBeenCalled()
   })
 
-  it('scans user text and ignores a pull request from another repository', async () => {
+  it('does not link a PR only named in chat text or read, and ignores one from another repository', async () => {
     const d = deps([
-      ['text', `please review ${BOT_605}`],
       ['text', 'tracked in https://github.com/tejasnafde/switchboard/pull/612'],
+      ['toolInput', '{"command":"gh pr view https://github.com/tejasnafde/switchboard/pull/613"}'],
+      ['toolInput', `{"command":"gh pr checkout ${BOT_605}"}`],
+      ['toolInput', '{"command":"gh pr checkout https://github.com/tejasnafde/switchboard/pull/614"}'],
     ], SB)
 
     await scanPullRequestHistoryForConversation(TARGET, d)
 
-    expect(d.linked).toEqual([{ ...SB, number: 612 }])
+    expect(d.linked).toEqual([{ ...SB, number: 614 }])
   })
 
   it('does not revive an unlinked tombstone', async () => {
@@ -190,9 +197,9 @@ describe('the character cap', () => {
   })
 
   it('never links a PR number the cap cut short', async () => {
-    const url = 'https://github.com/tejasnafde/switchboard/pull/612'
-    const cutAfter6 = url.length - 2
-    const d = deps([['text', `${'a'.repeat(MAX_HISTORY_SCAN_CHARS - cutAfter6 - 1)} ${url}`]], SB)
+    const command = 'gh pr checkout https://github.com/tejasnafde/switchboard/pull/612'
+    const cutAfter6 = command.length - 2
+    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS - cutAfter6)], ['toolInput', command]], SB)
 
     await scanPullRequestHistoryForConversation(TARGET, d)
 
@@ -209,7 +216,7 @@ describe('the character cap', () => {
   })
 
   it('counts text repeated by another source once', async () => {
-    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS / 2 + 1)], ['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS / 2 + 1)], ['text', BOT_605]])
+    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS / 2 + 1)], ['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS / 2 + 1)], ['toolInput', `bbpr ${BOT_605}`]])
 
     const result = await scanPullRequestHistoryForConversation(TARGET, d)
 
@@ -246,7 +253,7 @@ describe('the pending scan', () => {
   it('leaves a chat unmarked when the repository lookup or a link fails, so a later run retries it', async () => {
     const d = pendingDeps(['lookup', 'link', 'agent_1'])
     vi.mocked(d.readHistory).mockImplementation(async (id, visit) => {
-      visit('text', id === 'agent_1' ? 'nothing here' : BOT_605)
+      visit('toolInput', id === 'agent_1' ? 'nothing here' : `bbpr ${BOT_605}`)
     })
     vi.mocked(d.repoForProject).mockImplementation(async () => {
       if (vi.mocked(d.repoForProject).mock.calls.length === 1) throw new Error('git remote failed')

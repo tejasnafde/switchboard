@@ -44,6 +44,12 @@ export const BACKEND_CAPABILITIES = [
    *  resume gap instead of waiting on a card that will never re-arrive. */
   'pending_requests_v1',
   'history_window_v1',
+  /** `load-session-by-id` with `imageRefs: true` sends `MessageImage.ref`
+   *  instead of base64; `app:load-history-image` serves the bytes. */
+  'history_image_refs_v1',
+  /** `load-session-by-id` with `toolPreviews: true` shortens long tool calls
+   *  (`ToolCall.preview`); `app:load-tool-call` serves one in full. */
+  'history_tool_previews_v1',
   /** Both hosts answer application ping frames. WsHost also sends periodic pings. */
   'heartbeat_v1',
   /** A queued message is announced (`turn.queued` / `turn.dequeued`), listed

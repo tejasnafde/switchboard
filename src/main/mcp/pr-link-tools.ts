@@ -121,7 +121,7 @@ export function buildPrLinkTools(ctx: PrLinkToolContext): McpTool[] {
   const unlinkTool: McpTool = {
     name: PR_UNLINK_TOOL,
     description: [
-      'Unlink a pull request from this chat, for one linked by mistake (automatic linking picks up every pull request URL of the project the chat mentions).',
+      'Unlink a pull request from this chat, for one linked by mistake (automatic linking picks up every pull request of the project a shell command in the chat works on).',
       'It stays unlinked: automatic linking never links it again. Pass "pr": its number, "#612" or its URL. Refused in plan mode.',
     ].join('\n'),
     inputSchema: {

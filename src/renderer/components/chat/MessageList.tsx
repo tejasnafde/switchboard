@@ -9,6 +9,8 @@ import { useSkillStore } from '../../stores/skill-store'
 import { useShowFileDiffCards } from '../../services/effective-settings'
 import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from './turn-presentation'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
+import { shouldLoadOlder, turnIndexHolding } from '../../services/history-window'
+import { loadOlderHistory } from '../../services/history-loader'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -16,6 +18,8 @@ interface MessageListProps {
   visible?: boolean
   /** A turn is running, so rows can still grow on their own. */
   busy?: boolean
+  /** Older history exists past the loaded window; it loads near the top. */
+  hasOlderHistory?: boolean
   agentType?: AgentType
   // Promise-returning so the cards downstream can re-enable themselves when
   // the underlying IPC rejects.
@@ -143,7 +147,7 @@ export function roleLabel(role: ChatMessage['role'], agentType: AgentType = 'cla
  * matches the pre-virtualized layout exactly; tests for `groupIntoTurns`
  * still pass since the grouping is the same.
  */
-export function MessageList({ messages, sessionId, visible = true, busy = false, agentType = 'claude-code', onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageListProps) {
+export function MessageList({ messages, sessionId, visible = true, busy = false, hasOlderHistory = false, agentType = 'claude-code', onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageListProps) {
   useLayoutEffect(() => {
     if (sessionId) chatMessagesCommitted(sessionId, messages, visible)
   })
@@ -160,6 +164,8 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
   const prevSessionIdRef = useRef<string | null | undefined>(sessionId)
 
   const turns = useMemo(() => groupIntoTurns(messages), [messages])
+  const turnsRef = useRef(turns)
+  turnsRef.current = turns
   const turnsLengthRef = useRef(turns.length)
   turnsLengthRef.current = turns.length
 
@@ -200,9 +206,30 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
     getItemKey: (index) => turns[index]?.[0]?.id ?? index,
   })
 
+  // The first row in view, so rows added above it (an older history window)
+  // do not move what the user is reading.
+  const viewAnchorRef = useRef<{ messageId: string; index: number; offset: number } | null>(null)
+  const hasOlderRef = useRef(hasOlderHistory)
+  hasOlderRef.current = hasOlderHistory
+  const loadingOlderRef = useRef(false)
+
+  const maybeLoadOlder = useCallback(() => {
+    const container = containerRef.current
+    if (!container || !sessionId || programmaticScrollRef.current) return
+    if (!shouldLoadOlder(container.scrollTop, hasOlderRef.current, loadingOlderRef.current)) return
+    loadingOlderRef.current = true
+    void loadOlderHistory(sessionId).finally(() => { loadingOlderRef.current = false })
+  }, [sessionId])
+
   const handleScroll = useCallback(() => {
     const container = containerRef.current
     if (!container) return
+    const first = virtualizer.getVirtualItems().find((item) => item.end > container.scrollTop)
+    const firstId = first ? turnsRef.current[first.index]?.[0]?.id : undefined
+    viewAnchorRef.current = first && firstId
+      ? { messageId: firstId, index: first.index, offset: first.start - container.scrollTop }
+      : null
+    maybeLoadOlder()
     const distanceFromBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight
     if (programmaticScrollRef.current) {
@@ -210,7 +237,25 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
       return
     }
     isScrollLockedRef.current = distanceFromBottom > 50
-  }, [])
+  }, [maybeLoadOlder, virtualizer])
+
+  // Rows were added above the one in view: put it back where it was. While
+  // following the bottom there is nothing to keep; the follow logic owns it.
+  useLayoutEffect(() => {
+    const container = containerRef.current
+    const anchor = viewAnchorRef.current
+    if (!container) return
+    if (anchor && isScrollLockedRef.current) {
+      const index = turnIndexHolding(turns, anchor.messageId)
+      const start = index >= 0 ? virtualizer.measurementsCache[index]?.start : undefined
+      if (index !== anchor.index && start !== undefined) {
+        container.scrollTop = start - anchor.offset
+        viewAnchorRef.current = { ...anchor, index }
+      }
+    }
+    // A window shorter than the pane cannot be scrolled to its top.
+    if (visible && container.clientHeight > 0 && container.scrollHeight <= container.clientHeight) maybeLoadOlder()
+  }, [turns, visible, virtualizer, maybeLoadOlder])
 
   const beginProgrammaticFollow = useCallback(() => {
     programmaticScrollRef.current = true

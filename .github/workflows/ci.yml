@@ -43,6 +43,41 @@ jobs:
         if: github.event_name != 'pull_request'
         run: npm run validate:feature-parity -- --all
 
+  # Which jobs this change needs (scripts/ci-scope.mjs). The test job always
+  # runs and skips its steps instead of being skipped itself: a skipped matrix
+  # job reports one unexpanded "Test (${{ matrix.os }})" check, so the three
+  # required "Test (<os>)" checks would never arrive.
+  scope:
+    name: Change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+      visual: ${{ steps.scope.outputs.visual }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A pull request checks out its merge commit: HEAD^1 is the base.
+          fetch-depth: 2
+
+      - id: scope
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            changed=$(git diff --name-only HEAD^1 HEAD)
+            # A change to the scope rule or this workflow never decides its own
+            # scope: a broken script could otherwise skip the tests that catch it.
+            if printf '%s\n' "$changed" | grep -qxE 'scripts/ci-scope\.mjs|\.github/workflows/ci\.yml'; then
+              printf 'code=true\nvisual=true\n' >> "$GITHUB_OUTPUT"
+            else
+              # Any failure runs everything (see the test job's `if`): a skipped
+              # required check counts as passed.
+              printf '%s\n' "$changed" | node scripts/ci-scope.mjs >> "$GITHUB_OUTPUT" \
+                || printf 'code=true\nvisual=true\n' >> "$GITHUB_OUTPUT"
+            fi
+          else
+            printf 'code=true\nvisual=true\n' >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     name: Test (${{ matrix.os }})
     # Cross-platform matrix so Windows-only test breakage is caught at PR
@@ -53,13 +88,19 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-14, windows-latest]
+    needs: scope
+    # Runs even when scope failed: its outputs are then empty, so every step
+    # below runs. Only an explicit code=false skips them.
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
+        if: needs.scope.outputs.code != 'false'
 
       - uses: actions/setup-node@v4
+        if: needs.scope.outputs.code != 'false'
         with:
           # 22 to match release.yml — `@electron/rebuild@4` and `node-abi@4`
           # both require >=22.12.0; staying on 20 here would let an
@@ -70,12 +111,13 @@ jobs:
       # Linux-only: node-pty's native build needs build-essential + python3.
       # macOS + Windows runners ship the toolchain pre-installed.
       - name: Install system deps for node-pty (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: needs.scope.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y build-essential python3
 
       # Retry on transient flakes — the Electron CDN and the per-platform
       # Claude SDK tarball occasionally 502 on the windows-latest runner.
       - name: Install dependencies
+        if: needs.scope.outputs.code != 'false'
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 10
@@ -90,12 +132,21 @@ jobs:
       # transform on a clean checkout while passing on any machine that has run
       # the mobile install.
       - name: Install mobile dependencies
+        if: needs.scope.outputs.code != 'false'
         run: npm ci --prefix apps/mobile
 
+      # Unused files and dependencies, and imports of packages that are only
+      # there transitively (knip.jsonc). Unused exports are left out on purpose.
+      - name: Dead files and dependency drift
+        if: needs.scope.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
+        run: npx --yes knip@6.40.0 --include files,dependencies,unlisted,binaries,unresolved
+
       - name: Typecheck
+        if: needs.scope.outputs.code != 'false'
         run: npm run typecheck
 
       - name: Unit tests
+        if: needs.scope.outputs.code != 'false'
         run: npm test
 
       # The mobile component suite runs under jest, not vitest, because the root
@@ -108,7 +159,7 @@ jobs:
       # the tests reach `@shared/*` outside the package, so babel looks its
       # runtime helpers up from the root node_modules.
       - name: Mobile component tests
-        if: matrix.os == 'ubuntu-latest'
+        if: needs.scope.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
         run: npm test --prefix apps/mobile
 
       # `build:ci`, not `build`. The `prebuild` lifecycle hook chains
@@ -120,6 +171,7 @@ jobs:
       # The postbuild boot smoke launches 5 times on Windows (see
       # scripts/smoke-test.mjs); a crash leaves a minidump for the upload below.
       - name: Build
+        if: needs.scope.outputs.code != 'false'
         run: npm run build:ci
         env:
           SB_SMOKE_CRASH_DIR: ${{ runner.temp }}/smoke-dumps
@@ -128,12 +180,13 @@ jobs:
       # bit, so every PTY fails with "posix_spawnp failed" unless it is rebuilt
       # (the visual job runs `npm run rebuild`; packaging rebuilds too).
       - name: Make node-pty's prebuilt spawn-helper executable (macOS)
-        if: runner.os == 'macOS'
+        if: needs.scope.outputs.code != 'false' && runner.os == 'macOS'
         run: chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper
 
       # A real startup (PTYs, watchers, database) then a user-style quit, five
       # times: the teardown order, and the Windows quit crash, only show there.
       - name: Quit smoke
+        if: needs.scope.outputs.code != 'false'
         run: node scripts/smoke-quit.mjs
         env:
           SB_SMOKE_CRASH_DIR: ${{ runner.temp }}/smoke-dumps
@@ -155,6 +208,8 @@ jobs:
   # matched baselines generated on a developer Mac within tolerance.
   visual:
     name: Visual regressions (macOS)
+    needs: scope
+    if: ${{ !cancelled() && needs.scope.outputs.visual != 'false' }}
     runs-on: macos-14
     timeout-minutes: 20
 

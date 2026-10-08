@@ -1223,6 +1223,9 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
   async interruptTurn(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.connection || !active.sessionId) return
+    // Stop means stop: the queued messages wait for Resume or Cancel instead
+    // of starting when the cancelled prompt ends.
+    this.holdQueue(threadId, active, 'Stopped.')
     try {
       await active.connection.cancel({ sessionId: active.sessionId })
       log.info(`acp cancel sent: ${threadId}`)

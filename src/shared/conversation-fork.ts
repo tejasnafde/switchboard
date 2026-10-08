@@ -1,6 +1,6 @@
 import type { ReasoningEffort } from './models'
 import type { RuntimeMode } from './provider-events'
-import type { AgentType, ChatMessage, MessageRole } from './types'
+import type { AgentStatus, AgentType, ChatMessage, MessageRole } from './types'
 import type { AgentProvider } from './types'
 
 export const FORK_CONVERSATION_SCHEMA_VERSION = 1 as const
@@ -195,6 +195,40 @@ function stableValue(value: unknown): unknown {
   return output
 }
 
+/** The one shape every client sends; each supplies its own id store and SHA-256. */
+export function buildForkConversationRequest(input: {
+  requestId: string
+  sourceConversationId: string
+  machineId?: string
+  message: ChatMessage
+  contentDigest: string
+  withWorktree: boolean
+  dirtySourceConfirmed?: DirtySourceConfirmation
+  surface: ForkConversationSurface
+  requestedAt: number
+}): ForkConversationRequest {
+  return {
+    schemaVersion: FORK_CONVERSATION_SCHEMA_VERSION,
+    requestId: input.requestId,
+    sourceConversationId: input.sourceConversationId,
+    ...(input.machineId ? { machineId: input.machineId } : {}),
+    anchor: {
+      messageId: input.message.id,
+      role: input.message.role,
+      timestamp: input.message.timestamp,
+      contentDigest: input.contentDigest,
+    },
+    checkout: input.withWorktree
+      ? {
+          kind: 'new-worktree',
+          basePolicy: 'source-head',
+          ...(input.dirtySourceConfirmed ? { dirtySourceConfirmed: input.dirtySourceConfirmed } : {}),
+        }
+      : { kind: 'shared-checkout' },
+    provenance: { surface: input.surface, requestedAt: input.requestedAt },
+  }
+}
+
 export function canonicalizeForkConversationRequest(request: ForkConversationRequest): string {
   return JSON.stringify(stableValue(request))
 }
@@ -219,6 +253,15 @@ export function digestForkMessage(
   const digest = sha256(canonicalizeForkMessage(message)).toLowerCase()
   if (!SHA256.test(digest)) throw new Error('Fork message digest must be a SHA-256 hex value')
   return digest
+}
+
+/**
+ * Only a turn in flight blocks a fork: the agent is still appending to the
+ * transcript the fork copies. A chat whose last turn failed, or whose session
+ * exited, has a settled history and forks like an idle one.
+ */
+export function forkBlockedByStatus(status: AgentStatus): boolean {
+  return status === 'running' || status === 'thinking'
 }
 
 export function isForkableForkMessage(message: ChatMessage): boolean {

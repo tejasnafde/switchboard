@@ -1,8 +1,9 @@
 import { memo, useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { MessageImages } from './MessageImages'
 import { createPortal } from 'react-dom'
 import { agentShortLabel, type ChatMessage } from '@shared/types'
 import { fmtDuration } from '@shared/format'
-import { ToolCallBlock } from './ToolCallBlock'
+import { HistoryToolCall } from './HistoryToolCall'
 import { ApprovalCard } from './ApprovalCard'
 import { HostWriteApprovalCard } from './HostWriteApprovalCard'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
@@ -20,7 +21,7 @@ import { SkillChip } from './SkillChip'
 import {
   forkAndOpenSession,
 } from '../../services/fork-session'
-import { isForkableForkMessage } from '@shared/conversation-fork'
+import { forkBlockedByStatus, isForkableForkMessage } from '@shared/conversation-fork'
 import { parseRotationMarker } from '@shared/rotation-marker'
 import { parseUndeliveredMarker } from '@shared/peer-links'
 import { PeerUndeliveredRow } from './PeerUndeliveredRow'
@@ -34,7 +35,7 @@ import { splitSyntheticUserText } from '@shared/synthetic-message'
 import { stripDigest } from '@shared/agent-digest'
 import { TodoList } from './TodoList'
 import { useBookmarkStore } from '../../stores/bookmark-store'
-import { MarkdownWithCopyControls } from './MarkdownWithCopyControls'
+import { MessageMarkdown } from './visuals/MessageMarkdown'
 import { useMessageMutable } from '../../services/message-lifecycle'
 import { buildForwardedContext, forwardingSource, forwardingTargets } from '../../services/chat-forwarding'
 import { focusComposer } from '../../services/composer-registry'
@@ -342,7 +343,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     // Block forking mid-turn - Claude SDK can't safely truncate while it's
     // actively appending to the JSONL, and the user's freshly-typed reply
     // would race the fork's resume anchor.
-    if (session.status !== 'idle') {
+    if (forkBlockedByStatus(session.status)) {
       setForkError('Cannot fork while a turn is in flight')
       return
     }
@@ -499,7 +500,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             })()}
           </div>
         ) : (
-          <MarkdownWithCopyControls
+          <MessageMarkdown
             ref={markdownRef}
             markdown={markdownContent}
             mutable={isMutable}
@@ -512,41 +513,12 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
 
         {/* Attached images */}
         {message.images && message.images.length > 0 && (
-          <div style={{
-            display: 'flex',
-            gap: '6px',
-            flexWrap: 'wrap',
-            marginTop: body ? '8px' : '0',
-          }}>
-            {message.images.map((img, i) => (
-              <div
-                key={i}
-                onClick={() => setPreviewImage(img.url)}
-                style={{
-                  width: '120px',
-                  height: '90px',
-                  borderRadius: '6px',
-                  overflow: 'hidden',
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer',
-                  transition: 'opacity 0.12s',
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.85' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
-              >
-                <img
-                  src={img.url}
-                  alt={img.name || 'attachment'}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-              </div>
-            ))}
-          </div>
+          <MessageImages images={message.images} sessionId={sessionId} spaced={Boolean(body)} onOpen={setPreviewImage} />
         )}
 
         {/* Tool calls */}
         {message.toolCalls?.map((tc) => (
-          <ToolCallBlock key={tc.id} toolCall={tc} />
+          <HistoryToolCall key={tc.id} toolCall={tc} sessionId={sessionId} messageId={message.id} />
         ))}
 
         {/* Approval request */}

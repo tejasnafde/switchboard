@@ -34,6 +34,8 @@ export const AppChannels = {
   GET_ARCHIVED_CONVERSATIONS: 'app:get-archived-conversations',
   EXPORT_MARKDOWN: 'app:export-markdown',
   LOAD_SESSION_BY_ID: 'app:load-session-by-id',
+  LOAD_HISTORY_IMAGE: 'app:load-history-image',
+  LOAD_TOOL_CALL: 'app:load-tool-call',
   ATTACH_TO_THREAD: 'app:attach-to-thread',
   GET_CONVERSATION_RUNTIME_MODE: 'app:get-conversation-runtime-mode',
   SET_CONVERSATION_RUNTIME_MODE: 'app:set-conversation-runtime-mode',
