@@ -102,10 +102,11 @@ export type QueuedTurnExit = 'started' | 'promoted' | 'cancelled' | 'dropped' | 
 /**
  * The registry counted a queued message as an outstanding turn when it was
  * accepted. Taking it out of the queue releases that count when no
- * `turn.completed` will ever arrive for it: cancelled, or promoted into a turn
- * it joins rather than starts (a Codex steer). A Claude steer is a turn of
- * its own, so a promoted Claude message keeps its count. (`started` keeps it
- * too, and `dropped` is settled by the adapter's own `turn.completed`.)
+ * `turn.completed` will ever arrive for it: cancelled, or promoted into the
+ * running turn as a steer, on every provider. A promoted Claude message that
+ * misses that turn's last tool step runs as a turn of its own, and the adapter
+ * counts it again (`newTurn` on its `running` status). (`started` keeps the
+ * count, and `dropped` is settled by the adapter's own `turn.completed`.)
  */
 export function releasesOutstandingTurn(provider: string, exit: 'promoted' | 'cancelled'): boolean {
   if (exit === 'cancelled') return true
@@ -124,7 +125,7 @@ export interface QueuedTurnSummary {
   text: string
   queuedAt: number
   /**
-   * The queue is held after a failed or usage-limited turn: nothing starts
+   * The queue is held after Stop or a failed or usage-limited turn: nothing starts
    * until the user resumes it (`provider:resume-queued-turns`) or cancels.
    */
   held?: boolean

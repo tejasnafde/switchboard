@@ -5,6 +5,7 @@ import { notifyConversationArchived, notifyWorktreeSwap, publishRuntimeEvent } f
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { historyWindow, type HistoryLoadOptions } from '@shared/phone-history-window'
 import { imagesByReference } from '@shared/history-image-refs'
+import { toolCallsByPreview } from '@shared/history-tool-previews'
 import { rememberHistoryImage, rememberedHistoryImage } from '../conversations/history-images'
 import { historyTail } from '@shared/turn-activity'
 import { parseFollowSuggestionMode } from '@shared/follow-suggestions'
@@ -77,14 +78,14 @@ import {
 } from '../db/database'
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
-import { loadConversationHistory } from '../conversations/history'
+import { loadConversationHistory, mergedHistoryMessages } from '../conversations/history'
 import { sessionPreviewLine } from '@shared/turn-preview'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import { getConversationForkCoordinator } from '../conversations/conversation-fork-runtime'
 import type { ConversationForkCoordinator } from '../conversations/conversation-fork-coordinator'
 import { parseForkConversationRequest, type ForkConversationOutcome } from '@shared/conversation-fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
-import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary, FileDiffAttachment } from '@shared/types'
+import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary, FileDiffAttachment, ToolCall } from '@shared/types'
 import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conversation-sidebar-role'
 import { loadCursorConversation } from '../cursor/store'
 import { importCursorSnapshot } from '../db/cursor-import'
@@ -111,10 +112,11 @@ function capTail<T extends { messages: ChatMessage[] }>(
   imageThreadId?: string,
 ): T & { total: number; truncated: boolean } {
   const capped = capMessages(result, opts)
-  if (!opts?.imageRefs || !imageThreadId) return capped
+  const previewed = opts?.toolPreviews ? { ...capped, messages: toolCallsByPreview(capped.messages) } : capped
+  if (!opts?.imageRefs || !imageThreadId) return previewed
   return {
-    ...capped,
-    messages: imagesByReference(capped.messages, (messageId, index, url) =>
+    ...previewed,
+    messages: imagesByReference(previewed.messages, (messageId, index, url) =>
       rememberHistoryImage(imageThreadId, messageId, index, url)),
   }
 }
@@ -551,16 +553,16 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     }
   })
 
-  // Full-history reads started for an image miss, by root thread, so a burst
-  // of thumbnails scrolling into view shares one read instead of one each.
-  const imageHistoryLoads = new Map<string, Promise<ChatMessage[]>>()
-  const historyForImages = (rootThreadId: string, conversationId: string, projectPath: string): Promise<ChatMessage[]> => {
-    const running = imageHistoryLoads.get(rootThreadId)
+  // Full-history reads started for an image or tool call miss, by root thread,
+  // so a burst of thumbnails scrolling into view shares one read.
+  const missHistoryLoads = new Map<string, Promise<ChatMessage[]>>()
+  const historyForMisses = (rootThreadId: string, conversationId: string, projectPath: string): Promise<ChatMessage[]> => {
+    const running = missHistoryLoads.get(rootThreadId)
     if (running) return running
     const next = loadConversationHistory(conversationId, projectPath)
       .then((history) => history.messages)
-      .finally(() => imageHistoryLoads.delete(rootThreadId))
-    imageHistoryLoads.set(rootThreadId, next)
+      .finally(() => missHistoryLoads.delete(rootThreadId))
+    missHistoryLoads.set(rootThreadId, next)
     return next
   }
 
@@ -573,13 +575,32 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     const remembered = rememberedHistoryImage(rootThreadId, messageId, index)
     if (remembered) return { url: remembered }
     try {
-      const messages = await historyForImages(rootThreadId, conversationId, row.project_path)
+      const messages = await historyForMisses(rootThreadId, conversationId, row.project_path)
       const url = messages.find((message) => message.id === messageId)?.images?.[index]?.url ?? null
       if (url) rememberHistoryImage(rootThreadId, messageId, index, url)
       return { url }
     } catch (err) {
       log.warn(`history image load failed for ${conversationId}: ${err}`)
       return { url: null }
+    }
+  })
+
+  // One tool call a load with `toolPreviews` shortened, in full.
+  host.handle(AppChannels.LOAD_TOOL_CALL, async (conversationId: string, messageId: string, toolCallId: string): Promise<{ toolCall: ToolCall | null }> => {
+    if (typeof messageId !== 'string' || typeof toolCallId !== 'string') return { toolCall: null }
+    const row = getConversationById(conversationId)
+    if (!row) return { toolCall: null }
+    const find = (messages: ChatMessage[]) =>
+      messages.find((message) => message.id === messageId)?.toolCalls?.find((call) => call.id === toolCallId) ?? null
+    // The load that sent the preview left its history in the memo, and a
+    // finished call does not change, so that copy answers without a re-read.
+    const remembered = find(mergedHistoryMessages(conversationId) ?? [])
+    if (remembered?.output !== undefined) return { toolCall: remembered }
+    try {
+      return { toolCall: find(await historyForMisses(resolveRootThreadId(row.id), conversationId, row.project_path)) }
+    } catch (err) {
+      log.warn(`tool call load failed for ${conversationId}: ${err}`)
+      return { toolCall: null }
     }
   })
 

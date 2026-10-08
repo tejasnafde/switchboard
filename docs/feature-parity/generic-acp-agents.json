@@ -73,7 +73,8 @@
       "status": "implemented",
       "evidence": [
         "src/main/db/database.ts",
-        "src/shared/types.ts"
+        "src/main/conversations/fork-provider-artifacts.ts",
+        "tests/unit/agent-types.test.ts"
       ]
     },
     "updateRelease": {

@@ -4,6 +4,7 @@ import type { ChatMessage } from '../../src/shared/types'
 import { digestForkMessage, type ForkAnchor } from '../../src/shared/conversation-fork'
 import { compactSummaryText } from '../../src/shared/synthetic-message'
 import { imagesByReference } from '../../src/shared/history-image-refs'
+import { toolCallsByPreview } from '../../src/shared/history-tool-previews'
 import {
   isForkableCanonicalMessage,
   resolveCanonicalForkAnchor,
@@ -70,6 +71,18 @@ describe('canonical conversation fork anchor', () => {
     expect(result.ok && result.resolved.contentDigest).toBe(digestForkMessage(withImage, sha256))
     const otherImage = { ...shown, images: [{ ...shown.images![0], ref: { messageId: 'u4', index: 0, bytes: 9 } }] }
     expect(resolveCanonicalForkAnchor([canonical(withImage)], anchor(otherImage)).ok).toBe(false)
+  })
+
+  it('accepts an anchor digested over a desktop window that carried tool call previews', () => {
+    const withTool = message('a5', 'assistant', 'ran it', 12, {
+      images: [{ url: 'data:image/png;base64,AAAA', mimeType: 'image/png' }],
+      toolCalls: [{ id: 't1', name: 'Bash', input: '{"command":"ls"}', output: 'o'.repeat(5_000) }],
+    })
+    const [shown] = toolCallsByPreview(imagesByReference([withTool], () => {}))
+    const result = resolveCanonicalForkAnchor([canonical(withTool)], anchor(shown))
+    expect(result.ok && result.resolved.contentDigest).toBe(digestForkMessage(withTool, sha256))
+    const [onlyPreview] = toolCallsByPreview([withTool])
+    expect(resolveCanonicalForkAnchor([canonical(withTool)], anchor(onlyPreview)).ok).toBe(true)
   })
 
   it('resolves an exact durable id and validates the full fingerprint', () => {

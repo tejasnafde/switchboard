@@ -56,7 +56,7 @@ import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../renderer/logger'
 import { createWorktreeCreationApi } from './worktree-creation-api'
 import { createWorktreeManagerApi } from './worktree-manager-api'
-import type { AgentProvider } from '@shared/types'
+import type { AgentProvider, ToolCall } from '@shared/types'
 
 const log = createRendererLogger('preload:provider')
 
@@ -213,6 +213,8 @@ const api = {
       transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId, opts),
     loadHistoryImage: (conversationId: string, messageId: string, index: number) =>
       transport.invoke(AppChannels.LOAD_HISTORY_IMAGE, conversationId, messageId, index) as Promise<{ url: string | null }>,
+    loadToolCall: (conversationId: string, messageId: string, toolCallId: string) =>
+      transport.invoke(AppChannels.LOAD_TOOL_CALL, conversationId, messageId, toolCallId) as Promise<{ toolCall: ToolCall | null }>,
     attachToThread: (fragmentId: string, rootThreadId: string) =>
       transport.invoke(AppChannels.ATTACH_TO_THREAD, fragmentId, rootThreadId),
     relaunch: () => transport.invoke(AppChannels.RELAUNCH),

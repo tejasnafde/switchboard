@@ -109,19 +109,20 @@ describe('PullRequestAutoLinker', () => {
     ({ type: 'content', threadId: 'uuid-abc', messageId, text, append, streamKind: 'assistant' }) as RuntimeEvent
   const turnDone = { type: 'turn.completed', threadId: 'uuid-abc' } as RuntimeEvent
 
-  it('joins streamed deltas before matching, so a URL split across chunks links the whole number', async () => {
+  it('does not link a PR the agent only mentions in its reply', async () => {
     const { linker, linked, notified } = setup()
-    await linker.onEvent(content('Opened https://github.com/tejasnafde/switchboard/pull/6'))
-    await linker.onEvent(content('12 for review.'))
-    expect(linked).toEqual([])
+    await linker.onEvent(content('This regressed in https://github.com/tejasnafde/switchboard/pull/612.'))
     await linker.onEvent(turnDone)
-    expect(linked).toEqual(['agent_1#612'])
-    expect(notified).toEqual(['agent_1'])
+    expect(linked).toEqual([])
+    expect(notified).toEqual([])
   })
 
-  it('links from tool output at once, and not twice', async () => {
+  it('links the output of gh pr create once, and no other tool output', async () => {
     const { linker, linked, notified } = setup()
-    const tool = { type: 'tool.completed', threadId: 't', toolId: 'x', output: 'https://github.com/tejasnafde/switchboard/pull/7' } as RuntimeEvent
+    const output = 'https://github.com/tejasnafde/switchboard/pull/7'
+    await linker.onEvent({ type: 'tool.completed', threadId: 't', toolId: 'read', output: `## 0.9\n- fixed (${output.replace('/7', '/6')})` } as RuntimeEvent)
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'x', toolName: 'Bash', input: { command: 'gh pr create --fill' } } as RuntimeEvent)
+    const tool = { type: 'tool.completed', threadId: 't', toolId: 'x', output } as RuntimeEvent
     await linker.onEvent(tool)
     await linker.onEvent(tool)
     expect(linked).toEqual(['agent_1#7'])
@@ -145,11 +146,13 @@ describe('PullRequestAutoLinker', () => {
     expect(linked).toEqual(['agent_1#190'])
   })
 
-  it('links a PR URL in a tool input, Claude object or Codex command array', async () => {
+  it('links the PR a gh command works on, Claude object or Codex command array, and not one it reads', async () => {
     const { linker, linked, notified } = setup()
-    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'a', toolName: 'Bash', input: { command: 'gh pr view https://github.com/tejasnafde/switchboard/pull/31 --json state' } } as RuntimeEvent)
-    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'b', toolName: 'shell', input: { command: ['bash', '-lc', 'gh pr checks https://github.com/tejasnafde/switchboard/pull/32'] } } as RuntimeEvent)
-    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'c', toolName: 'Bash', input: { command: 'gh pr view https://github.com/someone/else/pull/33' } } as RuntimeEvent)
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'a', toolName: 'Bash', input: { command: 'gh pr checkout https://github.com/tejasnafde/switchboard/pull/31' } } as RuntimeEvent)
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'b', toolName: 'shell', input: { command: ['bash', '-lc', 'gh pr merge --merge https://github.com/tejasnafde/switchboard/pull/32'] } } as RuntimeEvent)
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'c', toolName: 'Bash', input: { command: 'gh pr checkout https://github.com/someone/else/pull/33' } } as RuntimeEvent)
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'd', toolName: 'Bash', input: { command: 'gh pr view https://github.com/tejasnafde/switchboard/pull/34 --json state' } } as RuntimeEvent)
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'e', toolName: 'WebFetch', input: { url: 'https://github.com/tejasnafde/switchboard/pull/35' } } as RuntimeEvent)
     expect(linked).toEqual(['agent_1#31', 'agent_1#32'])
     expect(notified).toEqual(['agent_1', 'agent_1'])
   })
@@ -199,13 +202,13 @@ describe('PullRequestAutoLinker', () => {
       notify: () => {},
       problem: (threadId, message) => problems.push(`${threadId}: ${message}`),
     })
-    await linker.onEvent({ type: 'tool.completed', threadId: 't', toolId: 'x', output: 'https://github.com/tejasnafde/switchboard/pull/7' } as RuntimeEvent)
+    await linker.onEvent({ type: 'tool.started', threadId: 't', toolId: 'x', toolName: 'Bash', input: { command: 'gh pr checkout https://github.com/tejasnafde/switchboard/pull/7' } } as RuntimeEvent)
     expect(problems).toEqual(['t: Linking a pull request this chat named failed: Error: git broke'])
   })
 
   it('does nothing for a thread with no conversation row', async () => {
     const { linker, linked } = setup()
-    await linker.onEvent({ type: 'tool.completed', threadId: 'missing', toolId: 'x', output: 'https://github.com/tejasnafde/switchboard/pull/7' } as RuntimeEvent)
+    await linker.onEvent({ type: 'tool.started', threadId: 'missing', toolId: 'x', toolName: 'Bash', input: { command: 'gh pr checkout https://github.com/tejasnafde/switchboard/pull/7' } } as RuntimeEvent)
     expect(linked).toEqual([])
   })
 })

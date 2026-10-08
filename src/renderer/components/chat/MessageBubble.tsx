@@ -3,7 +3,7 @@ import { MessageImages } from './MessageImages'
 import { createPortal } from 'react-dom'
 import { agentShortLabel, type ChatMessage } from '@shared/types'
 import { fmtDuration } from '@shared/format'
-import { ToolCallBlock } from './ToolCallBlock'
+import { HistoryToolCall } from './HistoryToolCall'
 import { ApprovalCard } from './ApprovalCard'
 import { HostWriteApprovalCard } from './HostWriteApprovalCard'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
@@ -21,7 +21,7 @@ import { SkillChip } from './SkillChip'
 import {
   forkAndOpenSession,
 } from '../../services/fork-session'
-import { isForkableForkMessage } from '@shared/conversation-fork'
+import { forkBlockedByStatus, isForkableForkMessage } from '@shared/conversation-fork'
 import { parseRotationMarker } from '@shared/rotation-marker'
 import { parseUndeliveredMarker } from '@shared/peer-links'
 import { PeerUndeliveredRow } from './PeerUndeliveredRow'
@@ -343,7 +343,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     // Block forking mid-turn - Claude SDK can't safely truncate while it's
     // actively appending to the JSONL, and the user's freshly-typed reply
     // would race the fork's resume anchor.
-    if (session.status !== 'idle') {
+    if (forkBlockedByStatus(session.status)) {
       setForkError('Cannot fork while a turn is in flight')
       return
     }
@@ -518,7 +518,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
 
         {/* Tool calls */}
         {message.toolCalls?.map((tc) => (
-          <ToolCallBlock key={tc.id} toolCall={tc} />
+          <HistoryToolCall key={tc.id} toolCall={tc} sessionId={sessionId} messageId={message.id} />
         ))}
 
         {/* Approval request */}
