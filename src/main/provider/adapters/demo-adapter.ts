@@ -40,7 +40,8 @@
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { AGENT_REPLY_MAX_CHARS, hostWriteDetail, type HostWriteCard, type HostWriteDiffLine } from '@shared/agent-host-writes'
 import { PR_DESCRIPTION_MAX_CHARS } from '@shared/agent-pr-create'
-import { agentLabel, toAgentProvider, type AgentType } from '@shared/types'
+import { agentLabel, toAgentProvider, type AgentProvider, type AgentType } from '@shared/types'
+import { CLAUDE_MODELS, type ModelOption, type ReasoningEffort } from '@shared/models'
 import { buildWindow, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
 import { randomUUID } from 'crypto'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
@@ -582,6 +583,22 @@ export function demoAdapters(): Map<ProviderKind, ProviderAdapter> {
     ['codex', new DemoAdapter('codex')],
     ['opencode', new DemoAdapter('opencode')],
   ])
+}
+
+const ALL_EFFORT: ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
+
+/**
+ * The catalog the picker gets in a demo launch, instead of probing the real
+ * CLI with this machine's account. Claude's is shaped like the live list (a
+ * `default` row, then the models, each with its effort levels), so the
+ * composer's effort control shows in recordings and screenshots.
+ */
+export function demoCatalog(agentType: AgentProvider): ModelOption[] {
+  if (agentType !== 'claude-code') return []
+  return [
+    { id: 'default', label: 'Default (recommended)', tier: 'balanced', effortLevels: ALL_EFFORT },
+    ...CLAUDE_MODELS.map((m) => ({ ...m, effortLevels: m.tier === 'fast' ? [] : ALL_EFFORT })),
+  ]
 }
 
 const MINUTE = 60_000
