@@ -46,6 +46,9 @@ export function GoToChatDialog({ open, onClose, onOpenChat }: GoToChatDialogProp
     if (!open) return
     const ticket = ++loadTicket.current
     setQuery('')
+    // A failed load must not show the previous open's list as current.
+    setLocalProjects([])
+    setArchived([])
     window.api.app.getProjects()
       .then((projects: Project[]) => { if (ticket === loadTicket.current) setLocalProjects(projects ?? []) })
       .catch((err: unknown) => log.warn('getProjects failed', err))

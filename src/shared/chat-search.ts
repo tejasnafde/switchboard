@@ -59,10 +59,10 @@ export interface ChatSearchSection<T> {
   items: T[]
 }
 
-/** No query: Recent (the newest 5), then All chats (the rest). A query: one ranked list. */
+/** No query: Recent (the newest 5), then All chats (the rest). A query, even the archive word alone: one ranked list. */
 export function chatSearchSections<T extends ChatSearchItem>(items: readonly T[], raw: string): ChatSearchSection<T>[] {
   const ranked = rankChats(items, raw)
-  if (parseChatQuery(raw).needle !== '') return [{ heading: null, items: ranked }]
+  if (raw.trim() !== '') return [{ heading: null, items: ranked }]
   return [
     { heading: 'Recent' as const, items: ranked.slice(0, RECENT_CHAT_COUNT) },
     { heading: 'All chats' as const, items: ranked.slice(RECENT_CHAT_COUNT) },

@@ -34,6 +34,7 @@ describe('chatSearchSections', () => {
 
   it('gives a query one ranked list', () => {
     expect(chatSearchSections(chats, 'sync').map((s) => [s.heading, s.items.length])).toEqual([[null, 4]])
+    expect(chatSearchSections(chats, 'archived').map((s) => s.heading)).toEqual([null])
   })
 })
 
