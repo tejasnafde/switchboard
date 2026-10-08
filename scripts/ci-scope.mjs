@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Decides which CI jobs a pull request needs, from the files it changes.
 //
 // Reads changed paths (one per line) on stdin and prints `code=` and `visual=`
