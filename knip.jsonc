@@ -1,0 +1,42 @@
+// Dead files and dependency drift. CI runs it without the unused-export check
+// (`--include files,dependencies,unlisted,binaries,unresolved`); run plain
+// `npx knip` to see unused exports too.
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/server/index.ts",
+    // Bundled by scripts/build-visual-host.mjs into the phones' visual page.
+    "src/visual-host/index.ts",
+    "scripts/*.mjs",
+    "scripts/pre-commit.sh",
+    "e2e/*.e2e.mjs",
+    "e2e/electron-runtime.mjs",
+    "videos/capture-tour.mjs",
+    "tests/unit/**/*.test.ts",
+    "tests/setup/*.ts",
+    "resources/sb-bridge/extension.js",
+    "resources/sb-bridge/protocol.js"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "scripts/**/*.mjs",
+    "e2e/**/*.mjs",
+    "videos/**/*.mjs",
+    "tests/**/*.ts",
+    "resources/sb-bridge/**/*.js"
+  ],
+  "ignoreDependencies": [
+    // tailwindcss: loaded by a CSS @import. vscode: the code-server extension host
+    // global, not a package. lint-staged: run by scripts/pre-commit.sh via npx.
+    "tailwindcss",
+    "vscode",
+    "lint-staged"
+  ],
+  // External CLIs the scripts shell out to, and a shell builtin.
+  "ignoreBinaries": [
+    "sqlite3",
+    "ffmpeg",
+    "codex",
+    "unset"
+  ]
+}

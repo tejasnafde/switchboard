@@ -31,6 +31,8 @@
  *                           answer (e2e/chat-render-order.e2e.mjs)
  *   - text says "to-dos" -> a long markdown list with inline code and branch
  *                           paths (e2e/message-overflow.e2e.mjs)
+ *   - text says "draw"   -> a ```mermaid diagram and a ```chart bar chart,
+ *                           drawn in the chat (visual regression screens)
  *   - anything else      -> a short two-sentence reply
  *
  * With `SB_DEMO_CLAUDE_TRANSCRIPT_DIR` set, the claude adapter also appends a
@@ -146,6 +148,25 @@ interface DemoQueuedTurn {
 }
 
 /** Long inline code and file-pill paths in lists (e2e/message-overflow.e2e.mjs). */
+const VISUALS_REPLY = [
+  'Here is how a chat opens now:',
+  '',
+  '```mermaid',
+  'flowchart LR',
+  '  open[Open chat] --> load[Load window]',
+  '  load --> tail[Parse tail]',
+  '  load --> images[Image refs]',
+  '  tail --> render[Render]',
+  '  images --> render',
+  '```',
+  '',
+  'And chat.open before and after, in ms:',
+  '',
+  '```chart',
+  '{"type":"bar","labels":["long chat","short chat"],"series":[{"name":"before","values":[3800,1100]},{"name":"after","values":[400,150]}],"yTitle":"ms"}',
+  '```',
+].join('\n')
+
 const TODO_REPLY = `**Left to-dos**
 
 **Release path (in progress)**
@@ -474,6 +495,8 @@ export class DemoAdapter implements ProviderAdapter {
       await this.say(threadId, turn, 'Interim note: checking the reload path first.')
       await this.tool(threadId, turn, 'Bash', { command: 'sleep 61' }, 'ok', undefined, LONG_TOOL_MS)
       await this.say(threadId, turn, 'Final answer: the order holds.')
+    } else if (/\bdraw\b/i.test(message)) {
+      await this.say(threadId, turn, VISUALS_REPLY)
     } else if (/to-dos/i.test(message)) {
       await this.say(threadId, turn, TODO_REPLY)
     } else {

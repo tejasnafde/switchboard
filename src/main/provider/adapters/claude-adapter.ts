@@ -404,14 +404,6 @@ const RUNTIME_MODE_TO_PERMISSION: Record<RuntimeMode, PermissionMode> = {
 }
 
 // Policy moved to `src/main/provider/policy.ts` so both adapters share it.
-// Re-exported here for backward compat with existing imports + tests.
-export {
-  PLAN_READ_ONLY_TOOLS,
-  CUSTOM_UI_TOOLS,
-  decidePermission,
-  denialMessage,
-  type PermissionDecision,
-} from '../policy'
 import { decidePermission, CUSTOM_UI_TOOLS, denialMessage, notebookWriteRedirect } from '../policy'
 import { notebookManager } from '../../notebooks/manager'
 import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
@@ -638,8 +630,15 @@ interface ActiveSession {
   queuedTurns: QueuedClaudeTurn[]
   /** A turn ended while the head of the queue was being cancelled; start the next once that settles. */
   startAfterWithdraw?: boolean
-  /** Nothing queued starts until the user resumes: a turn failed (see holdQueuedTurns). */
+  /** Nothing queued starts until the user resumes: a turn failed or was stopped (see holdQueuedTurns). */
   queueHeld?: boolean
+  /** A steer was sent while this turn ran. One that missed the turn's last tool step runs next, ahead of the queue. */
+  steeredThisTurn?: boolean
+  /**
+   * A turn ended with a steer and a queued message both possibly waiting in
+   * the CLI. The next turn's first frame says which one runs (see noteTurnStart).
+   */
+  awaitingNextTurn?: boolean
   /**
    * Effective model id from the last `getContextUsage()` poll, e.g.
    * `claude-fable-5`. The rejection payload never carries the model, yet the
@@ -797,7 +796,9 @@ export class ClaudeAdapter implements ProviderAdapter {
     // Queued behind a running turn: its runtime mode must not touch that turn
     // (a queued full-access message would otherwise let a plan turn run a
     // shell). The mode travels with the message and applies when it starts.
-    const queued = delivery === 'queue' && active.turnStartedAt != null
+    const turnLive = active.turnStartedAt != null || active.awaitingNextTurn === true
+    const queued = delivery === 'queue' && turnLive
+    const steer = !queued && turnLive
     // Reserve the turn before any await, so a queued send that arrives while
     // this one applies its mode still sees a turn in progress.
     if (!queued) {
@@ -851,13 +852,17 @@ export class ClaudeAdapter implements ProviderAdapter {
     // Mid-turn, the SDK reads a message at the next tool boundary (a steer).
     // `later` holds it until the running turn ends: measured, a separate turn.
     // A queued message carries a uuid, which is what lets it be cancelled.
-    const uuid = queued ? randomUUID() : undefined
+    // A steer carries one too: the turn it ends up running in is stamped
+    // with it (see noteTurnStart).
+    const uuid = queued || steer ? randomUUID() : undefined
     const userMsg: SDKUserMessage = {
       type: 'user',
       message: { role: 'user', content },
       parent_tool_use_id: null,
-      ...(queued ? { priority: 'later' as const, uuid } : {}),
+      ...(queued ? { priority: 'later' as const } : {}),
+      ...(uuid ? { uuid } : {}),
     } as SDKUserMessage
+    if (steer) active.steeredThisTurn = true
     // A message joining an empty queue starts a new one, not held. One joining
     // a held queue waits behind it, out of the CLI's queue, as on Codex and OpenCode.
     if (queued && active.queuedTurns.length === 0) active.queueHeld = false
@@ -1188,6 +1193,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           candidateDirs: active.candidateOauthDirs,
         })
         log.warn(`resume failed for ${threadId}: transcript ${where.kind} - preserving resume id`)
+        this.endTurnWithoutResult(threadId, active)
         active.session.status = 'idle'
         active.onEvent({ type: 'error', threadId, message: describeResumeFailure(where) })
         active.onEvent({ type: 'status', threadId, status: 'idle' })
@@ -1224,6 +1230,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         } catch (retryErr) {
           const re = retryErr as { message?: string }
           log.error(`retry also failed: ${threadId}`, re?.message ?? retryErr)
+          this.endTurnWithoutResult(threadId, active)
           active.session.status = 'error'
           active.onEvent({
             type: 'error',
@@ -1236,6 +1243,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         active.session.status = 'idle'
         active.onEvent({ type: 'status', threadId, status: 'idle' })
       } else {
+        this.endTurnWithoutResult(threadId, active)
         active.session.status = 'error'
         active.onEvent({
           type: 'error',
@@ -1246,6 +1254,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
     } finally {
       active.query = null
+      active.steeredThisTurn = false
+      active.awaitingNextTurn = false
       active.currentMessageId = null
       active.currentReasoningMessageId = null
       active.partialMessageText.clear()
@@ -1301,6 +1311,50 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
     }
     return active.models?.models ?? []
+  }
+
+  /**
+   * The query failed mid-turn, so no `result` will end the running turn. End
+   * it here, or the registry counts it as running until the next turn ends.
+   */
+  private endTurnWithoutResult(threadId: string, active: ActiveSession): void {
+    if (active.turnStartedAt == null) return
+    const durationMs = takeTurnDuration(active)
+    active.onEvent({ type: 'turn.completed', threadId, ...(durationMs !== undefined ? { durationMs } : {}) })
+  }
+
+  /**
+   * The first frame of a reply. The SDK stamps it with the uuids of the
+   * messages that turn answers, which settles what runs after a turn whose
+   * steer may have missed it (`awaitingNextTurn`): the queued message the
+   * stamp names, or the steer, as a turn of its own. Without a stamp (an
+   * older CLI) the head of the queue is assumed, as before. A reply nobody
+   * started (that late steer, or the agent's own follow-up) gets a turn too.
+   */
+  private noteTurnStart(threadId: string, active: ActiveSession, msg: SDKMessage): void {
+    const frame = msg as { event?: { type?: string }; parent_tool_use_id?: string | null; user_message_uuid?: string; user_message_uuids?: string[] }
+    if (frame.event?.type !== 'message_start' || frame.parent_tool_use_id) return
+    if (active.awaitingNextTurn) {
+      active.awaitingNextTurn = false
+      const stamped = frame.user_message_uuids ?? (frame.user_message_uuid ? [frame.user_message_uuid] : [])
+      const named = active.queuedTurns.find((turn) => !turn.held && stamped.includes(turn.uuid))
+      if (named) {
+        this.beginQueuedTurn(active, named)
+        return
+      }
+      if (stamped.length === 0) {
+        this.startQueuedTurn(active)
+        return
+      }
+      // The steer's turn. A send made meanwhile may have started its clock,
+      // but no send counted this turn, so it is announced either way.
+    } else if (active.turnStartedAt != null || active.startAfterWithdraw) {
+      return
+    }
+    active.turnStartedAt = Date.now()
+    active.watchdog.turnStarted(Date.now())
+    active.session.status = 'running'
+    active.onEvent({ type: 'status', threadId, status: 'running', newTurn: true })
   }
 
   /**
@@ -1475,6 +1529,8 @@ export class ClaudeAdapter implements ProviderAdapter {
     if (next.id) active.onEvent({ type: 'turn.dequeued', threadId: active.session.threadId, messageId: next.id, reason: 'started' })
     active.turnStartedAt = Date.now()
     active.watchdog.turnStarted(Date.now())
+    active.session.status = 'running'
+    active.onEvent({ type: 'status', threadId: active.session.threadId, status: 'running' })
     if (mode && mode !== active.session.runtimeMode) {
       active.session.runtimeMode = mode
       active.query?.setPermissionMode(RUNTIME_MODE_TO_PERMISSION[mode]).catch((err: unknown) => {
@@ -1543,6 +1599,8 @@ export class ClaudeAdapter implements ProviderAdapter {
   async interruptTurn(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.query) return
+    // Stop means stop: the queued messages wait for Resume or Cancel.
+    this.holdQueuedTurns(active, 'Stopped.')
     try {
       await active.query.interrupt()
     } catch (err) {
@@ -1651,6 +1709,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     // Auto-approved tools never hit the pendingApprovals path, so this is
     // the only place their (legitimately silent) run gets bracketed.
     countToolBrackets(msg, active.watchdog, Date.now())
+    if (msg.type === 'stream_event') this.noteTurnStart(threadId, active, msg)
     switch (msg.type) {
       case 'system': {
         const sys = msg as SDKMessage & Record<string, unknown>
@@ -1952,8 +2011,18 @@ export class ClaudeAdapter implements ProviderAdapter {
         active.watchdog.turnEnded()
         active.prompt.answered(new Set(active.queuedTurns.map((turn) => turn.sdkMessage)))
         // A failed turn holds the queue rather than running it into the failure.
-        if ((result as { is_error?: boolean }).is_error) this.holdQueuedTurns(active, 'The last turn failed.')
-        else this.startQueuedTurn(active)
+        // A held queue (Stop) starts nothing here: the hold itself starts any
+        // message the CLI already took.
+        if ((result as { is_error?: boolean }).is_error) {
+          this.holdQueuedTurns(active, 'The last turn failed.')
+        } else if (!active.queueHeld) {
+          // A steer that missed this turn's last tool step runs ahead of the
+          // queue, so the queued message cannot be marked started (and its
+          // mode applied) until the next turn shows which one it is.
+          if (active.steeredThisTurn && active.queuedTurns.length > 0) active.awaitingNextTurn = true
+          else this.startQueuedTurn(active)
+        }
+        active.steeredThisTurn = false
         active.onEvent({
           type: 'turn.completed',
           threadId,
@@ -1984,9 +2053,10 @@ export class ClaudeAdapter implements ProviderAdapter {
           })
         }
 
-        // Between turns - waiting for next user message
-        active.session.status = 'idle'
-        active.onEvent({ type: 'status', threadId, status: 'idle' })
+        // A queued message (or a late steer) is already the next turn.
+        const next = active.turnStartedAt != null || active.awaitingNextTurn ? 'running' : 'idle'
+        active.session.status = next
+        active.onEvent({ type: 'status', threadId, status: next })
         break
       }
 

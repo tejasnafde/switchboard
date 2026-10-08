@@ -15,6 +15,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useAgentStore } from '../../stores/agent-store'
+import { holdsWholeHistory } from '../../services/history-window'
 import { useMachineStore } from '../../stores/machine-store'
 import { useBookmarkStore } from '../../stores/bookmark-store'
 import { useLayoutStore } from '../../stores/layout-store'
@@ -431,7 +432,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     // Use the most up-to-date messages from agent-store if the session is
     // already loaded. Otherwise, load from disk first so exports of
     // never-opened sessions still work.
-    let messages = useAgentStore.getState().sessions.find((s) => s.id === session.id)?.messages
+    const stored = useAgentStore.getState().sessions.find((s) => s.id === session.id)
+    // A windowed chat holds only its newest rows and image references.
+    let messages = stored && holdsWholeHistory(stored) ? stored.messages : undefined
     if (!messages || messages.length === 0) {
       try {
         if (session.filePath) {
@@ -525,7 +528,8 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   }, [])
 
   const handleRemoteExport = useCallback(async (menu: { machineId: string; projectPath: string; session: SessionSummary }) => {
-    let messages = useAgentStore.getState().sessions.find((s) => s.id === menu.session.id)?.messages
+    const stored = useAgentStore.getState().sessions.find((s) => s.id === menu.session.id)
+    let messages = stored && holdsWholeHistory(stored) ? stored.messages : undefined
     if (!messages || messages.length === 0) {
       try {
         // Remote rows carry no filePath - load by id, routed to the machine.

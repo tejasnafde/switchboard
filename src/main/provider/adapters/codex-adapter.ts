@@ -244,6 +244,8 @@ interface ActiveSession {
    * Follow-up sends wait for it so they steer instead of starting a second
    * provider turn in the response gap. */
   turnStartPromise: Promise<void> | null
+  /** Turns Stop interrupted whose own turn/completed has not arrived yet. */
+  stoppedTurnIds: Set<string>
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -681,6 +683,7 @@ export class CodexAdapter implements ProviderAdapter {
       queueHeld: false,
       activeTurnId: null,
       turnStartPromise: null,
+      stoppedTurnIds: new Set(),
     }
 
     this.sessions.set(opts.threadId, active)
@@ -1222,6 +1225,10 @@ export class CodexAdapter implements ProviderAdapter {
       return
     }
 
+    // Stop means stop: the queued messages wait for Resume or Cancel instead
+    // of starting when the interrupted turn reports its end.
+    this.holdQueue(threadId, active, 'Stopped.')
+    active.stoppedTurnIds.add(turnId)
     await withTimeout(
       this.sendRpc(active, 'turn/interrupt', { threadId: active.threadId, turnId }),
       5_000,
@@ -1823,6 +1830,20 @@ export class CodexAdapter implements ProviderAdapter {
         active.onEvent({ type: 'status', threadId, status: 'error' })
       }
     } else if (method === 'turn/completed') {
+      const completedTurnId: unknown = notification.params?.turn?.id
+      const wasStopped = typeof completedTurnId === 'string' && active.stoppedTurnIds.delete(completedTurnId)
+      // The end of a turn Stop interrupted can arrive after the next send
+      // started a new turn. That turn is not over: ending it here would mark
+      // the chat idle mid-turn and start a queued message on top of it. The
+      // registry counted the new send as a steer of the stopped turn, so the
+      // new turn's own turn/completed settles that one count.
+      const otherTurnLive = active.activeTurnId
+        ? typeof completedTurnId === 'string' && completedTurnId !== active.activeTurnId
+        : wasStopped && active.turnStartPromise !== null
+      if (otherTurnLive) {
+        log.info(`ignoring turn/completed for ${String(completedTurnId)} on ${threadId}: a newer turn is running`)
+        return
+      }
       const turnStatus = notification.params?.turn?.status
       if (turnStatus === 'failed') {
         const message = notification.params?.turn?.error?.message ?? 'Codex turn failed'

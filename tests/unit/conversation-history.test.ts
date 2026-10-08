@@ -7,6 +7,7 @@ const CODEX = 'codex-session'
 
 const dbMessages = new Map<string, ChatMessage[]>()
 const diskMessages = new Map<string, ChatMessage[]>()
+let revision = 0
 let nativeResume: { provider: string; sessionId: string; copiedMessageCount?: number } | undefined
 
 vi.mock('../../src/main/db/database', () => ({
@@ -14,12 +15,15 @@ vi.mock('../../src/main/db/database', () => ({
   conversationSessionHints: () => [CODEX],
   listConversationSegments: () => [],
   getMessagesForConversation: (id: string) => dbMessages.get(id) ?? [],
+  // A new revision per load, so the merged-history memo never serves a stale mock.
+  getMessageRevisions: (ids: string[]) => ids.map(() => ++revision),
   messageRowsToChatMessages: (rows: ChatMessage[]) => rows,
   getDisplayBodyEnrichments: () => new Map(),
   getNativeForkResume: () => nativeResume,
 }))
 
 vi.mock('../../src/main/provider/claude-session-migrate', () => ({
+  compareSessionCopies: () => 0,
   claudeCandidateDirs: () => ['/claude-work'],
   listClaudeSessionCopies: (_dir: string, id: string) =>
     id === CLAUDE ? [{ path: '/claude-work/transcript.jsonl', mtimeMs: 1 }] : [],
@@ -42,6 +46,7 @@ vi.mock('../../src/main/projects/session-scanner', () => ({
 
 vi.mock('../../src/main/agent/jsonl-cache', () => ({
   loadJsonlCached: (path: string) => diskMessages.get(path) ?? null,
+  loadJsonlCopies: (paths: string[]) => paths.flatMap((path) => diskMessages.has(path) ? [{ path, messages: diskMessages.get(path) }] : []),
 }))
 
 const { loadConversationHistory } = await import('../../src/main/conversations/history')

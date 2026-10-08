@@ -21,6 +21,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { homedir } from 'os'
 import { join } from 'path'
+import type Database from 'better-sqlite3'
+import { createMigratedDb } from './helpers/test-db'
 
 vi.mock('../../src/main/runtime', () => ({
   isElectron: false,
@@ -48,7 +50,7 @@ interface Row {
   updated_at: number
 }
 
-const store = new Map<string, Row>()
+let sqlite: Database.Database
 
 function seedRow(over: Partial<Row> & { id: string; agent_type: string }): Row {
   const t = Date.now()
@@ -65,7 +67,10 @@ function seedRow(over: Partial<Row> & { id: string; agent_type: string }): Row {
     updated_at: t,
     ...over,
   }
-  store.set(row.id, row)
+  sqlite.prepare(
+    `INSERT OR REPLACE INTO provider_instances (${Object.keys(row).join(', ')})
+     VALUES (${Object.keys(row).map((k) => '@' + k).join(', ')})`,
+  ).run(row)
   return row
 }
 
@@ -81,45 +86,6 @@ function envRow(id: string, agentType: string, env: Record<string, string>, over
   })
 }
 
-function prepare(sql: string) {
-  const norm = sql.replace(/\s+/g, ' ').trim()
-  return {
-    get: (...args: unknown[]) => {
-      if (norm.startsWith('SELECT * FROM provider_instances WHERE id = ?')) return store.get(args[0] as string)
-      throw new Error(`mock get: unhandled SQL: ${norm}`)
-    },
-    all: () => {
-      if (norm.startsWith('SELECT * FROM provider_instances ORDER BY')) {
-        return [...store.values()].sort((a, b) =>
-          a.agent_type.localeCompare(b.agent_type) || a.created_at - b.created_at)
-      }
-      throw new Error(`mock all: unhandled SQL: ${norm}`)
-    },
-    run: (...args: unknown[]) => {
-      if (norm.startsWith('INSERT INTO provider_instances')) {
-        const [id, agent_type, display_name, accent_color, auth_mode,
-          env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at] =
-          args as [string, string, string, string | null, string, Buffer | null, string | null, string | null, string | null, number, number, number]
-        store.set(id, { id, agent_type, display_name, accent_color, auth_mode, env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at })
-        return { changes: 1 }
-      }
-      if (norm.startsWith('UPDATE provider_instances SET display_name')) {
-        const [name, accent, auth, env, envKeys, oauthDir, config, enabled, updated, id] =
-          args as [string, string | null, string, Buffer | null, string | null, string | null, string | null, number, number, string]
-        const r = store.get(id)
-        if (!r) return { changes: 0 }
-        Object.assign(r, {
-          display_name: name, accent_color: accent, auth_mode: auth, env_encrypted: env,
-          env_keys: envKeys, oauth_dir: oauthDir, config_json: config, enabled, updated_at: updated,
-        })
-        return { changes: 1 }
-      }
-      throw new Error(`mock run: unhandled SQL: ${norm}`)
-    },
-  }
-}
-
-vi.mock('../../src/main/db/database', () => ({ getDb: () => ({ prepare }) }))
 
 const CANONICAL_CODEX = join(homedir(), '.codex')
 const CANONICAL_CLAUDE = join(homedir(), '.claude')
@@ -129,7 +95,7 @@ async function db() {
 }
 
 beforeEach(() => {
-  store.clear()
+  sqlite = createMigratedDb()
   seedRow({ id: 'codex-default', agent_type: 'codex' })
   seedRow({ id: 'claude-code-default', agent_type: 'claude-code' })
 })

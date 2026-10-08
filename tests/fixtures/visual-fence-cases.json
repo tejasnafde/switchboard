@@ -1,0 +1,158 @@
+[
+  {
+    "id": "nothing-to-draw",
+    "markdown": "Hello\n\n```ts\nconst a = 1\n```\n",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "Hello\n\n```ts\nconst a = 1\n```\n"
+      }
+    ]
+  },
+  {
+    "id": "mermaid-and-chart",
+    "markdown": "Before\n```mermaid\ngraph TD\nA-->B\n```\nMiddle\n~~~~ chart extra\n{\"a\":1}\n~~~~\nAfter",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "Before"
+      },
+      {
+        "kind": "mermaid",
+        "source": "graph TD\nA-->B"
+      },
+      {
+        "kind": "markdown",
+        "text": "Middle"
+      },
+      {
+        "kind": "chart",
+        "source": "{\"a\":1}"
+      },
+      {
+        "kind": "markdown",
+        "text": "After"
+      }
+    ]
+  },
+  {
+    "id": "still-streaming",
+    "markdown": "Look:\n```mermaid\ngraph TD\nA-->",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "Look:\n```mermaid\ngraph TD\nA-->"
+      }
+    ]
+  },
+  {
+    "id": "closing-fence-too-short",
+    "markdown": "````mermaid\ngraph TD\n```\n",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "````mermaid\ngraph TD\n```\n"
+      }
+    ]
+  },
+  {
+    "id": "closing-fence-other-character",
+    "markdown": "```mermaid\ngraph TD\n~~~\n",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "```mermaid\ngraph TD\n~~~\n"
+      }
+    ]
+  },
+  {
+    "id": "info-string-case-and-longer-close",
+    "markdown": "```Mermaid\ngraph TD\n````\n",
+    "expected": [
+      {
+        "kind": "mermaid",
+        "source": "graph TD"
+      }
+    ]
+  },
+  {
+    "id": "inside-another-fence",
+    "markdown": "````markdown\n```mermaid\ngraph TD\n```\n````",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "````markdown\n```mermaid\ngraph TD\n```\n````"
+      }
+    ]
+  },
+  {
+    "id": "inside-a-quote",
+    "markdown": "> ```mermaid\n> graph TD\n> ```",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "> ```mermaid\n> graph TD\n> ```"
+      }
+    ]
+  },
+  {
+    "id": "indented-code",
+    "markdown": "    ```mermaid\n    graph TD\n    ```",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "    ```mermaid\n    graph TD\n    ```"
+      }
+    ]
+  },
+  {
+    "id": "three-space-indent",
+    "markdown": "   ```chart\n{}\n   ```",
+    "expected": [
+      {
+        "kind": "chart",
+        "source": "{}"
+      }
+    ]
+  },
+  {
+    "id": "empty-block",
+    "markdown": "```chart\n\n```",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "```chart\n\n```"
+      }
+    ]
+  },
+  {
+    "id": "backtick-in-info-string",
+    "markdown": "```mermaid `x`\ngraph TD\n```",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "```mermaid `x`\ngraph TD\n```"
+      }
+    ]
+  },
+  {
+    "id": "crlf",
+    "markdown": "```mermaid\r\ngraph TD\r\n```\r\n",
+    "expected": [
+      {
+        "kind": "mermaid",
+        "source": "graph TD"
+      }
+    ]
+  },
+  {
+    "id": "chartjs-is-not-chart",
+    "markdown": "```chartjs\n{}\n```",
+    "expected": [
+      {
+        "kind": "markdown",
+        "text": "```chartjs\n{}\n```"
+      }
+    ]
+  }
+]

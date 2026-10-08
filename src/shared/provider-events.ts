@@ -734,6 +734,12 @@ export interface RuntimeStatusEvent {
   type: 'status'
   threadId: string
   status: ProviderSessionStatus
+  /**
+   * With `running`: a turn started that no send accounted for, such as a
+   * steer that missed the turn it was sent into and runs as its own. The
+   * backend counts it as running until its `turn.completed`.
+   */
+  newTurn?: boolean
 }
 
 /**

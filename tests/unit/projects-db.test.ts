@@ -1,53 +1,31 @@
 /**
- * Projects rename/remove SQL over a fake better-sqlite3 (the prebuilt binary
- * targets Electron's ABI and won't load under vitest). The fake records every
- * prepared statement's run() args and returns empty/undefined for all reads, so
- * migrate() no-ops cleanly and we can assert the SQL + bind order our functions
- * emit. This pins renameProject's (name, path) order - the one flip-able bug in
- * the pair. The FK cascade that drops a removed project's conversations + kanban
- * cards is schema-level (ON DELETE CASCADE), verified by the migration, not TS.
+ * Projects rename/remove over a real in-memory database with the app's
+ * migrations. Pins renameProject's (name, path) bind order (the one flip-able
+ * bug in the pair) and the schema-level cascade that drops a removed project's
+ * conversations.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { createMigratedDb } from './helpers/test-db'
+import { addProject, createConversation, getConversationById, getProjects, removeProject, renameProject } from '../../src/main/db/database'
 
-const runCalls: Array<{ sql: string; args: unknown[] }> = []
+beforeEach(() => { createMigratedDb() })
 
-vi.mock('better-sqlite3', () => {
-  class FakeDb {
-    pragma() {}
-    exec() {}
-    transaction(fn: () => void) { return fn }
-    prepare(sql: string) {
-      return {
-        run: (...args: unknown[]) => { runCalls.push({ sql, args }); return { changes: 1 } },
-        get: () => undefined,
-        all: () => [],
-      }
-    }
-  }
-  return { default: FakeDb }
-})
-
-const { renameProject, removeProject } = await import('../../src/main/db/database')
-
-// One migrate()-full of statements fires on first getDb(); ignore those.
-const projectWrites = () => runCalls.filter((c) => /\b(UPDATE|DELETE FROM) projects\b/.test(c.sql))
-
-beforeEach(() => { runCalls.length = 0 })
-
-describe('projects rename/remove SQL', () => {
-  it('renameProject binds (name, path) in that order', () => {
+describe('projects rename/remove', () => {
+  it('renameProject renames only that project', () => {
+    addProject('/repo/a', 'a')
+    addProject('/repo/b', 'b')
     renameProject('/repo/a', 'Alpha')
-    const write = projectWrites()
-    expect(write).toHaveLength(1)
-    expect(write[0].sql).toMatch(/UPDATE projects SET name = \? WHERE path = \?/)
-    expect(write[0].args).toEqual(['Alpha', '/repo/a'])
+    expect(getProjects().map((p) => [p.path, p.name]).sort()).toEqual([['/repo/a', 'Alpha'], ['/repo/b', 'b']])
   })
 
-  it('removeProject deletes by path', () => {
+  it('removeProject deletes the project and its conversations', () => {
+    addProject('/repo/a', 'a')
+    addProject('/repo/b', 'b')
+    createConversation('c-a', '/repo/a', 'claude-code', 'A chat')
+    createConversation('c-b', '/repo/b', 'claude-code', 'B chat')
     removeProject('/repo/a')
-    const write = projectWrites()
-    expect(write).toHaveLength(1)
-    expect(write[0].sql).toMatch(/DELETE FROM projects WHERE path = \?/)
-    expect(write[0].args).toEqual(['/repo/a'])
+    expect(getProjects().map((p) => p.path)).toEqual(['/repo/b'])
+    expect(getConversationById('c-a')).toBeUndefined()
+    expect(getConversationById('c-b')).toBeDefined()
   })
 })

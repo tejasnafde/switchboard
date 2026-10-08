@@ -42,6 +42,9 @@ const INSTRUCTIONS = [
   'answer: it says the write is queued, and the result arrives later as a Switchboard message in this chat. Do not',
   'ask for the same write again while it is queued; withdraw_approval takes a card back. Approving, requesting',
   'changes and merging are left to the user. The session tools message the user\'s other open agent sessions.',
+  'Switchboard draws a ```mermaid block as a diagram, and a ```chart block holding JSON as a chart:',
+  '{"type":"bar"|"line"|"table","labels":["a","b"],"series":[{"name":"s","values":[1,2]}]}, with optional',
+  '"title", "xTitle" and "yTitle"; at most 50 labels and 8 series.',
 ].join(' ')
 
 /** What an adapter hands its agent to spawn the bridge. */
