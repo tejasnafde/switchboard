@@ -2,6 +2,7 @@
  * What the Accounts & models page shows, as pure functions: the order of the
  * cards, the summary strip, the bar colours and the reset countdowns.
  */
+import { speaksAcp } from '@shared/acp-agents'
 import { defaultInstanceId, type AgentType, type ProviderInstance } from '@shared/types'
 import { resolveMachineInstanceId } from '@shared/session-defaults'
 import { severityForPercent, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
@@ -131,7 +132,7 @@ export function accountsSummary(
 /** Where the account's credentials come from, for the card's muted line. */
 export function credentialSummary(inst: ProviderInstance): string {
   if (inst.authMode === 'env' && inst.envKeys.length > 0) return `API key (${inst.envKeys.join(', ')})`
-  if (inst.agentType === 'opencode') return 'Shell environment'
+  if (speaksAcp(inst.agentType)) return 'Shell environment'
   return credentialHomeDisplay(inst.effectiveOauthDir, inst.effectiveOauthDirSource).text
 }
 

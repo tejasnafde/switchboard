@@ -4,6 +4,7 @@
  * doesn't drift between the background "▶" path, the foreground
  * "▶ + open" path, and the auto-kickoff on `withWorktree=true` create.
  */
+import { toAgentProvider } from '@shared/types'
 import { createRendererLogger } from '../../logger'
 import { isRuntimeMode } from '@shared/session-defaults'
 import type { KanbanCard } from '@shared/kanban'
@@ -117,9 +118,7 @@ export async function launchCardChat(
       if (!row) {
         throw new Error('The linked conversation is not available. Refresh the board to recover its creation state.')
       }
-      const agentType: AgentType = row.agent_type === 'codex' || row.agent_type === 'opencode'
-        ? row.agent_type
-        : 'claude-code'
+      const agentType: AgentType = toAgentProvider(row.agent_type)
       useAgentStore.getState().addSession({
         id: row.id,
         type: agentType,

@@ -2,6 +2,7 @@ package app.switchboard.mobile.ui.browse
 
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.thread.ThreadSessionCoordinator
+import app.switchboard.mobile.domain.remote.AcpAgents
 import app.switchboard.mobile.domain.remote.BrowseDecisions
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
@@ -323,7 +324,7 @@ object BrowseRowPolicy {
         "claude", "claude-code" -> "Claude"
         "codex" -> "Codex"
         "opencode" -> "OpenCode"
-        else -> agentType
+        else -> AcpAgents.shortLabel(agentType) ?: agentType
     }
 
     private fun String?.isFailureStatus(): Boolean = this == "error" || this == "failed"

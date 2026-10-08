@@ -1,3 +1,4 @@
+import { cn } from '../../lib/utils'
 import { useChatWaitStore } from '../../stores/chat-wait-store'
 import { LoadingStatus } from '../ui/loading-status'
 import { ChatSkeleton } from '../ui/chat-skeleton'
@@ -80,7 +81,8 @@ import {
   requiresDraftTransferConfirmation,
   withDraftProvenance,
 } from '../../services/draft-transfer'
-import { providerKindFor } from '@shared/types'
+import { isAgentProvider, providerKindFor } from '@shared/types'
+import { speaksAcp } from '@shared/acp-agents'
 import { confirm } from '../ui/confirm'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 import { fileDiffNoRevertMessage } from '@shared/file-diff-revert'
@@ -854,10 +856,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       const liveStatus = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.status
       const busy = liveStatus === 'running' || liveStatus === 'thinking'
       // A queued send is held by the backend until the turn ends, so it may pass.
-      if (busy && agentType === 'opencode' && delivery !== 'queue') {
+      if (busy && speaksAcp(agentType) && delivery !== 'queue') {
         return {
           accepted: false,
-          error: 'OpenCode is still working. Your text and attachments are preserved; send again when it finishes.',
+          error: `${agentLabel(agentType)} is still working. Your text and attachments are preserved; send again when it finishes.`,
         }
       }
 
@@ -894,10 +896,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           const markerText = handoffFrom === agentType
             ? `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(agentType)} profile restarted with visible history`
             : `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(handoffFrom)} → ${agentLabel(agentType)}`
-          if (handoffFrom === 'claude-code'
-            || handoffFrom === 'codex'
-            || handoffFrom === 'opencode'
-            || handoffFrom === 'cursor') {
+          if (isAgentProvider(handoffFrom) || handoffFrom === 'cursor') {
             handoff = {
               expectedFrom: handoffFrom,
               markerId: '',
@@ -1138,19 +1137,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     <>
       {/* Thinking indicator */}
       {(status === 'running' || status === 'thinking' || pendingDeliveryState === 'pending') && (
-        <div style={{
-          padding: '8px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          fontSize: '12px',
-          color: 'var(--text-muted)',
-          flexShrink: 0,
-        }}>
-          <span className="thinking-dots" style={{ display: 'inline-flex', gap: '3px' }}>
-            <span style={{ animation: 'pulse 1.4s ease-in-out infinite', animationDelay: '0s', width: '4px', height: '4px', borderRadius: '50%', background: 'var(--accent)' }} />
-            <span style={{ animation: 'pulse 1.4s ease-in-out infinite', animationDelay: '0.2s', width: '4px', height: '4px', borderRadius: '50%', background: 'var(--accent)' }} />
-            <span style={{ animation: 'pulse 1.4s ease-in-out infinite', animationDelay: '0.4s', width: '4px', height: '4px', borderRadius: '50%', background: 'var(--accent)' }} />
+        <div className="flex shrink-0 items-center gap-[8px] px-[16px] py-[8px] text-[12px] text-[var(--text-muted)]">
+          <span className="thinking-dots inline-flex gap-[3px]">
+            <span className="h-[4px] w-[4px] rounded-[50%] bg-[var(--accent)] [animation:pulse_1.4s_ease-in-out_0s_infinite]" />
+            <span className="h-[4px] w-[4px] rounded-[50%] bg-[var(--accent)] [animation:pulse_1.4s_ease-in-out_0.2s_infinite]" />
+            <span className="h-[4px] w-[4px] rounded-[50%] bg-[var(--accent)] [animation:pulse_1.4s_ease-in-out_0.4s_infinite]" />
           </span>
           <span>{pendingDeliveryState === 'pending' && status === 'idle'
             ? 'Sending…'
@@ -1268,17 +1259,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       data-focused={showFocusIndicator ? isVisiblyFocused : undefined}
       onFocusCapture={focusSlot}
       onPointerDown={focusSlot}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        height: '100%',
-        background: 'var(--bg-primary)',
-        position: 'relative',
-        boxShadow: isVisiblyFocused
-          ? 'inset 0 0 0 1px color-mix(in srgb, var(--accent) 46%, transparent)'
-          : undefined,
-      }}
+      className={cn(
+        'relative flex h-full w-full flex-col bg-[var(--bg-primary)]',
+        isVisiblyFocused && '[box-shadow:inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_46%,transparent)]',
+      )}
     >
       {searchOpen && (
         <InPaneSearchBar
@@ -1303,20 +1287,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         <>
           {/* ── Top bar: folder / chat name ──────────────────────── */}
           <div
-            className="chat-panel-header"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '7px 16px',
-              borderBottom: '1px solid var(--border)',
-              gap: '6px',
-              flexShrink: 0,
-              background: 'var(--bg-secondary)',
-              fontSize: '12px',
-              minHeight: '32px',
-              // The linked-PR control hides itself when the header is too narrow for it.
-              containerType: 'inline-size',
-            }}
+            // The linked-PR control hides itself when the header is too narrow for it (container query).
+            className="chat-panel-header flex min-h-[32px] shrink-0 items-center gap-[6px] border-b border-solid border-[var(--border)] bg-[var(--bg-secondary)] px-[16px] py-[7px] text-[12px] [container-type:inline-size]"
           >
             {/* Plain identity breadcrumb; only consequential state receives color. */}
             {hasSession ? (
@@ -1336,17 +1308,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
                       if (e.key === 'Escape') setEditingTitle(false)
                     }}
                     onBlur={commitRename}
-                    style={{
-                      border: '1px solid var(--border-focus)',
-                      borderRadius: '3px',
-                      background: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '12px',
-                      padding: '1px 6px',
-                      outline: 'none',
-                      flex: '1 1 0%',
-                      minWidth: 0,
-                    }}
+                    className="min-w-0 flex-[1_1_0%] rounded-[3px] border border-solid border-[var(--border-focus)] bg-[var(--bg-primary)] px-[6px] py-[1px] text-[12px] text-[var(--text-primary)] outline-none"
                   />
                 ) : (
                   <span className="chat-identity-title" title={chatTitle}>{chatTitle}</span>
@@ -1354,20 +1316,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
                 {!editingTitle && (
                   <button
                     onClick={startRename}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      padding: '0 2px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      opacity: 0.5,
-                      transition: 'opacity 0.12s',
-                      flexShrink: 0,
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.5' }}
+                    className="flex shrink-0 cursor-pointer items-center border-none p-[0_2px] text-[var(--text-muted)] opacity-50 [background:none] [transition:opacity_0.12s] hover:opacity-100"
                     title="Rename"
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1382,10 +1331,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
                 )}
               </div>
             ) : (
-              <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Switchboard</span>
+              <span className="font-[500] text-[var(--text-primary)]">Switchboard</span>
             )}
 
-            <span style={{ flex: 1 }} />
+            <span className="flex-1" />
 
             {activeSession && activeSession.type !== 'terminal' && <LinkedPrControl sessionId={activeSession.id} />}
 
@@ -1420,19 +1369,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               <button
                 onClick={onClose}
                 title="Close this panel (⌘⇧\\)"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '2px 6px',
-                  borderRadius: '3px',
-                  fontSize: '14px',
-                  lineHeight: 1,
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+                className="shrink-0 cursor-pointer rounded-[3px] border-none p-[2px_6px] text-[14px] leading-[1] text-[var(--text-muted)] [background:none] hover:text-[var(--text-primary)]"
               >
                 ×
               </button>
@@ -1441,7 +1378,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             {/* Status text. A running turn has none: the chat's own
                 Working… row already says so. */}
             {hasSession && (activeSession?.draft || (status !== 'running' && status !== 'thinking')) && (
-              <span style={{ color: status === 'error' ? 'var(--error, #f85149)' : 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
+              <span className={cn('text-[11px] font-[400]', status === 'error' ? 'text-[var(--error,#f85149)]' : 'text-[var(--text-muted)]')}>
                 {activeSession?.draft
                   ? status === 'running' ? 'creating…' : 'draft'
                   : status === 'idle' && pendingDeliveryState === 'pending'

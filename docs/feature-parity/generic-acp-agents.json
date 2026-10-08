@@ -1,0 +1,104 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "generic-acp-agents",
+  "summary": "The OpenCode adapter is now one generic Agent Client Protocol adapter (src/main/provider/adapters/acp/acp-adapter.ts) driven by a small launch config per agent: binary lookup, ACP start arguments, env, an optional preflight and config reader, how runtime modes map onto ACP modes, model labels, and the capabilities it expects. OpenCode keeps its own config (version gate, opencode.json permission rules, Switchboard MCP auto-allow, model variants, session summary) and behaves as before. Four agents are added through it as new provider kinds and agent types: Gemini CLI (gemini --acp), Mistral Vibe (vibe-acp), Cline (cline --acp) and GitHub Copilot CLI (copilot --acp). Each is offered on the desktop only when its CLI is found on the machine. Their modes come from what session/new advertises (plan maps to an advertised plan mode, the rest to the mode the session started in), their models from session/new models or a model config option, and they never steer (a follow-up is queued). Native fork is not offered for them: forks use the transcript handoff. Session resume is used when the agent advertises session/resume. The Switchboard MCP server is registered on session/new; their permission requests for its tools go through the ordinary policy.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/UnifiedProviderPicker.tsx",
+        "src/renderer/components/settings/AccountsPanel.tsx",
+        "src/renderer/services/acp-agent-availability.ts",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/styles/tailwind.css",
+        "src/preload/index.ts",
+        "tests/unit/acp-agent-availability.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_generic_acp_agents",
+      "followUpRelease": "mobile-v0.6.0, to offer the generic ACP agents when starting a chat or switching a chat's agent. What ships now: a phone shows these chats with the agent's name (shared agentLabel), continues them on their own agent (providerKindFor passes the kinds through), queues follow-ups instead of steering (shared canSteer), and labels their skills. AGENTS in apps/mobile/src/lib/profiles.ts leaves them out of the new-chat list and the profile picker, except the chat's own agent, so nothing unfinished is reachable.",
+      "evidence": [
+        "apps/mobile/src/lib/profiles.ts",
+        "apps/mobile/src/components/ProfilePicker.tsx",
+        "apps/mobile/src/components/SlashMenu.tsx",
+        "tests/unit/mobile-profile-picker.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "native_generic_acp_agents",
+      "followUpRelease": "Native Android 0.6.0, to offer the generic ACP agents in the new-chat list. What ships in the next APK: ProviderKind knows the four kinds, so a chat with one reattaches to its own agent instead of reporting an unknown provider; the browse rows, the thread header and the no-steer notice name the agent (AcpAgents in RemoteModels.kt); follow-ups queue. NewSessionDecisions.providers still lists Claude, Codex and OpenCode only. An older APK shows such a chat but refuses to reattach it (Cannot reattach unknown provider).",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/NewSessionDecisions.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/TurnDelivery.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadChromePolicy.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/newsession/NewSessionScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/TurnDeliveryPolicyTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/acp-agents.ts",
+        "src/shared/types.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/turn-delivery.ts",
+        "src/shared/models.ts",
+        "src/main/provider/adapters/acp/acp-adapter.ts",
+        "src/main/provider/adapters/acp/launch-config.ts",
+        "src/main/provider/adapters/acp/session-config.ts",
+        "src/main/provider/adapters/acp/agents.ts",
+        "src/main/provider/adapters/acp/agent-env.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/remote-gate.ts",
+        "src/main/provider/catalog-probe.ts",
+        "src/main/provider/usage/index.ts",
+        "src/main/ipc/provider-instances.ts",
+        "src/main/conversations/fork-provider-artifacts.ts",
+        "tests/unit/acp-generic-adapter.test.ts",
+        "tests/unit/acp-launch-configs.test.ts",
+        "tests/unit/acp-session-config.test.ts",
+        "tests/unit/turn-delivery.test.ts",
+        "tests/unit/agent-types.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "src/shared/types.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/acp-generic-adapter.test.ts: the generic adapter against a fake agent speaking ACP over in-memory ndjson stdio (the SDK's AgentSideConnection): Gemini starts with gemini --acp, models come from a model config option and are set through session/set_config_option, plan maps to the advertised plan mode and back to the starting mode (and is left alone when no plan mode is advertised), a turn streams text, publishes skills under the agent's own source and asks for an edit in sandbox mode, plan mode denies the edit without a card, a second plain send is refused naming the agent, the Switchboard MCP server is registered on session/new, and an authentication-required answer names the sign-in step.",
+      "tests/unit/acp-launch-configs.test.ts: each of the four launch configs starts its documented command and names its install command; OpenCode's config keeps acp --cwd, build/plan modes, the question-tool flag, the version gate, its config reader and model variants.",
+      "tests/unit/opencode-acp-adapter.test.ts, opencode-acp-resume.test.ts, opencode-acp-switchboard-mcp.test.ts, opencode-version-gate.test.ts, native-fork-runners.test.ts: unchanged and passing on the generic adapter.",
+      "tests/unit/acp-session-config.test.ts, acp-agent-availability.test.ts, agent-types.test.ts, turn-delivery.test.ts, mobile-profile-picker.test.ts: mode and model mapping, capability check, which agents are offered, kind pass-through, the no-steer copy, and the staged phone agent list.",
+      "Android TurnDeliveryPolicyTest: every ACP agent queues and is named in the reason; the whole Android unit suite passes.",
+      "Visual regressions (screens phase): the picker and Accounts screens are unchanged, since no generic agent is installed in the fixture."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "None of the four CLIs was installed on the machine that built this, so no launch command was run against a real agent: each was checked against the agent's current documentation only (2026-10-08). Gemini CLI's docs name --acp; --experimental-acp is the older, deprecated spelling, so a Gemini CLI old enough to know only that flag fails at init.",
+      "How each agent names Switchboard's MCP tools in a permission request is undocumented, so their permission requests for those tools are not auto-allowed: in sandbox mode a write can show both the server's card and an ordinary approval card.",
+      "Mode ids, model reporting (models or a config option) and resume support of the four agents are read from what they advertise at runtime; none was observed live.",
+      "Accept-edits mode matches Claude and Codex edit tool names only, so a generic agent's edit still asks in that mode.",
+      "Phones were not run on a device against a backend with one of these agents."
+    ]
+  }
+}

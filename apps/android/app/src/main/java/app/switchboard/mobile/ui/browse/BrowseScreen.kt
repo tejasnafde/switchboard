@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
+import app.switchboard.mobile.domain.remote.AcpAgents
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.ui.theme.Accent
@@ -637,7 +638,7 @@ object BrowseAccessibilityPolicy {
         "claude", "claude-code" -> "Claude"
         "codex" -> "Codex"
         "opencode" -> "OpenCode"
-        else -> agentType
+        else -> AcpAgents.shortLabel(agentType) ?: agentType
     }
 }
 

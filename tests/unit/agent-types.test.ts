@@ -10,6 +10,8 @@ import {
   AGENT_TYPES,
   isAgentType,
   agentLabel,
+  providerKindFor,
+  toAgentProvider,
   agentShortLabel,
   defaultInstanceId,
 } from '../../src/shared/types'
@@ -85,5 +87,16 @@ describe('defaultInstanceId', () => {
     for (const k of kinds) {
       expect(defaultInstanceId(k)).toBe(`${k}-default`)
     }
+  })
+})
+
+describe('provider kind and agent type', () => {
+  it('pass a generic ACP agent through unchanged in both directions', () => {
+    for (const agent of ['gemini', 'vibe', 'cline', 'copilot'] as const) {
+      expect(providerKindFor(agent)).toBe(agent)
+      expect(toAgentProvider(agent)).toBe(agent)
+    }
+    expect(providerKindFor('claude-code')).toBe('claude')
+    expect(toAgentProvider('mystery')).toBe('claude-code')
   })
 })

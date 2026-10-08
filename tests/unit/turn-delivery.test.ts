@@ -91,6 +91,13 @@ describe('queued turn accounting', () => {
     expect(promoteUnavailableReason('claude-code')).toBeNull()
     expect(promoteUnavailableReason('opencode')).toMatch(/OpenCode/)
   })
+  it('never steers into any ACP agent, and names it', () => {
+    for (const agent of ['gemini', 'vibe', 'cline', 'copilot']) {
+      expect(sendAction(agent, true, 'steer').label).toBe('Queue')
+    }
+    expect(promoteUnavailableReason('gemini')).toBe('Gemini CLI cannot take a message mid-turn, so this waits for the turn to end.')
+    expect(sendAction('copilot', true, 'steer').tooltip).toMatch(/^Queue \(Enter\): GitHub Copilot cannot take a message mid-turn/)
+  })
 })
 
 import { runningPlaceholder } from '@shared/turn-delivery'

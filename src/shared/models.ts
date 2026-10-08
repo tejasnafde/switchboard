@@ -1,4 +1,5 @@
 import type { AgentType } from './types'
+import { isGenericAcpAgent } from './acp-agents'
 
 export interface ModelOption {
   /** Exactly what the provider named, alias and capability suffix included. */
@@ -92,12 +93,16 @@ export function inferModelTier(id: string): ModelOption['tier'] {
 export function modelsForAgent(agent: AgentType): ModelOption[] {
   if (agent === 'codex') return CODEX_MODELS
   if (agent === 'opencode') return OPENCODE_MODELS
+  // A generic ACP agent's catalog comes only from its own session/new.
+  if (isGenericAcpAgent(agent)) return []
   return CLAUDE_MODELS
 }
 
 export function defaultModelFor(agent: AgentType): string {
   if (agent === 'codex') return CODEX_MODELS[0].id
   if (agent === 'opencode') return OPENCODE_MODELS[0].id // GLM 5.1
+  // Empty means the agent's own default.
+  if (isGenericAcpAgent(agent)) return ''
   // Named, not positional: reordering the list used to change the default.
   return 'claude-sonnet-5'
 }

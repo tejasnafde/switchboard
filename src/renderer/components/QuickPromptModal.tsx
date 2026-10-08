@@ -1,3 +1,4 @@
+import { agentShortLabel } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import {
@@ -66,7 +67,7 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
 
   const agentLabel = useMemo(() => {
     if (!activeSession) return 'agent'
-    return activeSession.type === 'codex' ? 'Codex' : activeSession.type === 'opencode' ? 'OpenCode' : 'Claude'
+    return agentShortLabel(activeSession.type)
   }, [activeSession])
 
   const canSend = value.trim().length > 0 && !!activeSession && status !== 'sending'

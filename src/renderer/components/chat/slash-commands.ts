@@ -11,7 +11,7 @@
  * here rather than inline in UI code.
  */
 
-import type { AgentStatus, ProviderSkill } from '@shared/types'
+import { agentLabel, type AgentStatus, type ProviderSkill } from '@shared/types'
 import type { RuntimeMode } from '@shared/provider-events'
 import type { AgentProvider } from '@shared/types'
 
@@ -86,7 +86,7 @@ export function commandInsertion(command: Pick<SlashCommand, 'name' | 'source'>)
 export function skillsToSlashCommands(skills: ProviderSkill[]): SlashCommand[] {
   return skills.map((s) => ({
     name: s.name,
-    description: s.description ?? `${s.source === 'codex' ? 'Codex' : 'Claude Code'} command`,
+    description: s.description ?? `${agentLabel(s.source)} command`,
     source: s.source,
     ...(s.argumentHint ? { argumentHint: s.argumentHint } : {}),
   }))

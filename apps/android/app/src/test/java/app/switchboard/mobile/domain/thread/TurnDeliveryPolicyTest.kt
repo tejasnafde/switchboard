@@ -43,6 +43,23 @@ class TurnDeliveryPolicyTest {
     }
 
     @Test
+    fun everyAcpAgentQueuesAndIsNamedInTheReason() {
+        for (agent in listOf("opencode", "gemini", "vibe", "cline", "copilot")) {
+            assertFalse(agent, TurnDeliveryPolicy.canSteer(agent))
+        }
+        assertTrue(TurnDeliveryPolicy.canSteer("claude-code"))
+        assertEquals(
+            "OpenCode cannot take a message mid-turn, so this waits for the turn to end.",
+            TurnDeliveryPolicy.promoteUnavailableReason("opencode"),
+        )
+        assertEquals(
+            "Gemini CLI cannot take a message mid-turn, so this waits for the turn to end.",
+            TurnDeliveryPolicy.promoteUnavailableReason("gemini"),
+        )
+        assertNull(TurnDeliveryPolicy.promoteUnavailableReason("codex"))
+    }
+
+    @Test
     fun toggleReadsAsItAlwaysDidWithTheSteerDefault() {
         val steer = TurnDeliveryPolicy.queueToggle(TurnDelivery.Steer, flipped = false)
         assertFalse(steer.queues)

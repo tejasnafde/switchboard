@@ -60,7 +60,8 @@ object NewSessionDecisions {
         ),
     )
 
-    fun models(provider: ProviderKind): List<NewSessionModelOption> = catalogs.getValue(provider)
+    /** Generic ACP agents have no built-in catalog; their models come from the backend. */
+    fun models(provider: ProviderKind): List<NewSessionModelOption> = catalogs[provider].orEmpty()
 
     fun profiles(
         instances: List<ProviderInstance>,
