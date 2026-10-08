@@ -195,6 +195,40 @@ function stableValue(value: unknown): unknown {
   return output
 }
 
+/** The one shape every client sends; each supplies its own id store and SHA-256. */
+export function buildForkConversationRequest(input: {
+  requestId: string
+  sourceConversationId: string
+  machineId?: string
+  message: ChatMessage
+  contentDigest: string
+  withWorktree: boolean
+  dirtySourceConfirmed?: DirtySourceConfirmation
+  surface: ForkConversationSurface
+  requestedAt: number
+}): ForkConversationRequest {
+  return {
+    schemaVersion: FORK_CONVERSATION_SCHEMA_VERSION,
+    requestId: input.requestId,
+    sourceConversationId: input.sourceConversationId,
+    ...(input.machineId ? { machineId: input.machineId } : {}),
+    anchor: {
+      messageId: input.message.id,
+      role: input.message.role,
+      timestamp: input.message.timestamp,
+      contentDigest: input.contentDigest,
+    },
+    checkout: input.withWorktree
+      ? {
+          kind: 'new-worktree',
+          basePolicy: 'source-head',
+          ...(input.dirtySourceConfirmed ? { dirtySourceConfirmed: input.dirtySourceConfirmed } : {}),
+        }
+      : { kind: 'shared-checkout' },
+    provenance: { surface: input.surface, requestedAt: input.requestedAt },
+  }
+}
+
 export function canonicalizeForkConversationRequest(request: ForkConversationRequest): string {
   return JSON.stringify(stableValue(request))
 }

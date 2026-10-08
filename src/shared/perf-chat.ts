@@ -8,6 +8,8 @@ export interface ChatLoadTiming {
   diskBytes: number
   diskLines: number
   cacheHits: number
+  /** Profile copies skipped because their bytes are a prefix of a larger copy. */
+  prefixSkips: number
 }
 
 export interface ChatLoadDiagnostics {

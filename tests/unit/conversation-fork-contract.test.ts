@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type { ChatMessage } from '../../src/shared/types'
 import {
   FORK_CONVERSATION_SCHEMA_VERSION,
+  buildForkConversationRequest,
   canonicalizeForkConversationIdentity,
   canonicalizeForkConversationRequest,
   digestForkMessage,
@@ -158,6 +159,44 @@ describe('conversation fork request contract', () => {
       .not.toBe(canonicalizeForkConversationRequest(confirmed))
     expect(canonicalizeForkConversationIdentity(unconfirmed))
       .toBe(canonicalizeForkConversationIdentity(confirmed))
+  })
+})
+
+describe('buildForkConversationRequest', () => {
+  const message = {
+    id: 'message-anchor',
+    role: 'assistant',
+    content: 'done',
+    timestamp: 1_787_523_600_000,
+  } as ChatMessage
+
+  it('builds the same request every client sends, and it parses', () => {
+    const built = buildForkConversationRequest({
+      requestId: request().requestId,
+      sourceConversationId: 'conversation-source',
+      machineId: 'machine-remote-1',
+      message,
+      contentDigest: MESSAGE_DIGEST,
+      withWorktree: false,
+      surface: 'desktop',
+      requestedAt: 1_787_523_601_000,
+    })
+    expect(built).toEqual(request())
+    expect(parseForkConversationRequest(built)).toEqual({ ok: true, value: built })
+  })
+
+  it('carries the dirty-source confirmation only into a new worktree, and omits an empty machine id', () => {
+    const dirtySourceConfirmed = { headSha: 'b'.repeat(40), statusDigest: 'c'.repeat(64) }
+    const base = {
+      requestId: 'r', sourceConversationId: 's', message, contentDigest: MESSAGE_DIGEST,
+      dirtySourceConfirmed, surface: 'react-native' as const, requestedAt: 1,
+    }
+    expect(buildForkConversationRequest({ ...base, withWorktree: true }).checkout).toEqual({
+      kind: 'new-worktree', basePolicy: 'source-head', dirtySourceConfirmed,
+    })
+    const shared = buildForkConversationRequest({ ...base, withWorktree: false, machineId: '' })
+    expect(shared.checkout).toEqual({ kind: 'shared-checkout' })
+    expect('machineId' in shared).toBe(false)
   })
 })
 

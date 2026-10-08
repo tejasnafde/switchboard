@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { CUSTOM_UI_TOOLS } from '../../src/main/provider/adapters/claude-adapter'
+import { CUSTOM_UI_TOOLS } from '../../src/main/provider/policy'
 
 /**
  * Regression tests for the "don't emit tool.started for custom-UI tools" rule.

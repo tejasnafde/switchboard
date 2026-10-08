@@ -70,7 +70,7 @@ Any pull request that changes behavior-bearing product paths must add or update 
 
 ## Known gotchas
 
-- **Transcript caches**: `jsonl-cache.ts` keys by parser source and path plus size, mtime, ctime, inode and device; changed reads are not cached. Its 24-entry/128 MiB LRU budgets estimated retained message memory, not raw JSONL bytes (large discarded tool results must not evict both account copies). `transcript-compatibility.ts` caches only validated whole-file evidence and per-record SHA-256 digests, bounded to 24 paths/100,000 records, with the same file-state checks. Metadata alone never proves two different files equal. Preserve every copy/replacement validation and the source-only settle retries. No paging: search/fork still receive full histories.
+- **Transcript caches**: `jsonl-cache.ts` keys by parser source and path plus size, mtime, ctime, inode and device; changed reads are not cached. Its 24-entry/128 MiB LRU budgets estimated retained message memory, not raw JSONL bytes (large discarded tool results must not evict both account copies). `transcript-compatibility.ts` caches only validated whole-file evidence and per-record SHA-256 digests, bounded to 24 paths/100,000 records, with the same file-state checks. Metadata alone never proves two different files equal. Preserve every copy/replacement validation and the source-only settle retries. `loadJsonlCopies` parses the largest profile copy of a session and skips a smaller copy only when its sha256 equals the same-length prefix digest of the largest; a cached file that grew from a state ending on a newline parses only the new bytes, once the old bytes hash to the cached digest. The desktop opens a window (see History windows); cmd+F, global search, fork anchors, export and the handoff preamble load the full history (`ensureFullHistory`, or a backend read).
 
 - `ELECTRON_RUN_AS_NODE=1` is set by Claude Code's shell - `dev` script unsets it explicitly
 - `electron` MUST be in `devDependencies`, not `dependencies`
@@ -110,15 +110,24 @@ Three things beyond plain RPC, all driven by the phone case:
 
 **Remote machines / SSH** (`src/main/machines/`): `ssh-tunnel.ts` builds `ssh -L localPort:127.0.0.1:remotePort … <bootstrap>` (uses the system `ssh` binary - no `ssh2`/native deps; `BatchMode`, `accept-new`), `connection-manager.ts` owns connect/provision/health-probe/auto-reconnect, plus `provisioner.ts`/`remote-exec.ts`/`reconnectBackoff.ts`/`ssh-config.ts`. The renderer then connects to `ws://127.0.0.1:<localPort>` as if local. Docs: `docs/notes/ssh-remote-plan.md`, `docs/notes/remote-machines-handoff.md`. No mobile client and no cloud relay - the "remote client" is the desktop app pointed at a tunneled remote backend.
 
-### Phone history windows (`history_window_v1`)
+### History windows (`history_window_v1`, `history_image_refs_v1`)
 
-`app:load-session-by-id(id, { window: true, limit: 200, beforeId? })`
+`app:load-session-by-id(id, { window: true, limit: 200, beforeId?, imageRefs? })`
 returns at most 200 chronological rows, `total`, `truncated`,
 `nextBeforeId` (the oldest returned id when more older rows exist, else null),
 and `cursorReset` (a removed cursor returns a fresh tail). Phones feature-detect
 `history_window_v1`; an older backend still gets the legacy `{ limit }` call.
-Desktop and older phone callers without `window` keep the original contract.
+Callers without `window` keep the original contract.
 This bounds wire rows, not JSONL parsing. Keep parse caching separate.
+The desktop opens every chat with the newest 200 rows (`NEWEST_HISTORY_WINDOW`
+in `renderer/services/history-loader.ts`), keeps the session's
+`olderHistoryCursor`, and loads the previous window when the list nears its
+top, keeping the row in view in place. It also asks `imageRefs: true`: base64
+images come back as `MessageImage.ref` (message id, index, byte size, with
+`mimeType`) and `app:load-history-image` serves the bytes when a thumbnail
+scrolls into view. A fork anchor digested over a referenced image still
+matches (`fork-anchor.ts`). Phones do not ask for references, so they keep
+data URLs; an older backend ignores both options and answers in full.
 
 Clean replay resumes reuse the in-memory history cache; disk restores and real
 gaps reload it. Android's ProtocolEventHub updates the cache synchronously

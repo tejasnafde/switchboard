@@ -1,0 +1,69 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "desktop-history-window",
+  "summary": "The desktop opens a chat with its newest 200-row history window (history_window_v1) and loads older windows when the list nears its top, keeping the row in view in place. Windowed loads may ask imageRefs (history_image_refs_v1): base64 history images become references served by app:load-history-image when a thumbnail scrolls into view. The backend parses the largest profile copy of a session and skips copies proven by sha256 to be its byte prefix, and a cached transcript that grew parses only its new bytes after the old bytes hash to the cached digest. Search, export, fork anchors and the handoff preamble keep the full history; a handoff send is refused when the full read fails.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/history-loader.ts",
+        "src/renderer/services/history-window.ts",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/components/chat/MessageImages.tsx",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/App.tsx",
+        "tests/unit/desktop-history-window.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app already loads 200-row windows and never sends imageRefs, so it keeps receiving data URLs from the same handler. The new capability string is additive; MessageImage.ref is optional and never reaches a client that did not ask for it."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android already pages with history_window_v1 and never sends imageRefs, so its responses are unchanged. app:load-history-image is open to the chat scope, which already receives the same image bytes inside history, so a phone gains no new power."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/ipc/app.ts",
+        "src/main/conversations/history.ts",
+        "src/main/conversations/history-images.ts",
+        "src/main/conversations/fork-anchor.ts",
+        "src/main/agent/jsonl-cache.ts",
+        "src/shared/history-image-refs.ts",
+        "src/shared/phone-history-window.ts",
+        "src/shared/ws-protocol.ts",
+        "tests/unit/history-image-refs.test.ts",
+        "tests/unit/jsonl-copies.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, stored transcript or setting changes. The parse cache and the image reference map are bounded, process-local and rebuilt on demand; a missing image reference falls back to reading the history."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "docs/feature-parity/desktop-history-window.json"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/desktop-history-window.test.ts: paging from the newest window back to the first row with no gap or repeat, overlap removal, full-history cut at the cursor, the load-older trigger, anchor lookup, whole-history detection for export, and the rebase on the newest window that keeps live rows.",
+      "tests/unit/history-loader.test.ts: stale older windows dropped, a lost oldest row rebases on the newest window and paging continues, ensureFullHistory reports whether the whole chat is loaded, and a fork anchor jump is refused when its row is not loaded.",
+      "tests/unit/history-image-refs.test.ts: references only when asked (phones and older desktops keep data URLs), byte sizes, serving remembered bytes without a reload, the history fallback, clean misses, and one shared history read for simultaneous misses.",
+      "tests/unit/jsonl-copies.test.ts: prefix digests across chunk boundaries, prefix-copy skip on a miss and a cache hit, a diverged copy parsed, append-only parse with object reuse, full parse after an in-place rewrite and after a cached state that ended mid-line.",
+      "Built app (SB_E2E_BACKGROUND=1, isolated SB_USER_DATA, demo adapter) with a copied 98 MB Claude transcript in five provider dirs as byte prefixes: first open chat.open 923 ms, reopens 420 to 492 ms, payloadBytes 131 KB; scrolling to the top logged chat.load-older (about 400 ms) with the view anchored, and 112 history images loaded as they scrolled into view."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No phone run: phone requests are unchanged by construction.",
+      "Codex rollout copies are still parsed one by one; only Claude profile copies are deduplicated by prefix proof.",
+      "The SQLite mirror read and the merge with it still run over the whole history on every open (about 0.5 s each for an 8,700-row chat in the original log); the window bounds the payload, not that work."
+    ]
+  }
+}

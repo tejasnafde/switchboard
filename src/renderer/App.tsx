@@ -58,6 +58,7 @@ import { draftSessionId, isDraftSessionId } from '@shared/new-chat-draft'
 import { parkFirstSend, peekFirstSend, setDraftMaterializer, takeFirstSend } from './services/draft-chat'
 import { toAgentProvider, type SessionSummary, type ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
+import { NEWEST_HISTORY_WINDOW } from './services/history-loader'
 import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionResumeId, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 import { focusComposer } from './services/composer-registry'
@@ -435,12 +436,12 @@ export function App() {
             if (!session || session.type === 'terminal') continue
             if (machineId !== null && session.machineId !== machineId) continue
             if (session.status === 'running' || session.status === 'thinking') continue
-            const loaded = await window.api.app.loadSessionById(id) as { messages?: ChatMessage[] } | null
+            const loaded = await window.api.app.loadSessionById(id, NEWEST_HISTORY_WINDOW) as { messages?: ChatMessage[]; nextBeforeId?: string | null } | null
             if (!current()) return
             const now = useAgentStore.getState().sessions.find((s) => s.id === id)
             // A turn that started while this loaded owns the transcript now.
             if (now && now.status !== 'running' && now.status !== 'thinking' && loaded?.messages?.length) {
-              useAgentStore.getState().setMessages(id, loaded.messages)
+              useAgentStore.getState().setMessages(id, loaded.messages, loaded.nextBeforeId ?? null)
               void recoverPendingRequests(id)
             }
           }
@@ -970,9 +971,9 @@ export function App() {
     ) => {
       const openTiming = beginChatOpen(session.id)
       let storeMs = 0
-      const setLoadedMessages = (id: string, messages: ChatMessage[]) => {
+      const setLoadedMessages = (id: string, messages: ChatMessage[], olderCursor: string | null | undefined) => {
         const start = performance.now()
-        setMessages(id, messages)
+        setMessages(id, messages, olderCursor ?? null)
         storeMs += performance.now() - start
       }
       const readyTiming = (id: string, load: ChatLoadDiagnostics | null) => {
@@ -1045,15 +1046,16 @@ export function App() {
           // Messages may have been evicted - reload from disk if so.
           if (needsMessageReload(existing)) {
             try {
-              const resp = await window.api.app.loadSessionById(session.id) as ChatLoadDiagnostics & {
+              const resp = await window.api.app.loadSessionById(session.id, NEWEST_HISTORY_WINDOW) as ChatLoadDiagnostics & {
                 messages: ChatMessage[]
+                nextBeforeId?: string | null
                 meta: { id: string; title: string; projectPath: string; agentType: string } | null
               }
               if (!isCurrentOpen()) return
               waits.settleLoad(openingSlot, openingTicket, session.id)
               loadDiagnostics = resp ?? null
               if (resp?.messages?.length) {
-                setLoadedMessages(session.id, resp.messages)
+                setLoadedMessages(session.id, resp.messages, resp.nextBeforeId)
               } else if (effectiveMachineId !== 'local') {
                 // Empty reload for a remote chat means routing/scan failure, not
                 // an empty conversation.
@@ -1087,6 +1089,7 @@ export function App() {
         // building a twin next to it.
         type LoadedSession = ChatLoadDiagnostics & {
           messages: ChatMessage[]
+          nextBeforeId?: string | null
           meta: {
             id: string
             title: string
@@ -1107,7 +1110,7 @@ export function App() {
         }
         let loaded: LoadedSession | null = null
         try {
-          loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
+          loaded = await window.api.app.loadSessionById(session.id, NEWEST_HISTORY_WINDOW) as LoadedSession
           waits.settleLoad(openingSlot, openingTicket, session.id)
         } catch (err) {
           log.warn('session history load failed', { sessionId: session.id, machineId: effectiveMachineId, err })
@@ -1201,7 +1204,7 @@ export function App() {
 
         if (shouldRetrySessionLoadAfterCreate(Boolean(loaded?.meta), session.filePath)) {
           try {
-            loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
+            loaded = await window.api.app.loadSessionById(session.id, NEWEST_HISTORY_WINDOW) as LoadedSession
             loadDiagnostics = loaded
             waits.settleLoad(openingSlot, openingTicket, session.id)
           } catch (err) {
@@ -1254,7 +1257,7 @@ export function App() {
           log.warn('restore pinned model failed', { sessionId: session.id, err: modelResult.reason })
         }
 
-        if (loaded?.messages?.length) setLoadedMessages(session.id, loaded.messages)
+        if (loaded?.messages?.length) setLoadedMessages(session.id, loaded.messages, loaded.nextBeforeId)
         readyTiming(session.id, loadDiagnostics)
         void recoverPendingRequests(session.id)
       } finally {
@@ -1288,8 +1291,8 @@ export function App() {
     openChatBeside(sessionId)
     if (needsMessageReload(session)) {
       try {
-        const loaded = await window.api.app.loadSessionById(sessionId) as { messages?: ChatMessage[] } | null
-        if (loaded?.messages?.length) setMessages(sessionId, loaded.messages)
+        const loaded = await window.api.app.loadSessionById(sessionId, NEWEST_HISTORY_WINDOW) as { messages?: ChatMessage[]; nextBeforeId?: string | null } | null
+        if (loaded?.messages?.length) setMessages(sessionId, loaded.messages, loaded.nextBeforeId ?? null)
       } catch (err) {
         log.warn('open-beside history reload failed', { sessionId, err })
         setAppToast('The chat opened, but its history could not be reloaded.')
