@@ -4,6 +4,10 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ## Unreleased
 
+### Fixed
+- **A project search finds the project by its name first.** Searching "projects" in the landing screen's project picker (and every other searchable picker) listed every project whose path contains the word in sidebar order, so the folder named Projects could be far down. Name matches now come first (exact, then starts with, then contains), then path-only matches, each in the old order.
+- **The chat header no longer says "thinking..." during a turn.** The Working... row in the chat already shows it.
+
 ### Added
 - **Send a fork's work back to its parent chat.** A forked chat has "Send back to <parent>" in its fork banner, and `/merge-back` does the same. It shows a summary of what the fork did since the fork point (or since its last send): its turns, the files it changed, its worktree and its last result, capped at 16 KiB with the newest whole turns kept. You can edit it before you send. Nothing is merged in git. The parent shows the summary as a card you can edit or discard, and its agent gets it with your next message there, marked as context from Switchboard rather than your words; the card then becomes a "Sent with your message" row. A fork can send back again, and each send carries only what is new. Both phones show the card and the sent row, and can send back, edit and discard (see the next entry). See `docs/feature-parity/fork-merge-back.json`.
 - **Send a fork back, edit or discard its summary from a phone.** In a forked chat, both phone apps show "Send back to <parent>" in the fork banner: it opens the summary, which you can edit, then sends it. In the parent chat, a pending summary card has Edit and Discard. A backend without merge-back shows neither. The Expo app needs only an OTA update; native Android needs the next APK.
@@ -11,6 +15,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ### Fixed
 - **Open beside lists only loaded chats.** The picker also offered the landing screen's empty "New chat" draft, first in the list, so the keyboard pick opened the draft instead of the chat you wanted.
+- **The composer caret stays where you left it.** Closing Settings, the command palette, search or quick prompt put the caret at the start of the message. It now goes back where it was, and a selected range stays selected. If the text changed meanwhile and the old position is gone, the caret goes to the end. See `docs/feature-parity/composer-caret-restore.json`.
 - **The chat loading placeholder fills the pane.** It sat as two short groups at the top of an empty pane. It now anchors to the bottom, next to the composer where the chat appears, and fills the pane on any screen size or orientation.
 
 ### Fixed

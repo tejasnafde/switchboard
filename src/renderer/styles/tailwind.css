@@ -31,6 +31,7 @@
 @source '../components/chat/MergeBackDialog.tsx';
 @source '../components/chat/MergeBackRow.tsx';
 @source '../components/chat/QueuedTurnBar.tsx';
+@source '../components/chat/lexical/RichChatTextarea.tsx';
 @source '../components/CommandPalette.tsx';
 @source '../components/SessionPickerModal.tsx';
 @source '../components/SearchModal.tsx';

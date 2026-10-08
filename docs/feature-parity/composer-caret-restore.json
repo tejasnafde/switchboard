@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "composer-caret-restore",
+  "summary": "When focus returns to the desktop chat composer without a click (Settings, the command palette, search or quick prompt closing, or a panel refocusing its composer), the caret, or a selected range, goes back where the user left it instead of to the start. The composer saves its selection as body offsets while it has focus and at blur, and restores it in the focus event. If the text changed meanwhile, the old position is kept when it still exists and the caret goes to the end when it does not. A click still places the caret where it lands. The composer editor's inline styles moved to Tailwind classes with no visible change.",
+  "surfaces": {
+    "desktop": { "status": "implemented", "evidence": ["src/renderer/components/chat/lexical/RichChatTextarea.tsx", "src/renderer/services/composer-selection.ts", "src/renderer/styles/tailwind.css", "tests/unit/composer-selection.test.ts", "e2e/radix-overlays.e2e.mjs"] },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The Expo composer is a native TextInput, which keeps its own selection across blur and refocus, and no overlay there returns focus to it programmatically; the bug comes from focusing a desktop contenteditable with element.focus()." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "The Android composer is a Compose TextField that keeps its selection while it stays composed, and nothing there returns focus to it programmatically; the user taps the field, which places the caret. The bug comes from focusing a desktop contenteditable with element.focus()." },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "Renderer-only change; no API or wire change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "The selection lives in memory per editor; nothing stored changes." },
+    "updateRelease": { "status": "not_applicable", "reason": "Ships with the next desktop release; no packaging or channel change." }
+  },
+  "verification": {
+    "automated": ["tests/unit/composer-selection.test.ts covers the restore rule (unchanged text, a backward range, added text, a position past the end, a range end that no longer exists, a position inside a pill token, a pill boundary, an empty composer).", "e2e/radix-overlays.e2e.mjs: for Settings, the command palette, search and quick prompt, a caret in the middle and a selected range both survive the overlay's open and close; all eight checks fail without the fix (the caret lands at the start). Visual regression screens passed with no new baselines after the Tailwind move."],
+    "hardware": [],
+    "notExercised": ["Not clicked through in the installed app. The phone composers were judged from their code, not run."]
+  }
+}
