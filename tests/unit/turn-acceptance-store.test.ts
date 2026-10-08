@@ -150,6 +150,22 @@ describe('SqliteTurnAcceptanceStore', () => {
     db.close()
   })
 
+  it('keeps an accepted turn accepted when the dispatcher\'s afterCommit hook throws', async () => {
+    const db = atomicTurnDb()
+    const backend = new AtomicUserTurnSubmission({ store: new SqliteTurnAcceptanceStore(() => db), publish: () => {} })
+    const result = await backend.submit(
+      { version: 1, threadId: 'thread-a', origin: 'hook-throws', providerText: 'hello' },
+      {
+        clientScope: 'scope-a',
+        conversationId: 'thread-a',
+        prepare: async () => {},
+        dispatch: async () => ({ afterCommit: () => { throw new Error('hook failed') } }),
+      },
+    )
+    expect(result).toMatchObject({ status: 'accepted', accepted: true })
+    db.close()
+  })
+
   it('refuses abandonment while the original provider dispatch is still live', async () => {
     const db = atomicTurnDb()
     const backend = new AtomicUserTurnSubmission({

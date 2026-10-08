@@ -27,6 +27,19 @@ export type TurnAcceptanceResult =
   | { accepted: false; duplicate: boolean; state: 'pending' | 'ambiguous'; reason?: string }
 
 /** Only this error proves the provider did not accept the turn. */
+/**
+ * Tells the dispatcher whether the commit happened. Its hook must never change
+ * the turn's result: the provider already has the turn, so a throw here would
+ * report a delivered message as failed and invite a duplicate send.
+ */
+function notifyCommit(dispatched: { afterCommit?: (committed: boolean) => void } | undefined | null, committed: boolean): void {
+  try {
+    dispatched?.afterCommit?.(committed)
+  } catch (err) {
+    log.error('turn afterCommit hook failed', { committed, err: String(err) })
+  }
+}
+
 export class TurnNotAcceptedError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options)
@@ -295,7 +308,7 @@ export class AtomicUserTurnSubmission {
     try {
       completion = this.store.completeUserTurn(key, payloadHash, record)
     } catch (error) {
-      dispatched?.afterCommit?.(false)
+      notifyCommit(dispatched, false)
       log.warn(`provider accepted turn but transcript commit failed for ${turn.threadId}`, error)
       return {
         status: 'ambiguous',
@@ -306,7 +319,7 @@ export class AtomicUserTurnSubmission {
       }
     }
     if (!completion.completed) {
-      dispatched?.afterCommit?.(false)
+      notifyCommit(dispatched, false)
       return {
         status: 'ambiguous',
         accepted: false,
@@ -317,7 +330,7 @@ export class AtomicUserTurnSubmission {
     }
     const canonicalRow = this.store.readCanonicalUserTurn(key)
     if (!canonicalRow) {
-      dispatched?.afterCommit?.(true)
+      notifyCommit(dispatched, true)
       return {
         status: 'ambiguous',
         accepted: false,
@@ -328,7 +341,7 @@ export class AtomicUserTurnSubmission {
     }
     this.publish(canonicalEvent(key, canonicalRow))
     // After the user's message, so a client places what rode on it above it.
-    dispatched?.afterCommit?.(true)
+    notifyCommit(dispatched, true)
     return {
       status: 'accepted',
       accepted: true,
