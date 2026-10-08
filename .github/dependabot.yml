@@ -43,6 +43,11 @@ updates:
       - dependency-name: react-native
       - dependency-name: 'react-native-*'
       - dependency-name: '@react-native/*'
+      # Also pinned by the SDK: `npx expo install --fix` sets them to match it.
+      - dependency-name: babel-preset-expo
+      - dependency-name: jest
+      - dependency-name: '@types/jest'
+      - dependency-name: typescript
 
   # AGP, Kotlin and KSP move in lockstep, so they share one pull request.
   - package-ecosystem: gradle
