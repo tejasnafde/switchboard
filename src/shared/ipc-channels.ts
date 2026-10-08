@@ -434,6 +434,19 @@ export const ProviderChannels = {
   LIST_PEER_LINKS: 'provider:list-peer-links',
   /** Broadcast `{ threadIds }` (root ids) whose links or link budgets changed. */
   PEER_LINKS_CHANGED: 'provider:peer-links-changed',
+  /**
+   * Merge-back (`shared/merge-back.ts`): a fork sends a summary of its work
+   * back to its parent chat, which carries it to its agent with the user's
+   * next message. PREVIEW `(forkThreadId)` answers `MergeBackPreview`; SEND
+   * `(forkThreadId, text, token)`, EDIT `(parentThreadId, id, text)` and
+   * DISCARD `(parentThreadId, id)` answer `MergeBackActionResult`. Open to a
+   * phone (a user action in the user's own chats). Gated behind the
+   * `fork_merge_back_v1` backend capability.
+   */
+  MERGE_BACK_PREVIEW: 'provider:merge-back-preview',
+  MERGE_BACK_SEND: 'provider:merge-back-send',
+  MERGE_BACK_EDIT: 'provider:merge-back-edit',
+  MERGE_BACK_DISCARD: 'provider:merge-back-discard',
   EVENT: 'provider:event',
   IS_AVAILABLE: 'provider:is-available',
   /** Proactive remote-auth preflight - args[0] is a threadId purely so the

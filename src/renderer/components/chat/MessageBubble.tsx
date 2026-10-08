@@ -27,6 +27,8 @@ import { parseUndeliveredMarker } from '@shared/peer-links'
 import { PeerUndeliveredRow } from './PeerUndeliveredRow'
 import { ApprovalResultRow } from './ApprovalResultRow'
 import { parseApprovalResultMarker } from '@shared/agent-approval-cards'
+import { parseMergeBackMarker } from '@shared/merge-back'
+import { MergeBackRow } from './MergeBackRow'
 import { SYSTEM_MARKER_PREFIX, systemRowView } from '@shared/system-markers'
 import { SyntheticUserRow } from './SyntheticUserRow'
 import { splitSyntheticUserText } from '@shared/synthetic-message'
@@ -230,6 +232,8 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   if (undelivered) return <PeerUndeliveredRow row={undelivered} messageId={message.id} sessionId={sessionId} />
   const approvalResult = isSystem ? parseApprovalResultMarker(message.content) : null
   if (approvalResult) return <ApprovalResultRow row={approvalResult} messageId={message.id} />
+  const mergeBack = isSystem ? parseMergeBackMarker(message.content) : null
+  if (mergeBack) return <MergeBackRow row={mergeBack} messageId={message.id} sessionId={sessionId} />
 
   // A marker without its own row (a newer kind, the profile-restart handoff,
   // a payload that did not parse) gets the same pill, never its raw payload.

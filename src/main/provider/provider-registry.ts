@@ -37,6 +37,9 @@ import { sqliteQueuedTurnRowStore, type QueuedTurnRowStore } from '../db/queued-
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
+import { MergeBackService } from '../conversations/merge-back'
+import { loadConversationHistory } from '../conversations/history'
+import { SqliteMergeBackStore } from '../db/merge-backs'
 import { commitConversationProviderSwitch, getConversationRuntimeMode, getSetting, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope, describeRequestClient, remoteDeviceHasScope } from '../backend/request-context'
@@ -395,6 +398,35 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** Messages adapters hold until the running turn ends; see `QueuedTurnLedger`. */
   private queuedTurns = new QueuedTurnLedger()
+  /** A fork's summaries waiting in its parent until the parent's next user turn. */
+  private readonly mergeBacks = new MergeBackService({
+    store: new SqliteMergeBackStore(() => getDb()),
+    rootId: resolveRootThreadId,
+    fork: (id) => {
+      const row = getConversationById(id)
+      if (!row?.parent_conversation_id || !row.forked_at_message_id) return null
+      return {
+        id: row.id,
+        title: row.title,
+        parentId: row.parent_conversation_id,
+        createdAt: row.created_at,
+        worktreePath: row.worktree_path ?? null,
+        worktreeBranch: row.worktree_branch ?? null,
+      }
+    },
+    parent: (id) => {
+      const row = getConversationById(id)
+      return row ? { id: row.id, title: row.title, archived: row.archived === 1 } : null
+    },
+    loadMessages: async (id) => (await loadConversationHistory(id, getConversationById(id)?.project_path ?? '')).messages,
+    forkBusy: (id) => {
+      const live = this.liveSessionId(id)
+      return live !== null && this.hasOutstandingTurn(live)
+    },
+    publishRow: (parentId, messageId, content, at) => this.publish({
+      type: 'merge-back.row', threadId: this.liveSessionId(parentId) ?? parentId, messageId, content, at,
+    }),
+  })
 
   /** The live thread a client's id names: its own, or the root it rotated from. */
   private liveThreadId(threadId: string): string {
@@ -1790,9 +1822,14 @@ export class ProviderRegistry implements PeerToolHost {
             this.queuedTurns.expect(queuedId, queuedTurnComposerText(input.providerText, input.displayBody, input.pillsMeta), Date.now())
           }
           const modeBefore = adapter.runtimeModeOf?.(threadId)
+          // A fork's pending summaries ride on this message. Not on a queued
+          // one: it may be cancelled before it ever reaches the agent.
+          const mergeBack = queuedId ? null : this.mergeBacks.claimForTurn(threadId)
+          const providerText = mergeBack ? mergeBack.apply(input.providerText) : input.providerText
           try {
-            await adapter.sendTurn(threadId, input.providerText, input.runtimeMode, input.images, input.delivery, queuedId)
+            await adapter.sendTurn(threadId, providerText, input.runtimeMode, input.images, input.delivery, queuedId)
           } catch (error) {
+            mergeBack?.release()
             if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
             if (isDefiniteAdapterPreconditionFailure(error, threadId)) {
               throw new TurnNotAcceptedError(errorMessage(error), { cause: error })
@@ -1801,7 +1838,14 @@ export class ProviderRegistry implements PeerToolHost {
           } finally {
             if (queuedId) this.queuedTurns.settle(queuedId)
           }
-          this.announceTurnRuntimeMode(adapter, threadId, modeBefore, input.runtimeMode, queuedId)
+          try {
+            this.announceTurnRuntimeMode(adapter, threadId, modeBefore, input.runtimeMode, queuedId)
+          } catch (error) {
+            // The turn ends ambiguous: the summaries stay pending, not held.
+            mergeBack?.release()
+            throw error
+          }
+          return mergeBack?.dispatched(providerText)
         },
       })
       if (result.state === 'rejected') this.cancelFirstTurnTiming(threadId, firstContentSpan, 'rejected')
@@ -2760,6 +2804,13 @@ export class ProviderRegistry implements PeerToolHost {
     // from this client's view (reload, resume gap).
     this.host.handle(ProviderChannels.GET_PENDING_REQUESTS, (threadId: string) => this.getPendingRequests(threadId))
 
+    this.host.handle(ProviderChannels.MERGE_BACK_PREVIEW, (forkThreadId: string) => this.mergeBacks.preview(forkThreadId))
+    this.host.handle(ProviderChannels.MERGE_BACK_SEND, (forkThreadId: string, text: unknown, token: unknown) =>
+      this.mergeBacks.send(forkThreadId, text, token))
+    this.host.handle(ProviderChannels.MERGE_BACK_EDIT, async (parentThreadId: string, mergeBackId: string, text: unknown) =>
+      this.mergeBacks.edit(parentThreadId, mergeBackId, text))
+    this.host.handle(ProviderChannels.MERGE_BACK_DISCARD, async (parentThreadId: string, mergeBackId: string) =>
+      this.mergeBacks.discard(parentThreadId, mergeBackId))
     this.host.handle(ProviderChannels.LIST_QUEUED_TURNS, (threadId: string) => this.listQueuedTurns(threadId))
     this.host.handle(ProviderChannels.RESUME_QUEUED_TURNS, (threadId: string) => this.resumeQueuedTurns(threadId))
     this.host.handle(ProviderChannels.PROMOTE_QUEUED_TURN, (threadId: string, messageId: string) =>

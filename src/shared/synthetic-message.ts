@@ -121,6 +121,9 @@ const BLOCKS: readonly Block[] = [
   // A Switchboard approval result (shared/agent-approval-cards.ts). The chat
   // shows its own system row for it, so the turn the agent got renders nothing.
   { start: '<switchboard-approval-result>', end: '</switchboard-approval-result>' },
+  // A fork's merge-back (shared/merge-back.ts): the parent shows its own
+  // delivered row for it, so only what the user typed after it stays a bubble.
+  { start: '<switchboard-fork-merge-back>', end: '</switchboard-fork-merge-back>' },
   // A context summary, wrapped by the transcript parser from the record's own
   // `isCompactSummary` flag (`compactSummaryText`), never from its prose.
   {

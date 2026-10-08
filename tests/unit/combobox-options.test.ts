@@ -23,6 +23,23 @@ describe('filterComboboxOptions', () => {
     expect(filterComboboxOptions(options, '/p/sw').map((o) => o.value)).toEqual(['/p/switchboard'])
   })
 
+  it('lists a name match before rows that match only by path', () => {
+    const projects: ComboboxOption[] = [
+      { value: '/u/Projects/switchboard', label: 'switchboard', keywords: ['/u/Projects/switchboard'] },
+      { value: '/u/Projects/scout', label: 'scout', keywords: ['/u/Projects/scout'] },
+      { value: '/u/old-projects-archive', label: 'old-projects-archive', keywords: ['/u/old-projects-archive'] },
+      { value: '/u/projects-site', label: 'projects-site', keywords: ['/u/projects-site'] },
+      { value: '/u/Projects', label: 'Projects', keywords: ['/u/Projects'] },
+    ]
+    expect(filterComboboxOptions(projects, 'projects').map((o) => o.value)).toEqual([
+      '/u/Projects', // exact name
+      '/u/projects-site', // name starts with it
+      '/u/old-projects-archive', // name contains it
+      '/u/Projects/switchboard', // path only, in the given order
+      '/u/Projects/scout',
+    ])
+  })
+
   it('returns nothing when nothing matches', () => {
     expect(filterComboboxOptions(options, 'zzz')).toEqual([])
   })
