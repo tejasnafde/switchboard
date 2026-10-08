@@ -25,6 +25,10 @@ interface FakeAgentState {
   permission: RequestPermissionResponse | null
   mcpServers: unknown[]
   agentConnection: AgentSideConnection | null
+  /** True: `initialize` never resolves, simulating a non-ACP first-run prompt. */
+  hangOnInitialize: boolean
+  /** The most recently spawned fake child, so a test can assert it was killed. */
+  lastChild: (EventEmitter & { kill: ReturnType<typeof vi.fn> }) | null
 }
 
 const fake = vi.hoisted(() => ({ state: null as FakeAgentState | null }))
@@ -49,6 +53,7 @@ vi.mock('child_process', async (importOriginal) => {
       child.stderr = new EventEmitter()
       child.pid = 4242
       child.kill = vi.fn()
+      state.lastChild = child as EventEmitter & { kill: ReturnType<typeof vi.fn> }
       const stream = ndJsonStream(
         Writable.toWeb(toClient) as WritableStream<Uint8Array>,
         Readable.toWeb(toAgent) as ReadableStream<Uint8Array>,
@@ -63,6 +68,7 @@ function fakeAgent(conn: AgentSideConnection, state: FakeAgentState): Agent {
   return {
     async initialize() {
       state.calls.push('initialize')
+      if (state.hangOnInitialize) return new Promise<never>(() => {})
       return { protocolVersion: 1, agentCapabilities: {} }
     },
     async authenticate() {
@@ -145,6 +151,8 @@ beforeEach(() => {
     permission: null,
     mcpServers: [],
     agentConnection: null,
+    hangOnInitialize: false,
+    lastChild: null,
   }
 })
 
@@ -229,5 +237,34 @@ describe('generic ACP adapter over the protocol', () => {
     const events: RuntimeEvent[] = []
     await expect(startGemini(events)).rejects.toThrow(/Gemini CLI ACP init failed: .*Authentication required.*Run `gemini` in a terminal once and sign in/)
     expect(events).toContainEqual({ type: 'status', threadId: 'chat-1', status: 'error' })
+  })
+
+  it('times out, kills the child and allows a retry when the agent never answers over ACP', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { AcpAdapter, ACP_HANDSHAKE_TIMEOUT_MS } = await import('../../src/main/provider/adapters/acp/acp-adapter')
+      const { genericAcpLaunchConfig } = await import('../../src/main/provider/adapters/acp/agents')
+      const adapter = new AcpAdapter(genericAcpLaunchConfig('gemini'))
+      const startOpts = { threadId: 'chat-1', provider: 'gemini' as const, cwd: '/tmp/project', runtimeMode: 'sandbox' as const }
+
+      fake.state!.hangOnInitialize = true
+      const events: RuntimeEvent[] = []
+      const startPromise = adapter.startSession(startOpts, (event) => events.push(event))
+      const assertion = expect(startPromise).rejects.toThrow(
+        /Gemini CLI did not answer over ACP within 180s\. Run it once in a terminal to finish any first-run or sign-in step, then try again\./,
+      )
+      await vi.advanceTimersByTimeAsync(ACP_HANDSHAKE_TIMEOUT_MS)
+      await assertion
+      expect(fake.state!.lastChild?.kill).toHaveBeenCalledWith('SIGTERM')
+      expect(events).toContainEqual({ type: 'status', threadId: 'chat-1', status: 'error' })
+
+      // No cached broken state: the same adapter can retry the same thread.
+      fake.state!.hangOnInitialize = false
+      const retryEvents: RuntimeEvent[] = []
+      await adapter.startSession(startOpts, (event) => retryEvents.push(event))
+      expect(retryEvents).toContainEqual({ type: 'status', threadId: 'chat-1', status: 'idle' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

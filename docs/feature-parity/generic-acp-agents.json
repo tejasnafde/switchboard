@@ -99,7 +99,8 @@
       "How each agent names Switchboard's MCP tools in a permission request is undocumented, so their permission requests for those tools are not auto-allowed: in sandbox mode a write can show both the server's card and an ordinary approval card.",
       "Mode ids, model reporting (models or a config option) and resume support of the four agents are read from what they advertise at runtime; none was observed live.",
       "Accept-edits mode matches Claude and Codex edit tool names only, so a generic agent's edit still asks in that mode.",
-      "Phones were not run on a device against a backend with one of these agents."
+      "Phones were not run on a device against a backend with one of these agents.",
+      "Plan mode denies every tool call for the four new agents, reads included: their tool names do not match PLAN_READ_ONLY_TOOLS (Claude/Codex names only), and an agent's own ACP tool kind (e.g. 'read') is not trusted as a substitute, so plan is strict rather than read-only for these agents."
     ]
   }
 }

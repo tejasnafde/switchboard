@@ -25,6 +25,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { Readable, Writable } from 'stream'
 import { promises as fs } from 'fs'
 import { inferModelTier, type ModelOption } from '@shared/models'
+import { withTimeout } from '@shared/promise-timeout'
 import { TurnNotAcceptedError } from '../../durable-turn-acceptance'
 import {
   ClientSideConnection,
@@ -370,6 +371,23 @@ function errorText(err: unknown): string {
 }
 
 /**
+ * Ceiling on the whole ACP handshake: `initialize` through `resumeSession`
+ * or `newSession`. An agent binary that does an interactive first-run or
+ * sign-in step instead of speaking ACP never answers these calls, which
+ * without a deadline leaves the session in 'connecting' forever with no
+ * error. Same shared `withTimeout` codex-adapter uses for its own
+ * `initialize` RPC (`INIT_TIMEOUT_MS`, 30s) - ACP's is longer because it
+ * also covers resume/new-session, and because OpenCode's free tier can take
+ * up to a few minutes to cold-boot (see AGENTS.md).
+ * ponytail: 3 minutes matches that documented OpenCode cold-boot ceiling,
+ * so a slow but real first boot still finishes inside it.
+ */
+export const ACP_HANDSHAKE_TIMEOUT_MS = 180_000
+const ACP_HANDSHAKE_OP = 'ACP handshake'
+/** Matches the error `withTimeout` produces for `ACP_HANDSHAKE_OP` - mirrors `updater-error.ts`'s `CHECK_TIMEOUT_RE`. */
+const ACP_HANDSHAKE_TIMEOUT_RE = new RegExp(`^${ACP_HANDSHAKE_OP} timed out after \\d+ms$`)
+
+/**
  * One ACP agent, driven by its launch config. The registry holds one
  * instance per agent kind; each keeps a long-lived child per session.
  */
@@ -496,45 +514,52 @@ export class AcpAdapter implements ProviderAdapter {
     active.connection = connection
 
     try {
-      const init = await connection.initialize({
-        protocolVersion: 1,
-        clientCapabilities: {
-          fs: { readTextFile: true, writeTextFile: true },
-        },
-      })
-      log.info(`acp initialize: protocolVersion=${init.protocolVersion} agent=${init.agentInfo?.name ?? 'unknown'} ${init.agentInfo?.version ?? ''}`)
-      const missing = missingCapabilities(init.agentCapabilities, config.expectedCapabilities)
-      if (missing.length > 0) log.warn(`${this.provider} acp does not advertise expected capabilities: ${missing.join(', ')}`)
-
-      // No agent-digest prompt rule here: ACP's `NewSessionRequest` carries
-      // only `cwd`/`mcpServers`/`additionalDirectories` (checked against
-      // @agentclientprotocol/sdk's types.gen.d.ts) - there is no
-      // system/developer instructions seam to append it to, and `prompt`
-      // content blocks are the user's own message, not an instructions
-      // channel. ACP sessions do not get the digest rule; previews for them
-      // fall back to today's behavior. See docs/feature-parity/agent-digest.json.
-      // The agent also loads the MCP servers in the user's own config.
-      const mcpServers = opts.switchboardMcp ? [acpSwitchboardMcpServer(opts.switchboardMcp)] : []
-      // The session this chat last ran (or a native fork's), when the agent
-      // can resume one; otherwise a new session, which starts without the
-      // chat's earlier context.
-      const resumeId = init.agentCapabilities?.sessionCapabilities?.resume ? this.resumeTarget(opts) : null
-      let newSession: Pick<NewSessionResponse, 'sessionId' | 'models' | 'modes' | 'configOptions'> | null = null
-      if (resumeId) {
-        try {
-          const resumed = await connection.resumeSession({ sessionId: resumeId, cwd: opts.cwd, mcpServers })
-          newSession = { sessionId: resumeId, models: resumed?.models, modes: resumed?.modes, configOptions: resumed?.configOptions }
-        } catch (err) {
-          const reason = errorText(err)
-          log.warn(`acp resumeSession ${resumeId} failed, starting a new session: ${reason}`)
-          onEvent({
-            type: 'error',
-            threadId: opts.threadId,
-            message: `Could not resume ${config.label} session ${resumeId}; this chat continues in a new session without its earlier context. ${reason}`,
+      const { newSession, resumeId } = await withTimeout(
+        (async () => {
+          const init = await connection.initialize({
+            protocolVersion: 1,
+            clientCapabilities: {
+              fs: { readTextFile: true, writeTextFile: true },
+            },
           })
-        }
-      }
-      newSession ??= await connection.newSession({ cwd: opts.cwd, mcpServers })
+          log.info(`acp initialize: protocolVersion=${init.protocolVersion} agent=${init.agentInfo?.name ?? 'unknown'} ${init.agentInfo?.version ?? ''}`)
+          const missing = missingCapabilities(init.agentCapabilities, config.expectedCapabilities)
+          if (missing.length > 0) log.warn(`${this.provider} acp does not advertise expected capabilities: ${missing.join(', ')}`)
+
+          // No agent-digest prompt rule here: ACP's `NewSessionRequest` carries
+          // only `cwd`/`mcpServers`/`additionalDirectories` (checked against
+          // @agentclientprotocol/sdk's types.gen.d.ts) - there is no
+          // system/developer instructions seam to append it to, and `prompt`
+          // content blocks are the user's own message, not an instructions
+          // channel. ACP sessions do not get the digest rule; previews for them
+          // fall back to today's behavior. See docs/feature-parity/agent-digest.json.
+          // The agent also loads the MCP servers in the user's own config.
+          const mcpServers = opts.switchboardMcp ? [acpSwitchboardMcpServer(opts.switchboardMcp)] : []
+          // The session this chat last ran (or a native fork's), when the agent
+          // can resume one; otherwise a new session, which starts without the
+          // chat's earlier context.
+          const resumeId = init.agentCapabilities?.sessionCapabilities?.resume ? this.resumeTarget(opts) : null
+          let newSession: Pick<NewSessionResponse, 'sessionId' | 'models' | 'modes' | 'configOptions'> | null = null
+          if (resumeId) {
+            try {
+              const resumed = await connection.resumeSession({ sessionId: resumeId, cwd: opts.cwd, mcpServers })
+              newSession = { sessionId: resumeId, models: resumed?.models, modes: resumed?.modes, configOptions: resumed?.configOptions }
+            } catch (err) {
+              const reason = errorText(err)
+              log.warn(`acp resumeSession ${resumeId} failed, starting a new session: ${reason}`)
+              onEvent({
+                type: 'error',
+                threadId: opts.threadId,
+                message: `Could not resume ${config.label} session ${resumeId}; this chat continues in a new session without its earlier context. ${reason}`,
+              })
+            }
+          }
+          newSession ??= await connection.newSession({ cwd: opts.cwd, mcpServers })
+          return { newSession, resumeId }
+        })(),
+        ACP_HANDSHAKE_TIMEOUT_MS,
+        ACP_HANDSHAKE_OP,
+      )
       active.sessionId = newSession.sessionId
       session.sessionId = newSession.sessionId
       log.info(`acp ${resumeId === newSession.sessionId ? 'resumeSession' : 'newSession'}: ${newSession.sessionId}`)
@@ -573,8 +598,11 @@ export class AcpAdapter implements ProviderAdapter {
     } catch (err) {
       log.error(`acp init/newSession failed: ${errorText(err)}`)
       active.session.status = 'error'
+      const timedOut = err instanceof Error && ACP_HANDSHAKE_TIMEOUT_RE.test(err.message)
       const needsSignIn = err instanceof RequestError && err.code === ACP_AUTH_REQUIRED
-      const message = `${config.label} ACP init failed: ${errorText(err)}${needsSignIn ? ` ${config.signInHint}` : ''}`
+      const message = timedOut
+        ? `${config.label} did not answer over ACP within ${ACP_HANDSHAKE_TIMEOUT_MS / 1000}s. Run it once in a terminal to finish any first-run or sign-in step, then try again.`
+        : `${config.label} ACP init failed: ${errorText(err)}${needsSignIn ? ` ${config.signInHint}` : ''}`
       onEvent({ type: 'error', threadId: opts.threadId, message })
       onEvent({ type: 'status', threadId: opts.threadId, status: 'error' })
       // Tear down the child so the user can retry cleanly
