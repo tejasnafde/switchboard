@@ -715,6 +715,28 @@ async function captureThemeScreens(win, theme) {
   if (createListOverflow > 0) screenFailures.push(`host-create-pr-narrow-${theme.toLowerCase()}: the message list scrolls ${createListOverflow}px sideways`)
   await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size }), SCREEN_SIZE)
   await settle(win)
+
+  // A reply with a ```mermaid diagram and a ```chart block, drawn in the chat
+  // (demo adapter "draw" script). Deny the create card first so the turn ends.
+  await createCard.getByRole('button', { name: 'Deny', exact: true }).click()
+  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await editor.click()
+  await win.keyboard.type('Draw the chat open flow and its timings.')
+  await win.keyboard.press('Enter')
+  const diagram = win.locator('[data-chat-visual="mermaid"]').last()
+  const chart = win.locator('[data-chat-visual="chart"]').last()
+  await diagram.scrollIntoViewIfNeeded()
+  await diagram.locator('svg').first().waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'chat-diagram', theme, diagram)
+  await chart.scrollIntoViewIfNeeded()
+  await chart.locator('svg').first().waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'chat-chart', theme, chart)
+  // Open in pane shows it over the right pane; Close returns the terminals.
+  await diagram.getByRole('button', { name: 'Open in pane', exact: true }).click()
+  const paneClose = win.getByRole('button', { name: 'Close', exact: true })
+  await paneClose.waitFor({ state: 'visible', timeout: 10_000 })
+  await paneClose.click()
+  await paneClose.waitFor({ state: 'hidden', timeout: 10_000 })
 }
 
 // A deterministic IPC latch exercises the production UI while the demo

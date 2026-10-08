@@ -35,7 +35,7 @@ import { splitSyntheticUserText } from '@shared/synthetic-message'
 import { stripDigest } from '@shared/agent-digest'
 import { TodoList } from './TodoList'
 import { useBookmarkStore } from '../../stores/bookmark-store'
-import { MarkdownWithCopyControls } from './MarkdownWithCopyControls'
+import { MessageMarkdown } from './visuals/MessageMarkdown'
 import { useMessageMutable } from '../../services/message-lifecycle'
 import { buildForwardedContext, forwardingSource, forwardingTargets } from '../../services/chat-forwarding'
 import { focusComposer } from '../../services/composer-registry'
@@ -500,7 +500,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             })()}
           </div>
         ) : (
-          <MarkdownWithCopyControls
+          <MessageMarkdown
             ref={markdownRef}
             markdown={markdownContent}
             mutable={isMutable}

@@ -5,6 +5,8 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/server/index.ts",
+    // Bundled by scripts/build-visual-host.mjs into the phones' visual page.
+    "src/visual-host/index.ts",
     "scripts/*.mjs",
     "scripts/pre-commit.sh",
     "e2e/*.e2e.mjs",

@@ -17,6 +17,8 @@ module.exports = {
   // resolves modules itself, so it needs telling separately.
   moduleNameMapper: {
     '^@shared/(.*)$': '<rootDir>/../../src/shared/$1',
+    // The 3 MB visual host page is an asset; tests need only a module id.
+    '\\.html$': '<rootDir>/src/test/asset-stub.js',
   },
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testMatch: ['<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}'],

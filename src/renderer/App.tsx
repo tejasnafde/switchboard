@@ -18,6 +18,7 @@ import { ViewToggle } from './components/layout/ViewToggle'
 import { TerminalSessionPane } from './components/terminal/TerminalSessionPane'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { IdePane } from './components/ide/IdePane'
+import { ChatVisual } from './components/chat/visuals/ChatVisual'
 import { KanbanView } from './components/kanban/KanbanView'
 import { ReviewsView } from './components/reviews/ReviewsView'
 import { registerReviewChatOpener } from './components/reviews/review-to-chat'
@@ -117,6 +118,7 @@ export function App() {
     registerTerminalEl,
     rightPaneMode,
     toggleRightPaneMode,
+    paneVisual,
     appView,
     dataScienceMode,
   } = useLayoutStore()
@@ -1691,7 +1693,7 @@ export function App() {
               style={{
                 position: 'absolute',
                 inset: 0,
-                display: rightPaneMode === 'terminal' ? 'flex' : 'none',
+                display: rightPaneMode === 'terminal' && !paneVisual ? 'flex' : 'none',
               }}
             >
               <TerminalStrip />
@@ -1700,11 +1702,18 @@ export function App() {
               style={{
                 position: 'absolute',
                 inset: 0,
-                display: rightPaneMode === 'files' ? 'flex' : 'none',
+                display: rightPaneMode === 'files' && !paneVisual ? 'flex' : 'none',
               }}
             >
               <IdePane />
             </div>
+            {/* Open in pane: the panes above stay mounted, hidden (the
+                translucent theme would show them through it). */}
+            {paneVisual && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
+                <ChatVisual key={paneVisual.source} kind={paneVisual.kind} source={paneVisual.source} variant="pane" />
+              </div>
+            )}
           </div>
         </div>
 
