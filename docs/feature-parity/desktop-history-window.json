@@ -62,8 +62,7 @@
     "hardware": [],
     "notExercised": [
       "No phone run: phone requests are unchanged by construction.",
-      "Codex rollout copies are still parsed one by one; only Claude profile copies are deduplicated by prefix proof.",
-      "The SQLite mirror read and the merge with it still run over the whole history on every open (about 0.5 s each for an 8,700-row chat in the original log); the window bounds the payload, not that work."
+      "Codex rollout copies and the SQLite read and merge were left for docs/feature-parity/long-chat-data-layer.json."
     ]
   }
 }

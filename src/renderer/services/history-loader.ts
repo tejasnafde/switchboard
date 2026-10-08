@@ -7,10 +7,11 @@ import { DESKTOP_HISTORY_WINDOW, olderThan } from './history-window'
 
 const log = createRendererLogger('chat:history')
 
-/** The desktop opens a chat with its newest window, images by reference.
- * A backend without `history_window_v1` / `history_image_refs_v1` ignores
- * these and answers the full history with data URLs, which renders as before. */
-export const NEWEST_HISTORY_WINDOW: HistoryLoadOptions = { window: true, limit: DESKTOP_HISTORY_WINDOW, imageRefs: true }
+/** The desktop opens a chat with its newest window, images by reference and
+ * long tool calls as previews. A backend without `history_window_v1`,
+ * `history_image_refs_v1` or `history_tool_previews_v1` ignores these and
+ * answers in full, which renders as before. */
+export const NEWEST_HISTORY_WINDOW: HistoryLoadOptions = { window: true, limit: DESKTOP_HISTORY_WINDOW, imageRefs: true, toolPreviews: true }
 
 interface HistoryResponse {
   messages?: ChatMessage[]
@@ -80,7 +81,7 @@ export function ensureFullHistory(sessionId: string): Promise<boolean> {
     if (!cursor) return holdsAllRows(sessionId)
     const span = perfSpan('chat.load-full', { thread: sessionId })
     try {
-      const resp = await window.api.app.loadSessionById(sessionId, { imageRefs: true }) as HistoryResponse
+      const resp = await window.api.app.loadSessionById(sessionId, { imageRefs: true, toolPreviews: true }) as HistoryResponse
       // An older window may have landed meanwhile; cut at the row shown now.
       const current = cursorOf(sessionId)
       if (!current) {

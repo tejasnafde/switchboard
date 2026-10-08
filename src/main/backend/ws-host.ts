@@ -13,7 +13,7 @@
  */
 import { timeBackendHandler } from './perf-handler'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
-import { WebSocketServer, type WebSocket } from 'ws'
+import { WebSocketServer, type ServerOptions, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
 import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
 import {
@@ -42,6 +42,23 @@ const log = createLogger('backend:ws-host')
  * desktop a wire budget like the phone's 12 MB is the real fix.
  */
 export const MAX_FRAME_BYTES = 64 * 1024 * 1024
+
+/**
+ * permessage-deflate for frames of 4 KiB or more, negotiated in the WebSocket
+ * handshake: Chromium and OkHttp (Android, and the Expo app on Android) offer
+ * it, a client that does not gets plain frames. A history window shrinks to
+ * about a quarter. No context takeover: each message is compressed on its own,
+ * so a socket holds no zlib window between messages and one message's bytes
+ * never shape the next one's size. `maxPayload` bounds the inflated size.
+ */
+export function wsServerOptions(port: number, host: string): ServerOptions {
+  return {
+    port,
+    host,
+    maxPayload: MAX_FRAME_BYTES,
+    perMessageDeflate: { threshold: 4 * 1024, serverNoContextTakeover: true, clientNoContextTakeover: true },
+  }
+}
 
 /** Ping cadence. Short enough that a dead phone socket is noticed while the
  *  user is still looking at the screen, long enough to be free on a radio. */

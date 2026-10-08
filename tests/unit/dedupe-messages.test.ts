@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import * as messagesModule from '../../src/main/agent/dedupe-messages'
 import { dedupeMessagesById } from '../../src/main/agent/dedupe-messages'
 import type { ChatMessage } from '../../src/shared/types'
+import { STORED_TASK_NOTICE_PREFIX, taskNotificationText } from '../../src/shared/synthetic-message'
 
 function msg(id: string, over: Partial<ChatMessage> = {}): ChatMessage {
   return { id, role: 'assistant', content: 'hello', timestamp: 1000, ...over }
@@ -269,5 +270,19 @@ describe('mergeConversationMessages', () => {
     // n^1.3 across 2.5k-40k. A per-row scan of the disk list is quadratic and
     // takes many seconds here, so 5 s still catches it; 1 s failed under load.
     expect(performance.now() - startedAt).toBeLessThan(5_000)
+  })
+})
+
+describe('mergeConversationMessages with many task notices', () => {
+  it('pairs thousands of stored notices with their transcript lines quickly', () => {
+    const count = 4_000
+    const notice = (i: number) => taskNotificationText({ taskId: `task-${i}`, status: 'completed', summary: `done ${i}` })
+    const disk = Array.from({ length: count }, (_, i) => msg(`line-${i}`, { role: 'user', content: notice(i), timestamp: i * 10_000 }))
+    const stored = Array.from({ length: count }, (_, i) => msg(`${STORED_TASK_NOTICE_PREFIX}c:${i}`, { role: 'user', content: notice(i), timestamp: i * 10_000 + 50 }))
+    const start = performance.now()
+    const merged = messagesModule.mergeConversationMessages(disk, stored)
+    // Comparing every notice with every line took about 5 s here.
+    expect(performance.now() - start).toBeLessThan(1_000)
+    expect(merged).toHaveLength(count)
   })
 })

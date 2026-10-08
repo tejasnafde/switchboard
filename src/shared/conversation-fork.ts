@@ -1,6 +1,6 @@
 import type { ReasoningEffort } from './models'
 import type { RuntimeMode } from './provider-events'
-import type { AgentType, ChatMessage, MessageRole } from './types'
+import type { AgentStatus, AgentType, ChatMessage, MessageRole } from './types'
 import type { AgentProvider } from './types'
 
 export const FORK_CONVERSATION_SCHEMA_VERSION = 1 as const
@@ -253,6 +253,15 @@ export function digestForkMessage(
   const digest = sha256(canonicalizeForkMessage(message)).toLowerCase()
   if (!SHA256.test(digest)) throw new Error('Fork message digest must be a SHA-256 hex value')
   return digest
+}
+
+/**
+ * Only a turn in flight blocks a fork: the agent is still appending to the
+ * transcript the fork copies. A chat whose last turn failed, or whose session
+ * exited, has a settled history and forks like an idle one.
+ */
+export function forkBlockedByStatus(status: AgentStatus): boolean {
+  return status === 'running' || status === 'thinking'
 }
 
 export function isForkableForkMessage(message: ChatMessage): boolean {

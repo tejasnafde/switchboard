@@ -346,3 +346,124 @@ describe('ClaudeAdapter holds the queue after a usage limit or a failed turn', (
     active.watchdog.turnEnded()
   })
 })
+
+describe('ClaudeAdapter keeps the queue and the turn state in step', () => {
+  function setup(cancelAsyncMessage: (uuid: string) => Promise<boolean> = async () => true) {
+    const adapter = new ClaudeAdapter()
+    const query = { cancelAsyncMessage, interrupt: vi.fn(async () => {}), setPermissionMode: vi.fn(async () => {}), getContextUsage: vi.fn(async () => ({ totalTokens: 1, maxTokens: 2, percentage: 50 })) }
+    const active = { ...makeActive(query), currentReasoningMessageId: null, partialMessageText: new Map(), lastKnownModel: null }
+    active.turnStartedAt = Date.now()
+    withSession(adapter, active)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const feed = (msg: unknown) => (adapter as any).handleSDKMessage('thread-1', active, msg)
+    const events = () => active.onEvent.mock.calls.map(([e]) => e)
+    return { adapter, active, query, feed, events }
+  }
+  const result = { type: 'result', subtype: 'success' }
+  const messageStart = (uuids?: string[]) => ({
+    type: 'stream_event',
+    parent_tool_use_id: null,
+    event: { type: 'message_start', message: {} },
+    ...(uuids ? { user_message_uuid: uuids.at(-1), user_message_uuids: uuids } : {}),
+  })
+
+  it('reports running, not idle, while a queued message runs after the turn ahead of it', async () => {
+    const { adapter, active, feed, events } = setup()
+    await adapter.sendTurn('thread-1', 'next', undefined, undefined, 'queue', 'remote_q1')
+    feed(result)
+    const statuses = events().filter((e) => e.type === 'status')
+    expect(statuses.at(-1)).toEqual({ type: 'status', threadId: 'thread-1', status: 'running' })
+    expect(active.session.status).toBe('running')
+    active.watchdog.turnEnded()
+  })
+
+  it('holds the queue on Stop', async () => {
+    const { adapter, active, query, feed, events } = setup()
+    await adapter.sendTurn('thread-1', 'next', undefined, undefined, 'queue', 'remote_q1')
+    await adapter.interruptTurn('thread-1')
+    expect(query.interrupt).toHaveBeenCalled()
+    await vi.waitFor(() => expect(active.queuedTurns[0]).toMatchObject({ held: true }))
+    feed({ type: 'result', subtype: 'error_during_execution', is_error: true })
+    expect(events()).toContainEqual({ type: 'turn.queue-held', threadId: 'thread-1', held: true, reason: 'Stopped.' })
+    expect(events().some((e) => e.type === 'turn.dequeued')).toBe(false)
+    active.watchdog.turnEnded()
+  })
+
+  it('starts nothing when the stopped turn ends while the hold is still taking messages back', async () => {
+    let finishCancel!: (v: boolean) => void
+    const { adapter, active, feed, events } = setup(() => new Promise<boolean>((resolve) => { finishCancel = resolve }))
+    await adapter.sendTurn('thread-1', 'a', undefined, undefined, 'queue', 'remote_a')
+    await adapter.sendTurn('thread-1', 'b', undefined, undefined, 'queue', 'remote_b')
+    await adapter.sendTurn('thread-1', 'steer')
+    await adapter.interruptTurn('thread-1')
+    // The interrupted turn ends as a plain result, before the CLI answers the cancel.
+    feed(result)
+    expect(events().some((e) => e.type === 'turn.dequeued')).toBe(false)
+    expect(events().filter((e) => e.type === 'status').at(-1)?.status).toBe('idle')
+    finishCancel(true)
+    await vi.waitFor(() => expect(active.queuedTurns[0]).toMatchObject({ held: true }))
+    finishCancel(true)
+    await vi.waitFor(() => expect(active.queuedTurns.every((t) => (t as { held?: boolean }).held)).toBe(true))
+    expect(events().some((e) => e.type === 'turn.dequeued')).toBe(false)
+    expect(events().filter((e) => e.type === 'status').at(-1)?.status).toBe('idle')
+    active.watchdog.turnEnded()
+  })
+
+  it('runs a late steer ahead of the queue without starting the queued message or applying its mode', async () => {
+    const { adapter, active, query, feed, events } = setup()
+    await adapter.sendTurn('thread-1', 'queued', 'full-access', undefined, 'queue', 'remote_q1')
+    await adapter.sendTurn('thread-1', 'steer that misses the last tool step')
+    const steerUuid = active.prompt.push.mock.calls.map(([m]) => m).find((m) => m.message.content.startsWith('steer')).uuid
+    expect(typeof steerUuid).toBe('string')
+
+    feed(result)
+    // Undecided: something runs next, but not necessarily the queued message.
+    expect(events().some((e) => e.type === 'turn.dequeued')).toBe(false)
+    expect(events().filter((e) => e.type === 'status').at(-1)?.status).toBe('running')
+
+    feed(messageStart([steerUuid]))
+    expect(events()).toContainEqual({ type: 'status', threadId: 'thread-1', status: 'running', newTurn: true })
+    expect(events().some((e) => e.type === 'turn.dequeued')).toBe(false)
+    expect(active.session.runtimeMode).toBe('sandbox')
+    expect(query.setPermissionMode).not.toHaveBeenCalled()
+
+    // The steer's turn ends; the queued message is next, with its own mode.
+    feed(result)
+    expect(events()).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    expect(active.session.runtimeMode).toBe('full-access')
+    active.watchdog.turnEnded()
+  })
+
+  it('starts the queued message when the next turn is stamped with it (the steer joined the last turn)', async () => {
+    const { adapter, active, feed, events } = setup()
+    await adapter.sendTurn('thread-1', 'queued', undefined, undefined, 'queue', 'remote_q1')
+    await adapter.sendTurn('thread-1', 'steer that made it in')
+    const queuedUuid = active.queuedTurns[0].uuid
+    feed(result)
+    feed(messageStart([queuedUuid]))
+    expect(events()).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    expect(events().some((e) => e.type === 'status' && e.newTurn)).toBe(false)
+    active.watchdog.turnEnded()
+  })
+
+  it('assumes the queued message runs when the CLI stamps nothing', async () => {
+    const { adapter, active, feed, events } = setup()
+    await adapter.sendTurn('thread-1', 'queued', undefined, undefined, 'queue', 'remote_q1')
+    await adapter.sendTurn('thread-1', 'steer')
+    feed(result)
+    feed(messageStart())
+    expect(events()).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' })
+    active.watchdog.turnEnded()
+  })
+
+  it('announces a turn nobody started, such as a text-only late steer', () => {
+    const { active, feed, events } = setup()
+    feed(result)
+    expect(events().filter((e) => e.type === 'status').at(-1)?.status).toBe('idle')
+    feed(messageStart(['some-steer']))
+    expect(events()).toContainEqual({ type: 'status', threadId: 'thread-1', status: 'running', newTurn: true })
+    feed(result)
+    expect(events().filter((e) => e.type === 'turn.completed')).toHaveLength(2)
+    active.watchdog.turnEnded()
+  })
+})

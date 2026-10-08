@@ -41,7 +41,8 @@ export function turnIndexHolding(turns: ChatMessage[][], messageId: string): num
   return turns.findIndex((turn) => turn.some((message) => message.id === messageId))
 }
 
-/** Whether the store holds every row with its image bytes, as an export needs. */
+/** Whether the store holds every row with its image bytes and whole tool calls, as an export needs. */
 export function holdsWholeHistory(session: { messages: ChatMessage[]; olderHistoryCursor?: string | null }): boolean {
-  return !session.olderHistoryCursor && !session.messages.some((message) => message.images?.some((image) => image.ref))
+  return !session.olderHistoryCursor && !session.messages.some((message) =>
+    message.images?.some((image) => image.ref) || message.toolCalls?.some((call) => call.preview))
 }

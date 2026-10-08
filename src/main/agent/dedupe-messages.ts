@@ -1,6 +1,6 @@
 import type { ChatMessage, ToolCall } from '@shared/types'
 import { isActivityRow } from '@shared/turn-activity'
-import { STORED_TASK_NOTICE_PREFIX, TRANSCRIPT_NOTICE_SKEW_MS, sameTaskNotice, slashCommandRecordText, splitSyntheticUserText, type SyntheticUserPart } from '@shared/synthetic-message'
+import { STORED_TASK_NOTICE_PREFIX, TRANSCRIPT_NOTICE_SKEW_MS, slashCommandRecordText, taskNoticeKey, splitSyntheticUserText, type SyntheticUserPart } from '@shared/synthetic-message'
 
 /**
  * Collapse the same message arriving from more than one source. `load-by-id`
@@ -167,23 +167,37 @@ function taskNoticePart(message: ChatMessage): TaskNoticePart | undefined {
  */
 function noticesMissingFromTranscript(stored: ChatMessage[], disk: ChatMessage[]): ChatMessage[] {
   if (stored.length === 0) return []
-  const lines = disk
-    .filter((message) => message.role === 'user')
-    .flatMap((message) => (splitSyntheticUserText(message.content)?.parts ?? [])
-      .filter((part): part is TaskNoticePart => part.kind === 'task-notification')
-      .map((part) => ({ part, at: message.timestamp })))
+  // Lines indexed by key: a line with a task id pairs on the full key, one
+  // without on the key with no task id (and only inside the skew). Comparing
+  // every notice with every line was quadratic (1,146 x 1,500 in a real chat).
+  const withTask = new Map<string, Array<{ index: number; at: number }>>()
+  const withoutTask = new Map<string, Array<{ index: number; at: number }>>()
+  let lineCount = 0
+  for (const message of disk) {
+    if (message.role !== 'user') continue
+    for (const part of splitSyntheticUserText(message.content)?.parts ?? []) {
+      if (part.kind !== 'task-notification') continue
+      const byKey = part.taskId ? withTask : withoutTask
+      const key = taskNoticeKey(part.taskId ? part : { ...part, taskId: undefined })
+      const lines = byKey.get(key) ?? []
+      lines.push({ index: lineCount++, at: message.timestamp })
+      byKey.set(key, lines)
+    }
+  }
   const notices = collapseRepeatedNotices(stored)
   const pairs: Array<{ notice: number; line: number; distance: number }> = []
   notices.forEach((message, notice) => {
     const part = taskNoticePart(message)
     if (!part) return
-    lines.forEach((line, index) => {
-      const distance = Math.abs(line.at - message.timestamp)
-      const sameOccurrence = line.part.taskId
-        ? sameTaskNotice(line.part, part)
-        : sameTaskNotice(line.part, { ...part, taskId: undefined }) && distance <= TRANSCRIPT_NOTICE_SKEW_MS
-      if (sameOccurrence) pairs.push({ notice, line: index, distance })
-    })
+    const tasked = (withTask.get(taskNoticeKey(part)) ?? [])
+      .map((line) => ({ ...line, distance: Math.abs(line.at - message.timestamp) }))
+    const untasked = (withoutTask.get(taskNoticeKey({ ...part, taskId: undefined })) ?? [])
+      .map((line) => ({ ...line, distance: Math.abs(line.at - message.timestamp) }))
+      .filter((line) => line.distance <= TRANSCRIPT_NOTICE_SKEW_MS)
+    // Line order within a notice keeps equal distances resolved as before.
+    for (const line of [...tasked, ...untasked].sort((a, b) => a.index - b.index)) {
+      pairs.push({ notice, line: line.index, distance: line.distance })
+    }
   })
   pairs.sort((a, b) => a.distance - b.distance)
   const shown = new Set<number>()
@@ -202,15 +216,18 @@ function noticesMissingFromTranscript(stored: ChatMessage[], disk: ChatMessage[]
  * and the live reducers already treat equal notices that close as one.
  */
 function collapseRepeatedNotices(stored: ChatMessage[]): ChatMessage[] {
-  const kept: Array<{ message: ChatMessage; part: TaskNoticePart | undefined }> = []
+  // Sorted by time, so the latest kept notice per key is the closest one.
+  const lastKept = new Map<string, number>()
+  const kept: ChatMessage[] = []
   for (const message of [...stored].sort((a, b) => a.timestamp - b.timestamp)) {
     const part = taskNoticePart(message)
-    const repeat = part && kept.some((earlier) => earlier.part
-      && sameTaskNotice(earlier.part, part)
-      && message.timestamp - earlier.message.timestamp <= TRANSCRIPT_NOTICE_SKEW_MS)
-    if (!repeat) kept.push({ message, part })
+    const key = part && taskNoticeKey(part)
+    const earlier = key === undefined ? undefined : lastKept.get(key)
+    if (earlier !== undefined && message.timestamp - earlier <= TRANSCRIPT_NOTICE_SKEW_MS) continue
+    if (key !== undefined) lastKept.set(key, message.timestamp)
+    kept.push(message)
   }
-  return kept.map(({ message }) => message)
+  return kept
 }
 
 /** The disk message already holding every one of this row's tool calls. */
