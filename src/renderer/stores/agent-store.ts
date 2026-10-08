@@ -213,6 +213,8 @@ interface AgentSession {
    */
   availableVariants?: string[]
   currentVariant?: string
+  /** The model those variants belong to, as the agent named it. */
+  variantModelId?: string
   /**
    * Per-session context-window usage. Sourced from `turn.completed` and
    * `context_window` runtime events. Lives on the session (not on the
@@ -283,7 +285,7 @@ interface AgentStore {
   setResolvedModel: (sessionId: string, resolvedModel: string) => void
   setReasoningEffort: (sessionId: string, effort: ReasoningEffort) => void
   setCostUsd: (sessionId: string, costUsd: number) => void
-  setVariants: (sessionId: string, available: string[], current: string) => void
+  setVariants: (sessionId: string, available: string[], current: string, modelId: string) => void
   setTokenUsage: (sessionId: string, usage: { usedTokens: number; maxTokens: number | null }) => void
   /**
    * Switch the agent backend (claude-code / codex / opencode) for a
@@ -614,11 +616,11 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       ),
     })),
 
-  setVariants: (sessionId, available, current) =>
+  setVariants: (sessionId, available, current, modelId) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === sessionId
-          ? { ...s, availableVariants: available, currentVariant: current }
+          ? { ...s, availableVariants: available, currentVariant: current, variantModelId: modelId }
           : s
       ),
     })),

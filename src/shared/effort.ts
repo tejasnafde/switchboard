@@ -153,14 +153,18 @@ export type EffortPick =
   | { kind: 'effort'; effort: ReasoningEffort }
   | { kind: 'model'; model: string }
 
-/** What picking `value` changes: the effort, or for OpenCode the model id. */
+/**
+ * What picking `value` changes: the effort, or for OpenCode the model id.
+ * Null when there is nothing to change, including an OpenCode pick while no
+ * model id is known (rewriting an empty id would name no model).
+ */
 export function effortPick(
   agentType: AgentType,
   value: string,
   opencode?: { model: string; available: readonly string[] },
 ): EffortPick | null {
   if (agentType === 'opencode') {
-    if (!opencode) return null
+    if (!opencode?.model) return null
     const { base } = splitModelVariant(opencode.model, opencode.available)
     return { kind: 'model', model: value ? `${base}/${value}` : base }
   }

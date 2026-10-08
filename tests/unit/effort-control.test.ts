@@ -109,6 +109,7 @@ describe('effortPick', () => {
     expect(effortPick('opencode', '', { model: 'google/gemini-3-pro/high', available: ['high'] })).toEqual({ kind: 'model', model: 'google/gemini-3-pro' })
     expect(effortPick('claude-code', 'xhigh')).toEqual({ kind: 'effort', effort: 'xhigh' })
     expect(effortPick('codex', 'turbo')).toBeNull()
+    expect(effortPick('opencode', 'high', { model: '', available: ['high'] })).toBeNull()
   })
 })
 

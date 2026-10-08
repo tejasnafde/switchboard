@@ -29,7 +29,7 @@ export function EffortPicker({ control, onPick }: { control: EffortControl; onPi
           type="button"
           data-effort-picker
           title="Thinking effort. A change applies from the next turn."
-          className="inline-flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] py-[3px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] data-[state=open]:border-[var(--accent)]"
+          className="inline-flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] py-[3px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] focus-visible:border-[var(--accent)] data-[state=open]:border-[var(--accent)]"
         >
           <span>
             Effort: <span className="font-[500] text-[var(--text-primary)]">{effortLabel(control.value)}</span>

@@ -304,6 +304,7 @@ export function ChatInput({
   const costLabel = sessionCostLabel(useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.costUsd))
   const availableVariants = useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.availableVariants ?? EMPTY_VARIANTS)
   const currentVariant = useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.currentVariant ?? '')
+  const variantModelId = useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.variantModelId ?? '')
   const effortControl = useMemo(() => effortControlFor({
     agentType,
     model,
@@ -313,10 +314,11 @@ export function ChatInput({
     variants: { available: availableVariants, current: currentVariant },
   }), [agentType, model, resolvedModel, models, reasoningEffort, availableVariants, currentVariant])
   const pickEffort = useCallback((value: string) => {
-    const pick = effortPick(agentType, value, { model: model ?? '', available: availableVariants })
+    // With no pinned model, the variants' own model id is the one to rewrite.
+    const pick = effortPick(agentType, value, { model: model || variantModelId, available: availableVariants })
     if (pick?.kind === 'model') onModelChange?.(pick.model)
     else if (pick?.kind === 'effort') onReasoningEffortChange?.(pick.effort)
-  }, [agentType, model, availableVariants, onModelChange, onReasoningEffortChange])
+  }, [agentType, model, variantModelId, availableVariants, onModelChange, onReasoningEffortChange])
   // Checked against the live (or last cached live) catalog only: the static
   // list is not evidence that a model was retired.
   const pickUnavailable = Boolean(model)
