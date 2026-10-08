@@ -124,6 +124,12 @@ export function getMessagesForConversation(conversationId: string): MessageRow[]
   ).all(conversationId) as MessageRow[]
 }
 
+/** Each conversation's `message_revisions` counter, 0 when it has none yet. */
+export function getMessageRevisions(conversationIds: readonly string[]): number[] {
+  const read = getDb().prepare('SELECT revision FROM message_revisions WHERE conversation_id = ?')
+  return conversationIds.map((id) => (read.get(id) as { revision: number } | undefined)?.revision ?? 0)
+}
+
 /** Text columns only, one row at a time, oldest first: for readers that may stop early. */
 export function iterateMessageTextForConversation(
   conversationId: string,

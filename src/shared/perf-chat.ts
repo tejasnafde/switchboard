@@ -10,6 +10,8 @@ export interface ChatLoadTiming {
   cacheHits: number
   /** Profile copies skipped because their bytes are a prefix of a larger copy. */
   prefixSkips: number
+  /** The merged history was reused: the transcripts and SQLite rows were unchanged. */
+  mergeHit?: boolean
 }
 
 export interface ChatLoadDiagnostics {
