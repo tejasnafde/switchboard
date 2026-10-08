@@ -11,7 +11,12 @@ vi.mock('../../src/main/db/provider-instances', () => ({
     oauthDir: null,
   }),
   getProviderInstanceFull: (id: string) => ({
-    id, agentType: 'claude-code', displayName: id, enabled: true, env: {}, oauthDir: null,
+    id,
+    agentType: 'claude-code',
+    displayName: id,
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
   listOauthDirsForAgent: () => [],
 }))
@@ -20,7 +25,6 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/main/provider/remote-gate')>()
   return { ...actual, remoteProviderLoginPrompt: () => null }
 })
-
 
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
@@ -55,7 +59,9 @@ class FakeHost implements BackendHost {
   }
   on(): void {}
   emitted: unknown[][] = []
-  emit(...args: unknown[]): void { this.emitted.push(args) }
+  emit(...args: unknown[]): void {
+    this.emitted.push(args)
+  }
   async invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
     const fn = this.handlers.get(channel)
     if (!fn) throw new Error(`no handler registered for ${channel}`)
@@ -73,15 +79,28 @@ class Adapter implements ProviderAdapter {
   responded: string[] = []
   async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     this.onEvent = onEvent
-    return { threadId: opts.threadId, provider: 'claude', status: 'idle', runtimeMode: 'sandbox', cwd: opts.cwd, createdAt: 0 }
+    return {
+      threadId: opts.threadId,
+      provider: 'claude',
+      status: 'idle',
+      runtimeMode: 'sandbox',
+      cwd: opts.cwd,
+      createdAt: 0,
+    }
   }
   async sendTurn(): Promise<void> {}
-  async respondToRequest(_t: string, requestId: string): Promise<void> { this.responded.push(requestId) }
-  async answerQuestion(_t: string, requestId: string): Promise<void> { this.responded.push(requestId) }
+  async respondToRequest(_t: string, requestId: string): Promise<void> {
+    this.responded.push(requestId)
+  }
+  async answerQuestion(_t: string, requestId: string): Promise<void> {
+    this.responded.push(requestId)
+  }
   async interruptTurn(): Promise<void> {}
   async stopSession(): Promise<void> {}
   async setRuntimeMode(): Promise<void> {}
-  async isAvailable(): Promise<boolean> { return true }
+  async isAvailable(): Promise<boolean> {
+    return true
+  }
 }
 
 async function started() {
@@ -90,9 +109,17 @@ async function started() {
   const registry = new ProviderRegistry(host, new Map([['claude', adapter]]))
   registry.registerIpcHandlers()
   await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
-  adapter.onEvent({ type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' })
+  adapter.onEvent({
+    type: 'request.opened',
+    threadId: 't1',
+    requestId: 'r1',
+    requestType: 'command',
+    toolName: 'Bash',
+    detail: 'ls',
+  })
   adapter.onEvent({ type: 'question.asked', threadId: 't1', requestId: 'q1', questions: [] })
-  const events = () => host.emitted.filter(([channel]) => channel === ProviderChannels.EVENT).map(([, e]) => e as RuntimeEvent)
+  const events = () =>
+    host.emitted.filter(([channel]) => channel === ProviderChannels.EVENT).map(([, e]) => e as RuntimeEvent)
   return { host, adapter, events }
 }
 
@@ -105,7 +132,9 @@ describe('expired approvals and questions', () => {
     expect(expired.map((e) => e.type === 'request.expired' && e.requestId)).toEqual(['r1', 'q1'])
     expect(expired.every((e) => e.type === 'request.expired' && e.reason.length > 0)).toBe(true)
 
-    await expect(host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', 'r1', 'approve')).rejects.toThrow(REQUEST_EXPIRED)
+    await expect(host.invoke(ProviderChannels.RESPOND_TO_REQUEST, 't1', 'r1', 'approve')).rejects.toThrow(
+      REQUEST_EXPIRED,
+    )
     await expect(host.invoke(ProviderChannels.ANSWER_QUESTION, 't1', 'q1', [['yes']])).rejects.toThrow(REQUEST_EXPIRED)
     expect(adapter.responded).toEqual([])
   })

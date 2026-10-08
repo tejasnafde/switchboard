@@ -53,10 +53,7 @@ try {
 
   // 1. Add the project (same IPC the add-project flow uses), reload so the
   //    sidebar picks it up.
-  const added = await win.evaluate(
-    (dir) => window.api.routing.invokeOn('local', 'app:add-project-path', dir),
-    project,
-  )
+  const added = await win.evaluate((dir) => window.api.routing.invokeOn('local', 'app:add-project-path', dir), project)
   check(added && !added.error, 'project added via app:add-project-path')
   // Feature Tour auto-opens on first launch and eats pointer events - opt out
   // before reloading, then dismiss any straggler.
@@ -96,10 +93,7 @@ try {
   let routed = false
   for (let i = 0; i < 60 && !routed; i++) {
     await win.waitForTimeout(1000)
-    const res = await win.evaluate(
-      (dir) => window.api.ide.open({ folder: dir, path: 'hello.js', line: 1 }),
-      project,
-    )
+    const res = await win.evaluate((dir) => window.api.ide.open({ folder: dir, path: 'hello.js', line: 1 }), project)
     routed = res?.ok === true
   }
   check(routed, 'ide:open routed to the live workbench (sb-bridge hello)')
@@ -108,7 +102,12 @@ try {
   let editorText = ''
   for (let i = 0; i < 30 && !editorText.includes('hello'); i++) {
     await win.waitForTimeout(1000)
-    editorText = (await workbench.locator('.monaco-editor .view-lines').first().textContent().catch(() => '')) ?? ''
+    editorText =
+      (await workbench
+        .locator('.monaco-editor .view-lines')
+        .first()
+        .textContent()
+        .catch(() => '')) ?? ''
   }
   check(editorText.includes('hello'), 'hello.js content visible in the editor')
 
@@ -189,7 +188,10 @@ try {
     promptVisible = (await win.locator('textarea[placeholder*="Ask"], .sb-floating-surface textarea').count()) > 0
   }
   check(promptVisible, 'cmd+k in the workbench opens the quick-edit prompt')
-  const pillText = await win.locator('.sb-floating-surface').textContent().catch(() => '')
+  const pillText = await win
+    .locator('.sb-floating-surface')
+    .textContent()
+    .catch(() => '')
   check(pillText.includes('hello.js'), 'quick-edit prompt is pre-filled with the selection context')
   await win.keyboard.press('Escape')
 

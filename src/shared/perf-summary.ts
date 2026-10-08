@@ -29,9 +29,18 @@ export function summarizePerf(entries: PerfEntry[]) {
     group.push(entry)
     groups.set(entry.name, group)
   }
-  return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([name, group]) => {
-    const sorted = group.slice().sort((a, b) => a.durationMs - b.durationMs)
-    const percentile = (p: number) => sorted[Math.ceil(sorted.length * p) - 1].durationMs
-    return { name, count: sorted.length, p50: percentile(0.5), p90: percentile(0.9), max: sorted[sorted.length - 1].durationMs, worst: sorted.slice(-5).reverse() }
-  })
+  return [...groups]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, group]) => {
+      const sorted = group.slice().sort((a, b) => a.durationMs - b.durationMs)
+      const percentile = (p: number) => sorted[Math.ceil(sorted.length * p) - 1].durationMs
+      return {
+        name,
+        count: sorted.length,
+        p50: percentile(0.5),
+        p90: percentile(0.9),
+        max: sorted[sorted.length - 1].durationMs,
+        worst: sorted.slice(-5).reverse(),
+      }
+    })
 }

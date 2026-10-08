@@ -3,11 +3,7 @@ import { dirname } from 'node:path'
 import { assembleClaudeForkAtEvent } from '../agent/jsonl-truncate'
 import type { ProviderInstanceRow } from '../db/provider-instances'
 import { createMainLogger } from '../logger'
-import {
-  claudeSessionResumePath,
-  defaultClaudeDir,
-  listClaudeSessionCopies,
-} from '../provider/claude-session-migrate'
+import { claudeSessionResumePath, defaultClaudeDir, listClaudeSessionCopies } from '../provider/claude-session-migrate'
 import type {
   PreparedForkSnapshot,
   PreparedProviderForkArtifact,
@@ -54,11 +50,7 @@ interface CodexForkArtifactStage extends ProviderForkArtifactStage {
   path: string
 }
 
-function handoff(
-  prepared: PreparedForkSnapshot,
-  code: string,
-  message: string,
-): PreparedProviderForkArtifact {
+function handoff(prepared: PreparedForkSnapshot, code: string, message: string): PreparedProviderForkArtifact {
   return {
     resumeMode: 'transcript-handoff',
     sessionId: null,
@@ -111,10 +103,7 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
     }
 
     const profileDir = instance.oauthDir ?? defaultClaudeDir()
-    const sessionIds = this.deps.listCompatibleSessionIds(
-      prepared.source.conversationId,
-      instanceId,
-    )
+    const sessionIds = this.deps.listCompatibleSessionIds(prepared.source.conversationId, instanceId)
     const fragments: string[] = []
     for (const sessionId of sessionIds) {
       const source = listClaudeSessionCopies(profileDir, sessionId)[0]
@@ -200,7 +189,10 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
     }
   }
 
-  private async prepareOpencode(prepared: PreparedForkSnapshot, targetCwd: string): Promise<PreparedProviderForkArtifact> {
+  private async prepareOpencode(
+    prepared: PreparedForkSnapshot,
+    targetCwd: string,
+  ): Promise<PreparedProviderForkArtifact> {
     const native = this.deps.native
     const instanceId = prepared.source.providerInstanceId
     if (!native || !this.deps.listSegments) {
@@ -249,7 +241,11 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
         conversationId: prepared.source.conversationId,
         version: error.version,
       })
-      return handoff(prepared, 'native-fork-unsupported-version', `${error.message} The fork starts with a transcript handoff.`)
+      return handoff(
+        prepared,
+        'native-fork-unsupported-version',
+        `${error.message} The fork starts with a transcript handoff.`,
+      )
     }
     const unsupported = isUnsupportedMethodError(error, method)
     log.warn(`native ${method} failed, falling back to a transcript handoff`, {
@@ -258,7 +254,11 @@ export class DefaultProviderForkArtifacts implements ProviderForkArtifactPort {
       error: error instanceof Error ? error.message : String(error),
     })
     return unsupported
-      ? handoff(prepared, 'native-fork-unsupported', `The installed CLI has no ${method}; the fork starts with a transcript handoff.`)
+      ? handoff(
+          prepared,
+          'native-fork-unsupported',
+          `The installed CLI has no ${method}; the fork starts with a transcript handoff.`,
+        )
       : handoff(prepared, 'native-fork-failed', `Native ${method} failed; the fork starts with a transcript handoff.`)
   }
 

@@ -68,7 +68,10 @@ try {
   check(true, `app booted in remote mode (${backendUrl})`)
 
   const res = await win.evaluate((repo) => window.api.files.listDir(repo, ''), repoRoot)
-  check(res?.ok && res.entries?.[0]?.name === '__REMOTE_WS_SENTINEL__', 'files:list-dir routed over WS to the remote backend (sentinel returned)')
+  check(
+    res?.ok && res.entries?.[0]?.name === '__REMOTE_WS_SENTINEL__',
+    'files:list-dir routed over WS to the remote backend (sentinel returned)',
+  )
   check(seen.has('files:list-dir'), 'stub backend received the files:list-dir request frame')
 } catch (err) {
   console.error('✗ harness error:', err?.message ?? err)

@@ -3,7 +3,12 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { rename, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { RENAME_RETRY_DELAYS_MS, TargetChangedError, replaceFile, type ReplaceFileOps } from '../../src/main/files/replace-file'
+import {
+  RENAME_RETRY_DELAYS_MS,
+  TargetChangedError,
+  replaceFile,
+  type ReplaceFileOps,
+} from '../../src/main/files/replace-file'
 
 const locked = (code = 'EPERM') => Object.assign(new Error(`${code}: operation not permitted, rename`), { code })
 
@@ -75,7 +80,9 @@ describe('replaceFile', () => {
   it('does not treat a locked temp write as a locked rename', async () => {
     const { dir, target, ops, sleep, log } = setup(0)
     writeFileSync(target, 'old')
-    ops.writeFile = async () => { throw locked() }
+    ops.writeFile = async () => {
+      throw locked()
+    }
     await expect(replaceFile(target, 'new', { log, ops, sleep })).rejects.toMatchObject({ code: 'EPERM' })
     expect(readFileSync(target, 'utf8')).toBe('old')
     expect(readdirSync(dir)).toEqual(['settings.json'])
@@ -93,7 +100,9 @@ describe('replaceFile', () => {
   it('leaves a target edited between retries alone', async () => {
     const { dir, target, ops, sleep, log } = setup(Infinity)
     writeFileSync(target, 'old')
-    sleep.mockImplementationOnce(async () => { writeFileSync(target, 'edited') })
+    sleep.mockImplementationOnce(async () => {
+      writeFileSync(target, 'edited')
+    })
     const stillSafe = async () => readFileSync(target, 'utf8') === 'old'
     await expect(replaceFile(target, 'new', { log, ops, sleep, stillSafe })).rejects.toBeInstanceOf(TargetChangedError)
     expect(ops.rename).toHaveBeenCalledTimes(1)

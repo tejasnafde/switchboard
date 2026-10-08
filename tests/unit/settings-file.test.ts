@@ -50,7 +50,9 @@ describe('settings.json allow-list', () => {
 
   it('offers the same choices as the rows', () => {
     for (const row of SETTING_ROWS.filter((r) => r.options)) {
-      expect([...fileSetting(ROW_KEYS[row.id])!.choices!].sort(), row.id).toEqual(row.options!.map((o) => o.value).sort())
+      expect([...fileSetting(ROW_KEYS[row.id])!.choices!].sort(), row.id).toEqual(
+        row.options!.map((o) => o.value).sort(),
+      )
     }
     expect(fileSetting('sidebar.recentSessionLimit')!.choices).toEqual([...RECENT_SESSION_LIMITS])
   })
@@ -71,20 +73,41 @@ describe('settings.json allow-list', () => {
 
 describe('projectSettingsFile', () => {
   it('leaves defaults and values the setting does not accept out', () => {
-    const file = projectSettingsFile({
-      ...EMPTY,
-      settings: { theme: 'dark', 'chat.followUpDefault': 'queue', notificationsEnabled: 'false', 'sidebar.recentSessionLimit': '7', 'ide.idleTtlMinutes': '12' },
-    }, { platform: 'mac' })
-    expect(file.settings).toEqual({ 'chat.followUpDefault': 'queue', notificationsEnabled: false, 'ide.idleTtlMinutes': 12 })
+    const file = projectSettingsFile(
+      {
+        ...EMPTY,
+        settings: {
+          theme: 'dark',
+          'chat.followUpDefault': 'queue',
+          notificationsEnabled: 'false',
+          'sidebar.recentSessionLimit': '7',
+          'ide.idleTtlMinutes': '12',
+        },
+      },
+      { platform: 'mac' },
+    )
+    expect(file.settings).toEqual({
+      'chat.followUpDefault': 'queue',
+      notificationsEnabled: false,
+      'ide.idleTtlMinutes': 12,
+    })
     expect(file.$schema).toBe('./settings.schema.json')
   })
 
   it('never carries anything off the allow-list, whatever the snapshot holds', () => {
-    const file = projectSettingsFile({
-      settings: { theme: 'light', 'mobile.pairingToken': 'secret', 'provider.env': 'API_KEY=x', 'window.bounds': '{}' },
-      projects: { '/repo': { 'chat.defaultRuntimeMode': 'plan', 'mobile.token': 'secret' } },
-      keyboard: { 'app.search': ['Mod+Shift+Y'], 'future.command': ['Mod+Shift+U'] },
-    }, { platform: 'mac' })
+    const file = projectSettingsFile(
+      {
+        settings: {
+          theme: 'light',
+          'mobile.pairingToken': 'secret',
+          'provider.env': 'API_KEY=x',
+          'window.bounds': '{}',
+        },
+        projects: { '/repo': { 'chat.defaultRuntimeMode': 'plan', 'mobile.token': 'secret' } },
+        keyboard: { 'app.search': ['Mod+Shift+Y'], 'future.command': ['Mod+Shift+U'] },
+      },
+      { platform: 'mac' },
+    )
     const text = serializeSettingsFile(file)
     expect(text).not.toContain('secret')
     expect(text).not.toContain('API_KEY')
@@ -100,9 +123,12 @@ describe('projectSettingsFile', () => {
   })
 
   it('spells a project as the project list does', () => {
-    const file = projectSettingsFile({ ...EMPTY, projects: { '/real/repo': { defaultSessionEnvMode: 'worktree' } } }, {
-      projectLabel: (key) => (key === '/real/repo' ? '/link/repo' : key),
-    })
+    const file = projectSettingsFile(
+      { ...EMPTY, projects: { '/real/repo': { defaultSessionEnvMode: 'worktree' } } },
+      {
+        projectLabel: (key) => (key === '/real/repo' ? '/link/repo' : key),
+      },
+    )
     expect(Object.keys(file.projects)).toEqual(['/link/repo'])
   })
 })
@@ -111,7 +137,10 @@ describe('planSettingsFileApply', () => {
   it('applies nothing for invalid JSON or a non-object', () => {
     expect(planSettingsFileApply('{ "settings": ', EMPTY, opts)).toMatchObject({ ok: false })
     expect(planSettingsFileApply('', EMPTY, opts)).toMatchObject({ ok: false })
-    expect(planSettingsFileApply('[1]', EMPTY, opts)).toEqual({ ok: false, error: 'the file must hold one JSON object' })
+    expect(planSettingsFileApply('[1]', EMPTY, opts)).toEqual({
+      ok: false,
+      error: 'the file must hold one JSON object',
+    })
   })
 
   it('writes typed values in their stored form', () => {
@@ -126,7 +155,10 @@ describe('planSettingsFileApply', () => {
 
   it('skips an unknown key and a bad value, and leaves those settings alone', () => {
     const current = { ...EMPTY, settings: { theme: 'light' } }
-    const result = plan({ settings: { theme: 'purple', 'mobile.pairingToken': 'x', notificationsEnabled: 'no' }, extra: 1 }, current)
+    const result = plan(
+      { settings: { theme: 'purple', 'mobile.pairingToken': 'x', notificationsEnabled: 'no' }, extra: 1 },
+      current,
+    )
     expect(result.ops).toEqual([])
     expect(result.skipped).toEqual([
       { entry: 'extra', reason: 'not a section of this file' },
@@ -137,7 +169,10 @@ describe('planSettingsFileApply', () => {
   })
 
   it('resets a key removed from the file, and only when it was changed', () => {
-    const current = { ...EMPTY, settings: { theme: 'light', notificationsEnabled: 'true', 'chat.followUpDefault': 'bogus' } }
+    const current = {
+      ...EMPTY,
+      settings: { theme: 'light', notificationsEnabled: 'true', 'chat.followUpDefault': 'bogus' },
+    }
     expect(plan({ settings: {} }, current).ops).toEqual([{ kind: 'remove', key: 'theme' }])
   })
 
@@ -160,8 +195,14 @@ describe('planSettingsFileApply', () => {
 
   describe('projects', () => {
     it('sets, compares by project key, and removes overrides gone from the file', () => {
-      const current = { ...EMPTY, projects: { '/a': { 'chat.defaultRuntimeMode': 'plan', defaultSessionEnvMode: 'worktree' } } }
-      const result = plan({ projects: { '/a/': { 'chat.defaultRuntimeMode': 'plan' }, '/b': { 'chat.showFileDiffs': true } } }, current)
+      const current = {
+        ...EMPTY,
+        projects: { '/a': { 'chat.defaultRuntimeMode': 'plan', defaultSessionEnvMode: 'worktree' } },
+      }
+      const result = plan(
+        { projects: { '/a/': { 'chat.defaultRuntimeMode': 'plan' }, '/b': { 'chat.showFileDiffs': true } } },
+        current,
+      )
       expect(result.ops).toEqual([
         { kind: 'project-set', projectPath: '/b', key: 'chat.showFileDiffs', value: 'true' },
         { kind: 'project-remove', projectKey: '/a', key: 'defaultSessionEnvMode' },
@@ -188,7 +229,9 @@ describe('planSettingsFileApply', () => {
     }
 
     it('writes a valid rebind', () => {
-      expect(keyboardOp(plan({ keyboard: { 'app.search': ['Mod+Shift+Y'] } }))).toEqual({ 'app.search': ['Mod+Shift+Y'] })
+      expect(keyboardOp(plan({ keyboard: { 'app.search': ['Mod+Shift+Y'] } }))).toEqual({
+        'app.search': ['Mod+Shift+Y'],
+      })
     })
 
     it('refuses a reserved key, a typing key, an unknown id and a fixed command', () => {
@@ -211,11 +254,13 @@ describe('planSettingsFileApply', () => {
     it('refuses a clash, naming the command it clashes with, and keeps the stored rebind', () => {
       const current = { ...EMPTY, keyboard: { 'app.search': ['Mod+Shift+Y'] } }
       const result = plan({ keyboard: { 'app.search': ['Mod+Shift+P'] } }, current)
-      expect(result.skipped).toEqual([{ entry: 'keyboard.app.search', reason: '"Mod+Shift+P" is already Command palette' }])
+      expect(result.skipped).toEqual([
+        { entry: 'keyboard.app.search', reason: '"Mod+Shift+P" is already Command palette' },
+      ])
       expect(result.ops).toEqual([])
     })
 
-    it('resets a removed rebind, and keeps another build\'s', () => {
+    it("resets a removed rebind, and keeps another build's", () => {
       const current = { ...EMPTY, keyboard: { 'app.search': ['Mod+Shift+Y'], 'future.command': ['Mod+Shift+U'] } }
       expect(keyboardOp(plan({ keyboard: {} }, current))).toEqual({ 'future.command': ['Mod+Shift+U'] })
     })
@@ -236,19 +281,32 @@ describe('banner and schema', () => {
       { entry: 'keyboard.y', reason: 'unknown' },
     ]
     expect(describeSkipped(skipped)).toBe('settings.theme (expected one of); keyboard.x (unknown); and 1 more')
-    expect(settingsFileBanner({ ...IDLE_SETTINGS_FILE_STATUS, parseError: 'not valid JSON', skipped }))
-      .toBe('settings.json was not applied: not valid JSON. Fix it and save again.')
-    expect(settingsFileBanner({ ...IDLE_SETTINGS_FILE_STATUS, writeSkipped: true })).toMatch(/was not written to settings.json/)
-    expect(settingsFileBanner({ ...IDLE_SETTINGS_FILE_STATUS, writeFailed: true })).toMatch(/could not be written to settings.json/)
+    expect(settingsFileBanner({ ...IDLE_SETTINGS_FILE_STATUS, parseError: 'not valid JSON', skipped })).toBe(
+      'settings.json was not applied: not valid JSON. Fix it and save again.',
+    )
+    expect(settingsFileBanner({ ...IDLE_SETTINGS_FILE_STATUS, writeSkipped: true })).toMatch(
+      /was not written to settings.json/,
+    )
+    expect(settingsFileBanner({ ...IDLE_SETTINGS_FILE_STATUS, writeFailed: true })).toMatch(
+      /could not be written to settings.json/,
+    )
   })
 
   it('describes every allow-listed setting and rebindable command', () => {
-    const schema = settingsFileSchema('mac') as { properties: Record<string, { properties?: Record<string, unknown>; additionalProperties?: { properties: Record<string, unknown> } }> }
+    const schema = settingsFileSchema('mac') as {
+      properties: Record<
+        string,
+        { properties?: Record<string, unknown>; additionalProperties?: { properties: Record<string, unknown> } }
+      >
+    }
     expect(Object.keys(schema.properties.settings.properties!).sort()).toEqual(FILE_SETTINGS.map((s) => s.key).sort())
-    expect(schema.properties.settings.properties!.theme).toMatchObject({ enum: ['dark', 'light', 'translucent', 'system'] })
+    expect(schema.properties.settings.properties!.theme).toMatchObject({
+      enum: ['dark', 'light', 'translucent', 'system'],
+    })
     expect(schema.properties.settings.properties!.notificationsEnabled).toMatchObject({ type: 'boolean' })
-    expect(Object.keys(schema.properties.projects.additionalProperties!.properties).sort())
-      .toEqual(SCOPABLE_SETTINGS.map((s) => s.key).sort())
+    expect(Object.keys(schema.properties.projects.additionalProperties!.properties).sort()).toEqual(
+      SCOPABLE_SETTINGS.map((s) => s.key).sort(),
+    )
     expect(schema.properties.keyboard.properties).toHaveProperty('app.search')
     expect(schema.properties.keyboard.properties).not.toHaveProperty('app.focus-window')
   })

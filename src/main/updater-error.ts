@@ -30,7 +30,8 @@ export function isStaleDownloadError(raw: string): boolean {
  */
 const CHECK_TIMEOUT_RE = /^Update check timed out after \d+ms$/
 
-const MISSING_MANIFEST_RE = /(?:latest-mac\.yml|latest\.yml)[\s\S]*(?:404|not found)|(?:404|not found)[\s\S]*(?:latest-mac\.yml|latest\.yml)/i
+const MISSING_MANIFEST_RE =
+  /(?:latest-mac\.yml|latest\.yml)[\s\S]*(?:404|not found)|(?:404|not found)[\s\S]*(?:latest-mac\.yml|latest\.yml)/i
 
 export function isMissingUpdateManifestError(raw: string): boolean {
   return MISSING_MANIFEST_RE.test(raw)
@@ -49,6 +50,7 @@ export function friendlyUpdateError(raw: string): string {
   }
   // Not a failure: the request is still in flight and its real status
   // overwrites this. Measured, a slow path finished the check at ~77s.
-  if (CHECK_TIMEOUT_RE.test(raw)) return 'Still checking. This network is slow to reach GitHub, so it will finish in the background.'
+  if (CHECK_TIMEOUT_RE.test(raw))
+    return 'Still checking. This network is slow to reach GitHub, so it will finish in the background.'
   return raw
 }

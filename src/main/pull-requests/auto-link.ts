@@ -58,7 +58,7 @@ export class PullRequestAutoLinker {
   onEvent(event: RuntimeEvent): Promise<void> {
     if (event.type === 'content' && event.streamKind === 'assistant') {
       let byMessage = this.text.get(event.threadId)
-      if (!byMessage) this.text.set(event.threadId, byMessage = new Map())
+      if (!byMessage) this.text.set(event.threadId, (byMessage = new Map()))
       const before = byMessage.get(event.messageId)
       if ((before?.length ?? 0) < MAX_BUFFERED_CHARS) {
         byMessage.set(event.messageId, applyContentText(before, { text: event.text, append: event.append }))
@@ -71,7 +71,10 @@ export class PullRequestAutoLinker {
       return this.scan(event.threadId, input, toolInputCommand(input), toolInputCwd(input))
     }
     if (event.type === 'tool.completed' && event.output) return this.scan(event.threadId, event.output)
-    if (event.type === 'turn.completed' || (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))) {
+    if (
+      event.type === 'turn.completed' ||
+      (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))
+    ) {
       const byMessage = this.text.get(event.threadId)
       this.text.delete(event.threadId)
       if (byMessage) return this.scan(event.threadId, [...byMessage.values()].join('\n'))
@@ -80,14 +83,23 @@ export class PullRequestAutoLinker {
   }
 
   /** `command`: the shell command of a tool input, whose bare `bbpr <n>` numbers count when it runs in the chat's repository. */
-  private async scan(threadId: string, text: string, command: string | null = null, commandCwd: string | null = null): Promise<void> {
+  private async scan(
+    threadId: string,
+    text: string,
+    command: string | null = null,
+    commandCwd: string | null = null,
+  ): Promise<void> {
     const mayHaveBbpr = command !== null && command.includes('bbpr')
     if (!mayHaveBbpr && (!MENTIONS_HOST.test(text) || findPullRequestUrls(text).length === 0)) return
     try {
       const chat = this.deps.conversationFor(threadId)
       if (!chat) return
       const project = await this.deps.projectRepos(chat.projectPath)
-      const bbprNumbers = mayHaveBbpr ? await bbprNumbersInRepo(bbprTargetsForInput(command, chat.cwd, commandCwd), project.own, (dir) => this.deps.repoForProject(dir)) : []
+      const bbprNumbers = mayHaveBbpr
+        ? await bbprNumbersInRepo(bbprTargetsForInput(command, chat.cwd, commandCwd), project.own, (dir) =>
+            this.deps.repoForProject(dir),
+          )
+        : []
       let added = false
       for (const ref of projectPrRefs(text, bbprNumbers, project)) {
         if (this.deps.link(chat.id, ref)) added = true

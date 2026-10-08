@@ -11,10 +11,26 @@
 import { execFile } from 'node:child_process'
 import type { BackendHost } from '../backend/host'
 import { PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
-import { prKey, type GithubAccountState, type PrListData, type PrRef, type PrResult, type PrState, type SourceControlStatus, type SourceControlTestResult } from '@shared/pull-requests'
+import {
+  prKey,
+  type GithubAccountState,
+  type PrListData,
+  type PrRef,
+  type PrResult,
+  type PrState,
+  type SourceControlStatus,
+  type SourceControlTestResult,
+} from '@shared/pull-requests'
 import { applyHidden } from '@shared/pull-request-groups'
 import { parseRepoRefs } from '@shared/pull-request-hidden-repos'
-import { canLinkToProject, isPrRef, type PrHistoryScanResult, type PrLink, type PrLinkChat, type PrLinkResult } from '@shared/pull-request-links'
+import {
+  canLinkToProject,
+  isPrRef,
+  type PrHistoryScanResult,
+  type PrLink,
+  type PrLinkChat,
+  type PrLinkResult,
+} from '@shared/pull-request-links'
 import {
   getConversationByThreadId,
   getProjects,
@@ -91,14 +107,14 @@ function getService(): PullRequestService {
   service ??= DEMO
     ? createDemoPullRequestService(listHiddenPullRequestRepos)
     : new PullRequestService({
-      listProjects: () => getProjects().map((p) => p.path),
-      readRemotes,
-      scanChildRepos: scanChildRepoDirs,
-      github: () => github,
-      bitbucket: bitbucketProvider,
-      bitbucketState: () => credentials.status(),
-      hiddenRepos: listHiddenPullRequestRepos,
-    })
+        listProjects: () => getProjects().map((p) => p.path),
+        readRemotes,
+        scanChildRepos: scanChildRepoDirs,
+        github: () => github,
+        bitbucket: bitbucketProvider,
+        bitbucketState: () => credentials.status(),
+        hiddenRepos: listHiddenPullRequestRepos,
+      })
   return service
 }
 
@@ -158,7 +174,8 @@ function readLinkedPrKeys(): Set<string> {
  * registry and host, like the push notifier.
  */
 export function attachPullRequestAutoLink(bus: RuntimeEventBus, host: BackendHost): () => void {
-  notifyLinks = (conversationId, created) => host.emit(PullRequestChannels.LINKS_CHANGED, { conversationId, ...(created ? { created: true } : {}) })
+  notifyLinks = (conversationId, created) =>
+    host.emit(PullRequestChannels.LINKS_CHANGED, { conversationId, ...(created ? { created: true } : {}) })
   const linker = new PullRequestAutoLinker({
     conversationFor: (threadId) => {
       const row = getConversationByThreadId(threadId)
@@ -200,11 +217,14 @@ export function attachPullRequestAutoLink(bus: RuntimeEventBus, host: BackendHos
 
 function registerLinkHandlers(host: BackendHost): void {
   host.handle(PullRequestChannels.LINKS, (threadId: unknown): PrLink[] =>
-    typeof threadId === 'string' ? listConversationPullRequests(threadId) : [])
+    typeof threadId === 'string' ? listConversationPullRequests(threadId) : [],
+  )
   host.handle(PullRequestChannels.LINKED_CHATS, (ref: unknown): PrLinkChat[] =>
-    isPrRef(ref) ? listPullRequestChats(ref) : [])
+    isPrRef(ref) ? listPullRequestChats(ref) : [],
+  )
   host.handle(PullRequestChannels.LINKABLE_CHATS, async (ref: unknown): Promise<PrLinkChat[]> =>
-    isPrRef(ref) ? listLinkableChats(await getService().projectPathsFor(ref)) : [])
+    isPrRef(ref) ? listLinkableChats(await getService().projectPathsFor(ref)) : [],
+  )
 
   // Same rule as the auto-link: only a PR of a repository the chat's project covers.
   host.handle(PullRequestChannels.LINK, async (threadId: unknown, ref: unknown): Promise<PrLinkResult> => {
@@ -230,7 +250,10 @@ function registerLinkHandlers(host: BackendHost): void {
     const chat = getConversationByThreadId(threadId)
     if (!chat) return { ok: false, message: 'This chat has no Switchboard record to link to.' }
     try {
-      const { linked, capped } = await scanPullRequestHistoryForConversation({ id: chat.id, projectPath: chat.project_path, worktreePath: chat.worktree_path }, historyScanDeps())
+      const { linked, capped } = await scanPullRequestHistoryForConversation(
+        { id: chat.id, projectPath: chat.project_path, worktreePath: chat.worktree_path },
+        historyScanDeps(),
+      )
       return { ok: true, linked, capped, capChars: MAX_HISTORY_SCAN_CHARS }
     } catch (err) {
       log.warn('scanning a chat for pull requests failed', { threadId, err: String(err) })
@@ -262,16 +285,18 @@ export function startPullRequestHistoryScan(): void {
   if (backgroundHistoryScanStarted || DEMO) return
   backgroundHistoryScanStarted = true
   setTimeout(() => {
-    void scanPendingPullRequestHistory(historyScanDeps()).then((results) => {
-      if (results.length === 0) return
-      log.info('pull request history scan finished', {
-        chats: results.length,
-        linked: results.reduce((sum, result) => sum + result.linked, 0),
-        capped: results.filter((result) => result.capped).length,
+    void scanPendingPullRequestHistory(historyScanDeps())
+      .then((results) => {
+        if (results.length === 0) return
+        log.info('pull request history scan finished', {
+          chats: results.length,
+          linked: results.reduce((sum, result) => sum + result.linked, 0),
+          capped: results.filter((result) => result.capped).length,
+        })
       })
-    }).catch((err) => {
-      log.warn('pull request history scan failed', err)
-    })
+      .catch((err) => {
+        log.warn('pull request history scan failed', err)
+      })
   }, HISTORY_SCAN_START_DELAY_MS)
 }
 
@@ -292,33 +317,39 @@ function withHidden(result: PrResult<PrListData>): PrResult<PrListData> {
 }
 
 function registerHideHandlers(host: BackendHost): void {
-  const toggle = (hide: boolean) => (ref: unknown): { ok: boolean; message?: string } => {
-    if (!isPrRef(ref)) return { ok: false, message: 'Not a pull request.' }
-    try {
-      if (hide) hidePullRequest(ref)
-      else unhidePullRequest(ref)
-      return { ok: true }
-    } catch (err) {
-      log.warn('saving a hidden pull request failed', err)
-      return { ok: false, message: 'Could not save that; see the log.' }
+  const toggle =
+    (hide: boolean) =>
+    (ref: unknown): { ok: boolean; message?: string } => {
+      if (!isPrRef(ref)) return { ok: false, message: 'Not a pull request.' }
+      try {
+        if (hide) hidePullRequest(ref)
+        else unhidePullRequest(ref)
+        return { ok: true }
+      } catch (err) {
+        log.warn('saving a hidden pull request failed', err)
+        return { ok: false, message: 'Could not save that; see the log.' }
+      }
     }
-  }
   host.handle(PullRequestChannels.HIDE, toggle(true))
   host.handle(PullRequestChannels.UNHIDE, toggle(false))
 
-  const toggleRepos = (hide: boolean) => (value: unknown): { ok: boolean; message?: string } => {
-    const repos = parseRepoRefs(value)
-    if (!repos) return { ok: false, message: 'Not a list of repositories.' }
-    try {
-      if (hide) hidePullRequestRepos(repos)
-      else unhidePullRequestRepos(repos)
-      log.info(hide ? 'repositories hidden from Reviews' : 'repositories shown in Reviews again', { count: repos.length })
-      return { ok: true }
-    } catch (err) {
-      log.warn('saving hidden repositories failed', err)
-      return { ok: false, message: 'Could not save that; see the log.' }
+  const toggleRepos =
+    (hide: boolean) =>
+    (value: unknown): { ok: boolean; message?: string } => {
+      const repos = parseRepoRefs(value)
+      if (!repos) return { ok: false, message: 'Not a list of repositories.' }
+      try {
+        if (hide) hidePullRequestRepos(repos)
+        else unhidePullRequestRepos(repos)
+        log.info(hide ? 'repositories hidden from Reviews' : 'repositories shown in Reviews again', {
+          count: repos.length,
+        })
+        return { ok: true }
+      } catch (err) {
+        log.warn('saving hidden repositories failed', err)
+        return { ok: false, message: 'Could not save that; see the log.' }
+      }
     }
-  }
   host.handle(PullRequestChannels.HIDE_REPOS, toggleRepos(true))
   host.handle(PullRequestChannels.UNHIDE_REPOS, toggleRepos(false))
 }
@@ -382,7 +413,11 @@ export function registerPullRequestHandlers(host: BackendHost): void {
     // The list is a free state read for every linked PR in it, as of when it started.
     if (result.ok) {
       const linked = readLinkedPrKeys()
-      const changed = new Set(result.data.prs.filter((pr) => linked.has(prKey(pr.ref))).flatMap((pr) => storeLinkState(pr.ref, pr.state, startedAt)))
+      const changed = new Set(
+        result.data.prs
+          .filter((pr) => linked.has(prKey(pr.ref)))
+          .flatMap((pr) => storeLinkState(pr.ref, pr.state, startedAt)),
+      )
       for (const chatId of changed) notifyLinks(chatId)
     }
     return result
@@ -394,16 +429,34 @@ export function registerPullRequestHandlers(host: BackendHost): void {
   host.handle(PullRequestChannels.REVIEWER_CANDIDATES, (ref: unknown) => getService().reviewerCandidates(ref))
 
   host.handle(PullRequestWriteChannels.REPLY, (ref: unknown, input: unknown) => getService().reply(ref, input))
-  host.handle(PullRequestWriteChannels.RESOLVE, (ref: unknown, input: unknown) => getService().setResolved(ref, input, true))
-  host.handle(PullRequestWriteChannels.UNRESOLVE, (ref: unknown, input: unknown) => getService().setResolved(ref, input, false))
+  host.handle(PullRequestWriteChannels.RESOLVE, (ref: unknown, input: unknown) =>
+    getService().setResolved(ref, input, true),
+  )
+  host.handle(PullRequestWriteChannels.UNRESOLVE, (ref: unknown, input: unknown) =>
+    getService().setResolved(ref, input, false),
+  )
   host.handle(PullRequestWriteChannels.COMMENT, (ref: unknown, input: unknown) => getService().comment(ref, input))
-  host.handle(PullRequestWriteChannels.INLINE_COMMENT, (ref: unknown, input: unknown) => getService().inlineComment(ref, input))
-  host.handle(PullRequestWriteChannels.SUBMIT_REVIEW, (ref: unknown, input: unknown) => getService().submitReview(ref, input))
-  host.handle(PullRequestWriteChannels.MERGE, async (ref: unknown, input: unknown) => afterTerminalWrite(ref, 'merged', await getService().merge(ref, input)))
-  host.handle(PullRequestWriteChannels.RERUN_CHECK, (ref: unknown, input: unknown) => getService().rerunCheck(ref, input))
-  host.handle(PullRequestWriteChannels.ADD_REVIEWER, (ref: unknown, input: unknown) => getService().addReviewer(ref, input))
-  host.handle(PullRequestWriteChannels.REMOVE_REVIEWER, (ref: unknown, input: unknown) => getService().removeReviewer(ref, input))
-  host.handle(PullRequestWriteChannels.DECLINE, async (ref: unknown) => afterTerminalWrite(ref, 'closed', await getService().decline(ref)))
+  host.handle(PullRequestWriteChannels.INLINE_COMMENT, (ref: unknown, input: unknown) =>
+    getService().inlineComment(ref, input),
+  )
+  host.handle(PullRequestWriteChannels.SUBMIT_REVIEW, (ref: unknown, input: unknown) =>
+    getService().submitReview(ref, input),
+  )
+  host.handle(PullRequestWriteChannels.MERGE, async (ref: unknown, input: unknown) =>
+    afterTerminalWrite(ref, 'merged', await getService().merge(ref, input)),
+  )
+  host.handle(PullRequestWriteChannels.RERUN_CHECK, (ref: unknown, input: unknown) =>
+    getService().rerunCheck(ref, input),
+  )
+  host.handle(PullRequestWriteChannels.ADD_REVIEWER, (ref: unknown, input: unknown) =>
+    getService().addReviewer(ref, input),
+  )
+  host.handle(PullRequestWriteChannels.REMOVE_REVIEWER, (ref: unknown, input: unknown) =>
+    getService().removeReviewer(ref, input),
+  )
+  host.handle(PullRequestWriteChannels.DECLINE, async (ref: unknown) =>
+    afterTerminalWrite(ref, 'closed', await getService().decline(ref)),
+  )
 
   host.handle(SourceControlChannels.STATUS, async (): Promise<SourceControlStatus> => ({
     bitbucket: DEMO ? { state: 'configured', email: 'tejas@example.com' } : credentials.status(),
@@ -434,26 +487,37 @@ export function registerPullRequestHandlers(host: BackendHost): void {
   })
 
   /** Tests the saved account, or the email + token typed in the form before saving. */
-  host.handle(SourceControlChannels.TEST, async (hostName: unknown, input?: unknown): Promise<SourceControlTestResult> => {
-    if (hostName === 'github') {
-      const state = await githubState()
-      if (state.state === 'signed_in') return { ok: true, message: `Signed in to gh as ${state.login}.` }
-      if (state.state === 'gh_missing') return { ok: false, message: 'gh is not installed where the backend runs. Install it, then run gh auth login.' }
-      if (state.state === 'signed_out') return { ok: false, message: 'gh is signed out. Run gh auth login in a terminal.' }
-      return { ok: false, message: state.message }
-    }
-    if (hostName !== 'bitbucket') return { ok: false, message: 'Unknown host.' }
-    if (DEMO) return { ok: true, message: 'Signed in as Tejas.\nAll 3 project repositories are readable.' }
-    if (credentials.status().state === 'needs_desktop') return { ok: false, message: 'Bitbucket needs the desktop app in this release.' }
-    let creds
-    try {
-      creds = input ? validateBitbucketInput(input) : credentials.read()
-    } catch (err) {
-      if (err instanceof CredentialStoreError) return { ok: false, message: err.message }
-      throw err
-    }
-    if (!creds) return { ok: false, message: 'Enter an email and API token first.' }
-    const repos = [...(await getService().detect()).repos.values()].map((e) => e.repo).filter((r) => r.host === 'bitbucket')
-    return testBitbucket(new BitbucketClient(creds), repos)
-  })
+  host.handle(
+    SourceControlChannels.TEST,
+    async (hostName: unknown, input?: unknown): Promise<SourceControlTestResult> => {
+      if (hostName === 'github') {
+        const state = await githubState()
+        if (state.state === 'signed_in') return { ok: true, message: `Signed in to gh as ${state.login}.` }
+        if (state.state === 'gh_missing')
+          return {
+            ok: false,
+            message: 'gh is not installed where the backend runs. Install it, then run gh auth login.',
+          }
+        if (state.state === 'signed_out')
+          return { ok: false, message: 'gh is signed out. Run gh auth login in a terminal.' }
+        return { ok: false, message: state.message }
+      }
+      if (hostName !== 'bitbucket') return { ok: false, message: 'Unknown host.' }
+      if (DEMO) return { ok: true, message: 'Signed in as Tejas.\nAll 3 project repositories are readable.' }
+      if (credentials.status().state === 'needs_desktop')
+        return { ok: false, message: 'Bitbucket needs the desktop app in this release.' }
+      let creds
+      try {
+        creds = input ? validateBitbucketInput(input) : credentials.read()
+      } catch (err) {
+        if (err instanceof CredentialStoreError) return { ok: false, message: err.message }
+        throw err
+      }
+      if (!creds) return { ok: false, message: 'Enter an email and API token first.' }
+      const repos = [...(await getService().detect()).repos.values()]
+        .map((e) => e.repo)
+        .filter((r) => r.host === 'bitbucket')
+      return testBitbucket(new BitbucketClient(creds), repos)
+    },
+  )
 }

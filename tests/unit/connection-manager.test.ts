@@ -4,24 +4,40 @@
  * tested without real ssh or sockets. Node-specific deps live in ipc/machines.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { ConnectionManager, type ConnectionManagerDeps, type TunnelProcess } from '../../src/main/machines/connection-manager'
+import {
+  ConnectionManager,
+  type ConnectionManagerDeps,
+  type TunnelProcess,
+} from '../../src/main/machines/connection-manager'
 import type { Machine } from '@shared/machines'
 
 const machine = (over: Partial<Machine> = {}): Machine => ({
-  id: 'm1', name: 'prod', sshAlias: 'prod-vm', sshHost: '10.0.0.4', sshUser: 'ubuntu',
-  sshPort: 22, sortOrder: 0, createdAt: 0, updatedAt: 0, ...over,
+  id: 'm1',
+  name: 'prod',
+  sshAlias: 'prod-vm',
+  sshHost: '10.0.0.4',
+  sshUser: 'ubuntu',
+  sshPort: 22,
+  sortOrder: 0,
+  createdAt: 0,
+  updatedAt: 0,
+  ...over,
 })
 
 function fakeProc(): TunnelProcess & { fireExit: () => void } {
   let onExit = () => {}
   return {
     kill: vi.fn(),
-    onExit: (cb) => { onExit = cb },
+    onExit: (cb) => {
+      onExit = cb
+    },
     fireExit: () => onExit(),
   }
 }
 
-function deps(over: Partial<ConnectionManagerDeps> = {}): ConnectionManagerDeps & { statuses: Array<[string, string]> } {
+function deps(
+  over: Partial<ConnectionManagerDeps> = {},
+): ConnectionManagerDeps & { statuses: Array<[string, string]> } {
   const statuses: Array<[string, string]> = []
   return {
     allocatePort: async () => 7681,
@@ -68,7 +84,10 @@ describe('ConnectionManager', () => {
 
   it('goes to error and kills the tunnel when health never passes', async () => {
     const proc = fakeProc()
-    const d = deps({ spawnTunnel: () => proc, waitForHealth: async () => ({ ok: false, reason: "health check failed" }) })
+    const d = deps({
+      spawnTunnel: () => proc,
+      waitForHealth: async () => ({ ok: false, reason: 'health check failed' }),
+    })
     const mgr = new ConnectionManager(d)
     await mgr.connect(machine())
     expect(mgr.statusOf('m1')).toBe('error')
@@ -105,8 +124,14 @@ describe('ConnectionManager', () => {
 
   it('provisions before spawning the tunnel', async () => {
     const order: string[] = []
-    const provision = vi.fn(async () => { order.push('provision'); return { action: 'install' as const, reason: '' } })
-    const spawnTunnel = vi.fn(() => { order.push('spawn'); return fakeProc() })
+    const provision = vi.fn(async () => {
+      order.push('provision')
+      return { action: 'install' as const, reason: '' }
+    })
+    const spawnTunnel = vi.fn(() => {
+      order.push('spawn')
+      return fakeProc()
+    })
     const mgr = new ConnectionManager(deps({ provision, spawnTunnel }))
     await mgr.connect(machine())
     expect(order).toEqual(['provision', 'spawn'])
@@ -124,7 +149,9 @@ describe('ConnectionManager', () => {
 
   it('fails without spawning a tunnel when provisioning throws', async () => {
     const spawnTunnel = vi.fn(() => fakeProc())
-    const provision = vi.fn(async () => { throw new Error('upload failed') })
+    const provision = vi.fn(async () => {
+      throw new Error('upload failed')
+    })
     const mgr = new ConnectionManager(deps({ provision, spawnTunnel }))
     await mgr.connect(machine())
     expect(mgr.statusOf('m1')).toBe('error')
@@ -133,7 +160,11 @@ describe('ConnectionManager', () => {
 
   it('reconnects after an established tunnel drops', async () => {
     const procs: Array<ReturnType<typeof fakeProc>> = []
-    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const spawnTunnel = vi.fn(() => {
+      const p = fakeProc()
+      procs.push(p)
+      return p
+    })
     const timers: Array<() => void> = []
     const mgr = new ConnectionManager(deps({ spawnTunnel, maxReconnects: 2, setTimer: (fn) => timers.push(fn) }))
     await mgr.connect(machine())
@@ -148,10 +179,19 @@ describe('ConnectionManager', () => {
 
   it('gives up and stays in error after maxReconnects failed retries', async () => {
     const procs: Array<ReturnType<typeof fakeProc>> = []
-    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
-    const waitForHealth = vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValue({ ok: false, reason: "health check failed" })
+    const spawnTunnel = vi.fn(() => {
+      const p = fakeProc()
+      procs.push(p)
+      return p
+    })
+    const waitForHealth = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValue({ ok: false, reason: 'health check failed' })
     const timers: Array<() => void> = []
-    const mgr = new ConnectionManager(deps({ spawnTunnel, waitForHealth, maxReconnects: 1, setTimer: (fn) => timers.push(fn) }))
+    const mgr = new ConnectionManager(
+      deps({ spawnTunnel, waitForHealth, maxReconnects: 1, setTimer: (fn) => timers.push(fn) }),
+    )
     await mgr.connect(machine())
 
     procs[0].fireExit()
@@ -162,7 +202,11 @@ describe('ConnectionManager', () => {
 
   it('does not reconnect after a deliberate disconnect', async () => {
     const procs: Array<ReturnType<typeof fakeProc>> = []
-    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const spawnTunnel = vi.fn(() => {
+      const p = fakeProc()
+      procs.push(p)
+      return p
+    })
     const timers: Array<() => void> = []
     const mgr = new ConnectionManager(deps({ spawnTunnel, maxReconnects: 2, setTimer: (fn) => timers.push(fn) }))
     await mgr.connect(machine())
@@ -174,7 +218,9 @@ describe('ConnectionManager', () => {
 
   it('two rapid connect() calls on the same machine only spawn one tunnel', async () => {
     let resolvePort: (n: number) => void = () => {}
-    const portPromise = new Promise<number>((resolve) => { resolvePort = resolve })
+    const portPromise = new Promise<number>((resolve) => {
+      resolvePort = resolve
+    })
     const spawnTunnel = vi.fn(() => fakeProc())
     const mgr = new ConnectionManager(deps({ spawnTunnel, allocatePort: () => portPromise }))
 
@@ -189,7 +235,11 @@ describe('ConnectionManager', () => {
 
   it('a stale reconnect timer from a superseded attempt does not fire an interleaved retry', async () => {
     const procs: Array<ReturnType<typeof fakeProc>> = []
-    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const spawnTunnel = vi.fn(() => {
+      const p = fakeProc()
+      procs.push(p)
+      return p
+    })
     const timers: Array<() => void | Promise<void>> = []
     const mgr = new ConnectionManager(deps({ spawnTunnel, maxReconnects: 5, setTimer: (fn) => timers.push(fn) }))
 
@@ -220,7 +270,9 @@ describe('ConnectionManager', () => {
 
   it('logs the provisioner error via onLog instead of swallowing it', async () => {
     const onLog = vi.fn()
-    const provision = vi.fn(async () => { throw new Error('npm install failed: EACCES') })
+    const provision = vi.fn(async () => {
+      throw new Error('npm install failed: EACCES')
+    })
     const mgr = new ConnectionManager(deps({ provision, onLog }))
     await mgr.connect(machine())
     expect(mgr.statusOf('m1')).toBe('error')
@@ -230,7 +282,12 @@ describe('ConnectionManager', () => {
   it('a rejecting allocatePort transitions to error instead of hanging in connecting', async () => {
     const onLog = vi.fn()
     const mgr = new ConnectionManager(
-      deps({ allocatePort: async () => { throw new Error('EMFILE: no free ports') }, onLog }),
+      deps({
+        allocatePort: async () => {
+          throw new Error('EMFILE: no free ports')
+        },
+        onLog,
+      }),
     )
     await mgr.connect(machine())
     expect(mgr.statusOf('m1')).toBe('error')
@@ -241,7 +298,9 @@ describe('ConnectionManager', () => {
     const statuses: Array<[string, string, string | null, string | undefined]> = []
     const onStatus = (id: string, status: string, url: string | null, reason?: string) =>
       statuses.push([id, status, url, reason])
-    const provision = vi.fn(async () => { throw new Error('upload failed') })
+    const provision = vi.fn(async () => {
+      throw new Error('upload failed')
+    })
     const mgr = new ConnectionManager(deps({ provision, onStatus }))
     await mgr.connect(machine())
     expect(statuses.find((s) => s[1] === 'error')?.[3]).toBe('upload failed')
@@ -308,10 +367,16 @@ describe('ConnectionManager', () => {
     const onStatus = (_id: string, status: string, _url: string | null, _reason?: string, willRetry?: boolean) =>
       emissions.push({ status, willRetry })
     const procs: Array<ReturnType<typeof fakeProc>> = []
-    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const spawnTunnel = vi.fn(() => {
+      const p = fakeProc()
+      procs.push(p)
+      return p
+    })
     const waitForHealth = vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValue({ ok: false, reason: 'down' })
     const timers: Array<() => void | Promise<void>> = []
-    const mgr = new ConnectionManager(deps({ onStatus, spawnTunnel, waitForHealth, maxReconnects: 1, setTimer: (fn) => timers.push(fn) }))
+    const mgr = new ConnectionManager(
+      deps({ onStatus, spawnTunnel, waitForHealth, maxReconnects: 1, setTimer: (fn) => timers.push(fn) }),
+    )
     await mgr.connect(machine())
 
     procs[0].fireExit() // drop: schedules the one allowed retry
@@ -325,9 +390,15 @@ describe('ConnectionManager', () => {
   it('reuses the same local port across reconnects so the tunnel url stays stable', async () => {
     const allocatePort = vi.fn(async () => 7681)
     const procs: Array<ReturnType<typeof fakeProc>> = []
-    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const spawnTunnel = vi.fn(() => {
+      const p = fakeProc()
+      procs.push(p)
+      return p
+    })
     const timers: Array<() => void | Promise<void>> = []
-    const mgr = new ConnectionManager(deps({ allocatePort, spawnTunnel, maxReconnects: 2, setTimer: (fn) => timers.push(fn) }))
+    const mgr = new ConnectionManager(
+      deps({ allocatePort, spawnTunnel, maxReconnects: 2, setTimer: (fn) => timers.push(fn) }),
+    )
     await mgr.connect(machine())
     const firstUrl = mgr.urlOf('m1')
 
@@ -356,23 +427,30 @@ describe('ConnectionManager', () => {
     const onStatus = (_id: string, status: string, _url: string | null, _reason?: string, willRetry?: boolean) =>
       emissions.push({ status, willRetry })
     const procs: Array<ReturnType<typeof fakeProc>> = []
-    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const spawnTunnel = vi.fn(() => {
+      const p = fakeProc()
+      procs.push(p)
+      return p
+    })
     // Provision succeeds on the first connect, then throws (network down) on the reconnect.
-    const provision = vi.fn()
+    const provision = vi
+      .fn()
       .mockResolvedValueOnce({ action: 'ready' })
       .mockRejectedValueOnce(new Error('ssh probe failed (255)'))
       .mockResolvedValue({ action: 'ready' })
     const timers: Array<() => void | Promise<void>> = []
-    const mgr = new ConnectionManager(deps({ onStatus, spawnTunnel, provision, maxReconnects: 3, setTimer: (fn) => timers.push(fn) }))
+    const mgr = new ConnectionManager(
+      deps({ onStatus, spawnTunnel, provision, maxReconnects: 3, setTimer: (fn) => timers.push(fn) }),
+    )
     await mgr.connect(machine())
     expect(mgr.statusOf('m1')).toBe('connected')
 
     procs[0].fireExit() // drop -> schedules retry 1
-    await timers[0]()   // retry 1: provision throws -> must schedule retry 2, not die
+    await timers[0]() // retry 1: provision throws -> must schedule retry 2, not die
     expect(emissions.filter((e) => e.status === 'error').at(-1)?.willRetry).toBe(true)
     expect(timers).toHaveLength(2)
 
-    await timers[1]()   // retry 2: provision ready again -> reconnects
+    await timers[1]() // retry 2: provision ready again -> reconnects
     expect(mgr.statusOf('m1')).toBe('connected')
   })
 
@@ -434,7 +512,7 @@ describe('remote IDE forward', () => {
           spawned.push(args)
           return fakeProc()
         },
-      })
+      }),
     )
     await mgr.connect(machine())
 

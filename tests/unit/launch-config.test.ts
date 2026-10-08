@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  parseLaunchConfigFile,
-  type LaunchConfigFile,
-  type LaunchConfigTerminal,
-} from '../../src/shared/launch-config'
+import { parseLaunchConfigFile, type LaunchConfigFile, type LaunchConfigTerminal } from '../../src/shared/launch-config'
 
 describe('workspace config parser', () => {
   // ── Valid configs ─────────────────────────────────────────────
@@ -143,10 +139,7 @@ terminals: "not an array"
   it('serializeLaunchConfigFile produces valid yaml', async () => {
     const { serializeLaunchConfigFile } = await import('../../src/shared/launch-config')
     const config: LaunchConfigFile = {
-      terminals: [
-        { label: 'server', cwd: '.', on_start: 'npm run dev' },
-        { label: 'test' },
-      ],
+      terminals: [{ label: 'server', cwd: '.', on_start: 'npm run dev' }, { label: 'test' }],
     }
     const yaml = serializeLaunchConfigFile(config)
     // Round-trip

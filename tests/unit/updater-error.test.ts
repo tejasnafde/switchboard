@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  friendlyUpdateError,
-  isMissingUpdateManifestError,
-  isStaleDownloadError,
-} from '../../src/main/updater-error'
+import { friendlyUpdateError, isMissingUpdateManifestError, isStaleDownloadError } from '../../src/main/updater-error'
 
 /** Verbatim from a real 0.7.27 failure - the staging file was purged mid-download. */
 const STALE_RENAME =

@@ -37,9 +37,7 @@ function expectInvalid(value: unknown, path: string): void {
   const parsed = parseForkConversationRequest(value)
   expect(parsed.ok).toBe(false)
   if (parsed.ok) return
-  expect(parsed.issues).toEqual(expect.arrayContaining([
-    expect.objectContaining({ path }),
-  ]))
+  expect(parsed.issues).toEqual(expect.arrayContaining([expect.objectContaining({ path })]))
 }
 
 describe('conversation fork request contract', () => {
@@ -83,14 +81,17 @@ describe('conversation fork request contract', () => {
   })
 
   it('rejects confirmation receipts that are not bound to an exact HEAD and status digest', () => {
-    expectInvalid({
-      ...request(),
-      checkout: {
-        kind: 'new-worktree',
-        basePolicy: 'source-head',
-        dirtySourceConfirmed: { headSha: 'HEAD', statusDigest: MESSAGE_DIGEST },
+    expectInvalid(
+      {
+        ...request(),
+        checkout: {
+          kind: 'new-worktree',
+          basePolicy: 'source-head',
+          dirtySourceConfirmed: { headSha: 'HEAD', statusDigest: MESSAGE_DIGEST },
+        },
       },
-    }, 'checkout.dirtySourceConfirmed.headSha')
+      'checkout.dirtySourceConfirmed.headSha',
+    )
   })
 
   it('canonicalizes equivalent requests independently of object key order', () => {
@@ -108,8 +109,7 @@ describe('conversation fork request contract', () => {
     const parsed = parseForkConversationRequest(reordered)
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
-    expect(canonicalizeForkConversationRequest(first))
-      .toBe(canonicalizeForkConversationRequest(parsed.value))
+    expect(canonicalizeForkConversationRequest(first)).toBe(canonicalizeForkConversationRequest(parsed.value))
   })
 
   it('keeps audit time in the stored request but excludes it from idempotency identity', () => {
@@ -119,10 +119,8 @@ describe('conversation fork request contract', () => {
       provenance: { ...request().provenance, requestedAt: request().provenance.requestedAt + 10_000 },
     }
 
-    expect(canonicalizeForkConversationRequest(first))
-      .not.toBe(canonicalizeForkConversationRequest(retried))
-    expect(canonicalizeForkConversationIdentity(first))
-      .toBe(canonicalizeForkConversationIdentity(retried))
+    expect(canonicalizeForkConversationRequest(first)).not.toBe(canonicalizeForkConversationRequest(retried))
+    expect(canonicalizeForkConversationIdentity(first)).toBe(canonicalizeForkConversationIdentity(retried))
   })
 
   it('changes idempotency identity when the anchor or checkout policy changes', () => {
@@ -136,10 +134,8 @@ describe('conversation fork request contract', () => {
       checkout: { kind: 'new-worktree', basePolicy: 'source-head' } as const,
     }
 
-    expect(canonicalizeForkConversationIdentity(first))
-      .not.toBe(canonicalizeForkConversationIdentity(laterAnchor))
-    expect(canonicalizeForkConversationIdentity(first))
-      .not.toBe(canonicalizeForkConversationIdentity(worktree))
+    expect(canonicalizeForkConversationIdentity(first)).not.toBe(canonicalizeForkConversationIdentity(laterAnchor))
+    expect(canonicalizeForkConversationIdentity(first)).not.toBe(canonicalizeForkConversationIdentity(worktree))
   })
 
   it('keeps dirty-source confirmation in the audit request without changing the operation identity', () => {
@@ -154,10 +150,8 @@ describe('conversation fork request contract', () => {
         dirtySourceConfirmed: { headSha: 'b'.repeat(40), statusDigest: 'c'.repeat(64) },
       },
     }
-    expect(canonicalizeForkConversationRequest(unconfirmed))
-      .not.toBe(canonicalizeForkConversationRequest(confirmed))
-    expect(canonicalizeForkConversationIdentity(unconfirmed))
-      .toBe(canonicalizeForkConversationIdentity(confirmed))
+    expect(canonicalizeForkConversationRequest(unconfirmed)).not.toBe(canonicalizeForkConversationRequest(confirmed))
+    expect(canonicalizeForkConversationIdentity(unconfirmed)).toBe(canonicalizeForkConversationIdentity(confirmed))
   })
 })
 
@@ -200,17 +194,21 @@ describe('fork message digest', () => {
     ['pill metadata', { pillsMeta: { 'file-1': { label: 'src/main.ts', kind: 'file' as const } } }],
     ['plan', { plan: { ...message.plan!, content: 'Changed plan' } }],
   ])('changes when durable %s data changes', (_label, change) => {
-    expect(digestForkMessage({ ...message, ...change }, sha256))
-      .not.toBe(digestForkMessage(message, sha256))
+    expect(digestForkMessage({ ...message, ...change }, sha256)).not.toBe(digestForkMessage(message, sha256))
   })
 
   it('supports an attachment-only user message', () => {
-    expect(digestForkMessage({
-      id: 'image-only',
-      role: 'user',
-      content: '',
-      timestamp: 5,
-      images: [{ url: 'data:image/jpeg;base64,AAAA' }],
-    }, sha256)).toMatch(/^[0-9a-f]{64}$/)
+    expect(
+      digestForkMessage(
+        {
+          id: 'image-only',
+          role: 'user',
+          content: '',
+          timestamp: 5,
+          images: [{ url: 'data:image/jpeg;base64,AAAA' }],
+        },
+        sha256,
+      ),
+    ).toMatch(/^[0-9a-f]{64}$/)
   })
 })

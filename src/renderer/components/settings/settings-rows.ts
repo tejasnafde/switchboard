@@ -6,7 +6,14 @@
  * without being searchable, or be found under a label the page does not show.
  * Pure so the search and the changed-count rules are unit-tested.
  */
-import { currentPlatform, isRebindable, shortcutLabel, shortcutsFor, SHORTCUTS, type ShortcutPlatform } from '@shared/shortcuts'
+import {
+  currentPlatform,
+  isRebindable,
+  shortcutLabel,
+  shortcutsFor,
+  SHORTCUTS,
+  type ShortcutPlatform,
+} from '@shared/shortcuts'
 import { DEFAULT_RECENT_SESSION_LIMIT } from '../sidebar/recent-session-limit'
 import { FOLLOW_UP_DEFAULT_KEY } from '@shared/turn-delivery'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
@@ -35,12 +42,21 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'general', title: 'General', description: 'How Switchboard behaves on this Mac.' },
   { id: 'appearance', title: 'Appearance', description: 'How the window looks.' },
   { id: 'chat', title: 'Chat & agents', description: 'Defaults for new and running chats.' },
-  { id: 'accounts', title: 'Accounts & models', description: 'The accounts each agent signs in with, how much of each one is used, and the source control accounts for Reviews.' },
+  {
+    id: 'accounts',
+    title: 'Accounts & models',
+    description:
+      'The accounts each agent signs in with, how much of each one is used, and the source control accounts for Reviews.',
+  },
   { id: 'projects', title: 'Projects', description: 'Settings that belong to one project.' },
   { id: 'keyboard', title: 'Keyboard', description: 'Every shortcut, with the keys for this computer.' },
   { id: 'devices', title: 'Devices & machines', description: 'Phones paired with this Mac.' },
   { id: 'data', title: 'Archive & data', description: 'Archived chats and worktrees.' },
-  { id: 'about', title: 'About', description: 'A unified developer workspace that multiplexes terminals and agent chats.' },
+  {
+    id: 'about',
+    title: 'About',
+    description: 'A unified developer workspace that multiplexes terminals and agent chats.',
+  },
 ]
 
 export interface SettingRowDef {
@@ -67,82 +83,122 @@ export const PRIVACY_POLICY_URL = 'https://tn07.dev/privacy'
 
 const ROWS = {
   notifyTurnEnd: {
-    id: 'notifications.turnEnd', page: 'general', section: 'Notifications',
+    id: 'notifications.turnEnd',
+    page: 'general',
+    section: 'Notifications',
     label: 'Notify when an agent finishes a turn',
     description: "Only fires when the app isn't focused or you're on a different chat.",
     defaultValue: 'true',
   },
   notifyTest: {
-    id: 'notifications.test', page: 'general', section: 'Notifications',
+    id: 'notifications.test',
+    page: 'general',
+    section: 'Notifications',
     label: 'Send test notification',
     description: 'Checks that macOS lets Switchboard notifications through.',
   },
   updates: {
-    id: 'updates.check', page: 'general', section: 'Updates',
+    id: 'updates.check',
+    page: 'general',
+    section: 'Updates',
     label: 'Update status',
     description: 'Check for a newer Switchboard, and restart to install one that has downloaded.',
   },
   recentLimit: {
-    id: 'sidebar.recentLimit', page: 'general', section: 'Sidebar',
+    id: 'sidebar.recentLimit',
+    page: 'general',
+    section: 'Sidebar',
     label: 'Recent conversations',
     description: 'Rows shown before the Recents section offers Show more.',
     defaultValue: String(DEFAULT_RECENT_SESSION_LIMIT),
     defaultLabel: `${DEFAULT_RECENT_SESSION_LIMIT} conversations`,
   },
   ideIdleTtl: {
-    id: 'ide.idleTtl', page: 'general', section: 'Embedded IDE',
+    id: 'ide.idleTtl',
+    page: 'general',
+    section: 'Embedded IDE',
     label: 'Shut down when hidden after',
-    description: 'Idle minutes before the code-server workbench is killed to free CPU/RAM. Reopening (⌘⇧E) relaunches it in ~2s.',
+    description:
+      'Idle minutes before the code-server workbench is killed to free CPU/RAM. Reopening (⌘⇧E) relaunches it in ~2s.',
     defaultValue: '5',
     defaultLabel: '5 minutes',
   },
   analytics: {
-    id: 'privacy.analytics', page: 'general', section: 'Privacy',
+    id: 'privacy.analytics',
+    page: 'general',
+    section: 'Privacy',
     label: 'Share anonymous usage counts',
-    description: 'Sends launch, session, tour and crash counts with the app version, platform, chip and a random install id, never a path, name or message; one click here turns it off.',
+    description:
+      'Sends launch, session, tour and crash counts with the app version, platform, chip and a random install id, never a path, name or message; one click here turns it off.',
     defaultValue: 'true',
   },
   theme: {
-    id: 'appearance.theme', page: 'appearance', section: 'Theme',
+    id: 'appearance.theme',
+    page: 'appearance',
+    section: 'Theme',
     label: 'Theme',
-    description: 'Translucent blurs the desktop behind the window (macOS). System follows the macOS light or dark appearance.',
+    description:
+      'Translucent blurs the desktop behind the window (macOS). System follows the macOS light or dark appearance.',
     defaultValue: 'dark',
     defaultLabel: 'Dark',
   },
   followUp: {
-    id: 'chat.followUp', page: 'chat', section: 'While the agent works',
+    id: 'chat.followUp',
+    page: 'chat',
+    section: 'While the agent works',
     label: 'Follow-up while the agent works',
-    description: 'What Enter does with a message sent mid-turn. Steer hands it to the agent at its next step; Queue holds it until the turn ends. ⌥Enter does the other one. OpenCode always queues.',
+    description:
+      'What Enter does with a message sent mid-turn. Steer hands it to the agent at its next step; Queue holds it until the turn ends. ⌥Enter does the other one. OpenCode always queues.',
     defaultValue: 'steer',
     defaultLabel: 'Steer',
     scopeKey: FOLLOW_UP_DEFAULT_KEY,
-    options: [{ value: 'steer', label: 'Steer' }, { value: 'queue', label: 'Queue' }],
+    options: [
+      { value: 'steer', label: 'Steer' },
+      { value: 'queue', label: 'Queue' },
+    ],
   },
   streaming: {
-    id: 'chat.streaming', page: 'chat', section: 'While the agent works',
+    id: 'chat.streaming',
+    page: 'chat',
+    section: 'While the agent works',
     label: 'Stream assistant messages',
-    description: 'Show token-by-token output while a response is in progress. Off renders the final reply in one shot when the turn completes.',
+    description:
+      'Show token-by-token output while a response is in progress. Off renders the final reply in one shot when the turn completes.',
     defaultValue: 'true',
   },
   linkDuration: {
-    id: 'chat.linkDuration', page: 'chat', section: 'While the agent works',
+    id: 'chat.linkDuration',
+    page: 'chat',
+    section: 'While the agent works',
     label: 'Link duration',
-    description: 'How long a /link lasts when you do not give a time, renewed whenever you type in either chat. /link <session> 4h picks one for a single link.',
+    description:
+      'How long a /link lasts when you do not give a time, renewed whenever you type in either chat. /link <session> 4h picks one for a single link.',
     defaultValue: '30m',
     defaultLabel: '30 minutes',
-    options: PEER_LINK_DURATION_CHOICES.map((value) => ({ value, label: formatPeerLinkDuration(parsePeerLinkDuration(value)!) })),
+    options: PEER_LINK_DURATION_CHOICES.map((value) => ({
+      value,
+      label: formatPeerLinkDuration(parsePeerLinkDuration(value)!),
+    })),
   },
   envMode: {
-    id: 'chat.envMode', page: 'chat', section: 'Defaults for new chats',
+    id: 'chat.envMode',
+    page: 'chat',
+    section: 'Defaults for new chats',
     label: 'Recommended workspace',
-    description: "Which option is highlighted first. You still choose for every new thread. Local runs the agent in the project root; New worktree creates a fresh git worktree off HEAD so parallel threads don't trample each other.",
+    description:
+      "Which option is highlighted first. You still choose for every new thread. Local runs the agent in the project root; New worktree creates a fresh git worktree off HEAD so parallel threads don't trample each other.",
     defaultValue: 'local',
     defaultLabel: 'Local (project root)',
     scopeKey: SETTING_SESSION_ENV_MODE,
-    options: [{ value: 'local', label: 'Local (project root)' }, { value: 'worktree', label: 'New worktree' }],
+    options: [
+      { value: 'local', label: 'Local (project root)' },
+      { value: 'worktree', label: 'New worktree' },
+    ],
   },
   runtimeMode: {
-    id: 'chat.runtimeMode', page: 'chat', section: 'Defaults for new chats',
+    id: 'chat.runtimeMode',
+    page: 'chat',
+    section: 'Defaults for new chats',
     label: 'Runtime mode',
     description: 'The mode a new chat starts in. Picking a mode in a chat also makes it the default for the next one.',
     defaultValue: 'sandbox',
@@ -151,89 +207,131 @@ const ROWS = {
     options: RUNTIME_MODE_OPTIONS.map(({ value, label }) => ({ value, label })),
   },
   fileDiffs: {
-    id: 'chat.fileDiffs', page: 'chat', section: 'In the chat',
+    id: 'chat.fileDiffs',
+    page: 'chat',
+    section: 'In the chat',
     label: 'Show file diff cards in chat',
-    description: 'Show per-file diffs inline after each turn. Off shows a "Changed N files" button that expands them for that turn only.',
+    description:
+      'Show per-file diffs inline after each turn. Off shows a "Changed N files" button that expands them for that turn only.',
     defaultValue: 'false',
     scopeKey: SETTING_SHOW_FILE_DIFFS,
   },
   accountsSummary: {
-    id: 'accounts.summary', page: 'accounts', section: 'Summary',
+    id: 'accounts.summary',
+    page: 'accounts',
+    section: 'Summary',
     label: 'Usage summary',
-    description: 'The account with the most room left, the next reset, and how many accounts are signed out or failing.',
+    description:
+      'The account with the most room left, the next reset, and how many accounts are signed out or failing.',
   },
   providers: {
-    id: 'accounts.instances', page: 'accounts', section: 'Accounts',
+    id: 'accounts.instances',
+    page: 'accounts',
+    section: 'Accounts',
     label: 'Provider accounts',
-    description: 'Named credential sets for Claude Code, Codex and OpenCode with their usage limits and reset times. Each account\'s menu sets the default account and default model, renames it, tests or repeats the sign-in, refreshes usage, copies its folder path, or deletes it.',
+    description:
+      "Named credential sets for Claude Code, Codex and OpenCode with their usage limits and reset times. Each account's menu sets the default account and default model, renames it, tests or repeats the sign-in, refreshes usage, copies its folder path, or deletes it.",
   },
   addAccount: {
-    id: 'accounts.add', page: 'accounts', section: 'Accounts',
+    id: 'accounts.add',
+    page: 'accounts',
+    section: 'Accounts',
     label: 'Add account',
-    description: 'A new named account for Claude Code, Codex or OpenCode, signed in through its own folder or an API key.',
+    description:
+      'A new named account for Claude Code, Codex or OpenCode, signed in through its own folder or an API key.',
   },
   sourceControl: {
-    id: 'accounts.sourceControl', page: 'accounts', section: 'Source control',
+    id: 'accounts.sourceControl',
+    page: 'accounts',
+    section: 'Source control',
     label: 'Source control',
-    description: 'The Bitbucket Cloud email and API token, and the GitHub gh login, that Reviews reads pull requests with. The token is stored encrypted on this computer.',
+    description:
+      'The Bitbucket Cloud email and API token, and the GitHub gh login, that Reviews reads pull requests with. The token is stored encrypted on this computer.',
   },
   projectList: {
-    id: 'projects.list', page: 'projects', section: 'Projects',
+    id: 'projects.list',
+    page: 'projects',
+    section: 'Projects',
     label: 'Project overrides',
-    description: 'Each project with its launch configs and the Chat & agents settings it overrides. Open shows that project\'s scope.',
+    description:
+      "Each project with its launch configs and the Chat & agents settings it overrides. Open shows that project's scope.",
   },
   launchConfigs: {
-    id: 'projects.launchConfigs', page: 'projects', section: 'Launch configs',
+    id: 'projects.launchConfigs',
+    page: 'projects',
+    section: 'Launch configs',
     label: 'Project launch configs',
     description: 'The terminals a chat in each project opens with, and the worktree setup command.',
   },
   worktreeProtection: {
-    id: 'projects.worktreeProtection', page: 'projects', section: 'Worktree protection',
+    id: 'projects.worktreeProtection',
+    page: 'projects',
+    section: 'Worktree protection',
     label: 'Protected projects',
-    description: 'A protected project\'s worktrees are never offered for cleanup or counted as stale.',
+    description: "A protected project's worktrees are never offered for cleanup or counted as stale.",
   },
   mobile: {
-    id: 'devices.mobile', page: 'devices', section: 'Mobile pairing',
+    id: 'devices.mobile',
+    page: 'devices',
+    section: 'Mobile pairing',
     label: 'Mobile pairing',
     description: 'Pair a phone by QR code, revoke paired devices, and connect the Google account phones use for IAP.',
   },
   archived: {
-    id: 'data.archived', page: 'data', section: 'Archived conversations',
+    id: 'data.archived',
+    page: 'data',
+    section: 'Archived conversations',
     label: 'Archived conversations',
     description: 'Search and unarchive the chats you archived from the sidebar.',
   },
   worktrees: {
-    id: 'data.worktrees', page: 'data', section: 'Worktrees',
+    id: 'data.worktrees',
+    page: 'data',
+    section: 'Worktrees',
     label: 'Worktrees',
     description: 'Size, git state and linked chat of every worktree, with a cleanup that never loses work unasked.',
   },
   about: {
-    id: 'about.app', page: 'about', section: 'Switchboard',
+    id: 'about.app',
+    page: 'about',
+    section: 'Switchboard',
     label: 'Switchboard',
     description: 'Built with Electron + React + TypeScript + Love',
   },
   tourReplay: {
-    id: 'about.tourReplay', page: 'about', section: 'Feature tour',
+    id: 'about.tourReplay',
+    page: 'about',
+    section: 'Feature tour',
     label: 'Replay the feature tour',
-    description: "A short, replayable walk-through of what's shipped. Auto-opens on first launch after a release adds new features.",
+    description:
+      "A short, replayable walk-through of what's shipped. Auto-opens on first launch after a release adds new features.",
   },
   tourAutoplay: {
-    id: 'about.tourAutoplay', page: 'about', section: 'Feature tour',
+    id: 'about.tourAutoplay',
+    page: 'about',
+    section: 'Feature tour',
     label: 'Auto-open the tour after a release adds new features',
     defaultValue: 'true',
   },
   tourSteps: {
-    id: 'about.tourSteps', page: 'about', section: 'Feature tour',
+    id: 'about.tourSteps',
+    page: 'about',
+    section: 'Feature tour',
     label: 'Jump to a step',
     description: 'Play one clip of the tour.',
   },
   settingsJson: {
-    id: 'about.settingsJson', page: 'about', section: 'Advanced',
+    id: 'about.settingsJson',
+    page: 'about',
+    section: 'Advanced',
     label: 'Open settings as JSON',
-    description: 'For power users. The file is the same source as this page: saving it changes the settings here, and a change here rewrites it.',
+    description:
+      'For power users. The file is the same source as this page: saving it changes the settings here, and a change here rewrites it.',
   },
   diagnostics: {
-    id: 'about.diagnostics', page: 'about', section: 'Diagnostics',
+    id: 'about.diagnostics',
+    page: 'about',
+    section: 'Diagnostics',
     label: 'Diagnostics',
     description: 'Chip, OS, memory and the largest processes, with a report to copy and the logs folder.',
   },
@@ -286,7 +384,9 @@ export function searchSettingRows(query: string, rows: readonly SettingRowDef[] 
   if (terms.length === 0) return []
   return rows.filter((row) => {
     const haystack = [row.label, row.description, row.section, pageTitle(row.page), row.keys]
-      .filter(Boolean).join(' ').toLowerCase()
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
     return terms.every((term) => haystack.includes(term))
   })
 }

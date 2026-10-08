@@ -44,7 +44,12 @@ export interface McpToolCallContext {
 export interface McpTool {
   name: string
   description: string
-  inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[]; additionalProperties?: boolean }
+  inputSchema: {
+    type: 'object'
+    properties: Record<string, unknown>
+    required?: string[]
+    additionalProperties?: boolean
+  }
   annotations: McpToolAnnotations
   call(args: Record<string, unknown>, ctx: McpToolCallContext): Promise<McpToolResult>
 }
@@ -154,19 +159,25 @@ export class McpSession {
       this.error(id, -32602, `Unknown tool: ${String(p.name)}`)
       return
     }
-    const args = p.arguments && typeof p.arguments === 'object' && !Array.isArray(p.arguments)
-      ? p.arguments as Record<string, unknown>
-      : {}
+    const args =
+      p.arguments && typeof p.arguments === 'object' && !Array.isArray(p.arguments)
+        ? (p.arguments as Record<string, unknown>)
+        : {}
     const controller = new AbortController()
     this.inflight.set(id, controller)
     const progressToken = p._meta?.progressToken
     let progress = 0
-    const keepalive = typeof progressToken === 'string' || typeof progressToken === 'number'
-      ? setInterval(() => {
-        if (this.closed || controller.signal.aborted) return
-        this.opts.send({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken, progress: ++progress, message: 'Waiting on Switchboard' } })
-      }, this.opts.progressIntervalMs ?? PROGRESS_INTERVAL_MS)
-      : null
+    const keepalive =
+      typeof progressToken === 'string' || typeof progressToken === 'number'
+        ? setInterval(() => {
+            if (this.closed || controller.signal.aborted) return
+            this.opts.send({
+              jsonrpc: '2.0',
+              method: 'notifications/progress',
+              params: { progressToken, progress: ++progress, message: 'Waiting on Switchboard' },
+            })
+          }, this.opts.progressIntervalMs ?? PROGRESS_INTERVAL_MS)
+        : null
     keepalive?.unref?.()
     let result: McpToolResult
     try {
@@ -175,7 +186,10 @@ export class McpSession {
       // Tools report refusals as results. A throw is a bug, and the model
       // still gets words it can act on rather than a transport error.
       log.error(`tool ${tool.name} threw`, err)
-      result = toolText(`Switchboard could not run ${tool.name}: ${err instanceof Error ? err.message : String(err)}`, true)
+      result = toolText(
+        `Switchboard could not run ${tool.name}: ${err instanceof Error ? err.message : String(err)}`,
+        true,
+      )
     } finally {
       if (keepalive) clearInterval(keepalive)
       this.inflight.delete(id)

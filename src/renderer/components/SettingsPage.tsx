@@ -58,7 +58,13 @@ import { Button } from './ui/button'
 import { Combobox } from './ui/combobox'
 import { onEscapeFirst } from './ui/escape-first'
 import { cn } from '../lib/utils'
-import { chordFromEvent, formatBinding, reservedShortcutReason, setShortcutCapture, shortcutClashesFor } from '@shared/shortcuts'
+import {
+  chordFromEvent,
+  formatBinding,
+  reservedShortcutReason,
+  setShortcutCapture,
+  shortcutClashesFor,
+} from '@shared/shortcuts'
 
 const log = createRendererLogger('component:settings')
 
@@ -81,7 +87,14 @@ interface SettingsContextValue extends SettingValues {
 }
 
 const SettingsContext = createContext<SettingsContextValue>({
-  values: {}, set: () => {}, highlight: null, scope: null, setScope: () => {}, projects: [], workspaces: [], close: () => {},
+  values: {},
+  set: () => {},
+  highlight: null,
+  scope: null,
+  setScope: () => {},
+  projects: [],
+  workspaces: [],
+  close: () => {},
 })
 
 /**
@@ -108,14 +121,22 @@ export function SettingsPage({ page, onNavigate, onClose }: SettingsPageProps) {
     if (open) void useProviderInstanceStore.getState().refresh()
   }, [open])
 
-  const navigate = useCallback((next: SettingsPageId, rowId: string | null = null) => {
-    setQuery('')
-    setHighlight(rowId)
-    onNavigate(next)
-  }, [onNavigate])
+  const navigate = useCallback(
+    (next: SettingsPageId, rowId: string | null = null) => {
+      setQuery('')
+      setHighlight(rowId)
+      onNavigate(next)
+    },
+    [onNavigate],
+  )
 
   return (
-    <Dialog open={page !== null} onOpenChange={(next) => { if (!next) onClose() }}>
+    <Dialog
+      open={page !== null}
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent
         aria-describedby={undefined}
         onOpenAutoFocus={(event) => {
@@ -148,7 +169,13 @@ export function SettingsPage({ page, onNavigate, onClose }: SettingsPageProps) {
 }
 
 function SettingsBody({
-  page, query, onQuery, highlight, searchRef, onNavigate, onClose,
+  page,
+  query,
+  onQuery,
+  highlight,
+  searchRef,
+  onNavigate,
+  onClose,
 }: {
   page: SettingsPageId
   query: string
@@ -172,8 +199,16 @@ function SettingsBody({
 
   return (
     <SettingsContext.Provider value={context}>
-      <nav aria-label="Settings pages" className="flex w-[212px] shrink-0 flex-col gap-[2px] border-r border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-3">
-        <Button variant="ghost" size="sm" onClick={onClose} className="mb-1 self-start font-[500] text-[var(--text-secondary)]">
+      <nav
+        aria-label="Settings pages"
+        className="flex w-[212px] shrink-0 flex-col gap-[2px] border-r border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-3"
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+          className="mb-1 self-start font-[500] text-[var(--text-secondary)]"
+        >
           <ChevronLeftIcon />
           Back
         </Button>
@@ -217,9 +252,11 @@ function SettingsBody({
       <main className="min-w-0 flex-1 overflow-auto bg-[var(--bg-primary)] px-[30px] py-[22px]">
         <div className="max-w-[760px]">
           <SettingsFileBanner />
-          {searching
-            ? <SearchResults query={query} results={results} onOpen={(row) => onNavigate(row.page, row.id)} />
-            : <SettingsPageBody page={page} onNavigate={onNavigate} />}
+          {searching ? (
+            <SearchResults query={query} results={results} onOpen={(row) => onNavigate(row.page, row.id)} />
+          ) : (
+            <SettingsPageBody page={page} onNavigate={onNavigate} />
+          )}
         </div>
       </main>
     </SettingsContext.Provider>
@@ -229,7 +266,13 @@ function SettingsBody({
 function ChevronLeftIcon() {
   return (
     <svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true">
-      <path d="M7.5 2.5 L4 6 L7.5 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M7.5 2.5 L4 6 L7.5 9.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   )
 }
@@ -239,13 +282,15 @@ function useSettingsProjects(): { projects: PickerProject[]; workspaces: Workspa
   const [projects, setProjects] = useState<PickerProject[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   useEffect(() => {
-    window.api.app.getProjects()
+    window.api.app
+      .getProjects()
       .then((rows: PickerProject[]) => {
         setProjects(rows ?? [])
         void useProjectSettingsStore.getState().load((rows ?? []).map((row) => row.path))
       })
       .catch((err: unknown) => log.warn('getProjects failed, the Scope control lists no projects', err))
-    window.api.app.workspaces.list()
+    window.api.app.workspaces
+      .list()
       .then((list: Workspace[]) => setWorkspaces(list ?? []))
       .catch((err: unknown) => log.warn('workspaces.list failed, the Scope control shows no workspace groups', err))
   }, [])
@@ -256,7 +301,15 @@ function projectName(projects: PickerProject[], path: string): string {
   return projects.find((project) => project.path === path)?.name ?? path
 }
 
-function SearchResults({ query, results, onOpen }: { query: string; results: SettingRowDef[]; onOpen: (row: SettingRowDef) => void }) {
+function SearchResults({
+  query,
+  results,
+  onOpen,
+}: {
+  query: string
+  results: SettingRowDef[]
+  onOpen: (row: SettingRowDef) => void
+}) {
   const trimmed = query.trim()
   const { values, scope, projects } = useContext(SettingsContext)
   const overrides = useProjectSettingsStore((state) => (scope ? state.byProject[scope] : undefined))
@@ -271,27 +324,35 @@ function SearchResults({ query, results, onOpen }: { query: string; results: Set
       <SettingsCard>
         {results.length === 0 ? (
           <div className="px-[14px] py-3 text-[12.5px] text-[var(--text-secondary)]">No setting matches.</div>
-        ) : results.map((row) => (
-          <button
-            key={row.id}
-            type="button"
-            onClick={() => onOpen(row)}
-            className="flex w-full cursor-pointer items-center gap-4 border-0 border-t border-solid border-t-[var(--border)] bg-transparent px-[14px] py-2.5 text-left text-[var(--text-primary)] outline-none first:border-t-0 hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]"
-          >
-            <span className="min-w-0 flex-1">
-              <span className="block text-[11.5px] text-[var(--text-muted)]">{pageTitle(row.page)} · {row.section}</span>
-              <span className="block text-[13px] font-[500]"><Highlighted text={row.label} query={trimmed} /></span>
-              {row.description && (
-                <span className="mt-0.5 block truncate text-[12px] text-[var(--text-secondary)]">{row.description}</span>
+        ) : (
+          results.map((row) => (
+            <button
+              key={row.id}
+              type="button"
+              onClick={() => onOpen(row)}
+              className="flex w-full cursor-pointer items-center gap-4 border-0 border-t border-solid border-t-[var(--border)] bg-transparent px-[14px] py-2.5 text-left text-[var(--text-primary)] outline-none first:border-t-0 hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11.5px] text-[var(--text-muted)]">
+                  {pageTitle(row.page)} · {row.section}
+                </span>
+                <span className="block text-[13px] font-[500]">
+                  <Highlighted text={row.label} query={trimmed} />
+                </span>
+                {row.description && (
+                  <span className="mt-0.5 block truncate text-[12px] text-[var(--text-secondary)]">
+                    {row.description}
+                  </span>
+                )}
+              </span>
+              {row.keys && <Kbd>{row.keys}</Kbd>}
+              {!row.keys && row.defaultValue !== undefined && (
+                <ResultValue row={row} state={scopedRow(row, scope, values[row.id], overrides)} />
               )}
-            </span>
-            {row.keys && <Kbd>{row.keys}</Kbd>}
-            {!row.keys && row.defaultValue !== undefined && (
-              <ResultValue row={row} state={scopedRow(row, scope, values[row.id], overrides)} />
-            )}
-            <span className="shrink-0 text-[11.5px] text-[var(--text-muted)]">Open</span>
-          </button>
-        ))}
+              <span className="shrink-0 text-[11.5px] text-[var(--text-muted)]">Open</span>
+            </button>
+          ))
+        )}
       </SettingsCard>
     </>
   )
@@ -315,19 +376,35 @@ function Highlighted({ text, query }: { text: string; query: string }) {
   const pattern = new RegExp(`(${terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'ig')
   return (
     <>
-      {text.split(pattern).map((part, i) => (
-        i % 2 === 1
-          ? <mark key={i} className="rounded-[2px] bg-[var(--accent-subtle)] text-inherit">{part}</mark>
-          : <span key={i}>{part}</span>
-      ))}
+      {text.split(pattern).map((part, i) =>
+        i % 2 === 1 ? (
+          <mark key={i} className="rounded-[2px] bg-[var(--accent-subtle)] text-inherit">
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
     </>
   )
 }
 
-export function SettingsPageBody({ page, onNavigate }: { page: SettingsPageId; onNavigate?: (page: SettingsPageId) => void }) {
+export function SettingsPageBody({
+  page,
+  onNavigate,
+}: {
+  page: SettingsPageId
+  onNavigate?: (page: SettingsPageId) => void
+}) {
   const meta = SETTINGS_PAGES.find((p) => p.id === page)!
   if (page === 'data') {
-    return <ArchiveDataPage meta={meta} Anchor={SettingAnchor} onOpenProjects={onNavigate && (() => onNavigate('projects'))} />
+    return (
+      <ArchiveDataPage
+        meta={meta}
+        Anchor={SettingAnchor}
+        onOpenProjects={onNavigate && (() => onNavigate('projects'))}
+      />
+    )
   }
   return (
     <>
@@ -340,20 +417,28 @@ export function SettingsPageBody({ page, onNavigate }: { page: SettingsPageId; o
       {page === 'projects' && (
         <>
           <Section title={SETTING_ROW.projectList.section}>
-            <SettingAnchor def={SETTING_ROW.projectList}><ProjectList onNavigate={onNavigate} /></SettingAnchor>
+            <SettingAnchor def={SETTING_ROW.projectList}>
+              <ProjectList onNavigate={onNavigate} />
+            </SettingAnchor>
           </Section>
           <Section title={SETTING_ROW.launchConfigs.section}>
-            <SettingAnchor def={SETTING_ROW.launchConfigs}><LaunchConfigsPanel /></SettingAnchor>
+            <SettingAnchor def={SETTING_ROW.launchConfigs}>
+              <LaunchConfigsPanel />
+            </SettingAnchor>
           </Section>
           <Section title={SETTING_ROW.worktreeProtection.section}>
-            <SettingAnchor def={SETTING_ROW.worktreeProtection}><WorktreeProtectionPanel /></SettingAnchor>
+            <SettingAnchor def={SETTING_ROW.worktreeProtection}>
+              <WorktreeProtectionPanel />
+            </SettingAnchor>
           </Section>
         </>
       )}
       {page === 'keyboard' && <KeyboardPage />}
       {page === 'devices' && (
         <Section title={SETTING_ROW.mobile.section}>
-          <SettingAnchor def={SETTING_ROW.mobile}><MobilePairingTab /></SettingAnchor>
+          <SettingAnchor def={SETTING_ROW.mobile}>
+            <MobilePairingTab />
+          </SettingAnchor>
         </Section>
       )}
       {page === 'about' && <AboutPage />}
@@ -368,7 +453,14 @@ function GeneralPage() {
         <NotificationRows />
       </Section>
       <Section title="Updates" card>
-        <SettingRow def={SETTING_ROW.updates} below={<div className="mt-2"><UpdateCheckRow /></div>} />
+        <SettingRow
+          def={SETTING_ROW.updates}
+          below={
+            <div className="mt-2">
+              <UpdateCheckRow />
+            </div>
+          }
+        />
       </Section>
       <Section title="Sidebar" card>
         <SettingRow def={SETTING_ROW.recentLimit}>
@@ -386,7 +478,11 @@ function GeneralPage() {
       <Section title="Privacy" card>
         <SettingRow
           def={SETTING_ROW.analytics}
-          extra={<a href={PRIVACY_POLICY_URL} className="text-[var(--accent)] no-underline hover:underline">Read the privacy policy</a>}
+          extra={
+            <a href={PRIVACY_POLICY_URL} className="text-[var(--accent)] no-underline hover:underline">
+              Read the privacy policy
+            </a>
+          }
         >
           <ToggleControl def={SETTING_ROW.analytics} />
         </SettingRow>
@@ -469,7 +565,8 @@ function ScopeControl() {
       </div>
       {scope && (
         <p data-testid="settings-scope-note" className="mt-2 text-[12px] text-[var(--text-secondary)]">
-          Overrides for <b className="font-[600] text-[var(--text-primary)]">{projectName(projects, scope)}</b>. A row with no override uses the All projects value.
+          Overrides for <b className="font-[600] text-[var(--text-primary)]">{projectName(projects, scope)}</b>. A row
+          with no override uses the All projects value.
         </p>
       )}
     </div>
@@ -485,13 +582,16 @@ function ProjectList({ onNavigate }: { onNavigate?: (page: SettingsPageId) => vo
   useEffect(() => {
     let cancelled = false
     for (const project of projects) {
-      window.api.app.getLaunchConfig(project.path)
+      window.api.app
+        .getLaunchConfig(project.path)
         .then((yaml: string | null) => {
           if (!cancelled) setLaunchConfigs((prev) => ({ ...prev, [project.path]: launchConfigCount(yaml) }))
         })
         .catch((err: unknown) => log.warn(`could not count the launch configs of ${project.path}`, err))
     }
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [projects])
 
   if (projects.length === 0) {
@@ -500,9 +600,15 @@ function ProjectList({ onNavigate }: { onNavigate?: (page: SettingsPageId) => vo
   return (
     <SettingsCard>
       {projects.map((project) => (
-        <div key={project.path} data-project-row={project.path} className="flex items-center gap-4 border-t border-[var(--border)] px-[14px] py-2.5 first:border-t-0">
+        <div
+          key={project.path}
+          data-project-row={project.path}
+          className="flex items-center gap-4 border-t border-[var(--border)] px-[14px] py-2.5 first:border-t-0"
+        >
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-[500]" title={project.path}>{project.name}</div>
+            <div className="truncate text-[13px] font-[500]" title={project.path}>
+              {project.name}
+            </div>
             <div className="mt-0.5 text-[12px] text-[var(--text-secondary)]">
               {projectSummary(launchConfigs[project.path], overrideCount(byProject[project.path]))}
             </div>
@@ -547,7 +653,9 @@ function KeyboardPage() {
           variant="outline"
           size="sm"
           disabled={changed.length === 0}
-          onClick={() => { for (const row of changed) set(row.id, row.defaultValue!) }}
+          onClick={() => {
+            for (const row of changed) set(row.id, row.defaultValue!)
+          }}
         >
           Reset all
         </Button>
@@ -555,11 +663,13 @@ function KeyboardPage() {
       {groups.length === 0 && <p className="text-[12.5px] text-[var(--text-secondary)]">No shortcut matches.</p>}
       {groups.map((group) => (
         <Section key={group} title={group} card>
-          {shown.filter((row) => row.section === group).map((def) => (
-            <SettingRow key={def.id} def={def}>
-              {def.defaultValue !== undefined ? <ShortcutRecorder def={def} /> : <Kbd>{def.keys}</Kbd>}
-            </SettingRow>
-          ))}
+          {shown
+            .filter((row) => row.section === group)
+            .map((def) => (
+              <SettingRow key={def.id} def={def}>
+                {def.defaultValue !== undefined ? <ShortcutRecorder def={def} /> : <Kbd>{def.keys}</Kbd>}
+              </SettingRow>
+            ))}
         </Section>
       ))}
     </>
@@ -601,7 +711,9 @@ function ShortcutRecorder({ def }: { def: SettingRowDef }) {
       if (reason) return setProblem(`${formatBinding(chord)}: ${reason}`)
       const clashes = shortcutClashesFor(command, chord)
       if (clashes.length > 0) {
-        return setProblem(`${formatBinding(chord)} is already ${clashes.map((c) => c.label).join(', ')}. Change that one first.`)
+        return setProblem(
+          `${formatBinding(chord)} is already ${clashes.map((c) => c.label).join(', ')}. Change that one first.`,
+        )
       }
       setValue(chord)
       stop()
@@ -623,8 +735,14 @@ function ShortcutRecorder({ def }: { def: SettingRowDef }) {
         aria-label={`Change the shortcut for ${def.label}`}
         aria-pressed={recording}
         title="Click, then press the new keys. Escape cancels, Backspace unbinds."
-        onClick={() => { setRecording((r) => !r); setProblem(null) }}
-        onBlur={() => { setRecording(false); setProblem(null) }}
+        onClick={() => {
+          setRecording((r) => !r)
+          setProblem(null)
+        }}
+        onBlur={() => {
+          setRecording(false)
+          setProblem(null)
+        }}
         className={cn(
           'cursor-pointer whitespace-nowrap rounded-[5px] border border-b-2 px-1.5 py-[1px] text-[11.5px] outline-none focus-visible:ring-2 focus-visible:ring-ring',
           recording
@@ -634,7 +752,11 @@ function ShortcutRecorder({ def }: { def: SettingRowDef }) {
       >
         {recording ? 'Press the new shortcut' : label || <span className="text-[var(--text-muted)]">Not set</span>}
       </button>
-      {problem && <div role="alert" className="max-w-[300px] text-right text-[11.5px] text-[var(--warning)]">{problem}</div>}
+      {problem && (
+        <div role="alert" className="max-w-[300px] text-right text-[11.5px] text-[var(--warning)]">
+          {problem}
+        </div>
+      )}
     </div>
   )
 }
@@ -685,12 +807,22 @@ function SettingsJsonRow() {
     <SettingRow
       def={SETTING_ROW.settingsJson}
       below={
-        !available
-          ? <div className="mt-0.5 text-[11.5px] text-[var(--text-muted)]">The file is beside this Mac's settings, and this window uses a remote backend's.</div>
-          : problem && <div role="alert" className="mt-0.5 text-[11.5px] text-[var(--warning)]">{problem}</div>
+        !available ? (
+          <div className="mt-0.5 text-[11.5px] text-[var(--text-muted)]">
+            The file is beside this Mac's settings, and this window uses a remote backend's.
+          </div>
+        ) : (
+          problem && (
+            <div role="alert" className="mt-0.5 text-[11.5px] text-[var(--warning)]">
+              {problem}
+            </div>
+          )
+        )
       }
     >
-      <Button variant="outline" size="sm" disabled={!available} onClick={() => void open()}>Open</Button>
+      <Button variant="outline" size="sm" disabled={!available} onClick={() => void open()}>
+        Open
+      </Button>
     </SettingRow>
   )
 }
@@ -702,8 +834,11 @@ function SettingsFileBanner() {
     const api = window.api.settingsFile
     if (!api?.available) return
     let cancelled = false
-    api.status()
-      .then((next) => { if (!cancelled) setStatus(next) })
+    api
+      .status()
+      .then((next) => {
+        if (!cancelled) setStatus(next)
+      })
       .catch((err) => log.warn('reading the settings.json status failed', err))
     const off = api.onStatus(setStatus)
     return () => {
@@ -735,7 +870,11 @@ function Section({ title, card = false, children }: { title: string; card?: bool
 }
 
 function SettingsCard({ children }: { children: ReactNode }) {
-  return <div className="overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">{children}</div>
+  return (
+    <div className="overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
+      {children}
+    </div>
+  )
 }
 
 function Kbd({ children }: { children: ReactNode }) {
@@ -760,7 +899,9 @@ function useHighlightTarget(id: string) {
     const el = ref.current
     if (!active || !el) return
     el.scrollIntoView({ block: 'center' })
-    const control = el.querySelector<HTMLElement>(':is(button, input, select, textarea, a[href]):not([data-setting-reset])')
+    const control = el.querySelector<HTMLElement>(
+      ':is(button, input, select, textarea, a[href]):not([data-setting-reset])',
+    )
     ;(control ?? el).focus({ preventScroll: true })
   }, [active])
   return { ref, active }
@@ -774,7 +915,10 @@ function SettingAnchor({ def, children }: { def: SettingRowDef; children: ReactN
       ref={ref}
       tabIndex={-1}
       data-setting-row={def.id}
-      className={cn('rounded-[10px] outline-none', active && 'ring-2 ring-[var(--border-focus)] ring-offset-4 ring-offset-[var(--bg-primary)]')}
+      className={cn(
+        'rounded-[10px] outline-none',
+        active && 'ring-2 ring-[var(--border-focus)] ring-offset-4 ring-offset-[var(--bg-primary)]',
+      )}
     >
       {children}
     </div>
@@ -787,7 +931,12 @@ function SettingAnchor({ def, children }: { def: SettingRowDef; children: ReactN
  * the default, and the control. In a project's scope the marker is
  * "Overridden" instead and Reset removes the override.
  */
-function SettingRow({ def, extra, below, children }: {
+function SettingRow({
+  def,
+  extra,
+  below,
+  children,
+}: {
   def: SettingRowDef
   /** Shown after the description, e.g. a link or a live status. */
   extra?: ReactNode
@@ -815,7 +964,9 @@ function SettingRow({ def, extra, below, children }: {
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline">
-          <div id={labelId(def.id)} className="text-[13px] font-[500]">{def.label}</div>
+          <div id={labelId(def.id)} className="text-[13px] font-[500]">
+            {def.label}
+          </div>
           {changed && (
             <span
               title={`Changed from the default (${defaultValueLabel(def)})`}
@@ -837,7 +988,9 @@ function SettingRow({ def, extra, below, children }: {
         </div>
         {(def.description || extra) && (
           <div className="mt-0.5 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
-            {def.description}{def.description && extra ? ' ' : null}{extra}
+            {def.description}
+            {def.description && extra ? ' ' : null}
+            {extra}
           </div>
         )}
         {scoped.disabledReason && (
@@ -883,10 +1036,13 @@ function useRowValue(def: SettingRowDef): [string | undefined, (value: string) =
   const { set, scope } = useContext(SettingsContext)
   const scoped = useScopedRow(def)
   const setOverride = useProjectSettingsStore((state) => state.setOverride)
-  const write = useCallback((value: string) => {
-    if (scope && def.page === 'chat' && def.scopeKey) void setOverride(scope, def.scopeKey, value)
-    else set(def.id, value)
-  }, [set, setOverride, scope, def])
+  const write = useCallback(
+    (value: string) => {
+      if (scope && def.page === 'chat' && def.scopeKey) void setOverride(scope, def.scopeKey, value)
+      else set(def.id, value)
+    },
+    [set, setOverride, scope, def],
+  )
   return [scoped.value, write, scoped.value === undefined || scoped.disabledReason !== undefined]
 }
 
@@ -900,7 +1056,10 @@ function ToggleControl({ def, onToggle }: { def: SettingRowDef; onToggle?: (on: 
       aria-checked={on}
       aria-labelledby={labelId(def.id)}
       disabled={disabled}
-      onClick={() => { setValue(String(!on)); onToggle?.(!on) }}
+      onClick={() => {
+        setValue(String(!on))
+        onToggle?.(!on)
+      }}
       className={cn(
         'relative h-[18px] w-8 shrink-0 cursor-pointer rounded-full border-0 p-0 outline-none transition-colors duration-100 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50',
         on ? 'bg-[var(--accent)]' : 'bg-[rgba(128,128,128,0.35)]',
@@ -917,7 +1076,13 @@ function ToggleControl({ def, onToggle }: { def: SettingRowDef; onToggle?: (on: 
   )
 }
 
-function SelectControl({ def, options }: { def: SettingRowDef; options: ReadonlyArray<{ value: string; label: string }> }) {
+function SelectControl({
+  def,
+  options,
+}: {
+  def: SettingRowDef
+  options: ReadonlyArray<{ value: string; label: string }>
+}) {
   const [value, setValue, disabled] = useRowValue(def)
   return (
     <Combobox
@@ -932,10 +1097,20 @@ function SelectControl({ def, options }: { def: SettingRowDef; options: Readonly
   )
 }
 
-function SegmentedControl({ def, options }: { def: SettingRowDef; options: ReadonlyArray<{ value: string; label: string }> }) {
+function SegmentedControl({
+  def,
+  options,
+}: {
+  def: SettingRowDef
+  options: ReadonlyArray<{ value: string; label: string }>
+}) {
   const [value, setValue, disabled] = useRowValue(def)
   return (
-    <div role="group" aria-labelledby={labelId(def.id)} className="inline-flex shrink-0 overflow-hidden rounded-[6px] border border-[var(--border)]">
+    <div
+      role="group"
+      aria-labelledby={labelId(def.id)}
+      className="inline-flex shrink-0 overflow-hidden rounded-[6px] border border-[var(--border)]"
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -945,7 +1120,9 @@ function SegmentedControl({ def, options }: { def: SettingRowDef; options: Reado
           onClick={() => setValue(o.value)}
           className={cn(
             'cursor-pointer border-0 border-l border-solid border-l-[var(--border)] px-2.5 py-[3px] text-[12px] outline-none first:border-l-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-            value === o.value ? 'bg-[var(--bg-active)] text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]',
+            value === o.value
+              ? 'bg-[var(--bg-active)] text-[var(--text-primary)]'
+              : 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]',
           )}
         >
           {o.label}
@@ -981,7 +1158,9 @@ function IdleMinutesControl() {
  */
 function NotificationRows() {
   const [enabled] = useRowValue(SETTING_ROW.notifyTurnEnd)
-  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(() => currentNotificationPermission())
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    currentNotificationPermission(),
+  )
   const [testResult, setTestResult] = useState<string | null>(null)
 
   const onToggle = async (next: boolean) => {
@@ -1002,13 +1181,14 @@ function NotificationRows() {
     setTimeout(() => setTestResult(null), 6000)
   }
 
-  const permissionBadge = permission === 'granted'
-    ? { text: 'Permission: granted', className: 'text-[var(--text-muted)]' }
-    : permission === 'denied'
-      ? { text: 'Permission: denied (fix in macOS Settings)', className: 'text-[var(--error)]' }
-      : permission === 'default'
-        ? { text: 'Permission: not requested yet', className: 'text-[var(--warning)]' }
-        : { text: 'Notification API unavailable', className: 'text-[var(--text-muted)]' }
+  const permissionBadge =
+    permission === 'granted'
+      ? { text: 'Permission: granted', className: 'text-[var(--text-muted)]' }
+      : permission === 'denied'
+        ? { text: 'Permission: denied (fix in macOS Settings)', className: 'text-[var(--error)]' }
+        : permission === 'default'
+          ? { text: 'Permission: not requested yet', className: 'text-[var(--warning)]' }
+          : { text: 'Notification API unavailable', className: 'text-[var(--text-muted)]' }
 
   return (
     <>
@@ -1017,14 +1197,16 @@ function NotificationRows() {
       </SettingRow>
       <SettingRow
         def={SETTING_ROW.notifyTest}
-        below={(
+        below={
           <div className="mt-1 text-[11.5px]">
             <span className={permissionBadge.className}>{permissionBadge.text}</span>
             {testResult && <span className="ml-2 text-[var(--text-muted)]">{testResult}</span>}
           </div>
-        )}
+        }
       >
-        <Button variant="outline" size="sm" onClick={test} disabled={enabled === 'false'}>Send test</Button>
+        <Button variant="outline" size="sm" onClick={test} disabled={enabled === 'false'}>
+          Send test
+        </Button>
       </SettingRow>
     </>
   )
@@ -1042,14 +1224,16 @@ function TourRows() {
   return (
     <>
       <SettingRow def={SETTING_ROW.tourReplay}>
-        <Button size="sm" onClick={() => replay(0)}>Replay tour</Button>
+        <Button size="sm" onClick={() => replay(0)}>
+          Replay tour
+        </Button>
       </SettingRow>
       <SettingRow def={SETTING_ROW.tourAutoplay}>
         <ToggleControl def={SETTING_ROW.tourAutoplay} />
       </SettingRow>
       <SettingRow
         def={SETTING_ROW.tourSteps}
-        below={(
+        below={
           <div className="mt-2 flex flex-col gap-1">
             {FEATURE_TOUR_STEPS.map((step, i) => (
               <button
@@ -1058,13 +1242,15 @@ function TourRows() {
                 onClick={() => replay(i)}
                 className="flex cursor-pointer items-baseline gap-3 rounded-[5px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-3 py-2 text-left text-[var(--text-primary)] outline-none hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <span className="min-w-5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-muted)]">{String(i + 1).padStart(2, '0')}</span>
+                <span className="min-w-5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-muted)]">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
                 <span className="text-[12.5px] font-[500]">{step.title}</span>
                 <span className="ml-auto text-[11px] text-[var(--text-muted)]">Play</span>
               </button>
             ))}
           </div>
-        )}
+        }
       />
     </>
   )
@@ -1111,18 +1297,24 @@ export function DiagnosticsSection() {
 
   useEffect(() => {
     let cancelled = false
-    window.api.app.getDiagnostics()
-      .then((value) => { if (!cancelled) setSnapshot(value) })
+    window.api.app
+      .getDiagnostics()
+      .then((value) => {
+        if (!cancelled) setSnapshot(value)
+      })
       .catch((err) => {
         log.warn('getDiagnostics failed', err)
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
     let cancelled = false
-    window.api.settings.get(DIAGNOSTICS_EXPANDED_SETTING_KEY)
+    window.api.settings
+      .get(DIAGNOSTICS_EXPANDED_SETTING_KEY)
       .then((value) => {
         if (cancelled) return
         setStoredPreference(typeof value === 'string' ? value : null)
@@ -1134,7 +1326,9 @@ export function DiagnosticsSection() {
         // section would never derive a default at all.
         if (!cancelled) setPreferenceLoaded(true)
       })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // The default depends on two async loads, so it is derived rather than set
@@ -1155,7 +1349,8 @@ export function DiagnosticsSection() {
       headerRef.current?.focus()
     }
     setExpanded(next)
-    window.api.settings.set(DIAGNOSTICS_EXPANDED_SETTING_KEY, String(next))
+    window.api.settings
+      .set(DIAGNOSTICS_EXPANDED_SETTING_KEY, String(next))
       .catch((err) => log.warn('diagnostics preference write failed', err))
   }
 
@@ -1195,11 +1390,7 @@ export function DiagnosticsSection() {
     cursor: 'pointer',
   }
 
-  const gist = error
-    ? 'unavailable'
-    : snapshot
-      ? diagnosticsGist(snapshot)
-      : 'Collecting...'
+  const gist = error ? 'unavailable' : snapshot ? diagnosticsGist(snapshot) : 'Collecting...'
 
   return (
     <div style={{ marginBottom: '20px' }}>
@@ -1239,28 +1430,36 @@ export function DiagnosticsSection() {
             transition: 'transform 160ms cubic-bezier(0.2, 0.7, 0.3, 1)',
           }}
         >
-          <path d="M4.5 2.5 L8 6 L4.5 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M4.5 2.5 L8 6 L4.5 9.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
-        <span style={{
-          fontSize: '11px',
-          fontWeight: 600,
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-        }}>
+        <span
+          style={{
+            fontSize: '11px',
+            fontWeight: 600,
+            color: 'var(--text-muted)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+          }}
+        >
           Diagnostics
         </span>
-        <span style={{
-          marginLeft: 'auto',
-          fontSize: '11px',
-          color: error
-            ? 'var(--error)'
-            : snapshot?.translated ? 'var(--warning)' : 'var(--text-muted)',
-          fontVariantNumeric: 'tabular-nums',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>
+        <span
+          style={{
+            marginLeft: 'auto',
+            fontSize: '11px',
+            color: error ? 'var(--error)' : snapshot?.translated ? 'var(--warning)' : 'var(--text-muted)',
+            fontVariantNumeric: 'tabular-nums',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
           {gist}
         </span>
       </button>
@@ -1296,7 +1495,12 @@ export function DiagnosticsSection() {
 }
 
 export function DiagnosticsBody({
-  snapshot, error, feedback, buttonStyle, onCopy, onOpenLogs,
+  snapshot,
+  error,
+  feedback,
+  buttonStyle,
+  onCopy,
+  onOpenLogs,
 }: {
   snapshot: DiagnosticsSnapshot | null
   error: string | null
@@ -1318,7 +1522,10 @@ export function DiagnosticsBody({
     ['Chip', `${snapshot.arch}${snapshot.translated ? ' (running translated - install the native build)' : ''}`],
     ['OS', `${snapshot.platform} ${snapshot.osVersion}`],
     ['Electron', `${snapshot.versions.electron} (Chrome ${snapshot.versions.chrome}, Node ${snapshot.versions.node})`],
-    ['Memory', `${formatMb(snapshot.memory.freeMb)} free of ${formatMb(snapshot.memory.totalMb)}; Switchboard uses ${formatMb(appMb)}`],
+    [
+      'Memory',
+      `${formatMb(snapshot.memory.freeMb)} free of ${formatMb(snapshot.memory.totalMb)}; Switchboard uses ${formatMb(appMb)}`,
+    ],
     ['Live', `${snapshot.livePtys ?? '?'} terminals, ${snapshot.liveSessions ?? '?'} agent sessions`],
   ]
 
@@ -1328,32 +1535,44 @@ export function DiagnosticsBody({
         {facts.map(([label, value]) => (
           <div key={label} style={{ display: 'contents' }}>
             <span style={{ color: 'var(--text-muted)' }}>{label}</span>
-            <span style={{ color: snapshot.translated && label === 'Chip' ? 'var(--warning)' : 'var(--text-primary)' }}>{value}</span>
+            <span style={{ color: snapshot.translated && label === 'Chip' ? 'var(--warning)' : 'var(--text-primary)' }}>
+              {value}
+            </span>
           </div>
         ))}
       </div>
       <div style={{ marginTop: '10px', color: 'var(--text-muted)', fontSize: '11px' }}>Largest processes</div>
-      <div style={{
-        fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-        fontSize: '11px',
-        marginTop: '4px',
-        display: 'grid',
-        gridTemplateColumns: 'auto auto auto 1fr',
-        gap: '2px 14px',
-        color: 'var(--text-primary)',
-      }}>
+      <div
+        style={{
+          fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+          fontSize: '11px',
+          marginTop: '4px',
+          display: 'grid',
+          gridTemplateColumns: 'auto auto auto 1fr',
+          gap: '2px 14px',
+          color: 'var(--text-primary)',
+        }}
+      >
         {top.map((p) => (
           <div key={p.pid} style={{ display: 'contents' }}>
             <span>{p.type}</span>
             <span style={{ textAlign: 'right' }}>{p.cpuPercent.toFixed(1)}%</span>
             <span style={{ textAlign: 'right' }}>{formatMb(p.memoryMb)}</span>
-            <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name ?? ''}</span>
+            <span
+              style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {p.name ?? ''}
+            </span>
           </div>
         ))}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
-        <button type="button" onClick={onCopy} style={buttonStyle}>Copy report</button>
-        <button type="button" onClick={onOpenLogs} style={buttonStyle}>Open logs folder</button>
+        <button type="button" onClick={onCopy} style={buttonStyle}>
+          Copy report
+        </button>
+        <button type="button" onClick={onOpenLogs} style={buttonStyle}>
+          Open logs folder
+        </button>
         {feedback && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{feedback}</span>}
       </div>
     </div>
@@ -1429,28 +1648,23 @@ function UpdateCheckRow() {
 
   const view = updateRowView(status, { checking: busy, restarting })
   const footerCopy = updateFooterCopy(
-    navigator.platform.startsWith('Mac') ? 'darwin'
-      : navigator.platform.startsWith('Win') ? 'win32'
-        : 'linux',
+    navigator.platform.startsWith('Mac') ? 'darwin' : navigator.platform.startsWith('Win') ? 'win32' : 'linux',
   )
 
-  const label = restarting
-    ? updateStatusLabel({ kind: 'installing' })
-    : updateStatusLabel(status)
+  const label = restarting ? updateStatusLabel({ kind: 'installing' }) : updateStatusLabel(status)
 
   // `slow` deliberately stays secondary: the check is still running, so red
   // would report a failure that has not happened.
-  const labelColor = status.kind === 'error'
-    ? 'var(--error, #f85149)'
-    : status.kind === 'downloaded' || status.kind === 'available'
-      ? 'var(--accent)'
-      : 'var(--text-secondary)'
+  const labelColor =
+    status.kind === 'error'
+      ? 'var(--error, #f85149)'
+      : status.kind === 'downloaded' || status.kind === 'available'
+        ? 'var(--accent)'
+        : 'var(--text-secondary)'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <div style={{ fontSize: '12px', color: labelColor, lineHeight: 1.5 }}>
-        {label}
-      </div>
+      <div style={{ fontSize: '12px', color: labelColor, lineHeight: 1.5 }}>{label}</div>
       <div style={{ display: 'flex', gap: '8px' }}>
         <button
           type="button"
@@ -1507,7 +1721,16 @@ function UpdateCheckRow() {
         )}
       </div>
       <div ref={helpRef} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '10.5px',
+            color: 'var(--text-muted)',
+            lineHeight: 1.5,
+          }}
+        >
           <span>{footerCopy.line}</span>
           {footerCopy.tooltip && (
             <button
@@ -1523,11 +1746,7 @@ function UpdateCheckRow() {
           )}
         </div>
         {footerCopy.tooltip && helpOpen && (
-          <div
-            id="update-help-tooltip"
-            role="tooltip"
-            className="update-help-tooltip"
-          >
+          <div id="update-help-tooltip" role="tooltip" className="update-help-tooltip">
             {footerCopy.tooltip}
           </div>
         )}

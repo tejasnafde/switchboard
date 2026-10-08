@@ -73,12 +73,7 @@ describe('SendMicButton', () => {
 
   it('renders exactly one primary button in every state', () => {
     // Two tappable circles in the composer would be ambiguous.
-    for (const props of [
-      {},
-      { canSend: true },
-      { isRunning: true },
-      { isRunning: true, canSend: true },
-    ]) {
+    for (const props of [{}, { canSend: true }, { isRunning: true }, { isRunning: true, canSend: true }]) {
       const v = view(props)
       const buttons = v.root.findAll((n: Node) => n.props?.accessibilityRole === 'button', { deep: false })
       expect(buttons).toHaveLength(1)

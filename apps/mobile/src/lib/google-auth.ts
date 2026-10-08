@@ -44,8 +44,7 @@ function readClientConfig(): GoogleClientConfig | null {
   }
   const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, unknown>
   const clientId = typeof extra.googleClientId === 'string' ? extra.googleClientId.trim() : ''
-  const clientSecret =
-    typeof extra.googleClientSecret === 'string' ? extra.googleClientSecret.trim() : ''
+  const clientSecret = typeof extra.googleClientSecret === 'string' ? extra.googleClientSecret.trim() : ''
   if (!clientId || clientId.startsWith('REPLACE_ME')) {
     log.error('extra.googleClientId is not configured in app.json')
     return null
@@ -158,9 +157,7 @@ async function persist(state: {
     await Promise.all([
       SecureStore.setItemAsync(KEY_ACCESS_TOKEN, state.accessToken),
       SecureStore.setItemAsync(KEY_EXPIRES_AT, String(state.expiresAt)),
-      state.refreshToken
-        ? SecureStore.setItemAsync(KEY_REFRESH_TOKEN, state.refreshToken)
-        : Promise.resolve(),
+      state.refreshToken ? SecureStore.setItemAsync(KEY_REFRESH_TOKEN, state.refreshToken) : Promise.resolve(),
       state.email ? SecureStore.setItemAsync(KEY_EMAIL, state.email) : Promise.resolve(),
     ])
   } catch (err) {

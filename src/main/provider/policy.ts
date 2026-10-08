@@ -148,11 +148,7 @@ function normalizePosix(p: string): string | null {
  * prefix test would let '<root>/../../x.ipynb' pass as in-repo and the
  * mirror machinery would then read/write outside the repo.
  */
-export function notebookWriteRedirect(
-  toolName: string,
-  input: unknown,
-  repoRoot: string
-): NotebookRedirect | null {
+export function notebookWriteRedirect(toolName: string, input: unknown, repoRoot: string): NotebookRedirect | null {
   const target = extractWritePaths(toolName, input)
     .map(toPosix)
     .find((p) => p.endsWith('.ipynb'))
@@ -166,7 +162,7 @@ export function notebookWriteRedirect(
       notebookRelPath: null,
       mirrorRelPath: null,
       message:
-        'Notebook .ipynb files are never edited directly in this workspace. Edit the notebook\'s .py mirror instead - mirrors live under .switchboard/notebooks/ in the repo the notebook belongs to.',
+        "Notebook .ipynb files are never edited directly in this workspace. Edit the notebook's .py mirror instead - mirrors live under .switchboard/notebooks/ in the repo the notebook belongs to.",
     }
   }
 

@@ -2,11 +2,26 @@ import { describe, expect, it } from 'vitest'
 import { storedStatusLine } from '../../src/renderer/components/kanban/KanbanView'
 import type { KanbanCard, Project } from '@shared/types'
 
-const projects = new Map<string, Project>([['/repo', {
-  path: '/repo',
-  name: 'repo',
-  sessions: [{ id: 'chat', source: 'claude-code', title: 'Chat', startedAt: 1, messageCount: 0, filePath: '', statusLine: 'Tests pass, PR open' }],
-}]])
+const projects = new Map<string, Project>([
+  [
+    '/repo',
+    {
+      path: '/repo',
+      name: 'repo',
+      sessions: [
+        {
+          id: 'chat',
+          source: 'claude-code',
+          title: 'Chat',
+          startedAt: 1,
+          messageCount: 0,
+          filePath: '',
+          statusLine: 'Tests pass, PR open',
+        },
+      ],
+    },
+  ],
+])
 const card = (conversationId: string | null) => ({ id: 'c', projectPath: '/repo', conversationId }) as KanbanCard
 
 describe('kanban tile stored status line', () => {

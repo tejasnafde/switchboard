@@ -40,13 +40,16 @@ async function startTurn(mode: 'plan' | 'sandbox', withServer: boolean) {
   const { ClaudeAdapter } = await import('../../src/main/provider/adapters/claude-adapter')
   const adapter = new ClaudeAdapter()
   const onEvent = vi.fn()
-  await adapter.startSession({
-    threadId: 't1',
-    provider: 'claude',
-    cwd: '/tmp',
-    runtimeMode: mode,
-    ...(withServer ? { switchboardMcp: launch } : {}),
-  }, onEvent)
+  await adapter.startSession(
+    {
+      threadId: 't1',
+      provider: 'claude',
+      cwd: '/tmp',
+      runtimeMode: mode,
+      ...(withServer ? { switchboardMcp: launch } : {}),
+    },
+    onEvent,
+  )
   await adapter.sendTurn('t1', 'hello', mode)
   await vi.waitFor(() => expect(captured).not.toBeNull())
   return { adapter, onEvent }
@@ -98,7 +101,7 @@ describe('Claude canUseTool for the Switchboard tools', () => {
     await adapter.stopSession('t1')
   })
 
-  it('still denies another server\'s tool in plan mode', async () => {
+  it("still denies another server's tool in plan mode", async () => {
     const { adapter } = await startTurn('plan', true)
     expect((await captured!.canUseTool('mcp__slack__post_message', {})).behavior).toBe('deny')
     await adapter.stopSession('t1')

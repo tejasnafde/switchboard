@@ -5,5 +5,9 @@
  */
 export function decryptCaller(): string {
   // Frames 0-2 are "Error", this function and the decrypting function itself.
-  return (new Error().stack ?? '').split('\n').slice(3, 7).map((line) => line.trim()).join(' < ')
+  return (new Error().stack ?? '')
+    .split('\n')
+    .slice(3, 7)
+    .map((line) => line.trim())
+    .join(' < ')
 }

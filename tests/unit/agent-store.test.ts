@@ -34,15 +34,20 @@ describe('agent-store', () => {
   })
 
   it('keeps the persisted title when adopting a live provider session', () => {
-    useAgentStore.getState().adoptLiveSessions([{
-      threadId: 'agent_1786814211280',
-      provider: 'codex',
-      status: 'running',
-      runtimeMode: 'full-access',
-      cwd: '/projects/learnlang',
-      createdAt: Date.now(),
-      title: 'branding',
-    }], 'local')
+    useAgentStore.getState().adoptLiveSessions(
+      [
+        {
+          threadId: 'agent_1786814211280',
+          provider: 'codex',
+          status: 'running',
+          runtimeMode: 'full-access',
+          cwd: '/projects/learnlang',
+          createdAt: Date.now(),
+          title: 'branding',
+        },
+      ],
+      'local',
+    )
 
     expect(useAgentStore.getState().sessions[0].title).toBe('branding')
   })
@@ -172,7 +177,11 @@ describe('agent-store', () => {
     // instead of falling back to local.
     const stopSession = vi.fn(() => Promise.resolve())
     const unbind = vi.fn()
-    ;(globalThis as unknown as { window: { api: { provider: { stopSession: typeof stopSession }; routing: { unbind: typeof unbind } } } }).window = {
+    ;(
+      globalThis as unknown as {
+        window: { api: { provider: { stopSession: typeof stopSession }; routing: { unbind: typeof unbind } } }
+      }
+    ).window = {
       api: { provider: { stopSession }, routing: { unbind } },
     }
 
@@ -210,7 +219,14 @@ describe('agent-store', () => {
 
   it('resetRunningSessionsForMachine drops the open cards of every session on the lost machine', () => {
     const { addSession, setPendingRequests, resetRunningSessionsForMachine } = useAgentStore.getState()
-    const card = { type: 'request.opened' as const, threadId: 'a', requestId: 'r', requestType: 'command' as const, toolName: 'Bash', detail: 'ls' }
+    const card = {
+      type: 'request.opened' as const,
+      threadId: 'a',
+      requestId: 'r',
+      requestType: 'command' as const,
+      toolName: 'Bash',
+      detail: 'ls',
+    }
     addSession({ id: 'a', type: 'claude-code', status: 'running', machineId: 'm1' })
     addSession({ id: 'b', type: 'claude-code', status: 'running', machineId: 'm2' })
     setPendingRequests('a', [card])

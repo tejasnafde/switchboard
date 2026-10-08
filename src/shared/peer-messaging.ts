@@ -101,9 +101,7 @@ export function nextHopDepth(senderDepth: number, initiator: PeerMessageInitiato
 
 export type PeerMessageRefusal = 'too-large' | 'rate-limited' | 'duplicate'
 
-export type PeerMessageCheck =
-  | { ok: true; id: string }
-  | { ok: false; reason: PeerMessageRefusal; message: string }
+export type PeerMessageCheck = { ok: true; id: string } | { ok: false; reason: PeerMessageRefusal; message: string }
 
 /**
  * FNV-1a, 32 bits at a time over the utf-16 code units, run twice with
@@ -261,9 +259,7 @@ export class PeerMessageGuard {
 
 export type PeerAgentRefusal = 'hop-depth' | 'budget'
 
-export type PeerAgentCheck =
-  | { ok: true }
-  | { ok: false; reason: PeerAgentRefusal; message: string }
+export type PeerAgentCheck = { ok: true } | { ok: false; reason: PeerAgentRefusal; message: string }
 
 export interface PeerAgentSend {
   fromThreadId: string

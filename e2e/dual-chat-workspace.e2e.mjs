@@ -25,8 +25,16 @@ for (const dir of [userDataDir, isolatedHome, isolatedTmp, projectA, projectB]) 
 let runtime
 let app
 const cleanup = () => {
-  try { runtime?.cleanup() } catch { /* best effort */ }
-  try { rmSync(root, { recursive: true, force: true }) } catch { /* best effort */ }
+  try {
+    runtime?.cleanup()
+  } catch {
+    /* best effort */
+  }
+  try {
+    rmSync(root, { recursive: true, force: true })
+  } catch {
+    /* best effort */
+  }
 }
 process.once('exit', cleanup)
 process.once('SIGINT', () => process.exit(130))
@@ -54,14 +62,20 @@ function answerConfirms(win, accept) {
         await tick()
         continue
       }
-      const button = accept ? dialog.getByRole('button').last() : dialog.getByRole('button', { name: 'Cancel', exact: true })
+      const button = accept
+        ? dialog.getByRole('button').last()
+        : dialog.getByRole('button', { name: 'Cancel', exact: true })
       await button.click()
       await dialog.waitFor({ state: 'hidden', timeout: 2_000 })
       count += 1
     }
-  })().catch((error) => { failure = error })
+  })().catch((error) => {
+    failure = error
+  })
   return {
-    get count() { return count },
+    get count() {
+      return count
+    },
     /** Resolves once a confirm has been answered and closed, or after 3s without one. */
     async answered() {
       for (let waited = 0; count === 0 && waited < 3_000; waited += 50) await tick()
@@ -76,13 +90,13 @@ function answerConfirms(win, accept) {
 
 async function selectSidebarSession(win, title, sessionId) {
   const projectThread = win.locator('.sidebar-thread-main', { hasText: title })
-  if (await projectThread.count() > 0 && await projectThread.first().isVisible()) {
+  if ((await projectThread.count()) > 0 && (await projectThread.first().isVisible())) {
     await projectThread.first().click()
   } else {
     const recent = win.locator('.sidebar-recent-row', { hasText: title }).first()
-    for (let reveal = 0; reveal < 5 && await recent.count() === 0; reveal++) {
+    for (let reveal = 0; reveal < 5 && (await recent.count()) === 0; reveal++) {
       const showMore = win.locator('.sidebar-recents-more', { hasText: 'Show' }).first()
-      if (await showMore.count() === 0) break
+      if ((await showMore.count()) === 0) break
       await showMore.click()
     }
     await recent.click()
@@ -124,55 +138,142 @@ try {
   win.on('pageerror', (error) => console.error('[renderer pageerror]', error))
   await win.waitForFunction(() => Boolean(window.api?.app?.createConversation), null, { timeout: 20_000 })
 
-  const seededProjects = await win.evaluate(async ({ projectAPath, projectBPath }) => {
-    await window.api.settings.set('tour.autoplay', 'false')
-    await window.api.settings.set('sidebar.localTreeExpanded', 'true')
-    // The first-run analytics notice covers the bottom of the sidebar. It
-    // reads the flag on mount, so the reload below is what hides it.
-    await window.api.settings.set('analytics.enabled', 'false')
-    await window.api.settings.set('analytics.noticeSeen', 'true')
-    await window.api.routing.invokeOn('local', 'app:add-project-path', projectAPath)
-    await window.api.routing.invokeOn('local', 'app:add-project-path', projectBPath)
-    await window.api.app.createConversation({ id: 'dual-a', projectPath: projectAPath, agentType: 'claude-code', title: 'Dual A' })
-    await window.api.app.createConversation({ id: 'dual-b', projectPath: projectBPath, agentType: 'codex', title: 'Dual B' })
-    await window.api.app.createConversation({ id: 'idle-feedback', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Feedback' })
-    await window.api.app.createConversation({ id: 'idle-rollback', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Rollback' })
-    await window.api.app.createConversation({ id: 'idle-collision', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Collision' })
-    await window.api.app.createConversation({ id: 'idle-ambiguous', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Ambiguous' })
-    await window.api.app.createConversation({ id: 'idle-acceptance-race', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Acceptance Race' })
-    await window.api.app.createConversation({ id: 'idle-resolution-failure', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Resolution Failure' })
-    await window.api.app.createConversation({ id: 'idle-resolution-not-found', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Resolution Not Found' })
-    await window.api.app.createConversation({ id: 'idle-edited-ambiguous', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Edited Ambiguous' })
-    await window.api.app.createConversation({ id: 'tall-history', projectPath: projectAPath, agentType: 'claude-code', title: 'Tall History' })
-    await window.api.app.saveMessage({ id: 'seed-a', conversationId: 'dual-a', role: 'assistant', content: 'Seed response from A' })
-    await window.api.app.saveMessage({ id: 'seed-b', conversationId: 'dual-b', role: 'assistant', content: 'Seed response from B' })
-    const paragraph = Array.from({ length: 18 }, (_, index) => `wrapped line ${index + 1}: a dynamically measured transcript must reserve the full rendered height`).join('\n')
-    for (let index = 0; index < 30; index++) {
-      await window.api.app.saveMessage({
-        id: `tall-${index}`,
-        conversationId: 'tall-history',
-        role: index % 2 === 0 ? 'user' : 'assistant',
-        content: `Tall turn ${index + 1}\n${paragraph}`,
+  const seededProjects = await win.evaluate(
+    async ({ projectAPath, projectBPath }) => {
+      await window.api.settings.set('tour.autoplay', 'false')
+      await window.api.settings.set('sidebar.localTreeExpanded', 'true')
+      // The first-run analytics notice covers the bottom of the sidebar. It
+      // reads the flag on mount, so the reload below is what hides it.
+      await window.api.settings.set('analytics.enabled', 'false')
+      await window.api.settings.set('analytics.noticeSeen', 'true')
+      await window.api.routing.invokeOn('local', 'app:add-project-path', projectAPath)
+      await window.api.routing.invokeOn('local', 'app:add-project-path', projectBPath)
+      await window.api.app.createConversation({
+        id: 'dual-a',
+        projectPath: projectAPath,
+        agentType: 'claude-code',
+        title: 'Dual A',
       })
-    }
-    return window.api.app.getProjects()
-  }, { projectAPath: projectA, projectBPath: projectB })
-  assert(seededProjects.some((project) => project.sessions.some((session) => session.id === 'dual-a')), 'isolated backend catalogues session A')
-  assert(seededProjects.some((project) => project.sessions.some((session) => session.id === 'dual-b')), 'isolated backend catalogues session B')
+      await window.api.app.createConversation({
+        id: 'dual-b',
+        projectPath: projectBPath,
+        agentType: 'codex',
+        title: 'Dual B',
+      })
+      await window.api.app.createConversation({
+        id: 'idle-feedback',
+        projectPath: projectAPath,
+        agentType: 'claude-code',
+        title: 'Idle Feedback',
+      })
+      await window.api.app.createConversation({
+        id: 'idle-rollback',
+        projectPath: projectAPath,
+        agentType: 'claude-code',
+        title: 'Idle Rollback',
+      })
+      await window.api.app.createConversation({
+        id: 'idle-collision',
+        projectPath: projectAPath,
+        agentType: 'claude-code',
+        title: 'Idle Collision',
+      })
+      await window.api.app.createConversation({
+        id: 'idle-ambiguous',
+        projectPath: projectAPath,
+        agentType: 'claude-code',
+        title: 'Idle Ambiguous',
+      })
+      await window.api.app.createConversation({
+        id: 'idle-acceptance-race',
+        projectPath: projectAPath,
+        agentType: 'claude-code',
+        title: 'Idle Acceptance Race',
+      })
+      await window.api.app.createConversation({
+        id: 'idle-resolution-failure',
+        projectPath: projectAPath,
+        agentType: 'claude-code',
+        title: 'Idle Resolution Failure',
+      })
+      await window.api.app.createConversation({
+        id: 'idle-resolution-not-found',
+        projectPath: projectAPath,
+        agentType: 'claude-code',
+        title: 'Idle Resolution Not Found',
+      })
+      await window.api.app.createConversation({
+        id: 'idle-edited-ambiguous',
+        projectPath: projectAPath,
+        agentType: 'claude-code',
+        title: 'Idle Edited Ambiguous',
+      })
+      await window.api.app.createConversation({
+        id: 'tall-history',
+        projectPath: projectAPath,
+        agentType: 'claude-code',
+        title: 'Tall History',
+      })
+      await window.api.app.saveMessage({
+        id: 'seed-a',
+        conversationId: 'dual-a',
+        role: 'assistant',
+        content: 'Seed response from A',
+      })
+      await window.api.app.saveMessage({
+        id: 'seed-b',
+        conversationId: 'dual-b',
+        role: 'assistant',
+        content: 'Seed response from B',
+      })
+      const paragraph = Array.from(
+        { length: 18 },
+        (_, index) =>
+          `wrapped line ${index + 1}: a dynamically measured transcript must reserve the full rendered height`,
+      ).join('\n')
+      for (let index = 0; index < 30; index++) {
+        await window.api.app.saveMessage({
+          id: `tall-${index}`,
+          conversationId: 'tall-history',
+          role: index % 2 === 0 ? 'user' : 'assistant',
+          content: `Tall turn ${index + 1}\n${paragraph}`,
+        })
+      }
+      return window.api.app.getProjects()
+    },
+    { projectAPath: projectA, projectBPath: projectB },
+  )
+  assert(
+    seededProjects.some((project) => project.sessions.some((session) => session.id === 'dual-a')),
+    'isolated backend catalogues session A',
+  )
+  assert(
+    seededProjects.some((project) => project.sessions.some((session) => session.id === 'dual-b')),
+    'isolated backend catalogues session B',
+  )
 
   await win.reload()
   await win.waitForFunction(() => Boolean(window.api?.app?.loadSessionById), null, { timeout: 20_000 })
   await win.keyboard.press('Escape')
   const reloadedProjects = await win.evaluate(() => window.api.app.getProjects())
-  assert(reloadedProjects.some((project) => project.sessions.some((session) => session.id === 'dual-a')), 'session A survives renderer reload')
-  assert(reloadedProjects.some((project) => project.sessions.some((session) => session.id === 'dual-b')), 'session B survives renderer reload')
+  assert(
+    reloadedProjects.some((project) => project.sessions.some((session) => session.id === 'dual-a')),
+    'session A survives renderer reload',
+  )
+  assert(
+    reloadedProjects.some((project) => project.sessions.some((session) => session.id === 'dual-b')),
+    'session B survives renderer reload',
+  )
   try {
     await win.locator('.sidebar-recent-row', { hasText: 'Dual A' }).waitFor({ timeout: 20_000 })
   } catch (error) {
     console.error('renderer body after sidebar timeout', (await win.locator('body').innerText()).slice(0, 4_000))
     throw error
   }
-  assert(!(await win.getByText('Switchboard sends anonymous usage counts').isVisible()), 'first-run analytics notice is not covering the sidebar')
+  assert(
+    !(await win.getByText('Switchboard sends anonymous usage counts').isVisible()),
+    'first-run analytics notice is not covering the sidebar',
+  )
 
   // A cold idle send must acknowledge the click before provider startup
   // finishes. Stub only this renderer's provider boundary: the accepted
@@ -231,13 +332,17 @@ try {
       }
       if (turn.threadId === 'idle-acceptance-race') {
         const main = BrowserWindow.getAllWindows().find((candidate) => candidate.getTitle() === 'Switchboard')
-        setTimeout(() => main?.webContents.send('provider:event', {
-          type: 'user.message',
-          threadId: turn.threadId,
-          origin: turn.origin,
-          text: turn.providerText,
-          at: Date.now(),
-        }), 0)
+        setTimeout(
+          () =>
+            main?.webContents.send('provider:event', {
+              type: 'user.message',
+              threadId: turn.threadId,
+              origin: turn.origin,
+              text: turn.providerText,
+              at: Date.now(),
+            }),
+          0,
+        )
         return {
           status: 'ambiguous',
           accepted: false,
@@ -282,8 +387,7 @@ try {
             reason: 'Fixture could not confirm edited delivery',
           }
         }
-        if (globalThis.__sbIdleEditedRecoveryResolved
-          && turn.origin === globalThis.__sbIdleEditedAmbiguousOrigins[0]) {
+        if (globalThis.__sbIdleEditedRecoveryResolved && turn.origin === globalThis.__sbIdleEditedAmbiguousOrigins[0]) {
           const main = BrowserWindow.getAllWindows().find((candidate) => candidate.getTitle() === 'Switchboard')
           main?.webContents.send('provider:event', {
             type: 'user.message',
@@ -339,8 +443,14 @@ try {
     'cold idle send clears the composer before provider acceptance',
   )
   await idleSending.waitFor({ state: 'detached', timeout: 2_000 })
-  assert(!(await idleComposer.textContent())?.includes('Cold idle feedback check'), 'accepted idle send clears the draft')
-  assert(await idlePanel.getByText('Cold idle feedback check').count() === 1, 'accepted idle send keeps one reconciled bubble')
+  assert(
+    !(await idleComposer.textContent())?.includes('Cold idle feedback check'),
+    'accepted idle send clears the draft',
+  )
+  assert(
+    (await idlePanel.getByText('Cold idle feedback check').count()) === 1,
+    'accepted idle send keeps one reconciled bubble',
+  )
 
   await selectSidebarSession(win, 'Idle Rollback', 'idle-rollback')
   const rollbackPanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-rollback"]')
@@ -357,17 +467,19 @@ try {
     'definite delivery failure restores the exact draft',
   )
   assert(
-    await rollbackPanel.locator('.chat-composer button', { hasText: 'Retry' }).count() === 1,
+    (await rollbackPanel.locator('.chat-composer button', { hasText: 'Retry' }).count()) === 1,
     'restored failed delivery exposes a Retry action',
   )
   assert(
-    await rollbackPanel.locator('[data-message-list-scroll]').getByText('Restore this failed idle send').count() === 0,
+    (await rollbackPanel.locator('[data-message-list-scroll]').getByText('Restore this failed idle send').count()) ===
+      0,
     'failed optimistic bubble is removed from the transcript',
   )
   await rollbackPanel.locator('.chat-composer button', { hasText: 'Retry' }).click()
   await rollbackPanel.locator('[data-composer-send-error]').waitFor({ state: 'detached', timeout: 2_000 })
   assert(
-    await rollbackPanel.locator('[data-message-list-scroll]').getByText('Restore this failed idle send').count() === 1,
+    (await rollbackPanel.locator('[data-message-list-scroll]').getByText('Restore this failed idle send').count()) ===
+      1,
     'retry commits one accepted bubble',
   )
   const rollbackOrigins = await app.evaluate(() => globalThis.__sbIdleRollbackOrigins)
@@ -393,7 +505,7 @@ try {
     'detached failed payload stays outside the newer composer',
   )
   assert(
-    await collisionPanel.locator('[data-composer-recovery] button', { hasText: 'Restore' }).count() === 1,
+    (await collisionPanel.locator('[data-composer-recovery] button', { hasText: 'Restore' }).count()) === 1,
     'colliding rollback exposes an explicit Restore action',
   )
   const discardWarning = answerConfirms(win, true)
@@ -407,7 +519,10 @@ try {
   await collisionComposer.press('Enter')
   await win.waitForTimeout(250)
   await unexpectedRestoredWarning.stop()
-  assert(unexpectedRestoredWarning.count === 0, 'editing an auto-restored definite failure sends without a false discard warning')
+  assert(
+    unexpectedRestoredWarning.count === 0,
+    'editing an auto-restored definite failure sends without a false discard warning',
+  )
 
   await selectSidebarSession(win, 'Idle Acceptance Race', 'idle-acceptance-race')
   const racePanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-acceptance-race"]')
@@ -476,18 +591,20 @@ try {
   await ambiguousComposer.press('Enter')
   await ambiguousPanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
   assert(
-    await ambiguousPanel.locator('.chat-composer button', { hasText: 'Retry safely' }).count() === 1,
+    (await ambiguousPanel.locator('.chat-composer button', { hasText: 'Retry safely' }).count()) === 1,
     'ambiguous rollback exposes a safe idempotent retry',
   )
   const [ambiguousOrigin] = await app.evaluate(() => globalThis.__sbIdleAmbiguousOrigins)
   await selectSidebarSession(win, 'Idle Feedback', 'idle-feedback')
-  await emitProviderEvents([{
-    type: 'user.message',
-    threadId: 'idle-ambiguous',
-    origin: ambiguousOrigin,
-    text: 'Ambiguous message awaiting confirmation',
-    at: Date.now(),
-  }])
+  await emitProviderEvents([
+    {
+      type: 'user.message',
+      threadId: 'idle-ambiguous',
+      origin: ambiguousOrigin,
+      text: 'Ambiguous message awaiting confirmation',
+      at: Date.now(),
+    },
+  ])
   await selectSidebarSession(win, 'Idle Ambiguous', 'idle-ambiguous')
   await ambiguousPanel.locator('[data-composer-send-error]').waitFor({ state: 'detached', timeout: 2_000 })
   assert(
@@ -511,28 +628,29 @@ try {
   const editedWarning = answerConfirms(win, true)
   await editedComposer.press('Enter')
   await editedWarning.answered()
-  await editedPanel.locator('[data-message-list-scroll]').getByText('Edited message after ambiguity').waitFor({ timeout: 3_000 })
+  await editedPanel
+    .locator('[data-message-list-scroll]')
+    .getByText('Edited message after ambiguity')
+    .waitFor({ timeout: 3_000 })
   await editedWarning.stop()
   assert(editedWarning.count === 1, 'edited ambiguous delivery requires exactly one warning')
   const editedOrigins = await app.evaluate(() => globalThis.__sbIdleEditedAmbiguousOrigins)
   assert(
-    editedOrigins.length === 3
-      && editedOrigins[0] === editedOrigins[1]
-      && editedOrigins[1] !== editedOrigins[2],
+    editedOrigins.length === 3 && editedOrigins[0] === editedOrigins[1] && editedOrigins[1] !== editedOrigins[2],
     'edited ambiguous delivery creates exactly one new delivery id',
   )
   const editedRecoveryOrder = await app.evaluate(() => globalThis.__sbIdleEditedRecoveryOrder)
   assert(
-    editedRecoveryOrder.length === 4
-      && editedRecoveryOrder[0].startsWith('submit:')
-      && editedRecoveryOrder[1] === `resolve:${editedOrigins[0]}`
-      && editedRecoveryOrder[2] === `submit:${editedOrigins[0]}`
-      && editedRecoveryOrder[3] === `submit:${editedOrigins[2]}`,
+    editedRecoveryOrder.length === 4 &&
+      editedRecoveryOrder[0].startsWith('submit:') &&
+      editedRecoveryOrder[1] === `resolve:${editedOrigins[0]}` &&
+      editedRecoveryOrder[2] === `submit:${editedOrigins[0]}` &&
+      editedRecoveryOrder[3] === `submit:${editedOrigins[2]}`,
     'edited ambiguity resolves the prior delivery before submitting the new id',
   )
-  const editedTranscript = await editedPanel.locator('[data-message-id]').evaluateAll((rows) =>
-    rows.map((row) => row.textContent ?? ''),
-  )
+  const editedTranscript = await editedPanel
+    .locator('[data-message-id]')
+    .evaluateAll((rows) => rows.map((row) => row.textContent ?? ''))
   const recoveredIndex = editedTranscript.findIndex((text) => text.includes('Ambiguous message before edit'))
   const editedIndex = editedTranscript.findIndex((text) => text.includes('Edited message after ambiguity'))
   assert(
@@ -575,16 +693,18 @@ try {
         type: 'question.asked',
         threadId: 'tall-history',
         requestId: `live-question-${index}`,
-        questions: [{
-          id: `live-question-${index}.0`,
-          header: 'Rendering check',
-          question: `Live question ${index + 1}: choose a layout option`,
-          multiSelect: false,
-          options: Array.from({ length: 4 }, (_, option) => ({
-            label: `Option ${option + 1}`,
-            description: 'This description makes the dynamically measured card taller.',
-          })),
-        }],
+        questions: [
+          {
+            id: `live-question-${index}.0`,
+            header: 'Rendering check',
+            question: `Live question ${index + 1}: choose a layout option`,
+            multiSelect: false,
+            options: Array.from({ length: 4 }, (_, option) => ({
+              label: `Option ${option + 1}`,
+              description: 'This description makes the dynamically measured card taller.',
+            })),
+          },
+        ],
       },
       {
         type: 'question.answered',
@@ -618,29 +738,35 @@ try {
   // Grow one already-mounted assistant message in place. This preserves both
   // its message id and its virtual turn key, matching streaming/card updates
   // that change height without appending another transcript row.
-  await emitProviderEvents([{
-    type: 'content',
-    threadId: 'tall-history',
-    messageId: 'same-key-growth',
-    text: 'same-key start',
-    streamKind: 'assistant',
-  }])
+  await emitProviderEvents([
+    {
+      type: 'content',
+      threadId: 'tall-history',
+      messageId: 'same-key-growth',
+      text: 'same-key start',
+      streamKind: 'assistant',
+    },
+  ])
   await win.locator('[data-chat-slot="primary"]').getByText('same-key start').waitFor()
   const grownText = Array.from({ length: 90 }, (_, index) => `same-key grown line ${index + 1}`).join('\n')
-  await emitProviderEvents([{
-    type: 'content',
-    threadId: 'tall-history',
-    messageId: 'same-key-growth',
-    text: grownText,
-    streamKind: 'assistant',
-  }])
+  await emitProviderEvents([
+    {
+      type: 'content',
+      threadId: 'tall-history',
+      messageId: 'same-key-growth',
+      text: grownText,
+      streamKind: 'assistant',
+    },
+  ])
   await win.locator('[data-chat-slot="primary"]').getByText('same-key grown line 90').waitFor()
   await win.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-  const sameKeyOverlaps = await win.locator('[data-chat-slot="primary"] [data-index]').evaluateAll((rows) =>
-    rows
-      .map((row) => row.getBoundingClientRect())
-      .some((row, index, rects) => rects[index + 1] && rects[index + 1].top < row.bottom - 0.5),
-  )
+  const sameKeyOverlaps = await win
+    .locator('[data-chat-slot="primary"] [data-index]')
+    .evaluateAll((rows) =>
+      rows
+        .map((row) => row.getBoundingClientRect())
+        .some((row, index, rects) => rects[index + 1] && rects[index + 1].top < row.bottom - 0.5),
+    )
   assert(!sameKeyOverlaps, 'an existing virtual turn can grow in place without overlapping its successor')
 
   // Load both histories once, then restore A as the primary chat.
@@ -653,12 +779,15 @@ try {
 
   const primary = win.locator('[data-chat-slot="primary"]')
   await primary.getByRole('button', { name: 'Open beside' }).click()
-  await win.locator('.sb-floating-surface').getByRole('button', { name: /Dual B/ }).click()
+  await win
+    .locator('.sb-floating-surface')
+    .getByRole('button', { name: /Dual B/ })
+    .click()
 
   const secondary = win.locator('[data-chat-slot="secondary"]')
   await secondary.waitFor()
-  assert(await primary.getAttribute('data-session-id') === 'dual-a', 'session A remains primary')
-  assert(await secondary.getAttribute('data-session-id') === 'dual-b', 'session B opens in the secondary slot')
+  assert((await primary.getAttribute('data-session-id')) === 'dual-a', 'session A remains primary')
+  assert((await secondary.getAttribute('data-session-id')) === 'dual-b', 'session B opens in the secondary slot')
   await secondary.getByText('Seed response from B').waitFor()
   console.log('✓ session B loads its historical messages')
 
@@ -671,8 +800,11 @@ try {
 
   await secondaryComposer.click()
   await win.locator('[data-status-bar][data-session-id="dual-b"]').waitFor()
-  assert(await secondary.getAttribute('data-focused') === 'true', 'composer focus establishes the secondary slot')
-  assert(await primary.getAttribute('data-focused') === 'false', 'primary focus treatment clears when secondary is focused')
+  assert((await secondary.getAttribute('data-focused')) === 'true', 'composer focus establishes the secondary slot')
+  assert(
+    (await primary.getAttribute('data-focused')) === 'false',
+    'primary focus treatment clears when secondary is focused',
+  )
   console.log('✓ status and companion surfaces bind to the focused secondary session')
 
   await emitProviderEvents([
@@ -685,8 +817,8 @@ try {
   ])
   await primary.getByText('STREAM-A-ONLY').waitFor()
   await secondary.getByText('STREAM-B-ONLY').waitFor()
-  assert(await primary.getByText('STREAM-B-ONLY').count() === 0, 'B stream never renders in A')
-  assert(await secondary.getByText('STREAM-A-ONLY').count() === 0, 'A stream never renders in B')
+  assert((await primary.getByText('STREAM-B-ONLY').count()) === 0, 'B stream never renders in A')
+  assert((await secondary.getByText('STREAM-A-ONLY').count()) === 0, 'A stream never renders in B')
 
   await primary.locator('button[title="Forward to another agent"]').first().click()
   await win.getByRole('button', { name: /Send to other panel · Dual B/ }).click()
@@ -697,18 +829,30 @@ try {
   const forwardedDraft = await secondaryComposer.textContent()
   assert(forwardedDraft?.includes('Independent draft B'), 'forwarding preserves the receiving draft')
   assert(forwardedDraft?.includes('Seed response from A'), 'forwarding uses the message owning session')
-  assert(await secondary.getAttribute('data-focused') === 'true', 'forwarding focuses the receiving panel')
+  assert((await secondary.getAttribute('data-focused')) === 'true', 'forwarding focuses the receiving panel')
 
   await secondary.locator('button[title^="Close this panel"]').evaluate((button) => button.click())
   await win.locator('[data-chat-slot="primary"][data-session-id="dual-a"]').waitFor()
   await win.waitForFunction(() => !document.querySelector('[data-chat-slot="secondary"][data-session-id]'))
-  assert(await win.locator('[data-chat-slot="secondary"][data-session-id]').count() === 0, 'closing secondary leaves A intact')
+  assert(
+    (await win.locator('[data-chat-slot="secondary"][data-session-id]').count()) === 0,
+    'closing secondary leaves A intact',
+  )
 
   await primary.getByRole('button', { name: 'Open beside' }).click()
-  await win.locator('.sb-floating-surface').getByRole('button', { name: /Dual B/ }).click()
+  await win
+    .locator('.sb-floating-surface')
+    .getByRole('button', { name: /Dual B/ })
+    .click()
   await win.locator('[data-chat-slot="secondary"][data-session-id="dual-b"]').waitFor()
-  assert((await secondaryComposer.textContent())?.includes('Independent draft B'), 'reopening B preserves its independent draft')
-  assert(await secondary.getByText('STREAM-B-ONLY').count() === 1, 'reopening B preserves streamed messages without duplication')
+  assert(
+    (await secondaryComposer.textContent())?.includes('Independent draft B'),
+    'reopening B preserves its independent draft',
+  )
+  assert(
+    (await secondary.getByText('STREAM-B-ONLY').count()) === 1,
+    'reopening B preserves streamed messages without duplication',
+  )
 
   // Narrow workspaces present dual chats as tabs and retain both panels with
   // display:none. Messages arriving in the hidden tab must be measured and
@@ -722,7 +866,11 @@ try {
     threadId: 'dual-b',
     ...(index % 2 === 0
       ? { at: Date.now() + index, origin: `hidden-origin-${index}`, text: `Hidden tab turn ${index + 1}` }
-      : { messageId: `hidden-answer-${index}`, text: `Hidden tab answer ${index + 1}\n${liveParagraph}`, streamKind: 'assistant' }),
+      : {
+          messageId: `hidden-answer-${index}`,
+          text: `Hidden tab answer ${index + 1}\n${liveParagraph}`,
+          streamKind: 'assistant',
+        }),
   }))
   await emitProviderEvents(hiddenEvents)
   await win.getByRole('tab', { name: 'Dual B' }).click()

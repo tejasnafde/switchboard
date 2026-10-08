@@ -69,7 +69,9 @@ describe('resolveOauthDirForCreate - symlink escape (behavior 9)', () => {
 
   it('accepts an ordinary not-yet-created dir under a real home', () => {
     const home = tempRoot()
-    expect(resolveOauthDirForCreate(join(home, '.codex-work'), home))
-      .toEqual({ ok: true, path: join(home, '.codex-work') })
+    expect(resolveOauthDirForCreate(join(home, '.codex-work'), home)).toEqual({
+      ok: true,
+      path: join(home, '.codex-work'),
+    })
   })
 })

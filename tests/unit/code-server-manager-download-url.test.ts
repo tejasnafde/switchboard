@@ -6,23 +6,17 @@ describe('resolveDownloadAsset', () => {
     const a = resolveDownloadAsset('4.127.0', 'darwin', 'arm64')
     expect(a.assetName).toBe('code-server-4.127.0-macos-arm64.tar.gz')
     expect(a.url).toBe(
-      'https://github.com/coder/code-server/releases/download/v4.127.0/code-server-4.127.0-macos-arm64.tar.gz'
+      'https://github.com/coder/code-server/releases/download/v4.127.0/code-server-4.127.0-macos-arm64.tar.gz',
     )
   })
 
   it('maps darwin/x64 to macos-amd64', () => {
-    expect(resolveDownloadAsset('4.127.0', 'darwin', 'x64').assetName).toBe(
-      'code-server-4.127.0-macos-amd64.tar.gz'
-    )
+    expect(resolveDownloadAsset('4.127.0', 'darwin', 'x64').assetName).toBe('code-server-4.127.0-macos-amd64.tar.gz')
   })
 
   it('maps linux/x64 and linux/arm64', () => {
-    expect(resolveDownloadAsset('4.127.0', 'linux', 'x64').assetName).toBe(
-      'code-server-4.127.0-linux-amd64.tar.gz'
-    )
-    expect(resolveDownloadAsset('4.127.0', 'linux', 'arm64').assetName).toBe(
-      'code-server-4.127.0-linux-arm64.tar.gz'
-    )
+    expect(resolveDownloadAsset('4.127.0', 'linux', 'x64').assetName).toBe('code-server-4.127.0-linux-amd64.tar.gz')
+    expect(resolveDownloadAsset('4.127.0', 'linux', 'arm64').assetName).toBe('code-server-4.127.0-linux-arm64.tar.gz')
   })
 
   it('throws a descriptive error for unsupported platforms', () => {

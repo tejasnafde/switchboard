@@ -14,10 +14,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const panel = readFileSync(
-  resolve(__dirname, '../../src/renderer/components/chat/ChatPanel.tsx'),
-  'utf8',
-)
+const panel = readFileSync(resolve(__dirname, '../../src/renderer/components/chat/ChatPanel.tsx'), 'utf8')
 
 describe('ChatPanel machine-default instance write is agent-scoped', () => {
   it('imports the scoped key helper', () => {

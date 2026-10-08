@@ -3,11 +3,17 @@ import { perfSpan } from '../perf'
 
 // These handlers can await an entire turn or a human answer by design.
 export const LONG_RUNNING_CHANNELS = new Set([
-  'provider:send-turn', 'provider:submit-user-turn', 'provider:respond-to-request',
-  'provider:answer-question', 'provider:deliver-peer-message',
+  'provider:send-turn',
+  'provider:submit-user-turn',
+  'provider:respond-to-request',
+  'provider:answer-question',
+  'provider:deliver-peer-message',
 ])
 
-export function timeBackendHandler<A extends unknown[]>(channel: string, fn: (...args: A) => unknown): (...args: A) => unknown {
+export function timeBackendHandler<A extends unknown[]>(
+  channel: string,
+  fn: (...args: A) => unknown,
+): (...args: A) => unknown {
   if (LONG_RUNNING_CHANNELS.has(channel)) return fn
   return (...args) => {
     const start = performance.now()

@@ -4,10 +4,7 @@
  * see that module for why the ambient value never survives.
  */
 
-import {
-  applyCredentialHome,
-  canonicalCredentialHome,
-} from './credential-home'
+import { applyCredentialHome, canonicalCredentialHome } from './credential-home'
 
 /** Codex's own default credential dir: `~/.codex`, absolute, always. */
 export function canonicalCodexHome(): string {

@@ -12,8 +12,17 @@ import {
 import type { Machine, SshHost } from '@shared/machines'
 
 const mk = (over: Partial<Machine>): Machine => ({
-  id: 'm1', name: 'prod', sshAlias: null, sshHost: '10.0.0.1', sshUser: null,
-  sshPort: 22, remoteUser: null, sortOrder: 0, createdAt: 0, updatedAt: 0, ...over,
+  id: 'm1',
+  name: 'prod',
+  sshAlias: null,
+  sshHost: '10.0.0.1',
+  sshUser: null,
+  sshPort: 22,
+  remoteUser: null,
+  sortOrder: 0,
+  createdAt: 0,
+  updatedAt: 0,
+  ...over,
 })
 
 describe('isDuplicateMachine', () => {

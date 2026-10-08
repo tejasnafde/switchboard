@@ -91,7 +91,8 @@ describe('createTerminalAsync - success', () => {
     create.mockResolvedValue({ id: 'async-1' })
     expect(hasTerminal('async-1')).toBe(false)
     const instance = await createTerminalAsync('async-1', '/projects/foo', 'codex', undefined, {
-      agentType: 'codex', instanceId: 'codex-work',
+      agentType: 'codex',
+      instanceId: 'codex-work',
     })
     expect(instance).toBeDefined()
     expect(hasTerminal('async-1')).toBe(true)
@@ -101,7 +102,8 @@ describe('createTerminalAsync - success', () => {
     const { create } = makeApiStub()
     create.mockResolvedValue({ id: 'async-2' })
     await createTerminalAsync('async-2', '/projects/foo', 'claude', undefined, {
-      agentType: 'claude-code', instanceId: undefined,
+      agentType: 'claude-code',
+      instanceId: undefined,
     })
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'async-2', loginInstance: { agentType: 'claude-code', instanceId: undefined } }),

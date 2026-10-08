@@ -4,12 +4,24 @@ import { AgentWriteBudget } from '../../src/main/mcp/agent-write-budget'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import type { HostWriteCard, HostWriteResponse } from '../../src/shared/agent-host-writes'
 import { HOST_WRITE_SHOWN_REQUIRED, hostWriteShownDigest } from '../../src/shared/host-write-phone'
-import { memoryApprovalCardStore, type ApprovalCardClose, type ApprovalCardStore } from '../../src/shared/agent-approval-cards'
+import {
+  memoryApprovalCardStore,
+  type ApprovalCardClose,
+  type ApprovalCardStore,
+} from '../../src/shared/agent-approval-cards'
 import type { AgentWritePlan } from '../../src/main/mcp/agent-approvals'
 
 const card: HostWriteCard = {
-  action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'repo #1', target: { repository: 'acme/repo', number: 1 }, url: null,
-  location: 'a.ts:1', quote: null, replyText: 'done', maxChars: 8000,
+  action: 'reply',
+  agentLabel: 'Codex',
+  host: 'github',
+  prLabel: 'repo #1',
+  target: { repository: 'acme/repo', number: 1 },
+  url: null,
+  location: 'a.ts:1',
+  quote: null,
+  replyText: 'done',
+  maxChars: 8000,
 }
 
 const DESKTOP = { mayApproveHostWrite: true, label: 'the desktop' }
@@ -17,13 +29,19 @@ const NO_SCOPE = { mayApproveHostWrite: false, label: 'device session d0' }
 const PHONE = { mayApproveHostWrite: true, mustProveShown: true, label: 'device session d1' }
 
 const reviewCard: HostWriteCard = {
-  ...card, action: 'review', location: null, replyText: undefined,
+  ...card,
+  action: 'review',
+  location: null,
+  replyText: undefined,
   review: { summary: 'Two notes.', comments: [], verdicts: ['comment'], commentOnly: 'author' },
 }
 
 const PLAN: AgentWritePlan = { kind: 'peer-send', sessionId: 's2', message: 'hi' }
 
-interface Closed { close: ApprovalCardClose; response: HostWriteResponse }
+interface Closed {
+  close: ApprovalCardClose
+  response: HostWriteResponse
+}
 
 function broker(store: ApprovalCardStore<AgentWritePlan> = memoryApprovalCardStore()) {
   const events: RuntimeEvent[] = []
@@ -39,14 +57,22 @@ function broker(store: ApprovalCardStore<AgentWritePlan> = memoryApprovalCardSto
       closes.get(c.requestId)?.({ close, response })
     },
   })
-  const opened = () => events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
+  const opened = () =>
+    events.find((e) => e.type === 'request.opened') as Extract<RuntimeEvent, { type: 'request.opened' }>
   return { b, events, opened, closes, closed }
 }
 
 /** Open a card on `threadId` (its chat is the same id) and resolve once it closes. */
 function ask(b: AgentApprovalBroker, threadId: string, hostWrite?: HostWriteCard): Promise<Closed> {
   const handle = brokers.get(b)!
-  const opened = b.open({ threadId, chatId: threadId, toolName: 'x', detail: 'd', ...(hostWrite ? { hostWrite } : {}), plan: PLAN })
+  const opened = b.open({
+    threadId,
+    chatId: threadId,
+    toolName: 'x',
+    detail: 'd',
+    ...(hostWrite ? { hostWrite } : {}),
+    plan: PLAN,
+  })
   if (!opened.ok) throw new Error(opened.message)
   return new Promise((resolve) => handle.set(opened.requestId, resolve))
 }
@@ -64,9 +90,19 @@ describe('AgentApprovalBroker', () => {
     const answer = ask(b, 't1', card)
     expect(opened()).toMatchObject({ threadId: 't1', requestType: 'tool', hostWrite: card })
     expect(AgentApprovalBroker.owns(opened().requestId)).toBe(true)
-    expect(b.respond('t1', opened().requestId, 'approve', { text: 'edited', resolve: true }, DESKTOP)).toEqual({ ok: true })
-    await expect(answer).resolves.toEqual({ close: { kind: 'approve', wake: true }, response: { text: 'edited', resolve: true } })
-    expect(events.at(-1)).toEqual({ type: 'request.closed', threadId: 't1', requestId: opened().requestId, decision: 'approve' })
+    expect(b.respond('t1', opened().requestId, 'approve', { text: 'edited', resolve: true }, DESKTOP)).toEqual({
+      ok: true,
+    })
+    await expect(answer).resolves.toEqual({
+      close: { kind: 'approve', wake: true },
+      response: { text: 'edited', resolve: true },
+    })
+    expect(events.at(-1)).toEqual({
+      type: 'request.closed',
+      threadId: 't1',
+      requestId: opened().requestId,
+      decision: 'approve',
+    })
   })
 
   it('refuses a host write approval from a device that cannot write to a host, and keeps the card open', async () => {
@@ -84,7 +120,10 @@ describe('AgentApprovalBroker', () => {
     const answer = ask(b, 't1', card)
     const shown = hostWriteShownDigest(opened().requestId, card)!
     expect(b.respond('t1', opened().requestId, 'approve', { resolve: true, shown }, PHONE)).toEqual({ ok: true })
-    await expect(answer).resolves.toEqual({ close: { kind: 'approve', wake: true }, response: { resolve: true, shown } })
+    await expect(answer).resolves.toEqual({
+      close: { kind: 'approve', wake: true },
+      response: { resolve: true, shown },
+    })
   })
 
   it('refuses a phone approval without the digest of this draft, keeps the card open, and still takes a deny', async () => {
@@ -92,10 +131,16 @@ describe('AgentApprovalBroker', () => {
     const answer = ask(b, 't1', card)
     const id = opened().requestId
     // An app built before the digest showed a shortened card and sends none.
-    expect(b.respond('t1', id, 'approve', { resolve: true }, PHONE)).toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
+    expect(b.respond('t1', id, 'approve', { resolve: true }, PHONE)).toEqual({
+      ok: false,
+      message: HOST_WRITE_SHOWN_REQUIRED,
+    })
     // One that rendered another draft sends a different one.
     const other = hostWriteShownDigest(id, { ...card, replyText: 'something else' })!
-    expect(b.respond('t1', id, 'approve', { resolve: true, shown: other }, PHONE)).toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
+    expect(b.respond('t1', id, 'approve', { resolve: true, shown: other }, PHONE)).toEqual({
+      ok: false,
+      message: HOST_WRITE_SHOWN_REQUIRED,
+    })
     expect(b.respond('t1', id, 'deny', {}, PHONE)).toEqual({ ok: true })
     await expect(answer).resolves.toEqual({ close: { kind: 'deny', wake: true }, response: {} })
   })
@@ -105,26 +150,63 @@ describe('AgentApprovalBroker', () => {
     const first = ask(b, 't1', card)
     const otherPr: HostWriteCard = { ...card, prLabel: 'repo #2', target: { repository: 'acme/repo', number: 2 } }
     void ask(b, 't1', otherPr)
-    const [a, c] = events.filter((e) => e.type === 'request.opened') as Array<Extract<RuntimeEvent, { type: 'request.opened' }>>
+    const [a, c] = events.filter((e) => e.type === 'request.opened') as Array<
+      Extract<RuntimeEvent, { type: 'request.opened' }>
+    >
     // The phone approved card A's draft; the digest must not approve card B, same text or not.
-    expect(b.respond('t1', c.requestId, 'approve', { resolve: true, shown: hostWriteShownDigest(a.requestId, card)! }, PHONE))
-      .toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
-    expect(b.respond('t1', c.requestId, 'approve', { resolve: true, shown: hostWriteShownDigest(c.requestId, card)! }, PHONE))
-      .toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
-    expect(b.respond('t1', c.requestId, 'approve', { resolve: true, shown: hostWriteShownDigest(c.requestId, otherPr)! }, PHONE)).toEqual({ ok: true })
+    expect(
+      b.respond(
+        't1',
+        c.requestId,
+        'approve',
+        { resolve: true, shown: hostWriteShownDigest(a.requestId, card)! },
+        PHONE,
+      ),
+    ).toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
+    expect(
+      b.respond(
+        't1',
+        c.requestId,
+        'approve',
+        { resolve: true, shown: hostWriteShownDigest(c.requestId, card)! },
+        PHONE,
+      ),
+    ).toEqual({ ok: false, message: HOST_WRITE_SHOWN_REQUIRED })
+    expect(
+      b.respond(
+        't1',
+        c.requestId,
+        'approve',
+        { resolve: true, shown: hostWriteShownDigest(c.requestId, otherPr)! },
+        PHONE,
+      ),
+    ).toEqual({ ok: true })
     expect(b.respond('t1', a.requestId, 'deny', {}, PHONE)).toEqual({ ok: true })
     await expect(first).resolves.toMatchObject({ close: { kind: 'deny' } })
   })
 
   it('refuses a review the host would not take before closing the card, so the user can pick again', async () => {
     const { b, opened } = tracked()
-    const silent: HostWriteCard = { ...card, action: 'review', location: null, replyText: undefined, host: 'github', review: { summary: '', comments: [], verdicts: ['comment', 'request_changes'] } }
+    const silent: HostWriteCard = {
+      ...card,
+      action: 'review',
+      location: null,
+      replyText: undefined,
+      host: 'github',
+      review: { summary: '', comments: [], verdicts: ['comment', 'request_changes'] },
+    }
     const answer = ask(b, 't1', silent)
     const id = opened().requestId
     const shown = hostWriteShownDigest(id, silent)!
     // GitHub needs a summary to request changes; the card stays open.
-    expect(b.respond('t1', id, 'approve', { verdict: 'request_changes', shown }, PHONE)).toEqual({ ok: false, message: expect.stringContaining('GitHub needs a summary') })
-    expect(b.respond('t1', id, 'approve', { verdict: 'comment', shown }, PHONE)).toEqual({ ok: false, message: expect.stringContaining('Write a summary') })
+    expect(b.respond('t1', id, 'approve', { verdict: 'request_changes', shown }, PHONE)).toEqual({
+      ok: false,
+      message: expect.stringContaining('GitHub needs a summary'),
+    })
+    expect(b.respond('t1', id, 'approve', { verdict: 'comment', shown }, PHONE)).toEqual({
+      ok: false,
+      message: expect.stringContaining('Write a summary'),
+    })
     expect(b.respond('t1', id, 'deny', {}, PHONE)).toEqual({ ok: true })
     await expect(answer).resolves.toMatchObject({ close: { kind: 'deny' } })
   })
@@ -141,10 +223,19 @@ describe('AgentApprovalBroker', () => {
     const answer = ask(b, 't1', reviewCard)
     const id = opened().requestId
     const shown = hostWriteShownDigest(id, reviewCard)!
-    expect(b.respond('t1', id, 'approve', { shown }, PHONE)).toEqual({ ok: false, message: expect.stringContaining('Pick Comment') })
-    expect(b.respond('t1', id, 'approve', { verdict: 'approve', shown }, PHONE)).toEqual({ ok: false, message: 'Approve is not offered on this review.' })
+    expect(b.respond('t1', id, 'approve', { shown }, PHONE)).toEqual({
+      ok: false,
+      message: expect.stringContaining('Pick Comment'),
+    })
+    expect(b.respond('t1', id, 'approve', { verdict: 'approve', shown }, PHONE)).toEqual({
+      ok: false,
+      message: 'Approve is not offered on this review.',
+    })
     expect(b.respond('t1', id, 'approve', { verdict: 'comment', shown }, PHONE)).toEqual({ ok: true })
-    await expect(answer).resolves.toEqual({ close: { kind: 'approve', wake: true }, response: { verdict: 'comment', shown } })
+    await expect(answer).resolves.toEqual({
+      close: { kind: 'approve', wake: true },
+      response: { verdict: 'comment', shown },
+    })
   })
 
   it('lets any device approve an ordinary card', async () => {
@@ -161,9 +252,7 @@ describe('AgentApprovalBroker', () => {
     expect(b.respond('rotated-t1', opened().requestId, 'approve', {}, DESKTOP).ok).toBe(true)
     await answer
   })
-
 })
-
 
 describe('a card that does not hold the turn', () => {
   it('approves quietly and dismisses: the write runs or not, and the agent is not woken', async () => {
@@ -171,7 +260,10 @@ describe('a card that does not hold the turn', () => {
     const quiet = ask(b, 't1', card)
     const id = (events.at(-1) as Extract<RuntimeEvent, { type: 'request.opened' }>).requestId
     expect(b.respond('t1', id, 'approve', { resolve: false, quiet: true }, DESKTOP)).toEqual({ ok: true })
-    await expect(quiet).resolves.toEqual({ close: { kind: 'approve', wake: false }, response: { resolve: false, quiet: true } })
+    await expect(quiet).resolves.toEqual({
+      close: { kind: 'approve', wake: false },
+      response: { resolve: false, quiet: true },
+    })
     const dismissed = ask(b, 't1', card)
     const second = (events.at(-1) as Extract<RuntimeEvent, { type: 'request.opened' }>).requestId
     expect(b.respond('t1', second, 'deny', { quiet: true }, DESKTOP)).toEqual({ ok: true })
@@ -222,17 +314,40 @@ describe('a card that does not hold the turn', () => {
   it('keeps an open card across a restart, recovers it for clients, and still runs it once answered', async () => {
     const store = memoryApprovalCardStore<AgentWritePlan>()
     const before = tracked(store)
-    const opened = before.b.open({ threadId: 't1', chatId: 't1', toolName: 'x', detail: 'd', hostWrite: card, plan: PLAN })
+    const opened = before.b.open({
+      threadId: 't1',
+      chatId: 't1',
+      toolName: 'x',
+      detail: 'd',
+      hostWrite: card,
+      plan: PLAN,
+    })
     if (!opened.ok) throw new Error(opened.message)
     // The process exits; nothing answered the card.
     const after = tracked(store)
-    expect(after.b.pendingEvents('t1')).toEqual([{
-      type: 'request.opened', threadId: 't1', requestId: opened.requestId, requestType: 'tool', toolName: 'x', detail: 'd', hostWrite: card,
-    }])
+    expect(after.b.pendingEvents('t1')).toEqual([
+      {
+        type: 'request.opened',
+        threadId: 't1',
+        requestId: opened.requestId,
+        requestType: 'tool',
+        toolName: 'x',
+        detail: 'd',
+        hostWrite: card,
+      },
+    ])
     // A phone that recovered it hours later still proves what it showed.
     const shown = hostWriteShownDigest(opened.requestId, card)!
-    expect(after.b.respond('rotated-t1', opened.requestId, 'approve', { resolve: true, shown }, PHONE)).toEqual({ ok: true })
-    expect(after.closed).toEqual([{ card: expect.objectContaining({ requestId: opened.requestId, plan: PLAN }), close: { kind: 'approve', wake: true }, response: { resolve: true, shown } }])
+    expect(after.b.respond('rotated-t1', opened.requestId, 'approve', { resolve: true, shown }, PHONE)).toEqual({
+      ok: true,
+    })
+    expect(after.closed).toEqual([
+      {
+        card: expect.objectContaining({ requestId: opened.requestId, plan: PLAN }),
+        close: { kind: 'approve', wake: true },
+        response: { resolve: true, shown },
+      },
+    ])
     // Closed on the id it opened on and on the id the answering client knows it by.
     expect(after.events.filter((e) => e.type === 'request.closed').map((e) => e.threadId)).toEqual(['t1', 'rotated-t1'])
     expect(tracked(store).b.pendingEvents('t1')).toEqual([])

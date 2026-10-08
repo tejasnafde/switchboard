@@ -10,16 +10,24 @@ import { createRoot, type Root } from 'react-dom/client'
 import { Popover, PopoverContent, PopoverTrigger } from '../../src/renderer/components/ui/popover'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
 
 let root: Root
 let container: HTMLDivElement
 
 function Harness() {
   const [open, setOpen] = useState(true)
-  return createElement('div', null,
+  return createElement(
+    'div',
+    null,
     createElement('button', { id: 'outside' }, 'outside'),
-    createElement(Popover, { open, onOpenChange: setOpen },
+    createElement(
+      Popover,
+      { open, onOpenChange: setOpen },
       createElement(PopoverTrigger, null, 'trigger'),
       createElement(PopoverContent, { 'aria-label': 'picker' }, createElement('input', { id: 'search' })),
     ),
@@ -32,7 +40,9 @@ beforeEach(async () => {
   root = createRoot(container)
   await act(async () => root.render(createElement(Harness)))
   // Radix installs its focus-outside listener on the next tick.
-  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
   document.getElementById('search')?.focus()
 })
 

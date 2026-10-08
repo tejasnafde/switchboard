@@ -11,7 +11,9 @@ const press = (key: string) => {
 describe('onEscapeFirst', () => {
   // Stands in for a Radix dialog, which listens for Escape on the document.
   const dialogEscape = vi.fn()
-  const onDocument = (event: KeyboardEvent) => { if (event.key === 'Escape') dialogEscape() }
+  const onDocument = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') dialogEscape()
+  }
   document.addEventListener('keydown', onDocument, true)
   afterEach(() => dialogEscape.mockClear())
 

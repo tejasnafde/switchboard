@@ -1,10 +1,7 @@
 import { spawn } from 'node:child_process'
 import { parseLaunchConfigFile, type WorktreeSetupConfig } from '../../shared/launch-config'
 import { readLaunchConfig } from '../launch-config/launch-config-store'
-import type {
-  WorktreeSetupConfigPort,
-  WorktreeSetupRunnerPort,
-} from './worktree-creation-service'
+import type { WorktreeSetupConfigPort, WorktreeSetupRunnerPort } from './worktree-creation-service'
 
 type LaunchConfigReader = (projectPath: string) => string | null | Promise<string | null>
 
@@ -30,17 +27,18 @@ type SetupProcessExecutor = (input: {
   signal: AbortSignal
 }) => Promise<SetupProcessResult>
 
-const executeSetupProcess: SetupProcessExecutor = ({ cwd, command, signal }) => new Promise((resolve, reject) => {
-  const child = spawn(command, {
-    cwd,
-    shell: true,
-    stdio: 'ignore',
-    env: process.env,
-    signal,
+const executeSetupProcess: SetupProcessExecutor = ({ cwd, command, signal }) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(command, {
+      cwd,
+      shell: true,
+      stdio: 'ignore',
+      env: process.env,
+      signal,
+    })
+    child.once('error', reject)
+    child.once('close', (code) => resolve({ exitCode: code ?? 1 }))
   })
-  child.once('error', reject)
-  child.once('close', (code) => resolve({ exitCode: code ?? 1 }))
-})
 
 export class ProcessWorktreeSetupRunner implements WorktreeSetupRunnerPort {
   constructor(

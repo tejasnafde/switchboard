@@ -53,7 +53,7 @@ export const RowMeta = memo(function RowMeta({
   const preview = useChatStore((s) => {
     const thread = s.threads[threadKeyStr]
     const feedPreview = threadPreviewLine(thread?.items ?? [])
-    return thread?.cached ? statusLine ?? feedPreview : feedPreview ?? statusLine
+    return thread?.cached ? (statusLine ?? feedPreview) : (feedPreview ?? statusLine)
   })
   return (
     <>
@@ -192,85 +192,85 @@ export default function ConversationsScreen({ route, navigation }: Props) {
 
   return (
     <>
-    <RenameModal
-      row={renaming}
-      value={renameText}
-      onChange={setRenameText}
-      onCancel={() => setRenaming(null)}
-      onSubmit={commitRename}
-    />
-    <FlatList
-      data={visibleRows}
-      keyExtractor={(r) => r.id}
-      contentContainerStyle={visibleRows.length === 0 ? styles.emptyContainer : styles.listContent}
-      keyboardShouldPersistTaps="handled"
-      ListHeaderComponent={
-        // Long-lived projects accumulate hundreds of threads; short ones do not
-        // need a search field taking up the first row.
-        rows.length > 8 || query !== '' ? (
-          <View style={styles.searchWrap}>
-            <TextInput
-              style={styles.searchInput}
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search conversations"
-              placeholderTextColor={colors.textFaint}
-              autoCorrect={false}
-              autoCapitalize="none"
-              returnKeyType="search"
-              clearButtonMode="while-editing"
-            />
-          </View>
-        ) : null
-      }
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => void load(true)}
-          tintColor={colors.textDim}
-        />
-      }
-      ListEmptyComponent={
-        <View style={styles.center}>
-          <Text style={styles.stateTitle}>{query === '' ? 'No conversations' : 'No matches'}</Text>
-          <Text style={styles.stateDetail}>
-            {query === ''
-              ? `Tap + to start a new session in ${projectName}.`
-              : `No conversation title matches "${query.trim()}".`}
-          </Text>
-        </View>
-      }
-      renderItem={({ item }) => {
-        return (
-          <Pressable
-            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-            onLongPress={() => {
-              setRenameText(item.title)
-              setRenaming(item)
-            }}
-            onPress={() =>
-              navigation.navigate('Thread', {
-                connectionId,
-                threadId: item.id,
-                title: item.title,
-                projectPath,
-                worktreePath: item.worktree_path ?? null,
-              })
-            }
-          >
-            <View style={styles.rowBody}>
-              <RowMeta threadKeyStr={threadKey(connectionId, item.id)} title={item.title} statusLine={item.status_line} />
-              <View style={styles.metaLine}>
-                <View style={styles.agentChip}>
-                  <Text style={styles.agentChipText}>{conversationSourceLabel(item)}</Text>
-                </View>
-                <Text style={styles.time}>{formatRelativeTime(item.updated_at)}</Text>
-              </View>
+      <RenameModal
+        row={renaming}
+        value={renameText}
+        onChange={setRenameText}
+        onCancel={() => setRenaming(null)}
+        onSubmit={commitRename}
+      />
+      <FlatList
+        data={visibleRows}
+        keyExtractor={(r) => r.id}
+        contentContainerStyle={visibleRows.length === 0 ? styles.emptyContainer : styles.listContent}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          // Long-lived projects accumulate hundreds of threads; short ones do not
+          // need a search field taking up the first row.
+          rows.length > 8 || query !== '' ? (
+            <View style={styles.searchWrap}>
+              <TextInput
+                style={styles.searchInput}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search conversations"
+                placeholderTextColor={colors.textFaint}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
             </View>
-          </Pressable>
-        )
-      }}
-    />
+          ) : null
+        }
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.textDim} />
+        }
+        ListEmptyComponent={
+          <View style={styles.center}>
+            <Text style={styles.stateTitle}>{query === '' ? 'No conversations' : 'No matches'}</Text>
+            <Text style={styles.stateDetail}>
+              {query === ''
+                ? `Tap + to start a new session in ${projectName}.`
+                : `No conversation title matches "${query.trim()}".`}
+            </Text>
+          </View>
+        }
+        renderItem={({ item }) => {
+          return (
+            <Pressable
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+              onLongPress={() => {
+                setRenameText(item.title)
+                setRenaming(item)
+              }}
+              onPress={() =>
+                navigation.navigate('Thread', {
+                  connectionId,
+                  threadId: item.id,
+                  title: item.title,
+                  projectPath,
+                  worktreePath: item.worktree_path ?? null,
+                })
+              }
+            >
+              <View style={styles.rowBody}>
+                <RowMeta
+                  threadKeyStr={threadKey(connectionId, item.id)}
+                  title={item.title}
+                  statusLine={item.status_line}
+                />
+                <View style={styles.metaLine}>
+                  <View style={styles.agentChip}>
+                    <Text style={styles.agentChipText}>{conversationSourceLabel(item)}</Text>
+                  </View>
+                  <Text style={styles.time}>{formatRelativeTime(item.updated_at)}</Text>
+                </View>
+              </View>
+            </Pressable>
+          )
+        }}
+      />
     </>
   )
 }

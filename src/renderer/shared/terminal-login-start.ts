@@ -90,14 +90,16 @@ export async function startTerminalSession(
     instanceId: params.instanceId,
   })
   deps.setActiveSession(sessionId)
-  deps.createConversation({
-    id: sessionId,
-    projectPath: params.projectPath,
-    agentType: 'terminal',
-    title: params.command,
-  }).catch((err) => {
-    log.warn(`createConversation failed for terminal session ${sessionId}`, err)
-  })
+  deps
+    .createConversation({
+      id: sessionId,
+      projectPath: params.projectPath,
+      agentType: 'terminal',
+      title: params.command,
+    })
+    .catch((err) => {
+      log.warn(`createConversation failed for terminal session ${sessionId}`, err)
+    })
   deps.emitSessionCreated({
     id: sessionId,
     projectPath: params.projectPath,

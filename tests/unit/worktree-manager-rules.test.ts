@@ -36,13 +36,29 @@ function row(overrides: Partial<WorktreeRow> = {}): WorktreeRow {
   }
 }
 
-const dirty = (files: number, commits = 0) => ({ uncommittedFiles: files, ignoredFiles: 0, ignoredSample: [] as string[], unpushedCommits: commits, merged: false })
-const ignoring = (...names: string[]) => ({ uncommittedFiles: 0, ignoredFiles: names.length, ignoredSample: names.slice(0, 3), unpushedCommits: 0, merged: true })
+const dirty = (files: number, commits = 0) => ({
+  uncommittedFiles: files,
+  ignoredFiles: 0,
+  ignoredSample: [] as string[],
+  unpushedCommits: commits,
+  merged: false,
+})
+const ignoring = (...names: string[]) => ({
+  uncommittedFiles: 0,
+  ignoredFiles: names.length,
+  ignoredSample: names.slice(0, 3),
+  unpushedCommits: 0,
+  merged: true,
+})
 
 describe('classifyWorktree', () => {
   it('calls a clean worktree with nothing unpushed safe, merged or not', () => {
     expect(classifyWorktree(row())).toBe('safe')
-    expect(classifyWorktree(row({ git: { uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: false } }))).toBe('safe')
+    expect(
+      classifyWorktree(
+        row({ git: { uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: false } }),
+      ),
+    ).toBe('safe')
   })
 
   it('puts uncommitted files, unpushed commits and unreadable git state under Has changes', () => {
@@ -66,7 +82,13 @@ describe('filters', () => {
   })
 
   it('counts each tab', () => {
-    const rows = [row(), row({ git: dirty(1) }), row({ owned: true }), row({ owned: true }), row({ protectedBy: 'worktree' })]
+    const rows = [
+      row(),
+      row({ git: dirty(1) }),
+      row({ owned: true }),
+      row({ owned: true }),
+      row({ protectedBy: 'worktree' }),
+    ]
     expect(filterCounts(rows)).toEqual({ all: 4, safe: 1, has_changes: 1, in_use: 2 })
   })
 })
@@ -78,7 +100,13 @@ describe('removalVerdict', () => {
 
   it('never removes an owned, protected, locked or unreadable worktree, whatever was acknowledged', () => {
     const ack = { uncommittedFiles: 99, unpushedCommits: 99, ignoredFiles: 99 }
-    for (const r of [row({ owned: true }), row({ protectedBy: 'project' }), row({ protectedBy: 'worktree' }), row({ locked: true }), row({ git: null })]) {
+    for (const r of [
+      row({ owned: true }),
+      row({ protectedBy: 'project' }),
+      row({ protectedBy: 'worktree' }),
+      row({ locked: true }),
+      row({ git: null }),
+    ]) {
       expect(removalVerdict(r, ack).ok).toBe(false)
     }
   })
@@ -92,23 +120,33 @@ describe('removalVerdict', () => {
   it('refuses when the worktree gained changes after the confirm', () => {
     const verdict = removalVerdict(row({ git: dirty(5) }), { uncommittedFiles: 1, unpushedCommits: 0, ignoredFiles: 0 })
     expect(!verdict.ok && verdict.reason).toMatch(/changed since you confirmed/)
-    expect(removalVerdict(row({ git: dirty(0, 2) }), { uncommittedFiles: 0, unpushedCommits: 1, ignoredFiles: 0 }).ok).toBe(false)
+    expect(
+      removalVerdict(row({ git: dirty(0, 2) }), { uncommittedFiles: 0, unpushedCommits: 1, ignoredFiles: 0 }).ok,
+    ).toBe(false)
   })
 
   it('forces only for uncommitted files, and keeps a branch that holds unpushed commits', () => {
-    expect(removalVerdict(row({ git: dirty(2) }), { uncommittedFiles: 2, unpushedCommits: 0, ignoredFiles: 0 }))
-      .toEqual({ ok: true, force: true, deleteBranch: 'kanban/a' })
-    expect(removalVerdict(row({ git: dirty(0, 1) }), { uncommittedFiles: 0, unpushedCommits: 1, ignoredFiles: 0 }))
-      .toEqual({ ok: true, force: false, deleteBranch: null })
+    expect(
+      removalVerdict(row({ git: dirty(2) }), { uncommittedFiles: 2, unpushedCommits: 0, ignoredFiles: 0 }),
+    ).toEqual({ ok: true, force: true, deleteBranch: 'kanban/a' })
+    expect(
+      removalVerdict(row({ git: dirty(0, 1) }), { uncommittedFiles: 0, unpushedCommits: 1, ignoredFiles: 0 }),
+    ).toEqual({ ok: true, force: false, deleteBranch: null })
   })
 })
 
 describe('protection', () => {
   it('parses what it writes, and treats junk as nothing protected', () => {
-    const p = applyProtectionPatch({ projects: [], worktrees: [] }, { target: 'project', path: '/repo', protected: true })
+    const p = applyProtectionPatch(
+      { projects: [], worktrees: [] },
+      { target: 'project', path: '/repo', protected: true },
+    )
     expect(parseWorktreeProtection(JSON.stringify(p))).toEqual({ projects: ['/repo'], worktrees: [] })
     expect(parseWorktreeProtection('{nope')).toEqual({ projects: [], worktrees: [] })
-    expect(parseWorktreeProtection(JSON.stringify({ projects: ['/a', 3, '/a', ''] }))).toEqual({ projects: ['/a'], worktrees: [] })
+    expect(parseWorktreeProtection(JSON.stringify({ projects: ['/a', 3, '/a', ''] }))).toEqual({
+      projects: ['/a'],
+      worktrees: [],
+    })
     expect(parseWorktreeProtection(null)).toEqual({ projects: [], worktrees: [] })
   })
 
@@ -121,17 +159,25 @@ describe('protection', () => {
   })
 
   it('accepts only a well-formed protection patch from IPC', () => {
-    expect(parseProtectionPatch({ target: 'project', path: '/repo', protected: true }))
-      .toEqual({ target: 'project', path: '/repo', protected: true })
-    expect(parseProtectionPatch({ target: 'worktree', path: 'C:\\repo\\wt', protected: false })?.target).toBe('worktree')
+    expect(parseProtectionPatch({ target: 'project', path: '/repo', protected: true })).toEqual({
+      target: 'project',
+      path: '/repo',
+      protected: true,
+    })
+    expect(parseProtectionPatch({ target: 'worktree', path: 'C:\\repo\\wt', protected: false })?.target).toBe(
+      'worktree',
+    )
     for (const bad of [
-      null, 'x', {},
+      null,
+      'x',
+      {},
       { target: 'repo', path: '/repo', protected: true },
       { target: 'project', path: 'relative/repo', protected: true },
       { target: 'project', path: 42, protected: true },
       { target: 'project', path: '/repo', protected: 0 },
       { target: 'project', path: '/repo' },
-    ]) expect(parseProtectionPatch(bad)).toBeNull()
+    ])
+      expect(parseProtectionPatch(bad)).toBeNull()
   })
 
   it('reports the project before the worktree', () => {
@@ -145,18 +191,25 @@ describe('protection', () => {
 describe('labels', () => {
   it('keeps normal states plain and marks only the exceptions', () => {
     expect(gitStateLabel(row())).toEqual({ text: 'Merged, clean', tone: 'muted' })
-    expect(gitStateLabel(row({ git: { uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: false } })).text).toBe('Pushed, clean')
+    expect(
+      gitStateLabel(
+        row({ git: { uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: false } }),
+      ).text,
+    ).toBe('Pushed, clean')
     expect(gitStateLabel(row({ git: dirty(3) }))).toEqual({ text: '3 uncommitted files', tone: 'warn' })
     expect(gitStateLabel(row({ git: dirty(1, 1) })).text).toBe('1 uncommitted file, 1 unpushed commit')
-    expect(gitStateLabel(row({ owned: true, chat: { kind: 'chat', id: 'c', title: 'T', archived: false } })))
-      .toMatchObject({ text: 'In use', tone: 'lock', title: expect.stringMatching(/live chat/) })
+    expect(
+      gitStateLabel(row({ owned: true, chat: { kind: 'chat', id: 'c', title: 'T', archived: false } })),
+    ).toMatchObject({ text: 'In use', tone: 'lock', title: expect.stringMatching(/live chat/) })
   })
 
   it('names every loss in the confirm, and says a branch with unpushed commits stays', () => {
     const body = removalConfirmBody(row({ git: dirty(3, 2) }))
     expect(body).toMatch(/3 uncommitted files will be deleted/)
     expect(body).toMatch(/2 unpushed commits .* stay on branch kanban\/a/)
-    expect(removalConfirmBody(row({ git: dirty(0, 1) }))).toBe('1 unpushed commit exists nowhere else. It stays on branch kanban/a, which is not deleted.')
+    expect(removalConfirmBody(row({ git: dirty(0, 1) }))).toBe(
+      '1 unpushed commit exists nowhere else. It stays on branch kanban/a, which is not deleted.',
+    )
     expect(removalConfirmBody(row({ branch: null, git: dirty(0, 1) }))).toMatch(/detached HEAD, will be lost/)
   })
 
@@ -181,8 +234,9 @@ describe('ignored files', () => {
   })
 
   it('keeps local work, and drops folders listed only because they hold other listed entries', () => {
-    expect(ignoredLosses(['.env', 'a.log', 'dist/', 'node_modules/', 'pkg/', 'pkg/node_modules/', 'secrets/', '']))
-      .toEqual(['.env', 'a.log', 'secrets/'])
+    expect(
+      ignoredLosses(['.env', 'a.log', 'dist/', 'node_modules/', 'pkg/', 'pkg/node_modules/', 'secrets/', '']),
+    ).toEqual(['.env', 'a.log', 'secrets/'])
     expect(ignoredLosses(['q/', 'q/x.log'])).toEqual(['q/x.log'])
   })
 
@@ -193,18 +247,25 @@ describe('ignored files', () => {
     expect(ignoredSummary(ignoring('.env'))).toBe('ignored .env')
     expect(gitStateLabel(r)).toEqual({ text: '.env and 2 other ignored files', tone: 'warn' })
     expect(removalConfirmBody(r)).toBe('.env and 2 other ignored files will be deleted and cannot be recovered.')
-    expect(removalConfirmBody(row({ git: { ...ignoring('.env'), uncommittedFiles: 2 } })))
-      .toBe('2 uncommitted files and ignored .env will be deleted and cannot be recovered.')
+    expect(removalConfirmBody(row({ git: { ...ignoring('.env'), uncommittedFiles: 2 } }))).toBe(
+      '2 uncommitted files and ignored .env will be deleted and cannot be recovered.',
+    )
   })
 
   it('needs the ignored files acknowledged like uncommitted ones, without forcing', () => {
     const r = row({ git: ignoring('.env', 'local.json') })
     expect(removalVerdict(r, null).ok).toBe(false)
     // An acknowledgement without the ignored count is malformed, not zero.
-    expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0 })).toMatchObject({ ok: false, reason: expect.stringMatching(/invalid removal confirmation/i) })
+    expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0 })).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/invalid removal confirmation/i),
+    })
     expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0, ignoredFiles: 1 }).ok).toBe(false)
-    expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0, ignoredFiles: 2 }))
-      .toEqual({ ok: true, force: false, deleteBranch: 'kanban/a' })
+    expect(removalVerdict(r, { uncommittedFiles: 0, unpushedCommits: 0, ignoredFiles: 2 })).toEqual({
+      ok: true,
+      force: false,
+      deleteBranch: 'kanban/a',
+    })
   })
 })
 
@@ -232,7 +293,10 @@ describe('parseRemovalAck', () => {
       true,
     ]
     for (const value of bad) {
-      expect(parseRemovalAck(value)).toMatchObject({ ok: false, error: expect.stringMatching(/invalid removal confirmation/i) })
+      expect(parseRemovalAck(value)).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/invalid removal confirmation/i),
+      })
     }
   })
 

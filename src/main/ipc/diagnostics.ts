@@ -37,9 +37,7 @@ function appProcesses(): DiagnosticsProcess[] {
 }
 
 function gpuStatus(): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(app.getGPUFeatureStatus()).map(([k, v]) => [k, String(v)]),
-  )
+  return Object.fromEntries(Object.entries(app.getGPUFeatureStatus()).map(([k, v]) => [k, String(v)]))
 }
 
 export function collectDiagnostics(deps: DiagnosticsDeps): DiagnosticsSnapshot {

@@ -66,16 +66,19 @@ import { decidePermission, denialMessage } from '../policy'
 import { findOpencodePath, buildOpencodeEnv } from './opencode/env'
 import { assertSupportedOpencode } from './opencode/version'
 import { resolveResumeSegment } from '../../db/database'
-import { acpSwitchboardMcpServer, isSwitchboardOpencodeReadTool, isSwitchboardOpencodeTool, SWITCHBOARD_OPENCODE_TOOLS } from '../../mcp/agent-registration'
+import {
+  acpSwitchboardMcpServer,
+  isSwitchboardOpencodeReadTool,
+  isSwitchboardOpencodeTool,
+  SWITCHBOARD_OPENCODE_TOOLS,
+} from '../../mcp/agent-registration'
 import { markAgentSpawnEnv } from '../agent-spawn-env'
 
 const log = createLogger('provider:opencode-acp')
 const LOG_PAYLOAD_LIMIT = 4000
 
 function truncate(v: string): string {
-  return v.length > LOG_PAYLOAD_LIMIT
-    ? `${v.slice(0, LOG_PAYLOAD_LIMIT)}…<truncated>`
-    : v
+  return v.length > LOG_PAYLOAD_LIMIT ? `${v.slice(0, LOG_PAYLOAD_LIMIT)}…<truncated>` : v
 }
 
 /**
@@ -299,9 +302,8 @@ function collectMcpNamesFromConfig(config: Record<string, unknown>, out: Set<str
   const mcp = config.mcp
   if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) return
   for (const [name, value] of Object.entries(mcp as Record<string, unknown>)) {
-    const enabled = value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as { enabled?: unknown }).enabled
-      : undefined
+    const enabled =
+      value && typeof value === 'object' && !Array.isArray(value) ? (value as { enabled?: unknown }).enabled : undefined
     if (enabled !== false) out.add(name)
   }
 }
@@ -415,8 +417,9 @@ const OPENCODE_PERMISSION_STRENGTH: Record<OpencodePermissionValue, number> = {
 }
 
 function permissionIsAtLeastAsProtective(value: unknown, baseline: OpencodePermissionValue): boolean {
-  return isOpencodePermissionValue(value)
-    && OPENCODE_PERMISSION_STRENGTH[value] >= OPENCODE_PERMISSION_STRENGTH[baseline]
+  return (
+    isOpencodePermissionValue(value) && OPENCODE_PERMISSION_STRENGTH[value] >= OPENCODE_PERMISSION_STRENGTH[baseline]
+  )
 }
 
 function generatedRulesForScalarDefault(
@@ -435,9 +438,10 @@ function mergeOpencodeInlineConfig(existing: string | undefined, injected: strin
   const base = parseOpencodeConfigObject(existing, 'existing OPENCODE_CONFIG_CONTENT')
   const extra = parseOpencodeConfigObject(injected, 'Switchboard OPENCODE_CONFIG_CONTENT')
   if (!base || !extra) return injected
-  const extraPermission = extra.permission && typeof extra.permission === 'object' && !Array.isArray(extra.permission)
-    ? extra.permission as Record<string, unknown>
-    : {}
+  const extraPermission =
+    extra.permission && typeof extra.permission === 'object' && !Array.isArray(extra.permission)
+      ? (extra.permission as Record<string, unknown>)
+      : {}
   if (isOpencodePermissionValue(base.permission)) {
     return JSON.stringify({
       ...base,
@@ -447,9 +451,10 @@ function mergeOpencodeInlineConfig(existing: string | undefined, injected: strin
       },
     })
   }
-  const basePermission = base.permission && typeof base.permission === 'object' && !Array.isArray(base.permission)
-    ? base.permission as Record<string, unknown>
-    : {}
+  const basePermission =
+    base.permission && typeof base.permission === 'object' && !Array.isArray(base.permission)
+      ? (base.permission as Record<string, unknown>)
+      : {}
   return JSON.stringify({
     ...base,
     permission: {
@@ -497,7 +502,12 @@ interface ActiveSession {
   /** True while a send applies its mode, before its prompt is in flight. */
   startingPrompt: boolean
   /** Messages sent with delivery 'queue' while a prompt ran, oldest first. */
-  queuedTurns: Array<{ id?: string; message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
+  queuedTurns: Array<{
+    id?: string
+    message: string
+    runtimeMode?: RuntimeMode
+    images?: Array<{ url: string; mimeType?: string }>
+  }>
   /** Nothing queued starts until the user resumes: a turn failed (see holdQueue). */
   queueHeld: boolean
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
@@ -536,7 +546,7 @@ export function mapSessionUpdate(
           assistantMessageText.set(fallbackIdKey, messageId)
         }
       }
-      
+
       // The accumulated copy is kept for the fallback message id bookkeeping
       // below; only the wire carries the increment, which is what keeps a long
       // reply from costing O(n^2) bytes.
@@ -630,7 +640,10 @@ export function mapSessionUpdate(
 /** Files an ACP edit tool call wrote: its locations, plus the path its input names. */
 function acpEditPaths(update: SessionUpdate & { sessionUpdate: 'tool_call_update' }): string[] {
   if (update.kind !== 'edit') return []
-  const input = (typeof update.rawInput === 'object' && update.rawInput !== null ? update.rawInput : {}) as Record<string, unknown>
+  const input = (typeof update.rawInput === 'object' && update.rawInput !== null ? update.rawInput : {}) as Record<
+    string,
+    unknown
+  >
   return [
     ...(update.locations ?? []).map((l) => l.path),
     ...(typeof input.filePath === 'string' ? [input.filePath] : []),
@@ -697,9 +710,10 @@ export function mapAvailableCommands(commands: AvailableCommand[]): ProviderSkil
  * ACP describes options via `kind` ("allow_once" | "allow_always" |
  * "reject_once") so the client can render labels itself.
  */
-export function pickPermissionOptions(
-  options: RequestPermissionRequest['options'],
-): { allow: string | null; reject: string | null } {
+export function pickPermissionOptions(options: RequestPermissionRequest['options']): {
+  allow: string | null
+  reject: string | null
+} {
   let allow: string | null = null
   let reject: string | null = null
   for (const o of options) {
@@ -742,10 +756,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     return findOpencodePath() !== null
   }
 
-  async startSession(
-    opts: SessionStartOpts,
-    onEvent: (event: RuntimeEvent) => void,
-  ): Promise<ProviderSession> {
+  async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
     const binPath = findOpencodePath()
     if (!binPath) {
       throw new Error('OpenCode not found. Install: curl -fsSL https://opencode.ai/install | bash')
@@ -879,7 +890,9 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
           fs: { readTextFile: true, writeTextFile: true },
         },
       })
-      log.info(`acp initialize: protocolVersion=${init.protocolVersion} agent=${init.agentInfo?.name ?? 'unknown'} ${init.agentInfo?.version ?? ''}`)
+      log.info(
+        `acp initialize: protocolVersion=${init.protocolVersion} agent=${init.agentInfo?.name ?? 'unknown'} ${init.agentInfo?.version ?? ''}`,
+      )
 
       // No agent-digest prompt rule here: ACP's `NewSessionRequest` carries
       // only `cwd`/`mcpServers`/`additionalDirectories` (checked against
@@ -991,12 +1004,15 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     active.drainingQueue = true
     if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'started' })
     this.deliverTurn(threadId, next.message, next.runtimeMode, next.images, undefined, undefined, true)
-      .then(() => { active.drainingQueue = false })
+      .then(() => {
+        active.drainingQueue = false
+      })
       .catch((err: unknown) => {
         const reason = err instanceof Error ? err.message : String(err)
         log.warn(`queued opencode turn failed to start for ${threadId}: ${reason}`)
         active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
-        if (next.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'failed', error: reason })
+        if (next.id)
+          active.onEvent({ type: 'turn.dequeued', threadId, messageId: next.id, reason: 'failed', error: reason })
         active.onEvent({ type: 'turn.completed', threadId })
         // The next one would most likely fail the same way.
         this.holdQueue(threadId, active, 'A queued message could not be sent.')
@@ -1020,7 +1036,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     if (!active?.queueHeld) return false
     active.queueHeld = false
     active.onEvent({ type: 'turn.queue-held', threadId, held: false })
-    if (active.inFlightPrompt === null && !active.startingPrompt && !active.drainingQueue) this.drainQueued(threadId, active)
+    if (active.inFlightPrompt === null && !active.startingPrompt && !active.drainingQueue)
+      this.drainQueued(threadId, active)
     return true
   }
 
@@ -1165,11 +1182,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       .catch((err: unknown) => {
         // Cancellation surfaces as `cancelled` stopReason - the SDK still
         // resolves cleanly, so this catch is for hard transport errors.
-        const msg = err instanceof RequestError
-          ? `${err.code}: ${err.message}`
-          : err instanceof Error
-            ? err.message
-            : String(err)
+        const msg =
+          err instanceof RequestError ? `${err.code}: ${err.message}` : err instanceof Error ? err.message : String(err)
         log.error(`acp prompt failed: ${msg}`)
         active.session.status = 'error'
         active.onEvent({ type: 'error', threadId, message: msg })
@@ -1221,11 +1235,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     }
   }
 
-  async respondToRequest(
-    threadId: string,
-    requestId: string,
-    decision: ApprovalDecision,
-  ): Promise<void> {
+  async respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
     const pending = active.pendingPermissions.get(requestId)
@@ -1309,9 +1319,10 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
    */
   async listModels(threadId: string): Promise<ModelOption[]> {
     const own = this.sessions.get(threadId)?.availableModels ?? []
-    const catalog = own.length > 0
-      ? own
-      : [...this.sessions.values()].find((s) => s.availableModels.length > 0)?.availableModels ?? []
+    const catalog =
+      own.length > 0
+        ? own
+        : ([...this.sessions.values()].find((s) => s.availableModels.length > 0)?.availableModels ?? [])
     return catalog.map((m) => ({
       id: m.modelId,
       label: formatOpencodeModelLabel(m.modelId),
@@ -1329,7 +1340,11 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         sessionId: active.sessionId,
         modelId,
       })
-      const meta = (res?._meta as { opencode?: { modelId?: string; variant?: string | null; availableVariants?: string[] } } | undefined)?.opencode
+      const meta = (
+        res?._meta as
+          | { opencode?: { modelId?: string; variant?: string | null; availableVariants?: string[] } }
+          | undefined
+      )?.opencode
       if (meta) {
         active.onEvent({
           type: 'model.variants',
@@ -1386,10 +1401,10 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         // For ours the server already enforces plan mode and shows the card;
         // in plan mode only our read tools skip the prompt, so a write is denied here too.
         if (
-          active.switchboardMcp
-          && allow
-          && (active.session.runtimeMode !== 'plan' || isSwitchboardOpencodeReadTool(toolName))
-          && canAutoAllowSwitchboardOpencodeTool(
+          active.switchboardMcp &&
+          allow &&
+          (active.session.runtimeMode !== 'plan' || isSwitchboardOpencodeReadTool(toolName)) &&
+          canAutoAllowSwitchboardOpencodeTool(
             toolName,
             active.mcpServerNames,
             active.opencodePermissionRules,
@@ -1421,8 +1436,12 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         // policy === 'prompt' - bubble up to the user via approval card.
         const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
         const detail = JSON.stringify(
-          { tool: params.toolCall, options: params.options.map((o) => ({ id: o.optionId, name: o.name, kind: o.kind })) },
-          null, 2,
+          {
+            tool: params.toolCall,
+            options: params.options.map((o) => ({ id: o.optionId, name: o.name, kind: o.kind })),
+          },
+          null,
+          2,
         ).slice(0, 2000)
 
         return new Promise<RequestPermissionResponse>((resolve) => {
@@ -1471,9 +1490,10 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
  *
  * Exported for unit tests.
  */
-export function parseImageInput(
-  img: { url: string; mimeType?: string },
-): { mimeType: string | undefined; data: string | null } {
+export function parseImageInput(img: { url: string; mimeType?: string }): {
+  mimeType: string | undefined
+  data: string | null
+} {
   const parsed = img.url ? parseImageDataUrl(img.url) : null
   return parsed ?? { mimeType: img.mimeType, data: null }
 }

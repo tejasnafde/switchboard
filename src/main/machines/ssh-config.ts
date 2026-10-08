@@ -36,7 +36,10 @@ export function parseSshConfig(text: string): SshHost[] {
     const sep = line.search(/[\s=]/)
     if (sep === -1) continue
     const keyword = line.slice(0, sep).toLowerCase()
-    const value = line.slice(sep + 1).trim().replace(/^=\s*/, '')
+    const value = line
+      .slice(sep + 1)
+      .trim()
+      .replace(/^=\s*/, '')
 
     if (keyword === 'host') {
       current = { aliases: value.split(/\s+/).filter((a) => a && !isPattern(a) && !isPathLike(a)) }
@@ -57,9 +60,7 @@ export function parseSshConfig(text: string): SshHost[] {
 
   return blocks
     .filter((b) => b.hostName && b.aliases.length > 0)
-    .flatMap((b) =>
-      b.aliases.map((alias) => ({ alias, hostName: b.hostName, user: b.user, port: b.port ?? 22 })),
-    )
+    .flatMap((b) => b.aliases.map((alias) => ({ alias, hostName: b.hostName, user: b.user, port: b.port ?? 22 })))
 }
 
 /** `--project "x"` / `--project x` / `--project=x`, quoted or not. */
@@ -102,7 +103,10 @@ export function parseIapTargets(text: string): SshIapTarget[] {
     const sep = line.search(/[\s=]/)
     if (sep === -1) continue
     const keyword = line.slice(0, sep).toLowerCase()
-    const value = line.slice(sep + 1).trim().replace(/^=\s*/, '')
+    const value = line
+      .slice(sep + 1)
+      .trim()
+      .replace(/^=\s*/, '')
 
     if (keyword === 'host') {
       flush()
@@ -120,10 +124,7 @@ export function parseIapTargets(text: string): SshIapTarget[] {
 }
 
 /** Durable transport patch for a saved machine whose SSH alias is an IAP target. */
-export function iapTransportForMachine(
-  machine: Machine,
-  targets: SshIapTarget[],
-): Partial<MachineInput> | null {
+export function iapTransportForMachine(machine: Machine, targets: SshIapTarget[]): Partial<MachineInput> | null {
   const key = machine.sshAlias ?? machine.sshHost
   const target = targets.find((candidate) => candidate.alias === key)
   if (!target) return null
@@ -132,7 +133,8 @@ export function iapTransportForMachine(
     machine.iapInstance === target.instance &&
     machine.iapProject === target.project &&
     machine.iapZone === target.zone
-  ) return null
+  )
+    return null
 
   return {
     transportKind: 'gcloud-iap',

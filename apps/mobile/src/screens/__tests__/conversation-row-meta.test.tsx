@@ -11,7 +11,9 @@ import { renderComponent } from '../../test/render'
 const key = threadKey('conn', 't1')
 
 afterEach(() => {
-  act(() => { useChatStore.setState({ threads: {} }) })
+  act(() => {
+    useChatStore.setState({ threads: {} })
+  })
 })
 
 describe('RowMeta', () => {

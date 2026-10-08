@@ -83,23 +83,26 @@ export function registerAppDesktopHandlers(window: BrowserWindow): void {
     app.quit()
   })
 
-  ipcMain.handle(AppChannels.EXPORT_MARKDOWN, async (_event, params: { suggestedFilename: string; content: string }) => {
-    const result = await dialog.showSaveDialog(window, {
-      title: 'Export Conversation',
-      defaultPath: params.suggestedFilename,
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
-    })
-    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
-    try {
-      await writeFile(result.filePath, params.content, 'utf-8')
-      log.info(`exported markdown: ${result.filePath}`)
-      return { ok: true, path: result.filePath }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      log.error(`export failed: ${message}`)
-      return { ok: false, error: message }
-    }
-  })
+  ipcMain.handle(
+    AppChannels.EXPORT_MARKDOWN,
+    async (_event, params: { suggestedFilename: string; content: string }) => {
+      const result = await dialog.showSaveDialog(window, {
+        title: 'Export Conversation',
+        defaultPath: params.suggestedFilename,
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+      })
+      if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+      try {
+        await writeFile(result.filePath, params.content, 'utf-8')
+        log.info(`exported markdown: ${result.filePath}`)
+        return { ok: true, path: result.filePath }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        log.error(`export failed: ${message}`)
+        return { ok: false, error: message }
+      }
+    },
+  )
 
   ipcMain.handle(AppChannels.SET_VIBRANCY, (_event, theme: 'dark' | 'light' | 'translucent') => {
     if (window.isDestroyed()) return

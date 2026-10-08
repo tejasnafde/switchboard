@@ -24,18 +24,16 @@ export const ThreadHeaderStatus = memo(function ThreadHeaderStatus({
       style={styles.row}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={
-        [
-          `status ${thread.status}`,
-          pct != null ? `context ${pct} percent` : null,
-          thread.usedTokens != null && thread.maxTokens != null
-            ? `${formatTokens(thread.usedTokens)} of ${formatTokens(thread.maxTokens)} tokens`
-            : null,
-          thread.costUsd != null ? `cost ${formatCostUsd(thread.costUsd).slice(1)} dollars` : null,
-        ]
-          .filter(Boolean)
-          .join(', ')
-      }
+      accessibilityLabel={[
+        `status ${thread.status}`,
+        pct != null ? `context ${pct} percent` : null,
+        thread.usedTokens != null && thread.maxTokens != null
+          ? `${formatTokens(thread.usedTokens)} of ${formatTokens(thread.maxTokens)} tokens`
+          : null,
+        thread.costUsd != null ? `cost ${formatCostUsd(thread.costUsd).slice(1)} dollars` : null,
+      ]
+        .filter(Boolean)
+        .join(', ')}
     >
       <View style={[styles.dot, { backgroundColor: statusColor[thread.status] ?? colors.textFaint }]} />
       {pct != null && <Text style={styles.value}>{pct}%</Text>}

@@ -44,16 +44,21 @@ export function checkReviewerNames(value: unknown): Checked<string[]> {
   const names: string[] = []
   const seen = new Set<string>()
   for (const item of value) {
-    if (typeof item !== 'string' || !item.trim()) return { ok: false, message: 'Every entry of "reviewers" is a non-empty name, login or email.' }
+    if (typeof item !== 'string' || !item.trim())
+      return { ok: false, message: 'Every entry of "reviewers" is a non-empty name, login or email.' }
     const name = item.trim()
-    if (name.length > NAME_MAX_CHARS || name.includes('\u0000')) return { ok: false, message: `The reviewer "${name.slice(0, 40)}" is not a name.` }
+    if (name.length > NAME_MAX_CHARS || name.includes('\u0000'))
+      return { ok: false, message: `The reviewer "${name.slice(0, 40)}" is not a name.` }
     const key = normalize(name)
     if (seen.has(key)) continue
     seen.add(key)
     names.push(name)
   }
   if (names.length > AGENT_PR_MAX_REVIEWERS) {
-    return { ok: false, message: `That is ${names.length} reviewers; a pull request opened here asks for at most ${AGENT_PR_MAX_REVIEWERS}.` }
+    return {
+      ok: false,
+      message: `That is ${names.length} reviewers; a pull request opened here asks for at most ${AGENT_PR_MAX_REVIEWERS}.`,
+    }
   }
   return { ok: true, value: names }
 }
@@ -70,7 +75,12 @@ function keysOf(c: PrReviewerCandidate): string[] {
 }
 
 function toReviewer(c: PrReviewerCandidate): HostWriteReviewer {
-  return { id: c.id, login: c.kind === 'team' && c.id.startsWith('team:') ? c.id : c.person.login, displayName: c.person.displayName, kind: c.kind }
+  return {
+    id: c.id,
+    login: c.kind === 'team' && c.id.startsWith('team:') ? c.id : c.person.login,
+    displayName: c.person.displayName,
+    kind: c.kind,
+  }
 }
 
 function words(value: string): string[] {
@@ -82,14 +92,22 @@ function closeTo(name: string, candidates: readonly PrReviewerCandidate[]): PrRe
   const raw = normalize(name)
   const q = raw.includes('@') ? raw.slice(0, raw.indexOf('@')) : raw
   const qWords = words(q)
-  return candidates.filter((c) => keysOf(c).some((k) =>
-    (q.length >= 2 && k.includes(q)) || (k.length >= 3 && q.includes(k)) || words(k).some((w) => qWords.includes(w)),
-  )).slice(0, CLOSE_MAX)
+  return candidates
+    .filter((c) =>
+      keysOf(c).some(
+        (k) =>
+          (q.length >= 2 && k.includes(q)) ||
+          (k.length >= 3 && q.includes(k)) ||
+          words(k).some((w) => qWords.includes(w)),
+      ),
+    )
+    .slice(0, CLOSE_MAX)
 }
 
 function isViewer(host: PrHost, c: PrReviewerCandidate, viewer: ReviewerViewer | null): boolean {
   if (!viewer) return false
-  const same = (a: string | null, b: string) => !!a && (host === 'github' ? a.toLowerCase() === b.toLowerCase() : a === b)
+  const same = (a: string | null, b: string) =>
+    !!a && (host === 'github' ? a.toLowerCase() === b.toLowerCase() : a === b)
   return same(viewer.id, c.id) || (c.kind === 'user' && same(viewer.login, c.person.login))
 }
 
@@ -113,7 +131,9 @@ export function resolveReviewers(
     const ids = new Set(hits.map((c) => c.id))
     if (ids.size === 0) {
       const close = closeTo(name, candidates)
-      problems.push(`"${name}" is not someone who can review here${close.length > 0 ? `; close: ${suggest(close)}` : ''}.`)
+      problems.push(
+        `"${name}" is not someone who can review here${close.length > 0 ? `; close: ${suggest(close)}` : ''}.`,
+      )
     } else if (ids.size > 1) {
       problems.push(`"${name}" matches ${ids.size} people: ${suggest(hits)}. Use a login.`)
     } else if (isViewer(host, hits[0], viewer)) {
@@ -123,13 +143,19 @@ export function resolveReviewers(
     }
   }
   if (problems.length > 0) {
-    return { ok: false, message: `${problems.join(' ')} Call again with logins exactly as listed, or without those reviewers. Nothing was created.` }
+    return {
+      ok: false,
+      message: `${problems.join(' ')} Call again with logins exactly as listed, or without those reviewers. Nothing was created.`,
+    }
   }
   return { ok: true, value: out }
 }
 
 /** The reviewers the card kept: the approval's ids, in the card's order. Absent means all of them (a phone, a plain client). */
-export function keptReviewers(card: readonly HostWriteReviewer[], kept: readonly string[] | undefined): HostWriteReviewer[] {
+export function keptReviewers(
+  card: readonly HostWriteReviewer[],
+  kept: readonly string[] | undefined,
+): HostWriteReviewer[] {
   if (kept === undefined) return [...card]
   const ids = new Set(kept)
   return card.filter((r) => ids.has(r.id))

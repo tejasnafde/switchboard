@@ -60,7 +60,9 @@ describe('findSpendBlock', () => {
   })
 
   it('returns null once the block has expired', () => {
-    expect(findSpendBlock(blocks, 'claude-code-akshaya-933v', 'claude-fable-5', Date.parse('2026-08-02T00:00:00Z'))).toBeNull()
+    expect(
+      findSpendBlock(blocks, 'claude-code-akshaya-933v', 'claude-fable-5', Date.parse('2026-08-02T00:00:00Z')),
+    ).toBeNull()
   })
 
   it('returns null when no model is known yet', () => {
@@ -144,13 +146,15 @@ describe('describeSpendBlock: scope-aware advice', () => {
   })
 
   it('offers another profile when the block is account-scoped', () => {
-    expect(describeSpendBlock(block({ scope: 'account', reason: 'out_of_credits' })))
-      .toMatch(/switch to another profile/i)
+    expect(describeSpendBlock(block({ scope: 'account', reason: 'out_of_credits' }))).toMatch(
+      /switch to another profile/i,
+    )
   })
 
   it('asks for extra usage to be enabled when it was never provisioned', () => {
-    expect(describeSpendBlock(block({ scope: 'not-provisioned', reason: 'overage_not_provisioned' })))
-      .toMatch(/enable extra usage/i)
+    expect(describeSpendBlock(block({ scope: 'not-provisioned', reason: 'overage_not_provisioned' }))).toMatch(
+      /enable extra usage/i,
+    )
   })
 
   it('defaults to the org wording when scope is absent on a persisted block', () => {

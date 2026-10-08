@@ -22,7 +22,10 @@ async function store(answers: Array<PrResult<PrListData>>) {
 
 describe('review store: a stale list', () => {
   it('stays stale when the refresh fails, and the next open reads again', async () => {
-    const failed: PrResult<PrListData> = { ok: false, error: { kind: 'offline', host: 'github', message: 'Could not reach github.com.' } }
+    const failed: PrResult<PrListData> = {
+      ok: false,
+      error: { kind: 'offline', host: 'github', message: 'Could not reach github.com.' },
+    }
     const { useReviewStore, list } = await store([failed])
     useReviewStore.setState({ visible: true, lastFetchAt: Date.now(), loading: false, stale: false })
 

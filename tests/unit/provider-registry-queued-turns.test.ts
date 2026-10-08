@@ -18,7 +18,12 @@ vi.mock('../../src/main/db/provider-instances', () => ({
     oauthDir: null,
   }),
   getProviderInstanceFull: (id: string) => ({
-    id, agentType: 'claude-code', displayName: id, enabled: true, env: {}, oauthDir: null,
+    id,
+    agentType: 'claude-code',
+    displayName: id,
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
   listOauthDirsForAgent: () => [],
 }))
@@ -36,7 +41,10 @@ vi.mock('../../src/main/db/database', () => ({
   recordConversationSegment: () => {},
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: () => true,
-  deleteUserMessage: (conversationId: string, messageId: string) => { deleted.push([conversationId, messageId]); return true },
+  deleteUserMessage: (conversationId: string, messageId: string) => {
+    deleted.push([conversationId, messageId])
+    return true
+  },
   getConversationById: (id: string) => ({ id }),
   getConversationTitle: () => null,
   resolveRootThreadId: (id: string) => rotated.get(id) ?? id,
@@ -83,9 +91,23 @@ class QueueingAdapter implements ProviderAdapter {
 
   async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     this.onEvent = onEvent
-    return { threadId: opts.threadId, provider: this.provider, status: 'idle', runtimeMode: 'sandbox', cwd: opts.cwd, createdAt: 0 }
+    return {
+      threadId: opts.threadId,
+      provider: this.provider,
+      status: 'idle',
+      runtimeMode: 'sandbox',
+      cwd: opts.cwd,
+      createdAt: 0,
+    }
   }
-  async sendTurn(threadId: string, _m: string, _r?: unknown, _i?: unknown, delivery?: TurnDelivery, queuedId?: string): Promise<void> {
+  async sendTurn(
+    threadId: string,
+    _m: string,
+    _r?: unknown,
+    _i?: unknown,
+    delivery?: TurnDelivery,
+    queuedId?: string,
+  ): Promise<void> {
     if (delivery === 'queue' && this.running && queuedId) {
       this.held.push(queuedId)
       this.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
@@ -130,7 +152,13 @@ const passThroughSubmission = {
   async submit(input: UserTurnSubmissionV1, context: AtomicUserTurnContext) {
     await context.prepare()
     await context.dispatch()
-    return { status: 'accepted' as const, accepted: true as const, duplicate: false, state: 'completed' as const, acceptedAt: 1 }
+    return {
+      status: 'accepted' as const,
+      accepted: true as const,
+      duplicate: false,
+      state: 'completed' as const,
+      acceptedAt: 1,
+    }
   },
 }
 
@@ -138,8 +166,12 @@ const passThroughSubmission = {
 function fakeRowStore(earlier: string[] = []) {
   const calls: string[] = []
   const store: QueuedTurnRowStore = {
-    record: (row) => { calls.push(`record ${row.messageId} ${row.conversationId} ${row.text}`) },
-    forget: (id) => { calls.push(`forget ${id}`) },
+    record: (row) => {
+      calls.push(`record ${row.messageId} ${row.conversationId} ${row.text}`)
+    },
+    forget: (id) => {
+      calls.push(`forget ${id}`)
+    },
     markNotSent: (id, cause) => {
       calls.push(`notSent ${id} ${cause}`)
       return { conversationId: 't1', messageId: id, content: `Error: not sent ${id}` }
@@ -155,14 +187,27 @@ function fakeRowStore(earlier: string[] = []) {
 async function setup(provider: ProviderKind, rows = fakeRowStore()) {
   const host = new FakeHost()
   const adapter = new QueueingAdapter(provider)
-  const registry = new ProviderRegistry(host, new Map([[provider, adapter]]), undefined, passThroughSubmission, undefined, undefined, rows.store)
+  const registry = new ProviderRegistry(
+    host,
+    new Map([[provider, adapter]]),
+    undefined,
+    passThroughSubmission,
+    undefined,
+    undefined,
+    rows.store,
+  )
   registry.registerIpcHandlers()
   await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider, cwd: '/tmp' })
   const published: RuntimeEvent[] = []
   registry.bus.subscribe((e) => published.push(e))
-  const submit = (origin: string, delivery?: TurnDelivery) => host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
-    version: 1, threadId: 't1', origin, providerText: `text of ${origin}`, ...(delivery ? { delivery } : {}),
-  })
+  const submit = (origin: string, delivery?: TurnDelivery) =>
+    host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+      version: 1,
+      threadId: 't1',
+      origin,
+      providerText: `text of ${origin}`,
+      ...(delivery ? { delivery } : {}),
+    })
   const outstanding = () => (Reflect.get(registry, 'outstandingTurns') as Map<string, number>).get('t1') ?? 0
   const list = () => host.invoke<QueuedTurnSummary[]>(ProviderChannels.LIST_QUEUED_TURNS, 't1')
   const promote = (id: string) => host.invoke<QueuedTurnActionResult>(ProviderChannels.PROMOTE_QUEUED_TURN, 't1', id)
@@ -181,7 +226,10 @@ describe('ProviderRegistry queued messages', () => {
     await t.submit('b', 'queue')
     const [listed] = await t.list()
     expect(listed).toMatchObject({ threadId: 't1', messageId: 'remote_b', text: 'text of b' })
-    expect(t.published.find((e) => e.type === 'turn.queued')).toMatchObject({ messageId: 'remote_b', text: 'text of b' })
+    expect(t.published.find((e) => e.type === 'turn.queued')).toMatchObject({
+      messageId: 'remote_b',
+      text: 'text of b',
+    })
     expect(await t.host.invoke(ProviderChannels.LIST_QUEUED_TURNS, 'rotated-uuid')).toHaveLength(1)
   })
 
@@ -257,7 +305,12 @@ describe('ProviderRegistry queued messages', () => {
     await t.submit('a')
     await t.submit('b', 'queue')
     await t.cancel('remote_b')
-    ;(Reflect.get(t.adapter, 'onEvent') as (e: RuntimeEvent) => void)({ type: 'turn.dequeued', threadId: 't1', messageId: 'remote_b', reason: 'cancelled' })
+    ;(Reflect.get(t.adapter, 'onEvent') as (e: RuntimeEvent) => void)({
+      type: 'turn.dequeued',
+      threadId: 't1',
+      messageId: 'remote_b',
+      reason: 'cancelled',
+    })
     expect(t.outstanding()).toBe(1)
   })
 
@@ -268,7 +321,12 @@ describe('ProviderRegistry queued messages', () => {
     await t.submit('b', 'queue')
     await t.submit('c', 'queue')
     t.adapter.finishTurn('t1')
-    ;(Reflect.get(t.adapter, 'onEvent') as (e: RuntimeEvent) => void)({ type: 'turn.dequeued', threadId: 't1', messageId: 'remote_c', reason: 'dropped' })
+    ;(Reflect.get(t.adapter, 'onEvent') as (e: RuntimeEvent) => void)({
+      type: 'turn.dequeued',
+      threadId: 't1',
+      messageId: 'remote_c',
+      reason: 'dropped',
+    })
     expect(rows.calls).toEqual([
       'sweep',
       'record remote_b t1 text of b',

@@ -57,7 +57,8 @@ export function serializeConversationToMarkdown(opts: {
       !msg.plan &&
       !msg.images?.length &&
       !msg.denial
-    ) continue
+    )
+      continue
 
     if (msg.role !== lastRole) {
       if (lastRole !== null) {
@@ -65,11 +66,10 @@ export function serializeConversationToMarkdown(opts: {
         lines.push('---')
         lines.push('')
       }
-      const label = msg.role === 'user' ? 'You'
-        : msg.role === 'system' ? 'System'
-        : agentShortLabel(agentType)
+      const label = msg.role === 'user' ? 'You' : msg.role === 'system' ? 'System' : agentShortLabel(agentType)
       const time = new Date(msg.timestamp).toLocaleTimeString([], {
-        hour: '2-digit', minute: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
       })
       lines.push(`## ${label} - ${time}`)
       lines.push('')
@@ -96,7 +96,9 @@ export function serializeConversationToMarkdown(opts: {
       for (const tc of msg.toolCalls) {
         const summary = summarizeToolCall(tc.name, tc.input)
         lines.push(`<details>`)
-        lines.push(`<summary><strong>${escapeHtml(tc.name)}</strong>${summary ? ` - <code>${escapeHtml(summary)}</code>` : ''}</summary>`)
+        lines.push(
+          `<summary><strong>${escapeHtml(tc.name)}</strong>${summary ? ` - <code>${escapeHtml(summary)}</code>` : ''}</summary>`,
+        )
         lines.push('')
         lines.push('```')
         lines.push(typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input, null, 2))
@@ -180,11 +182,7 @@ function summarizeToolCall(_name: string, input: string | object): string {
 }
 
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 /** Suggest a filename like `chat-admin-panel-changes-2026-04-21.md` */

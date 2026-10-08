@@ -35,11 +35,7 @@ function decodeEntities(value: string): string {
 }
 
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 }
 
 /** Tabs and line breaks would start a new cell or row in TSV, CSV and markdown. */
@@ -61,7 +57,10 @@ function inlineText(tokens: Token[] | undefined): string {
         out += ' '
         break
       default:
-        out += 'tokens' in token && token.tokens ? inlineText(token.tokens) : decodeEntities('text' in token ? token.text : token.raw)
+        out +=
+          'tokens' in token && token.tokens
+            ? inlineText(token.tokens)
+            : decodeEntities('text' in token ? token.text : token.raw)
     }
   }
   return out
@@ -81,9 +80,7 @@ function inlineHtml(tokens: Token[] | undefined): string {
         out += `<code>${escapeHtml(flatten(token.text))}</code>`
         break
       default:
-        out += 'tokens' in token && token.tokens
-          ? inlineHtml(token.tokens)
-          : escapeHtml(flatten(inlineText([token])))
+        out += 'tokens' in token && token.tokens ? inlineHtml(token.tokens) : escapeHtml(flatten(inlineText([token])))
     }
   }
   return out
@@ -102,16 +99,22 @@ export function tableToHtml(source: CopyTableSource): string {
   const cell = (tag: 'th' | 'td', value: Tokens.TableCell | undefined): string =>
     `<${tag}>${inlineHtml(value?.tokens).trim()}</${tag}>`
   const head = `<thead><tr>${source.header.map((h) => cell('th', h)).join('')}</tr></thead>`
-  const body = source.rows.length === 0
-    ? ''
-    : `<tbody>${source.rows.map((row) => `<tr>${rowCells(source, row).map((c) => cell('td', c)).join('')}</tr>`).join('')}</tbody>`
+  const body =
+    source.rows.length === 0
+      ? ''
+      : `<tbody>${source.rows
+          .map(
+            (row) =>
+              `<tr>${rowCells(source, row)
+                .map((c) => cell('td', c))
+                .join('')}</tr>`,
+          )
+          .join('')}</tbody>`
   return `<table>${head}${body}</table>`
 }
 
 export function tableToTsv(source: CopyTableSource): string {
-  return [source.header, ...source.rows]
-    .map((row) => rowCells(source, row).map(cellText).join('\t'))
-    .join('\n')
+  return [source.header, ...source.rows].map((row) => rowCells(source, row).map(cellText).join('\t')).join('\n')
 }
 
 const NUMBER = /^[-+]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?%?$/
@@ -137,12 +140,18 @@ function csvField(value: string): string {
  */
 export function tableToCsv(source: CopyTableSource): string {
   return [source.header, ...source.rows]
-    .map((row) => rowCells(source, row).map((c) => csvField(cellText(c))).join(','))
+    .map((row) =>
+      rowCells(source, row)
+        .map((c) => csvField(cellText(c)))
+        .join(','),
+    )
     .join('\r\n')
 }
 
 function markdownCell(cell: Tokens.TableCell | undefined): string {
-  return flatten(cell?.text ?? '').trim().replaceAll('|', '\\|')
+  return flatten(cell?.text ?? '')
+    .trim()
+    .replaceAll('|', '\\|')
 }
 
 const ALIGN_MARKER: Record<string, string> = { left: ':---', center: ':---:', right: '---:' }

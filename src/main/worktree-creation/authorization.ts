@@ -1,12 +1,7 @@
-import type {
-  WorktreeCreationActionRequest,
-  WorktreeCreationRequest,
-} from '../../shared/worktree-creation'
+import type { WorktreeCreationActionRequest, WorktreeCreationRequest } from '../../shared/worktree-creation'
 import { currentBackendRequestContext, remoteDeviceHasScope } from '../backend/request-context'
 
-export function authorizeWorktreeCreationRequest(
-  request: WorktreeCreationRequest,
-): WorktreeCreationRequest {
+export function authorizeWorktreeCreationRequest(request: WorktreeCreationRequest): WorktreeCreationRequest {
   const remote = currentBackendRequestContext()?.transport === 'remote'
   const canProvisionTerminals = remoteDeviceHasScope('terminal')
   if (remote && !canProvisionTerminals && request.setup.policy !== 'skip') {
@@ -20,9 +15,7 @@ export function authorizeWorktreeCreationRequest(
     ...request,
     launch: {
       ...request.launch,
-      terminalPolicy: canProvisionTerminals
-        ? request.launch.terminalPolicy ?? 'provision'
-        : 'skip',
+      terminalPolicy: canProvisionTerminals ? (request.launch.terminalPolicy ?? 'provision') : 'skip',
     },
   }
 }

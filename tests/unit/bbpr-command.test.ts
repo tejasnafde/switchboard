@@ -42,7 +42,9 @@ describe('bbprPullRequestNumbers', () => {
 describe('toolInputCommand', () => {
   it('reads Claude Bash input, Codex argv, and a bare command', () => {
     expect(toolInputCommand(JSON.stringify({ command: 'bbpr 605', description: 'x' }, null, 2))).toBe('bbpr 605')
-    expect(toolInputCommand(JSON.stringify({ command: ['bash', '-lc', 'cd /r && bbpr 605'] }))).toBe('cd /r && bbpr 605')
+    expect(toolInputCommand(JSON.stringify({ command: ['bash', '-lc', 'cd /r && bbpr 605'] }))).toBe(
+      'cd /r && bbpr 605',
+    )
     expect(toolInputCommand(JSON.stringify({ cmd: 'bbpr 605' }))).toBe('bbpr 605')
     expect(toolInputCommand('bbpr 605 diff')).toBe('bbpr 605 diff')
   })

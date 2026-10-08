@@ -1,8 +1,18 @@
 import { useEffect, useRef } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import { useTerminalStore } from '../stores/terminal-store'
-import { parseLaunchConfigFile, serializeLaunchConfigFile, type LaunchConfig, type LaunchConfigFile } from '@shared/launch-config'
-import { planLaunchConfigSpawn, resolveLaunchConfigFallback, resolveCwd, type SpawnOp } from '../services/launch-config-planner'
+import {
+  parseLaunchConfigFile,
+  serializeLaunchConfigFile,
+  type LaunchConfig,
+  type LaunchConfigFile,
+} from '@shared/launch-config'
+import {
+  planLaunchConfigSpawn,
+  resolveLaunchConfigFallback,
+  resolveCwd,
+  type SpawnOp,
+} from '../services/launch-config-planner'
 import { recordLaunchConfigUsage } from '../services/launch-config-usage'
 import { getRecentOutputPaneLabels } from '../services/terminal-registry'
 import { launchConfigListReducer } from '../services/launch-config-list-reducer'
@@ -82,7 +92,12 @@ export function useTerminalLifecycle() {
         // fall back to default if the user just deleted it from YAML.
         const currentLaunchConfig = useTerminalStore.getState().getSessionLaunchConfigName(sessionId)
         useTerminalStore.getState().clearSessionLayout(sessionId)
-        spawnTerminalsForSession(sessionId, executionRootForSession(session)?.path ?? projectPath, true, currentLaunchConfig)
+        spawnTerminalsForSession(
+          sessionId,
+          executionRootForSession(session)?.path ?? projectPath,
+          true,
+          currentLaunchConfig,
+        )
       }
     })
     return cleanup
@@ -124,9 +139,19 @@ export function useTerminalLifecycle() {
 
 // ─── Hydration helpers ──────────────────────────────────────────────
 
-interface SavedPane { label?: string; cwd?: string; command?: string; wait_for?: string }
-interface SavedWindow { panes?: SavedPane[] }
-interface SavedRow { windows?: SavedWindow[]; panes?: SavedPane[] /* legacy */ }
+interface SavedPane {
+  label?: string
+  cwd?: string
+  command?: string
+  wait_for?: string
+}
+interface SavedWindow {
+  panes?: SavedPane[]
+}
+interface SavedRow {
+  windows?: SavedWindow[]
+  panes?: SavedPane[] /* legacy */
+}
 
 async function spawnTerminalsForSession(
   sessionId: string,
@@ -146,7 +171,8 @@ async function spawnTerminalsForSession(
         const parsed = JSON.parse(saved.layoutJson) as { rows?: SavedRow[] }
         if (parsed.rows && Array.isArray(parsed.rows) && parsed.rows.length > 0) {
           restoreFromSaved(sessionId, parsed.rows, projectPath)
-          if (saved.launchConfigName) useTerminalStore.getState().setSessionLaunchConfigName(sessionId, saved.launchConfigName)
+          if (saved.launchConfigName)
+            useTerminalStore.getState().setSessionLaunchConfigName(sessionId, saved.launchConfigName)
           return
         }
       }
@@ -164,9 +190,11 @@ async function spawnTerminalsForSession(
         const resolved = resolveLaunchConfigFallback(config, requestedLaunchConfig)
         if (resolved) {
           if (resolved.fellBack && resolved.removedName) {
-            window.dispatchEvent(new CustomEvent('sb-launch-config-fallback', {
-              detail: { sessionId, removedName: resolved.removedName, fallbackName: resolved.launchConfigName },
-            }))
+            window.dispatchEvent(
+              new CustomEvent('sb-launch-config-fallback', {
+                detail: { sessionId, removedName: resolved.removedName, fallbackName: resolved.launchConfigName },
+              }),
+            )
           }
           spawnFromLaunchConfig(sessionId, resolved.launchConfig, projectPath)
           useTerminalStore.getState().setSessionLaunchConfigName(sessionId, resolved.launchConfigName)
@@ -190,9 +218,7 @@ function restoreFromSaved(sessionId: string, rows: SavedRow[], projectPath?: str
   for (const row of rows) {
     // New format: row.windows[] with each window having panes[]
     // Legacy format: row.panes[] (single pane per window)
-    const windows: SavedWindow[] = row.windows
-      ? row.windows
-      : (row.panes ?? []).map((p) => ({ panes: [p] }))
+    const windows: SavedWindow[] = row.windows ? row.windows : (row.panes ?? []).map((p) => ({ panes: [p] }))
 
     for (let wi = 0; wi < windows.length; wi++) {
       const win = windows[wi]
@@ -304,15 +330,19 @@ export async function applyLaunchConfig(
   recordLaunchConfigUsage(projectPath, resolved.launchConfigName)
 
   if (resolved.fellBack && resolved.removedName) {
-    window.dispatchEvent(new CustomEvent('sb-launch-config-fallback', {
-      detail: { sessionId, removedName: resolved.removedName, fallbackName: resolved.launchConfigName },
-    }))
+    window.dispatchEvent(
+      new CustomEvent('sb-launch-config-fallback', {
+        detail: { sessionId, removedName: resolved.removedName, fallbackName: resolved.launchConfigName },
+      }),
+    )
   }
 
   // Persist immediately so a relaunch picks up the new selection.
-  void window.api.app.saveSessionLayout(sessionId, snapshotLayoutJson(sessionId), resolved.launchConfigName).catch((err) => {
-    log.warn(`saveSessionLayout failed for ${sessionId} after applying launch config`, err)
-  })
+  void window.api.app
+    .saveSessionLayout(sessionId, snapshotLayoutJson(sessionId), resolved.launchConfigName)
+    .catch((err) => {
+      log.warn(`saveSessionLayout failed for ${sessionId} after applying launch config`, err)
+    })
 }
 
 /**
@@ -347,26 +377,28 @@ function snapshotCurrentAsLaunchConfig(sessionId: string, projectPath: string): 
     if (!cwd) return undefined
     if (cwd === projectPath) return '.'
     if (cwd.startsWith(projectPrefix)) return cwd.slice(projectPrefix.length)
-    return cwd  // outside the project - keep absolute
+    return cwd // outside the project - keep absolute
   }
 
   // Each row in YAML corresponds to a row in the live layout. Tabs
   // (multiple panes inside a single window) get flattened into siblings
   // in the same row - we don't have a YAML representation for tabs
   // today, and surfacing them as side-by-side panes loses the least.
-  const rows = layout.rows.map((row) => ({
-    panes: row.windowIds.flatMap((wid) => {
-      const win = layout.windows[wid]
-      return win.paneIds.map((pid) => {
-        const pane = layout.panes[pid]
-        const cwd = toRelativeCwd(pane?.cwd)
-        return {
-          label: pane?.label ?? 'Terminal',
-          ...(cwd ? { cwd } : {}),
-        }
-      })
-    }),
-  })).filter((r) => r.panes.length > 0)
+  const rows = layout.rows
+    .map((row) => ({
+      panes: row.windowIds.flatMap((wid) => {
+        const win = layout.windows[wid]
+        return win.paneIds.map((pid) => {
+          const pane = layout.panes[pid]
+          const cwd = toRelativeCwd(pane?.cwd)
+          return {
+            label: pane?.label ?? 'Terminal',
+            ...(cwd ? { cwd } : {}),
+          }
+        })
+      }),
+    }))
+    .filter((r) => r.panes.length > 0)
 
   // Flatten to terminals[] when the layout is exactly one row - keeps
   // the YAML shape simpler (legacy `terminals:` flat list) for the
@@ -401,7 +433,9 @@ export async function saveCurrentLayoutAsLaunchConfig(
   const yamlContent = await window.api.app.getLaunchConfig(projectPath)
   let config: LaunchConfigFile
   try {
-    config = yamlContent ? parseLaunchConfigFile(yamlContent) : { terminals: [], configs: { default: { terminals: [] } } }
+    config = yamlContent
+      ? parseLaunchConfigFile(yamlContent)
+      : { terminals: [], configs: { default: { terminals: [] } } }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Invalid launch-config.yaml' }
   }

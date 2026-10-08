@@ -9,7 +9,14 @@ import { AgentApprovalBroker, type AgentApprovalAnswer } from '../../src/main/mc
 import { parseHostWriteResponse, type HostWriteResponse } from '../../src/shared/agent-host-writes'
 import { declinedResultText } from '../../src/shared/agent-approval-cards'
 import { AgentWriteBudget } from '../../src/main/mcp/agent-write-budget'
-import { buildPrTools, pickLinkedPr, prWritePlanSummary, runPrWritePlan, type AgentPullRequestAccess, type PrWritePlan } from '../../src/main/mcp/pr-tools'
+import {
+  buildPrTools,
+  pickLinkedPr,
+  prWritePlanSummary,
+  runPrWritePlan,
+  type AgentPullRequestAccess,
+  type PrWritePlan,
+} from '../../src/main/mcp/pr-tools'
 import { toolText, type McpTool, type McpToolResult } from '../../src/main/mcp/mcp-session'
 import type { PrChangedFile, PrCheck, PrConversation, PrDetail, PrRef } from '../../src/shared/pull-requests'
 import { parseHunks } from '../../src/shared/unified-diff'
@@ -25,10 +32,26 @@ const conversation: PrConversation = {
   side: 'new',
   resolved: false,
   outdated: false,
-  comments: [{ id: 'c1', author: { login: 'pankaj', displayName: 'Pankaj', avatarUrl: null }, body: 'Cap the jitter too.', createdAt: 0, url: 'https://github.com/acme/app/pull/612#discussion_r1' }],
+  comments: [
+    {
+      id: 'c1',
+      author: { login: 'pankaj', displayName: 'Pankaj', avatarUrl: null },
+      body: 'Cap the jitter too.',
+      createdAt: 0,
+      url: 'https://github.com/acme/app/pull/612#discussion_r1',
+    },
+  ],
 }
 
-const failedCheck: PrCheck = { id: 'chk1', name: 'integration', state: 'failure', description: null, url: null, durationMs: null, rerunId: '99' }
+const failedCheck: PrCheck = {
+  id: 'chk1',
+  name: 'integration',
+  state: 'failure',
+  description: null,
+  url: null,
+  durationMs: null,
+  rerunId: '99',
+}
 
 const WORKER_DIFF = [
   '@@ -80,4 +80,5 @@ class SyncWorker:',
@@ -40,25 +63,62 @@ const WORKER_DIFF = [
 ].join('\n')
 
 const changedFiles: PrChangedFile[] = [
-  { path: 'sync/worker.py', oldPath: null, status: 'modified', additions: 2, deletions: 1, binary: false, truncated: false, hunks: parseHunks(WORKER_DIFF).hunks },
+  {
+    path: 'sync/worker.py',
+    oldPath: null,
+    status: 'modified',
+    additions: 2,
+    deletions: 1,
+    binary: false,
+    truncated: false,
+    hunks: parseHunks(WORKER_DIFF).hunks,
+  },
 ]
 
 /** The worker diff plus a second hunk far below it, so a range can cross hunks. */
-const twoHunkFiles: PrChangedFile[] = [{
-  ...changedFiles[0],
-  hunks: parseHunks([WORKER_DIFF, '@@ -120,2 +121,3 @@ class SyncWorker:', '     def stop(self) -> None:', '+        self.closed = True', '         return None'].join('\n')).hunks,
-}]
+const twoHunkFiles: PrChangedFile[] = [
+  {
+    ...changedFiles[0],
+    hunks: parseHunks(
+      [
+        WORKER_DIFF,
+        '@@ -120,2 +121,3 @@ class SyncWorker:',
+        '     def stop(self) -> None:',
+        '+        self.closed = True',
+        '         return None',
+      ].join('\n'),
+    ).hunks,
+  },
+]
 
 function detail(): PrDetail {
   return {
-    ref: PR, title: 'Sync backoff', url: 'https://github.com/acme/app/pull/612',
-    author: { login: 'tejas', displayName: 'Tejas', avatarUrl: null }, state: 'open', draft: false,
-    sourceBranch: 'backoff', targetBranch: 'main', createdAt: 0, updatedAt: 0, mergedAt: null,
-    additions: 1, deletions: 1, changedFiles: 1, unresolvedConversations: 1,
+    ref: PR,
+    title: 'Sync backoff',
+    url: 'https://github.com/acme/app/pull/612',
+    author: { login: 'tejas', displayName: 'Tejas', avatarUrl: null },
+    state: 'open',
+    draft: false,
+    sourceBranch: 'backoff',
+    targetBranch: 'main',
+    createdAt: 0,
+    updatedAt: 0,
+    mergedAt: null,
+    additions: 1,
+    deletions: 1,
+    changedFiles: 1,
+    unresolvedConversations: 1,
     checks: { state: 'failure', total: 1, passed: 0, failed: 1, pending: 0 },
-    reviewers: [], approvals: { given: 0, required: 1 }, viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false },
-    projectPaths: ['/p'], description: 'body', headSha: 'abc', mergeBlockers: [{ kind: 'checks_failed', label: 'Checks failed' }],
-    mergeStrategies: ['merge_commit'], activity: [], checkList: [failedCheck],
+    reviewers: [],
+    approvals: { given: 0, required: 1 },
+    viewer: { isAuthor: true, isRequestedReviewer: false, hasReviewed: false, hasCommented: false },
+    projectPaths: ['/p'],
+    description: 'body',
+    headSha: 'abc',
+    mergeBlockers: [{ kind: 'checks_failed', label: 'Checks failed' }],
+    mergeStrategies: ['merge_commit'],
+    activity: [],
+    checkList: [failedCheck],
   }
 }
 
@@ -70,11 +130,26 @@ function fakeAccess(linked: PrRef[] = [PR], over: Partial<PrDetail> = {}, diff: 
     detail: vi.fn(async () => ({ ok: true as const, data: { ...detail(), ...over } })),
     conversations: vi.fn(async () => ({ ok: true as const, data: [conversation] })),
     files: vi.fn(async () => ({ ok: true as const, data: diff })),
-    reply: vi.fn(async (ref, input) => { calls.push({ op: 'reply', ref, input }); return ok }),
-    setResolved: vi.fn(async (ref, input, resolved) => { calls.push({ op: 'resolve', ref, input, resolved }); return ok }),
-    rerunCheck: vi.fn(async (ref, input) => { calls.push({ op: 'rerun', ref, input }); return ok }),
-    inlineComment: vi.fn(async (ref, input) => { calls.push({ op: 'comment', ref, input }); return ok }),
-    submitReview: vi.fn(async (ref, input) => { calls.push({ op: 'review', ref, input }); return ok }),
+    reply: vi.fn(async (ref, input) => {
+      calls.push({ op: 'reply', ref, input })
+      return ok
+    }),
+    setResolved: vi.fn(async (ref, input, resolved) => {
+      calls.push({ op: 'resolve', ref, input, resolved })
+      return ok
+    }),
+    rerunCheck: vi.fn(async (ref, input) => {
+      calls.push({ op: 'rerun', ref, input })
+      return ok
+    }),
+    inlineComment: vi.fn(async (ref, input) => {
+      calls.push({ op: 'comment', ref, input })
+      return ok
+    }),
+    submitReview: vi.fn(async (ref, input) => {
+      calls.push({ op: 'review', ref, input })
+      return ok
+    }),
   }
   return { access, calls }
 }
@@ -86,19 +161,36 @@ type Answer = { decision: 'approve'; response: HostWriteResponse } | { decision:
  * as it opens; `call` follows a queued write through to the result the agent
  * is later told, which is what most of these tests are about.
  */
-function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<PrDetail>; files?: PrChangedFile[]; answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => Answer | null; budget?: AgentWriteBudget } = {}) {
+function setup(
+  opts: {
+    mode?: RuntimeMode
+    linked?: PrRef[]
+    detail?: Partial<PrDetail>
+    files?: PrChangedFile[]
+    answer?: (card: Extract<RuntimeEvent, { type: 'request.opened' }>) => Answer | null
+    budget?: AgentWriteBudget
+  } = {},
+) {
   const events: RuntimeEvent[] = []
   const refusals: AgentApprovalAnswer[] = []
   const results: Array<Promise<McpToolResult>> = []
   const { access, calls } = fakeAccess(opts.linked, opts.detail, opts.files)
   let mode: RuntimeMode = opts.mode ?? 'sandbox'
-  const runContext = { threadId: 't1', chatId: 'root-1', runtimeMode: () => mode, publish: (e: RuntimeEvent) => events.push(e), pullRequests: access }
+  const runContext = {
+    threadId: 't1',
+    chatId: 'root-1',
+    runtimeMode: () => mode,
+    publish: (e: RuntimeEvent) => events.push(e),
+    pullRequests: access,
+  }
   const approvals = new AgentApprovalBroker({
     onClosed: (card, close, response) => {
       const plan = card.plan as PrWritePlan
-      results.push(close.kind === 'approve'
-        ? runPrWritePlan(runContext, plan, response)
-        : Promise.resolve(toolText(declinedResultText(prWritePlanSummary(plan)), true)))
+      results.push(
+        close.kind === 'approve'
+          ? runPrWritePlan(runContext, plan, response)
+          : Promise.resolve(toolText(declinedResultText(prWritePlanSummary(plan)), true)),
+      )
     },
     publish: (e) => {
       events.push(e)
@@ -106,7 +198,13 @@ function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<Pr
       const outcome = opts.answer?.(e)
       if (!outcome) return
       queueMicrotask(() => {
-        const answer = approvals.respond('t1', e.requestId, outcome.decision, outcome.decision === 'approve' ? outcome.response : {}, { mayApproveHostWrite: true, label: 'test' })
+        const answer = approvals.respond(
+          't1',
+          e.requestId,
+          outcome.decision,
+          outcome.decision === 'approve' ? outcome.response : {},
+          { mayApproveHostWrite: true, label: 'test' },
+        )
         refusals.push(answer)
         // A refused answer leaves the card open; the user then denies it.
         if (!answer.ok) approvals.respond('t1', e.requestId, 'deny', {}, { mayApproveHostWrite: true, label: 'test' })
@@ -132,12 +230,26 @@ function setup(opts: { mode?: RuntimeMode; linked?: PrRef[]; detail?: Partial<Pr
     await new Promise((resolve) => setTimeout(resolve, 0))
     return results[before] ?? queued
   }
-  return { tools, call, events, access, calls, refusals, approvals, setMode: (m: RuntimeMode) => { mode = m } }
+  return {
+    tools,
+    call,
+    events,
+    access,
+    calls,
+    refusals,
+    approvals,
+    setMode: (m: RuntimeMode) => {
+      mode = m
+    },
+  }
 }
 
-const approve = (response = {}) => () => ({ decision: 'approve' as const, response })
+const approve =
+  (response = {}) =>
+  () => ({ decision: 'approve' as const, response })
 const deny = () => ({ decision: 'deny' as const })
-const opened = (events: RuntimeEvent[]) => events.filter((e) => e.type === 'request.opened') as Array<Extract<RuntimeEvent, { type: 'request.opened' }>>
+const opened = (events: RuntimeEvent[]) =>
+  events.filter((e) => e.type === 'request.opened') as Array<Extract<RuntimeEvent, { type: 'request.opened' }>>
 const text = (r: { content: Array<{ text: string }> }) => r.content[0].text
 
 describe('the tool list', () => {
@@ -199,7 +311,9 @@ describe('reads', () => {
     const result = await call('get_pr_status', {})
     const body = JSON.parse(text(result))
     expect(body.pr).toBe('GitHub acme/app #612')
-    expect(body.checkList).toEqual([{ id: 'chk1', name: 'integration', state: 'failure', description: null, url: null, canRerun: true }])
+    expect(body.checkList).toEqual([
+      { id: 'chk1', name: 'integration', state: 'failure', description: null, url: null, canRerun: true },
+    ])
     expect(body.mergeBlockers).toEqual(['Checks failed'])
     expect(opened(events)).toEqual([])
   })
@@ -207,7 +321,15 @@ describe('reads', () => {
   it('lists open conversations with their ids', async () => {
     const { call } = setup()
     const body = JSON.parse(text(await call('list_pr_conversations', {})))
-    expect(body).toEqual([{ id: 'PRRT_1', location: 'sync/worker.py:88', resolved: false, outdated: false, comments: [{ author: 'pankaj', body: 'Cap the jitter too.', at: '1970-01-01T00:00:00.000Z' }] }])
+    expect(body).toEqual([
+      {
+        id: 'PRRT_1',
+        location: 'sync/worker.py:88',
+        resolved: false,
+        outdated: false,
+        comments: [{ author: 'pankaj', body: 'Cap the jitter too.', at: '1970-01-01T00:00:00.000Z' }],
+      },
+    ])
   })
 
   it('names both ends of a conversation on a range of lines', async () => {
@@ -217,7 +339,7 @@ describe('reads', () => {
     expect(body[0].location).toBe('sync/worker.py:84-88')
   })
 
-  it('reads the links of the chat\'s root conversation', async () => {
+  it("reads the links of the chat's root conversation", async () => {
     const { call, access } = setup()
     await call('get_pr_status', {})
     expect(access.linkedPrs).toHaveBeenCalledWith('root-1')
@@ -234,15 +356,26 @@ describe('reads', () => {
 describe('reply_to_conversation', () => {
   it('opens one card quoting the reviewer and posts the edited text with the marker', async () => {
     const { call, events, calls } = setup({ answer: approve({ text: 'Edited by the user.', resolve: false }) })
-    const result = await call('reply_to_conversation', { conversationId: 'PRRT_1', text: 'Done in a1b2c3d.', resolve: true })
+    const result = await call('reply_to_conversation', {
+      conversationId: 'PRRT_1',
+      text: 'Done in a1b2c3d.',
+      resolve: true,
+    })
 
     const cards = opened(events)
     expect(cards).toHaveLength(1)
     expect(cards[0].hostWrite).toMatchObject({
-      action: 'reply', agentLabel: 'Codex', prLabel: 'app #612', location: 'sync/worker.py:88',
-      quote: { author: 'pankaj', body: 'Cap the jitter too.' }, replyText: 'Done in a1b2c3d.', suggestResolve: true,
+      action: 'reply',
+      agentLabel: 'Codex',
+      prLabel: 'app #612',
+      location: 'sync/worker.py:88',
+      quote: { author: 'pankaj', body: 'Cap the jitter too.' },
+      replyText: 'Done in a1b2c3d.',
+      suggestResolve: true,
     })
-    expect(calls).toEqual([{ op: 'reply', ref: PR, input: { conversationId: 'PRRT_1', body: 'Edited by the user.\n\nvia Switchboard' } }])
+    expect(calls).toEqual([
+      { op: 'reply', ref: PR, input: { conversationId: 'PRRT_1', body: 'Edited by the user.\n\nvia Switchboard' } },
+    ])
     expect(result.isError).toBeUndefined()
     expect(text(result)).toContain('edited your reply')
   })
@@ -272,7 +405,13 @@ describe('reply_to_conversation', () => {
     const result = await call('reply_to_conversation', { conversationId: 'PRRT_1', text: 'Done.' })
     expect(result.isError).toBe(true)
     expect(opened(events)).toEqual([])
-    expect(events).toContainEqual(expect.objectContaining({ type: 'tool.denied', toolName: 'mcp__switchboard__reply_to_conversation', mode: 'plan' }))
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'tool.denied',
+        toolName: 'mcp__switchboard__reply_to_conversation',
+        mode: 'plan',
+      }),
+    )
     expect(calls).toEqual([])
   })
 
@@ -324,7 +463,10 @@ describe('reply_to_conversation', () => {
 
   it('says the reply was posted when only the resolve failed, so it is not posted again', async () => {
     const { call, access } = setup({ answer: approve({ resolve: true }) })
-    vi.mocked(access.setResolved).mockResolvedValueOnce({ ok: false, error: { kind: 'forbidden', host: 'github', message: 'No permission.' } })
+    vi.mocked(access.setResolved).mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'forbidden', host: 'github', message: 'No permission.' },
+    })
     const result = await call('reply_to_conversation', { conversationId: 'PRRT_1', text: 'Done.' })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('Do not post the reply again')
@@ -343,7 +485,9 @@ describe('a card the agent does not wait on', () => {
     expect(text(queued)).toContain('Do not send it again')
     controller.abort()
     expect(calls).toEqual([])
-    expect(approvals.respond('t1', card.requestId, 'approve', {}, { mayApproveHostWrite: true, label: 'test' })).toEqual({ ok: true })
+    expect(
+      approvals.respond('t1', card.requestId, 'approve', {}, { mayApproveHostWrite: true, label: 'test' }),
+    ).toEqual({ ok: true })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(calls.map((c) => c.op)).toEqual(['reply'])
   })
@@ -352,7 +496,12 @@ describe('a card the agent does not wait on', () => {
 describe('what changed while the card was open', () => {
   it('posts nothing when the user unlinked the PR before approving', async () => {
     let access: AgentPullRequestAccess | null = null
-    const ctx = setup({ answer: () => { vi.mocked(access!.linkedPrs).mockReturnValue([]); return { decision: 'approve' as const, response: {} } } })
+    const ctx = setup({
+      answer: () => {
+        vi.mocked(access!.linkedPrs).mockReturnValue([])
+        return { decision: 'approve' as const, response: {} }
+      },
+    })
     access = ctx.access
     const result = await ctx.call('reply_to_conversation', { conversationId: 'PRRT_1', text: 'Done.' })
     expect(result.isError).toBe(true)
@@ -362,7 +511,12 @@ describe('what changed while the card was open', () => {
 
   it('posts nothing when the chat switched to plan mode before the approval', async () => {
     let switchToPlan: () => void = () => {}
-    const ctx = setup({ answer: () => { switchToPlan(); return { decision: 'approve' as const, response: {} } } })
+    const ctx = setup({
+      answer: () => {
+        switchToPlan()
+        return { decision: 'approve' as const, response: {} }
+      },
+    })
     switchToPlan = () => ctx.setMode('plan')
     const result = await ctx.call('resolve_conversation', { conversationId: 'PRRT_1' })
     expect(result.isError).toBe(true)
@@ -386,7 +540,12 @@ describe('what changed while the card was open', () => {
 
   it('re-runs nothing when the PR was unlinked', async () => {
     let access: AgentPullRequestAccess | null = null
-    const ctx = setup({ answer: () => { vi.mocked(access!.linkedPrs).mockReturnValue([OTHER]); return { decision: 'approve' as const, response: {} } } })
+    const ctx = setup({
+      answer: () => {
+        vi.mocked(access!.linkedPrs).mockReturnValue([OTHER])
+        return { decision: 'approve' as const, response: {} }
+      },
+    })
     access = ctx.access
     expect((await ctx.call('rerun_check', { checkId: 'chk1' })).isError).toBe(true)
     expect(ctx.calls).toEqual([])
@@ -454,11 +613,21 @@ describe('comment_on_line', () => {
     const cards = opened(events)
     expect(cards).toHaveLength(1)
     expect(cards[0].toolName).toBe('mcp__switchboard__comment_on_line')
-    expect(cards[0].hostWrite).toMatchObject({ action: 'comment', location: 'sync/worker.py:81', replyText: 'Log the delay.' })
+    expect(cards[0].hostWrite).toMatchObject({
+      action: 'comment',
+      location: 'sync/worker.py:81',
+      replyText: 'Log the delay.',
+    })
     const excerpt = cards[0].hostWrite!.excerpt!
     expect(excerpt.find((l) => l.target)).toMatchObject({ kind: 'add', newLine: 81 })
     expect(excerpt.length).toBeGreaterThan(1)
-    expect(calls).toEqual([{ op: 'comment', ref: PR, input: { path: 'sync/worker.py', side: 'new', line: 81, body: 'Log the delay, please.\n\nvia Switchboard' } }])
+    expect(calls).toEqual([
+      {
+        op: 'comment',
+        ref: PR,
+        input: { path: 'sync/worker.py', side: 'new', line: 81, body: 'Log the delay, please.\n\nvia Switchboard' },
+      },
+    ])
     expect(text(result)).toContain('edited your comment')
   })
 
@@ -466,10 +635,26 @@ describe('comment_on_line', () => {
     const { call, events, calls } = setup({ answer: approve() })
     const result = await call('comment_on_line', { ...args, startLine: 80, line: 82 })
     const card = opened(events)[0].hostWrite!
-    expect(card).toMatchObject({ action: 'comment', location: 'sync/worker.py:80-82', lineRange: { start: 80, end: 82 } })
+    expect(card).toMatchObject({
+      action: 'comment',
+      location: 'sync/worker.py:80-82',
+      lineRange: { start: 80, end: 82 },
+    })
     expect(card.excerpt!.filter((l) => l.target).map((l) => l.newLine)).toEqual([80, 81, 82])
     expect(opened(events)[0].detail).toContain('Comment on app #612 · sync/worker.py:80-82')
-    expect(calls).toEqual([{ op: 'comment', ref: PR, input: { path: 'sync/worker.py', side: 'new', line: 82, startLine: 80, body: 'Log the delay.\n\nvia Switchboard' } }])
+    expect(calls).toEqual([
+      {
+        op: 'comment',
+        ref: PR,
+        input: {
+          path: 'sync/worker.py',
+          side: 'new',
+          line: 82,
+          startLine: 80,
+          body: 'Log the delay.\n\nvia Switchboard',
+        },
+      },
+    ])
     expect(text(result)).toContain('sync/worker.py:80-82')
   })
 
@@ -519,7 +704,9 @@ describe('comment_on_line', () => {
     const plan = setup({ mode: 'plan' })
     expect((await plan.call('comment_on_line', args)).isError).toBe(true)
     expect(opened(plan.events)).toEqual([])
-    expect(plan.events).toContainEqual(expect.objectContaining({ type: 'tool.denied', toolName: 'mcp__switchboard__comment_on_line' }))
+    expect(plan.events).toContainEqual(
+      expect.objectContaining({ type: 'tool.denied', toolName: 'mcp__switchboard__comment_on_line' }),
+    )
     const full = setup({ mode: 'full-access', answer: approve() })
     await full.call('comment_on_line', args)
     expect(opened(full.events)).toHaveLength(1)
@@ -534,7 +721,12 @@ describe('comment_on_line', () => {
     expect((await emptied.call('comment_on_line', args)).isError).toBe(true)
     expect(emptied.calls).toEqual([])
     let access: AgentPullRequestAccess | null = null
-    const unlinked = setup({ answer: () => { vi.mocked(access!.linkedPrs).mockReturnValue([]); return { decision: 'approve' as const, response: {} } } })
+    const unlinked = setup({
+      answer: () => {
+        vi.mocked(access!.linkedPrs).mockReturnValue([])
+        return { decision: 'approve' as const, response: {} }
+      },
+    })
     access = unlinked.access
     expect((await unlinked.call('comment_on_line', args)).isError).toBe(true)
     expect(unlinked.calls).toEqual([])
@@ -580,18 +772,24 @@ describe('draft_review', () => {
   it('submits with the verdict the USER picked, the kept comments as edited, each with the marker', async () => {
     const { call, calls } = setup({
       detail: reviewer,
-      answer: approve({ verdict: 'request_changes', summary: 'Please log the delay.', comments: [{ id: 'c1', text: 'Log it here.' }] }),
+      answer: approve({
+        verdict: 'request_changes',
+        summary: 'Please log the delay.',
+        comments: [{ id: 'c1', text: 'Log it here.' }],
+      }),
     })
     const result = await call('draft_review', draft)
-    expect(calls).toEqual([{
-      op: 'review',
-      ref: PR,
-      input: {
-        event: 'request_changes',
-        body: 'Please log the delay.\n\nvia Switchboard',
-        comments: [{ path: 'sync/worker.py', side: 'new', line: 81, body: 'Log it here.\n\nvia Switchboard' }],
+    expect(calls).toEqual([
+      {
+        op: 'review',
+        ref: PR,
+        input: {
+          event: 'request_changes',
+          body: 'Please log the delay.\n\nvia Switchboard',
+          comments: [{ path: 'sync/worker.py', side: 'new', line: 81, body: 'Log it here.\n\nvia Switchboard' }],
+        },
       },
-    }])
+    ])
     expect(text(result)).toContain('as Request changes, with 1 inline comments')
     expect(text(result)).toContain('removed 1 of your comments')
   })
@@ -605,12 +803,19 @@ describe('draft_review', () => {
     expect(row).toMatchObject({ line: 82, startLine: 80 })
     expect(row.excerpt.filter((l) => l.target).map((l) => l.newLine)).toEqual([80, 81, 82])
     expect(card.detail).toContain('sync/worker.py:80-82: This block.')
-    expect(calls[0].input).toMatchObject({ comments: [{ path: 'sync/worker.py', side: 'new', line: 82, startLine: 80, body: 'This block.\n\nvia Switchboard' }] })
+    expect(calls[0].input).toMatchObject({
+      comments: [
+        { path: 'sync/worker.py', side: 'new', line: 82, startLine: 80, body: 'This block.\n\nvia Switchboard' },
+      ],
+    })
   })
 
   it('refuses a draft with a range across two hunks, naming it, before any card', async () => {
     const { call, events } = setup({ detail: reviewer, answer: approve({ verdict: 'comment' }), files: twoHunkFiles })
-    const result = await call('draft_review', { ...draft, comments: [{ path: 'sync/worker.py', startLine: 81, line: 122, text: 'x' }] })
+    const result = await call('draft_review', {
+      ...draft,
+      comments: [{ path: 'sync/worker.py', startLine: 81, line: 122, text: 'x' }],
+    })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('sync/worker.py:81-122 (spans two hunks)')
     expect(opened(events)).toEqual([])
@@ -625,13 +830,16 @@ describe('draft_review', () => {
   })
 
   it('refuses an unknown verdict from a phone as no verdict at all', async () => {
-    const { call, calls, refusals } = setup({ detail: reviewer, answer: approve(parseHostWriteResponse({ verdict: 'merge' })) })
+    const { call, calls, refusals } = setup({
+      detail: reviewer,
+      answer: approve(parseHostWriteResponse({ verdict: 'merge' })),
+    })
     await call('draft_review', draft)
     expect(refusals[0].ok).toBe(false)
     expect(calls).toEqual([])
   })
 
-  it('refuses a verdict among the agent\'s arguments, before any card', async () => {
+  it("refuses a verdict among the agent's arguments, before any card", async () => {
     for (const key of ['verdict', 'event', 'approve']) {
       const { call, events } = setup({ detail: reviewer, answer: approve({ verdict: 'comment' }) })
       const result = await call('draft_review', { ...draft, [key]: key === 'approve' ? true : 'approve' })
@@ -665,7 +873,14 @@ describe('draft_review', () => {
 
   it('refuses comments on lines the diff does not show, naming all of them, before any card', async () => {
     const { call, events } = setup({ detail: reviewer })
-    const result = await call('draft_review', { ...draft, comments: [...draft.comments, { path: 'sync/worker.py', line: 500, text: 'a' }, { path: 'nope.py', line: 1, text: 'b' }] })
+    const result = await call('draft_review', {
+      ...draft,
+      comments: [
+        ...draft.comments,
+        { path: 'sync/worker.py', line: 500, text: 'a' },
+        { path: 'nope.py', line: 1, text: 'b' },
+      ],
+    })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('sync/worker.py:500, nope.py:1')
     expect(opened(events)).toEqual([])
@@ -675,7 +890,14 @@ describe('draft_review', () => {
     const { call, events } = setup({ detail: reviewer })
     const many = Array.from({ length: 31 }, () => ({ path: 'sync/worker.py', line: 81, text: 'x' }))
     expect(text(await call('draft_review', { summary: 's', comments: many }))).toContain('at most 30')
-    expect((await call('draft_review', { summary: 's', comments: [{ path: 'sync/worker.py', line: 81, text: 'x'.repeat(8_001) }] })).isError).toBe(true)
+    expect(
+      (
+        await call('draft_review', {
+          summary: 's',
+          comments: [{ path: 'sync/worker.py', line: 81, text: 'x'.repeat(8_001) }],
+        })
+      ).isError,
+    ).toBe(true)
     const big = Array.from({ length: 6 }, () => ({ path: 'sync/worker.py', line: 81, text: 'x'.repeat(7_000) }))
     expect(text(await call('draft_review', { summary: 's', comments: big }))).toContain('KiB')
     expect((await call('draft_review', { summary: '', comments: [] })).isError).toBe(true)
@@ -686,7 +908,9 @@ describe('draft_review', () => {
     const plan = setup({ mode: 'plan', detail: reviewer })
     expect((await plan.call('draft_review', draft)).isError).toBe(true)
     expect(opened(plan.events)).toEqual([])
-    expect(plan.events).toContainEqual(expect.objectContaining({ type: 'tool.denied', toolName: 'mcp__switchboard__draft_review' }))
+    expect(plan.events).toContainEqual(
+      expect.objectContaining({ type: 'tool.denied', toolName: 'mcp__switchboard__draft_review' }),
+    )
     const full = setup({ mode: 'full-access', detail: reviewer, answer: approve({ verdict: 'approve' }) })
     await full.call('draft_review', draft)
     expect(opened(full.events)).toHaveLength(1)
@@ -710,20 +934,35 @@ describe('draft_review', () => {
 
   it('posts nothing when the mode switched to plan or the PR was unlinked while the card was open', async () => {
     let switchToPlan: () => void = () => {}
-    const plan = setup({ detail: reviewer, answer: () => { switchToPlan(); return { decision: 'approve' as const, response: { verdict: 'comment' } } } })
+    const plan = setup({
+      detail: reviewer,
+      answer: () => {
+        switchToPlan()
+        return { decision: 'approve' as const, response: { verdict: 'comment' } }
+      },
+    })
     switchToPlan = () => plan.setMode('plan')
     expect((await plan.call('draft_review', draft)).isError).toBe(true)
     expect(plan.calls).toEqual([])
 
     let access: AgentPullRequestAccess | null = null
-    const unlinked = setup({ detail: reviewer, answer: () => { vi.mocked(access!.linkedPrs).mockReturnValue([OTHER]); return { decision: 'approve' as const, response: { verdict: 'comment' } } } })
+    const unlinked = setup({
+      detail: reviewer,
+      answer: () => {
+        vi.mocked(access!.linkedPrs).mockReturnValue([OTHER])
+        return { decision: 'approve' as const, response: { verdict: 'comment' } }
+      },
+    })
     access = unlinked.access
     expect(text(await unlinked.call('draft_review', draft))).toContain('unlinked')
     expect(unlinked.calls).toEqual([])
   })
 
   it('refuses an answer that empties a kept comment, or a change request without a summary', async () => {
-    const emptied = setup({ detail: reviewer, answer: approve({ verdict: 'comment', comments: [{ id: 'c1', text: '  ' }] }) })
+    const emptied = setup({
+      detail: reviewer,
+      answer: approve({ verdict: 'comment', comments: [{ id: 'c1', text: '  ' }] }),
+    })
     expect((await emptied.call('draft_review', draft)).isError).toBe(true)
     expect(emptied.calls).toEqual([])
     const noSummary = setup({ detail: reviewer, answer: approve({ verdict: 'request_changes', summary: '' }) })
@@ -732,14 +971,28 @@ describe('draft_review', () => {
   })
 
   it('ignores a comment id the card never showed', async () => {
-    const { call, calls } = setup({ detail: reviewer, answer: approve({ verdict: 'comment', comments: [{ id: 'c9', text: 'smuggled' }, { id: 'c2', text: 'Jitter?' }] }) })
+    const { call, calls } = setup({
+      detail: reviewer,
+      answer: approve({
+        verdict: 'comment',
+        comments: [
+          { id: 'c9', text: 'smuggled' },
+          { id: 'c2', text: 'Jitter?' },
+        ],
+      }),
+    })
     await call('draft_review', draft)
-    expect((calls[0].input as { comments: unknown[] }).comments).toEqual([{ path: 'sync/worker.py', side: 'new', line: 82, body: 'Jitter?\n\nvia Switchboard' }])
+    expect((calls[0].input as { comments: unknown[] }).comments).toEqual([
+      { path: 'sync/worker.py', side: 'new', line: 82, body: 'Jitter?\n\nvia Switchboard' },
+    ])
   })
 
   it('says how many comments went out when a Bitbucket review failed part way', async () => {
     const { call, access } = setup({ detail: reviewer, answer: approve({ verdict: 'approve' }) })
-    vi.mocked(access.submitReview).mockResolvedValueOnce({ ok: false, error: { kind: 'unknown', host: 'bitbucket', message: 'Approve failed.', postedComments: 2 } })
+    vi.mocked(access.submitReview).mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'unknown', host: 'bitbucket', message: 'Approve failed.', postedComments: 2 },
+    })
     const result = await call('draft_review', draft)
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('2 of its comments were posted. Do not submit it again')
@@ -747,7 +1000,10 @@ describe('draft_review', () => {
 })
 
 describe('replies on a pull request the user did not write', () => {
-  const others = { viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: true, hasCommented: false }, author: { login: 'akshaya', displayName: 'Akshaya', avatarUrl: null } }
+  const others = {
+    viewer: { isAuthor: false, isRequestedReviewer: true, hasReviewed: true, hasCommented: false },
+    author: { login: 'akshaya', displayName: 'Akshaya', avatarUrl: null },
+  }
 
   it('replies and resolves, since neither the link nor the author rules look at who wrote it', async () => {
     const { call, calls } = setup({ detail: others, answer: approve({ text: 'Agreed, changed.', resolve: true }) })

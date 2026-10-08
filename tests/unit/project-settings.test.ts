@@ -63,11 +63,17 @@ describe('effectiveSetting', () => {
     expect(resolveSetting(FOLLOW_UP_DEFAULT_KEY, '/repo/a', read)).toEqual({ value: 'steer', source: 'project' })
     expect(resolveSetting(FOLLOW_UP_DEFAULT_KEY, '/repo/b', read)).toEqual({ value: 'queue', source: 'global' })
     expect(resolveSetting(FOLLOW_UP_DEFAULT_KEY, null, read)).toEqual({ value: 'queue', source: 'global' })
-    expect(resolveSetting(FOLLOW_UP_DEFAULT_KEY, '/repo/b', reader({}, {}))).toEqual({ value: 'steer', source: 'default' })
+    expect(resolveSetting(FOLLOW_UP_DEFAULT_KEY, '/repo/b', reader({}, {}))).toEqual({
+      value: 'steer',
+      source: 'default',
+    })
   })
 
-  it('skips a value the setting does not accept, so a newer build\'s value falls through', () => {
-    const read = reader({ '/repo/a': { [SETTING_DEFAULT_RUNTIME_MODE]: 'yolo' } }, { [SETTING_DEFAULT_RUNTIME_MODE]: 'bogus' })
+  it("skips a value the setting does not accept, so a newer build's value falls through", () => {
+    const read = reader(
+      { '/repo/a': { [SETTING_DEFAULT_RUNTIME_MODE]: 'yolo' } },
+      { [SETTING_DEFAULT_RUNTIME_MODE]: 'bogus' },
+    )
     expect(effectiveSetting(SETTING_DEFAULT_RUNTIME_MODE, '/repo/a', read)).toBe('sandbox')
   })
 })
@@ -75,7 +81,10 @@ describe('effectiveSetting', () => {
 describe('override keys', () => {
   it('round-trips a key whose project part holds a colon (a Windows drive)', () => {
     const key = projectOverrideKey('c:\\users\\me\\repo', 'chat.showFileDiffs')
-    expect(parseProjectOverrideKey(key)).toEqual({ projectKey: 'c:\\users\\me\\repo', settingKey: 'chat.showFileDiffs' })
+    expect(parseProjectOverrideKey(key)).toEqual({
+      projectKey: 'c:\\users\\me\\repo',
+      settingKey: 'chat.showFileDiffs',
+    })
     expect(governedSettingKey(key)).toBe('chat.showFileDiffs')
   })
 
@@ -89,9 +98,32 @@ describe('override keys', () => {
     const key = projectOverrideKey('/repo/a', SETTING_DEFAULT_RUNTIME_MODE)
     expect(isSettingWriteAllowed(PHONE_SCOPES, key)).toBe(false)
     expect(isSettingsFrameAllowed(PHONE_SCOPES, 'settings:set', [key, 'full-access'])).toBe(false)
-    expect(isSettingsFrameAllowed(PHONE_SCOPES, 'settings:project-override-set', ['/repo/a', SETTING_DEFAULT_RUNTIME_MODE, 'full-access'])).toBe(false)
-    expect(isSettingsFrameAllowed(PHONE_SCOPES, 'settings:project-override-remove', ['/repo/a', SETTING_DEFAULT_RUNTIME_MODE])).toBe(false)
-    expect(isSettingsFrameAllowed(FULL_SCOPES, 'settings:project-override-set', ['/repo/a', SETTING_DEFAULT_RUNTIME_MODE, 'plan'])).toBe(true)
-    expect(isSettingsFrameAllowed(PHONE_SCOPES, 'settings:project-override-set', ['/repo/a', FOLLOW_UP_DEFAULT_KEY, 'queue'])).toBe(true)
+    expect(
+      isSettingsFrameAllowed(PHONE_SCOPES, 'settings:project-override-set', [
+        '/repo/a',
+        SETTING_DEFAULT_RUNTIME_MODE,
+        'full-access',
+      ]),
+    ).toBe(false)
+    expect(
+      isSettingsFrameAllowed(PHONE_SCOPES, 'settings:project-override-remove', [
+        '/repo/a',
+        SETTING_DEFAULT_RUNTIME_MODE,
+      ]),
+    ).toBe(false)
+    expect(
+      isSettingsFrameAllowed(FULL_SCOPES, 'settings:project-override-set', [
+        '/repo/a',
+        SETTING_DEFAULT_RUNTIME_MODE,
+        'plan',
+      ]),
+    ).toBe(true)
+    expect(
+      isSettingsFrameAllowed(PHONE_SCOPES, 'settings:project-override-set', [
+        '/repo/a',
+        FOLLOW_UP_DEFAULT_KEY,
+        'queue',
+      ]),
+    ).toBe(true)
   })
 })

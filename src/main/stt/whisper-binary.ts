@@ -91,11 +91,7 @@ function installedServerPath(userDataRoot: string, asset: WhisperAsset): string 
  * LD_LIBRARY_PATH. A PATH/brew binary resolves its libs itself, and Windows
  * finds the DLLs in the exe's own dir without help.
  */
-export function whisperSpawnEnv(
-  binaryPath: string,
-  platform: string,
-  baseEnv: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv {
+export function whisperSpawnEnv(binaryPath: string, platform: string, baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (platform !== 'linux') return { ...baseEnv }
   const libDir = dirname(binaryPath)
   const existing = baseEnv.LD_LIBRARY_PATH
@@ -143,7 +139,11 @@ async function downloadWithProgress(
       cb(null, chunk)
     },
   })
-  await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), counter, createWriteStream(destination))
+  await pipeline(
+    Readable.fromWeb(res.body as import('node:stream/web').ReadableStream),
+    counter,
+    createWriteStream(destination),
+  )
 }
 
 /**

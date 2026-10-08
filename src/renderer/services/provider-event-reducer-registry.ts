@@ -1,6 +1,6 @@
-export function createSingleOwnerEventReducer<Event>(
-  subscribe: (callback: (event: Event) => void) => () => void,
-): { register: (callback: (event: Event) => void) => () => void } {
+export function createSingleOwnerEventReducer<Event>(subscribe: (callback: (event: Event) => void) => () => void): {
+  register: (callback: (event: Event) => void) => () => void
+} {
   const reducers = new Map<symbol, (event: Event) => void>()
   let unsubscribe: (() => void) | null = null
 

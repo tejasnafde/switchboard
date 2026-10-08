@@ -34,11 +34,7 @@ export function ModePicker({
         {MODES.map(({ mode, label }) => {
           const active = value === mode
           return (
-            <Pressable
-              key={mode}
-              onPress={() => onChange(mode)}
-              style={[styles.chip, active && styles.chipActive]}
-            >
+            <Pressable key={mode} onPress={() => onChange(mode)} style={[styles.chip, active && styles.chipActive]}>
               <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
             </Pressable>
           )
@@ -76,15 +72,9 @@ export function ModePicker({
                     setOpen(false)
                     onChange(mode)
                   }}
-                  style={({ pressed }) => [
-                    styles.sheetRow,
-                    active && styles.sheetRowActive,
-                    pressed && styles.pressed,
-                  ]}
+                  style={({ pressed }) => [styles.sheetRow, active && styles.sheetRowActive, pressed && styles.pressed]}
                 >
-                  <Text style={[styles.sheetRowText, active && styles.sheetRowTextActive]}>
-                    {rowLabel}
-                  </Text>
+                  <Text style={[styles.sheetRowText, active && styles.sheetRowTextActive]}>{rowLabel}</Text>
                   {active && <Ionicons name="checkmark" size={14} color={colors.accent} />}
                 </Pressable>
               )

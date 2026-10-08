@@ -55,11 +55,7 @@ import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import { WsTransport } from '../../src/shared/ws-transport'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
 import { createPeerToolHandlers, PEER_LIST_TOOL_NAME } from '../../src/main/provider/peer-tools'
-import {
-  PEER_AGENT_SEND_BUDGET,
-  PEER_AGENT_SENT_MARKER_PREFIX,
-  wrapPeerMessage,
-} from '../../src/shared/peer-messaging'
+import { PEER_AGENT_SEND_BUDGET, PEER_AGENT_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
@@ -134,8 +130,7 @@ async function startAll(cwd: string, ids: string[] = ['sender', 'target']) {
 /** The tools as the model in `from` calls them. */
 const toolsFor = (from: string) => createPeerToolHandlers(registry!, from)
 
-const text = (result: { content: Array<{ text: string }> }) =>
-  result.content.map((c) => c.text).join('\n')
+const text = (result: { content: Array<{ text: string }> }) => result.content.map((c) => c.text).join('\n')
 
 afterEach(async () => {
   client?.close()
@@ -156,7 +151,9 @@ describe('list_agent_sessions against the registry', () => {
     // Parsed, not substring-matched: the payload is JSON, so a Windows cwd
     // arrives with escaped separators and a raw contains() on the path fails.
     const listed = JSON.parse(body.slice(body.indexOf('['))) as Array<{
-      sessionId: string; title: string; folder: string
+      sessionId: string
+      title: string
+      folder: string
     }>
     expect(listed.map((s) => s.sessionId)).toEqual(['target'])
     expect(listed[0].title).toBe('API refactor')
@@ -186,10 +183,12 @@ describe('send_agent_message against the registry', () => {
     })
 
     expect(out.isError).toBeFalsy()
-    expect(adapter.turns).toEqual([{
-      threadId: 'target',
-      message: wrapPeerMessage('Docs pass', 'the auth migration landed on main'),
-    }])
+    expect(adapter.turns).toEqual([
+      {
+        threadId: 'target',
+        message: wrapPeerMessage('Docs pass', 'the auth migration landed on main'),
+      },
+    ])
   })
 
   // The tool has a thread id and no title, so the backend has to resolve the
@@ -200,9 +199,7 @@ describe('send_agent_message against the registry', () => {
     await toolsFor('sender').sendMessage({ sessionId: 'target', message: 'ready' })
     await flush()
 
-    const received = events.find(
-      (e) => e.type === 'peer.message' && 'direction' in e && e.direction === 'received',
-    )
+    const received = events.find((e) => e.type === 'peer.message' && 'direction' in e && e.direction === 'received')
     expect(received).toMatchObject({ peerLabel: 'Docs pass', initiator: 'agent' })
   })
 

@@ -75,7 +75,10 @@ vi.mock('electron', () => ({
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => '/fake/bin/codex\n'),
-  execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => cb(new Error('not mocked'), '', '')),
+  execFile: vi.fn(
+    (_cmd: string, _args: string[], _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) =>
+      cb(new Error('not mocked'), '', ''),
+  ),
   spawnSync: vi.fn(() => ({ status: 1, stdout: '', stderr: '', error: undefined })),
   spawn: vi.fn(),
 }))
@@ -126,43 +129,58 @@ describe('fetchInstanceUsage - Codex multi-instance isolation (item 1)', () => {
   // POSIX-literal string round-trip, which only holds on a POSIX host - skip
   // on win32 rather than assert a separator style no real Windows install
   // would produce either (see oauth-path.ts).
-  it.skipIf(process.platform === 'win32')('resolves distinct CODEX_HOME per instance through the real usage-probe path, and cache keys do not collapse', async () => {
-    process.env.CODEX_HOME = '/tmp/ambient-leftover-codex-home'
-    rows.set('codex-work', codexRow({
-      id: 'codex-work', displayName: 'Work', authMode: 'oauth_dir', oauthDir: '/tmp/codex-work',
-    }))
-    rows.set('codex-personal', codexRow({
-      id: 'codex-personal', displayName: 'Personal', authMode: 'oauth_dir', oauthDir: '/tmp/codex-personal',
-    }))
-    rows.set('codex-default', codexRow({ id: 'codex-default', displayName: 'Default' }))
+  it.skipIf(process.platform === 'win32')(
+    'resolves distinct CODEX_HOME per instance through the real usage-probe path, and cache keys do not collapse',
+    async () => {
+      process.env.CODEX_HOME = '/tmp/ambient-leftover-codex-home'
+      rows.set(
+        'codex-work',
+        codexRow({
+          id: 'codex-work',
+          displayName: 'Work',
+          authMode: 'oauth_dir',
+          oauthDir: '/tmp/codex-work',
+        }),
+      )
+      rows.set(
+        'codex-personal',
+        codexRow({
+          id: 'codex-personal',
+          displayName: 'Personal',
+          authMode: 'oauth_dir',
+          oauthDir: '/tmp/codex-personal',
+        }),
+      )
+      rows.set('codex-default', codexRow({ id: 'codex-default', displayName: 'Default' }))
 
-    const { fetchInstanceUsage, invalidateUsage } = await import('../../src/main/provider/usage/index')
-    invalidateUsage()
+      const { fetchInstanceUsage, invalidateUsage } = await import('../../src/main/provider/usage/index')
+      invalidateUsage()
 
-    const [work, personal, ambient] = await Promise.all([
-      fetchInstanceUsage('codex-work'),
-      fetchInstanceUsage('codex-personal'),
-      fetchInstanceUsage('codex-default'),
-    ])
+      const [work, personal, ambient] = await Promise.all([
+        fetchInstanceUsage('codex-work'),
+        fetchInstanceUsage('codex-personal'),
+        fetchInstanceUsage('codex-default'),
+      ])
 
-    expect(work.instanceId).toBe('codex-work')
-    expect(personal.instanceId).toBe('codex-personal')
-    expect(ambient.instanceId).toBe('codex-default')
+      expect(work.instanceId).toBe('codex-work')
+      expect(personal.instanceId).toBe('codex-personal')
+      expect(ambient.instanceId).toBe('codex-default')
 
-    const homeById = new Map(fetchCodexUsageCalls.map((c) => [c.id, c.env.CODEX_HOME]))
-    expect(homeById.get('codex-work')).toBe('/tmp/codex-work')
-    expect(homeById.get('codex-personal')).toBe('/tmp/codex-personal')
-    expect(homeById.get('codex-default')).toBe(join(homedir(), '.codex'))
+      const homeById = new Map(fetchCodexUsageCalls.map((c) => [c.id, c.env.CODEX_HOME]))
+      expect(homeById.get('codex-work')).toBe('/tmp/codex-work')
+      expect(homeById.get('codex-personal')).toBe('/tmp/codex-personal')
+      expect(homeById.get('codex-default')).toBe(join(homedir(), '.codex'))
 
-    // No collapse onto each other or onto the ambient leftover CODEX_HOME.
-    expect(new Set(homeById.values()).size).toBe(3)
-    expect([...homeById.values()]).not.toContain('/tmp/ambient-leftover-codex-home')
+      // No collapse onto each other or onto the ambient leftover CODEX_HOME.
+      expect(new Set(homeById.values()).size).toBe(3)
+      expect([...homeById.values()]).not.toContain('/tmp/ambient-leftover-codex-home')
 
-    // Cache keys are per-instance id: re-fetching "Work" must hit the cache
-    // (no second probe call) and must not return "Personal"'s reading.
-    const workAgain = await fetchInstanceUsage('codex-work')
-    expect(workAgain.instanceId).toBe('codex-work')
-    expect(fetchCodexUsageCalls.filter((c) => c.id === 'codex-work')).toHaveLength(1)
-    expect(fetchCodexUsageCalls).toHaveLength(3)
-  })
+      // Cache keys are per-instance id: re-fetching "Work" must hit the cache
+      // (no second probe call) and must not return "Personal"'s reading.
+      const workAgain = await fetchInstanceUsage('codex-work')
+      expect(workAgain.instanceId).toBe('codex-work')
+      expect(fetchCodexUsageCalls.filter((c) => c.id === 'codex-work')).toHaveLength(1)
+      expect(fetchCodexUsageCalls).toHaveLength(3)
+    },
+  )
 })

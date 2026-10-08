@@ -43,9 +43,7 @@ describe('Android APK release verifier', () => {
   })
 
   test('rejects incomplete aapt badging instead of inventing defaults', () => {
-    expect(() => parseAaptBadging("package: name='app.switchboard.mobile' versionCode='2'\n")).toThrow(
-      'versionName',
-    )
+    expect(() => parseAaptBadging("package: name='app.switchboard.mobile' versionCode='2'\n")).toThrow('versionName')
   })
 
   test('normalizes the single signer SHA-256 reported by apksigner', () => {

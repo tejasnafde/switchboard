@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import {
-  logicalImportConversationId,
-  recoveryCandidateTitle,
-} from '../../src/main/db/conversation-sidebar-role'
+import { logicalImportConversationId, recoveryCandidateTitle } from '../../src/main/db/conversation-sidebar-role'
 const conversationsSource = readFileSync(new URL('../../src/main/db/conversations.ts', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../../src/main/ipc/app.ts', import.meta.url), 'utf8')
 
@@ -31,7 +28,9 @@ describe('recoveryCandidateTitle', () => {
 describe('existing conversation recovery contract', () => {
   it('revives an existing root without overwriting its active provider selection', () => {
     expect(conversationsSource).toMatch(/export function reviveConversationForRecovery[\s\S]*?\): RecoveryReviveResult/)
-    expect(conversationsSource).toMatch(/export function reviveConversationForRecovery[\s\S]*?UPDATE conversations[\s\S]*?sidebar_role = 'managed'[\s\S]*?archived = 0[\s\S]*?title = \?[\s\S]*?WHERE id = \?[\s\S]*?changes > 0/)
+    expect(conversationsSource).toMatch(
+      /export function reviveConversationForRecovery[\s\S]*?UPDATE conversations[\s\S]*?sidebar_role = 'managed'[\s\S]*?archived = 0[\s\S]*?title = \?[\s\S]*?WHERE id = \?[\s\S]*?changes > 0/,
+    )
     const body = conversationsSource.match(/export function reviveConversationForRecovery[\s\S]*?\n\}/)?.[0] ?? ''
     expect(body).not.toMatch(/agent_type\s*=/)
     expect(body).not.toMatch(/session_id\s*=/)
@@ -40,7 +39,9 @@ describe('existing conversation recovery contract', () => {
   })
 
   it('revives the known owner instead of returning a successful archived no-op', () => {
-    expect(appSource).toMatch(/if \(existingId\) \{[\s\S]*?reviveConversationForRecovery\(existingId,[\s\S]*?const messages = await loadJsonlCached/)
+    expect(appSource).toMatch(
+      /if \(existingId\) \{[\s\S]*?reviveConversationForRecovery\(existingId,[\s\S]*?const messages = await loadJsonlCached/,
+    )
     const earlyExistingBranch = appSource.slice(
       appSource.indexOf('if (existingId) {'),
       appSource.indexOf('const messages = await loadJsonlCached'),
@@ -49,7 +50,9 @@ describe('existing conversation recovery contract', () => {
   })
 
   it('distinguishes missing lineage from a cross-project collision', () => {
-    expect(conversationsSource).toMatch(/export type RecoveryReviveResult = 'revived' \| 'missing' \| 'project-mismatch'/)
+    expect(conversationsSource).toMatch(
+      /export type RecoveryReviveResult = 'revived' \| 'missing' \| 'project-mismatch'/,
+    )
     expect(appSource).toContain("reviveResult === 'project-mismatch'")
     expect(appSource).toContain('The stored conversation no longer exists')
   })

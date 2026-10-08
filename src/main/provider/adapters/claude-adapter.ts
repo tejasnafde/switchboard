@@ -19,7 +19,12 @@ import { homedir } from 'os'
 import { join, sep } from 'path'
 import { promisify } from 'util'
 import { createMainLogger as createLogger } from '../../logger'
-import { recordThreadSession, listSessionIdsForThread, resolveResumeSegment, resolveRootThreadId } from '../../db/database'
+import {
+  recordThreadSession,
+  listSessionIdsForThread,
+  resolveResumeSegment,
+  resolveRootThreadId,
+} from '../../db/database'
 
 /**
  * Claude Code CLI only accepts UUID session ids (or exact titles) for
@@ -108,7 +113,7 @@ export function resolveClaudeResumeId(threadId: string, hint?: string): string |
     const typedId = resolveResumeSegment(rootId, 'claude-code')?.provider_session_id
     const ids = listSessionIdsForThread(rootId)
     return selectClaudeResumeId(typedId, hint, ids, (id) =>
-      claudeCandidateDirs().some((dir) => listClaudeSessionCopies(dir, id).length > 0)
+      claudeCandidateDirs().some((dir) => listClaudeSessionCopies(dir, id).length > 0),
     )
   } catch (err) {
     log.debug('resolveClaudeResumeId failed - DB might not be ready yet, starting fresh', err)
@@ -324,7 +329,9 @@ function resolveClaudeBin(): string | null {
       encoding: 'utf-8',
       timeout: 5000,
       env: buildClaudeCliEnv(),
-    }).trim().split('\n')[0]
+    })
+      .trim()
+      .split('\n')[0]
     if (which) return which
   } catch (err) {
     log.debug('no global claude on PATH - falling through to the SDK-bundled binary', err)
@@ -361,7 +368,8 @@ export function claudeExecutableIdentity(): string | null {
 function findSdkClaudeBin(): string | undefined {
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
   const bin = process.platform === 'win32' ? 'claude.exe' : 'claude'
-  const variants = process.platform === 'linux' ? [`linux-${arch}`, `linux-${arch}-musl`] : [`${process.platform}-${arch}`]
+  const variants =
+    process.platform === 'linux' ? [`linux-${arch}`, `linux-${arch}-musl`] : [`${process.platform}-${arch}`]
   // Candidate `@anthropic-ai` dirs: the bundled server's index.cjs sits next to
   // node_modules on the VM (__dirname); plus wherever the SDK main resolves from
   // (the SDK's exports map blocks resolving ./package.json, so use the main entry).
@@ -394,10 +402,10 @@ function findSdkClaudeBin(): string | undefined {
 }
 
 const RUNTIME_MODE_TO_PERMISSION: Record<RuntimeMode, PermissionMode> = {
-  'plan': 'plan',
-  'sandbox': 'default',
+  plan: 'plan',
+  sandbox: 'default',
   'accept-edits': 'acceptEdits',
-  'auto': 'auto',
+  auto: 'auto',
   'full-access': 'bypassPermissions',
 }
 
@@ -416,12 +424,7 @@ import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
 import { markAgentSpawnEnv } from '../agent-spawn-env'
 import { applyEnvOverlay } from '../env-overlay'
 import { applyClaudeHome, canonicalClaudeHome } from '../claude-home'
-import {
-  createExecutableCache,
-  executableIdentity,
-  managedPath,
-  preferManagedExecutable,
-} from '../managed-bin'
+import { createExecutableCache, executableIdentity, managedPath, preferManagedExecutable } from '../managed-bin'
 import { commitCatalog, shouldRefreshCatalog, type CatalogCache } from '../model-catalog'
 import { claudeRowCovers, reconcileSelectedModel } from '@shared/model-reconcile'
 import {
@@ -504,7 +507,9 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
         const next = this.buffer.shift()
         if (next) return Promise.resolve({ value: next, done: false })
         if (this.closed) return Promise.resolve({ value: undefined as never, done: true })
-        return new Promise((resolve) => { this.waiting.push(resolve) })
+        return new Promise((resolve) => {
+          this.waiting.push(resolve)
+        })
       },
       return: (): Promise<IteratorResult<SDKUserMessage>> => {
         this.closed = true
@@ -535,9 +540,7 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
  *
  * `content` is a string for simple results and a block array for rich ones.
  */
-export function extractToolResults(
-  message: unknown,
-): Array<{ toolId: string; output: string; isError: boolean }> {
+export function extractToolResults(message: unknown): Array<{ toolId: string; output: string; isError: boolean }> {
   const blocks = (message as { message?: { content?: unknown } } | null)?.message?.content
   if (!Array.isArray(blocks)) return []
   const out: Array<{ toolId: string; output: string; isError: boolean }> = []
@@ -579,9 +582,12 @@ export function parseClaudeSlashCommands(input: unknown): ProviderSkill[] {
       const name = rawName.replace(/^\//, '').trim()
       if (!name) continue
       const description = typeof obj.description === 'string' ? obj.description : undefined
-      const argumentHint = typeof obj.argumentHint === 'string'
-        ? obj.argumentHint
-        : (typeof obj.argument_hint === 'string' ? obj.argument_hint : undefined)
+      const argumentHint =
+        typeof obj.argumentHint === 'string'
+          ? obj.argumentHint
+          : typeof obj.argument_hint === 'string'
+            ? obj.argument_hint
+            : undefined
       out.push({
         name,
         ...(description ? { description } : {}),
@@ -704,10 +710,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
   }
 
-  async startSession(
-    opts: SessionStartOpts,
-    onEvent: (event: RuntimeEvent) => void,
-  ): Promise<ProviderSession> {
+  async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
     // Resolve to a Claude-valid UUID (or undefined → fresh session).
     // Switchboard-native thread ids like `agent_<timestamp>` fail `--resume`
     // with "not a UUID and does not match any session title." Children
@@ -821,9 +824,15 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
 
     // Build SDK content - text + optional image blocks
-    let content: string | Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }>
+    let content:
+      | string
+      | Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }>
     if (images && images.length > 0) {
-      const blocks: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
+      const blocks: Array<{
+        type: string
+        text?: string
+        source?: { type: string; media_type: string; data: string }
+      }> = []
       for (const img of images) {
         const parsed = parseImageDataUrl(img.url)
         if (parsed) {
@@ -864,7 +873,15 @@ export class ClaudeAdapter implements ProviderAdapter {
     // (it may be suspended on an approval). Its own turn starts when that
     // one ends, in startQueuedTurn.
     if (queued && uuid) {
-      active.queuedTurns.push({ id: queuedId, uuid, message, runtimeMode, images, sdkMessage: userMsg, ...(holdNow ? { held: true } : {}) })
+      active.queuedTurns.push({
+        id: queuedId,
+        uuid,
+        message,
+        runtimeMode,
+        images,
+        sdkMessage: userMsg,
+        ...(holdNow ? { held: true } : {}),
+      })
       if (queuedId) active.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
     }
 
@@ -905,7 +922,8 @@ export class ClaudeAdapter implements ProviderAdapter {
         }
         return {
           behavior: 'deny',
-          message: 'The client captured your proposed plan. Stop here and wait for the user\'s feedback or implementation request in a later turn.',
+          message:
+            "The client captured your proposed plan. Stop here and wait for the user's feedback or implementation request in a later turn.",
         } as PermissionResult
       }
 
@@ -946,7 +964,9 @@ export class ClaudeAdapter implements ProviderAdapter {
           // helper - keying by header silently dropped every answer.
           const shaped = shapeQuestionAnswers(questions, userAnswers)
 
-          log.info(`question answered: ${threadId} requestId=${requestId} answers=${JSON.stringify(shaped.answers).slice(0, 300)}`)
+          log.info(
+            `question answered: ${threadId} requestId=${requestId} answers=${JSON.stringify(shaped.answers).slice(0, 300)}`,
+          )
           return {
             behavior: 'allow',
             updatedInput: {
@@ -1015,9 +1035,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       // 'prompt' - fall through to approval request flow below
 
       const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-      const detail = typeof toolInput === 'object'
-        ? JSON.stringify(toolInput, null, 2).slice(0, 500)
-        : String(toolInput)
+      const detail =
+        typeof toolInput === 'object' ? JSON.stringify(toolInput, null, 2).slice(0, 500) : String(toolInput)
 
       active.onEvent({
         type: 'request.opened',
@@ -1038,8 +1057,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       active.onEvent({ type: 'request.closed', threadId, requestId, decision })
 
       return decision === 'approve'
-        ? { behavior: 'allow', updatedInput: toolInput } as PermissionResult
-        : { behavior: 'deny', message: 'User denied permission' } as PermissionResult
+        ? ({ behavior: 'allow', updatedInput: toolInput } as PermissionResult)
+        : ({ behavior: 'deny', message: 'User denied permission' } as PermissionResult)
     }
 
     const claudeBin = findClaudeBin()
@@ -1048,12 +1067,13 @@ export class ClaudeAdapter implements ProviderAdapter {
     // Resume pre-flight. Runs before each query rather than once per session,
     // because cwd and profile both change without a restart.
     if (active.session.sessionId) {
-      const preflight = (sessionId: string) => ensureClaudeSessionResumable({
-        sessionId,
-        cwd: active.session.cwd,
-        toDir: active.instanceOauthDir ?? defaultClaudeDir(),
-        candidates: active.candidateOauthDirs,
-      })
+      const preflight = (sessionId: string) =>
+        ensureClaudeSessionResumable({
+          sessionId,
+          cwd: active.session.cwd,
+          toDir: active.instanceOauthDir ?? defaultClaudeDir(),
+          candidates: active.candidateOauthDirs,
+        })
       const placement = resolveResumePlacement(
         active.session.sessionId,
         preflight,
@@ -1126,7 +1146,9 @@ export class ClaudeAdapter implements ProviderAdapter {
       ...(systemPrompt ? { systemPrompt } : {}),
       // Added to the user's own MCP servers, which the CLI still loads. The
       // token in its env is what binds the server's tools to this thread.
-      ...(active.switchboardMcp ? { mcpServers: { [SWITCHBOARD_MCP_SERVER_NAME]: { type: 'stdio' as const, ...active.switchboardMcp } } } : {}),
+      ...(active.switchboardMcp
+        ? { mcpServers: { [SWITCHBOARD_MCP_SERVER_NAME]: { type: 'stdio' as const, ...active.switchboardMcp } } }
+        : {}),
       permissionMode,
       // Always enable the dangerously-skip-permissions CLI flag so the user
       // can toggle to Full Access mid-session. Our `canUseTool` is the
@@ -1149,7 +1171,9 @@ export class ClaudeAdapter implements ProviderAdapter {
       },
     }
 
-    log.info(`starting query: cwd=${active.session.cwd} model=${active.session.model ?? 'default'} mode=${permissionMode} claudeBin=${claudeBin ?? 'auto'} resume=${active.session.sessionId ?? 'none'} CLAUDE_CONFIG_DIR=${env.CLAUDE_CONFIG_DIR ?? '(default ~/.claude)'} PATH=${env.PATH?.slice(0, 200)}`)
+    log.info(
+      `starting query: cwd=${active.session.cwd} model=${active.session.model ?? 'default'} mode=${permissionMode} claudeBin=${claudeBin ?? 'auto'} resume=${active.session.sessionId ?? 'none'} CLAUDE_CONFIG_DIR=${env.CLAUDE_CONFIG_DIR ?? '(default ~/.claude)'} PATH=${env.PATH?.slice(0, 200)}`,
+    )
 
     active.session.status = 'running'
     active.onEvent({ type: 'status', threadId, status: 'running' })
@@ -1259,7 +1283,9 @@ export class ClaudeAdapter implements ProviderAdapter {
     // both built-ins and any user-defined commands in `.claude/commands/*`.
     // If the query hasn't started yet, fall back to whatever we captured
     // from the system/init event (or empty if neither has happened yet).
-    const queryWithCommands = active.query as (typeof active.query & { supportedCommands?: () => Promise<unknown> }) | null
+    const queryWithCommands = active.query as
+      | (typeof active.query & { supportedCommands?: () => Promise<unknown> })
+      | null
     if (queryWithCommands && typeof queryWithCommands.supportedCommands === 'function') {
       try {
         const cmds = await queryWithCommands.supportedCommands()
@@ -1372,7 +1398,7 @@ export class ClaudeAdapter implements ProviderAdapter {
    */
   private async withdrawQueuedTurn(threadId: string, active: ActiveSession, turn: QueuedClaudeTurn): Promise<boolean> {
     // A held message is in neither queue: it is ours alone.
-    const withdrawn = turn.held || await this.withdrawFromCli(threadId, active, turn)
+    const withdrawn = turn.held || (await this.withdrawFromCli(threadId, active, turn))
     if (withdrawn) {
       const index = active.queuedTurns.indexOf(turn)
       if (index >= 0) active.queuedTurns.splice(index, 1)
@@ -1477,7 +1503,13 @@ export class ClaudeAdapter implements ProviderAdapter {
   private beginQueuedTurn(active: ActiveSession, next: QueuedClaudeTurn): void {
     active.queuedTurns.splice(active.queuedTurns.indexOf(next), 1)
     const mode = next.runtimeMode
-    if (next.id) active.onEvent({ type: 'turn.dequeued', threadId: active.session.threadId, messageId: next.id, reason: 'started' })
+    if (next.id)
+      active.onEvent({
+        type: 'turn.dequeued',
+        threadId: active.session.threadId,
+        messageId: next.id,
+        reason: 'started',
+      })
     active.turnStartedAt = Date.now()
     active.watchdog.turnStarted(Date.now())
     if (mode && mode !== active.session.runtimeMode) {
@@ -1569,11 +1601,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     log.info(`question answered: ${requestId}`)
   }
 
-  async respondToRequest(
-    threadId: string,
-    requestId: string,
-    decision: ApprovalDecision,
-  ): Promise<void> {
+  async respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
 
@@ -1630,11 +1658,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
   // ── SDK Message Handler ──────────────────────────────────────
 
-  private handleSDKMessage(
-    threadId: string,
-    active: ActiveSession,
-    msg: SDKMessage,
-  ): void {
+  private handleSDKMessage(threadId: string, active: ActiveSession, msg: SDKMessage): void {
     // Any message counts as life, including types this switch ignores.
     active.watchdog.activity(Date.now())
     // Auto-approved tools never hit the pendingApprovals path, so this is
@@ -1659,18 +1683,23 @@ export class ClaudeAdapter implements ProviderAdapter {
           // Seed real context usage at init - resumed sessions otherwise
           // show the renderer's rough estimate until the next turn ends.
           if (active.query) {
-            active.query.getContextUsage().then((ctx) => {
-              if (ctx.model) active.lastKnownModel = ctx.model
-              active.onEvent({
-                type: 'context_window',
-                threadId,
-                usedTokens: ctx.totalTokens,
-                maxTokens: ctx.maxTokens,
-                ...(ctx.model ? { model: ctx.model } : {}),
+            active.query
+              .getContextUsage()
+              .then((ctx) => {
+                if (ctx.model) active.lastKnownModel = ctx.model
+                active.onEvent({
+                  type: 'context_window',
+                  threadId,
+                  usedTokens: ctx.totalTokens,
+                  maxTokens: ctx.maxTokens,
+                  ...(ctx.model ? { model: ctx.model } : {}),
+                })
               })
-            }).catch((err) => {
-              log.warn(`getContextUsage at init failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
-            })
+              .catch((err) => {
+                log.warn(
+                  `getContextUsage at init failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`,
+                )
+              })
           }
         }
 
@@ -1688,7 +1717,11 @@ export class ClaudeAdapter implements ProviderAdapter {
             try {
               recordThreadSession(newId, threadId)
             } catch (err) {
-              log.warn('failed to record rotated thread session lineage - best-effort, turn continues', { threadId, newId, err })
+              log.warn('failed to record rotated thread session lineage - best-effort, turn continues', {
+                threadId,
+                newId,
+                err,
+              })
             }
           }
           active.onEvent({
@@ -1702,18 +1735,23 @@ export class ClaudeAdapter implements ProviderAdapter {
         if (sys.subtype === 'status' && sys.compact_result === 'success') {
           log.info(`compaction completed: ${threadId}`)
           if (active.query) {
-            active.query.getContextUsage().then((ctx) => {
-              if (ctx.model) active.lastKnownModel = ctx.model
-              active.onEvent({
-                type: 'context_window',
-                threadId,
-                usedTokens: ctx.totalTokens,
-                maxTokens: ctx.maxTokens,
-                ...(ctx.model ? { model: ctx.model } : {}),
+            active.query
+              .getContextUsage()
+              .then((ctx) => {
+                if (ctx.model) active.lastKnownModel = ctx.model
+                active.onEvent({
+                  type: 'context_window',
+                  threadId,
+                  usedTokens: ctx.totalTokens,
+                  maxTokens: ctx.maxTokens,
+                  ...(ctx.model ? { model: ctx.model } : {}),
+                })
               })
-            }).catch((err) => {
-              log.warn(`getContextUsage after compaction failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
-            })
+              .catch((err) => {
+                log.warn(
+                  `getContextUsage after compaction failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`,
+                )
+              })
           }
         }
 
@@ -1783,10 +1821,7 @@ export class ClaudeAdapter implements ProviderAdapter {
               active.currentReasoningMessageId = `think_${threadId.slice(-6)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
             }
             const reasonId = active.currentReasoningMessageId
-            active.partialMessageText.set(
-              reasonId,
-              (active.partialMessageText.get(reasonId) ?? '') + delta.thinking,
-            )
+            active.partialMessageText.set(reasonId, (active.partialMessageText.get(reasonId) ?? '') + delta.thinking)
             active.onEvent({
               type: 'content',
               threadId,
@@ -1823,7 +1858,14 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
 
       case 'assistant': {
-        type ContentBlock = { type: string; text?: string; id?: string; name?: string; input?: unknown; thinking?: string }
+        type ContentBlock = {
+          type: string
+          text?: string
+          id?: string
+          name?: string
+          input?: unknown
+          thinking?: string
+        }
         const errMsg = msg as SDKMessage & {
           error?: string
           parent_tool_use_id?: string | null
@@ -1931,7 +1973,12 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
 
       case 'result': {
-        type ResultMsg = SDKMessage & { total_cost_usd?: number; num_turns?: number; usage?: { input_tokens?: number }; session_id?: string }
+        type ResultMsg = SDKMessage & {
+          total_cost_usd?: number
+          num_turns?: number
+          usage?: { input_tokens?: number }
+          session_id?: string
+        }
         const result = msg as ResultMsg
         active.currentMessageId = null
         active.currentReasoningMessageId = null
@@ -1958,19 +2005,26 @@ export class ClaudeAdapter implements ProviderAdapter {
 
         // Poll real context window usage from SDK after turn completes
         if (active.query) {
-          active.query.getContextUsage().then((ctx) => {
-            if (ctx.model) active.lastKnownModel = ctx.model
-            active.onEvent({
-              type: 'context_window',
-              threadId,
-              usedTokens: ctx.totalTokens,
-              maxTokens: ctx.maxTokens,
-              ...(ctx.model ? { model: ctx.model } : {}),
+          active.query
+            .getContextUsage()
+            .then((ctx) => {
+              if (ctx.model) active.lastKnownModel = ctx.model
+              active.onEvent({
+                type: 'context_window',
+                threadId,
+                usedTokens: ctx.totalTokens,
+                maxTokens: ctx.maxTokens,
+                ...(ctx.model ? { model: ctx.model } : {}),
+              })
+              log.info(
+                `context: ${ctx.totalTokens}/${ctx.maxTokens} (${Math.round(ctx.percentage)}%) model=${ctx.model}`,
+              )
             })
-            log.info(`context: ${ctx.totalTokens}/${ctx.maxTokens} (${Math.round(ctx.percentage)}%) model=${ctx.model}`)
-          }).catch((err) => {
-            log.warn(`getContextUsage post-turn failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
-          })
+            .catch((err) => {
+              log.warn(
+                `getContextUsage post-turn failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`,
+              )
+            })
         }
 
         // Between turns - waiting for next user message

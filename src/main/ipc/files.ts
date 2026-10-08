@@ -69,10 +69,7 @@ async function assertRemoteMutationAllowed(candidate: string): Promise<void> {
   const context = currentBackendRequestContext()
   if (context?.transport !== 'remote' || context.deviceScopes?.includes('terminal')) return
   const canonical = (await realpathOrAncestor(candidate)).replaceAll('\\', '/').toLowerCase()
-  if (
-    canonical.endsWith('/.switchboard/launch-config.yaml')
-    || canonical.endsWith('/.switchboard/workspace.yaml')
-  ) {
+  if (canonical.endsWith('/.switchboard/launch-config.yaml') || canonical.endsWith('/.switchboard/workspace.yaml')) {
     throw new Error('Not permitted: command-bearing project configuration requires terminal scope')
   }
 }
@@ -128,16 +125,19 @@ export function registerFilesHandlers(host: BackendHost): void {
     },
   )
 
-  host.handle(FilesChannels.DELETE_FILE, async (repoRoot: string, subPath: string, expected?: { content: string } | null) => {
-    try {
-      const abs = await resolveWithinRepo(repoRoot, subPath)
-      await assertRemoteMutationAllowed(abs)
-      return await deleteFileSafe(abs, expected?.content)
-    } catch (err) {
-      log.warn('delete-file failed', { repoRoot, subPath, err: (err as Error).message })
-      return { ok: false, error: (err as Error).message }
-    }
-  })
+  host.handle(
+    FilesChannels.DELETE_FILE,
+    async (repoRoot: string, subPath: string, expected?: { content: string } | null) => {
+      try {
+        const abs = await resolveWithinRepo(repoRoot, subPath)
+        await assertRemoteMutationAllowed(abs)
+        return await deleteFileSafe(abs, expected?.content)
+      } catch (err) {
+        log.warn('delete-file failed', { repoRoot, subPath, err: (err as Error).message })
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
 
   host.handle(FilesChannels.RESOLVE, async (repoRoot: string, subPath: string) => {
     try {

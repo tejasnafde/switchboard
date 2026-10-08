@@ -16,37 +16,64 @@ const log = createRendererLogger('settings:source-control')
 
 type Note = { ok: boolean; message: string } | null
 
-const INPUT = 'h-[30px] w-full max-w-[360px] rounded-[7px] border border-[var(--border)] bg-[var(--bg-primary)] px-[10px] text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--border-focus)]'
+const INPUT =
+  'h-[30px] w-full max-w-[360px] rounded-[7px] border border-[var(--border)] bg-[var(--bg-primary)] px-[10px] text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--border-focus)]'
 
 export function SourceControlPanel() {
   const [status, setStatus] = useState<SourceControlStatus | null>(null)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
-    return () => { mounted.current = false }
+    return () => {
+      mounted.current = false
+    }
   }, [])
 
   const reload = useCallback(() => {
-    window.api.sourceControl.status()
-      .then((next) => { if (mounted.current) setStatus(next) })
+    window.api.sourceControl
+      .status()
+      .then((next) => {
+        if (mounted.current) setStatus(next)
+      })
       .catch((err: unknown) => log.warn('reading source control status failed', err))
   }, [])
   useEffect(reload, [reload])
 
   return (
     <section className="mb-[18px]" aria-busy={status === null}>
-      <h3 className="mb-2 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]">Source control</h3>
+      <h3 className="mb-2 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]">
+        Source control
+      </h3>
       <BitbucketCard status={status} onChanged={reload} />
       <GithubCard status={status} />
     </section>
   )
 }
 
-function CardShell({ logo, title, detail, actions, children }: { logo: string; title: string; detail: React.ReactNode; actions?: React.ReactNode; children?: React.ReactNode }) {
+function CardShell({
+  logo,
+  title,
+  detail,
+  actions,
+  children,
+}: {
+  logo: string
+  title: string
+  detail: React.ReactNode
+  actions?: React.ReactNode
+  children?: React.ReactNode
+}) {
   return (
-    <div data-source-control={title} className="mb-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]">
+    <div
+      data-source-control={title}
+      className="mb-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)]"
+    >
       <div className="flex items-center gap-[10px] px-[14px] py-3">
-        <span aria-hidden="true" className="flex size-[30px] shrink-0 items-center justify-center rounded-[8px] text-[11px] font-[700] text-white" style={{ background: logo }}>
+        <span
+          aria-hidden="true"
+          className="flex size-[30px] shrink-0 items-center justify-center rounded-[8px] text-[11px] font-[700] text-white"
+          style={{ background: logo }}
+        >
           {title.slice(0, 2).toUpperCase()}
         </span>
         <div className="min-w-0 flex-1">
@@ -63,7 +90,13 @@ function CardShell({ logo, title, detail, actions, children }: { logo: string; t
 function NoteLine({ note, busy }: { note: Note; busy: string | null }) {
   if (!busy && !note) return null
   return (
-    <div role="status" className={cn('px-[14px] pb-3 text-[12px] break-words whitespace-pre-line', !busy && note && !note.ok ? 'text-[var(--error)]' : 'text-[var(--text-muted)]')}>
+    <div
+      role="status"
+      className={cn(
+        'px-[14px] pb-3 text-[12px] break-words whitespace-pre-line',
+        !busy && note && !note.ok ? 'text-[var(--error)]' : 'text-[var(--text-muted)]',
+      )}
+    >
       {busy ?? note?.message}
     </div>
   )
@@ -92,70 +125,143 @@ function BitbucketCard({ status, onChanged }: { status: SourceControlStatus | nu
     }
   }
 
-  const save = () => run('Saving…', async () => {
-    const result = await window.api.sourceControl.setBitbucket({ email, apiToken: token })
-    if (!result.ok) {
-      setNote({ ok: false, message: result.message ?? 'Saving failed.' })
-      return
-    }
-    setToken('')
-    setEditing(false)
-    onChanged()
-    setNote(await window.api.sourceControl.test('bitbucket'))
-  })
+  const save = () =>
+    run('Saving…', async () => {
+      const result = await window.api.sourceControl.setBitbucket({ email, apiToken: token })
+      if (!result.ok) {
+        setNote({ ok: false, message: result.message ?? 'Saving failed.' })
+        return
+      }
+      setToken('')
+      setEditing(false)
+      onChanged()
+      setNote(await window.api.sourceControl.test('bitbucket'))
+    })
 
-  const test = () => run('Testing…', async () => {
-    const typed = showForm && email && token ? { email, apiToken: token } : undefined
-    setNote(await window.api.sourceControl.test('bitbucket', typed))
-  })
+  const test = () =>
+    run('Testing…', async () => {
+      const typed = showForm && email && token ? { email, apiToken: token } : undefined
+      setNote(await window.api.sourceControl.test('bitbucket', typed))
+    })
 
   const remove = async () => {
-    if (!(await confirm({ title: 'Remove the Bitbucket account?', body: 'Reviews stops reading Bitbucket pull requests until you add it again.', confirmLabel: 'Remove', destructive: true }))) return
+    if (
+      !(await confirm({
+        title: 'Remove the Bitbucket account?',
+        body: 'Reviews stops reading Bitbucket pull requests until you add it again.',
+        confirmLabel: 'Remove',
+        destructive: true,
+      }))
+    )
+      return
     await run('Removing…', async () => {
       await window.api.sourceControl.removeBitbucket()
       onChanged()
     })
   }
 
-  const detail = bb === undefined
-    ? 'Checking…'
-    : bb.state === 'needs_desktop'
-      ? 'Bitbucket needs the desktop app in this release.'
-      : bb.state === 'configured'
-        ? bb.email
-        : 'Not connected'
+  const detail =
+    bb === undefined
+      ? 'Checking…'
+      : bb.state === 'needs_desktop'
+        ? 'Bitbucket needs the desktop app in this release.'
+        : bb.state === 'configured'
+          ? bb.email
+          : 'Not connected'
 
   return (
     <CardShell
       logo="#1f3f86"
       title="Bitbucket Cloud"
       detail={detail}
-      actions={bb?.state === 'needs_desktop' ? undefined : (
-        <>
-          <Button variant="outline" size="sm" disabled={!!busy || (!configured && !(email && token))} onClick={() => void test()}>Test</Button>
-          {configured && !editing && <Button variant="ghost" size="sm" disabled={!!busy} onClick={() => { setEditing(true); setEmail(bb.email) }}>Change</Button>}
-          {configured && <Button variant="ghost" size="sm" disabled={!!busy} onClick={() => void remove()}>Remove</Button>}
-        </>
-      )}
+      actions={
+        bb?.state === 'needs_desktop' ? undefined : (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!!busy || (!configured && !(email && token))}
+              onClick={() => void test()}
+            >
+              Test
+            </Button>
+            {configured && !editing && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!!busy}
+                onClick={() => {
+                  setEditing(true)
+                  setEmail(bb.email)
+                }}
+              >
+                Change
+              </Button>
+            )}
+            {configured && (
+              <Button variant="ghost" size="sm" disabled={!!busy} onClick={() => void remove()}>
+                Remove
+              </Button>
+            )}
+          </>
+        )
+      }
     >
       {showForm && (
         <form
           className="grid grid-cols-[120px_1fr] items-center gap-x-[14px] gap-y-[10px] border-t border-[var(--border)] px-[14px] py-3"
-          onSubmit={(e) => { e.preventDefault(); void save() }}
+          onSubmit={(e) => {
+            e.preventDefault()
+            void save()
+          }}
         >
-          <label htmlFor="bb-email" className="text-[12.5px] text-[var(--text-secondary)]">Email</label>
-          <input id="bb-email" type="email" autoComplete="off" className={INPUT} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
-          <label htmlFor="bb-token" className="text-[12.5px] text-[var(--text-secondary)]">API token</label>
+          <label htmlFor="bb-email" className="text-[12.5px] text-[var(--text-secondary)]">
+            Email
+          </label>
+          <input
+            id="bb-email"
+            type="email"
+            autoComplete="off"
+            className={INPUT}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@company.com"
+          />
+          <label htmlFor="bb-token" className="text-[12.5px] text-[var(--text-secondary)]">
+            API token
+          </label>
           <div>
-            <input id="bb-token" type="password" autoComplete="off" className={INPUT} value={token} onChange={(e) => setToken(e.target.value)} />
+            <input
+              id="bb-token"
+              type="password"
+              autoComplete="off"
+              className={INPUT}
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+            />
             <div className="mt-1 text-[12px] text-[var(--text-muted)]">
-              An Atlassian API token with the scopes {BITBUCKET_TOKEN_SCOPES.join(', ')}, and optionally {BITBUCKET_OPTIONAL_SCOPES.join(', ')} to suggest workspace members as reviewers. Stored encrypted on this computer.
+              An Atlassian API token with the scopes {BITBUCKET_TOKEN_SCOPES.join(', ')}, and optionally{' '}
+              {BITBUCKET_OPTIONAL_SCOPES.join(', ')} to suggest workspace members as reviewers. Stored encrypted on this
+              computer.
             </div>
           </div>
           <span />
           <div className="flex gap-[6px]">
-            <Button type="submit" size="sm" disabled={!!busy || !email || !token}>Save</Button>
-            {editing && <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setToken('') }}>Cancel</Button>}
+            <Button type="submit" size="sm" disabled={!!busy || !email || !token}>
+              Save
+            </Button>
+            {editing && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setEditing(false)
+                  setToken('')
+                }}
+              >
+                Cancel
+              </Button>
+            )}
           </div>
         </form>
       )}
@@ -168,15 +274,16 @@ function GithubCard({ status }: { status: SourceControlStatus | null }) {
   const [note, setNote] = useState<Note>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const gh = status?.github
-  const detail = gh === undefined
-    ? 'Checking…'
-    : gh.state === 'signed_in'
-      ? `${gh.login} · through the gh CLI where the backend runs`
-      : gh.state === 'signed_out'
-        ? 'gh is signed out. Run gh auth login in a terminal.'
-        : gh.state === 'gh_missing'
-          ? 'Needs the gh CLI where the backend runs.'
-          : gh.message
+  const detail =
+    gh === undefined
+      ? 'Checking…'
+      : gh.state === 'signed_in'
+        ? `${gh.login} · through the gh CLI where the backend runs`
+        : gh.state === 'signed_out'
+          ? 'gh is signed out. Run gh auth login in a terminal.'
+          : gh.state === 'gh_missing'
+            ? 'Needs the gh CLI where the backend runs.'
+            : gh.message
 
   const test = async () => {
     setBusy('Testing…')
@@ -196,7 +303,11 @@ function GithubCard({ status }: { status: SourceControlStatus | null }) {
       logo="#2b2d31"
       title="GitHub"
       detail={detail}
-      actions={<Button variant="outline" size="sm" disabled={!!busy} onClick={() => void test()}>Test</Button>}
+      actions={
+        <Button variant="outline" size="sm" disabled={!!busy} onClick={() => void test()}>
+          Test
+        </Button>
+      }
     >
       <NoteLine note={note} busy={busy} />
     </CardShell>

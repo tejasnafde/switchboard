@@ -23,7 +23,10 @@ export const PR_LINK_TOOL = 'link_pull_request'
 export const PR_UNLINK_TOOL = 'unlink_pull_request'
 export const PR_LIST_LINKS_TOOL = 'list_thread_pull_requests'
 
-export type PrLinkAccess = Pick<AgentPullRequestAccess, 'chatProject' | 'projectRepos' | 'linkToChat' | 'links' | 'unlinkFromChat' | 'linkProblem'>
+export type PrLinkAccess = Pick<
+  AgentPullRequestAccess,
+  'chatProject' | 'projectRepos' | 'linkToChat' | 'links' | 'unlinkFromChat' | 'linkProblem'
+>
 
 export interface PrLinkToolContext {
   threadId: string
@@ -48,7 +51,10 @@ function webUrl(ref: PrRef): string {
 }
 
 /** The PR the arguments name: a URL in `pr`, or `repository` + `number` (+ `host` when the name is on both hosts). */
-function targetOf(args: Record<string, unknown>, covered: { host: PrHost; owner: string; name: string }[]): PrRef | string {
+function targetOf(
+  args: Record<string, unknown>,
+  covered: { host: PrHost; owner: string; name: string }[],
+): PrRef | string {
   if (typeof args.pr === 'string') {
     const url = findPullRequestUrls(args.pr)[0]
     if (url) return url
@@ -61,7 +67,9 @@ function targetOf(args: Record<string, unknown>, covered: { host: PrHost; owner:
   const named = parseFullName(host ?? 'github', args.repository)
   if (!named) return `"${args.repository}" is not an owner/name repository.`
   const key = (h: PrHost) => repoKey({ ...named, host: h })
-  const hosts = host ? [host] : (['github', 'bitbucket'] as const).filter((h) => covered.some((r) => repoKey(r) === key(h)))
+  const hosts = host
+    ? [host]
+    : (['github', 'bitbucket'] as const).filter((h) => covered.some((r) => repoKey(r) === key(h)))
   if (hosts.length > 1) return `${args.repository} is on both GitHub and Bitbucket in this project. Pass "host".`
   return { ...named, host: hosts[0] ?? host ?? 'github', number }
 }
@@ -90,7 +98,11 @@ export function buildPrLinkTools(ctx: PrLinkToolContext): McpTool[] {
         pr: { type: 'string', description: 'The pull request URL.' },
         repository: { type: 'string', description: '"owner/name", with "number", instead of a URL.' },
         number: { type: 'number', description: 'The pull request number, with "repository".' },
-        host: { type: 'string', enum: ['github', 'bitbucket'], description: 'Only when the repository name exists on both hosts.' },
+        host: {
+          type: 'string',
+          enum: ['github', 'bitbucket'],
+          description: 'Only when the repository name exists on both hosts.',
+        },
       },
       additionalProperties: false,
     },
@@ -108,11 +120,17 @@ export function buildPrLinkTools(ctx: PrLinkToolContext): McpTool[] {
       if (typeof ref === 'string') return toolText(ref, true)
       if (!canLinkToProject(ref, project)) {
         const repos = covered.map((r) => `${r.owner}/${r.name}`).join(', ')
-        return toolText(`${label(ref)} is not on a repository of this project${repos ? ` (${repos})` : ''}. Nothing was linked.`, true)
+        return toolText(
+          `${label(ref)} is not on a repository of this project${repos ? ` (${repos})` : ''}. Nothing was linked.`,
+          true,
+        )
       }
-      const already = access.links(ctx.chatId).some((l) => repoKey(l.ref) === repoKey(ref) && l.ref.number === ref.number)
+      const already = access
+        .links(ctx.chatId)
+        .some((l) => repoKey(l.ref) === repoKey(ref) && l.ref.number === ref.number)
       if (already) return toolText(`${label(ref)} is already linked to this chat.`)
-      if (!access.linkToChat(ctx.chatId, ref, false)) return toolText(`Linking ${label(ref)} failed; see the Switchboard log. Tell the user.`, true)
+      if (!access.linkToChat(ctx.chatId, ref, false))
+        return toolText(`Linking ${label(ref)} failed; see the Switchboard log. Tell the user.`, true)
       log.info('agent linked a pull request', { host: ref.host, number: ref.number })
       return toolText(`Linked ${label(ref)} to this chat. The pull request tools can act on it now.`)
     },
@@ -126,7 +144,9 @@ export function buildPrLinkTools(ctx: PrLinkToolContext): McpTool[] {
     ].join('\n'),
     inputSchema: {
       type: 'object',
-      properties: { pr: { type: ['string', 'number'], description: 'The linked pull request: its number, "#612" or its URL.' } },
+      properties: {
+        pr: { type: ['string', 'number'], description: 'The linked pull request: its number, "#612" or its URL.' },
+      },
       required: ['pr'],
       additionalProperties: false,
     },
@@ -136,9 +156,13 @@ export function buildPrLinkTools(ctx: PrLinkToolContext): McpTool[] {
       if (!access) return toolText(NO_REVIEWS, true)
       const refused = refusePlan(PR_UNLINK_TOOL)
       if (refused) return refused
-      const picked = pickLinkedPr(access.links(ctx.chatId).map((l) => l.ref), args.pr)
+      const picked = pickLinkedPr(
+        access.links(ctx.chatId).map((l) => l.ref),
+        args.pr,
+      )
       if (!picked.ok) return toolText(picked.message, true)
-      if (!access.unlinkFromChat(ctx.chatId, picked.ref)) return toolText(`${label(picked.ref)} was not linked to this chat.`, true)
+      if (!access.unlinkFromChat(ctx.chatId, picked.ref))
+        return toolText(`${label(picked.ref)} was not linked to this chat.`, true)
       log.info('agent unlinked a pull request', { host: picked.ref.host, number: picked.ref.number })
       return toolText(`Unlinked ${label(picked.ref)} from this chat. It will not be linked again automatically.`)
     },
@@ -147,7 +171,7 @@ export function buildPrLinkTools(ctx: PrLinkToolContext): McpTool[] {
   const listTool: McpTool = {
     name: PR_LIST_LINKS_TOOL,
     description: [
-      'The pull requests linked to this chat: each one\'s URL, how it was linked (manual: the user; auto: its URL or branch',
+      "The pull requests linked to this chat: each one's URL, how it was linked (manual: the user; auto: its URL or branch",
       'appeared in the chat; agent: an agent linked it; created: an agent opened it) and its last known state.',
       'Also the last problem automatic linking hit, if any. Read-only; runs without asking. Call it before you finish work on a pull request.',
     ].join('\n'),
@@ -157,15 +181,23 @@ export function buildPrLinkTools(ctx: PrLinkToolContext): McpTool[] {
       const access = ctx.pullRequests
       if (!access) return toolText(NO_REVIEWS, true)
       const problem = access.linkProblem(ctx.chatId)
-      return toolText(JSON.stringify({
-        pullRequests: access.links(ctx.chatId).map((l: PrLink) => ({
-          pr: label(l.ref),
-          url: webUrl(l.ref),
-          linkedBy: l.source,
-          ...(l.state ? { state: l.state } : {}),
-        })),
-        ...(problem ? { lastAutoLinkProblem: { at: new Date(problem.at).toISOString(), message: problem.message } } : {}),
-      }, null, 2))
+      return toolText(
+        JSON.stringify(
+          {
+            pullRequests: access.links(ctx.chatId).map((l: PrLink) => ({
+              pr: label(l.ref),
+              url: webUrl(l.ref),
+              linkedBy: l.source,
+              ...(l.state ? { state: l.state } : {}),
+            })),
+            ...(problem
+              ? { lastAutoLinkProblem: { at: new Date(problem.at).toISOString(), message: problem.message } }
+              : {}),
+          },
+          null,
+          2,
+        ),
+      )
     },
   }
 

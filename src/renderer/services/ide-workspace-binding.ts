@@ -6,10 +6,7 @@ export interface IdeWorkspaceBinding {
 
 let committedBinding: IdeWorkspaceBinding | null = null
 
-export function sameIdeWorkspaceTarget(
-  left: IdeWorkspaceBinding | null,
-  right: IdeWorkspaceBinding | null,
-): boolean {
+export function sameIdeWorkspaceTarget(left: IdeWorkspaceBinding | null, right: IdeWorkspaceBinding | null): boolean {
   return left?.machineId === right?.machineId && left?.folder === right?.folder
 }
 

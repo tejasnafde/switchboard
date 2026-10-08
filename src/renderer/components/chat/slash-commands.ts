@@ -15,7 +15,6 @@ import type { AgentStatus, ProviderSkill } from '@shared/types'
 import type { RuntimeMode } from '@shared/provider-events'
 import type { AgentProvider } from '@shared/types'
 
-
 /**
  * Context passed to every slash-command action. Keeping this in one place
  * makes it obvious which app surfaces a command can touch.
@@ -126,7 +125,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   },
   {
     name: 'link',
-    description: 'Link this chat with another open session so the two agents can message each other (default 20 messages; the time, such as 4h, defaults to Settings > Link duration)',
+    description:
+      'Link this chat with another open session so the two agents can message each other (default 20 messages; the time, such as 4h, defaults to Settings > Link duration)',
     argumentHint: '<session> [messages] [time]',
     takesArgs: true,
   },
@@ -204,7 +204,10 @@ export function detectSlashTrigger(text: string, cursorInput: number): SlashTrig
   let slashIdx = -1
   for (let i = cursor - 1; i >= 0; i--) {
     const ch = text[i]
-    if (ch === '/') { slashIdx = i; break }
+    if (ch === '/') {
+      slashIdx = i
+      break
+    }
     if (/\s/.test(ch)) return null
   }
   if (slashIdx === -1) return null
@@ -237,9 +240,7 @@ export function detectSlashTrigger(text: string, cursorInput: number): SlashTrig
  *
  * Pure: returns a flat list of segments; rendering is left to the caller.
  */
-export type SlashSegment =
-  | { type: 'text'; value: string }
-  | { type: 'skill'; name: string }
+export type SlashSegment = { type: 'text'; value: string } | { type: 'skill'; name: string }
 
 export function splitSkillMentions(text: string, known: Set<string>): SlashSegment[] {
   if (!text) return []
@@ -286,13 +287,8 @@ export function filterSlashCommands(query: string, commands: SlashCommand[] = SL
  * wins - preserves the user's mental model that `/clear` always clears
  * the chat locally rather than firing some agent-defined action.
  */
-export function mergeWithAgentSkills(
-  builtIns: SlashCommand[],
-  skills: ProviderSkill[],
-): SlashCommand[] {
+export function mergeWithAgentSkills(builtIns: SlashCommand[], skills: ProviderSkill[]): SlashCommand[] {
   const taken = new Set(builtIns.map((c) => c.name.toLowerCase()))
-  const fromSkills = skillsToSlashCommands(skills).filter(
-    (c) => !taken.has(c.name.toLowerCase()),
-  )
+  const fromSkills = skillsToSlashCommands(skills).filter((c) => !taken.has(c.name.toLowerCase()))
   return [...builtIns, ...fromSkills]
 }

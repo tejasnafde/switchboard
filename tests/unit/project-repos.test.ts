@@ -8,7 +8,9 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
 
 import {
   CHILD_REPO_MAX_LISTED_DIRS,
@@ -50,7 +52,10 @@ describe('which repositories a project covers', () => {
   it('finds zero, one or several child checkouts of a repository', () => {
     const p = projectReposFrom(null, [child('core', CORE), child('studio', STUDIO)])
     expect(findChildRepo(p, [APP])).toEqual({ kind: 'none', candidates: p.children })
-    expect(findChildRepo(p, [{ ...STUDIO, name: 'GEOIQ-SSG-STUDIO-V1' }])).toEqual({ kind: 'one', child: p.children[1] })
+    expect(findChildRepo(p, [{ ...STUDIO, name: 'GEOIQ-SSG-STUDIO-V1' }])).toEqual({
+      kind: 'one',
+      child: p.children[1],
+    })
     // "owner/name" without a host is tried as both.
     expect(findChildRepo(p, [{ ...CORE, host: 'github' }, CORE])).toEqual({ kind: 'one', child: p.children[0] })
     const twice = projectReposFrom(null, [child('core', CORE), child('old/core', CORE)])
@@ -81,8 +86,10 @@ describe('the child scan', () => {
 
   it('finds work trees one and two levels down, and does not descend into one', async () => {
     const { listDir, listed } = lister([
-      'core/.git/', 'core/packages/inner/.git/',
-      'group/studio/.git/', 'group/notes.md',
+      'core/.git/',
+      'core/packages/inner/.git/',
+      'group/studio/.git/',
+      'group/notes.md',
       'deep/a/b/.git/',
       'wt/.git',
       'README.md',
@@ -96,8 +103,15 @@ describe('the child scan', () => {
     expect(await scanChildWorkTrees(lister(['src/index.ts', 'docs/a/b.md']).listDir)).toEqual([])
   })
 
-  it('skips node_modules, hidden folders, the project\'s own .git and symlinks', async () => {
-    const { listDir, listed } = lister(['.git/', 'node_modules/pkg/.git/', '.switchboard/worktrees/x/.git/', '.cache/r/.git/', 'link@', 'real/.git/'])
+  it("skips node_modules, hidden folders, the project's own .git and symlinks", async () => {
+    const { listDir, listed } = lister([
+      '.git/',
+      'node_modules/pkg/.git/',
+      '.switchboard/worktrees/x/.git/',
+      '.cache/r/.git/',
+      'link@',
+      'real/.git/',
+    ])
     expect(await scanChildWorkTrees(listDir)).toEqual(['real'])
     expect(listed.some((d) => d.startsWith('node_modules') || d.startsWith('.') || d === 'link')).toBe(false)
   })
@@ -105,10 +119,13 @@ describe('the child scan', () => {
   it('skips an unreadable folder and keeps going', async () => {
     const { listDir } = lister(['locked/', 'ok/.git/'])
     const errors: string[] = []
-    const found = await scanChildWorkTrees(async (rel) => {
-      if (rel === 'locked') throw new Error('EACCES')
-      return listDir(rel)
-    }, (rel) => errors.push(rel))
+    const found = await scanChildWorkTrees(
+      async (rel) => {
+        if (rel === 'locked') throw new Error('EACCES')
+        return listDir(rel)
+      },
+      (rel) => errors.push(rel),
+    )
     expect(found).toEqual(['ok'])
     expect(errors).toEqual(['locked'])
   })
@@ -156,12 +173,22 @@ describe('on disk', () => {
   })
 
   it('resolves a relative or absolute repoPath inside the folder', async () => {
-    expect(await resolveRepoDir(project, 'core', { realpath: async (p) => realpathSync(p), run: worktree }))
-      .toEqual({ ok: true, dir: path.join(project, 'core'), relPath: 'core' })
-    expect(await resolveRepoDir(project, path.join(project, 'group/studio'), { realpath: async (p) => realpathSync(p), run: worktree }))
-      .toEqual({ ok: true, dir: path.join(project, 'group', 'studio'), relPath: 'group/studio' })
-    expect(await resolveRepoDir(project, '.', { realpath: async (p) => realpathSync(p), run: worktree }))
-      .toEqual({ ok: true, dir: project, relPath: '.' })
+    expect(await resolveRepoDir(project, 'core', { realpath: async (p) => realpathSync(p), run: worktree })).toEqual({
+      ok: true,
+      dir: path.join(project, 'core'),
+      relPath: 'core',
+    })
+    expect(
+      await resolveRepoDir(project, path.join(project, 'group/studio'), {
+        realpath: async (p) => realpathSync(p),
+        run: worktree,
+      }),
+    ).toEqual({ ok: true, dir: path.join(project, 'group', 'studio'), relPath: 'group/studio' })
+    expect(await resolveRepoDir(project, '.', { realpath: async (p) => realpathSync(p), run: worktree })).toEqual({
+      ok: true,
+      dir: project,
+      relPath: '.',
+    })
   })
 
   it('refuses .., an absolute path outside, a symlink out, a missing path and a folder that is not a work tree', async () => {
@@ -169,11 +196,14 @@ describe('on disk', () => {
     for (const repoPath of ['../outside/evil', 'core/../../outside/evil', path.join(outside, 'evil'), 'escape']) {
       const r = await resolveRepoDir(project, repoPath, deps)
       expect(r.ok, repoPath).toBe(false)
-      if (!r.ok) expect(r.message).toContain('outside this chat\'s project folder')
+      if (!r.ok) expect(r.message).toContain("outside this chat's project folder")
     }
     const missing = await resolveRepoDir(project, 'nope', deps)
     expect(missing.ok === false && missing.message).toContain('does not exist')
-    const notTree = await resolveRepoDir(project, 'group', { ...deps, run: async () => ({ code: 128, stdout: '', stderr: 'fatal: not a git repository' }) })
+    const notTree = await resolveRepoDir(project, 'group', {
+      ...deps,
+      run: async () => ({ code: 128, stdout: '', stderr: 'fatal: not a git repository' }),
+    })
     expect(notTree.ok === false && notTree.message).toContain('is not a git work tree')
   })
 })

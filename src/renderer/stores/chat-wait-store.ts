@@ -1,8 +1,17 @@
 import { create } from 'zustand'
 import type { ChatSlot } from '../services/chat-workspace'
 
-interface OpeningChat { id: string; title: string; projectPath: string; ticket: number }
-export interface ChatWait { label: string; pending: boolean; error?: boolean }
+interface OpeningChat {
+  id: string
+  title: string
+  projectPath: string
+  ticket: number
+}
+export interface ChatWait {
+  label: string
+  pending: boolean
+  error?: boolean
+}
 interface ChatWaitStore {
   opening: Partial<Record<ChatSlot, OpeningChat>>
   waits: Record<string, ChatWait | undefined>
@@ -26,26 +35,29 @@ export const useChatWaitStore = create<ChatWaitStore>((set) => ({
     })
     return next
   },
-  settleLoad: (slot, completed, id, error) => set((state) => {
-    if (state.opening[slot]?.ticket !== completed) return state
-    if (error) return { waits: { ...state.waits, [id]: { label: error, pending: false, error: true } } }
-    if (!state.waits[id]?.error) return state
-    const waits = { ...state.waits }
-    delete waits[id]
-    return { waits }
-  }),
-  finishOpen: (slot, completed) => set((state) => {
-    if (state.opening[slot]?.ticket !== completed) return state
-    const opening = { ...state.opening }
-    delete opening[slot]
-    return { opening }
-  }),
+  settleLoad: (slot, completed, id, error) =>
+    set((state) => {
+      if (state.opening[slot]?.ticket !== completed) return state
+      if (error) return { waits: { ...state.waits, [id]: { label: error, pending: false, error: true } } }
+      if (!state.waits[id]?.error) return state
+      const waits = { ...state.waits }
+      delete waits[id]
+      return { waits }
+    }),
+  finishOpen: (slot, completed) =>
+    set((state) => {
+      if (state.opening[slot]?.ticket !== completed) return state
+      const opening = { ...state.opening }
+      delete opening[slot]
+      return { opening }
+    }),
   begin: (id, label) => set((state) => ({ waits: { ...state.waits, [id]: { label, pending: true } } })),
   fail: (id, label) => set((state) => ({ waits: { ...state.waits, [id]: { label, pending: false, error: true } } })),
-  finish: (id) => set((state) => {
-    if (!state.waits[id]?.pending) return state
-    const waits = { ...state.waits }
-    delete waits[id]
-    return { waits }
-  }),
+  finish: (id) =>
+    set((state) => {
+      if (!state.waits[id]?.pending) return state
+      const waits = { ...state.waits }
+      delete waits[id]
+      return { waits }
+    }),
 }))

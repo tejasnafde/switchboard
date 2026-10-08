@@ -91,8 +91,8 @@ describe('decideDragOutcome', () => {
     // rendered indices {2,1}, NOT raw indices {1,2}.
     const projects = [
       p('/w1-a', 'w1'),
-      p('/w2-a', 'w2'),  // raw index 1
-      p('/w1-b', 'w1'),  // raw index 2
+      p('/w2-a', 'w2'), // raw index 1
+      p('/w1-b', 'w1'), // raw index 2
       p('/w2-b', 'w2'),
     ]
     const rendered = ['/w1-a', '/w1-b', '/w2-a', '/w2-b']
@@ -107,10 +107,10 @@ describe('decideDragOutcome', () => {
 
   it('reorder uses rendered indices when raw and rendered orders differ', () => {
     const projects = [
-      p('/w2-a', 'w2'),  // raw 0, rendered 2
-      p('/w1-a', 'w1'),  // raw 1, rendered 0
-      p('/w2-b', 'w2'),  // raw 2, rendered 3
-      p('/w1-b', 'w1'),  // raw 3, rendered 1
+      p('/w2-a', 'w2'), // raw 0, rendered 2
+      p('/w1-a', 'w1'), // raw 1, rendered 0
+      p('/w2-b', 'w2'), // raw 2, rendered 3
+      p('/w1-b', 'w1'), // raw 3, rendered 1
     ]
     const rendered = ['/w1-a', '/w1-b', '/w2-a', '/w2-b']
     expect(decideDragOutcome(projects, rendered, '/w2-b', '/w2-a')).toEqual({

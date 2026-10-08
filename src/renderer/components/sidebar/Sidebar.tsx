@@ -1,17 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import {
-  DndContext,
-  type DragEndEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable'
+import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useAgentStore } from '../../stores/agent-store'
@@ -38,11 +27,7 @@ import {
   type WorkspaceGroup,
 } from './sidebar-helpers'
 import type { Workspace } from '@shared/types'
-import {
-  moveProjectToWorkspace,
-  projectOrganizationItems,
-  reorderWorkspacesById,
-} from '@shared/workspace-organization'
+import { moveProjectToWorkspace, projectOrganizationItems, reorderWorkspacesById } from '@shared/workspace-organization'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('sidebar')
@@ -81,14 +66,7 @@ function SortableProject({
   id: string
   children: (props: { isDragging: boolean; dragHandleProps: Record<string, unknown> }) => React.ReactNode
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
 
   return (
     <div
@@ -132,9 +110,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   const editRef = useRef<HTMLInputElement>(null)
   const createTriggerRef = useRef<HTMLButtonElement>(null)
   const activeSessionId = useLayoutStore((s) =>
-    s.focusedChatSlot === 'secondary' && s.secondarySessionId
-      ? s.secondarySessionId
-      : s.primarySessionId,
+    s.focusedChatSlot === 'secondary' && s.secondarySessionId ? s.secondarySessionId : s.primarySessionId,
   )
   const primarySessionId = useLayoutStore((s) => s.primarySessionId)
   const secondarySessionId = useLayoutStore((s) => s.secondarySessionId)
@@ -156,20 +132,24 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   // Agent sessions change identity on every streamed token. Subscribe outside
   // React and update the sidebar only when recents-relevant state changes, so
   // a streaming answer never re-renders the whole machine/workspace tree.
-  useEffect(() => useAgentStore.subscribe((state) => {
-    const next = state.sessions.map(({ id, machineId, status, messages, unreadCount, pendingRequests }) => ({
-      id,
-      machineId,
-      status,
-      messages,
-      unreadCount,
-      pendingRequests,
-    }))
-    const signal = recentLiveSignal(next)
-    if (signal === recentSignalRef.current) return
-    recentSignalRef.current = signal
-    setRecentLiveSessions(next)
-  }), [])
+  useEffect(
+    () =>
+      useAgentStore.subscribe((state) => {
+        const next = state.sessions.map(({ id, machineId, status, messages, unreadCount, pendingRequests }) => ({
+          id,
+          machineId,
+          status,
+          messages,
+          unreadCount,
+          pendingRequests,
+        }))
+        const signal = recentLiveSignal(next)
+        if (signal === recentSignalRef.current) return
+        recentSignalRef.current = signal
+        setRecentLiveSessions(next)
+      }),
+    [],
+  )
 
   useEffect(() => {
     void window.api.settings.get(RECENT_SESSION_LIMIT_SETTING).then((value) => {
@@ -228,9 +208,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     session: SessionSummary
   } | null>(null)
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  )
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   useEffect(() => {
     if (!createMenuOpen) return
@@ -260,19 +238,25 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   }, [createMenuOpen])
 
   const refreshWorkspaces = useCallback(() => {
-    window.api.app.workspaces.list().then((list) => setWorkspaces(list ?? [])).catch((err) => {
-      log.warn('workspaces.list failed', err)
-    })
+    window.api.app.workspaces
+      .list()
+      .then((list) => setWorkspaces(list ?? []))
+      .catch((err) => {
+        log.warn('workspaces.list failed', err)
+      })
   }, [])
 
-  const loadProjects = useCallback(async (firstRun = false): Promise<void> => {
-    const saved: Project[] = await window.api.app.getProjects()
-    if (firstRun && useLayoutStore.getState().sidebarCollapsedProjects.length === 0) {
-      setSidebarCollapsedProjects(saved.map((p) => p.path))
-    }
-    setProjects(saved)
-    void useProjectSettingsStore.getState().load(saved.map((p) => p.path))
-  }, [setSidebarCollapsedProjects])
+  const loadProjects = useCallback(
+    async (firstRun = false): Promise<void> => {
+      const saved: Project[] = await window.api.app.getProjects()
+      if (firstRun && useLayoutStore.getState().sidebarCollapsedProjects.length === 0) {
+        setSidebarCollapsedProjects(saved.map((p) => p.path))
+      }
+      setProjects(saved)
+      void useProjectSettingsStore.getState().load(saved.map((p) => p.path))
+    },
+    [setSidebarCollapsedProjects],
+  )
 
   useEffect(() => {
     refreshWorkspaces()
@@ -293,42 +277,54 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     window.dispatchEvent(new CustomEvent('sidebar-refresh'))
   }, [])
 
-  const handleScan = useCallback(async (projectPath: string) => {
-    setScanning(projectPath)
-    try {
-      const sessions = await window.api.app.scanSessions(projectPath)
-      const project = projects.find((item) => item.path === projectPath)
-      if (project) setImportProject(project)
-      setImportCandidates(sessions)
-      setImportError(null)
-    } finally {
-      setScanning(null)
-    }
-  }, [projects])
-
-  const handleImportNative = useCallback(async (session: SessionSummary) => {
-    if (!importProject
-      || (session.source !== 'claude-code' && session.source !== 'codex' && session.source !== 'cursor')) return
-    setImportingId(session.id)
-    setImportError(null)
-    try {
-      const result = await window.api.app.importSession(importProject.path, session.id, session.source)
-      if (!result?.ok) {
-        setImportError(result?.error ?? 'Import failed')
-        return
+  const handleScan = useCallback(
+    async (projectPath: string) => {
+      setScanning(projectPath)
+      try {
+        const sessions = await window.api.app.scanSessions(projectPath)
+        const project = projects.find((item) => item.path === projectPath)
+        if (project) setImportProject(project)
+        setImportCandidates(sessions)
+        setImportError(null)
+      } finally {
+        setScanning(null)
       }
-      await loadProjects()
-      setImportCandidates((current) => current.filter((item) => item.id !== session.id))
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed')
-    } finally {
-      setImportingId(null)
-    }
-  }, [importProject, loadProjects])
+    },
+    [projects],
+  )
 
-  const toggleCollapse = useCallback((path: string) => {
-    toggleSidebarProject(path)
-  }, [toggleSidebarProject])
+  const handleImportNative = useCallback(
+    async (session: SessionSummary) => {
+      if (
+        !importProject ||
+        (session.source !== 'claude-code' && session.source !== 'codex' && session.source !== 'cursor')
+      )
+        return
+      setImportingId(session.id)
+      setImportError(null)
+      try {
+        const result = await window.api.app.importSession(importProject.path, session.id, session.source)
+        if (!result?.ok) {
+          setImportError(result?.error ?? 'Import failed')
+          return
+        }
+        await loadProjects()
+        setImportCandidates((current) => current.filter((item) => item.id !== session.id))
+      } catch (error) {
+        setImportError(error instanceof Error ? error.message : 'Import failed')
+      } finally {
+        setImportingId(null)
+      }
+    },
+    [importProject, loadProjects],
+  )
+
+  const toggleCollapse = useCallback(
+    (path: string) => {
+      toggleSidebarProject(path)
+    },
+    [toggleSidebarProject],
+  )
 
   const startRename = useCallback((session: SessionSummary) => {
     setRenamingProjectPath(null)
@@ -341,26 +337,30 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     setEditingId(null)
   }, [])
 
-  const commitRename = useCallback((projectPath: string, sessionId: string) => {
-    const newTitle = editValue.trim()
-    if (!newTitle) { setEditingId(null); return }
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.path !== projectPath) return p
-        return {
-          ...p,
-          sessions: p.sessions.map((s) =>
-            s.id === sessionId ? { ...s, title: newTitle } : s
-          ),
-        }
+  const commitRename = useCallback(
+    (projectPath: string, sessionId: string) => {
+      const newTitle = editValue.trim()
+      if (!newTitle) {
+        setEditingId(null)
+        return
+      }
+      setProjects((prev) =>
+        prev.map((p) => {
+          if (p.path !== projectPath) return p
+          return {
+            ...p,
+            sessions: p.sessions.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s)),
+          }
+        }),
+      )
+      window.api.app.renameConversation(sessionId, newTitle).catch((err) => {
+        log.warn(`renameConversation failed for ${sessionId} - optimistic title may not persist`, err)
       })
-    )
-    window.api.app.renameConversation(sessionId, newTitle).catch((err) => {
-      log.warn(`renameConversation failed for ${sessionId} - optimistic title may not persist`, err)
-    })
-    emitSessionRename(sessionId, newTitle)
-    setEditingId(null)
-  }, [editValue])
+      emitSessionRename(sessionId, newTitle)
+      setEditingId(null)
+    },
+    [editValue],
+  )
 
   // Listen for renames from other places (ChatPanel) and update local projects state
   useEffect(() => {
@@ -368,10 +368,8 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       setProjects((prev) =>
         prev.map((p) => ({
           ...p,
-          sessions: p.sessions.map((s) =>
-            s.id === sid ? { ...s, title } : s
-          ),
-        }))
+          sessions: p.sessions.map((s) => (s.id === sid ? { ...s, title } : s)),
+        })),
       )
     })
   }, [])
@@ -386,9 +384,10 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
 
   // Refresh project list from disk (e.g., after unarchive)
   useEffect(() => {
-    const handler = () => void loadProjects().catch((err) => {
-      log.warn('loadProjects failed on sidebar-refresh event', err)
-    })
+    const handler = () =>
+      void loadProjects().catch((err) => {
+        log.warn('loadProjects failed on sidebar-refresh event', err)
+      })
     window.addEventListener('sidebar-refresh', handler)
     // onSessionCreated is renderer-local, so another client's chat needs this.
     const off = window.api.app.onConversationsChanged(handler)
@@ -420,7 +419,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
               ...p.sessions,
             ],
           }
-        })
+        }),
       )
       // Auto-expand the project so the user sees the new chat
       expandSidebarProject(newSession.projectPath)
@@ -441,7 +440,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
           // No filePath means a db-only row, which is what every worktree-run
           // chat is. Exporting those wrote an empty file with the transcript
           // sitting on disk unread; loadSessionById finds it by session id.
-          const resp = await window.api.app.loadSessionById(session.id) as { messages?: ChatMessage[] } | null
+          const resp = (await window.api.app.loadSessionById(session.id)) as { messages?: ChatMessage[] } | null
           messages = resp?.messages ?? []
         }
       } catch (err) {
@@ -472,42 +471,41 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     await confirm({ ...historyScanSummary(result), notice: true })
   }, [])
 
-  const handleMerge = useCallback(async (
-    fragment: { sessionId: string; projectPath: string; session: SessionSummary },
-    rootThreadId: string,
-  ) => {
-    try {
-      await window.api.app.attachToThread(fragment.sessionId, rootThreadId)
-      // Optimistic UI: remove the fragment from its project list in the sidebar
-      setProjects((prev) =>
-        prev.map((p) =>
-          p.path !== fragment.projectPath
-            ? p
-            : { ...p, sessions: p.sessions.filter((s) => s.id !== fragment.sessionId) }
+  const handleMerge = useCallback(
+    async (fragment: { sessionId: string; projectPath: string; session: SessionSummary }, rootThreadId: string) => {
+      try {
+        await window.api.app.attachToThread(fragment.sessionId, rootThreadId)
+        // Optimistic UI: remove the fragment from its project list in the sidebar
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.path !== fragment.projectPath
+              ? p
+              : { ...p, sessions: p.sessions.filter((s) => s.id !== fragment.sessionId) },
+          ),
         )
-      )
-    } catch (err) {
-      log.warn(`attachToThread(${fragment.sessionId}, ${rootThreadId}) failed - next getProjects refresh will correct state`, err)
-    }
-  }, [])
+      } catch (err) {
+        log.warn(
+          `attachToThread(${fragment.sessionId}, ${rootThreadId}) failed - next getProjects refresh will correct state`,
+          err,
+        )
+      }
+    },
+    [],
+  )
 
   const handleArchive = useCallback((projectPath: string, session: SessionSummary) => {
     // Optimistically remove from sidebar
     setProjects((prev) =>
-      prev.map((p) =>
-        p.path !== projectPath
-          ? p
-          : { ...p, sessions: p.sessions.filter((s) => s.id !== session.id) }
-      )
+      prev.map((p) => (p.path !== projectPath ? p : { ...p, sessions: p.sessions.filter((s) => s.id !== session.id) })),
     )
-    ;window.api.app.archiveConversation(session.id, projectPath, session.title).catch(() => {
+    window.api.app.archiveConversation(session.id, projectPath, session.title).catch(() => {
       // Rollback on error
       setProjects((prev) =>
         prev.map((p) =>
           p.path !== projectPath
             ? p
-            : { ...p, sessions: [...p.sessions, session].sort((a, b) => b.startedAt - a.startedAt) }
-        )
+            : { ...p, sessions: [...p.sessions, session].sort((a, b) => b.startedAt - a.startedAt) },
+        ),
       )
     })
   }, [])
@@ -524,52 +522,62 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     emitSessionRename(menu.session.id, title)
   }, [])
 
-  const handleRemoteExport = useCallback(async (menu: { machineId: string; projectPath: string; session: SessionSummary }) => {
-    let messages = useAgentStore.getState().sessions.find((s) => s.id === menu.session.id)?.messages
-    if (!messages || messages.length === 0) {
-      try {
-        // Remote rows carry no filePath - load by id, routed to the machine.
-        window.api.routing.bind(menu.session.id, menu.machineId)
-        const resp = await window.api.app.loadSessionById(menu.session.id) as { messages?: ChatMessage[] }
-        messages = resp?.messages
-      } catch (err) {
-        log.warn(`failed to load remote messages for export of ${menu.session.id} - exporting whatever we have`, err)
+  const handleRemoteExport = useCallback(
+    async (menu: { machineId: string; projectPath: string; session: SessionSummary }) => {
+      let messages = useAgentStore.getState().sessions.find((s) => s.id === menu.session.id)?.messages
+      if (!messages || messages.length === 0) {
+        try {
+          // Remote rows carry no filePath - load by id, routed to the machine.
+          window.api.routing.bind(menu.session.id, menu.machineId)
+          const resp = (await window.api.app.loadSessionById(menu.session.id)) as { messages?: ChatMessage[] }
+          messages = resp?.messages
+        } catch (err) {
+          log.warn(`failed to load remote messages for export of ${menu.session.id} - exporting whatever we have`, err)
+        }
       }
-    }
-    const content = serializeConversationToMarkdown({
-      title: menu.session.title ?? 'Conversation',
-      projectPath: menu.projectPath,
-      startedAt: menu.session.startedAt,
-      messages: messages ?? [],
-      agentType: menu.session.source === 'codex' ? 'codex' : 'claude-code',
-    })
-    await window.api.app.exportMarkdown({
-      suggestedFilename: suggestedExportFilename(menu.session.title ?? 'conversation'),
-      content,
-    })
-  }, [])
-
-  const handleRemoteArchive = useCallback((menu: { machineId: string; projectPath: string; session: SessionSummary }) => {
-    window.api.routing.bind(menu.session.id, menu.machineId)
-    // Optimistic: drop from the snapshot; roll back if the routed archive fails.
-    useMachineStore.getState().removeSnapshotSession(menu.machineId, menu.session.id)
-    window.api.app.archiveConversation(menu.session.id, menu.projectPath, menu.session.title).catch(() => {
-      useMachineStore.getState().addSnapshotSession(menu.machineId, menu.projectPath, {
-        id: menu.session.id,
-        title: menu.session.title,
-        agentType: menu.session.agentType ?? null,
+      const content = serializeConversationToMarkdown({
+        title: menu.session.title ?? 'Conversation',
+        projectPath: menu.projectPath,
+        startedAt: menu.session.startedAt,
+        messages: messages ?? [],
+        agentType: menu.session.source === 'codex' ? 'codex' : 'claude-code',
       })
-    })
-  }, [])
+      await window.api.app.exportMarkdown({
+        suggestedFilename: suggestedExportFilename(menu.session.title ?? 'conversation'),
+        content,
+      })
+    },
+    [],
+  )
 
-  const handleAssignWorkspace = useCallback((projectPath: string, workspaceId: string | null) => {
-    setProjects((prev) => {
-      const next = moveProjectToWorkspace(prev, projectPath, workspaceId)
-      void window.api.app.organizeProjects(projectOrganizationItems(next))
-        .catch(() => { void loadProjects() })
-      return next
-    })
-  }, [loadProjects])
+  const handleRemoteArchive = useCallback(
+    (menu: { machineId: string; projectPath: string; session: SessionSummary }) => {
+      window.api.routing.bind(menu.session.id, menu.machineId)
+      // Optimistic: drop from the snapshot; roll back if the routed archive fails.
+      useMachineStore.getState().removeSnapshotSession(menu.machineId, menu.session.id)
+      window.api.app.archiveConversation(menu.session.id, menu.projectPath, menu.session.title).catch(() => {
+        useMachineStore.getState().addSnapshotSession(menu.machineId, menu.projectPath, {
+          id: menu.session.id,
+          title: menu.session.title,
+          agentType: menu.session.agentType ?? null,
+        })
+      })
+    },
+    [],
+  )
+
+  const handleAssignWorkspace = useCallback(
+    (projectPath: string, workspaceId: string | null) => {
+      setProjects((prev) => {
+        const next = moveProjectToWorkspace(prev, projectPath, workspaceId)
+        void window.api.app.organizeProjects(projectOrganizationItems(next)).catch(() => {
+          void loadProjects()
+        })
+        return next
+      })
+    },
+    [loadProjects],
+  )
 
   // Inline edit, not window.prompt - Electron renderers don't implement
   // prompt() (returns null), so the prompt version silently did nothing.
@@ -580,24 +588,30 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     setTimeout(() => editRef.current?.select(), 0)
   }, [])
 
-  const commitProjectRename = useCallback((projectPath: string) => {
-    const name = editValue.trim()
-    setRenamingProjectPath(null)
-    if (!name) return
-    setProjects((prev) => prev.map((p) => p.path === projectPath ? { ...p, name } : p))
-    window.api.app.renameProject(projectPath, name).catch((err) => {
-      // optimistic - next refresh will correct
-      log.warn(`renameProject failed for ${projectPath}`, err)
-    })
-  }, [editValue])
+  const commitProjectRename = useCallback(
+    (projectPath: string) => {
+      const name = editValue.trim()
+      setRenamingProjectPath(null)
+      if (!name) return
+      setProjects((prev) => prev.map((p) => (p.path === projectPath ? { ...p, name } : p)))
+      window.api.app.renameProject(projectPath, name).catch((err) => {
+        // optimistic - next refresh will correct
+        log.warn(`renameProject failed for ${projectPath}`, err)
+      })
+    },
+    [editValue],
+  )
 
   const handleRemoveProject = useCallback(async (project: { path: string; name: string }) => {
-    if (!(await confirm({
-      title: `Remove "${project.name}"?`,
-      body: 'This also deletes its conversations and kanban cards from Switchboard (the folder on disk is untouched).',
-      confirmLabel: 'Remove',
-      destructive: true,
-    }))) return
+    if (
+      !(await confirm({
+        title: `Remove "${project.name}"?`,
+        body: 'This also deletes its conversations and kanban cards from Switchboard (the folder on disk is untouched).',
+        confirmLabel: 'Remove',
+        destructive: true,
+      }))
+    )
+      return
     setProjects((prev) => prev.filter((p) => p.path !== project.path))
     // Tear down any open sessions rooted in this project before the cascade
     // delete lands - otherwise activeSessionId points at a conversation row
@@ -611,69 +625,71 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     }
   }, [])
 
-  const handleCreateWorkspaceFromProject = useCallback(async (projectPath: string) => {
-    // Default the workspace name to the project's folder name (no window.prompt
-    // - Electron no-ops it). Rename later via Manage workspaces.
-    const name = projectPath.split('/').filter(Boolean).pop() || 'New workspace'
-    try {
-      const w = await window.api.app.workspaces.create({ name })
-      setWorkspaces((prev) => [...prev, w])
-      await handleAssignWorkspace(projectPath, w.id)
-    } catch (err) {
-      log.warn(`failed to create workspace from project ${projectPath}`, err)
-    }
-  }, [handleAssignWorkspace])
+  const handleCreateWorkspaceFromProject = useCallback(
+    async (projectPath: string) => {
+      // Default the workspace name to the project's folder name (no window.prompt
+      // - Electron no-ops it). Rename later via Manage workspaces.
+      const name = projectPath.split('/').filter(Boolean).pop() || 'New workspace'
+      try {
+        const w = await window.api.app.workspaces.create({ name })
+        setWorkspaces((prev) => [...prev, w])
+        await handleAssignWorkspace(projectPath, w.id)
+      } catch (err) {
+        log.warn(`failed to create workspace from project ${projectPath}`, err)
+      }
+    },
+    [handleAssignWorkspace],
+  )
 
   // Drives both same- and cross-workspace drops off the *rendered* flat
   // order (what SortableContext.items sees), not the raw `projects` array
   // - dnd-kit's drag indices are relative to that. Cross-workspace drops
   // also flip the dragged item's workspaceId so it lands in the target
   // bucket at the visual drop slot.
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over) return
-    const renderedOrder = groupProjectsByWorkspace(projects, workspaces)
-      .flatMap((g) => g.projects.map((p) => p.path))
-    const outcome = decideDragOutcome(
-      projects,
-      renderedOrder,
-      String(active.id),
-      String(over.id),
-    )
-    if (outcome.type === 'noop') return
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event
+      if (!over) return
+      const renderedOrder = groupProjectsByWorkspace(projects, workspaces).flatMap((g) => g.projects.map((p) => p.path))
+      const outcome = decideDragOutcome(projects, renderedOrder, String(active.id), String(over.id))
+      if (outcome.type === 'noop') return
 
-    const newRenderedOrder = arrayMove(renderedOrder, outcome.oldIndex, outcome.newIndex)
+      const newRenderedOrder = arrayMove(renderedOrder, outcome.oldIndex, outcome.newIndex)
 
-    setProjects((prev) => {
-      const byPath = new Map(prev.map((p) => [p.path, p]))
-      const reordered = newRenderedOrder
-        .map((path) => byPath.get(path))
-        .filter((project): project is Project => project !== undefined)
-        .map((p) =>
-          outcome.type === 'reassign' && p.path === outcome.projectPath
-            ? { ...p, workspaceId: outcome.targetWorkspaceId }
-            : p,
-        )
-      void window.api.app.organizeProjects(projectOrganizationItems(reordered))
-        .catch(() => { void loadProjects() })
-      return reordered
-    })
-  }, [loadProjects, projects, workspaces])
+      setProjects((prev) => {
+        const byPath = new Map(prev.map((p) => [p.path, p]))
+        const reordered = newRenderedOrder
+          .map((path) => byPath.get(path))
+          .filter((project): project is Project => project !== undefined)
+          .map((p) =>
+            outcome.type === 'reassign' && p.path === outcome.projectPath
+              ? { ...p, workspaceId: outcome.targetWorkspaceId }
+              : p,
+          )
+        void window.api.app.organizeProjects(projectOrganizationItems(reordered)).catch(() => {
+          void loadProjects()
+        })
+        return reordered
+      })
+    },
+    [loadProjects, projects, workspaces],
+  )
 
   // Compute the workspace-grouped tree, then apply the (debounced) filter.
   // The filter expansion sets are merged with the persisted collapse sets:
   // when filtering, matching ancestors auto-expand without clobbering the
   // user's saved collapse state - clearing the filter restores it.
-  const groups: WorkspaceGroup[] = useMemo(
-    () => groupProjectsByWorkspace(projects, workspaces),
-    [projects, workspaces]
-  )
+  const groups: WorkspaceGroup[] = useMemo(() => groupProjectsByWorkspace(projects, workspaces), [projects, workspaces])
   const filtered = useMemo(() => applySidebarFilter(filterQuery, groups), [filterQuery, groups])
-  const recentSessions = useMemo(() => deriveRecentSessions({
-    localProjects: projects,
-    remoteProjects: machineProjects,
-    liveSessions: recentLiveSessions,
-  }), [projects, machineProjects, recentLiveSessions])
+  const recentSessions = useMemo(
+    () =>
+      deriveRecentSessions({
+        localProjects: projects,
+        remoteProjects: machineProjects,
+        liveSessions: recentLiveSessions,
+      }),
+    [projects, machineProjects, recentLiveSessions],
+  )
   const isFiltering = filterQuery.trim().length > 0
   const isProjectCollapsed = (path: string) => {
     if (isFiltering && filtered.expandProjects.has(path)) return false
@@ -685,11 +701,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   }
   const ungroupedKey = '__ungrouped__'
 
-  const renderProject = (
-    project: Project,
-    isDragging: boolean,
-    dragHandleProps: Record<string, unknown>,
-  ) => {
+  const renderProject = (project: Project, isDragging: boolean, dragHandleProps: Record<string, unknown>) => {
     const isCollapsed = isProjectCollapsed(project.path)
     return (
       <div className="sidebar-project">
@@ -758,10 +770,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
               <span className="sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
               <ProjectFavicon projectPath={project.path} />
               <span className="sidebar-project-name">{project.name}</span>
-              <GroupUnreadBadge
-                sessionIds={project.sessions.map((s) => s.id)}
-                expanded={!isCollapsed}
-              />
+              <GroupUnreadBadge sessionIds={project.sessions.map((s) => s.id)} expanded={!isCollapsed} />
               <span className="sidebar-project-count">{project.sessions.length || ''}</span>
             </button>
           )}
@@ -774,8 +783,18 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
             }}
             title="New thread in this project"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
             </svg>
           </button>
         </div>
@@ -835,9 +854,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                           aria-current={isActive ? 'page' : undefined}
                           onClick={() => onSessionSelect?.(s, project.path)}
                         >
-                          <span className="sidebar-thread-title">
-                            {s.title}
-                          </span>
+                          <span className="sidebar-thread-title">{s.title}</span>
                           {s.worktreeRecovery?.cleanupDisposition === 'retained' && (
                             <span
                               title="This worktree was retained and needs recovery before the conversation can start."
@@ -847,9 +864,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                             </span>
                           )}
                           <UnreadBadge sessionId={s.id} />
-                          <span className="sidebar-thread-time">
-                            {formatRelativeTime(s.startedAt)}
-                          </span>
+                          <span className="sidebar-thread-time">{formatRelativeTime(s.startedAt)}</span>
                         </button>
                         <button
                           className="sidebar-thread-archive"
@@ -859,7 +874,16 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                           }}
                           title="Archive"
                         >
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
                             <rect x="3" y="3" width="18" height="4" rx="1" />
                             <path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7" />
                             <line x1="10" y1="12" x2="14" y2="12" />
@@ -872,7 +896,10 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
               })
             ) : (
               <button
-                onClick={(e) => { e.stopPropagation(); handleScan(project.path) }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleScan(project.path)
+                }}
                 disabled={scanning === project.path}
                 className="sidebar-scan-btn"
               >
@@ -885,7 +912,6 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     )
   }
 
-
   const openSavedBookmark = (bookmark: Bookmark) => {
     const syntheticSession: SessionSummary = {
       id: bookmark.sessionId,
@@ -896,10 +922,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       filePath: '',
     }
     onSessionSelect?.(syntheticSession, bookmark.projectPath)
-    useAgentStore.getState().requestScrollToTimestamp(
-      bookmark.sessionId,
-      bookmark.messageTimestamp,
-    )
+    useAgentStore.getState().requestScrollToTimestamp(bookmark.sessionId, bookmark.messageTimestamp)
   }
 
   return (
@@ -915,7 +938,17 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
               title="Back to threads"
               onClick={() => setSidebarView('threads')}
             >
-              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                aria-hidden="true"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="m15 18-6-6 6-6" />
               </svg>
             </button>
@@ -933,7 +966,17 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                 title="Saved messages"
                 onClick={() => setSidebarView('saved')}
               >
-                <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  aria-hidden="true"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                 </svg>
               </button>
@@ -944,8 +987,18 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
                 disabled={projects.length === 0}
                 title="New thread (⌘⇧O)"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                 </svg>
               </button>
             </div>
@@ -957,255 +1010,338 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
         <div className="sidebar-list sidebar-saved-list">
           {bookmarks.length === 0 ? (
             <div className="sidebar-saved-empty">
-              <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                aria-hidden="true"
+                width="19"
+                height="19"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
               <strong>No saved messages</strong>
               <span>Save a message to find it here.</span>
             </div>
-          ) : bookmarks.map((bookmark) => (
-            <SavedItem
-              key={bookmark.id}
-              bookmark={bookmark}
-              onNavigate={() => openSavedBookmark(bookmark)}
-              onRemove={() => void removeBookmark(bookmark.id)}
-            />
-          ))}
+          ) : (
+            bookmarks.map((bookmark) => (
+              <SavedItem
+                key={bookmark.id}
+                bookmark={bookmark}
+                onNavigate={() => openSavedBookmark(bookmark)}
+                onRemove={() => void removeBookmark(bookmark.id)}
+              />
+            ))
+          )}
         </div>
       )}
       {/* Filter input - debounced 100ms, fuzzy substring on session titles */}
-      {sidebarView === 'threads' && projects.length > 0 && (
-        <SidebarFilter onChange={setFilterQuery} />
-      )}
+      {sidebarView === 'threads' && projects.length > 0 && <SidebarFilter onChange={setFilterQuery} />}
 
       {/* Project + thread list */}
       {sidebarView === 'threads' && (
-      <div className="sidebar-list">
-        {!isFiltering && (
-          <RecentSessionsSection
-            items={recentSessions}
-            initialLimit={recentLimit}
-            activeSessionId={activeSessionId}
-            displayedSessionIds={displayedSessionIds}
-            onSelect={(item) => onSessionSelect?.(
-              item.session,
-              item.projectPath,
-              item.machineId === 'local' ? undefined : item.machineId,
-            )}
-          />
-        )}
-        <MachineLayer
-          localSummary={localMachineSummary(workspaces.length, projects.length)}
-          forceLocalExpanded={isFiltering}
-          onEditMachine={(machine) => setEditMachine(machine)}
-          onOpenRemoteSession={(machineId, projectPath, session) => onSessionSelect?.(session, projectPath, machineId)}
-          onNewRemoteChat={(machineId, projectPath) => onNewChat?.(projectPath, machineId)}
-          onSessionContextMenu={(e, machineId, projectPath, session) =>
-            setRemoteMenu({ x: e.clientX, y: e.clientY, machineId, projectPath, session })}
-        >
-        <DndContext
-          sensors={sensors}
-          modifiers={[restrictToVerticalAxis]}
-          onDragEnd={handleDragEnd}
-        >
-          {/* Items must match rendered DOM order (grouped by workspace), not raw load order. */}
-          <SortableContext
-            items={filtered.groups.flatMap((g) => g.projects.map((p) => p.path))}
-            strategy={verticalListSortingStrategy}
+        <div className="sidebar-list">
+          {!isFiltering && (
+            <RecentSessionsSection
+              items={recentSessions}
+              initialLimit={recentLimit}
+              activeSessionId={activeSessionId}
+              displayedSessionIds={displayedSessionIds}
+              onSelect={(item) =>
+                onSessionSelect?.(
+                  item.session,
+                  item.projectPath,
+                  item.machineId === 'local' ? undefined : item.machineId,
+                )
+              }
+            />
+          )}
+          <MachineLayer
+            localSummary={localMachineSummary(workspaces.length, projects.length)}
+            forceLocalExpanded={isFiltering}
+            onEditMachine={(machine) => setEditMachine(machine)}
+            onOpenRemoteSession={(machineId, projectPath, session) =>
+              onSessionSelect?.(session, projectPath, machineId)
+            }
+            onNewRemoteChat={(machineId, projectPath) => onNewChat?.(projectPath, machineId)}
+            onSessionContextMenu={(e, machineId, projectPath, session) =>
+              setRemoteMenu({ x: e.clientX, y: e.clientY, machineId, projectPath, session })
+            }
           >
-            {filtered.groups.map((group) => {
-              const workspace = group.workspace
-              const wsId = workspace?.id ?? ungroupedKey
-              const wsCollapsed = isWorkspaceCollapsed(wsId)
-              const sessionTotal = group.projects.reduce((acc, p) => acc + p.sessions.length, 0)
-              const spineColor = workspace ? colorTokenForWorkspace(workspace) : 'var(--text-muted)'
-              return (
-                <section
-                  key={wsId}
-                  className={`sidebar-workspace ${wsCollapsed ? 'collapsed' : ''} ${workspace ? '' : 'ungrouped'}`}
-                  style={{ ['--spine' as string]: spineColor } as React.CSSProperties}
-                >
-                  <div className="sidebar-workspace-header-row">
-                    <button
-                      type="button"
-                      className="sidebar-workspace-header"
-                      onClick={() => toggleSidebarWorkspace(wsId)}
-                      aria-expanded={!wsCollapsed}
-                      onContextMenu={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        if (workspace) {
-                          setWorkspaceMenu({
-                            x: event.clientX,
-                            y: event.clientY,
-                            workspace,
-                          })
-                        }
-                      }}
+            <DndContext sensors={sensors} modifiers={[restrictToVerticalAxis]} onDragEnd={handleDragEnd}>
+              {/* Items must match rendered DOM order (grouped by workspace), not raw load order. */}
+              <SortableContext
+                items={filtered.groups.flatMap((g) => g.projects.map((p) => p.path))}
+                strategy={verticalListSortingStrategy}
+              >
+                {filtered.groups.map((group) => {
+                  const workspace = group.workspace
+                  const wsId = workspace?.id ?? ungroupedKey
+                  const wsCollapsed = isWorkspaceCollapsed(wsId)
+                  const sessionTotal = group.projects.reduce((acc, p) => acc + p.sessions.length, 0)
+                  const spineColor = workspace ? colorTokenForWorkspace(workspace) : 'var(--text-muted)'
+                  return (
+                    <section
+                      key={wsId}
+                      className={`sidebar-workspace ${wsCollapsed ? 'collapsed' : ''} ${workspace ? '' : 'ungrouped'}`}
+                      style={{ ['--spine' as string]: spineColor } as React.CSSProperties}
                     >
-                      <span className="sidebar-chevron">{wsCollapsed ? '▶' : '▼'}</span>
-                      <span className="sidebar-workspace-name">
-                        {workspace?.name ?? 'Ungrouped'}
-                      </span>
-                      <GroupUnreadBadge
-                        sessionIds={group.projects.flatMap((p) => p.sessions.map((s) => s.id))}
-                        expanded={!wsCollapsed}
-                      />
-                      <span
-                        className="sidebar-workspace-count"
-                        title={countLabel(sessionTotal, 'thread')}
-                      >
-                        {countLabel(group.projects.length, 'project')}
-                      </span>
-                    </button>
-                    {workspace && (
-                      <button
-                        type="button"
-                        className="sidebar-workspace-actions"
-                        aria-label={`Actions for ${workspace.name}`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          const rect = event.currentTarget.getBoundingClientRect()
-                          setWorkspaceMenu({
-                            x: rect.right,
-                            y: rect.bottom,
-                            workspace,
-                          })
-                        }}
-                      >
-                        <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                          <circle cx="5" cy="12" r="1.6" />
-                          <circle cx="12" cy="12" r="1.6" />
-                          <circle cx="19" cy="12" r="1.6" />
-                        </svg>
-                      </button>
-                    )}
+                      <div className="sidebar-workspace-header-row">
+                        <button
+                          type="button"
+                          className="sidebar-workspace-header"
+                          onClick={() => toggleSidebarWorkspace(wsId)}
+                          aria-expanded={!wsCollapsed}
+                          onContextMenu={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            if (workspace) {
+                              setWorkspaceMenu({
+                                x: event.clientX,
+                                y: event.clientY,
+                                workspace,
+                              })
+                            }
+                          }}
+                        >
+                          <span className="sidebar-chevron">{wsCollapsed ? '▶' : '▼'}</span>
+                          <span className="sidebar-workspace-name">{workspace?.name ?? 'Ungrouped'}</span>
+                          <GroupUnreadBadge
+                            sessionIds={group.projects.flatMap((p) => p.sessions.map((s) => s.id))}
+                            expanded={!wsCollapsed}
+                          />
+                          <span className="sidebar-workspace-count" title={countLabel(sessionTotal, 'thread')}>
+                            {countLabel(group.projects.length, 'project')}
+                          </span>
+                        </button>
+                        {workspace && (
+                          <button
+                            type="button"
+                            className="sidebar-workspace-actions"
+                            aria-label={`Actions for ${workspace.name}`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              const rect = event.currentTarget.getBoundingClientRect()
+                              setWorkspaceMenu({
+                                x: rect.right,
+                                y: rect.bottom,
+                                workspace,
+                              })
+                            }}
+                          >
+                            <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                              <circle cx="5" cy="12" r="1.6" />
+                              <circle cx="12" cy="12" r="1.6" />
+                              <circle cx="19" cy="12" r="1.6" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                      {!wsCollapsed && (
+                        <div className="sidebar-workspace-body">
+                          {group.projects.map((project) => (
+                            <SortableProject key={project.path} id={project.path}>
+                              {({ isDragging, dragHandleProps }) => renderProject(project, isDragging, dragHandleProps)}
+                            </SortableProject>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  )
+                })}
+                {isFiltering && filtered.matchCount === 0 && (
+                  <div className="sidebar-empty" style={{ padding: '14px', textAlign: 'center' }}>
+                    No matches for "{filterQuery}"
                   </div>
-                  {!wsCollapsed && (
-                    <div className="sidebar-workspace-body">
-                      {group.projects.map((project) => (
-                        <SortableProject key={project.path} id={project.path}>
-                          {({ isDragging, dragHandleProps }) =>
-                            renderProject(project, isDragging, dragHandleProps)
-                          }
-                        </SortableProject>
-                      ))}
-                    </div>
-                  )}
-                </section>
-              )
-            })}
-            {isFiltering && filtered.matchCount === 0 && (
-              <div className="sidebar-empty" style={{ padding: '14px', textAlign: 'center' }}>
-                No matches for "{filterQuery}"
+                )}
+              </SortableContext>
+            </DndContext>
+          </MachineLayer>
+
+          {projects.length === 0 && (
+            <div className="sidebar-empty-state">
+              <div className="sidebar-empty-icon">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity="0.4"
+                >
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                </svg>
               </div>
-            )}
-          </SortableContext>
-        </DndContext>
-        </MachineLayer>
-
-
-        {projects.length === 0 && (
-          <div className="sidebar-empty-state">
-            <div className="sidebar-empty-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.4">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-              </svg>
+              <div>Add a project folder</div>
+              <div style={{ fontSize: '11px', marginTop: '2px' }}>to see threads</div>
             </div>
-            <div>Add a project folder</div>
-            <div style={{ fontSize: '11px', marginTop: '2px' }}>to see threads</div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
       )}
 
       {/* Footer */}
       {sidebarView === 'threads' && (
-      <div className="sidebar-footer">
-        <div className="sidebar-create-wrap">
+        <div className="sidebar-footer">
+          <div className="sidebar-create-wrap">
+            <button
+              ref={createTriggerRef}
+              type="button"
+              className="sidebar-create-trigger"
+              aria-haspopup="menu"
+              aria-expanded={createMenuOpen}
+              onClick={() => setCreateMenuOpen((open) => !open)}
+            >
+              <svg
+                aria-hidden="true"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              Create
+              <svg
+                aria-hidden="true"
+                className="sidebar-create-caret"
+                width="10"
+                height="10"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path d="m5 7.5 5 5 5-5Z" />
+              </svg>
+            </button>
+            {createMenuOpen && (
+              <div
+                className="sidebar-create-menu sb-floating-surface"
+                role="menu"
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+                  event.preventDefault()
+                  const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+                  const current = items.indexOf(document.activeElement as HTMLButtonElement)
+                  const delta = event.key === 'ArrowDown' ? 1 : -1
+                  items[(current + delta + items.length) % items.length]?.focus()
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setCreateMenuOpen(false)
+                    void handleAddProject()
+                  }}
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+                    <path d="M12 10v6M9 13h6" />
+                  </svg>
+                  <span>
+                    <strong>New project</strong>
+                    <small>Add a folder from this Mac</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setCreateMenuOpen(false)
+                    setManagerWorkspaceId(undefined)
+                    setManagerStartsCreating(true)
+                    setManagerOpen(true)
+                  }}
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M4 6h16M4 12h16M4 18h10" />
+                  </svg>
+                  <span>
+                    <strong>New workspace</strong>
+                    <small>Group related projects</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setCreateMenuOpen(false)
+                    setAddMachineOpen(true)
+                  }}
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <rect x="3" y="4" width="18" height="6" rx="1" />
+                    <rect x="3" y="14" width="18" height="6" rx="1" />
+                    <path d="M7 7h.01M7 17h.01" />
+                  </svg>
+                  <span>
+                    <strong>New machine</strong>
+                    <small>Connect over SSH or IAP</small>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
           <button
-            ref={createTriggerRef}
             type="button"
-            className="sidebar-create-trigger"
-            aria-haspopup="menu"
-            aria-expanded={createMenuOpen}
-            onClick={() => setCreateMenuOpen((open) => !open)}
+            onClick={() => {
+              setManagerWorkspaceId(undefined)
+              setManagerStartsCreating(false)
+              setManagerOpen(true)
+            }}
+            className="sidebar-organize-btn"
+            aria-label="Organize workspaces and projects"
+            title="Organize sidebar"
           >
-            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            Create
-            <svg aria-hidden="true" className="sidebar-create-caret" width="10" height="10" viewBox="0 0 20 20" fill="currentColor">
-              <path d="m5 7.5 5 5 5-5Z" />
+            <svg
+              aria-hidden="true"
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            >
+              <path d="M4 6h16M4 12h16M4 18h16" />
+              <circle cx="9" cy="6" r="1.7" fill="var(--bg-elevated)" />
+              <circle cx="15" cy="12" r="1.7" fill="var(--bg-elevated)" />
+              <circle cx="11" cy="18" r="1.7" fill="var(--bg-elevated)" />
             </svg>
           </button>
-          {createMenuOpen && (
-            <div
-              className="sidebar-create-menu sb-floating-surface"
-              role="menu"
-              onKeyDown={(event) => {
-                if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-                event.preventDefault()
-                const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
-                const current = items.indexOf(document.activeElement as HTMLButtonElement)
-                const delta = event.key === 'ArrowDown' ? 1 : -1
-                items[(current + delta + items.length) % items.length]?.focus()
-              }}
-            >
-              <button type="button" role="menuitem" onClick={() => {
-                setCreateMenuOpen(false)
-                void handleAddProject()
-              }}>
-                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-                  <path d="M12 10v6M9 13h6" />
-                </svg>
-                <span><strong>New project</strong><small>Add a folder from this Mac</small></span>
-              </button>
-              <button type="button" role="menuitem" onClick={() => {
-                setCreateMenuOpen(false)
-                setManagerWorkspaceId(undefined)
-                setManagerStartsCreating(true)
-                setManagerOpen(true)
-              }}>
-                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M4 6h16M4 12h16M4 18h10" />
-                </svg>
-                <span><strong>New workspace</strong><small>Group related projects</small></span>
-              </button>
-              <button type="button" role="menuitem" onClick={() => {
-                setCreateMenuOpen(false)
-                setAddMachineOpen(true)
-              }}>
-                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <rect x="3" y="4" width="18" height="6" rx="1" />
-                  <rect x="3" y="14" width="18" height="6" rx="1" />
-                  <path d="M7 7h.01M7 17h.01" />
-                </svg>
-                <span><strong>New machine</strong><small>Connect over SSH or IAP</small></span>
-              </button>
-            </div>
-          )}
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setManagerWorkspaceId(undefined)
-            setManagerStartsCreating(false)
-            setManagerOpen(true)
-          }}
-          className="sidebar-organize-btn"
-          aria-label="Organize workspaces and projects"
-          title="Organize sidebar"
-        >
-          <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-            <path d="M4 6h16M4 12h16M4 18h16" />
-            <circle cx="9" cy="6" r="1.7" fill="var(--bg-elevated)" />
-            <circle cx="15" cy="12" r="1.7" fill="var(--bg-elevated)" />
-            <circle cx="11" cy="18" r="1.7" fill="var(--bg-elevated)" />
-          </svg>
-        </button>
-      </div>
       )}
 
       {/* Right-click context menu on sessions */}
@@ -1224,7 +1360,10 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
             },
             {
               label: 'Rename',
-              onClick: () => { startRename(contextMenu.session); setContextMenu(null) },
+              onClick: () => {
+                startRename(contextMenu.session)
+                setContextMenu(null)
+              },
             },
             {
               label: 'Export as Markdown',
@@ -1275,7 +1414,10 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
             },
             {
               label: 'Rename',
-              onClick: () => { setRemoteRename({ machineId: remoteMenu.machineId, session: remoteMenu.session }); setRemoteMenu(null) },
+              onClick: () => {
+                setRemoteRename({ machineId: remoteMenu.machineId, session: remoteMenu.session })
+                setRemoteMenu(null)
+              },
             },
             {
               label: 'Export as Markdown',
@@ -1301,7 +1443,10 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
           title="Rename chat"
           initialValue={remoteRename.session.title}
           submitLabel="Rename"
-          onSubmit={(title) => { commitRemoteRename(remoteRename, title); setRemoteRename(null) }}
+          onSubmit={(title) => {
+            commitRemoteRename(remoteRename, title)
+            setRemoteRename(null)
+          }}
           onCancel={() => setRemoteRename(null)}
         />
       )}
@@ -1322,30 +1467,44 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
               },
             },
             ...(workspaces.findIndex((workspace) => workspace.id === workspaceMenu.workspace.id) > 0
-              ? [{
-                  label: 'Move workspace up',
-                  onClick: () => {
-                    const index = workspaces.findIndex((workspace) => workspace.id === workspaceMenu.workspace.id)
-                    const next = reorderWorkspacesById(workspaces, workspaceMenu.workspace.id, workspaces[index - 1].id)
-                    setWorkspaces(next)
-                    void window.api.app.workspaces.reorder(next.map((workspace) => workspace.id))
-                      .catch(refreshWorkspaces)
-                    setWorkspaceMenu(null)
+              ? [
+                  {
+                    label: 'Move workspace up',
+                    onClick: () => {
+                      const index = workspaces.findIndex((workspace) => workspace.id === workspaceMenu.workspace.id)
+                      const next = reorderWorkspacesById(
+                        workspaces,
+                        workspaceMenu.workspace.id,
+                        workspaces[index - 1].id,
+                      )
+                      setWorkspaces(next)
+                      void window.api.app.workspaces
+                        .reorder(next.map((workspace) => workspace.id))
+                        .catch(refreshWorkspaces)
+                      setWorkspaceMenu(null)
+                    },
                   },
-                }]
+                ]
               : []),
             ...(workspaces.findIndex((workspace) => workspace.id === workspaceMenu.workspace.id) < workspaces.length - 1
-              ? [{
-                  label: 'Move workspace down',
-                  onClick: () => {
-                    const index = workspaces.findIndex((workspace) => workspace.id === workspaceMenu.workspace.id)
-                    const next = reorderWorkspacesById(workspaces, workspaceMenu.workspace.id, workspaces[index + 1].id)
-                    setWorkspaces(next)
-                    void window.api.app.workspaces.reorder(next.map((workspace) => workspace.id))
-                      .catch(refreshWorkspaces)
-                    setWorkspaceMenu(null)
+              ? [
+                  {
+                    label: 'Move workspace down',
+                    onClick: () => {
+                      const index = workspaces.findIndex((workspace) => workspace.id === workspaceMenu.workspace.id)
+                      const next = reorderWorkspacesById(
+                        workspaces,
+                        workspaceMenu.workspace.id,
+                        workspaces[index + 1].id,
+                      )
+                      setWorkspaces(next)
+                      void window.api.app.workspaces
+                        .reorder(next.map((workspace) => workspace.id))
+                        .catch(refreshWorkspaces)
+                      setWorkspaceMenu(null)
+                    },
                   },
-                }]
+                ]
               : []),
           ]}
         />
@@ -1358,20 +1517,26 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
           y={projectMenu.y}
           onClose={() => setProjectMenu(null)}
           items={[
-            ...(workspaces.length > 0 ? workspaces.map((w) => ({
-              label: `Move to: ${w.name}`,
-              onClick: () => {
-                void handleAssignWorkspace(projectMenu.project.path, w.id)
-                setProjectMenu(null)
-              },
-            })) : []),
-            ...(projectMenu.project.workspaceId ? [{
-              label: 'Move to: Ungrouped',
-              onClick: () => {
-                void handleAssignWorkspace(projectMenu.project.path, null)
-                setProjectMenu(null)
-              },
-            }] : []),
+            ...(workspaces.length > 0
+              ? workspaces.map((w) => ({
+                  label: `Move to: ${w.name}`,
+                  onClick: () => {
+                    void handleAssignWorkspace(projectMenu.project.path, w.id)
+                    setProjectMenu(null)
+                  },
+                }))
+              : []),
+            ...(projectMenu.project.workspaceId
+              ? [
+                  {
+                    label: 'Move to: Ungrouped',
+                    onClick: () => {
+                      void handleAssignWorkspace(projectMenu.project.path, null)
+                      setProjectMenu(null)
+                    },
+                  },
+                ]
+              : []),
             {
               label: 'New workspace from this project…',
               onClick: () => {
@@ -1440,7 +1605,10 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       {(addMachineOpen || editMachine) && (
         <AddMachineModal
           editMachine={editMachine ?? undefined}
-          onClose={() => { setAddMachineOpen(false); setEditMachine(null) }}
+          onClose={() => {
+            setAddMachineOpen(false)
+            setEditMachine(null)
+          }}
         />
       )}
 
@@ -1449,8 +1617,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
         <MergeIntoPicker
           fragment={mergePickerFor}
           candidates={
-            projects.find((p) => p.path === mergePickerFor.projectPath)?.sessions
-              .filter((s) => s.id !== mergePickerFor.sessionId) ?? []
+            projects
+              .find((p) => p.path === mergePickerFor.projectPath)
+              ?.sessions.filter((s) => s.id !== mergePickerFor.sessionId) ?? []
           }
           onClose={() => setMergePickerFor(null)}
           onPick={(rootId) => {
@@ -1498,8 +1667,10 @@ function MergeIntoPicker({
   const [idx, setIdx] = useState(0)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); onClose() }
-      else if (e.key === 'ArrowDown') {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      } else if (e.key === 'ArrowDown') {
         e.preventDefault()
         setIdx((i) => Math.min(i + 1, candidates.length - 1))
       } else if (e.key === 'ArrowUp') {
@@ -1543,15 +1714,17 @@ function MergeIntoPicker({
           overflow: 'hidden',
         }}
       >
-        <div style={{
-          padding: '10px 14px',
-          borderBottom: '1px solid var(--border)',
-          fontSize: '11px',
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.8px',
-          fontWeight: 600,
-        }}>
+        <div
+          style={{
+            padding: '10px 14px',
+            borderBottom: '1px solid var(--border)',
+            fontSize: '11px',
+            color: 'var(--text-muted)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.8px',
+            fontWeight: 600,
+          }}
+        >
           Merge "{fragment.session.title}" into
         </div>
         {candidates.length === 0 ? (
@@ -1580,7 +1753,15 @@ function MergeIntoPicker({
                     textAlign: 'left',
                   }}
                 >
-                  <span style={{ fontSize: '13px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span
+                    style={{
+                      fontSize: '13px',
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {c.title}
                   </span>
                   <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
@@ -1591,13 +1772,16 @@ function MergeIntoPicker({
             })}
           </div>
         )}
-        <div style={{
-          padding: '6px 14px',
-          borderTop: '1px solid var(--border)',
-          fontSize: '10.5px',
-          color: 'var(--text-muted)',
-        }}>
-          ↑↓ navigate · Enter select · Esc dismiss · merging won't delete anything (hidden child can be re-surfaced via DB)
+        <div
+          style={{
+            padding: '6px 14px',
+            borderTop: '1px solid var(--border)',
+            fontSize: '10.5px',
+            color: 'var(--text-muted)',
+          }}
+        >
+          ↑↓ navigate · Enter select · Esc dismiss · merging won't delete anything (hidden child can be re-surfaced via
+          DB)
         </div>
       </div>
     </div>
@@ -1630,7 +1814,9 @@ function SidebarContextMenu({
     const onDown = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) onClose()
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -1671,8 +1857,12 @@ function SidebarContextMenu({
             textAlign: 'left',
             borderRadius: '3px',
           }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+          onMouseEnter={(e) => {
+            ;(e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
+          }}
+          onMouseLeave={(e) => {
+            ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+          }}
         >
           {item.label}
         </button>

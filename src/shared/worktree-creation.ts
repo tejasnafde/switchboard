@@ -12,13 +12,7 @@ export type WorktreeCreationPhase =
   | 'provisioning'
   | 'ready'
 
-export type WorktreeCreationStatus =
-  | 'pending'
-  | 'ready'
-  | 'failed'
-  | 'rolled_back'
-  | 'cleanup_required'
-  | 'cancelled'
+export type WorktreeCreationStatus = 'pending' | 'ready' | 'failed' | 'rolled_back' | 'cleanup_required' | 'cancelled'
 
 export type WorktreePurpose = 'new-chat' | 'kanban' | 'fork'
 export type WorktreeSetupPolicy = 'inherit' | 'run' | 'skip'
@@ -77,10 +71,7 @@ export interface ForkCreationOwner {
   omittedChangeSummary?: string
 }
 
-export type WorktreeCreationOwner =
-  | ConversationCreationOwner
-  | KanbanCreationOwner
-  | ForkCreationOwner
+export type WorktreeCreationOwner = ConversationCreationOwner | KanbanCreationOwner | ForkCreationOwner
 
 export interface WorktreeSetupIntent {
   policy: WorktreeSetupPolicy
@@ -137,7 +128,15 @@ export interface SparseCheckoutReceipt {
 export interface WorktreeSetupReceipt {
   requestedPolicy: WorktreeSetupPolicy
   resolvedPolicy: 'ask' | 'run' | 'skip'
-  status: 'pending' | 'awaiting_decision' | 'not_configured' | 'skipped' | 'running' | 'succeeded' | 'failed' | 'ambiguous'
+  status:
+    | 'pending'
+    | 'awaiting_decision'
+    | 'not_configured'
+    | 'skipped'
+    | 'running'
+    | 'succeeded'
+    | 'failed'
+    | 'ambiguous'
   commandSource?: 'launch-config' | 'request'
   commandFingerprint?: string
   startedAt?: number
@@ -239,9 +238,7 @@ const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/
 const AGENT_TYPE_VALUES: ReadonlySet<string> = new Set(['claude-code', 'codex', 'opencode', 'terminal'])
 
 function record(value: unknown): UnknownRecord | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as UnknownRecord
-    : null
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as UnknownRecord) : null
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -261,21 +258,25 @@ function validAbsolutePath(value: unknown): value is string {
 }
 
 function validGitRef(value: unknown): value is string {
-  return typeof value === 'string' &&
+  return (
+    typeof value === 'string' &&
     value.length > 0 &&
     value.length <= 512 &&
     !value.startsWith('-') &&
     !/\s/.test(value) &&
     !hasControlCharacters(value)
+  )
 }
 
 function validBranchSeed(value: unknown): value is string {
-  return typeof value === 'string' &&
+  return (
+    typeof value === 'string' &&
     value.trim().length > 0 &&
     value.length <= 120 &&
     !value.trim().startsWith('-') &&
     !value.includes('..') &&
     !hasControlCharacters(value)
+  )
 }
 
 function normalizeSparsePath(value: unknown): string | null {
@@ -311,11 +312,13 @@ export function canonicalizeWorktreeCreationIdentity(request: WorktreeCreationRe
         return intent
       })()
     : undefined
-  return JSON.stringify(stableValue({
-    ...request,
-    ...(launch ? { launch } : {}),
-    provenance,
-  }))
+  return JSON.stringify(
+    stableValue({
+      ...request,
+      ...(launch ? { launch } : {}),
+      provenance,
+    }),
+  )
 }
 
 export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationParseResult {
@@ -337,8 +340,10 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
   if (!repository) issue('required', 'repository', 'Repository intent is required.')
   const projectPath = repository?.projectPath
   const repositoryMachineId = repository?.machineId
-  if (!validAbsolutePath(projectPath)) issue('invalid_value', 'repository.projectPath', 'Project path must be absolute.')
-  if (!validIdentifier(repositoryMachineId)) issue('invalid_value', 'repository.machineId', 'Machine identity is invalid.')
+  if (!validAbsolutePath(projectPath))
+    issue('invalid_value', 'repository.projectPath', 'Project path must be absolute.')
+  if (!validIdentifier(repositoryMachineId))
+    issue('invalid_value', 'repository.machineId', 'Machine identity is invalid.')
 
   const checkout = record(root.checkout)
   if (!checkout) issue('required', 'checkout', 'Checkout intent is required.')
@@ -362,7 +367,8 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
     if (!sparse) {
       issue('invalid_type', 'checkout.sparseCheckout', 'Sparse checkout must be an object.')
     } else {
-      if (sparse.mode !== 'cone') issue('invalid_value', 'checkout.sparseCheckout.mode', 'Only cone sparse checkout is supported.')
+      if (sparse.mode !== 'cone')
+        issue('invalid_value', 'checkout.sparseCheckout.mode', 'Only cone sparse checkout is supported.')
       if (!Array.isArray(sparse.directories) || sparse.directories.length === 0) {
         issue('required', 'checkout.sparseCheckout.directories', 'At least one sparse directory is required.')
       } else {
@@ -370,7 +376,11 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
         sparse.directories.forEach((directory, index) => {
           const path = normalizeSparsePath(directory)
           if (path === null) {
-            issue('invalid_sparse_path', `checkout.sparseCheckout.directories[${index}]`, 'Sparse paths must be repository-relative cone directories.')
+            issue(
+              'invalid_sparse_path',
+              `checkout.sparseCheckout.directories[${index}]`,
+              'Sparse paths must be repository-relative cone directories.',
+            )
           } else {
             normalized.push(path)
           }
@@ -390,8 +400,10 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
   if (!ownerInput) issue('required', 'owner', 'Owner intent is required.')
   let owner: WorktreeCreationOwner | undefined
   if (ownerInput?.kind === 'conversation') {
-    if (!validIdentifier(ownerInput.conversationId)) issue('invalid_value', 'owner.conversationId', 'Conversation identity is invalid.')
-    if (!AGENT_TYPE_VALUES.has(ownerInput.agentType as string)) issue('required', 'owner.agentType', 'Conversation agent type is required.')
+    if (!validIdentifier(ownerInput.conversationId))
+      issue('invalid_value', 'owner.conversationId', 'Conversation identity is invalid.')
+    if (!AGENT_TYPE_VALUES.has(ownerInput.agentType as string))
+      issue('required', 'owner.agentType', 'Conversation agent type is required.')
     if (validIdentifier(ownerInput.conversationId) && AGENT_TYPE_VALUES.has(ownerInput.agentType as string)) {
       owner = {
         kind: 'conversation',
@@ -408,11 +420,12 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
       if (!draft || !optionalString(draft.title)) {
         issue('required', 'owner.create.title', 'A new card requires a title.')
       } else {
-        const tags = draft.tags === undefined
-          ? undefined
-          : Array.isArray(draft.tags) && draft.tags.every((tag) => typeof tag === 'string')
-            ? draft.tags as string[]
-            : null
+        const tags =
+          draft.tags === undefined
+            ? undefined
+            : Array.isArray(draft.tags) && draft.tags.every((tag) => typeof tag === 'string')
+              ? (draft.tags as string[])
+              : null
         if (tags === null) issue('invalid_type', 'owner.create.tags', 'Card tags must be strings.')
         const status = draft.status
         if (status !== undefined && !['backlog', 'in_progress', 'needs_input', 'done'].includes(status as string)) {
@@ -424,9 +437,9 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
         }
         const costCapUsd = draft.costCapUsd
         if (
-          costCapUsd !== undefined
-          && costCapUsd !== null
-          && (typeof costCapUsd !== 'number' || !Number.isFinite(costCapUsd) || costCapUsd < 0)
+          costCapUsd !== undefined &&
+          costCapUsd !== null &&
+          (typeof costCapUsd !== 'number' || !Number.isFinite(costCapUsd) || costCapUsd < 0)
         ) {
           issue('invalid_value', 'owner.create.costCapUsd', 'Card cost cap must be a non-negative number or null.')
         }
@@ -453,11 +466,20 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
       }
     }
   } else if (ownerInput?.kind === 'fork') {
-    if (!validIdentifier(ownerInput.requestId)) issue('invalid_value', 'owner.requestId', 'Fork request identity is invalid.')
-    if (!validIdentifier(ownerInput.conversationId)) issue('invalid_value', 'owner.conversationId', 'Fork conversation identity is invalid.')
-    if (!validIdentifier(ownerInput.parentConversationId)) issue('invalid_value', 'owner.parentConversationId', 'Parent conversation identity is invalid.')
-    if (typeof ownerInput.sourceDirty !== 'boolean') issue('invalid_type', 'owner.sourceDirty', 'Fork source dirty state is required.')
-    if (validIdentifier(ownerInput.requestId) && validIdentifier(ownerInput.conversationId) && validIdentifier(ownerInput.parentConversationId) && typeof ownerInput.sourceDirty === 'boolean') {
+    if (!validIdentifier(ownerInput.requestId))
+      issue('invalid_value', 'owner.requestId', 'Fork request identity is invalid.')
+    if (!validIdentifier(ownerInput.conversationId))
+      issue('invalid_value', 'owner.conversationId', 'Fork conversation identity is invalid.')
+    if (!validIdentifier(ownerInput.parentConversationId))
+      issue('invalid_value', 'owner.parentConversationId', 'Parent conversation identity is invalid.')
+    if (typeof ownerInput.sourceDirty !== 'boolean')
+      issue('invalid_type', 'owner.sourceDirty', 'Fork source dirty state is required.')
+    if (
+      validIdentifier(ownerInput.requestId) &&
+      validIdentifier(ownerInput.conversationId) &&
+      validIdentifier(ownerInput.parentConversationId) &&
+      typeof ownerInput.sourceDirty === 'boolean'
+    ) {
       owner = {
         kind: 'fork',
         requestId: ownerInput.requestId as string,
@@ -477,13 +499,25 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
   if (purpose !== 'new-chat' && purpose !== 'kanban' && purpose !== 'fork') {
     issue('invalid_value', 'purpose', 'Worktree purpose is invalid.')
   }
-  const expectedOwnerKind = purpose === 'new-chat' ? 'conversation' : purpose === 'kanban' ? 'kanban-card' : purpose === 'fork' ? 'fork' : undefined
+  const expectedOwnerKind =
+    purpose === 'new-chat'
+      ? 'conversation'
+      : purpose === 'kanban'
+        ? 'kanban-card'
+        : purpose === 'fork'
+          ? 'fork'
+          : undefined
   if (ownerInput && expectedOwnerKind && ownerInput.kind !== expectedOwnerKind) {
     issue('owner_purpose_mismatch', 'owner.kind', `Purpose ${String(purpose)} requires a ${expectedOwnerKind} owner.`)
   }
-  const expectedNamespace = purpose === 'new-chat' ? 'sb' : purpose === 'kanban' ? 'kanban' : purpose === 'fork' ? 'fork' : undefined
+  const expectedNamespace =
+    purpose === 'new-chat' ? 'sb' : purpose === 'kanban' ? 'kanban' : purpose === 'fork' ? 'fork' : undefined
   if (expectedNamespace && namespace !== expectedNamespace) {
-    issue('invalid_value', 'checkout.branch.namespace', `Purpose ${String(purpose)} requires the ${expectedNamespace} namespace.`)
+    issue(
+      'invalid_value',
+      'checkout.branch.namespace',
+      `Purpose ${String(purpose)} requires the ${expectedNamespace} namespace.`,
+    )
   }
 
   const setupInput = record(root.setup)
@@ -518,7 +552,9 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
         }
       }
       launch = {
-        ...(optionalString(launchInput.launchConfigName) ? { launchConfigName: launchInput.launchConfigName as string } : {}),
+        ...(optionalString(launchInput.launchConfigName)
+          ? { launchConfigName: launchInput.launchConfigName as string }
+          : {}),
         ...(optionalString(launchInput.startupCommand) ? { startupCommand: launchInput.startupCommand as string } : {}),
         ...(initialAgent ? { initialAgent } : {}),
         ...(launchInput.terminalPolicy === 'provision' || launchInput.terminalPolicy === 'skip'
@@ -526,9 +562,9 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
           : {}),
       }
       if (
-        launchInput.terminalPolicy !== undefined
-        && launchInput.terminalPolicy !== 'provision'
-        && launchInput.terminalPolicy !== 'skip'
+        launchInput.terminalPolicy !== undefined &&
+        launchInput.terminalPolicy !== 'provision' &&
+        launchInput.terminalPolicy !== 'skip'
       ) {
         issue('invalid_value', 'launch.terminalPolicy', 'Terminal provisioning policy is invalid.')
       }
@@ -542,9 +578,15 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
       issue('invalid_type', 'lineage', 'Lineage must be an object.')
     } else {
       lineage = {
-        ...(optionalString(lineageInput.parentWorktreeId) ? { parentWorktreeId: lineageInput.parentWorktreeId as string } : {}),
-        ...(optionalString(lineageInput.parentConversationId) ? { parentConversationId: lineageInput.parentConversationId as string } : {}),
-        ...(optionalString(lineageInput.sourceMessageId) ? { sourceMessageId: lineageInput.sourceMessageId as string } : {}),
+        ...(optionalString(lineageInput.parentWorktreeId)
+          ? { parentWorktreeId: lineageInput.parentWorktreeId as string }
+          : {}),
+        ...(optionalString(lineageInput.parentConversationId)
+          ? { parentConversationId: lineageInput.parentConversationId as string }
+          : {}),
+        ...(optionalString(lineageInput.sourceMessageId)
+          ? { sourceMessageId: lineageInput.sourceMessageId as string }
+          : {}),
       }
     }
   }
@@ -556,8 +598,13 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
     issue('invalid_value', 'provenance.surface', 'Provenance surface is invalid.')
   }
   const provenanceMachineId = provenanceInput?.machineId
-  if (!validIdentifier(provenanceMachineId)) issue('invalid_value', 'provenance.machineId', 'Provenance machine identity is invalid.')
-  if (validIdentifier(repositoryMachineId) && validIdentifier(provenanceMachineId) && repositoryMachineId !== provenanceMachineId) {
+  if (!validIdentifier(provenanceMachineId))
+    issue('invalid_value', 'provenance.machineId', 'Provenance machine identity is invalid.')
+  if (
+    validIdentifier(repositoryMachineId) &&
+    validIdentifier(provenanceMachineId) &&
+    repositoryMachineId !== provenanceMachineId
+  ) {
     issue('machine_mismatch', 'provenance.machineId', 'Repository and provenance machines must match.')
   }
   const requestedAt = provenanceInput?.requestedAt

@@ -37,21 +37,23 @@ vi.mock('node:child_process', () => ({
       ? { status: 0, stdout: Buffer.from(shell.env), error: undefined }
       : { status: 1, stdout: Buffer.from(''), error: undefined }
   }),
-  execFile: vi.fn((
-    _shell: string,
-    args: string[],
-    _opts: unknown,
-    cb: (err: Error | null, stdout: string | Buffer, stderr: string) => void,
-  ) => {
-    shell.asyncCalls.push(args)
-    const finish = (): void => {
-      if (shell.okFlags.has(args[0])) cb(null, Buffer.from(shell.env), '')
-      else cb(new Error('exit 1'), Buffer.from(''), '')
-    }
-    if (shell.manual) shell.pending.push(finish)
-    else queueMicrotask(finish)
-    return { kill: vi.fn() }
-  }),
+  execFile: vi.fn(
+    (
+      _shell: string,
+      args: string[],
+      _opts: unknown,
+      cb: (err: Error | null, stdout: string | Buffer, stderr: string) => void,
+    ) => {
+      shell.asyncCalls.push(args)
+      const finish = (): void => {
+        if (shell.okFlags.has(args[0])) cb(null, Buffer.from(shell.env), '')
+        else cb(new Error('exit 1'), Buffer.from(''), '')
+      }
+      if (shell.manual) shell.pending.push(finish)
+      else queueMicrotask(finish)
+      return { kill: vi.fn() }
+    },
+  ),
 }))
 
 vi.mock('../../src/main/logger', () => ({
@@ -160,9 +162,9 @@ describePosix('shell-env async warmup (behavior 5)', () => {
     // good cached PATH with null - for the rest of the process, leaving every
     // later provider lookup and ssh spawn on Finder's truncated PATH.
     const { warmShellEnv, loadShellEnv, peekShellEnv } = await loadModule()
-    const warm = warmShellEnv()               // execFile queued, not yet run
+    const warm = warmShellEnv() // execFile queued, not yet run
     expect(loadShellEnv()?.PATH).toBe('/shell/bin:/usr/bin') // same tick, wins
-    shell.okFlags = new Set()                 // the in-flight probe will fail
+    shell.okFlags = new Set() // the in-flight probe will fail
     expect(await warm).toMatchObject({ PATH: '/shell/bin:/usr/bin' })
     expect(peekShellEnv()?.PATH).toBe('/shell/bin:/usr/bin')
   })

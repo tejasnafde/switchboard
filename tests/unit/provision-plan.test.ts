@@ -17,8 +17,17 @@ describe('parseProbeOutput', () => {
     // tools) default to null here because this fixture predates them; they are
     // covered in managed-tool-plan.test.ts.
     expect(parseProbeOutput(line)).toEqual({
-      node: 'v20.11.0', platform: 'linux', arch: 'x64', abi: '115', server: '0.4.16', bridge: null,
-      claudeBin: null, claudeVersion: null, codexBin: null, codexVersion: null, tools: null,
+      node: 'v20.11.0',
+      platform: 'linux',
+      arch: 'x64',
+      abi: '115',
+      server: '0.4.16',
+      bridge: null,
+      claudeBin: null,
+      claudeVersion: null,
+      codexBin: null,
+      codexVersion: null,
+      tools: null,
     })
   })
 
@@ -29,8 +38,17 @@ describe('parseProbeOutput', () => {
 
   it('returns all-null when node is absent (empty / garbage output)', () => {
     const allNull = {
-      node: null, platform: null, arch: null, abi: null, server: null, bridge: null,
-      claudeBin: null, claudeVersion: null, codexBin: null, codexVersion: null, tools: null,
+      node: null,
+      platform: null,
+      arch: null,
+      abi: null,
+      server: null,
+      bridge: null,
+      claudeBin: null,
+      claudeVersion: null,
+      codexBin: null,
+      codexVersion: null,
+      tools: null,
     }
     expect(parseProbeOutput('')).toEqual(allNull)
     expect(parseProbeOutput('bash: node: command not found')).toEqual(allNull)
@@ -52,9 +70,17 @@ describe('parseProbeOutput', () => {
 })
 
 describe('planProvision', () => {
-  const probe = (over = {}) => parseProbeOutput(JSON.stringify({
-    node: 'v20.11.0', platform: 'linux', arch: 'x64', abi: '115', server: '0.4.16', ...over,
-  }))
+  const probe = (over = {}) =>
+    parseProbeOutput(
+      JSON.stringify({
+        node: 'v20.11.0',
+        platform: 'linux',
+        arch: 'x64',
+        abi: '115',
+        server: '0.4.16',
+        ...over,
+      }),
+    )
 
   it('no-node when the remote has no node runtime', () => {
     expect(planProvision(probe({ node: null }), '0.4.16').action).toBe('no-node')
@@ -75,8 +101,17 @@ describe('planProvision', () => {
 
 describe('buildProbeCommand', () => {
   const mk = (over: Partial<Machine> = {}): Machine => ({
-    id: 'm1', name: 'prod', sshAlias: null, sshHost: 'h.dev', sshUser: 'ubuntu',
-    sshPort: 22, remoteUser: null, sortOrder: 0, createdAt: 0, updatedAt: 0, ...over,
+    id: 'm1',
+    name: 'prod',
+    sshAlias: null,
+    sshHost: 'h.dev',
+    sshUser: 'ubuntu',
+    sshPort: 22,
+    remoteUser: null,
+    sortOrder: 0,
+    createdAt: 0,
+    updatedAt: 0,
+    ...over,
   })
 
   // The remote command is wrapped through `printf %s '<b64>' | base64 -d | bash`
@@ -96,21 +131,27 @@ describe('buildProbeCommand', () => {
   })
 
   it('runs the probe through gcloud for an IAP machine', () => {
-    const { command, args } = buildProbeCommand(mk({
-      transportKind: 'gcloud-iap',
-      iapInstance: 'prod-instance',
-      iapProject: 'prod-project',
-      iapZone: 'asia-south1-b',
-    }))
+    const { command, args } = buildProbeCommand(
+      mk({
+        transportKind: 'gcloud-iap',
+        iapInstance: 'prod-instance',
+        iapProject: 'prod-project',
+        iapZone: 'asia-south1-b',
+      }),
+    )
 
     expect(command).toBe('gcloud')
     expect(args.slice(0, 3)).toEqual(['compute', 'ssh', 'prod-instance'])
-    expect(args).toEqual(expect.arrayContaining([
-      '--zone', 'asia-south1-b',
-      '--project', 'prod-project',
-      '--tunnel-through-iap',
-      '--command',
-    ]))
+    expect(args).toEqual(
+      expect.arrayContaining([
+        '--zone',
+        'asia-south1-b',
+        '--project',
+        'prod-project',
+        '--tunnel-through-iap',
+        '--command',
+      ]),
+    )
     expect(decode(args[args.indexOf('--command') + 1])).toMatch(/node -e/)
   })
 

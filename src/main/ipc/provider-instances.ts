@@ -92,10 +92,13 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
  * open, every instance save), so the answer is cached per ROW VERSION - a save
  * bumps `updatedAt` and invalidates it on its own.
  */
-const resolvedHomeMemo = new Map<string, {
-  effectiveOauthDir: string | null
-  effectiveOauthDirSource: ProviderInstanceWire['effectiveOauthDirSource']
-}>()
+const resolvedHomeMemo = new Map<
+  string,
+  {
+    effectiveOauthDir: string | null
+    effectiveOauthDirSource: ProviderInstanceWire['effectiveOauthDirSource']
+  }
+>()
 
 /**
  * Replace every `unresolved` effective home with the real one.
@@ -171,12 +174,7 @@ interface ProbeResult {
  * whole main-process event loop for up to the probe timeout (5-8s) - every
  * PTY and streaming turn stalled while a Settings "Test" ran.
  */
-function runProbe(
-  bin: string,
-  args: string[],
-  env: Record<string, string>,
-  timeoutMs: number,
-): Promise<ProbeResult> {
+function runProbe(bin: string, args: string[], env: Record<string, string>, timeoutMs: number): Promise<ProbeResult> {
   return new Promise((resolve) => {
     execFile(bin, args, { env, timeout: timeoutMs, encoding: 'utf-8' }, (err, stdout, stderr) => {
       if (!err) {

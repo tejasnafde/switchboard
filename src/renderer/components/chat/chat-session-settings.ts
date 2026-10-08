@@ -9,7 +9,7 @@ const log = createRendererLogger('chat:panel')
 export function changeRuntimeMode(sessionId: string, mode: RuntimeMode): void {
   useAgentStore.getState().setRuntimeMode(sessionId, mode)
   // Propagate to active provider session if running
-  ;window.api.provider?.setRuntimeMode?.(sessionId, mode).catch((err: unknown) => {
+  window.api.provider?.setRuntimeMode?.(sessionId, mode).catch((err: unknown) => {
     log.warn(`setRuntimeMode failed for ${sessionId} - live provider session may not have applied it`, err)
   })
   // Persist as the per-conversation source of truth so reopening this

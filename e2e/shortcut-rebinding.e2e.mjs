@@ -18,26 +18,36 @@ const userData = mkdtempSync(join(tmpdir(), 'sb-rebind-ud-'))
 process.on('exit', () => rmSync(userData, { recursive: true, force: true }))
 
 const app = await electron.launch({
-  args: ['.'], cwd: repoRoot, timeout: 30_000,
+  args: ['.'],
+  cwd: repoRoot,
+  timeout: 30_000,
   env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SHELL: '/bin/sh' },
 })
 const results = []
-const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`) }
+const check = (name, ok, detail = '') => {
+  results.push(ok)
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`)
+}
 
 try {
   const win = await app.firstWindow({ timeout: 20_000 })
   win.on('pageerror', (e) => console.error('pageerror', e.message))
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
-  await win.evaluate(() => Promise.all([
-    window.api.settings.set('tour.autoplay', 'false'),
-    window.api.settings.set('analytics.noticeSeen', 'true'),
-  ]))
+  await win.evaluate(() =>
+    Promise.all([
+      window.api.settings.set('tour.autoplay', 'false'),
+      window.api.settings.set('analytics.noticeSeen', 'true'),
+    ]),
+  )
   await win.reload()
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
   const palette = win.getByRole('dialog', { name: /command palette/i })
   const paletteOpens = async (keys) => {
     await win.keyboard.press(keys)
-    const open = await palette.waitFor({ state: 'visible', timeout: 1500 }).then(() => true, () => false)
+    const open = await palette.waitFor({ state: 'visible', timeout: 1500 }).then(
+      () => true,
+      () => false,
+    )
     if (open) {
       await win.keyboard.press('Escape')
       await palette.waitFor({ state: 'hidden' })
@@ -66,14 +76,22 @@ try {
   // would vanish on a reload.
   await app.evaluate(({ dialog }) => {
     globalThis.__reloadPrompts = 0
-    dialog.showMessageBox = async () => { globalThis.__reloadPrompts += 1; return { response: 1 } }
+    dialog.showMessageBox = async () => {
+      globalThis.__reloadPrompts += 1
+      return { response: 1 }
+    }
   })
   const reloadPrompts = () => app.evaluate(() => globalThis.__reloadPrompts)
-  const clickReloadItem = () => app.evaluate(({ Menu, BrowserWindow }) => {
-    const item = Menu.getApplicationMenu()?.items.flatMap((i) => i.submenu?.items ?? []).find((i) => i.label === 'Reload')
-    item?.click(undefined, BrowserWindow.getAllWindows()[0])
+  const clickReloadItem = () =>
+    app.evaluate(({ Menu, BrowserWindow }) => {
+      const item = Menu.getApplicationMenu()
+        ?.items.flatMap((i) => i.submenu?.items ?? [])
+        .find((i) => i.label === 'Reload')
+      item?.click(undefined, BrowserWindow.getAllWindows()[0])
+    })
+  await win.evaluate(() => {
+    window.__sameDocument = true
   })
-  await win.evaluate(() => { window.__sameDocument = true })
   await win.keyboard.press(`${mod}+R`)
   await clickReloadItem()
   await win.waitForTimeout(300)
@@ -82,12 +100,25 @@ try {
   check('the recorder is still recording', (await recorder.textContent()) === 'Press the new shortcut')
 
   await win.keyboard.press(`${mod}+Shift+Y`)
-  check('the row shows Changed', await row.getByText('Changed').waitFor({ timeout: 3000 }).then(() => true, () => false))
+  check(
+    'the row shows Changed',
+    await row
+      .getByText('Changed')
+      .waitFor({ timeout: 3000 })
+      .then(
+        () => true,
+        () => false,
+      ),
+  )
   check('the recorder shows the new keys', (await recorder.textContent()) !== 'Press the new shortcut')
 
   // Recording ended with that chord, so the menu acts again.
   await clickReloadItem()
-  check('the Reload menu item works again once recording ends', (await reloadPrompts()) === 1, String(await reloadPrompts()))
+  check(
+    'the Reload menu item works again once recording ends',
+    (await reloadPrompts()) === 1,
+    String(await reloadPrompts()),
+  )
 
   await win.keyboard.press('Escape')
   await settings.waitFor({ state: 'hidden' })
@@ -105,10 +136,19 @@ try {
   check('after reset the default chord opens the palette again', await paletteOpens(`${mod}+Shift+P`))
 
   // The main process rebuilds the app menu when the stored value changes.
-  const settingsAccelerator = () => app.evaluate(({ Menu }) =>
-    Menu.getApplicationMenu()?.items[0]?.submenu?.items.find((i) => i.label === 'Settings')?.accelerator ?? null)
-  await win.evaluate(() => window.api.settings.set('keyboard.overrides', JSON.stringify({ 'app.settings': ['Mod+Shift+.'] })))
-  check('a menu accelerator follows the override', (await settingsAccelerator()) === 'CmdOrCtrl+Shift+.', String(await settingsAccelerator()))
+  const settingsAccelerator = () =>
+    app.evaluate(
+      ({ Menu }) =>
+        Menu.getApplicationMenu()?.items[0]?.submenu?.items.find((i) => i.label === 'Settings')?.accelerator ?? null,
+    )
+  await win.evaluate(() =>
+    window.api.settings.set('keyboard.overrides', JSON.stringify({ 'app.settings': ['Mod+Shift+.'] })),
+  )
+  check(
+    'a menu accelerator follows the override',
+    (await settingsAccelerator()) === 'CmdOrCtrl+Shift+.',
+    String(await settingsAccelerator()),
+  )
   await win.evaluate(() => window.api.settings.set('keyboard.overrides', '{}'))
   check('and goes back on reset', (await settingsAccelerator()) === 'CmdOrCtrl+,')
 } finally {

@@ -62,9 +62,13 @@ export function findOpencodePath(): string | null {
     }
   }
   try {
-    cachedPath = execSync('which opencode 2>/dev/null', {
-      encoding: 'utf-8', timeout: 5000,
-    }).trim().split('\n')[0] || null
+    cachedPath =
+      execSync('which opencode 2>/dev/null', {
+        encoding: 'utf-8',
+        timeout: 5000,
+      })
+        .trim()
+        .split('\n')[0] || null
   } catch (err) {
     log.debug('opencode not found on PATH', err)
     cachedPath = null

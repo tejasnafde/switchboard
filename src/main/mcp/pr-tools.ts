@@ -41,7 +41,13 @@ import {
   type CreatePrArgs,
   type OpenedPr,
 } from '@shared/agent-pr-create'
-import { coveredRepos, describeChildRepos, findChildRepo, projectCoversRepo, type ProjectRepos } from '@shared/project-repos'
+import {
+  coveredRepos,
+  describeChildRepos,
+  findChildRepo,
+  projectCoversRepo,
+  type ProjectRepos,
+} from '@shared/project-repos'
 import {
   AGENT_PR_MAX_REVIEWERS,
   keptReviewers,
@@ -139,7 +145,17 @@ export interface AgentPullRequestAccess {
   defaultBranch(repo: RepoRef): Promise<PrResult<string>>
   openPullRequestFor(repo: RepoRef, branch: string): Promise<PrResult<CreatedPr | null>>
   /** Returns the open one instead (`existing`) when one appeared for the branch meanwhile. */
-  createPullRequest(repo: RepoRef, input: { title: string; description: string; sourceBranch: string; targetBranch: string; draft: boolean; reviewers?: string[] }): Promise<PrResult<OpenedPr & { existing: boolean }>>
+  createPullRequest(
+    repo: RepoRef,
+    input: {
+      title: string
+      description: string
+      sourceBranch: string
+      targetBranch: string
+      draft: boolean
+      reviewers?: string[]
+    },
+  ): Promise<PrResult<OpenedPr & { existing: boolean }>>
   /** Who may review a pull request opened on `repo` (the Reviewers card's candidates), and the signed-in user. */
   reviewerPool(repo: RepoRef): Promise<PrResult<{ candidates: PrReviewerCandidate[]; viewer: ReviewerViewer }>>
   /**
@@ -191,7 +207,15 @@ export type PrWriteRunContext = Pick<PrToolContext, 'threadId' | 'chatId' | 'run
  * needs after the card, as data, so the card survives a backend restart.
  */
 export type PrWritePlan =
-  | { kind: 'pr-reply'; ref: PrRef; conversationId: string; conversationResolved: boolean; location: string | null; draft: string; suggestResolve: boolean }
+  | {
+      kind: 'pr-reply'
+      ref: PrRef
+      conversationId: string
+      conversationResolved: boolean
+      location: string | null
+      draft: string
+      suggestResolve: boolean
+    }
   | { kind: 'pr-resolve'; ref: PrRef; conversationId: string; location: string | null }
   | { kind: 'pr-rerun'; ref: PrRef; checkId: string; checkName: string }
   | { kind: 'pr-comment'; ref: PrRef; target: Omit<DraftLineComment, 'text'>; draft: string }
@@ -234,7 +258,7 @@ function describeLinks(refs: PrRef[]): string {
 const NO_LINK =
   'No pull request is linked to this chat, so there is nothing these tools may read or write. ' +
   'The user links one from Reviews ("Link to chat"), you can link one with link_pull_request, and a pull request of this project ' +
-  'links itself once its URL appears in the chat or it is the open pull request of the chat\'s branch.'
+  "links itself once its URL appears in the chat or it is the open pull request of the chat's branch."
 
 /**
  * The linked PR the agent means: `pr` as a number, "#612" or a URL, or omitted
@@ -244,19 +268,26 @@ export function pickLinkedPr(linked: PrRef[], pr: unknown): { ok: true; ref: PrR
   if (linked.length === 0) return { ok: false, message: NO_LINK }
   if (pr === undefined || pr === null || pr === '') {
     if (linked.length === 1) return { ok: true, ref: linked[0] }
-    return { ok: false, message: `Several pull requests are linked to this chat (${describeLinks(linked)}). Pass "pr" with the one you mean.` }
+    return {
+      ok: false,
+      message: `Several pull requests are linked to this chat (${describeLinks(linked)}). Pass "pr" with the one you mean.`,
+    }
   }
   const text = String(pr).trim()
   const url = findPullRequestUrls(text)[0]
   if (url) {
     const hit = linked.find((r) => prKey(normalizePrRef(r)) === prKey(url))
-    return hit ? { ok: true, ref: hit } : { ok: false, message: `${text} is not linked to this chat. Linked: ${describeLinks(linked)}.` }
+    return hit
+      ? { ok: true, ref: hit }
+      : { ok: false, message: `${text} is not linked to this chat. Linked: ${describeLinks(linked)}.` }
   }
   const number = /^#?(\d{1,9})$/.exec(text)?.[1]
-  if (!number) return { ok: false, message: `"${text}" is not a pull request number or URL. Linked: ${describeLinks(linked)}.` }
+  if (!number)
+    return { ok: false, message: `"${text}" is not a pull request number or URL. Linked: ${describeLinks(linked)}.` }
   const hits = linked.filter((r) => r.number === Number(number))
   if (hits.length === 1) return { ok: true, ref: hits[0] }
-  if (hits.length === 0) return { ok: false, message: `#${number} is not linked to this chat. Linked: ${describeLinks(linked)}.` }
+  if (hits.length === 0)
+    return { ok: false, message: `#${number} is not linked to this chat. Linked: ${describeLinks(linked)}.` }
   return { ok: false, message: `More than one linked pull request is #${number}. Pass its URL instead.` }
 }
 
@@ -273,7 +304,8 @@ function quoteOf(c: PrConversation): HostWriteCard['quote'] {
 
 const PR_ARG = {
   type: ['string', 'number'],
-  description: 'The pull request: its number, "#612" or its URL. Optional when exactly one pull request is linked to this chat.',
+  description:
+    'The pull request: its number, "#612" or its URL. Optional when exactly one pull request is linked to this chat.',
 }
 
 type Picked = { ref: PrRef; access: AgentPullRequestAccess }
@@ -281,7 +313,8 @@ type Picked = { ref: PrRef; access: AgentPullRequestAccess }
 export function buildPrTools(ctx: PrToolContext): McpTool[] {
   const pick = (args: Record<string, unknown>): Picked | McpToolResult => {
     const access = ctx.pullRequests
-    if (!access) return toolText('Reviews is not available on this backend, so pull request tools cannot run here.', true)
+    if (!access)
+      return toolText('Reviews is not available on this backend, so pull request tools cannot run here.', true)
     const picked = pickLinkedPr(access.linkedPrs(ctx.chatId), args.pr)
     return picked.ok ? { ref: picked.ref, access } : toolText(picked.message, true)
   }
@@ -289,11 +322,15 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
   const refusePlan = (toolName: string): McpToolResult | null => refusePlanFor(ctx, toolName)
 
   const conversationOf = async (p: Picked, id: unknown): Promise<PrConversation | McpToolResult> => {
-    if (typeof id !== 'string' || !id.trim()) return toolText(`No conversationId given. Call ${PR_CONVERSATIONS_TOOL} for the ids.`, true)
+    if (typeof id !== 'string' || !id.trim())
+      return toolText(`No conversationId given. Call ${PR_CONVERSATIONS_TOOL} for the ids.`, true)
     const read = await p.access.conversations(p.ref)
     if (!read.ok) return toolText(read.error.message, true)
     const found = read.data.find((c) => c.id === id.trim())
-    return found ?? toolText(`No conversation ${id} on ${prLabel(p.ref)}. Call ${PR_CONVERSATIONS_TOOL} for the current ids.`, true)
+    return (
+      found ??
+      toolText(`No conversation ${id} on ${prLabel(p.ref)}. Call ${PR_CONVERSATIONS_TOOL} for the current ids.`, true)
+    )
   }
 
   /**
@@ -346,44 +383,53 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if (!read.ok) return toolText(read.error.message, true)
       const d = read.data
       const canRerun = HOST_CAPABILITIES[d.ref.host].rerunChecks
-      return toolText(JSON.stringify({
-        pr: `${PR_HOST_LABEL[d.ref.host]} ${d.ref.owner}/${d.ref.name} #${d.ref.number}`,
-        url: d.url,
-        title: d.title,
-        state: d.state,
-        draft: d.draft,
-        author: d.author.login,
-        viewerIsAuthor: d.viewer.isAuthor,
-        sourceBranch: d.sourceBranch,
-        targetBranch: d.targetBranch,
-        headSha: d.headSha,
-        checks: d.checks,
-        checkList: d.checkList.map((c) => ({
-          id: c.id,
-          name: c.name,
-          state: c.state,
-          description: c.description,
-          url: c.url,
-          canRerun: canRerun && c.state === 'failure' && c.rerunId !== null,
-        })),
-        approvals: d.approvals,
-        reviewers: d.reviewers.map((r) => ({ login: r.person.login, state: r.state, requested: r.requested })),
-        unresolvedConversations: d.unresolvedConversations,
-        mergeBlockers: d.mergeBlockers.map((b) => b.label),
-        description: cap(d.description, DESCRIPTION_MAX_CHARS),
-      }, null, 2))
+      return toolText(
+        JSON.stringify(
+          {
+            pr: `${PR_HOST_LABEL[d.ref.host]} ${d.ref.owner}/${d.ref.name} #${d.ref.number}`,
+            url: d.url,
+            title: d.title,
+            state: d.state,
+            draft: d.draft,
+            author: d.author.login,
+            viewerIsAuthor: d.viewer.isAuthor,
+            sourceBranch: d.sourceBranch,
+            targetBranch: d.targetBranch,
+            headSha: d.headSha,
+            checks: d.checks,
+            checkList: d.checkList.map((c) => ({
+              id: c.id,
+              name: c.name,
+              state: c.state,
+              description: c.description,
+              url: c.url,
+              canRerun: canRerun && c.state === 'failure' && c.rerunId !== null,
+            })),
+            approvals: d.approvals,
+            reviewers: d.reviewers.map((r) => ({ login: r.person.login, state: r.state, requested: r.requested })),
+            unresolvedConversations: d.unresolvedConversations,
+            mergeBlockers: d.mergeBlockers.map((b) => b.label),
+            description: cap(d.description, DESCRIPTION_MAX_CHARS),
+          },
+          null,
+          2,
+        ),
+      )
     },
   }
 
   const conversationsTool: McpTool = {
     name: PR_CONVERSATIONS_TOOL,
     description: [
-      'The review conversations (inline threads) on a pull request linked to this chat, with each one\'s id,',
+      "The review conversations (inline threads) on a pull request linked to this chat, with each one's id,",
       'file and line, and its comments. Open ones only unless includeResolved is true. Read-only; runs without asking.',
     ].join('\n'),
     inputSchema: {
       type: 'object',
-      properties: { pr: PR_ARG, includeResolved: { type: 'boolean', description: 'Also list resolved conversations.' } },
+      properties: {
+        pr: PR_ARG,
+        includeResolved: { type: 'boolean', description: 'Also list resolved conversations.' },
+      },
       additionalProperties: false,
     },
     annotations: { title: 'Pull request conversations', readOnlyHint: true, openWorldHint: true },
@@ -393,14 +439,25 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const read = await p.access.conversations(p.ref)
       if (!read.ok) return toolText(read.error.message, true)
       const list = read.data.filter((c) => args.includeResolved === true || !c.resolved)
-      if (list.length === 0) return toolText(`${prLabel(p.ref)} has no ${args.includeResolved === true ? '' : 'open '}review conversations.`)
-      return toolText(JSON.stringify(list.map((c) => ({
-        id: c.id,
-        location: location(c),
-        resolved: c.resolved,
-        outdated: c.outdated,
-        comments: c.comments.map((m) => ({ author: m.author.login, body: cap(m.body, COMMENT_MAX_CHARS), at: new Date(m.createdAt).toISOString() })),
-      })), null, 2))
+      if (list.length === 0)
+        return toolText(`${prLabel(p.ref)} has no ${args.includeResolved === true ? '' : 'open '}review conversations.`)
+      return toolText(
+        JSON.stringify(
+          list.map((c) => ({
+            id: c.id,
+            location: location(c),
+            resolved: c.resolved,
+            outdated: c.outdated,
+            comments: c.comments.map((m) => ({
+              author: m.author.login,
+              body: cap(m.body, COMMENT_MAX_CHARS),
+              at: new Date(m.createdAt).toISOString(),
+            })),
+          })),
+          null,
+          2,
+        ),
+      )
     },
   }
 
@@ -419,12 +476,20 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         pr: PR_ARG,
         conversationId: { type: 'string', description: `The conversation id from ${PR_CONVERSATIONS_TOOL}.` },
         text: { type: 'string', description: 'The reply. Do not add a signature; Switchboard adds its marker line.' },
-        resolve: { type: 'boolean', description: 'Suggest resolving the conversation after the reply. The user decides.' },
+        resolve: {
+          type: 'boolean',
+          description: 'Suggest resolving the conversation after the reply. The user decides.',
+        },
       },
       required: ['conversationId', 'text'],
       additionalProperties: false,
     },
-    annotations: { title: 'Reply to a review conversation', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    annotations: {
+      title: 'Reply to a review conversation',
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: true,
+    },
     async call(args) {
       const p = pick(args)
       if ('content' in p) return p
@@ -435,21 +500,25 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const conversation = await conversationOf(p, args.conversationId)
       if ('content' in conversation) return conversation
       const suggestResolve = args.resolve === true && !conversation.resolved
-      return queue(PR_REPLY_TOOL, card(p.ref, 'reply', {
-        url: conversation.comments[0]?.url ?? null,
-        location: location(conversation),
-        quote: quoteOf(conversation),
-        replyText: draft.text,
-        suggestResolve,
-      }), {
-        kind: 'pr-reply',
-        ref: p.ref,
-        conversationId: conversation.id,
-        conversationResolved: conversation.resolved,
-        location: location(conversation),
-        draft: draft.text,
-        suggestResolve,
-      })
+      return queue(
+        PR_REPLY_TOOL,
+        card(p.ref, 'reply', {
+          url: conversation.comments[0]?.url ?? null,
+          location: location(conversation),
+          quote: quoteOf(conversation),
+          replyText: draft.text,
+          suggestResolve,
+        }),
+        {
+          kind: 'pr-reply',
+          ref: p.ref,
+          conversationId: conversation.id,
+          conversationResolved: conversation.resolved,
+          location: location(conversation),
+          draft: draft.text,
+          suggestResolve,
+        },
+      )
     },
   }
 
@@ -462,11 +531,20 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     ].join('\n'),
     inputSchema: {
       type: 'object',
-      properties: { pr: PR_ARG, conversationId: { type: 'string', description: `The conversation id from ${PR_CONVERSATIONS_TOOL}.` } },
+      properties: {
+        pr: PR_ARG,
+        conversationId: { type: 'string', description: `The conversation id from ${PR_CONVERSATIONS_TOOL}.` },
+      },
       required: ['conversationId'],
       additionalProperties: false,
     },
-    annotations: { title: 'Resolve a review conversation', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    annotations: {
+      title: 'Resolve a review conversation',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     async call(args) {
       const p = pick(args)
       if ('content' in p) return p
@@ -475,11 +553,15 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const conversation = await conversationOf(p, args.conversationId)
       if ('content' in conversation) return conversation
       if (conversation.resolved) return toolText('That conversation is already resolved. Nothing to do.')
-      return queue(PR_RESOLVE_TOOL, card(p.ref, 'resolve', {
-        url: conversation.comments[0]?.url ?? null,
-        location: location(conversation),
-        quote: quoteOf(conversation),
-      }), { kind: 'pr-resolve', ref: p.ref, conversationId: conversation.id, location: location(conversation) })
+      return queue(
+        PR_RESOLVE_TOOL,
+        card(p.ref, 'resolve', {
+          url: conversation.comments[0]?.url ?? null,
+          location: location(conversation),
+          quote: quoteOf(conversation),
+        }),
+        { kind: 'pr-resolve', ref: p.ref, conversationId: conversation.id, location: location(conversation) },
+      )
     },
   }
 
@@ -502,17 +584,26 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if ('content' in p) return p
       const caps = HOST_CAPABILITIES[p.ref.host]
       if (!caps.rerunChecks) return toolText(caps.rerunUnavailable ?? 'This host cannot re-run checks.', true)
-      if (typeof args.checkId !== 'string' || !args.checkId.trim()) return toolText(`No checkId given. Call ${PR_STATUS_TOOL} for the ids.`, true)
+      if (typeof args.checkId !== 'string' || !args.checkId.trim())
+        return toolText(`No checkId given. Call ${PR_STATUS_TOOL} for the ids.`, true)
       const gated = refusePlan(PR_RERUN_TOOL)
       if (gated) return gated
       const read = await p.access.detail(p.ref)
       if (!read.ok) return toolText(read.error.message, true)
       const check = read.data.checkList.find((c) => c.id === (args.checkId as string).trim())
-      if (!check) return toolText(`No check ${args.checkId} on the head commit. Call ${PR_STATUS_TOOL} for the current ids.`, true)
-      if (check.state !== 'failure') return toolText(`${check.name} is ${check.state}, not failed. Only a failed check is re-run.`, true)
+      if (!check)
+        return toolText(
+          `No check ${args.checkId} on the head commit. Call ${PR_STATUS_TOOL} for the current ids.`,
+          true,
+        )
+      if (check.state !== 'failure')
+        return toolText(`${check.name} is ${check.state}, not failed. Only a failed check is re-run.`, true)
       if (!check.rerunId) return toolText(`${check.name} is not a GitHub Actions run; it is re-run where it ran.`, true)
       return queue(PR_RERUN_TOOL, card(p.ref, 'rerun', { url: check.url, checkName: check.name }), {
-        kind: 'pr-rerun', ref: p.ref, checkId: check.id, checkName: check.name,
+        kind: 'pr-rerun',
+        ref: p.ref,
+        checkId: check.id,
+        checkName: check.name,
       })
     },
   }
@@ -530,7 +621,11 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       properties: {
         pr: PR_ARG,
         path: { type: 'string', description: 'Only this file, or every file under this directory.' },
-        page: { type: 'integer', minimum: 1, description: 'The page to read, from 1. The previous page says which comes next.' },
+        page: {
+          type: 'integer',
+          minimum: 1,
+          description: 'The page to read, from 1. The previous page says which comes next.',
+        },
       },
       additionalProperties: false,
     },
@@ -538,7 +633,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     async call(args) {
       const p = pick(args)
       if ('content' in p) return p
-      if (args.path !== undefined && typeof args.path !== 'string') return toolText('"path" is a file or directory path of the diff.', true)
+      if (args.path !== undefined && typeof args.path !== 'string')
+        return toolText('"path" is a file or directory path of the diff.', true)
       const page = typeof args.page === 'string' && /^\d{1,6}$/.test(args.page) ? Number(args.page) : args.page
       if (page !== undefined && typeof page !== 'number') return toolText('"page" is a page number, from 1.', true)
       const read = await p.access.files(p.ref)
@@ -561,7 +657,12 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       minimum: 1,
       description: `Optional: the first line of a range ending at "line", on the same side and in the same hunk of ${PR_DIFF_TOOL}. At most ${AGENT_COMMENT_MAX_LINES} lines. Omit for one line.`,
     },
-    side: { type: 'string', enum: ['new', 'old'], description: '"new" (default) for added or unchanged lines, "old" for deleted lines. Both ends of a range are on this side.' },
+    side: {
+      type: 'string',
+      enum: ['new', 'old'],
+      description:
+        '"new" (default) for added or unchanged lines, "old" for deleted lines. Both ends of a range are on this side.',
+    },
   }
 
   /** Each target the fresh diff does not take, with why. */
@@ -608,18 +709,28 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const where = lineLocation(target.value)
       const fit = lineTargetFit(files.data, target.value)
       if (fit === 'split') {
-        return toolText(`${where} spans two hunks of the diff; a comment covers lines of one hunk. Split it, or pick lines from one hunk of ${PR_DIFF_TOOL}. Nothing was sent.`, true)
+        return toolText(
+          `${where} spans two hunks of the diff; a comment covers lines of one hunk. Split it, or pick lines from one hunk of ${PR_DIFF_TOOL}. Nothing was sent.`,
+          true,
+        )
       }
       if (fit === 'missing') {
-        return toolText(`${where} is not a line the diff shows on the ${target.value.side} side. Call ${PR_DIFF_TOOL} and pick a line from it. Nothing was sent.`, true)
+        return toolText(
+          `${where} is not a line the diff shows on the ${target.value.side} side. Call ${PR_DIFF_TOOL} and pick a line from it. Nothing was sent.`,
+          true,
+        )
       }
       const { startLine, line } = target.value
-      return queue(PR_COMMENT_TOOL, card(p.ref, 'comment', {
-        location: where,
-        replyText: draft.value,
-        excerpt: diffExcerpt(files.data, target.value, COMMENT_EXCERPT_RADIUS),
-        ...(startLine !== undefined ? { lineRange: { start: startLine, end: line } } : {}),
-      }), { kind: 'pr-comment', ref: p.ref, target: target.value, draft: draft.value })
+      return queue(
+        PR_COMMENT_TOOL,
+        card(p.ref, 'comment', {
+          location: where,
+          replyText: draft.value,
+          excerpt: diffExcerpt(files.data, target.value, COMMENT_EXCERPT_RADIUS),
+          ...(startLine !== undefined ? { lineRange: { start: startLine, end: line } } : {}),
+        }),
+        { kind: 'pr-comment', ref: p.ref, target: target.value, draft: draft.value },
+      )
     },
   }
 
@@ -640,7 +751,10 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       type: 'object',
       properties: {
         pr: PR_ARG,
-        summary: { type: 'string', description: 'The review summary: what the change does well, what must change, and why.' },
+        summary: {
+          type: 'string',
+          description: 'The review summary: what the change does well, what must change, and why.',
+        },
         comments: {
           type: 'array',
           maxItems: AGENT_REVIEW_MAX_COMMENTS,
@@ -673,17 +787,28 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       if (!files.ok) return toolText(files.error.message, true)
       const missing = notInDiff(files.data, comments)
       if (missing.length > 0) {
-        return toolText(`Not lines the diff shows in one hunk: ${missing.join(', ')}. Call ${PR_DIFF_TOOL}, fix their lines and side, and send the whole draft again. Nothing was sent.`, true)
+        return toolText(
+          `Not lines the diff shows in one hunk: ${missing.join(', ')}. Call ${PR_DIFF_TOOL}, fix their lines and side, and send the whole draft again. Nothing was sent.`,
+          true,
+        )
       }
       // Both hosts refuse a verdict from the author, and on a PR that is not open.
       const commentOnly = detail.data.viewer.isAuthor ? 'author' : detail.data.state !== 'open' ? 'closed' : undefined
       const review: HostWriteReview = {
         summary,
-        comments: comments.map((c, i) => ({ id: `c${i + 1}`, ...c, excerpt: diffExcerpt(files.data, c, REVIEW_EXCERPT_RADIUS) })),
+        comments: comments.map((c, i) => ({
+          id: `c${i + 1}`,
+          ...c,
+          excerpt: diffExcerpt(files.data, c, REVIEW_EXCERPT_RADIUS),
+        })),
         verdicts: commentOnly ? ['comment'] : reviewEventsFor(detail.data.viewer),
         ...(commentOnly ? { commentOnly } : {}),
       }
-      return queue(PR_REVIEW_TOOL, card(p.ref, 'review', { url: detail.data.url, review }), { kind: 'pr-review', ref: p.ref, review })
+      return queue(PR_REVIEW_TOOL, card(p.ref, 'review', { url: detail.data.url, review }), {
+        kind: 'pr-review',
+        ref: p.ref,
+        review,
+      })
     },
   }
 
@@ -693,9 +818,16 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
    * checkout, else the one child repository of a parent folder that
    * `repository` names. Every path ends at a repository the project covers.
    */
-  const createTarget = async (access: AgentPullRequestAccess, input: CreatePrArgs): Promise<CreateTarget | McpToolResult> => {
+  const createTarget = async (
+    access: AgentPullRequestAccess,
+    input: CreatePrArgs,
+  ): Promise<CreateTarget | McpToolResult> => {
     const projectPath = access.chatProject(ctx.chatId)
-    if (!projectPath) return toolText('This chat has no Switchboard project record, so there is no repository to open a pull request on.', true)
+    if (!projectPath)
+      return toolText(
+        'This chat has no Switchboard project record, so there is no repository to open a pull request on.',
+        true,
+      )
     const project = await access.projectRepos(projectPath)
     if (input.repoPath) {
       const dir = await access.resolveRepoDir(projectPath, input.repoPath)
@@ -707,18 +839,28 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         if (dir.relPath !== '.') {
           return toolText(
             `${projectPath} is itself a repository (${project.own.owner}/${project.own.name}), so "repoPath" can only be the project folder; ` +
-            `${dir.relPath} is inside it. Call again without "repoPath". Nothing was created.`, true)
+              `${dir.relPath} is inside it. Call again without "repoPath". Nothing was created.`,
+            true,
+          )
         }
       } else {
         const repo = await access.repoFor(dir.dir)
-        if (!repo) return toolText(`The git remotes of ${dir.relPath} (under ${projectPath}) point at neither GitHub nor Bitbucket, so Switchboard cannot open a pull request for it. Nothing was created.`, true)
+        if (!repo)
+          return toolText(
+            `The git remotes of ${dir.relPath} (under ${projectPath}) point at neither GitHub nor Bitbucket, so Switchboard cannot open a pull request for it. Nothing was created.`,
+            true,
+          )
         const refused = repoPathRepositoryProblem(input.repository, repo, dir.relPath)
         if (refused) return toolText(refused, true)
         if (!projectCoversRepo(project, repo)) {
-          const covered = coveredRepos(project).map((r) => `${r.owner}/${r.name}`).join(', ')
+          const covered = coveredRepos(project)
+            .map((r) => `${r.owner}/${r.name}`)
+            .join(', ')
           return toolText(
             `${dir.relPath} points at ${repo.owner}/${repo.name}, which is not a repository this chat's project covers` +
-            `${covered ? ` (it covers ${covered})` : ''}. Nothing was created.`, true)
+              `${covered ? ` (it covers ${covered})` : ''}. Nothing was created.`,
+            true,
+          )
         }
         return { projectPath, repo, cwd: dir.dir, localPath: dir.relPath }
       }
@@ -731,18 +873,29 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     if (project.children.length === 0) {
       return toolText(
         `The git remotes of ${projectPath} point at neither GitHub nor Bitbucket, and no GitHub or Bitbucket repository was found up to two folders below it, ` +
-        'so Switchboard cannot open a pull request for it.', true)
+          'so Switchboard cannot open a pull request for it.',
+        true,
+      )
     }
     const listed = describeChildRepos(project.children)
     if (!input.repository) {
-      return toolText(`${projectPath} is not a repository itself; it holds ${listed}. Call again with "repoPath" naming the one the change is in. Nothing was created.`, true)
+      return toolText(
+        `${projectPath} is not a repository itself; it holds ${listed}. Call again with "repoPath" naming the one the change is in. Nothing was created.`,
+        true,
+      )
     }
     const match = findChildRepo(project, repoArgCandidates(input.repository))
     if (match.kind === 'none') {
-      return toolText(`No repository under ${projectPath} has its remote at "${input.repository}". It holds ${listed}. Nothing was created.`, true)
+      return toolText(
+        `No repository under ${projectPath} has its remote at "${input.repository}". It holds ${listed}. Nothing was created.`,
+        true,
+      )
     }
     if (match.kind === 'many') {
-      return toolText(`Several checkouts under ${projectPath} point at "${input.repository}": ${describeChildRepos(match.matches)}. Call again with "repoPath" naming one. Nothing was created.`, true)
+      return toolText(
+        `Several checkouts under ${projectPath} point at "${input.repository}": ${describeChildRepos(match.matches)}. Call again with "repoPath" naming one. Nothing was created.`,
+        true,
+      )
     }
     return { projectPath, repo: match.child.repo, cwd: match.child.path, localPath: match.child.relPath }
   }
@@ -750,11 +903,11 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
   const createTool: McpTool = {
     name: PR_CREATE_TOOL,
     description: [
-      'Open a pull request on the repository of this chat\'s project (GitHub or Bitbucket), with the user\'s account in Switchboard.',
+      "Open a pull request on the repository of this chat's project (GitHub or Bitbucket), with the user's account in Switchboard.",
       'Use this whenever the user asks you to raise, open or create a pull request, instead of gh pr create, bbpr or a host API:',
       'it is the path that is set up with write access, and the pull request is linked to this chat so it shows in Reviews.',
       'Commit and push the branch first (git push -u <remote> <branch>); the source branch must already be on the remote.',
-      'sourceBranch defaults to the branch checked out in this chat, targetBranch to the repository\'s default branch.',
+      "sourceBranch defaults to the branch checked out in this chat, targetBranch to the repository's default branch.",
       'When the project folder holds several repositories (it is not one itself), pass "repoPath": the repository the change is in,',
       'relative to the project folder or absolute; its git remote is the repository and its checked-out branch the default sourceBranch.',
       '"repository" alone also works there when exactly one repository under the folder has that remote.',
@@ -770,20 +923,35 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       type: 'object',
       properties: {
         title: { type: 'string', description: 'The pull request title: what the change does, in one line.' },
-        description: { type: 'string', description: `What changed and why, how it was tested. Markdown. At most ${PR_DESCRIPTION_MAX_CHARS} characters. No signature; Switchboard adds its marker line.` },
-        sourceBranch: { type: 'string', description: 'The branch to merge from, already pushed. Default: the branch checked out in this chat.' },
-        targetBranch: { type: 'string', description: 'The branch to merge into. Default: the repository\'s default branch.' },
+        description: {
+          type: 'string',
+          description: `What changed and why, how it was tested. Markdown. At most ${PR_DESCRIPTION_MAX_CHARS} characters. No signature; Switchboard adds its marker line.`,
+        },
+        sourceBranch: {
+          type: 'string',
+          description: 'The branch to merge from, already pushed. Default: the branch checked out in this chat.',
+        },
+        targetBranch: {
+          type: 'string',
+          description: "The branch to merge into. Default: the repository's default branch.",
+        },
         draft: { type: 'boolean', description: 'Open it as a draft. GitHub only; refused on Bitbucket.' },
-        repository: { type: 'string', description: 'Optional: "owner/name" or its URL. Must be a repository of this chat\'s project (with repoPath, that path\'s remote); any other is refused.' },
+        repository: {
+          type: 'string',
+          description:
+            'Optional: "owner/name" or its URL. Must be a repository of this chat\'s project (with repoPath, that path\'s remote); any other is refused.',
+        },
         repoPath: {
           type: 'string',
-          description: 'Optional: a git repository inside this chat\'s project folder, relative to it or absolute, for a project folder that holds several repositories. Anything outside the folder is refused.',
+          description:
+            "Optional: a git repository inside this chat's project folder, relative to it or absolute, for a project folder that holds several repositories. Anything outside the folder is refused.",
         },
         reviewers: {
           type: 'array',
           items: { type: 'string' },
           maxItems: AGENT_PR_MAX_REVIEWERS,
-          description: 'Optional: who to ask for a review, by login, display name or email (GitHub teams as team:<slug>). Each must match exactly one person.',
+          description:
+            'Optional: who to ask for a review, by login, display name or email (GitHub teams as team:<slug>). Each must match exactly one person.',
         },
       },
       required: ['title'],
@@ -792,7 +960,8 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
     annotations: { title: 'Open a pull request', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     async call(args) {
       const access = ctx.pullRequests
-      if (!access) return toolText('Reviews is not available on this backend, so a pull request cannot be opened here.', true)
+      if (!access)
+        return toolText('Reviews is not available on this backend, so a pull request cannot be opened here.', true)
       const input = checkCreatePrArgs(args)
       if (!input.ok) return toolText(`${input.message} Nothing was created.`, true)
       const gated = refusePlan(PR_CREATE_TOOL)
@@ -804,35 +973,60 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       const refused = draftProblem(repo.host, input.value.draft)
       if (refused) return toolText(refused, true)
 
-      const source = input.value.sourceBranch ?? await access.currentBranch(cwd)
-      if (!source) return toolText(`No branch is checked out in ${cwd} (a detached HEAD?). Pass "sourceBranch". Nothing was created.`, true)
+      const source = input.value.sourceBranch ?? (await access.currentBranch(cwd))
+      if (!source)
+        return toolText(
+          `No branch is checked out in ${cwd} (a detached HEAD?). Pass "sourceBranch". Nothing was created.`,
+          true,
+        )
       let target = input.value.targetBranch
       if (!target) {
         const read = await access.defaultBranch(repo)
-        if (!read.ok) return toolText(`Could not read the default branch of ${repoLabel}: ${read.error.message} Pass "targetBranch", or tell the user.`, true)
+        if (!read.ok)
+          return toolText(
+            `Could not read the default branch of ${repoLabel}: ${read.error.message} Pass "targetBranch", or tell the user.`,
+            true,
+          )
         target = read.data
       }
       if (source === target) {
-        return toolText(`The source and target branch are both ${source}. Commit to a new branch, push it, and call again with that branch. Nothing was created.`, true)
+        return toolText(
+          `The source and target branch are both ${source}. Commit to a new branch, push it, and call again with that branch. Nothing was created.`,
+          true,
+        )
       }
       const pushed = await access.remoteHasBranch(cwd, repo, source)
-      if (!pushed.ok) return toolText(`${pushed.message} Could not check that ${source} is pushed. Nothing was created.`, true)
+      if (!pushed.ok)
+        return toolText(`${pushed.message} Could not check that ${source} is pushed. Nothing was created.`, true)
       if (!pushed.found) {
-        return toolText(`${source} is not on ${pushed.remote} (${repoLabel}). Push it first (git push -u ${pushed.remote} ${source}), then call again. Nothing was created.`, true)
+        return toolText(
+          `${source} is not on ${pushed.remote} (${repoLabel}). Push it first (git push -u ${pushed.remote} ${source}), then call again. Nothing was created.`,
+          true,
+        )
       }
       const open = await access.openPullRequestFor(repo, source)
-      if (!open.ok) return toolText(`Could not check for an open pull request on ${repoLabel}: ${open.error.message} Nothing was created.`, true)
+      if (!open.ok)
+        return toolText(
+          `Could not check for an open pull request on ${repoLabel}: ${open.error.message} Nothing was created.`,
+          true,
+        )
       if (open.data) {
         const { linked } = linkCreated(access, ctx.chatId, repo, open.data, false)
-        const skipped = input.value.reviewers.length > 0 ? ' Its reviewers were not changed; the user can add them in Reviews.' : ''
-        return toolText(`A pull request is already open for ${source}: ${repoLabel} #${open.data.number}, ${open.data.url}. ${linked} No new one was created.${skipped}`)
+        const skipped =
+          input.value.reviewers.length > 0 ? ' Its reviewers were not changed; the user can add them in Reviews.' : ''
+        return toolText(
+          `A pull request is already open for ${source}: ${repoLabel} #${open.data.number}, ${open.data.url}. ${linked} No new one was created.${skipped}`,
+        )
       }
 
       let reviewers: HostWriteReviewer[] = []
       if (input.value.reviewers.length > 0) {
         const pool = await access.reviewerPool(repo)
         if (!pool.ok) {
-          return toolText(`Could not read who can review on ${repoLabel}: ${pool.error.message} Call again without "reviewers", or tell the user. Nothing was created.`, true)
+          return toolText(
+            `Could not read who can review on ${repoLabel}: ${pool.error.message} Call again without "reviewers", or tell the user. Nothing was created.`,
+            true,
+          )
         }
         const resolved = resolveReviewers(repo.host, input.value.reviewers, pool.data.candidates, pool.data.viewer)
         if (!resolved.ok) return toolText(resolved.message, true)
@@ -840,8 +1034,15 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
       }
 
       const plan: PrWritePlan = {
-        kind: 'pr-create', repo, projectPath: chat.projectPath, source, target,
-        title: input.value.title, description: input.value.description, draft: input.value.draft, reviewers,
+        kind: 'pr-create',
+        repo,
+        projectPath: chat.projectPath,
+        source,
+        target,
+        title: input.value.title,
+        description: input.value.description,
+        draft: input.value.draft,
+        reviewers,
       }
       // Full access opens it without a card, in this call.
       if (createPullRequestGate(ctx.runtimeMode()) === 'allow') {
@@ -849,25 +1050,45 @@ export function buildPrTools(ctx: PrToolContext): McpTool[] {
         if (!budget.ok) return toolText(budget.message, true)
         return runPrWritePlan(ctx, plan, {}, { withoutCard: true })
       }
-      return queue(PR_CREATE_TOOL, {
-        action: 'create',
-        agentLabel: ctx.agentLabel,
-        host: repo.host,
-        prLabel: repoLabel,
-        target: { repository: `${repo.owner}/${repo.name}`, number: null },
-        url: null,
-        location: null,
-        quote: null,
-        create: {
-          repoLabel, ...(chat.localPath ? { localPath: chat.localPath } : {}), sourceBranch: source, targetBranch: target, title: plan.title, description: plan.description,
-          draft: input.value.draft, ...(reviewers.length > 0 ? { reviewers } : {}),
+      return queue(
+        PR_CREATE_TOOL,
+        {
+          action: 'create',
+          agentLabel: ctx.agentLabel,
+          host: repo.host,
+          prLabel: repoLabel,
+          target: { repository: `${repo.owner}/${repo.name}`, number: null },
+          url: null,
+          location: null,
+          quote: null,
+          create: {
+            repoLabel,
+            ...(chat.localPath ? { localPath: chat.localPath } : {}),
+            sourceBranch: source,
+            targetBranch: target,
+            title: plan.title,
+            description: plan.description,
+            draft: input.value.draft,
+            ...(reviewers.length > 0 ? { reviewers } : {}),
+          },
+          maxChars: PR_DESCRIPTION_MAX_CHARS,
         },
-        maxChars: PR_DESCRIPTION_MAX_CHARS,
-      }, plan)
+        plan,
+      )
     },
   }
 
-  return [statusTool, conversationsTool, diffTool, createTool, replyTool, resolveTool, rerunTool, commentTool, reviewTool]
+  return [
+    statusTool,
+    conversationsTool,
+    diffTool,
+    createTool,
+    replyTool,
+    resolveTool,
+    rerunTool,
+    commentTool,
+    reviewTool,
+  ]
 }
 
 type PlanGateContext = Pick<PrToolContext, 'threadId' | 'runtimeMode' | 'publish'>
@@ -876,7 +1097,8 @@ type PlanGateContext = Pick<PrToolContext, 'threadId' | 'runtimeMode' | 'publish
 function refusePlanFor(ctx: PlanGateContext, toolName: string): McpToolResult | null {
   const mode = ctx.runtimeMode()
   if (hostWriteGate(mode) !== 'deny') return null
-  const reason = 'Plan mode - nothing is posted to a pull request. Tell the user what you would post, or ask them to switch modes.'
+  const reason =
+    'Plan mode - nothing is posted to a pull request. Tell the user what you would post, or ask them to switch modes.'
   ctx.publish({ type: 'tool.denied', threadId: ctx.threadId, toolName: `mcp__switchboard__${toolName}`, reason, mode })
   return toolText(reason, true)
 }
@@ -895,7 +1117,13 @@ function changedSinceCard(ctx: PrWriteRunContext, ref: PrRef, toolName: string):
   return null
 }
 
-function linkCreated(access: AgentPullRequestAccess, chatId: string, repo: RepoRef, pr: CreatedPr, created: boolean): { ref: PrRef; linked: string } {
+function linkCreated(
+  access: AgentPullRequestAccess,
+  chatId: string,
+  repo: RepoRef,
+  pr: CreatedPr,
+  created: boolean,
+): { ref: PrRef; linked: string } {
   const ref: PrRef = { ...repo, number: pr.number }
   const ok = access.linkToChat(chatId, ref, created)
   return {
@@ -919,12 +1147,18 @@ const PLAN_TOOL: Record<PrWritePlan['kind'], string> = {
 /** What the agent is told it asked for, in a denial or a withdrawal. */
 export function prWritePlanSummary(plan: PrWritePlan): string {
   switch (plan.kind) {
-    case 'pr-reply': return `the reply on ${prLabel(plan.ref)}${plan.location ? ` at ${plan.location}` : ''}`
-    case 'pr-resolve': return `resolving the conversation${plan.location ? ` at ${plan.location}` : ''} on ${prLabel(plan.ref)}`
-    case 'pr-rerun': return `re-running ${plan.checkName} on ${prLabel(plan.ref)}`
-    case 'pr-comment': return `the comment at ${lineLocation(plan.target)} on ${prLabel(plan.ref)}`
-    case 'pr-review': return `the review of ${prLabel(plan.ref)}`
-    case 'pr-create': return `opening a pull request from ${plan.source} into ${plan.target} on ${plan.repo.owner}/${plan.repo.name}`
+    case 'pr-reply':
+      return `the reply on ${prLabel(plan.ref)}${plan.location ? ` at ${plan.location}` : ''}`
+    case 'pr-resolve':
+      return `resolving the conversation${plan.location ? ` at ${plan.location}` : ''} on ${prLabel(plan.ref)}`
+    case 'pr-rerun':
+      return `re-running ${plan.checkName} on ${prLabel(plan.ref)}`
+    case 'pr-comment':
+      return `the comment at ${lineLocation(plan.target)} on ${prLabel(plan.ref)}`
+    case 'pr-review':
+      return `the review of ${prLabel(plan.ref)}`
+    case 'pr-create':
+      return `opening a pull request from ${plan.source} into ${plan.target} on ${plan.repo.owner}/${plan.repo.name}`
   }
 }
 
@@ -955,14 +1189,23 @@ export async function runPrWritePlan(
     log.info('agent reply posted', { host: ref.host, number: ref.number, resolve })
 
     const edited = final.text !== plan.draft ? ` The user edited your reply first; what was posted:\n${final.text}` : ''
-    if (!resolve) return toolText(`Posted the reply on ${prLabel(ref)}${plan.location ? ` at ${plan.location}` : ''}. The conversation stays open.${edited}`)
+    if (!resolve)
+      return toolText(
+        `Posted the reply on ${prLabel(ref)}${plan.location ? ` at ${plan.location}` : ''}. The conversation stays open.${edited}`,
+      )
     // The post can take a while: check the link and the mode again before the second write.
     if (changedSinceCard(ctx, ref, PR_REPLY_TOOL)) {
-      return toolText(`Posted the reply on ${prLabel(ref)}, but did not resolve the conversation: the chat's link or mode changed while the reply was posting. Do not post the reply again.${edited}`, true)
+      return toolText(
+        `Posted the reply on ${prLabel(ref)}, but did not resolve the conversation: the chat's link or mode changed while the reply was posting. Do not post the reply again.${edited}`,
+        true,
+      )
     }
     const resolved = await access.setResolved(ref, { conversationId: plan.conversationId }, true)
     if (!resolved.ok) {
-      return toolText(`Posted the reply, but resolving the conversation failed: ${resolved.error.message} Do not post the reply again.${edited}`, true)
+      return toolText(
+        `Posted the reply, but resolving the conversation failed: ${resolved.error.message} Do not post the reply again.${edited}`,
+        true,
+      )
     }
     return toolText(`Posted the reply on ${prLabel(ref)} and resolved the conversation.${edited}`)
   }
@@ -986,7 +1229,8 @@ export async function runPrWritePlan(
     const posted = await access.inlineComment(ref, { ...plan.target, body: withViaMarker(final.value) })
     if (!posted.ok) return toolText(`Posting failed: ${posted.error.message} Nothing was posted.`, true)
     log.info('agent line comment posted', { host: ref.host, number: ref.number })
-    const edited = final.value !== plan.draft ? ` The user edited your comment first; what was posted:\n${final.value}` : ''
+    const edited =
+      final.value !== plan.draft ? ` The user edited your comment first; what was posted:\n${final.value}` : ''
     return toolText(`Posted the comment at ${where} on ${prLabel(ref)}.${edited}`)
   }
 
@@ -1007,11 +1251,19 @@ export async function runPrWritePlan(
   })
   if (!submitted.ok) {
     const posted = submitted.error.postedComments ?? 0
-    return toolText(posted > 0
-      ? `Submitting the review failed part way: ${submitted.error.message} ${posted} of its comments were posted. Do not submit it again; tell the user.`
-      : `Submitting the review failed: ${submitted.error.message} Nothing was posted.`, true)
+    return toolText(
+      posted > 0
+        ? `Submitting the review failed part way: ${submitted.error.message} ${posted} of its comments were posted. Do not submit it again; tell the user.`
+        : `Submitting the review failed: ${submitted.error.message} Nothing was posted.`,
+      true,
+    )
   }
-  log.info('agent review submitted', { host: ref.host, number: ref.number, verdict, comments: final.value.comments.length })
+  log.info('agent review submitted', {
+    host: ref.host,
+    number: ref.number,
+    verdict,
+    comments: final.value.comments.length,
+  })
   const notes = [
     final.value.removed > 0 ? `removed ${final.value.removed} of your comments` : '',
     final.value.edited > 0 ? `edited ${final.value.edited}` : '',
@@ -1019,7 +1271,7 @@ export async function runPrWritePlan(
   ].filter(Boolean)
   return toolText(
     `The user submitted the review on ${prLabel(ref)} as ${REVIEW_EVENT_LABEL[verdict]}, with ${final.value.comments.length} inline comments.` +
-    `${notes.length > 0 ? ` They ${notes.join(', ')} first.` : ''} Do not post these comments again.`,
+      `${notes.length > 0 ? ` They ${notes.join(', ')} first.` : ''} Do not post these comments again.`,
   )
 }
 
@@ -1041,11 +1293,18 @@ async function runCreate(
 
   const title = response.title === undefined ? { ok: true as const, value: plan.title } : checkPrTitle(response.title)
   if (!title.ok) return toolText(`The edited title was refused: ${title.message} Nothing was created.`, true)
-  const description = response.description === undefined ? { ok: true as const, value: plan.description } : checkPrDescription(response.description)
-  if (!description.ok) return toolText(`The edited description was refused: ${description.message} Nothing was created.`, true)
+  const description =
+    response.description === undefined
+      ? { ok: true as const, value: plan.description }
+      : checkPrDescription(response.description)
+  if (!description.ok)
+    return toolText(`The edited description was refused: ${description.message} Nothing was created.`, true)
   // No card was shown, so full access must still hold after the awaits above.
   if (withoutCard && createPullRequestGate(ctx.runtimeMode()) !== 'allow') {
-    return toolText('The chat left full access before the pull request was opened, so nothing was created. Call again: the user will see an approval card.', true)
+    return toolText(
+      'The chat left full access before the pull request was opened, so nothing was created. Call again: the user will see an approval card.',
+      true,
+    )
   }
   const kept = keptReviewers(reviewers, response.reviewers)
   const created = await access.createPullRequest(repo, {
@@ -1057,23 +1316,31 @@ async function runCreate(
     ...(kept.length > 0 ? { reviewers: kept.map((r) => r.id) } : {}),
   })
   if (!created.ok) {
-    if (!isUncertainCreateFailure(created.error)) return toolText(`Opening the pull request failed: ${created.error.message} Nothing was created.`, true)
+    if (!isUncertainCreateFailure(created.error))
+      return toolText(`Opening the pull request failed: ${created.error.message} Nothing was created.`, true)
     // The request may have gone out: look before telling the agent anything.
     const after = await access.openPullRequestFor(repo, source)
     if (after.ok && after.data) {
       const { linked } = linkCreated(access, ctx.chatId, repo, after.data, true)
-      const unsure = kept.length > 0 ? ' Whether its reviewers were asked is not known: tell the user to check them in Reviews.' : ''
-      return toolText(`Opened ${repoLabel} #${after.data.number}: ${after.data.url} (the host's answer was lost, but the pull request is there). ${linked} Do not open it again.${unsure}`)
+      const unsure =
+        kept.length > 0 ? ' Whether its reviewers were asked is not known: tell the user to check them in Reviews.' : ''
+      return toolText(
+        `Opened ${repoLabel} #${after.data.number}: ${after.data.url} (the host's answer was lost, but the pull request is there). ${linked} Do not open it again.${unsure}`,
+      )
     }
     log.warn('agent pull request create result uncertain', { host: repo.host, kind: created.error.kind })
     return toolText(
       `The host did not answer clearly: ${created.error.message} The pull request may or may not have been opened. ` +
-      `Do not call ${PR_CREATE_TOOL} again; ask the user to check ${PR_HOST_LABEL[repo.host]} or Reviews.`, true)
+        `Do not call ${PR_CREATE_TOOL} again; ask the user to check ${PR_HOST_LABEL[repo.host]} or Reviews.`,
+      true,
+    )
   }
   const { ref, linked } = linkCreated(access, ctx.chatId, repo, created.data, !created.data.existing)
   if (created.data.existing) {
     const skipped = kept.length > 0 ? ' Its reviewers were not changed; the user can add them in Reviews.' : ''
-    return toolText(`A pull request for ${source} was opened while the card was open: ${repoLabel} #${ref.number}, ${created.data.url}. ${linked} No new one was created.${skipped}`)
+    return toolText(
+      `A pull request for ${source} was opened while the card was open: ${repoLabel} #${ref.number}, ${created.data.url}. ${linked} No new one was created.${skipped}`,
+    )
   }
   log.info('agent pull request opened', { host: repo.host, number: ref.number, reviewers: kept.length })
   const removed = reviewers.filter((r) => !kept.some((k) => k.id === r.id))
@@ -1083,13 +1350,18 @@ async function runCreate(
     removed.length > 0 ? `the reviewers, removing ${removed.map(reviewerLabel).join(', ')}` : '',
   ].filter(Boolean)
   const failure = created.data.reviewerFailure
-  const asked = kept.length === 0 ? ''
-    : failure
-      ? ` Asking ${kept.filter((r) => failure.reviewers.includes(r.id)).map(reviewerLabel).join(', ')} to review failed: ${failure.error.message} ` +
-        `The pull request is open either way: do not open it again. Tell the user, who can add them in Reviews.`
-      : ` Asked ${kept.map(reviewerLabel).join(', ')} to review it.`
+  const asked =
+    kept.length === 0
+      ? ''
+      : failure
+        ? ` Asking ${kept
+            .filter((r) => failure.reviewers.includes(r.id))
+            .map(reviewerLabel)
+            .join(', ')} to review failed: ${failure.error.message} ` +
+          `The pull request is open either way: do not open it again. Tell the user, who can add them in Reviews.`
+        : ` Asked ${kept.map(reviewerLabel).join(', ')} to review it.`
   return toolText(
     `Opened ${repoLabel} #${ref.number}: ${created.data.url} (${source} -> ${target}). ${linked}` +
-    `${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}${asked}`,
+      `${edits.length > 0 ? ` The user edited ${edits.join(' and ')} first.` : ''}${asked}`,
   )
 }

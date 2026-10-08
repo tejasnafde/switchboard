@@ -17,9 +17,6 @@ export function createWorktreeCreationApi(transport: Transport) {
     act: (request: WorktreeCreationActionRequest): Promise<WorktreeCreationSnapshot> =>
       transport.invoke(WorktreeCreationChannels.ACT, request),
     onProgress: (callback: (event: WorktreeCreationProgressEvent) => void): (() => void) =>
-      transport.on<[WorktreeCreationProgressEvent]>(
-        WorktreeCreationChannels.PROGRESS,
-        (event) => callback(event),
-      ),
+      transport.on<[WorktreeCreationProgressEvent]>(WorktreeCreationChannels.PROGRESS, (event) => callback(event)),
   }
 }

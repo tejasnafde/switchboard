@@ -16,7 +16,9 @@ describe('parseImageDataUrl', () => {
 
 describe('validateUserMessageImages', () => {
   it('rejects an SVG with a clear message instead of dropping it later', () => {
-    expect(() => validateUserMessageImages([{ url: 'data:image/svg+xml;base64,QUJD' }])).toThrow(/PNG, JPEG, WebP, or GIF/)
+    expect(() => validateUserMessageImages([{ url: 'data:image/svg+xml;base64,QUJD' }])).toThrow(
+      /PNG, JPEG, WebP, or GIF/,
+    )
   })
   it('accepts a PNG', () => {
     expect(validateUserMessageImages([{ url: 'data:image/png;base64,QUJD' }])).toHaveLength(1)

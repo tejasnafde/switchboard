@@ -11,7 +11,7 @@ import type { RuntimeFileEditedEvent } from '@shared/provider-events'
 
 export function filterNotebookFileEdits(
   events: RuntimeFileEditedEvent[],
-  explains: (event: RuntimeFileEditedEvent) => boolean
+  explains: (event: RuntimeFileEditedEvent) => boolean,
 ): RuntimeFileEditedEvent[] {
   return events.filter((event) => !explains(event))
 }

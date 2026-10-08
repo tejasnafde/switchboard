@@ -17,11 +17,7 @@
  *
  * Backed by `tests/unit/launch-config-reducer.test.ts`.
  */
-import type {
-  LaunchConfigFile,
-  LaunchConfig,
-  WorktreeSetupConfig,
-} from '../../shared/launch-config'
+import type { LaunchConfigFile, LaunchConfig, WorktreeSetupConfig } from '../../shared/launch-config'
 
 export type LaunchConfigListAction =
   | { type: 'addLaunchConfig'; name: string }
@@ -30,9 +26,7 @@ export type LaunchConfigListAction =
   | { type: 'replaceLaunchConfigBody'; name: string; body: LaunchConfig }
   | { type: 'replaceWorktreeSetup'; setup: WorktreeSetupConfig }
 
-export type LaunchConfigListResult =
-  | { ok: true; config: LaunchConfigFile }
-  | { ok: false; error: string }
+export type LaunchConfigListResult = { ok: true; config: LaunchConfigFile } | { ok: false; error: string }
 
 const RESERVED = 'default'
 
@@ -105,10 +99,7 @@ export function launchConfigListReducer(
  * so legacy callers that read `config.terminals` directly stay consistent
  * with the modern configs map.
  */
-function withLaunchConfigs(
-  config: LaunchConfigFile,
-  configs: Record<string, LaunchConfig>,
-): LaunchConfigFile {
+function withLaunchConfigs(config: LaunchConfigFile, configs: Record<string, LaunchConfig>): LaunchConfigFile {
   const def = configs[RESERVED]
   return {
     ...config,

@@ -99,9 +99,15 @@ export function memoryApprovalCardStore<Plan = unknown>(): ApprovalCardStore<Pla
   const held: HeldApprovalResult[] = []
   return {
     loadCards: () => [...cards.values()].map((c) => structuredClone(c)),
-    putCard: (card) => { cards.set(card.requestId, structuredClone(card)) },
-    removeCard: (id) => { cards.delete(id) },
-    holdResult: (r) => { held.push({ ...r }) },
+    putCard: (card) => {
+      cards.set(card.requestId, structuredClone(card))
+    },
+    removeCard: (id) => {
+      cards.delete(id)
+    },
+    holdResult: (r) => {
+      held.push({ ...r })
+    },
     takeHeldResults: (chatId) => {
       const mine = held.filter((r) => r.chatId === chatId).sort((a, b) => a.at - b.at)
       for (const r of mine) held.splice(held.indexOf(r), 1)
@@ -111,8 +117,10 @@ export function memoryApprovalCardStore<Plan = unknown>(): ApprovalCardStore<Pla
 }
 
 export function openCardCapMessage(cap = AGENT_OPEN_CARD_CAP): string {
-  return `This chat already has ${cap} approval cards waiting for the user, which is the limit. Nothing was queued. ` +
+  return (
+    `This chat already has ${cap} approval cards waiting for the user, which is the limit. Nothing was queued. ` +
     'Wait for the user to answer them, or withdraw one you no longer need with withdraw_approval.'
+  )
 }
 
 /**
@@ -123,7 +131,10 @@ export function openCardCapMessage(cap = AGENT_OPEN_CARD_CAP): string {
 export class ApprovalCardBook<Plan = unknown> {
   private readonly cards = new Map<string, StoredApprovalCard<Plan>>()
 
-  constructor(private readonly store: ApprovalCardStore<Plan>, private readonly cap = AGENT_OPEN_CARD_CAP) {
+  constructor(
+    private readonly store: ApprovalCardStore<Plan>,
+    private readonly cap = AGENT_OPEN_CARD_CAP,
+  ) {
     for (const card of store.loadCards()) this.cards.set(card.requestId, card)
   }
 
@@ -161,9 +172,11 @@ export class ApprovalCardBook<Plan = unknown> {
 
 /** What the tool answers at once. Not an error: the write is waiting, not refused. */
 export function queuedToolText(requestId: string): string {
-  return `Queued for the user's approval (card ${requestId}). You will get a message in this chat with the result. ` +
+  return (
+    `Queued for the user's approval (card ${requestId}). You will get a message in this chat with the result. ` +
     'Do not send it again. Carry on with other work, or end your turn. ' +
     `If you no longer want it, call withdraw_approval with card "${requestId}".`
+  )
 }
 
 /** What the agent is told about a card the user denied. */
@@ -178,7 +191,11 @@ export function declinedResultText(what: string): string {
  */
 export type ApprovalResultDelivery = 'none' | 'turn' | 'queue' | 'hold'
 
-export function approvalResultDelivery(input: { wake: boolean; live: boolean; midTurn: boolean }): ApprovalResultDelivery {
+export function approvalResultDelivery(input: {
+  wake: boolean
+  live: boolean
+  midTurn: boolean
+}): ApprovalResultDelivery {
   if (!input.wake) return 'none'
   if (!input.live) return 'hold'
   return input.midTurn ? 'queue' : 'turn'
@@ -228,10 +245,17 @@ export function parseApprovalResultMarker(content: string): ApprovalResultRow | 
   try {
     const raw = JSON.parse(content.slice(APPROVAL_RESULT_MARKER_PREFIX.length)) as Record<string, unknown>
     if (typeof raw.requestId !== 'string' || typeof raw.title !== 'string' || typeof raw.text !== 'string') return null
-    if (!OUTCOMES.includes(raw.outcome as ApprovalResultOutcome) || !DELIVERIES.includes(raw.delivery as ApprovalResultDelivery)) return null
+    if (
+      !OUTCOMES.includes(raw.outcome as ApprovalResultOutcome) ||
+      !DELIVERIES.includes(raw.delivery as ApprovalResultDelivery)
+    )
+      return null
     return {
-      requestId: raw.requestId, title: raw.title, text: raw.text,
-      outcome: raw.outcome as ApprovalResultOutcome, delivery: raw.delivery as ApprovalResultDelivery,
+      requestId: raw.requestId,
+      title: raw.title,
+      text: raw.text,
+      outcome: raw.outcome as ApprovalResultOutcome,
+      delivery: raw.delivery as ApprovalResultDelivery,
     }
   } catch {
     return null

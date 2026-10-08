@@ -6,22 +6,44 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
 
-import { BITBUCKET_API, BitbucketClient, BitbucketProvider, bitbucketWriteError, type FetchLike } from '../../src/main/pull-requests/bitbucket'
+import {
+  BITBUCKET_API,
+  BitbucketClient,
+  BitbucketProvider,
+  bitbucketWriteError,
+  type FetchLike,
+} from '../../src/main/pull-requests/bitbucket'
 import { mapBbMergeStrategies } from '../../src/main/pull-requests/bitbucket-map'
 import type { PrRef } from '../../src/shared/pull-requests'
 
 const ref: PrRef = { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2', number: 612 }
 const PR = `${BITBUCKET_API}/repositories/geoiq/ssg-bot-v2/pullrequests/612`
 
-interface Answer { status: number; body?: unknown; headers?: Record<string, string> }
-interface Sent { method: string; url: string; body: unknown; contentType: string | undefined }
+interface Answer {
+  status: number
+  body?: unknown
+  headers?: Record<string, string>
+}
+interface Sent {
+  method: string
+  url: string
+  body: unknown
+  contentType: string | undefined
+}
 
 function fakeFetch(answers: Answer[] = []) {
   const sent: Sent[] = []
   const impl: FetchLike = vi.fn(async (url, init) => {
-    sent.push({ method: init.method ?? 'GET', url, body: init.body ? JSON.parse(init.body) : undefined, contentType: init.headers['Content-Type'] })
+    sent.push({
+      method: init.method ?? 'GET',
+      url,
+      body: init.body ? JSON.parse(init.body) : undefined,
+      contentType: init.headers['Content-Type'],
+    })
     const a = answers.shift() ?? { status: 200, body: {} }
     const text = a.body === undefined ? '' : JSON.stringify(a.body)
     return {
@@ -40,7 +62,14 @@ describe('Bitbucket write requests', () => {
   it('replies under the conversation root', async () => {
     const { provider, sent } = fakeFetch()
     await provider.reply(ref, '812', 'Done in a1b2c3d.')
-    expect(sent).toEqual([{ method: 'POST', url: `${PR}/comments`, body: { content: { raw: 'Done in a1b2c3d.' }, parent: { id: 812 } }, contentType: 'application/json' }])
+    expect(sent).toEqual([
+      {
+        method: 'POST',
+        url: `${PR}/comments`,
+        body: { content: { raw: 'Done in a1b2c3d.' }, parent: { id: 812 } },
+        contentType: 'application/json',
+      },
+    ])
   })
 
   it('resolves with POST and unresolves with DELETE on the root comment', async () => {
@@ -67,10 +96,14 @@ describe('Bitbucket write requests', () => {
 
   it('submits a review as the comments, the summary, then the verdict', async () => {
     const { provider, sent } = fakeFetch()
-    await provider.submitReview(ref, { event: 'request_changes', body: 'Two things.', comments: [
-      { path: 'a.py', side: 'new', line: 1, body: 'one' },
-      { path: 'b.py', side: 'new', line: 9, startLine: 2, body: 'two' },
-    ] })
+    await provider.submitReview(ref, {
+      event: 'request_changes',
+      body: 'Two things.',
+      comments: [
+        { path: 'a.py', side: 'new', line: 1, body: 'one' },
+        { path: 'b.py', side: 'new', line: 9, startLine: 2, body: 'two' },
+      ],
+    })
     expect(sent[1].body).toEqual({ content: { raw: 'two' }, inline: { path: 'b.py', to: 9, start_to: 2 } })
     expect(sent.map((s) => [s.method, s.url.replace(PR, '')])).toEqual([
       ['POST', '/comments'],
@@ -88,11 +121,20 @@ describe('Bitbucket write requests', () => {
   })
 
   it('says how many comments went when a review fails part way', async () => {
-    const { provider, sent } = fakeFetch([{ status: 201, body: {} }, { status: 429, headers: { 'retry-after': '30' } }])
-    await expect(provider.submitReview(ref, { event: 'comment', body: '', comments: [
-      { path: 'a.py', side: 'new', line: 1, body: 'one' },
-      { path: 'b.py', side: 'new', line: 2, body: 'two' },
-    ] })).rejects.toMatchObject({ error: { kind: 'rate_limited', postedComments: 1 } })
+    const { provider, sent } = fakeFetch([
+      { status: 201, body: {} },
+      { status: 429, headers: { 'retry-after': '30' } },
+    ])
+    await expect(
+      provider.submitReview(ref, {
+        event: 'comment',
+        body: '',
+        comments: [
+          { path: 'a.py', side: 'new', line: 1, body: 'one' },
+          { path: 'b.py', side: 'new', line: 2, body: 'two' },
+        ],
+      }),
+    ).rejects.toMatchObject({ error: { kind: 'rate_limited', postedComments: 1 } })
     expect(sent).toHaveLength(2)
   })
 
@@ -121,11 +163,26 @@ describe('bitbucketWriteError', () => {
   })
 
   it.each([
-    [400, { error: { message: 'Bad request', detail: 'inline.to must be on the diff' } }, 'invalid', 'Bad request: inline.to must be on the diff'],
+    [
+      400,
+      { error: { message: 'Bad request', detail: 'inline.to must be on the diff' } },
+      'invalid',
+      'Bad request: inline.to must be on the diff',
+    ],
     [401, undefined, 'token_rejected', 'Bitbucket rejected the email and API token.'],
-    [403, { error: { message: 'You cannot approve your own pull request' } }, 'forbidden', 'You cannot approve your own pull request'],
+    [
+      403,
+      { error: { message: 'You cannot approve your own pull request' } },
+      'forbidden',
+      'You cannot approve your own pull request',
+    ],
     [404, undefined, 'stale', 'Bitbucket could not find it; it may have been deleted.'],
-    [409, { error: { message: 'Pull request has unresolved merge conflicts' } }, 'conflict', 'Pull request has unresolved merge conflicts'],
+    [
+      409,
+      { error: { message: 'Pull request has unresolved merge conflicts' } },
+      'conflict',
+      'Pull request has unresolved merge conflicts',
+    ],
     [500, 'not json', 'unknown', 'Bitbucket answered 500.'],
   ])('%d -> %s', async (status, body, kind, message) => {
     expect(await bitbucketWriteError(res(status, body))).toEqual({ kind, host: 'bitbucket', message })
@@ -147,12 +204,18 @@ describe('bitbucketWriteError', () => {
 describe('Bitbucket reviewer and decline requests', () => {
   const A = '{00000000-0000-4000-8000-00000000000a}'
   const B = '{00000000-0000-4000-8000-00000000000b}'
-  const current = { status: 200, body: { id: 612, title: 'Jittered backoff', description: 'keep <!-- me -->', reviewers: [{ uuid: A }] } }
+  const current = {
+    status: 200,
+    body: { id: 612, title: 'Jittered backoff', description: 'keep <!-- me -->', reviewers: [{ uuid: A }] },
+  }
 
   it('adds a reviewer by PUT with the title and the whole list, never the description', async () => {
     const { provider, sent } = fakeFetch([current, { status: 200, body: {} }])
     await provider.addReviewer(ref, B)
-    expect(sent.map((s) => [s.method, s.url])).toEqual([['GET', PR], ['PUT', PR]])
+    expect(sent.map((s) => [s.method, s.url])).toEqual([
+      ['GET', PR],
+      ['PUT', PR],
+    ])
     expect(sent[1].body).toEqual({ title: 'Jittered backoff', reviewers: [{ uuid: A }, { uuid: B }] })
   })
 
@@ -170,31 +233,58 @@ describe('Bitbucket reviewer and decline requests', () => {
     expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([['POST', `${PR}/decline`, undefined]])
   })
 
-  it('maps a refused reviewer change to the typed error with Bitbucket\'s reason', async () => {
-    const { provider } = fakeFetch([current, { status: 400, body: { error: { message: 'Bad request', detail: 'reviewers: pankaj is the author of the pull request' } } }])
-    await expect(provider.addReviewer(ref, B)).rejects.toMatchObject({ error: { kind: 'invalid', message: 'Bad request: reviewers: pankaj is the author of the pull request' } })
+  it("maps a refused reviewer change to the typed error with Bitbucket's reason", async () => {
+    const { provider } = fakeFetch([
+      current,
+      {
+        status: 400,
+        body: { error: { message: 'Bad request', detail: 'reviewers: pankaj is the author of the pull request' } },
+      },
+    ])
+    await expect(provider.addReviewer(ref, B)).rejects.toMatchObject({
+      error: { kind: 'invalid', message: 'Bad request: reviewers: pankaj is the author of the pull request' },
+    })
   })
 
   it('offers workspace members by uuid, and none without the workspace scope', async () => {
-    const members = { status: 200, body: { values: [{ user: { display_name: 'barath', nickname: 'barath', uuid: B } }, { user: { display_name: 'no id' } }] } }
+    const members = {
+      status: 200,
+      body: {
+        values: [
+          { user: { display_name: 'barath', nickname: 'barath', uuid: B } },
+          { user: { display_name: 'no id' } },
+        ],
+      },
+    }
     const { provider, sent } = fakeFetch([members])
     const repo = { host: 'bitbucket' as const, owner: 'geoiq', name: 'ssg-bot-v2' }
-    expect(await provider.reviewerCandidates(repo)).toEqual([{ id: B, person: { login: 'barath', displayName: 'barath', avatarUrl: null }, kind: 'user', reviewed: 0 }])
+    expect(await provider.reviewerCandidates(repo)).toEqual([
+      { id: B, person: { login: 'barath', displayName: 'barath', avatarUrl: null }, kind: 'user', reviewed: 0 },
+    ])
     expect(sent[0].url).toBe(`${BITBUCKET_API}/workspaces/geoiq/members?pagelen=100`)
     const denied = fakeFetch([{ status: 403, body: {} }])
     expect(await denied.provider.reviewerCandidates(repo)).toEqual([])
   })
 
-  it('reads a workspace\'s members once per 10 minutes across its repositories, and not an offline failure', async () => {
+  it("reads a workspace's members once per 10 minutes across its repositories, and not an offline failure", async () => {
     let now = 0
     let calls = 0
     let offline = true
     const impl: FetchLike = vi.fn(async () => {
       calls++
       if (offline) throw new TypeError('fetch failed')
-      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ values: [{ user: { display_name: 'barath', uuid: B } }] }), text: async () => '' }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({ values: [{ user: { display_name: 'barath', uuid: B } }] }),
+        text: async () => '',
+      }
     })
-    const provider = new BitbucketProvider(new BitbucketClient({ email: 'me@example.com', apiToken: 'tok-secret' }, impl), () => now)
+    const provider = new BitbucketProvider(
+      new BitbucketClient({ email: 'me@example.com', apiToken: 'tok-secret' }, impl),
+      () => now,
+    )
     const repo = (name: string) => ({ host: 'bitbucket' as const, owner: 'geoiq', name })
     await expect(provider.reviewerCandidates(repo('a'))).rejects.toMatchObject({ error: { kind: 'offline' } })
     offline = false
@@ -226,11 +316,23 @@ describe('Bitbucket reviewer and decline requests', () => {
 
 describe('mapBbMergeStrategies', () => {
   it('maps the destination branch strategies, merge commit first', () => {
-    expect(mapBbMergeStrategies({ destination: { branch: { name: 'main', merge_strategies: ['squash', 'rebase_fast_forward', 'merge_commit', 'something_new'] } } }))
-      .toEqual(['merge_commit', 'squash', 'rebase'])
+    expect(
+      mapBbMergeStrategies({
+        destination: {
+          branch: {
+            name: 'main',
+            merge_strategies: ['squash', 'rebase_fast_forward', 'merge_commit', 'something_new'],
+          },
+        },
+      }),
+    ).toEqual(['merge_commit', 'squash', 'rebase'])
   })
 
   it('falls back to Bitbucket defaults when the branch does not list them', () => {
-    expect(mapBbMergeStrategies({ destination: { branch: { name: 'main' } } })).toEqual(['merge_commit', 'fast_forward', 'squash'])
+    expect(mapBbMergeStrategies({ destination: { branch: { name: 'main' } } })).toEqual([
+      'merge_commit',
+      'fast_forward',
+      'squash',
+    ])
   })
 })

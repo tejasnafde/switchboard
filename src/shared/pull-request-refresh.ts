@@ -47,7 +47,13 @@ export function nextRefreshDelay(lastFetchAt: number | null, now: number): numbe
 export function pullRequestChanged(before: PrSummary, after: PrSummary): boolean {
   const a = before.checks
   const b = after.checks
-  return before.updatedAt !== after.updatedAt
-    || a.state !== b.state || a.total !== b.total || a.passed !== b.passed || a.failed !== b.failed || a.pending !== b.pending
-    || before.unresolvedConversations !== after.unresolvedConversations
+  return (
+    before.updatedAt !== after.updatedAt ||
+    a.state !== b.state ||
+    a.total !== b.total ||
+    a.passed !== b.passed ||
+    a.failed !== b.failed ||
+    a.pending !== b.pending ||
+    before.unresolvedConversations !== after.unresolvedConversations
+  )
 }

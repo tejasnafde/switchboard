@@ -14,7 +14,7 @@ let emitFailedTurn = false
 let turnStartErrors: string[] = []
 let turnRetryMessages: string[] = []
 let fileChanges: Array<{ path: string; kind: { type: string; move_path?: string | null }; diff: string }> = []
-let fileChangePatchUpdates: typeof fileChanges[] = []
+let fileChangePatchUpdates: (typeof fileChanges)[] = []
 let fileChangeStatus = 'completed'
 let omitFileChangesAtStart = false
 let stallInitialize = false
@@ -58,87 +58,105 @@ function makeChild(): MockChild {
           return
         }
         queueMicrotask(() => {
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            id: message.id,
-            result: {
-              userAgent: 'mock-codex-app-server',
-              codexHome: '/tmp/codex-home',
-              platformFamily: 'unix',
-              platformOs: 'macos',
-            },
-          }) + '\n')
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: {
+                userAgent: 'mock-codex-app-server',
+                codexHome: '/tmp/codex-home',
+                platformFamily: 'unix',
+                platformOs: 'macos',
+              },
+            }) + '\n',
+          )
         })
       }
       if (message.method === 'thread/start') {
         queueMicrotask(() => {
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            id: message.id,
-            result: {
-              thread: { id: 'codex-thread-1' },
-              cwd: '/tmp/project',
-              model: 'gpt-5.4',
-            },
-          }) + '\n')
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: {
+                thread: { id: 'codex-thread-1' },
+                cwd: '/tmp/project',
+                model: 'gpt-5.4',
+              },
+            }) + '\n',
+          )
         })
       }
       if (message.method === 'thread/resume') {
         queueMicrotask(() => {
           if (threadResumeError) {
-            stdout.write(JSON.stringify({
-              jsonrpc: '2.0',
-              id: message.id,
-              error: { code: -32000, message: threadResumeError },
-            }) + '\n')
+            stdout.write(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: message.id,
+                error: { code: -32000, message: threadResumeError },
+              }) + '\n',
+            )
             return
           }
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            id: message.id,
-            result: {
-              thread: { id: message.params.threadId },
-              cwd: '/tmp/project',
-              model: 'gpt-5.4',
-            },
-          }) + '\n')
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: {
+                thread: { id: message.params.threadId },
+                cwd: '/tmp/project',
+                model: 'gpt-5.4',
+              },
+            }) + '\n',
+          )
         })
       }
       if (message.method === 'model/list') {
         const empty = emptyModelListReplies > 0
         if (empty) emptyModelListReplies -= 1
         queueMicrotask(() => {
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            id: message.id,
-            result: {
-              data: empty ? [] : [
-                { id: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', hidden: false, isDefault: true },
-                { id: 'gpt-5-mini', displayName: 'GPT-5 mini', hidden: false, isDefault: false },
-              ],
-              nextCursor: null,
-            },
-          }) + '\n')
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: {
+                data: empty
+                  ? []
+                  : [
+                      { id: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', hidden: false, isDefault: true },
+                      { id: 'gpt-5-mini', displayName: 'GPT-5 mini', hidden: false, isDefault: false },
+                    ],
+                nextCursor: null,
+              },
+            }) + '\n',
+          )
         })
       }
       if (message.method === 'skills/list') {
         queueMicrotask(() => {
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            id: message.id,
-            result: {
-              data: [{
-                cwd: '/tmp/project',
-                errors: [],
-                skills: [{
-                  name: 'review',
-                  description: 'Review changes',
-                  path: '/tmp/skills/review/SKILL.md',
-                  enabled: true,
-                }],
-              }],
-            },
-          }) + '\n')
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: {
+                data: [
+                  {
+                    cwd: '/tmp/project',
+                    errors: [],
+                    skills: [
+                      {
+                        name: 'review',
+                        description: 'Review changes',
+                        path: '/tmp/skills/review/SKILL.md',
+                        enabled: true,
+                      },
+                    ],
+                  },
+                ],
+              },
+            }) + '\n',
+          )
         })
       }
       if (message.method === 'turn/start') {
@@ -146,256 +164,302 @@ function makeChild(): MockChild {
           if (turnStartGate) await turnStartGate
           const turnStartError = turnStartErrors.shift()
           if (turnStartError) {
-            stdout.write(JSON.stringify({
-              jsonrpc: '2.0',
-              id: message.id,
-              error: { code: -32600, message: turnStartError },
-            }) + '\n')
+            stdout.write(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: message.id,
+                error: { code: -32600, message: turnStartError },
+              }) + '\n',
+            )
             return
           }
           if (emitFailedTurn) {
-            stdout.write(JSON.stringify({
-              jsonrpc: '2.0',
-              method: 'turn/completed',
-              params: {
-                threadId: 'codex-thread-1',
-                turn: {
-                  id: 'turn-1',
-                  items: [],
-                  status: 'failed',
-                  error: { message: 'Mock Codex failure' },
+            stdout.write(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'turn/completed',
+                params: {
+                  threadId: 'codex-thread-1',
+                  turn: {
+                    id: 'turn-1',
+                    items: [],
+                    status: 'failed',
+                    error: { message: 'Mock Codex failure' },
+                  },
                 },
-              },
-            }) + '\n')
-            stdout.write(JSON.stringify({
-              jsonrpc: '2.0',
-              id: message.id,
-              result: {
-                turn: { id: 'turn-1', status: 'failed' },
-              },
-            }) + '\n')
+              }) + '\n',
+            )
+            stdout.write(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: message.id,
+                result: {
+                  turn: { id: 'turn-1', status: 'failed' },
+                },
+              }) + '\n',
+            )
             return
           }
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'turn/started',
-            params: {
-              threadId: 'codex-thread-1',
-              turn: { id: 'turn-1', status: 'inProgress' },
-            },
-          }) + '\n')
-          for (const retryMessage of turnRetryMessages) {
-            stdout.write(JSON.stringify({
+          stdout.write(
+            JSON.stringify({
               jsonrpc: '2.0',
-              method: 'error',
+              method: 'turn/started',
               params: {
-                error: { message: retryMessage },
-                willRetry: true,
+                threadId: 'codex-thread-1',
+                turn: { id: 'turn-1', status: 'inProgress' },
+              },
+            }) + '\n',
+          )
+          for (const retryMessage of turnRetryMessages) {
+            stdout.write(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'error',
+                params: {
+                  error: { message: retryMessage },
+                  willRetry: true,
+                  threadId: 'codex-thread-1',
+                  turnId: 'turn-1',
+                },
+              }) + '\n',
+            )
+          }
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'thread/status/changed',
+              params: {
+                threadId: 'codex-thread-1',
+                status: { type: 'active', activeFlags: [] },
+              },
+            }) + '\n',
+          )
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'thread/tokenUsage/updated',
+              params: {
                 threadId: 'codex-thread-1',
                 turnId: 'turn-1',
+                tokenUsage: {
+                  last: { totalTokens: 128000, inputTokens: 120000, outputTokens: 8000 },
+                  total: { totalTokens: 4200000, inputTokens: 4000000, outputTokens: 200000 },
+                  modelContextWindow: 258400,
+                },
               },
-            }) + '\n')
-          }
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'thread/status/changed',
-            params: {
-              threadId: 'codex-thread-1',
-              status: { type: 'active', activeFlags: [] },
-            },
-          }) + '\n')
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'thread/tokenUsage/updated',
-            params: {
-              threadId: 'codex-thread-1',
-              turnId: 'turn-1',
-              tokenUsage: {
-                last: { totalTokens: 128000, inputTokens: 120000, outputTokens: 8000 },
-                total: { totalTokens: 4200000, inputTokens: 4000000, outputTokens: 200000 },
-                modelContextWindow: 258400,
-              },
-            },
-          }) + '\n')
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'item/started',
-            params: {
-              threadId: 'codex-thread-1',
-              turnId: 'turn-1',
-              item: {
-                id: 'cmd-1',
-                type: 'commandExecution',
-                command: 'npm test',
-                commandActions: [],
-                cwd: '/tmp/project',
-                status: 'inProgress',
-              },
-            },
-          }) + '\n')
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'item/commandExecution/outputDelta',
-            params: {
-              threadId: 'codex-thread-1',
-              turnId: 'turn-1',
-              itemId: 'cmd-1',
-              delta: 'running ',
-            },
-          }) + '\n')
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'item/commandExecution/outputDelta',
-            params: {
-              threadId: 'codex-thread-1',
-              turnId: 'turn-1',
-              itemId: 'cmd-1',
-              delta: 'tests\n',
-            },
-          }) + '\n')
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'item/completed',
-            params: {
-              threadId: 'codex-thread-1',
-              turnId: 'turn-1',
-              item: {
-                id: 'cmd-1',
-                type: 'commandExecution',
-                command: 'npm test',
-                commandActions: [],
-                cwd: '/tmp/project',
-                status: 'completed',
-                exitCode: 0,
-                aggregatedOutput: 'all tests passed',
-              },
-            },
-          }) + '\n')
-          if (fileChanges.length > 0) {
-            stdout.write(JSON.stringify({
+            }) + '\n',
+          )
+          stdout.write(
+            JSON.stringify({
               jsonrpc: '2.0',
               method: 'item/started',
               params: {
                 threadId: 'codex-thread-1',
                 turnId: 'turn-1',
                 item: {
-                  id: 'file-1',
-                  type: 'fileChange',
-                  changes: omitFileChangesAtStart ? [] : fileChanges,
+                  id: 'cmd-1',
+                  type: 'commandExecution',
+                  command: 'npm test',
+                  commandActions: [],
+                  cwd: '/tmp/project',
                   status: 'inProgress',
                 },
               },
-            }) + '\n')
-            for (const changes of fileChangePatchUpdates) {
-              stdout.write(JSON.stringify({
-                jsonrpc: '2.0',
-                method: 'item/fileChange/patchUpdated',
-                params: {
-                  threadId: 'codex-thread-1',
-                  turnId: 'turn-1',
-                  itemId: 'file-1',
-                  changes,
-                },
-              }) + '\n')
-            }
-            stdout.write(JSON.stringify({
+            }) + '\n',
+          )
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'item/commandExecution/outputDelta',
+              params: {
+                threadId: 'codex-thread-1',
+                turnId: 'turn-1',
+                itemId: 'cmd-1',
+                delta: 'running ',
+              },
+            }) + '\n',
+          )
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'item/commandExecution/outputDelta',
+              params: {
+                threadId: 'codex-thread-1',
+                turnId: 'turn-1',
+                itemId: 'cmd-1',
+                delta: 'tests\n',
+              },
+            }) + '\n',
+          )
+          stdout.write(
+            JSON.stringify({
               jsonrpc: '2.0',
               method: 'item/completed',
               params: {
                 threadId: 'codex-thread-1',
                 turnId: 'turn-1',
                 item: {
-                  id: 'file-1',
-                  type: 'fileChange',
-                  changes: fileChanges,
-                  status: fileChangeStatus,
+                  id: 'cmd-1',
+                  type: 'commandExecution',
+                  command: 'npm test',
+                  commandActions: [],
+                  cwd: '/tmp/project',
+                  status: 'completed',
+                  exitCode: 0,
+                  aggregatedOutput: 'all tests passed',
                 },
               },
-            }) + '\n')
+            }) + '\n',
+          )
+          if (fileChanges.length > 0) {
+            stdout.write(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'item/started',
+                params: {
+                  threadId: 'codex-thread-1',
+                  turnId: 'turn-1',
+                  item: {
+                    id: 'file-1',
+                    type: 'fileChange',
+                    changes: omitFileChangesAtStart ? [] : fileChanges,
+                    status: 'inProgress',
+                  },
+                },
+              }) + '\n',
+            )
+            for (const changes of fileChangePatchUpdates) {
+              stdout.write(
+                JSON.stringify({
+                  jsonrpc: '2.0',
+                  method: 'item/fileChange/patchUpdated',
+                  params: {
+                    threadId: 'codex-thread-1',
+                    turnId: 'turn-1',
+                    itemId: 'file-1',
+                    changes,
+                  },
+                }) + '\n',
+              )
+            }
+            stdout.write(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'item/completed',
+                params: {
+                  threadId: 'codex-thread-1',
+                  turnId: 'turn-1',
+                  item: {
+                    id: 'file-1',
+                    type: 'fileChange',
+                    changes: fileChanges,
+                    status: fileChangeStatus,
+                  },
+                },
+              }) + '\n',
+            )
           }
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'turn/diff/updated',
-            params: {
-              threadId: 'codex-thread-1',
-              turnId: 'turn-1',
-              diff: 'diff --git a/a.txt b/a.txt\n+hello\n',
-            },
-          }) + '\n')
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'item/agentMessage/delta',
-            params: {
-              delta: 'Hello',
-              itemId: 'item-1',
-              threadId: 'codex-thread-1',
-              turnId: 'turn-1',
-            },
-          }) + '\n')
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'item/agentMessage/delta',
-            params: {
-              delta: ' from Codex',
-              itemId: 'item-1',
-              threadId: 'codex-thread-1',
-              turnId: 'turn-1',
-            },
-          }) + '\n')
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'item/reasoning/textDelta',
-            params: {
-              delta: 'Thinking ',
-              itemId: 'reason-1',
-              threadId: 'codex-thread-1',
-              turnId: 'turn-1',
-            },
-          }) + '\n')
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'item/reasoning/textDelta',
-            params: {
-              delta: 'with Codex',
-              itemId: 'reason-1',
-              threadId: 'codex-thread-1',
-              turnId: 'turn-1',
-            },
-          }) + '\n')
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            id: message.id,
-            result: {
-              turn: { id: 'turn-1', status: 'running' },
-            },
-          }) + '\n')
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'turn/diff/updated',
+              params: {
+                threadId: 'codex-thread-1',
+                turnId: 'turn-1',
+                diff: 'diff --git a/a.txt b/a.txt\n+hello\n',
+              },
+            }) + '\n',
+          )
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'item/agentMessage/delta',
+              params: {
+                delta: 'Hello',
+                itemId: 'item-1',
+                threadId: 'codex-thread-1',
+                turnId: 'turn-1',
+              },
+            }) + '\n',
+          )
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'item/agentMessage/delta',
+              params: {
+                delta: ' from Codex',
+                itemId: 'item-1',
+                threadId: 'codex-thread-1',
+                turnId: 'turn-1',
+              },
+            }) + '\n',
+          )
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'item/reasoning/textDelta',
+              params: {
+                delta: 'Thinking ',
+                itemId: 'reason-1',
+                threadId: 'codex-thread-1',
+                turnId: 'turn-1',
+              },
+            }) + '\n',
+          )
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'item/reasoning/textDelta',
+              params: {
+                delta: 'with Codex',
+                itemId: 'reason-1',
+                threadId: 'codex-thread-1',
+                turnId: 'turn-1',
+              },
+            }) + '\n',
+          )
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: {
+                turn: { id: 'turn-1', status: 'running' },
+              },
+            }) + '\n',
+          )
         })
       }
       if (message.method === 'turn/steer') {
         queueMicrotask(() => {
           const error = turnSteerErrors.shift()
           if (error) {
-            stdout.write(JSON.stringify({
-              jsonrpc: '2.0',
-              id: message.id,
-              error: { code: -32600, message: error },
-            }) + '\n')
+            stdout.write(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: message.id,
+                error: { code: -32600, message: error },
+              }) + '\n',
+            )
             return
           }
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            id: message.id,
-            result: { turnId: 'turn-1' },
-          }) + '\n')
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: { turnId: 'turn-1' },
+            }) + '\n',
+          )
         })
       }
       if (message.method === 'turn/interrupt') {
         queueMicrotask(() => {
-          stdout.write(JSON.stringify({
-            jsonrpc: '2.0',
-            id: message.id,
-            result: {},
-          }) + '\n')
+          stdout.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: {},
+            }) + '\n',
+          )
         })
       }
     }),
@@ -424,14 +488,17 @@ vi.mock('../../src/main/db/database', () => ({
   listSessionIdsForThread: vi.fn(() => persistedSessionIds),
   threadFamilyIds: vi.fn(() => persistedSessionIds),
   conversationSessionHints: vi.fn(() => persistedSessionHints),
-  resolveResumeSegment: vi.fn(() => typedResumeSessionId ? {
-    provider_session_id: typedResumeSessionId,
-  } : null),
+  resolveResumeSegment: vi.fn(() =>
+    typedResumeSessionId
+      ? {
+          provider_session_id: typedResumeSessionId,
+        }
+      : null,
+  ),
 }))
 
 vi.mock('../../src/main/projects/session-scanner', () => ({
-  scanCodexSessionCopies: vi.fn((ids: Set<string>) =>
-    [...ids].map((id) => ({ id, filePath: `/codex/${id}.jsonl` }))),
+  scanCodexSessionCopies: vi.fn((ids: Set<string>) => [...ids].map((id) => ({ id, filePath: `/codex/${id}.jsonl` }))),
 }))
 
 vi.mock('../../src/main/provider/codex-session-dirs', () => ({
@@ -465,11 +532,14 @@ describe('CodexAdapter', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      vi.fn(),
+    )
 
     const messages = writes.map((line) => JSON.parse(line))
 
@@ -495,18 +565,26 @@ describe('CodexAdapter', () => {
 
   it('parses the current cwd-grouped skills/list response including skill paths', async () => {
     const { parseCodexSkills } = await import('../../src/main/provider/adapters/codex-adapter')
-    expect(parseCodexSkills({
-      data: [{
-        cwd: '/tmp/project',
-        errors: [],
-        skills: [{ name: 'review', description: 'Review changes', path: '/tmp/skills/review/SKILL.md', enabled: true }],
-      }],
-    })).toEqual([{
-      name: 'review',
-      description: 'Review changes',
-      path: '/tmp/skills/review/SKILL.md',
-      source: 'codex',
-    }])
+    expect(
+      parseCodexSkills({
+        data: [
+          {
+            cwd: '/tmp/project',
+            errors: [],
+            skills: [
+              { name: 'review', description: 'Review changes', path: '/tmp/skills/review/SKILL.md', enabled: true },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        name: 'review',
+        description: 'Review changes',
+        path: '/tmp/skills/review/SKILL.md',
+        source: 'codex',
+      },
+    ])
   })
 
   it('sends the agent-digest rule as developerInstructions on thread/start', async () => {
@@ -514,12 +592,15 @@ describe('CodexAdapter', () => {
     const { AGENT_DIGEST_PROMPT_RULE } = await import('../../src/shared/agent-digest')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      runtimeMode: 'sandbox',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        runtimeMode: 'sandbox',
+      },
+      vi.fn(),
+    )
     await adapter.sendTurn('thread-1', 'hello codex')
 
     const messages = writes.map((line) => JSON.parse(line))
@@ -531,14 +612,17 @@ describe('CodexAdapter', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      model: 'gpt-5.4',
-      runtimeMode: 'accept-edits',
-      reasoningEffort: 'high',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        model: 'gpt-5.4',
+        runtimeMode: 'accept-edits',
+        reasoningEffort: 'high',
+      },
+      vi.fn(),
+    )
 
     await adapter.sendTurn('thread-1', 'hello codex')
 
@@ -577,13 +661,16 @@ describe('CodexAdapter', () => {
   it('applies a reasoning effort changed mid-thread to the next turn', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      runtimeMode: 'sandbox',
-      reasoningEffort: 'medium',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        runtimeMode: 'sandbox',
+        reasoningEffort: 'medium',
+      },
+      vi.fn(),
+    )
 
     await adapter.setReasoningEffort('thread-1', 'high')
     await adapter.sendTurn('thread-1', 'think harder')
@@ -596,31 +683,44 @@ describe('CodexAdapter', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      runtimeMode: 'auto',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        runtimeMode: 'auto',
+      },
+      vi.fn(),
+    )
     await adapter.sendTurn('thread-1', 'hello codex')
 
     const messages = writes.map((line) => JSON.parse(line))
     const threadStart = messages.find((message) => message.method === 'thread/start')
     const turnStart = messages.find((message) => message.method === 'turn/start')
-    expect(threadStart.params).toMatchObject({ approvalPolicy: 'on-request', sandbox: 'workspace-write', approvalsReviewer: 'auto_review' })
-    expect(turnStart.params).toMatchObject({ sandboxPolicy: { type: 'workspaceWrite' }, approvalsReviewer: 'auto_review' })
+    expect(threadStart.params).toMatchObject({
+      approvalPolicy: 'on-request',
+      sandbox: 'workspace-write',
+      approvalsReviewer: 'auto_review',
+    })
+    expect(turnStart.params).toMatchObject({
+      sandboxPolicy: { type: 'workspaceWrite' },
+      approvalsReviewer: 'auto_review',
+    })
   })
 
   it('loads a persisted codex thread with thread/resume before sending another turn', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'switchboard-thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      resumeSessionId: 'codex-thread-existing',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'switchboard-thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        resumeSessionId: 'codex-thread-existing',
+      },
+      vi.fn(),
+    )
 
     const { AGENT_DIGEST_PROMPT_RULE } = await import('../../src/shared/agent-digest')
     const messages = writes.map((line) => JSON.parse(line))
@@ -649,15 +749,17 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     persistedSessionHints = ['codex-thread-stale', 'codex-thread-newest']
 
-    await adapter.startSession({
-      threadId: 'switchboard-thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      resumeSessionId: 'claude-session',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'switchboard-thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        resumeSessionId: 'claude-session',
+      },
+      vi.fn(),
+    )
 
-    const resume = writes.map((line) => JSON.parse(line))
-      .find((message) => message.method === 'thread/resume')
+    const resume = writes.map((line) => JSON.parse(line)).find((message) => message.method === 'thread/resume')
     expect(resume?.params.threadId).toBe('codex-thread-newest')
   })
 
@@ -667,14 +769,16 @@ describe('CodexAdapter', () => {
     persistedSessionHints = ['codex-native-session']
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'switchboard-thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'switchboard-thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      vi.fn(),
+    )
 
-    const resume = writes.map((line) => JSON.parse(line))
-      .find((message) => message.method === 'thread/resume')
+    const resume = writes.map((line) => JSON.parse(line)).find((message) => message.method === 'thread/resume')
     expect(resume?.params.threadId).toBe('codex-native-session')
   })
 
@@ -684,15 +788,17 @@ describe('CodexAdapter', () => {
     typedResumeSessionId = 'codex-thread-typed'
     persistedSessionIds = ['switchboard-thread-1', 'legacy-ambiguous']
 
-    await adapter.startSession({
-      threadId: 'switchboard-thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      instanceId: 'codex-work',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'switchboard-thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        instanceId: 'codex-work',
+      },
+      vi.fn(),
+    )
 
-    const resume = writes.map((line) => JSON.parse(line))
-      .find((message) => message.method === 'thread/resume')
+    const resume = writes.map((line) => JSON.parse(line)).find((message) => message.method === 'thread/resume')
     expect(resume?.params.threadId).toBe('codex-thread-typed')
   })
 
@@ -701,12 +807,17 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     threadResumeError = 'authentication service unavailable'
 
-    await expect(adapter.startSession({
-      threadId: 'switchboard-thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      resumeSessionId: 'codex-thread-existing',
-    }, vi.fn())).rejects.toThrow('authentication service unavailable')
+    await expect(
+      adapter.startSession(
+        {
+          threadId: 'switchboard-thread-1',
+          provider: 'codex',
+          cwd: '/tmp/project',
+          resumeSessionId: 'codex-thread-existing',
+        },
+        vi.fn(),
+      ),
+    ).rejects.toThrow('authentication service unavailable')
 
     expect(writes.map((line) => JSON.parse(line)).some((message) => message.method === 'thread/start')).toBe(false)
   })
@@ -716,21 +827,21 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     turnStartErrors = ['thread not found: codex-thread-existing']
 
-    await adapter.startSession({
-      threadId: 'switchboard-thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      resumeSessionId: 'codex-thread-existing',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'switchboard-thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        resumeSessionId: 'codex-thread-existing',
+      },
+      vi.fn(),
+    )
 
     await adapter.sendTurn('switchboard-thread-1', 'recover this turn')
 
     const messages = writes.map((line) => JSON.parse(line))
     const turnStarts = messages.filter((message) => message.method === 'turn/start')
-    expect(turnStarts.map((message) => message.params.threadId)).toEqual([
-      'codex-thread-existing',
-      'codex-thread-1',
-    ])
+    expect(turnStarts.map((message) => message.params.threadId)).toEqual(['codex-thread-existing', 'codex-thread-1'])
     expect(messages.filter((message) => message.method === 'thread/start')).toHaveLength(1)
   })
 
@@ -740,11 +851,14 @@ describe('CodexAdapter', () => {
     const onEvent = vi.fn()
     turnStartErrors = ['model not loaded']
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     await expect(adapter.sendTurn('thread-1', 'do not hang')).rejects.toThrow('model not loaded')
     expect(onEvent).toHaveBeenLastCalledWith({
@@ -760,11 +874,14 @@ describe('CodexAdapter', () => {
     const onEvent = vi.fn()
     turnRetryMessages = ['Reconnecting... 1/5', 'Reconnecting... 2/5']
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     await adapter.sendTurn('thread-1', 'keep going')
 
@@ -774,30 +891,37 @@ describe('CodexAdapter', () => {
       turnId: 'turn-1',
       message: 'Reconnecting... 2/5',
     })
-    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
-      type: 'error',
-      message: expect.stringContaining('Reconnecting'),
-    }))
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringContaining('Reconnecting'),
+      }),
+    )
   })
 
   it('lists the live Codex model catalog instead of relying on stale static ids', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      vi.fn(),
+    )
 
     await expect(adapter.listModels?.('thread-1')).resolves.toEqual([
       { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', tier: 'max' },
       { id: 'gpt-5-mini', label: 'GPT-5 mini', tier: 'fast' },
     ])
-    expect(writes.map((line) => JSON.parse(line))).toContainEqual(expect.objectContaining({
-      method: 'model/list',
-      params: { limit: 100, includeHidden: false },
-    }))
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual(
+      expect.objectContaining({
+        method: 'model/list',
+        params: { limit: 100, includeHidden: false },
+      }),
+    )
   })
 
   it('retries model/list after an empty reply instead of pinning the session to the static catalog', async () => {
@@ -810,11 +934,14 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     emptyModelListReplies = 1
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      vi.fn(),
+    )
 
     await expect(adapter.listModels?.('thread-1')).resolves.toEqual([])
     await expect(adapter.listModels?.('thread-1')).resolves.toEqual([
@@ -829,11 +956,14 @@ describe('CodexAdapter', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      vi.fn(),
+    )
 
     await adapter.listModels?.('thread-1')
     await adapter.listModels?.('thread-1')
@@ -845,12 +975,15 @@ describe('CodexAdapter', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      model: 'gpt-5-mini',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        model: 'gpt-5-mini',
+      },
+      vi.fn(),
+    )
     await adapter.setModel?.('thread-1', 'gpt-5.6-sol')
     await adapter.sendTurn('thread-1', 'use the new model')
 
@@ -867,12 +1000,15 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      model: 'gpt-4-ancient',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        model: 'gpt-4-ancient',
+      },
+      onEvent,
+    )
     await adapter.listModels?.('thread-1')
     await adapter.sendTurn('thread-1', 'hello')
 
@@ -888,19 +1024,24 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      runtimeMode: 'sandbox',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        runtimeMode: 'sandbox',
+      },
+      onEvent,
+    )
 
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: 900,
-      method: 'item/commandExecution/requestApproval',
-      params: { threadId: 'codex-thread-1', turnId: 'turn-1', itemId: 'cmd-1', command: 'npm test' },
-    }) + '\n')
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 900,
+        method: 'item/commandExecution/requestApproval',
+        params: { threadId: 'codex-thread-1', turnId: 'turn-1', itemId: 'cmd-1', command: 'npm test' },
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
     const opened = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'request.opened')
     expect(opened).toBeTruthy()
@@ -919,31 +1060,38 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
-
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: 901,
-      method: 'item/tool/requestUserInput',
-      params: {
-        threadId: 'codex-thread-1',
-        turnId: 'turn-1',
-        itemId: 'question-tool-1',
-        autoResolutionMs: null,
-        questions: [{
-          id: 'deploy_target',
-          header: 'Target',
-          question: 'Where should this deploy?',
-          isOther: true,
-          isSecret: false,
-          options: [{ label: 'Production', description: 'Deploy to prod' }],
-        }],
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
       },
-    }) + '\n')
+      onEvent,
+    )
+
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 901,
+        method: 'item/tool/requestUserInput',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'question-tool-1',
+          autoResolutionMs: null,
+          questions: [
+            {
+              id: 'deploy_target',
+              header: 'Target',
+              question: 'Where should this deploy?',
+              isOther: true,
+              isSecret: false,
+              options: [{ label: 'Production', description: 'Deploy to prod' }],
+            },
+          ],
+        },
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
     const asked = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'question.asked')
     expect(asked?.questions[0]).toMatchObject({
@@ -966,47 +1114,50 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
-
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: 903,
-      method: 'mcpServer/elicitation/request',
-      params: {
-        threadId: 'codex-thread-1',
-        turnId: 'turn-1',
-        serverName: 'imagegen',
-        mode: 'form',
-        message: 'Choose how the image should be generated.',
-        requestedSchema: {
-          type: 'object',
-          properties: {
-            direction: {
-              type: 'string',
-              title: 'Direction',
-              description: 'Pick a visual direction.',
-              enum: ['Editorial', 'Playful'],
-            },
-            transparent: {
-              type: 'boolean',
-              title: 'Transparency',
-              description: 'Use a transparent background?',
-            },
-          },
-          required: ['direction', 'transparent'],
-        },
-        _meta: null,
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
       },
-    }) + '\n')
+      onEvent,
+    )
+
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 903,
+        method: 'mcpServer/elicitation/request',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          serverName: 'imagegen',
+          mode: 'form',
+          message: 'Choose how the image should be generated.',
+          requestedSchema: {
+            type: 'object',
+            properties: {
+              direction: {
+                type: 'string',
+                title: 'Direction',
+                description: 'Pick a visual direction.',
+                enum: ['Editorial', 'Playful'],
+              },
+              transparent: {
+                type: 'boolean',
+                title: 'Transparency',
+                description: 'Use a transparent background?',
+              },
+            },
+            required: ['direction', 'transparent'],
+          },
+          _meta: null,
+        },
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
 
-    const asked = onEvent.mock.calls
-      .map(([event]) => event)
-      .find((event) => event.type === 'question.asked')
+    const asked = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'question.asked')
     expect(asked?.questions).toEqual([
       {
         id: 'direction',
@@ -1042,35 +1193,38 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      runtimeMode: 'sandbox',
-    }, onEvent)
-
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: 904,
-      method: 'mcpServer/elicitation/request',
-      params: {
-        threadId: 'codex-thread-1',
-        turnId: 'turn-1',
-        serverName: 'imagegen',
-        mode: 'form',
-        message: 'Allow the imagegen MCP server to run tool "generate"?',
-        requestedSchema: {
-          type: 'object',
-          properties: {},
-        },
-        _meta: null,
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        runtimeMode: 'sandbox',
       },
-    }) + '\n')
+      onEvent,
+    )
+
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 904,
+        method: 'mcpServer/elicitation/request',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          serverName: 'imagegen',
+          mode: 'form',
+          message: 'Allow the imagegen MCP server to run tool "generate"?',
+          requestedSchema: {
+            type: 'object',
+            properties: {},
+          },
+          _meta: null,
+        },
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
 
-    const opened = onEvent.mock.calls
-      .map(([event]) => event)
-      .find((event) => event.type === 'request.opened')
+    const opened = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'request.opened')
     expect(opened).toMatchObject({
       type: 'request.opened',
       threadId: 'thread-1',
@@ -1104,31 +1258,37 @@ describe('CodexAdapter', () => {
       args: ['/Users/me/Library/Application Support/switchboard/mcp/switchboard-mcp.cjs'],
       env: { ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_MCP_PORT: '51234', SWITCHBOARD_MCP_TOKEN: 'tok' },
     }
-    const confirm = (id: number, serverName: string, tool = 'reply_to_conversation') => JSON.stringify({
-      jsonrpc: '2.0',
-      id,
-      method: 'mcpServer/elicitation/request',
-      params: {
-        threadId: 'codex-thread-1',
-        turnId: 'turn-1',
-        serverName,
-        mode: 'form',
-        message: `Allow the ${serverName} MCP server to run tool "${tool}"?`,
-        requestedSchema: { type: 'object', properties: {} },
-        _meta: null,
-      },
-    }) + '\n'
+    const confirm = (id: number, serverName: string, tool = 'reply_to_conversation') =>
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        method: 'mcpServer/elicitation/request',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          serverName,
+          mode: 'form',
+          message: `Allow the ${serverName} MCP server to run tool "${tool}"?`,
+          requestedSchema: { type: 'object', properties: {} },
+          _meta: null,
+        },
+      }) + '\n'
 
-    it('registers the server on this chat\'s app-server with config overrides', async () => {
+    it("registers the server on this chat's app-server with config overrides", async () => {
       const { spawn } = await import('child_process')
       const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
-      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', switchboardMcp: launch }, vi.fn())
+      await new CodexAdapter().startSession(
+        { threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', switchboardMcp: launch },
+        vi.fn(),
+      )
 
       const args = vi.mocked(spawn).mock.calls.at(-1)?.[1] as string[]
       expect(args[0]).toBe('app-server')
       expect(args).toContain(`mcp_servers.switchboard.command="${launch.command}"`)
       expect(args).toContain(`mcp_servers.switchboard.args=["${launch.args[0]}"]`)
-      expect(args).toContain('mcp_servers.switchboard.env={ELECTRON_RUN_AS_NODE="1",SWITCHBOARD_MCP_PORT="51234",SWITCHBOARD_MCP_TOKEN="tok"}')
+      expect(args).toContain(
+        'mcp_servers.switchboard.env={ELECTRON_RUN_AS_NODE="1",SWITCHBOARD_MCP_PORT="51234",SWITCHBOARD_MCP_TOKEN="tok"}',
+      )
     })
 
     it('spawns plain app-server when no server was opened', async () => {
@@ -1141,19 +1301,41 @@ describe('CodexAdapter', () => {
     it('accepts the confirm for its own server without a second card', async () => {
       const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
       const onEvent = vi.fn()
-      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox', switchboardMcp: launch }, onEvent)
+      await new CodexAdapter().startSession(
+        {
+          threadId: 'thread-1',
+          provider: 'codex',
+          cwd: '/tmp/project',
+          runtimeMode: 'sandbox',
+          switchboardMcp: launch,
+        },
+        onEvent,
+      )
 
       lastChild?.stdout.write(confirm(905, 'switchboard'))
       await new Promise((resolve) => setImmediate(resolve))
 
       expect(onEvent.mock.calls.map(([event]) => event.type)).not.toContain('request.opened')
-      expect(writes.map((line) => JSON.parse(line))).toContainEqual({ jsonrpc: '2.0', id: 905, result: { action: 'accept', content: {}, _meta: null } })
+      expect(writes.map((line) => JSON.parse(line))).toContainEqual({
+        jsonrpc: '2.0',
+        id: 905,
+        result: { action: 'accept', content: {}, _meta: null },
+      })
     })
 
     it('accepts the confirm for the line comment and review tools without a second card', async () => {
       const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
       const onEvent = vi.fn()
-      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox', switchboardMcp: launch }, onEvent)
+      await new CodexAdapter().startSession(
+        {
+          threadId: 'thread-1',
+          provider: 'codex',
+          cwd: '/tmp/project',
+          runtimeMode: 'sandbox',
+          switchboardMcp: launch,
+        },
+        onEvent,
+      )
 
       lastChild?.stdout.write(confirm(908, 'switchboard', 'comment_on_line'))
       lastChild?.stdout.write(confirm(909, 'switchboard', 'draft_review'))
@@ -1161,13 +1343,23 @@ describe('CodexAdapter', () => {
 
       expect(onEvent.mock.calls.map(([event]) => event.type)).not.toContain('request.opened')
       const answers = writes.map((line) => JSON.parse(line))
-      for (const id of [908, 909]) expect(answers).toContainEqual({ jsonrpc: '2.0', id, result: { action: 'accept', content: {}, _meta: null } })
+      for (const id of [908, 909])
+        expect(answers).toContainEqual({ jsonrpc: '2.0', id, result: { action: 'accept', content: {}, _meta: null } })
     })
 
-    it('still asks for another server\'s tool', async () => {
+    it("still asks for another server's tool", async () => {
       const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
       const onEvent = vi.fn()
-      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox', switchboardMcp: launch }, onEvent)
+      await new CodexAdapter().startSession(
+        {
+          threadId: 'thread-1',
+          provider: 'codex',
+          cwd: '/tmp/project',
+          runtimeMode: 'sandbox',
+          switchboardMcp: launch,
+        },
+        onEvent,
+      )
 
       lastChild?.stdout.write(confirm(906, 'github'))
       await new Promise((resolve) => setImmediate(resolve))
@@ -1178,7 +1370,10 @@ describe('CodexAdapter', () => {
     it('does not trust a server calling itself switchboard when ours was not registered', async () => {
       const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
       const onEvent = vi.fn()
-      await new CodexAdapter().startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox' }, onEvent)
+      await new CodexAdapter().startSession(
+        { threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project', runtimeMode: 'sandbox' },
+        onEvent,
+      )
 
       lastChild?.stdout.write(confirm(907, 'switchboard'))
       await new Promise((resolve) => setImmediate(resolve))
@@ -1192,32 +1387,35 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-      runtimeMode: 'sandbox',
-    }, onEvent)
-
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: 905,
-      method: 'mcpServer/elicitation/request',
-      params: {
-        serverName: 'github',
-        mode: 'form',
-        message: 'Allow the github MCP server to run tool "create_issue"?',
-        requestedSchema: {
-          type: 'object',
-          properties: {},
-        },
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+        runtimeMode: 'sandbox',
       },
-    }) + '\n')
+      onEvent,
+    )
+
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 905,
+        method: 'mcpServer/elicitation/request',
+        params: {
+          serverName: 'github',
+          mode: 'form',
+          message: 'Allow the github MCP server to run tool "create_issue"?',
+          requestedSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
 
-    const opened = onEvent.mock.calls
-      .map(([event]) => event)
-      .find((event) => event.type === 'request.opened')
+    const opened = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'request.opened')
     expect(opened).toBeTruthy()
 
     await adapter.respondToRequest('thread-1', opened.requestId, 'deny')
@@ -1251,19 +1449,24 @@ describe('CodexAdapter', () => {
       const adapter = new CodexAdapter()
       const onEvent = vi.fn()
 
-      await adapter.startSession({
-        threadId: 'thread-1',
-        provider: 'codex',
-        cwd: '/tmp/project',
-        runtimeMode,
-      }, onEvent)
+      await adapter.startSession(
+        {
+          threadId: 'thread-1',
+          provider: 'codex',
+          cwd: '/tmp/project',
+          runtimeMode,
+        },
+        onEvent,
+      )
 
-      lastChild?.stdout.write(JSON.stringify({
-        jsonrpc: '2.0',
-        id: 906,
-        method: 'mcpServer/elicitation/request',
-        params,
-      }) + '\n')
+      lastChild?.stdout.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 906,
+          method: 'mcpServer/elicitation/request',
+          params,
+        }) + '\n',
+      )
       await new Promise((resolve) => setImmediate(resolve))
 
       return { onEvent, messages: writes.map((line) => JSON.parse(line)) }
@@ -1325,27 +1528,32 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
-
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: 907,
-      method: 'mcpServer/elicitation/request',
-      params: {
-        threadId: 'codex-thread-1',
-        turnId: 'turn-1',
-        serverName: 'example',
-        mode: 'url',
-        message: 'Open an external flow.',
-        url: 'https://example.com',
-        elicitationId: 'elicit-1',
-        _meta: null,
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
       },
-    }) + '\n')
+      onEvent,
+    )
+
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 907,
+        method: 'mcpServer/elicitation/request',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          serverName: 'example',
+          mode: 'url',
+          message: 'Open an external flow.',
+          url: 'https://example.com',
+          elicitationId: 'elicit-1',
+          _meta: null,
+        },
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
 
     expect(onEvent.mock.calls.map(([event]) => event)).toContainEqual({
@@ -1365,20 +1573,25 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
-
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: 902,
-      method: 'item/userInput/request',
-      params: {
-        questions: [{ header: 'Target', question: 'Where?', options: [] }],
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
       },
-    }) + '\n')
+      onEvent,
+    )
+
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 902,
+        method: 'item/userInput/request',
+        params: {
+          questions: [{ header: 'Target', question: 'Where?', options: [] }],
+        },
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
     const asked = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'question.asked')
 
@@ -1395,11 +1608,14 @@ describe('CodexAdapter', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      vi.fn(),
+    )
     await adapter.listSkills('thread-1')
     await adapter.sendTurn('thread-1', '$review focus on auth')
 
@@ -1415,11 +1631,14 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'switchboard-thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'switchboard-thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     await adapter.sendTurn('switchboard-thread-1', 'hello codex')
 
@@ -1440,35 +1659,42 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'switchboard-thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'switchboard-thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
     await adapter.sendTurn('switchboard-thread-1', 'start parent')
     onEvent.mockClear()
 
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'thread/started',
-      params: {
-        thread: {
-          id: 'codex-child-1',
-          source: {
-            subAgent: {
-              thread_spawn: { parent_thread_id: 'codex-thread-1', depth: 1 },
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'thread/started',
+        params: {
+          thread: {
+            id: 'codex-child-1',
+            source: {
+              subAgent: {
+                thread_spawn: { parent_thread_id: 'codex-thread-1', depth: 1 },
+              },
             },
           },
         },
-      },
-    }) + '\n')
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
     await adapter.sendTurn('switchboard-thread-1', 'continue parent')
 
-    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
-      type: 'session',
-      sessionId: 'codex-child-1',
-    }))
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'session',
+        sessionId: 'codex-child-1',
+      }),
+    )
     const turn = writes.map((line) => JSON.parse(line)).findLast((message) => message.method === 'turn/start')
     expect(turn.params.threadId).toBe('codex-thread-1')
   })
@@ -1478,34 +1704,45 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'switchboard-thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'switchboard-thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
     await adapter.sendTurn('switchboard-thread-1', 'start parent')
     onEvent.mockClear()
 
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'thread/status/changed',
-      params: { threadId: 'codex-child-1', status: { type: 'active' } },
-    }) + '\n')
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'item/agentMessage/delta',
-      params: { threadId: 'codex-child-1', itemId: 'child-msg', delta: 'worker-only output' },
-    }) + '\n')
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'thread/status/changed',
+        params: { threadId: 'codex-child-1', status: { type: 'active' } },
+      }) + '\n',
+    )
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'item/agentMessage/delta',
+        params: { threadId: 'codex-child-1', itemId: 'child-msg', delta: 'worker-only output' },
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
 
-    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
-      type: 'status',
-      status: 'running',
-    }))
-    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
-      type: 'content',
-      messageId: 'child-msg',
-    }))
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'status',
+        status: 'running',
+      }),
+    )
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'content',
+        messageId: 'child-msg',
+      }),
+    )
   })
 
   it('uses Codex last token usage as current context instead of cumulative total processed tokens', async () => {
@@ -1513,11 +1750,14 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     await adapter.sendTurn('thread-1', 'hello codex')
 
@@ -1527,10 +1767,12 @@ describe('CodexAdapter', () => {
       usedTokens: 128000,
       maxTokens: 258400,
     })
-    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
-      type: 'context_window',
-      usedTokens: 4200000,
-    }))
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'context_window',
+        usedTokens: 4200000,
+      }),
+    )
   })
 
   it('emits one completed command event after output deltas instead of cumulative snapshots', async () => {
@@ -1538,11 +1780,14 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     await adapter.sendTurn('thread-1', 'hello codex')
 
@@ -1560,12 +1805,14 @@ describe('CodexAdapter', () => {
       .map(([event]) => event)
       .filter((event) => event.type === 'tool.completed' && event.toolId === 'cmd-1')
 
-    expect(completions).toEqual([{
-      type: 'tool.completed',
-      threadId: 'thread-1',
-      toolId: 'cmd-1',
-      output: 'all tests passed',
-    }])
+    expect(completions).toEqual([
+      {
+        type: 'tool.completed',
+        threadId: 'thread-1',
+        toolId: 'cmd-1',
+        output: 'all tests passed',
+      },
+    ])
   })
 
   it('uses accumulated command deltas once when the completed item omits aggregatedOutput', async () => {
@@ -1573,46 +1820,63 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'item/started',
-      params: {
-        threadId: 'codex-thread-1',
-        item: { id: 'cmd-fallback', type: 'commandExecution', command: 'printf fallback', status: 'inProgress' },
-      },
-    }) + '\n')
-    for (const delta of ['fallback ', 'output']) {
-      lastChild?.stdout.write(JSON.stringify({
+    lastChild?.stdout.write(
+      JSON.stringify({
         jsonrpc: '2.0',
-        method: 'item/commandExecution/outputDelta',
-        params: { threadId: 'codex-thread-1', itemId: 'cmd-fallback', delta },
-      }) + '\n')
+        method: 'item/started',
+        params: {
+          threadId: 'codex-thread-1',
+          item: { id: 'cmd-fallback', type: 'commandExecution', command: 'printf fallback', status: 'inProgress' },
+        },
+      }) + '\n',
+    )
+    for (const delta of ['fallback ', 'output']) {
+      lastChild?.stdout.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'item/commandExecution/outputDelta',
+          params: { threadId: 'codex-thread-1', itemId: 'cmd-fallback', delta },
+        }) + '\n',
+      )
     }
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'item/completed',
-      params: {
-        threadId: 'codex-thread-1',
-        item: { id: 'cmd-fallback', type: 'commandExecution', command: 'printf fallback', status: 'completed', exitCode: 0 },
-      },
-    }) + '\n')
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'item/completed',
+        params: {
+          threadId: 'codex-thread-1',
+          item: {
+            id: 'cmd-fallback',
+            type: 'commandExecution',
+            command: 'printf fallback',
+            status: 'completed',
+            exitCode: 0,
+          },
+        },
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
 
     const completions = onEvent.mock.calls
       .map(([event]) => event)
       .filter((event) => event.type === 'tool.completed' && event.toolId === 'cmd-fallback')
-    expect(completions).toEqual([{
-      type: 'tool.completed',
-      threadId: 'thread-1',
-      toolId: 'cmd-fallback',
-      output: 'fallback output',
-    }])
+    expect(completions).toEqual([
+      {
+        type: 'tool.completed',
+        threadId: 'thread-1',
+        toolId: 'cmd-fallback',
+        output: 'fallback output',
+      },
+    ])
   })
 
   it('keeps forwarded command output bytes linear across many deltas', async () => {
@@ -1620,44 +1884,53 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
-
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'item/started',
-      params: {
-        threadId: 'codex-thread-1',
-        item: { id: 'cmd-volume', type: 'commandExecution', command: 'large-output', status: 'inProgress' },
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
       },
-    }) + '\n')
+      onEvent,
+    )
+
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'item/started',
+        params: {
+          threadId: 'codex-thread-1',
+          item: { id: 'cmd-volume', type: 'commandExecution', command: 'large-output', status: 'inProgress' },
+        },
+      }) + '\n',
+    )
     const deltas = Array.from({ length: 128 }, (_, index) => `${index.toString().padStart(3, '0')}:${'x'.repeat(508)}`)
     for (const delta of deltas) {
-      lastChild?.stdout.write(JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'item/commandExecution/outputDelta',
-        params: { threadId: 'codex-thread-1', itemId: 'cmd-volume', delta },
-      }) + '\n')
+      lastChild?.stdout.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'item/commandExecution/outputDelta',
+          params: { threadId: 'codex-thread-1', itemId: 'cmd-volume', delta },
+        }) + '\n',
+      )
     }
     const aggregatedOutput = deltas.join('')
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'item/completed',
-      params: {
-        threadId: 'codex-thread-1',
-        item: {
-          id: 'cmd-volume',
-          type: 'commandExecution',
-          command: 'large-output',
-          status: 'completed',
-          exitCode: 0,
-          aggregatedOutput,
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'item/completed',
+        params: {
+          threadId: 'codex-thread-1',
+          item: {
+            id: 'cmd-volume',
+            type: 'commandExecution',
+            command: 'large-output',
+            status: 'completed',
+            exitCode: 0,
+            aggregatedOutput,
+          },
         },
-      },
-    }) + '\n')
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
 
     const forwardedBytes = onEvent.mock.calls
@@ -1673,20 +1946,22 @@ describe('CodexAdapter', () => {
     const onEvent = vi.fn()
 
     await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'item/completed',
-      params: {
-        threadId: 'codex-thread-1',
-        item: {
-          id: 'cmd-bounded',
-          type: 'commandExecution',
-          command: 'large-output',
-          status: 'completed',
-          aggregatedOutput: `first\n${'x'.repeat(300_000)}\nlast`,
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'item/completed',
+        params: {
+          threadId: 'codex-thread-1',
+          item: {
+            id: 'cmd-bounded',
+            type: 'commandExecution',
+            command: 'large-output',
+            status: 'completed',
+            aggregatedOutput: `first\n${'x'.repeat(300_000)}\nlast`,
+          },
         },
-      },
-    }) + '\n')
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
 
     const completion = onEvent.mock.calls
@@ -1705,20 +1980,24 @@ describe('CodexAdapter', () => {
 
     await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
     for (const delta of [`first\n${'a'.repeat(150_000)}`, `${'b'.repeat(150_000)}\nlast`]) {
-      lastChild?.stdout.write(JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'item/commandExecution/outputDelta',
-        params: { threadId: 'codex-thread-1', itemId: 'cmd-fallback-bounded', delta },
-      }) + '\n')
+      lastChild?.stdout.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'item/commandExecution/outputDelta',
+          params: { threadId: 'codex-thread-1', itemId: 'cmd-fallback-bounded', delta },
+        }) + '\n',
+      )
     }
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'item/completed',
-      params: {
-        threadId: 'codex-thread-1',
-        item: { id: 'cmd-fallback-bounded', type: 'commandExecution', command: 'large-output', status: 'completed' },
-      },
-    }) + '\n')
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'item/completed',
+        params: {
+          threadId: 'codex-thread-1',
+          item: { id: 'cmd-fallback-bounded', type: 'commandExecution', command: 'large-output', status: 'completed' },
+        },
+      }) + '\n',
+    )
     await new Promise((resolve) => setImmediate(resolve))
 
     const completion = onEvent.mock.calls
@@ -1735,17 +2014,22 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     await adapter.sendTurn('thread-1', 'hello codex')
 
-    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
-      toolId: 'diff_turn-1',
-    }))
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolId: 'diff_turn-1',
+      }),
+    )
   })
 
   it('maps every Codex fileChange hunk to a Claude-compatible Edit card', async () => {
@@ -1765,11 +2049,14 @@ describe('CodexAdapter', () => {
       },
     ]
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
     await adapter.sendTurn('thread-1', 'edit both files')
 
     expect(onEvent).toHaveBeenCalledWith({
@@ -1811,21 +2098,25 @@ describe('CodexAdapter', () => {
       toolId: 'file-1:0',
       output: 'Applied',
     })
-    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
-      toolId: 'file-1',
-      output: expect.stringContaining('changes'),
-    }))
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolId: 'file-1',
+        output: expect.stringContaining('changes'),
+      }),
+    )
   })
 
   it('does not call a failed Codex file change Applied', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
-    fileChanges = [{
-      path: '/tmp/project/src/a.ts',
-      kind: { type: 'update', move_path: null },
-      diff: '@@ -1 +1 @@\n-old\n+new\n',
-    }]
+    fileChanges = [
+      {
+        path: '/tmp/project/src/a.ts',
+        kind: { type: 'update', move_path: null },
+        diff: '@@ -1 +1 @@\n-old\n+new\n',
+      },
+    ]
     fileChangeStatus = 'failed'
 
     await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
@@ -1837,21 +2128,25 @@ describe('CodexAdapter', () => {
       toolId: 'file-1:0',
       output: 'Failed',
     })
-    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
-      toolId: 'file-1:0',
-      output: 'Applied',
-    }))
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolId: 'file-1:0',
+        output: 'Applied',
+      }),
+    )
   })
 
   it('renders a Codex edit when the diff arrives only with item/completed', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
-    fileChanges = [{
-      path: '/tmp/project/src/a.ts',
-      kind: { type: 'update', move_path: null },
-      diff: '@@ -1 +1 @@\n-old\n+new\n',
-    }]
+    fileChanges = [
+      {
+        path: '/tmp/project/src/a.ts',
+        kind: { type: 'update', move_path: null },
+        diff: '@@ -1 +1 @@\n-old\n+new\n',
+      },
+    ]
     omitFileChangesAtStart = true
 
     await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
@@ -1880,16 +2175,22 @@ describe('CodexAdapter', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
-    fileChanges = [{
-      path: '/tmp/project/src/a.ts',
-      kind: { type: 'update', move_path: null },
-      diff: '@@ -1,2 +1,2 @@\n-old()\n+new()\n keep()\n',
-    }]
-    fileChangePatchUpdates = [[{
-      path: '/tmp/project/src/a.ts',
-      kind: { type: 'update', move_path: null },
-      diff: '@@ -1,3 +1,3 @@\n-old()\n+new()\n keep()\n-tail()\n+replacement()\n',
-    }]]
+    fileChanges = [
+      {
+        path: '/tmp/project/src/a.ts',
+        kind: { type: 'update', move_path: null },
+        diff: '@@ -1,2 +1,2 @@\n-old()\n+new()\n keep()\n',
+      },
+    ]
+    fileChangePatchUpdates = [
+      [
+        {
+          path: '/tmp/project/src/a.ts',
+          kind: { type: 'update', move_path: null },
+          diff: '@@ -1,3 +1,3 @@\n-old()\n+new()\n keep()\n-tail()\n+replacement()\n',
+        },
+      ],
+    ]
 
     await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
     await adapter.sendTurn('thread-1', 'expand the edit')
@@ -1911,11 +2212,13 @@ describe('CodexAdapter', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
-    fileChanges = [{
-      path: '/tmp/project/src/old.ts',
-      kind: { type: 'update', move_path: '/tmp/project/src/new.ts' },
-      diff: '',
-    }]
+    fileChanges = [
+      {
+        path: '/tmp/project/src/old.ts',
+        kind: { type: 'update', move_path: '/tmp/project/src/new.ts' },
+        diff: '',
+      },
+    ]
 
     await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
     await adapter.sendTurn('thread-1', 'rename the file')
@@ -1939,11 +2242,14 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     await adapter.sendTurn('thread-1', 'hello codex')
 
@@ -1962,11 +2268,14 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     // First turn starts turn-1; the mock never emits turn/completed, so the
     // turn stays active and the next send must steer it.
@@ -1999,11 +2308,13 @@ describe('CodexAdapter', () => {
     expect(frames.some((m) => m.method === 'turn/steer')).toBe(false)
     expect(frames.some((m) => m.method === 'turn/start')).toBe(false)
 
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'turn/completed',
-      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
-    }) + '\n')
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
+      }) + '\n',
+    )
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     frames = writes.map((w) => JSON.parse(w))
@@ -2023,11 +2334,16 @@ describe('CodexAdapter', () => {
     await adapter.sendTurn('thread-1', 'queued follow-up', undefined, undefined, 'queue', 'remote_q')
     writes.length = 0
 
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'turn/completed',
-      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'failed', error: { message: 'boom' } } },
-    }) + '\n')
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: {
+          threadId: 'codex-thread-1',
+          turn: { id: 'turn-1', items: [], status: 'failed', error: { message: 'boom' } },
+        },
+      }) + '\n',
+    )
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     const types = onEvent.mock.calls.map(([e]) => e.type)
@@ -2041,7 +2357,9 @@ describe('CodexAdapter', () => {
     expect(onEvent).toHaveBeenCalledWith({ type: 'turn.queue-held', threadId: 'thread-1', held: false })
     await vi.waitFor(() => {
       const frames = writes.map((w) => JSON.parse(w))
-      expect(frames.find((m) => m.method === 'turn/start')?.params.input).toEqual([{ type: 'text', text: 'queued follow-up' }])
+      expect(frames.find((m) => m.method === 'turn/start')?.params.input).toEqual([
+        { type: 'text', text: 'queued follow-up' },
+      ])
     })
     expect(await adapter.resumeQueuedTurns('thread-1')).toBe(false)
   })
@@ -2057,14 +2375,22 @@ describe('CodexAdapter', () => {
     turnStartErrors = ['model not loaded']
     writes.length = 0
 
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'turn/completed',
-      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
-    }) + '\n')
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
+      }) + '\n',
+    )
 
     await vi.waitFor(() => {
-      expect(onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'failed', error: 'model not loaded' })
+      expect(onEvent).toHaveBeenCalledWith({
+        type: 'turn.dequeued',
+        threadId: 'thread-1',
+        messageId: 'remote_q1',
+        reason: 'failed',
+        error: 'model not loaded',
+      })
     })
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'turn.queue-held', held: true }))
     const starts = writes.map((w) => JSON.parse(w)).filter((m) => m.method === 'turn/start')
@@ -2075,7 +2401,9 @@ describe('CodexAdapter', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
     let releaseTurnStart!: () => void
-    turnStartGate = new Promise<void>((resolve) => { releaseTurnStart = resolve })
+    turnStartGate = new Promise<void>((resolve) => {
+      releaseTurnStart = resolve
+    })
     turnStartErrors = ['model not loaded']
 
     await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, vi.fn())
@@ -2106,14 +2434,21 @@ describe('CodexAdapter', () => {
 
     await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(true)
     await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(false)
-    expect(onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'cancelled' })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'cancelled',
+    })
 
     writes.length = 0
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'turn/completed',
-      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
-    }) + '\n')
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
+      }) + '\n',
+    )
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(writes.map((w) => JSON.parse(w)).some((m) => m.method === 'turn/start')).toBe(false)
   })
@@ -2135,7 +2470,12 @@ describe('CodexAdapter', () => {
       input: [{ type: 'text', text: 'also check the parser' }],
     })
     expect(frames.some((m) => m.method === 'turn/start')).toBe(false)
-    expect(onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'promoted' })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'promoted',
+    })
   })
 
   it('drops what it holds, and ends each accepted turn, when the process exits', async () => {
@@ -2150,7 +2490,12 @@ describe('CodexAdapter', () => {
     lastChild?.emit('close', 1)
 
     const events = onEvent.mock.calls.map(([e]) => e)
-    expect(events).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'dropped' })
+    expect(events).toContainEqual({
+      type: 'turn.dequeued',
+      threadId: 'thread-1',
+      messageId: 'remote_q1',
+      reason: 'dropped',
+    })
     expect(events.filter((e) => e.type === 'turn.completed')).toHaveLength(1)
     await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(false)
   })
@@ -2163,12 +2508,21 @@ describe('CodexAdapter', () => {
     await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
     await adapter.sendTurn('thread-1', 'hello codex')
     await adapter.sendTurn('thread-1', 'next', undefined, undefined, 'queue', 'remote_q1')
-    lastChild?.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'turn/completed',
-      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
-    }) + '\n')
-    await vi.waitFor(() => expect(onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'started' }))
+    lastChild?.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
+      }) + '\n',
+    )
+    await vi.waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith({
+        type: 'turn.dequeued',
+        threadId: 'thread-1',
+        messageId: 'remote_q1',
+        reason: 'started',
+      }),
+    )
     await expect(adapter.promoteQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(false)
   })
 
@@ -2176,13 +2530,18 @@ describe('CodexAdapter', () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
     let releaseTurnStart!: () => void
-    turnStartGate = new Promise<void>((resolve) => { releaseTurnStart = resolve })
+    turnStartGate = new Promise<void>((resolve) => {
+      releaseTurnStart = resolve
+    })
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      vi.fn(),
+    )
 
     const first = adapter.sendTurn('thread-1', 'first prompt')
     await vi.waitFor(() => {
@@ -2202,20 +2561,21 @@ describe('CodexAdapter', () => {
     expect(frames.filter((frame) => frame.method === 'turn/steer')).toHaveLength(1)
   })
 
-  it('retries steering with Codex\'s live turn id instead of starting a concurrent turn', async () => {
+  it("retries steering with Codex's live turn id instead of starting a concurrent turn", async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, vi.fn())
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      vi.fn(),
+    )
     await adapter.sendTurn('thread-1', 'hello codex')
 
-    turnSteerErrors = [
-      'expected turn id 01a00b7d-expected, found 01a00b18-live',
-    ]
+    turnSteerErrors = ['expected turn id 01a00b7d-expected, found 01a00b18-live']
     writes.length = 0
     await adapter.sendTurn('thread-1', 'use the updated direction')
 
@@ -2231,11 +2591,14 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     await adapter.sendTurn('thread-1', 'hello codex')
     await adapter.interruptTurn('thread-1')
@@ -2254,23 +2617,28 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
     await adapter.sendTurn('thread-1', 'hello codex')
     writes.length = 0
 
     await adapter.interruptTurn('thread-1')
 
-    expect(writes.map((line) => JSON.parse(line))).toContainEqual(expect.objectContaining({
-      method: 'turn/interrupt',
-      params: {
-        threadId: 'codex-thread-1',
-        turnId: 'turn-1',
-      },
-    }))
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual(
+      expect.objectContaining({
+        method: 'turn/interrupt',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+        },
+      }),
+    )
     expect(onEvent).toHaveBeenLastCalledWith({
       type: 'status',
       threadId: 'thread-1',
@@ -2283,11 +2651,14 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     await adapter.sendTurn('thread-1', 'think')
 
@@ -2313,13 +2684,18 @@ describe('CodexAdapter', () => {
 
       // Attach a catch handler synchronously so the rejection is never
       // observed as unhandled - we still assert on the value below.
-      const startPromise = adapter.startSession({
-        threadId: 'thread-1',
-        provider: 'codex',
-        cwd: '/tmp/project',
-      }, onEvent)
+      const startPromise = adapter.startSession(
+        {
+          threadId: 'thread-1',
+          provider: 'codex',
+          cwd: '/tmp/project',
+        },
+        onEvent,
+      )
       const settled: { error: Error | null } = { error: null }
-      const tracked = startPromise.catch((err: Error) => { settled.error = err })
+      const tracked = startPromise.catch((err: Error) => {
+        settled.error = err
+      })
 
       // Let the spawn + stderr microtasks flush, then jump past the
       // 30s init timeout window.
@@ -2333,11 +2709,13 @@ describe('CodexAdapter', () => {
       // the actual cause ("please run `codex login`") is surfaced.
       expect(settled.error?.message).toMatch(/codex login/)
 
-      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
-        type: 'error',
-        threadId: 'thread-1',
-        message: expect.stringContaining('codex login'),
-      }))
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'error',
+          threadId: 'thread-1',
+          message: expect.stringContaining('codex login'),
+        }),
+      )
       expect(onEvent).toHaveBeenCalledWith({
         type: 'status',
         threadId: 'thread-1',
@@ -2359,11 +2737,14 @@ describe('CodexAdapter', () => {
     const onEvent = vi.fn()
     emitFailedTurn = true
 
-    await adapter.startSession({
-      threadId: 'thread-1',
-      provider: 'codex',
-      cwd: '/tmp/project',
-    }, onEvent)
+    await adapter.startSession(
+      {
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      },
+      onEvent,
+    )
 
     await adapter.sendTurn('thread-1', 'hello codex')
 

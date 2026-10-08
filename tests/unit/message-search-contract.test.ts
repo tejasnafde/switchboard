@@ -36,8 +36,12 @@ describe('message search contract', () => {
     expect(sql).toContain('COALESCE(root.title, c.title) as conversationTitle')
     expect(sql).toContain('COALESCE(root.project_path, c.project_path) as projectPath')
     expect(sql).toContain('COALESCE(root.agent_type, c.agent_type) as agentType')
-    expect(sql).toContain('CASE WHEN root.id IS NOT NULL THEN root.worktree_path ELSE c.worktree_path END as worktreePath')
-    expect(sql).toContain('CASE WHEN root.id IS NOT NULL THEN root.worktree_branch ELSE c.worktree_branch END as worktreeBranch')
+    expect(sql).toContain(
+      'CASE WHEN root.id IS NOT NULL THEN root.worktree_path ELSE c.worktree_path END as worktreePath',
+    )
+    expect(sql).toContain(
+      'CASE WHEN root.id IS NOT NULL THEN root.worktree_branch ELSE c.worktree_branch END as worktreeBranch',
+    )
     expect(sql).toMatch(/as worktreeBranch,\s+snippet\(messages_fts/)
     expect(sql).toContain("COALESCE(root.sidebar_role, c.sidebar_role) = 'managed'")
     expect(sql).toContain('COALESCE(root.archived, c.archived) = 0')
@@ -58,10 +62,19 @@ describe('message search over a real index', () => {
     `)
     const insert = (id: string, role: string, content: string) => {
       const { lastInsertRowid } = db.prepare('INSERT INTO messages VALUES (?, ?, ?, ?)').run(id, 't1', role, content)
-      db.prepare('INSERT INTO messages_fts(rowid, content, conversation_id, role) VALUES (?, ?, ?, ?)').run(lastInsertRowid, content, 't1', role)
+      db.prepare('INSERT INTO messages_fts(rowid, content, conversation_id, role) VALUES (?, ?, ?, ?)').run(
+        lastInsertRowid,
+        content,
+        't1',
+        role,
+      )
     }
     insert('a1', 'assistant', 'The build failed with exit code 2')
-    insert(storedTaskNoticeId('t1', 'task_u1'), 'user', '<task-notification>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>')
+    insert(
+      storedTaskNoticeId('t1', 'task_u1'),
+      'user',
+      '<task-notification>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>',
+    )
 
     expect(searchMessagesInDatabase(db, 'failed').map((r) => r.messageId)).toEqual(['a1'])
     db.close()

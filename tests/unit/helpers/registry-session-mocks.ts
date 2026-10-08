@@ -18,8 +18,12 @@ vi.mock('../../../src/main/logger', () => ({
 
 vi.mock('../../../src/main/notebooks/manager', () => ({
   notebookManager: {
-    setPublisher: () => {}, attach: () => [], detach: () => {}, beginTurn: () => {},
-    drainTurnEdits: () => [], explainsFileEdit: () => false,
+    setPublisher: () => {},
+    attach: () => [],
+    detach: () => {},
+    beginTurn: () => {},
+    drainTurnEdits: () => [],
+    explainsFileEdit: () => false,
   },
 }))
 
@@ -28,7 +32,7 @@ vi.mock('node:child_process', async (importOriginal) => {
   return {
     ...actual,
     execFile: (...args: unknown[]) => {
-      (args[args.length - 1] as (err: Error) => void)(new Error('git does not run in this test'))
+      ;(args[args.length - 1] as (err: Error) => void)(new Error('git does not run in this test'))
     },
   }
 })

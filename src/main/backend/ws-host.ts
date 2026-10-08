@@ -15,7 +15,13 @@ import { timeBackendHandler } from './perf-handler'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
-import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
+import {
+  BACKEND_CAPABILITIES,
+  encodeFrame,
+  decodeFrame,
+  isReplayableEventChannel,
+  type WsFrame,
+} from '@shared/ws-protocol'
 import {
   isChannelAllowed,
   isFileMutationAllowed,
@@ -82,10 +88,7 @@ interface ClientState {
  * has no auth-frame path rather than a broken one.
  */
 export interface DeviceAuthPort {
-  redeem: (
-    pairing: string,
-    label: string,
-  ) => { ok: boolean; session?: string; scopes?: DeviceScope[]; error?: string }
+  redeem: (pairing: string, label: string) => { ok: boolean; session?: string; scopes?: DeviceScope[]; error?: string }
   authenticate: (session: string) => { id: string; scopes: DeviceScope[] } | null
 }
 
@@ -149,9 +152,10 @@ export class WsHost implements BackendHost {
           return
         }
       }
-      const clientScope = token && legacyScopes
-        ? hashClientScope('legacy-ws-token', token)
-        : hashClientScope('trusted-ws', 'local-trust-boundary')
+      const clientScope =
+        token && legacyScopes
+          ? hashClientScope('legacy-ws-token', token)
+          : hashClientScope('trusted-ws', 'local-trust-boundary')
       this.clients.set(socket, { missedPings: 0, sawPong: false, scopes: legacyScopes, clientScope })
       log.info(`client connected (${this.clients.size} total)`)
       if (legacyScopes === null) {
@@ -237,10 +241,10 @@ export class WsHost implements BackendHost {
       return
     }
     if (
-      (frame.k === 'req' || frame.k === 'snd')
-      && state?.scopes
-      && (frame.ch === FilesChannels.WRITE_FILE || frame.ch === FilesChannels.DELETE_FILE)
-      && !isFileMutationAllowed(
+      (frame.k === 'req' || frame.k === 'snd') &&
+      state?.scopes &&
+      (frame.ch === FilesChannels.WRITE_FILE || frame.ch === FilesChannels.DELETE_FILE) &&
+      !isFileMutationAllowed(
         state.scopes,
         (frame.args as unknown[] | undefined)?.[0],
         (frame.args as unknown[] | undefined)?.[1],
@@ -260,21 +264,37 @@ export class WsHost implements BackendHost {
       }
       try {
         const result = await withBackendRequestContext(
-          { clientScope: state!.clientScope, transport: 'remote', deviceScopes: state!.scopes!, deviceSessionId: state!.sessionId },
+          {
+            clientScope: state!.clientScope,
+            transport: 'remote',
+            deviceScopes: state!.scopes!,
+            deviceSessionId: state!.sessionId,
+          },
           () => handler(...frame.args),
         )
         this.reply(socket, { k: 'res', id: frame.id, ok: true, result })
       } catch (err) {
-        this.reply(socket, { k: 'res', id: frame.id, ok: false, error: err instanceof Error ? err.message : String(err) })
+        this.reply(socket, {
+          k: 'res',
+          id: frame.id,
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        })
       }
     } else if (frame.k === 'snd') {
       const fns = this.listeners.get(frame.ch)
-      if (fns) for (const fn of fns) {
-        withBackendRequestContext(
-          { clientScope: state!.clientScope, transport: 'remote', deviceScopes: state!.scopes!, deviceSessionId: state!.sessionId },
-          () => fn(...frame.args),
-        )
-      }
+      if (fns)
+        for (const fn of fns) {
+          withBackendRequestContext(
+            {
+              clientScope: state!.clientScope,
+              transport: 'remote',
+              deviceScopes: state!.scopes!,
+              deviceSessionId: state!.sessionId,
+            },
+            () => fn(...frame.args),
+          )
+        }
     } else if (frame.k === 'hello') {
       this.onHello(socket, frame)
     } else if (frame.k === 'pong') {

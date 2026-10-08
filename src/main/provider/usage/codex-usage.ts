@@ -126,10 +126,9 @@ export class CodexProbeSession {
     this.pending.delete(record.id)
     if (record.error) {
       const err = record.error as Record<string, unknown>
-      entry.reject(Object.assign(
-        new Error(typeof err.message === 'string' ? err.message : 'JSON-RPC error'),
-        { code: err.code },
-      ))
+      entry.reject(
+        Object.assign(new Error(typeof err.message === 'string' ? err.message : 'JSON-RPC error'), { code: err.code }),
+      )
       return
     }
     entry.resolve(record.result)
@@ -150,8 +149,14 @@ export class CodexProbeSession {
         reject(new Error(`${method} timed out after ${timeoutMs}ms`))
       }, timeoutMs)
       this.pending.set(id, {
-        resolve: (value) => { clearTimeout(timer); resolve(value) },
-        reject: (err) => { clearTimeout(timer); reject(err) },
+        resolve: (value) => {
+          clearTimeout(timer)
+          resolve(value)
+        },
+        reject: (err) => {
+          clearTimeout(timer)
+          reject(err)
+        },
       })
       try {
         this.child.stdin.write(`${payload}\n`)
@@ -258,7 +263,11 @@ export async function fetchCodexUsage(
   try {
     probe = new CodexProbeSession(bin, env)
   } catch (err) {
-    return { ...result, status: 'error', message: `Could not start codex app-server: ${err instanceof Error ? err.message : String(err)}` }
+    return {
+      ...result,
+      status: 'error',
+      message: `Could not start codex app-server: ${err instanceof Error ? err.message : String(err)}`,
+    }
   }
 
   const deadline = started + TOTAL_BUDGET_MS
@@ -272,7 +281,9 @@ export async function fetchCodexUsage(
     // the cheapest source of the plan label. Marked deprecated in current
     // builds but still served; its failure must not fail the probe.
     let account: { account: string | null; plan: string | null; isApiKey: boolean } = {
-      account: null, plan: null, isApiKey: false,
+      account: null,
+      plan: null,
+      isApiKey: false,
     }
     try {
       // Needs an explicit params object; omitting it is rejected with
@@ -282,7 +293,9 @@ export async function fetchCodexUsage(
       log.debug(`account/read unavailable: ${err instanceof Error ? err.message : String(err)}`)
     }
 
-    let parsed = parseCodexRateLimits(await probe.send('account/rateLimits/read', undefined, remaining(RATE_LIMITS_TIMEOUT_MS)))
+    let parsed = parseCodexRateLimits(
+      await probe.send('account/rateLimits/read', undefined, remaining(RATE_LIMITS_TIMEOUT_MS)),
+    )
 
     // A cold server can answer before its snapshot is populated. One retry
     // separates "not ready yet" from "genuinely has no limits". Failures here
@@ -290,22 +303,44 @@ export async function fetchCodexUsage(
     if (parsed.ok && parsed.allNull && Date.now() + EMPTY_SNAPSHOT_RETRY_MS + 1000 < deadline) {
       await new Promise((r) => setTimeout(r, EMPTY_SNAPSHOT_RETRY_MS))
       try {
-        const retry = parseCodexRateLimits(await probe.send('account/rateLimits/read', undefined, remaining(RATE_LIMITS_TIMEOUT_MS)))
+        const retry = parseCodexRateLimits(
+          await probe.send('account/rateLimits/read', undefined, remaining(RATE_LIMITS_TIMEOUT_MS)),
+        )
         if (retry.ok && !retry.allNull) parsed = retry
       } catch (err) {
-        log.debug(`rate-limit retry failed, keeping the first snapshot: ${err instanceof Error ? err.message : String(err)}`)
+        log.debug(
+          `rate-limit retry failed, keeping the first snapshot: ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
     }
 
     const plan = parsed.plan ?? account.plan
 
     if (!parsed.ok) {
-      return { ...result, status: 'error', plan, account: account.account, message: parsed.error ?? 'Rate-limit response could not be parsed.' }
+      return {
+        ...result,
+        status: 'error',
+        plan,
+        account: account.account,
+        message: parsed.error ?? 'Rate-limit response could not be parsed.',
+      }
     }
     if (parsed.allNull) {
       return account.isApiKey
-        ? { ...result, status: 'not-applicable', plan, account: account.account, message: 'Plan limits do not apply - this instance authenticates with an API key.' }
-        : { ...result, status: 'not-applicable', plan, account: account.account, message: 'Codex reported no usage limits for this account.' }
+        ? {
+            ...result,
+            status: 'not-applicable',
+            plan,
+            account: account.account,
+            message: 'Plan limits do not apply - this instance authenticates with an API key.',
+          }
+        : {
+            ...result,
+            status: 'not-applicable',
+            plan,
+            account: account.account,
+            message: 'Codex reported no usage limits for this account.',
+          }
     }
 
     return {

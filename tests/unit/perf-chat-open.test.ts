@@ -3,7 +3,11 @@ const { end } = vi.hoisted(() => ({ end: vi.fn() }))
 vi.mock('../../src/renderer/perf', () => ({ perfSpan: () => ({ end }) }))
 import { beginChatOpen, chatMessagesCommitted, chatMessagesUnmounted } from '../../src/renderer/services/perf-chat-open'
 
-afterEach(() => { chatMessagesUnmounted('t'); vi.unstubAllGlobals(); vi.clearAllMocks() })
+afterEach(() => {
+  chatMessagesUnmounted('t')
+  vi.unstubAllGlobals()
+  vi.clearAllMocks()
+})
 
 describe('chat open through first committed message list', () => {
   it('waits for the loaded array to commit and then a frame', () => {
@@ -74,11 +78,14 @@ describe('chat open through first committed message list', () => {
     for (const frame of frames) frame(0)
     expect(end).not.toHaveBeenCalled()
   })
-  it.each([null, { messages: [], loadStatus: 'error' as const }])('ends a failed load without awaiting an empty-list paint (%j)', (response) => {
-    const open = beginChatOpen('t')
-    open.ready('t', [], {}, response)
-    expect(end).toHaveBeenCalledExactlyOnceWith({ outcome: 'load-error' })
-  })
+  it.each([null, { messages: [], loadStatus: 'error' as const }])(
+    'ends a failed load without awaiting an empty-list paint (%j)',
+    (response) => {
+      const open = beginChatOpen('t')
+      open.ready('t', [], {}, response)
+      expect(end).toHaveBeenCalledExactlyOnceWith({ outcome: 'load-error' })
+    },
+  )
   it('does not count an abandoned frame as a rendered chat', () => {
     const frames: FrameRequestCallback[] = []
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))

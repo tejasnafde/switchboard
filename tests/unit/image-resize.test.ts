@@ -120,7 +120,9 @@ describe('sendAsIs', () => {
 
 describe('imageRefusalMessage', () => {
   it('names the image and the reason', () => {
-    expect(imageRefusalMessage('IMG_1.jpg', 'too-large')).toBe('IMG_1.jpg is still over 3 MB after shrinking it to 1280 px')
+    expect(imageRefusalMessage('IMG_1.jpg', 'too-large')).toBe(
+      'IMG_1.jpg is still over 3 MB after shrinking it to 1280 px',
+    )
     expect(imageRefusalMessage('a.png', 'over-message-budget')).toContain('a.png did not fit')
     expect(imageRefusalMessage('cat.gif', 'gif-too-large')).toContain('animation')
   })

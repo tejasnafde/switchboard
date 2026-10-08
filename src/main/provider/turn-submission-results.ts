@@ -1,9 +1,5 @@
 import type { UserTurnSubmissionResult } from '@shared/provider-events'
-import {
-  TurnNotAcceptedError,
-  TurnOriginConflictError,
-  type TurnAcceptanceResult,
-} from './durable-turn-acceptance'
+import { TurnNotAcceptedError, TurnOriginConflictError, type TurnAcceptanceResult } from './durable-turn-acceptance'
 
 export function rejectedAtomicTurn(reason: string): UserTurnSubmissionResult {
   return {
@@ -18,10 +14,12 @@ export function rejectedAtomicTurn(reason: string): UserTurnSubmissionResult {
 
 export function isDefiniteAdapterPreconditionFailure(error: unknown, threadId: string): boolean {
   const message = errorMessage(error)
-  return message === `Session ${threadId} not found`
-    || message === `Session ${threadId} not found or not connected`
-    || message === `No OpenCode ACP session: ${threadId}`
-    || message === 'OpenCode ACP session not initialized'
+  return (
+    message === `Session ${threadId} not found` ||
+    message === `Session ${threadId} not found or not connected` ||
+    message === `No OpenCode ACP session: ${threadId}` ||
+    message === 'OpenCode ACP session not initialized'
+  )
 }
 
 export function errorMessage(error: unknown): string {

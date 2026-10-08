@@ -32,9 +32,7 @@ export function projectLoadedSearchSession(meta: LoadedSearchSessionMeta) {
     worktreePath: meta.worktreePath ?? null,
     worktreeBranch: meta.worktreeBranch ?? null,
     worktreeId: meta.worktreeId ?? null,
-    resumeSessionId: meta.forkMetadata?.resumeMode === 'transcript-handoff'
-      ? undefined
-      : meta.id,
+    resumeSessionId: meta.forkMetadata?.resumeMode === 'transcript-handoff' ? undefined : meta.id,
     title: meta.title,
     runtimeMode: meta.runtimeMode ?? undefined,
     model: meta.model ?? undefined,

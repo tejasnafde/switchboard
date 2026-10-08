@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  decidePermission,
-  PLAN_READ_ONLY_TOOLS,
-  CUSTOM_UI_TOOLS,
-  denialMessage,
-} from '../../src/main/provider/policy'
+import { decidePermission, PLAN_READ_ONLY_TOOLS, CUSTOM_UI_TOOLS, denialMessage } from '../../src/main/provider/policy'
 
 /**
  * Shared provider policy - applies to both Claude and Codex adapters.

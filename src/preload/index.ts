@@ -4,7 +4,24 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
-import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels, SettingsFileChannels, PullRequestChannels, PullRequestWriteChannels, SourceControlChannels } from '@shared/ipc-channels'
+import {
+  TerminalChannels,
+  AppChannels,
+  ProviderChannels,
+  FilesChannels,
+  GitChannels,
+  IdeChannels,
+  KanbanChannels,
+  MachineChannels,
+  ProviderInstanceChannels,
+  BookmarkChannels,
+  PushChannels,
+  AnalyticsChannels,
+  SettingsFileChannels,
+  PullRequestChannels,
+  PullRequestWriteChannels,
+  SourceControlChannels,
+} from '@shared/ipc-channels'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { PeerLinkView } from '@shared/peer-links'
@@ -26,7 +43,17 @@ import type {
   SourceControlTestResult,
 } from '@shared/pull-requests'
 import type { PrHistoryScanResult, PrLink, PrLinkChat, PrLinkResult } from '@shared/pull-request-links'
-import type { CommentInput, InlineCommentInput, MergeInput, PrWriteDone, ReplyInput, RerunInput, ResolveInput, ReviewerInput, SubmitReviewInput } from '@shared/pull-request-writes'
+import type {
+  CommentInput,
+  InlineCommentInput,
+  MergeInput,
+  PrWriteDone,
+  ReplyInput,
+  RerunInput,
+  ResolveInput,
+  ReviewerInput,
+  SubmitReviewInput,
+} from '@shared/pull-request-writes'
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
@@ -133,17 +160,13 @@ const api = {
 
   // ─── Terminal ────────────────────────────────────────────────────
   terminal: {
-    create: (opts: TerminalCreateOptions) =>
-      transport.invoke(TerminalChannels.CREATE, opts),
+    create: (opts: TerminalCreateOptions) => transport.invoke(TerminalChannels.CREATE, opts),
 
-    write: (id: string, data: string) =>
-      transport.send(TerminalChannels.DATA, { id, data }),
+    write: (id: string, data: string) => transport.send(TerminalChannels.DATA, { id, data }),
 
-    resize: (payload: TerminalResizePayload) =>
-      transport.send(TerminalChannels.RESIZE, payload),
+    resize: (payload: TerminalResizePayload) => transport.send(TerminalChannels.RESIZE, payload),
 
-    kill: (id: string) =>
-      transport.send(TerminalChannels.KILL, id),
+    kill: (id: string) => transport.send(TerminalChannels.KILL, id),
 
     onOutput: (callback: (id: string, data: string) => void) =>
       transport.on<[string, string]>(TerminalChannels.OUTPUT, (id, data) => callback(id, data)),
@@ -155,8 +178,7 @@ const api = {
   // ─── App ──────────────────────────────────────────────────────
   app: {
     openFolder: () => transport.invoke(AppChannels.OPEN_FOLDER),
-    scanSessions: (projectPath: string) =>
-      transport.invoke(AppChannels.SCAN_SESSIONS, projectPath),
+    scanSessions: (projectPath: string) => transport.invoke(AppChannels.SCAN_SESSIONS, projectPath),
     importSession: (projectPath: string, sessionId: string, source: 'claude-code' | 'codex' | 'cursor') =>
       transport.invoke(AppChannels.IMPORT_SESSION, projectPath, sessionId, source),
     getProjects: () => transport.invoke(AppChannels.GET_PROJECTS),
@@ -165,26 +187,20 @@ const api = {
     renameProject: (projectPath: string, name: string): Promise<{ ok: true }> =>
       transport.invoke(AppChannels.RENAME_PROJECT, projectPath, name),
     /** External IPv4 addresses of this machine (mobile pairing host picker). */
-    lanAddresses: (): Promise<Array<{ iface: string; address: string }>> =>
-      transport.invoke(AppChannels.LAN_ADDRESSES),
+    lanAddresses: (): Promise<Array<{ iface: string; address: string }>> => transport.invoke(AppChannels.LAN_ADDRESSES),
     /** Persist + broadcast that this thread was read, clearing it on the phone too. */
     markRead: (threadId: string, at?: number): Promise<{ ok: boolean; at: number }> =>
       transport.invoke(AppChannels.MARK_READ, threadId, at),
     /** (Re)start the pairing endpoint from saved settings; resolves to its status. */
-    mobilePairingApply: (): Promise<MobilePairingStatus> =>
-      transport.invoke(AppChannels.MOBILE_PAIRING_APPLY),
+    mobilePairingApply: (): Promise<MobilePairingStatus> => transport.invoke(AppChannels.MOBILE_PAIRING_APPLY),
     /** One-time code for the QR. Short-lived and consumed on first use. */
-    mobilePairingCode: (): Promise<PairingCode> =>
-      transport.invoke(AppChannels.MOBILE_PAIRING_CODE),
+    mobilePairingCode: (): Promise<PairingCode> => transport.invoke(AppChannels.MOBILE_PAIRING_CODE),
     /** Paired devices. Never includes the credential itself. */
-    mobileDevices: (): Promise<DeviceSessionView[]> =>
-      transport.invoke(AppChannels.MOBILE_DEVICES),
+    mobileDevices: (): Promise<DeviceSessionView[]> => transport.invoke(AppChannels.MOBILE_DEVICES),
     /** Cut off one device, leaving every other pairing intact. */
-    mobileRevokeDevice: (id: string): Promise<boolean> =>
-      transport.invoke(AppChannels.MOBILE_DEVICE_REVOKE, id),
+    mobileRevokeDevice: (id: string): Promise<boolean> => transport.invoke(AppChannels.MOBILE_DEVICE_REVOKE, id),
     /** Whether an OAuth client is configured for minting, and from where. */
-    googleClientStatus: (): Promise<GoogleClientStatus> =>
-      transport.invoke(AppChannels.GOOGLE_CLIENT_STATUS),
+    googleClientStatus: (): Promise<GoogleClientStatus> => transport.invoke(AppChannels.GOOGLE_CLIENT_STATUS),
     googleSetClient: (config: PartialClientConfig): Promise<GoogleClientStatus> =>
       transport.invoke(AppChannels.GOOGLE_CLIENT_SET, config),
     /**
@@ -192,40 +208,42 @@ const api = {
      * payload. Slow by nature - it waits for a human.
      */
     googleMint: (): Promise<{ blob: string }> => transport.invoke(AppChannels.GOOGLE_MINT),
-    createConversation: (params: CreateConversationParams) =>
-      transport.invoke(AppChannels.CREATE_CONVERSATION, params),
+    createConversation: (params: CreateConversationParams) => transport.invoke(AppChannels.CREATE_CONVERSATION, params),
     setConversationWorktree: (
       conversationId: string,
       worktreePath: string | null,
       worktreeBranch: string | null,
     ): Promise<{ ok: true }> =>
-      transport.invoke(
-        AppChannels.SET_CONVERSATION_WORKTREE,
-        conversationId,
-        worktreePath,
-        worktreeBranch,
-      ),
+      transport.invoke(AppChannels.SET_CONVERSATION_WORKTREE, conversationId, worktreePath, worktreeBranch),
     loadSession: (filePath: string, conversationId?: string, source?: 'claude-code' | 'codex') =>
       transport.invoke(AppChannels.LOAD_SESSION, filePath, conversationId, source),
-    loadSessionById: (conversationId: string) =>
-      transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId),
+    loadSessionById: (conversationId: string) => transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId),
     attachToThread: (fragmentId: string, rootThreadId: string) =>
       transport.invoke(AppChannels.ATTACH_TO_THREAD, fragmentId, rootThreadId),
     relaunch: () => transport.invoke(AppChannels.RELAUNCH),
-    saveMessage: (params: SaveMessageParams) =>
-      transport.invoke(AppChannels.SAVE_MESSAGE, params),
-    setFileDiffStatus: (conversationId: string, messageId: string, status: FileDiffAttachment['status']): Promise<{ ok: boolean }> =>
+    saveMessage: (params: SaveMessageParams) => transport.invoke(AppChannels.SAVE_MESSAGE, params),
+    setFileDiffStatus: (
+      conversationId: string,
+      messageId: string,
+      status: FileDiffAttachment['status'],
+    ): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_FILE_DIFF_STATUS, conversationId, messageId, status),
-    renameConversation: (id: string, title: string) =>
-      transport.invoke(AppChannels.RENAME_CONVERSATION, id, title),
+    renameConversation: (id: string, title: string) => transport.invoke(AppChannels.RENAME_CONVERSATION, id, title),
     getConversationRuntimeMode: (id: string): Promise<{ mode: RuntimeMode | null }> =>
       transport.invoke(AppChannels.GET_CONVERSATION_RUNTIME_MODE, id),
     setConversationRuntimeMode: (id: string, mode: RuntimeMode): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_RUNTIME_MODE, id, mode),
-    setConversationFollowSuggestions: (id: string, mode: import('@shared/follow-suggestions').FollowSuggestionMode): Promise<{ ok: boolean }> =>
-      transport.invoke(AppChannels.SET_CONVERSATION_FOLLOW_SUGGESTIONS, id, mode),
-    getConversationFollowSuggestions: (id: string): Promise<{ mode: import('@shared/follow-suggestions').FollowSuggestionMode; noticeDismissed: boolean; workedWorktrees: number }> =>
-      transport.invoke(AppChannels.GET_CONVERSATION_FOLLOW_SUGGESTIONS, id),
+    setConversationFollowSuggestions: (
+      id: string,
+      mode: import('@shared/follow-suggestions').FollowSuggestionMode,
+    ): Promise<{ ok: boolean }> => transport.invoke(AppChannels.SET_CONVERSATION_FOLLOW_SUGGESTIONS, id, mode),
+    getConversationFollowSuggestions: (
+      id: string,
+    ): Promise<{
+      mode: import('@shared/follow-suggestions').FollowSuggestionMode
+      noticeDismissed: boolean
+      workedWorktrees: number
+    }> => transport.invoke(AppChannels.GET_CONVERSATION_FOLLOW_SUGGESTIONS, id),
     dismissConversationFollowNotice: (id: string): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.DISMISS_CONVERSATION_FOLLOW_NOTICE, id),
     getConversationProviderInstanceId: (id: string): Promise<{ instanceId: string | null }> =>
@@ -250,26 +268,23 @@ const api = {
       transport.invoke(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, id),
     setConversationPendingHandoff: (id: string, from: string | null): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_PENDING_HANDOFF, id, from),
-    getConversations: (projectPath: string) =>
-      transport.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
-    setVibrancy: (theme: 'dark' | 'light' | 'translucent') =>
-      transport.invoke(AppChannels.SET_VIBRANCY, theme),
+    getConversations: (projectPath: string) => transport.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
+    setVibrancy: (theme: 'dark' | 'light' | 'translucent') => transport.invoke(AppChannels.SET_VIBRANCY, theme),
     saveSessionLayout: (sessionId: string, layoutJson: string, launchConfigName?: string | null) =>
       transport.invoke(AppChannels.SAVE_SESSION_LAYOUT, sessionId, layoutJson, launchConfigName ?? null),
     getSessionLayout: (sessionId: string) =>
-      transport.invoke(AppChannels.GET_SESSION_LAYOUT, sessionId) as Promise<{ layoutJson: string; launchConfigName: string | null } | null>,
-    searchMessages: (query: string) =>
-      transport.invoke(AppChannels.SEARCH_MESSAGES, query),
+      transport.invoke(AppChannels.GET_SESSION_LAYOUT, sessionId) as Promise<{
+        layoutJson: string
+        launchConfigName: string | null
+      } | null>,
+    searchMessages: (query: string) => transport.invoke(AppChannels.SEARCH_MESSAGES, query),
     archiveConversation: (id: string, projectPath?: string, title?: string) =>
       transport.invoke(AppChannels.ARCHIVE_CONVERSATION, id, projectPath, title),
-    unarchiveConversation: (id: string) =>
-      transport.invoke(AppChannels.UNARCHIVE_CONVERSATION, id),
-    getArchivedConversations: () =>
-      transport.invoke(AppChannels.GET_ARCHIVED_CONVERSATIONS),
+    unarchiveConversation: (id: string) => transport.invoke(AppChannels.UNARCHIVE_CONVERSATION, id),
+    getArchivedConversations: () => transport.invoke(AppChannels.GET_ARCHIVED_CONVERSATIONS),
     exportMarkdown: (params: { suggestedFilename: string; content: string }) =>
       transport.invoke(AppChannels.EXPORT_MARKDOWN, params),
-    getLaunchConfig: (projectPath: string) =>
-      transport.invoke(AppChannels.GET_LAUNCH_CONFIG, projectPath),
+    getLaunchConfig: (projectPath: string) => transport.invoke(AppChannels.GET_LAUNCH_CONFIG, projectPath),
     saveLaunchConfig: (projectPath: string, yamlContent: string) =>
       transport.invoke(AppChannels.SAVE_LAUNCH_CONFIG, projectPath, yamlContent),
     onLaunchConfigChanged: (callback: (projectPath: string) => void) =>
@@ -281,10 +296,8 @@ const api = {
      * status the main process saw (or `unsupported` in dev). Live
      * progress flows through `onUpdateStatus` below.
      */
-    checkForUpdates: (): Promise<UpdateStatus> =>
-      transport.invoke(AppChannels.CHECK_FOR_UPDATES),
-    getUpdateStatus: (): Promise<UpdateStatus> =>
-      transport.invoke(AppChannels.GET_UPDATE_STATUS),
+    checkForUpdates: (): Promise<UpdateStatus> => transport.invoke(AppChannels.CHECK_FOR_UPDATES),
+    getUpdateStatus: (): Promise<UpdateStatus> => transport.invoke(AppChannels.GET_UPDATE_STATUS),
     /**
      * Subscribe to update lifecycle events from the main-process
      * autoUpdater (checking → available → downloading → downloaded |
@@ -292,8 +305,7 @@ const api = {
      * status line that reflects what the updater is doing.
      */
     onUpdateStatus: (callback: (status: UpdateStatus) => void) =>
-      transport.on<[UpdateStatus]>(AppChannels.UPDATE_STATUS, (status) =>
-        callback(status)),
+      transport.on<[UpdateStatus]>(AppChannels.UPDATE_STATUS, (status) => callback(status)),
     /**
      * Quit the app and relaunch into the downloaded update. Only valid
      * after `onUpdateStatus` reports `{ kind: 'downloaded' }`.
@@ -302,25 +314,18 @@ const api = {
       transport.send('app:quit-and-install')
     },
     /** Settings > About > Diagnostics: host snapshot (no env, no home paths but the logs dir). */
-    getDiagnostics: (): Promise<DiagnosticsSnapshot> =>
-      transport.invoke(AppChannels.GET_DIAGNOSTICS),
-    openLogsFolder: (): Promise<{ ok: boolean; error?: string }> =>
-      transport.invoke(AppChannels.OPEN_LOGS_FOLDER),
+    getDiagnostics: (): Promise<DiagnosticsSnapshot> => transport.invoke(AppChannels.GET_DIAGNOSTICS),
+    openLogsFolder: (): Promise<{ ok: boolean; error?: string }> => transport.invoke(AppChannels.OPEN_LOGS_FOLDER),
 
     // ─── Workspaces (sidebar grouping above projects) ──────────
     workspaces: {
-      list: (): Promise<import('@shared/types').Workspace[]> =>
-        transport.invoke(AppChannels.WORKSPACE_LIST),
+      list: (): Promise<import('@shared/types').Workspace[]> => transport.invoke(AppChannels.WORKSPACE_LIST),
       create: (input: { name: string; color?: string | null }): Promise<import('@shared/types').Workspace> =>
         transport.invoke(AppChannels.WORKSPACE_CREATE, input),
-      rename: (id: string, name: string) =>
-        transport.invoke(AppChannels.WORKSPACE_RENAME, id, name),
-      recolor: (id: string, color: string | null) =>
-        transport.invoke(AppChannels.WORKSPACE_RECOLOR, id, color),
-      delete: (id: string) =>
-        transport.invoke(AppChannels.WORKSPACE_DELETE, id),
-      reorder: (ids: string[]) =>
-        transport.invoke(AppChannels.WORKSPACE_REORDER, ids),
+      rename: (id: string, name: string) => transport.invoke(AppChannels.WORKSPACE_RENAME, id, name),
+      recolor: (id: string, color: string | null) => transport.invoke(AppChannels.WORKSPACE_RECOLOR, id, color),
+      delete: (id: string) => transport.invoke(AppChannels.WORKSPACE_DELETE, id),
+      reorder: (ids: string[]) => transport.invoke(AppChannels.WORKSPACE_REORDER, ids),
     },
     organizeProjects: (items: import('@shared/types').ProjectOrganizationItem[]) =>
       transport.invoke(AppChannels.PROJECT_ORGANIZE, items),
@@ -345,14 +350,9 @@ const api = {
       subPath?: string,
     ): Promise<{ ok: boolean; error?: string; entries: Array<{ name: string; isDir: boolean }> }> =>
       transport.invoke(FilesChannels.LIST_DIR, repoRoot, subPath ?? ''),
-    resolve: (
-      repoRoot: string,
-      subPath: string,
-    ): Promise<{ ok: boolean; exists: boolean; absPath?: string }> =>
+    resolve: (repoRoot: string, subPath: string): Promise<{ ok: boolean; exists: boolean; absPath?: string }> =>
       transport.invoke(FilesChannels.RESOLVE, repoRoot, subPath),
-    listAll: (
-      repoRoot: string,
-    ): Promise<{ ok: boolean; error?: string; files: string[] }> =>
+    listAll: (repoRoot: string): Promise<{ ok: boolean; error?: string; files: string[] }> =>
       transport.invoke(FilesChannels.LIST_ALL, repoRoot),
     writeFile: (
       repoRoot: string,
@@ -361,18 +361,8 @@ const api = {
       expectedMtimeMs?: number,
       /** Refuse unless the file holds this now (null = absent). */
       expected?: { content: string | null },
-    ): Promise<
-      | { ok: true; mtimeMs: number }
-      | { ok: false; error: string; conflict?: boolean }
-    > =>
-      transport.invoke(
-        FilesChannels.WRITE_FILE,
-        repoRoot,
-        subPath,
-        content,
-        expectedMtimeMs,
-        expected,
-      ),
+    ): Promise<{ ok: true; mtimeMs: number } | { ok: false; error: string; conflict?: boolean }> =>
+      transport.invoke(FilesChannels.WRITE_FILE, repoRoot, subPath, content, expectedMtimeMs, expected),
     deleteFile: (
       repoRoot: string,
       subPath: string,
@@ -399,19 +389,12 @@ const api = {
         }
       | { ok: false; error: string }
     > => transport.invoke(GitChannels.LIST_REFS, cwd),
-    switchRef: (
-      cwd: string,
-      refName: string,
-    ): Promise<{ ok: true } | { ok: false; error: string }> =>
+    switchRef: (cwd: string, refName: string): Promise<{ ok: true } | { ok: false; error: string }> =>
       transport.invoke(GitChannels.SWITCH_REF, cwd, refName),
-    currentBranch: (
-      cwd: string,
-    ): Promise<{ ok: true; branch: string | null } | { ok: false; error: string }> =>
+    currentBranch: (cwd: string): Promise<{ ok: true; branch: string | null } | { ok: false; error: string }> =>
       transport.invoke(GitChannels.CURRENT_BRANCH, cwd),
-    watchHead: (cwd: string): Promise<{ ok: boolean }> =>
-      transport.invoke(GitChannels.WATCH_HEAD, cwd),
-    unwatchHead: (cwd: string): Promise<{ ok: boolean }> =>
-      transport.invoke(GitChannels.UNWATCH_HEAD, cwd),
+    watchHead: (cwd: string): Promise<{ ok: boolean }> => transport.invoke(GitChannels.WATCH_HEAD, cwd),
+    unwatchHead: (cwd: string): Promise<{ ok: boolean }> => transport.invoke(GitChannels.UNWATCH_HEAD, cwd),
     onHeadChanged: (callback: (cwd: string) => void) =>
       transport.on<[string]>(GitChannels.HEAD_CHANGED, (cwd) => callback(cwd)),
   },
@@ -518,38 +501,56 @@ const api = {
     list: (): Promise<PrResult<PrListData>> => transport.invoke(PullRequestChannels.LIST),
     detail: (ref: PrRef): Promise<PrResult<PrDetail>> => transport.invoke(PullRequestChannels.DETAIL, ref),
     files: (ref: PrRef): Promise<PrResult<PrChangedFile[]>> => transport.invoke(PullRequestChannels.FILES, ref),
-    conversations: (ref: PrRef): Promise<PrResult<PrConversation[]>> => transport.invoke(PullRequestChannels.CONVERSATIONS, ref),
+    conversations: (ref: PrRef): Promise<PrResult<PrConversation[]>> =>
+      transport.invoke(PullRequestChannels.CONVERSATIONS, ref),
     checks: (ref: PrRef): Promise<PrResult<PrCheck[]>> => transport.invoke(PullRequestChannels.CHECKS, ref),
     /** PRs linked to a chat; `threadId` first so a remote chat routes to its machine. */
     links: (threadId: string): Promise<PrLink[]> => transport.invoke(PullRequestChannels.LINKS, threadId),
     linkedChats: (ref: PrRef): Promise<PrLinkChat[]> => transport.invoke(PullRequestChannels.LINKED_CHATS, ref),
     linkableChats: (ref: PrRef): Promise<PrLinkChat[]> => transport.invoke(PullRequestChannels.LINKABLE_CHATS, ref),
-    link: (threadId: string, ref: PrRef): Promise<PrLinkResult> => transport.invoke(PullRequestChannels.LINK, threadId, ref),
-    unlink: (threadId: string, ref: PrRef): Promise<PrLinkResult> => transport.invoke(PullRequestChannels.UNLINK, threadId, ref),
-    scanHistory: (threadId: string): Promise<PrHistoryScanResult> => transport.invoke(PullRequestChannels.HISTORY_SCAN, threadId),
+    link: (threadId: string, ref: PrRef): Promise<PrLinkResult> =>
+      transport.invoke(PullRequestChannels.LINK, threadId, ref),
+    unlink: (threadId: string, ref: PrRef): Promise<PrLinkResult> =>
+      transport.invoke(PullRequestChannels.UNLINK, threadId, ref),
+    scanHistory: (threadId: string): Promise<PrHistoryScanResult> =>
+      transport.invoke(PullRequestChannels.HISTORY_SCAN, threadId),
     /** `created`: an agent just opened the PR, so a Reviews list on screen is out of date. */
     onLinksChanged: (callback: (change: { conversationId: string; created?: boolean }) => void) =>
-      transport.on(PullRequestChannels.LINKS_CHANGED, (change) => callback(change as { conversationId: string; created?: boolean })),
-    reply: (ref: PrRef, input: ReplyInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.REPLY, ref, input),
-    resolve: (ref: PrRef, input: ResolveInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.RESOLVE, ref, input),
-    unresolve: (ref: PrRef, input: ResolveInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.UNRESOLVE, ref, input),
-    comment: (ref: PrRef, input: CommentInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.COMMENT, ref, input),
+      transport.on(PullRequestChannels.LINKS_CHANGED, (change) =>
+        callback(change as { conversationId: string; created?: boolean }),
+      ),
+    reply: (ref: PrRef, input: ReplyInput): Promise<PrResult<PrWriteDone>> =>
+      transport.invoke(PullRequestWriteChannels.REPLY, ref, input),
+    resolve: (ref: PrRef, input: ResolveInput): Promise<PrResult<PrWriteDone>> =>
+      transport.invoke(PullRequestWriteChannels.RESOLVE, ref, input),
+    unresolve: (ref: PrRef, input: ResolveInput): Promise<PrResult<PrWriteDone>> =>
+      transport.invoke(PullRequestWriteChannels.UNRESOLVE, ref, input),
+    comment: (ref: PrRef, input: CommentInput): Promise<PrResult<PrWriteDone>> =>
+      transport.invoke(PullRequestWriteChannels.COMMENT, ref, input),
     inlineComment: (ref: PrRef, input: InlineCommentInput): Promise<PrResult<PrWriteDone>> =>
       transport.invoke(PullRequestWriteChannels.INLINE_COMMENT, ref, input),
     submitReview: (ref: PrRef, input: SubmitReviewInput): Promise<PrResult<PrWriteDone>> =>
       transport.invoke(PullRequestWriteChannels.SUBMIT_REVIEW, ref, input),
-    merge: (ref: PrRef, input: MergeInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.MERGE, ref, input),
-    rerunCheck: (ref: PrRef, input: RerunInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.RERUN_CHECK, ref, input),
-    reviewerCandidates: (ref: PrRef): Promise<PrResult<PrReviewerCandidate[]>> => transport.invoke(PullRequestChannels.REVIEWER_CANDIDATES, ref),
-    addReviewer: (ref: PrRef, input: ReviewerInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.ADD_REVIEWER, ref, input),
-    removeReviewer: (ref: PrRef, input: ReviewerInput): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.REMOVE_REVIEWER, ref, input),
+    merge: (ref: PrRef, input: MergeInput): Promise<PrResult<PrWriteDone>> =>
+      transport.invoke(PullRequestWriteChannels.MERGE, ref, input),
+    rerunCheck: (ref: PrRef, input: RerunInput): Promise<PrResult<PrWriteDone>> =>
+      transport.invoke(PullRequestWriteChannels.RERUN_CHECK, ref, input),
+    reviewerCandidates: (ref: PrRef): Promise<PrResult<PrReviewerCandidate[]>> =>
+      transport.invoke(PullRequestChannels.REVIEWER_CANDIDATES, ref),
+    addReviewer: (ref: PrRef, input: ReviewerInput): Promise<PrResult<PrWriteDone>> =>
+      transport.invoke(PullRequestWriteChannels.ADD_REVIEWER, ref, input),
+    removeReviewer: (ref: PrRef, input: ReviewerInput): Promise<PrResult<PrWriteDone>> =>
+      transport.invoke(PullRequestWriteChannels.REMOVE_REVIEWER, ref, input),
     decline: (ref: PrRef): Promise<PrResult<PrWriteDone>> => transport.invoke(PullRequestWriteChannels.DECLINE, ref),
     /** Local only: hides the PR from Reviews on this backend until it needs you again. */
     hide: (ref: PrRef): Promise<{ ok: boolean; message?: string }> => transport.invoke(PullRequestChannels.HIDE, ref),
-    unhide: (ref: PrRef): Promise<{ ok: boolean; message?: string }> => transport.invoke(PullRequestChannels.UNHIDE, ref),
+    unhide: (ref: PrRef): Promise<{ ok: boolean; message?: string }> =>
+      transport.invoke(PullRequestChannels.UNHIDE, ref),
     /** Local only: Reviews stops reading these repositories on this backend until they are shown again. */
-    hideRepos: (repos: RepoRef[]): Promise<{ ok: boolean; message?: string }> => transport.invoke(PullRequestChannels.HIDE_REPOS, repos),
-    unhideRepos: (repos: RepoRef[]): Promise<{ ok: boolean; message?: string }> => transport.invoke(PullRequestChannels.UNHIDE_REPOS, repos),
+    hideRepos: (repos: RepoRef[]): Promise<{ ok: boolean; message?: string }> =>
+      transport.invoke(PullRequestChannels.HIDE_REPOS, repos),
+    unhideRepos: (repos: RepoRef[]): Promise<{ ok: boolean; message?: string }> =>
+      transport.invoke(PullRequestChannels.UNHIDE_REPOS, repos),
   },
 
   sourceControl: {
@@ -564,18 +565,13 @@ const api = {
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────
   kanban: {
-    list: (projectPath: string): Promise<KanbanCard[]> =>
-      transport.invoke(KanbanChannels.LIST, projectPath),
-    create: (input: KanbanCardCreate): Promise<KanbanCard> =>
-      transport.invoke(KanbanChannels.CREATE, input),
+    list: (projectPath: string): Promise<KanbanCard[]> => transport.invoke(KanbanChannels.LIST, projectPath),
+    create: (input: KanbanCardCreate): Promise<KanbanCard> => transport.invoke(KanbanChannels.CREATE, input),
     update: (id: string, patch: KanbanCardUpdate): Promise<KanbanCard | null> =>
       transport.invoke(KanbanChannels.UPDATE, id, patch),
     delete: (id: string, opts?: { removeWorktree?: boolean; force?: boolean }): Promise<void> =>
       transport.invoke(KanbanChannels.DELETE, id, opts),
-    createWorktree: (
-      id: string,
-      intent?: KanbanWorktreeCreationIntent,
-    ): Promise<KanbanCard | null> =>
+    createWorktree: (id: string, intent?: KanbanWorktreeCreationIntent): Promise<KanbanCard | null> =>
       transport.invoke(KanbanChannels.CREATE_WORKTREE, id, intent),
     removeWorktree: (id: string, opts?: { force?: boolean }): Promise<KanbanCard | null> =>
       transport.invoke(KanbanChannels.REMOVE_WORKTREE, id, opts),
@@ -597,7 +593,9 @@ const api = {
     set: (key: string, value: string) => transport.invoke('settings:set', key, value),
     remove: (key: string) => transport.invoke('settings:remove', key),
     /** Each project's overrides, keyed by the path as given. */
-    projectOverrides: (projectPaths: string[]): Promise<Record<string, import('@shared/project-settings').ProjectOverrides>> =>
+    projectOverrides: (
+      projectPaths: string[],
+    ): Promise<Record<string, import('@shared/project-settings').ProjectOverrides>> =>
       transport.invoke(AppChannels.SETTINGS_PROJECT_OVERRIDES, projectPaths),
     setProjectOverride: (projectPath: string, key: string, value: string): Promise<void> =>
       transport.invoke(AppChannels.SETTINGS_PROJECT_OVERRIDE_SET, projectPath, key, value),
@@ -610,9 +608,13 @@ const api = {
     available: !backendUrl,
     open: (): Promise<{ path: string }> => transport.invoke(SettingsFileChannels.OPEN),
     openExternal: (): Promise<{ ok: boolean; error?: string }> => transport.invoke(SettingsFileChannels.OPEN_EXTERNAL),
-    status: (): Promise<import('@shared/settings-file').SettingsFileStatus> => transport.invoke(SettingsFileChannels.STATUS),
+    status: (): Promise<import('@shared/settings-file').SettingsFileStatus> =>
+      transport.invoke(SettingsFileChannels.STATUS),
     onStatus: (callback: (status: import('@shared/settings-file').SettingsFileStatus) => void) =>
-      transport.on<[import('@shared/settings-file').SettingsFileStatus]>(SettingsFileChannels.STATUS_CHANGED, (status) => callback(status)),
+      transport.on<[import('@shared/settings-file').SettingsFileStatus]>(
+        SettingsFileChannels.STATUS_CHANGED,
+        (status) => callback(status),
+      ),
     /** A save changed these stored settings keys. */
     onApplied: (callback: (keys: string[]) => void) =>
       transport.on<[string[]]>(SettingsFileChannels.APPLIED, (keys) => callback(keys)),
@@ -620,15 +622,16 @@ const api = {
 
   // ─── Provider instances (named credential sets per agent kind) ───
   providerInstances: {
-    list: (): Promise<import('@shared/types').ProviderInstance[]> =>
-      transport.invoke(ProviderInstanceChannels.LIST),
+    list: (): Promise<import('@shared/types').ProviderInstance[]> => transport.invoke(ProviderInstanceChannels.LIST),
     upsert: (input: ProviderInstanceUpsertInput): Promise<import('@shared/types').ProviderInstance> =>
       transport.invoke(ProviderInstanceChannels.UPSERT, input),
-    delete: (id: string): Promise<boolean> =>
-      transport.invoke(ProviderInstanceChannels.DELETE, id),
+    delete: (id: string): Promise<boolean> => transport.invoke(ProviderInstanceChannels.DELETE, id),
     test: (id: string): Promise<{ ok: boolean; message: string }> =>
       transport.invoke(ProviderInstanceChannels.TEST, id),
-    usage: (id: string, opts?: { force?: boolean; refreshWithTurn?: boolean }): Promise<import('@shared/provider-usage').ProviderUsage> =>
+    usage: (
+      id: string,
+      opts?: { force?: boolean; refreshWithTurn?: boolean },
+    ): Promise<import('@shared/provider-usage').ProviderUsage> =>
       transport.invoke(ProviderInstanceChannels.USAGE, id, opts),
     createOauthDir: (dir: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
       transport.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
@@ -660,12 +663,19 @@ const api = {
       return transport.invoke(ProviderChannels.START_SESSION, opts)
     },
 
-    sendTurn: (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string) =>
-      transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images, origin),
+    sendTurn: (
+      threadId: string,
+      message: string,
+      runtimeMode?: RuntimeMode,
+      images?: Array<{ url: string; mimeType?: string }>,
+      origin?: string,
+    ) => transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images, origin),
 
     submitUserTurn: (turn: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> =>
       transport.invoke(ProviderChannels.SUBMIT_USER_TURN, turn),
-    resolveUserTurn: (resolution: import('@shared/provider-events').UserTurnResolutionV1): Promise<import('@shared/provider-events').UserTurnResolutionResult> =>
+    resolveUserTurn: (
+      resolution: import('@shared/provider-events').UserTurnResolutionV1,
+    ): Promise<import('@shared/provider-events').UserTurnResolutionResult> =>
       transport.invoke(ProviderChannels.RESOLVE_USER_TURN, resolution),
 
     interrupt: (threadId: string): Promise<import('@shared/provider-events').InterruptResult | undefined> =>
@@ -674,8 +684,7 @@ const api = {
     setRuntimeMode: (threadId: string, mode: RuntimeMode) =>
       transport.invoke(ProviderChannels.SET_RUNTIME_MODE, threadId, mode),
 
-    setModel: (threadId: string, model: string) =>
-      transport.invoke(ProviderChannels.SET_MODEL, threadId, model),
+    setModel: (threadId: string, model: string) => transport.invoke(ProviderChannels.SET_MODEL, threadId, model),
 
     setReasoningEffort: (threadId: string, effort: 'low' | 'medium' | 'high') =>
       transport.invoke(ProviderChannels.SET_REASONING_EFFORT, threadId, effort),
@@ -687,16 +696,27 @@ const api = {
      * `supportedModels()`). Returns `null` when the adapter doesn't support
      * it and `[]` before the session has fully initialized.
      */
-    listModels: (threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> | null> =>
+    listModels: (
+      threadId: string,
+    ): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> | null> =>
       transport.invoke(ProviderChannels.LIST_MODELS, threadId),
 
     /** An instance's live catalog before any session; `threadId` routes it to that chat's machine. */
-    listCatalog: async (req: { threadId?: string; agentType: string; instanceId?: string | null }): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max'; resolvedModel?: string }>> => {
+    listCatalog: async (req: {
+      threadId?: string
+      agentType: string
+      instanceId?: string | null
+    }): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max'; resolvedModel?: string }>> => {
       // A remote knows no desktop profile ids: forward the profile's config
       // dir, exactly as startSession does, so the probe lists that account.
       const target = routingTable.resolve(ProviderChannels.LIST_CATALOG, [req])
       if (target !== 'local' && (req.agentType === 'claude-code' || req.agentType === 'codex')) {
-        const seg = await router.invokeOn<string | null>('local', ProviderInstanceChannels.RESOLVE_OAUTH_DIR, req.agentType, req.instanceId)
+        const seg = await router.invokeOn<string | null>(
+          'local',
+          ProviderInstanceChannels.RESOLVE_OAUTH_DIR,
+          req.agentType,
+          req.instanceId,
+        )
         if (seg) return transport.invoke(ProviderChannels.LIST_CATALOG, { ...req, remoteConfigDir: seg })
       }
       return transport.invoke(ProviderChannels.LIST_CATALOG, req)
@@ -706,8 +726,7 @@ const api = {
      * Sessions running on the backend now, whoever started them. Lets this
      * window adopt a chat begun on the phone instead of showing it as idle.
      */
-    listSessions: (): Promise<LiveSessionSummary[]> =>
-      transport.invoke(ProviderChannels.LIST_SESSIONS),
+    listSessions: (): Promise<LiveSessionSummary[]> => transport.invoke(ProviderChannels.LIST_SESSIONS),
 
     /**
      * A thread's still-open approval/question/plan cards, from the backend's
@@ -721,10 +740,16 @@ const api = {
     listQueuedTurns: (threadId: string): Promise<import('@shared/turn-delivery').QueuedTurnSummary[]> =>
       transport.invoke(ProviderChannels.LIST_QUEUED_TURNS, threadId),
     /** Steer a queued message into the running turn now. */
-    promoteQueuedTurn: (threadId: string, messageId: string): Promise<import('@shared/turn-delivery').QueuedTurnActionResult> =>
+    promoteQueuedTurn: (
+      threadId: string,
+      messageId: string,
+    ): Promise<import('@shared/turn-delivery').QueuedTurnActionResult> =>
       transport.invoke(ProviderChannels.PROMOTE_QUEUED_TURN, threadId, messageId),
     /** Take a queued message back before it runs. */
-    cancelQueuedTurn: (threadId: string, messageId: string): Promise<import('@shared/turn-delivery').QueuedTurnActionResult> =>
+    cancelQueuedTurn: (
+      threadId: string,
+      messageId: string,
+    ): Promise<import('@shared/turn-delivery').QueuedTurnActionResult> =>
       transport.invoke(ProviderChannels.CANCEL_QUEUED_TURN, threadId, messageId),
     /** Start a queue held after a failed or usage-limited turn. */
     resumeQueuedTurns: (threadId: string): Promise<{ ok: boolean; message?: string }> =>
@@ -734,13 +759,24 @@ const api = {
     mergeBackPreview: (forkThreadId: string): Promise<import('@shared/merge-back').MergeBackPreview> =>
       transport.invoke(ProviderChannels.MERGE_BACK_PREVIEW, forkThreadId),
     /** Store the (edited) summary as a pending card in the parent. */
-    mergeBackSend: (forkThreadId: string, text: string, token: import('@shared/merge-back').MergeBackToken): Promise<import('@shared/merge-back').MergeBackActionResult> =>
+    mergeBackSend: (
+      forkThreadId: string,
+      text: string,
+      token: import('@shared/merge-back').MergeBackToken,
+    ): Promise<import('@shared/merge-back').MergeBackActionResult> =>
       transport.invoke(ProviderChannels.MERGE_BACK_SEND, forkThreadId, text, token),
     /** Change the text of a pending card in the parent. */
-    mergeBackEdit: (parentThreadId: string, mergeBackId: string, text: string): Promise<import('@shared/merge-back').MergeBackActionResult> =>
+    mergeBackEdit: (
+      parentThreadId: string,
+      mergeBackId: string,
+      text: string,
+    ): Promise<import('@shared/merge-back').MergeBackActionResult> =>
       transport.invoke(ProviderChannels.MERGE_BACK_EDIT, parentThreadId, mergeBackId, text),
     /** Remove a pending card without sending it. */
-    mergeBackDiscard: (parentThreadId: string, mergeBackId: string): Promise<import('@shared/merge-back').MergeBackActionResult> =>
+    mergeBackDiscard: (
+      parentThreadId: string,
+      mergeBackId: string,
+    ): Promise<import('@shared/merge-back').MergeBackActionResult> =>
       transport.invoke(ProviderChannels.MERGE_BACK_DISCARD, parentThreadId, mergeBackId),
 
     /**
@@ -774,8 +810,7 @@ const api = {
     respondToRequest: (threadId: string, requestId: string, decision: ApprovalDecision, response?: HostWriteResponse) =>
       transport.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision, response),
 
-    stopSession: (threadId: string) =>
-      transport.invoke(ProviderChannels.STOP_SESSION, threadId),
+    stopSession: (threadId: string) => transport.invoke(ProviderChannels.STOP_SESSION, threadId),
 
     switchInstance: async (
       threadId: string,
@@ -819,8 +854,7 @@ const api = {
     ): Promise<import('@shared/execution-root-relocation').RelocateExecutionRootResult> =>
       transport.invoke(ProviderChannels.RELOCATE_EXECUTION_ROOT, request),
 
-    isAvailable: (provider: 'claude' | 'codex') =>
-      transport.invoke(ProviderChannels.IS_AVAILABLE, provider),
+    isAvailable: (provider: 'claude' | 'codex') => transport.invoke(ProviderChannels.IS_AVAILABLE, provider),
 
     /**
      * Proactive remote-auth preflight. `threadId` is passed purely so the
@@ -858,8 +892,13 @@ const api = {
     /** Route an open-at-line to the workbench serving `folder`. `machineId` picks
      *  the backend: a remote session's workbench runs on that machine, and
      *  `folder` is not a routing key, so without it the call would go local. */
-    open: (args: { folder: string; path: string; line?: number; endLine?: number; machineId?: string }): Promise<{ ok: boolean }> =>
-      transport.invoke(IdeChannels.OPEN, args),
+    open: (args: {
+      folder: string
+      path: string
+      line?: number
+      endLine?: number
+      machineId?: string
+    }): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.OPEN, args),
     /** Idle shutdown - kill the server, renderer blanks the webview. */
     stop: (): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.STOP),
     /** ctrl+` or cmd+j inside the workbench - open Switchboard's terminal pane instead. */
@@ -874,12 +913,15 @@ const api = {
     setTheme: (theme: string, machineId?: string): Promise<{ ok: boolean }> =>
       transport.invoke(IdeChannels.SET_THEME, { theme, machineId }),
     onStatus: (
-      callback: (payload: { status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number; pct?: number }) => void,
+      callback: (payload: {
+        status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'
+        port?: number
+        pct?: number
+      }) => void,
     ): (() => void) =>
-      transport.on<[{ status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number; pct?: number }]>(
-        IdeChannels.STATUS,
-        (payload) => callback(payload),
-      ),
+      transport.on<
+        [{ status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number; pct?: number }]
+      >(IdeChannels.STATUS, (payload) => callback(payload)),
     onSelection: (
       callback: (msg: { path: string; startLine: number; endLine: number; text: string; intent?: 'edit' }) => void,
     ): (() => void) =>
@@ -892,16 +934,21 @@ const api = {
   // ─── Bookmarks ─────────────────────────────────────────────────
   bookmarks: {
     save: (params: {
-      id: string; sessionId: string; projectPath: string; sessionTitle: string
-      agentType: string; messageRole: string; contentExcerpt: string; messageTimestamp: number
+      id: string
+      sessionId: string
+      projectPath: string
+      sessionTitle: string
+      agentType: string
+      messageRole: string
+      contentExcerpt: string
+      messageTimestamp: number
     }) => transport.invoke(BookmarkChannels.SAVE, params),
     remove: (id: string) => transport.invoke(BookmarkChannels.REMOVE, id),
     list: (): Promise<import('@shared/types').Bookmark[]> => transport.invoke(BookmarkChannels.LIST),
   },
 
   // Menu events from main process
-  onOpenSettings: (callback: () => void) =>
-    transport.on('app:open-settings', () => callback()),
+  onOpenSettings: (callback: () => void) => transport.on('app:open-settings', () => callback()),
 
   /** Settings is recording a shortcut: the app menu's items stand down meanwhile. */
   setShortcutCapture: (on: boolean) => transport.send('app:shortcut-capture', on),
@@ -910,8 +957,7 @@ const api = {
   onKeyboardOverridesChanged: (callback: () => void) =>
     transport.on('app:keyboard-overrides-changed', () => callback()),
 
-  onOpenChatBeside: (callback: () => void) =>
-    transport.on('app:open-chat-beside', () => callback()),
+  onOpenChatBeside: (callback: () => void) => transport.on('app:open-chat-beside', () => callback()),
 
   onClosePaneOrWindow: (callback: (opts: { shift?: boolean }) => void) =>
     transport.on<[{ shift?: boolean }]>('app:close-pane-or-window', (opts) => callback(opts ?? {})),

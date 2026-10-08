@@ -26,21 +26,20 @@ describe('application database worktree creation migration', () => {
     process.env.SWITCHBOARD_DATA_DIR = root
 
     const db = getDb()
-    const tables = db.prepare(`
+    const tables = db
+      .prepare(`
       SELECT name FROM sqlite_master
        WHERE type = 'table' AND name IN ('managed_worktrees', 'worktree_creations')
        ORDER BY name
-    `).all() as Array<{ name: string }>
+    `)
+      .all() as Array<{ name: string }>
     expect(tables.map((row) => row.name)).toEqual(['managed_worktrees', 'worktree_creations'])
 
     for (const table of ['conversations', 'kanban_cards']) {
       const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
-      expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining([
-        'worktree_id',
-        'worktree_creation_id',
-        'worktree_path',
-        'worktree_branch',
-      ]))
+      expect(columns.map((column) => column.name)).toEqual(
+        expect.arrayContaining(['worktree_id', 'worktree_creation_id', 'worktree_path', 'worktree_branch']),
+      )
     }
   })
 
@@ -57,7 +56,12 @@ describe('application database worktree creation migration', () => {
       ) VALUES ('machine-local', ?, 1, '{}', ?, 'provisioning', ?, 4, ?, 100, 100)
     `)
     insertCreation.run('creation-ready', 'hash-ready', 'ready', null)
-    insertCreation.run('creation-retained', 'hash-retained', 'cleanup_required', JSON.stringify({ disposition: 'retained' }))
+    insertCreation.run(
+      'creation-retained',
+      'hash-retained',
+      'cleanup_required',
+      JSON.stringify({ disposition: 'retained' }),
+    )
     insertCreation.run('creation-pending', 'hash-pending', 'pending', null)
     insertCreation.run('creation-corrupt', 'hash-corrupt', 'cleanup_required', '{')
     const insertConversation = db.prepare(`

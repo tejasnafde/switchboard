@@ -28,7 +28,9 @@ export interface PidFileIo {
 }
 
 export const nodePidFileIo: PidFileIo = {
-  ensureDir: (dir) => { mkdirSync(dir, { recursive: true }) },
+  ensureDir: (dir) => {
+    mkdirSync(dir, { recursive: true })
+  },
   read: (path) => {
     try {
       return readFileSync(path, 'utf8')
@@ -36,8 +38,12 @@ export const nodePidFileIo: PidFileIo = {
       return null
     }
   },
-  write: (path, contents) => { writeFileSync(path, contents) },
-  remove: (path) => { unlinkSync(path) },
+  write: (path, contents) => {
+    writeFileSync(path, contents)
+  },
+  remove: (path) => {
+    unlinkSync(path)
+  },
 }
 
 /**

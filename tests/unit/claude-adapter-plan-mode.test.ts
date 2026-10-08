@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  decidePermission,
-  PLAN_READ_ONLY_TOOLS,
-} from '../../src/main/provider/adapters/claude-adapter'
+import { decidePermission, PLAN_READ_ONLY_TOOLS } from '../../src/main/provider/adapters/claude-adapter'
 
 /**
  * Policy tests for `decidePermission` - the pure function that decides

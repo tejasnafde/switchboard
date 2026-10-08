@@ -17,7 +17,15 @@
  * above-textarea chip row, just inline at the caret position. Tint
  * varies by `kind` (file=blue, terminal=amber, chat-message=purple).
  */
-import { $getNodeByKey, DecoratorNode, type EditorConfig, type LexicalNode, type NodeKey, type SerializedLexicalNode, type Spread } from 'lexical'
+import {
+  $getNodeByKey,
+  DecoratorNode,
+  type EditorConfig,
+  type LexicalNode,
+  type NodeKey,
+  type SerializedLexicalNode,
+  type Spread,
+} from 'lexical'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import type { JSX } from 'react'
 import type { DraftPillKind } from '../../../stores/draft-store'
@@ -68,7 +76,11 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
         <button
           type="button"
           aria-label={`Remove ${label}`}
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRemove() }}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            handleRemove()
+          }}
           // Prevent focus stealing - without this, clicking × moves focus
           // out of the editor and the user has to re-click into the chip.
           onMouseDown={(e) => e.preventDefault()}
@@ -110,9 +122,15 @@ export class PillNode extends DecoratorNode<JSX.Element> {
   }
 
   /** Pill id is what survives serialization - label + kind are looked up at render time. */
-  getPillId(): string { return this.__pillId }
-  getLabel(): string { return this.__label }
-  getKindValue(): DraftPillKind { return this.__kind }
+  getPillId(): string {
+    return this.__pillId
+  }
+  getLabel(): string {
+    return this.__label
+  }
+  getKindValue(): DraftPillKind {
+    return this.__kind
+  }
 
   /**
    * `getTextContent` is what `$getRoot().getTextContent()` walks, and it's
@@ -123,12 +141,18 @@ export class PillNode extends DecoratorNode<JSX.Element> {
     return `[[pill:${this.__pillId}]]`
   }
 
-  isInline(): boolean { return true }
-  isKeyboardSelectable(): boolean { return true }
+  isInline(): boolean {
+    return true
+  }
+  isKeyboardSelectable(): boolean {
+    return true
+  }
   // Treat the chip as one indivisible unit - Backspace deletes the whole
   // pill, arrow keys jump past it. Without this, users could caret-into
   // the empty chip and get stuck.
-  isIsolated(): boolean { return true }
+  isIsolated(): boolean {
+    return true
+  }
 
   createDOM(_config: EditorConfig): HTMLElement {
     // Span so the chip flows inline with surrounding text.
@@ -137,17 +161,12 @@ export class PillNode extends DecoratorNode<JSX.Element> {
     return span
   }
 
-  updateDOM(): false { return false }
+  updateDOM(): false {
+    return false
+  }
 
   decorate(): JSX.Element {
-    return (
-      <PillChip
-        pillId={this.__pillId}
-        label={this.__label}
-        kind={this.__kind}
-        nodeKey={this.__key}
-      />
-    )
+    return <PillChip pillId={this.__pillId} label={this.__label} kind={this.__kind} nodeKey={this.__key} />
   }
 
   static importJSON(serialized: SerializedPillNode): PillNode {

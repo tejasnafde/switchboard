@@ -17,10 +17,7 @@ export interface WorkspaceGroup {
  * treated as ungrouped - defensive against stale references after a
  * workspace was deleted between the renderer's last fetch and now.
  */
-export function groupProjectsByWorkspace(
-  projects: Project[],
-  workspaces: Workspace[],
-): WorkspaceGroup[] {
+export function groupProjectsByWorkspace(projects: Project[], workspaces: Workspace[]): WorkspaceGroup[] {
   const known = new Set(workspaces.map((w) => w.id))
   const byId = new Map<string, Project[]>()
   const ungrouped: Project[] = []
@@ -55,6 +52,6 @@ export function colorTokenForWorkspace(w: Workspace): string {
   if (w.color) return w.color // explicit hex/CSS-color value wins
   let h = 0
   for (let i = 0; i < w.id.length; i++) h = (h * 31 + w.id.charCodeAt(i)) | 0
-  const idx = Math.abs(h) % 6 + 1
+  const idx = (Math.abs(h) % 6) + 1
   return `var(--workspace-color-${idx})`
 }

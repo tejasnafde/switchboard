@@ -96,7 +96,10 @@ function fileBlocks(f: PrChangedFile, budget: number): Block[] {
   if (f.truncated) head += '(the host cut this patch short; the rest is only on the host)\n'
   const blocks: Block[] = [{ file: f, text: head, cut: 0 }]
   if (f.binary) return blocks
-  const width = Math.max(1, ...f.hunks.flatMap((h) => h.lines.flatMap((l) => [l.oldLine ?? 0, l.newLine ?? 0])).map((n) => String(n).length))
+  const width = Math.max(
+    1,
+    ...f.hunks.flatMap((h) => h.lines.flatMap((l) => [l.oldLine ?? 0, l.newLine ?? 0])).map((n) => String(n).length),
+  )
   for (const hunk of f.hunks) {
     const header = clipBytes(hunk.header, HEADER_SHOWN_BYTES)
     let block: Block = { file: f, text: `${header}\n`, cut: 0 }
@@ -147,42 +150,58 @@ interface FooterFacts {
 }
 
 function renderFooter(f: FooterFacts): string {
-  const lines = [`--- Page ${f.page} of ${f.total}${f.filter ? ` for "${f.filter}"` : ''}. ${f.matched} of ${f.files} changed files match.`]
+  const lines = [
+    `--- Page ${f.page} of ${f.total}${f.filter ? ` for "${f.filter}"` : ''}. ${f.matched} of ${f.files} changed files match.`,
+  ]
   if (f.leftOut) lines.push(`On other pages (in whole or in part): ${f.leftOut}.`)
-  if (f.page < f.total) lines.push(`Next: call get_pr_diff with page: ${f.page + 1}${f.filter ? ' and the same path' : ''}.`)
+  if (f.page < f.total)
+    lines.push(`Next: call get_pr_diff with page: ${f.page + 1}${f.filter ? ' and the same path' : ''}.`)
   if (f.unmatched) lines.push(`Not matched by "${f.filter}": ${f.unmatched}.`)
-  if (f.cut > 0) lines.push(`${f.cut} ${f.cut === 1 ? 'line' : 'lines'} longer than ${PR_DIFF_LINE_CHARS} characters were cut.`)
+  if (f.cut > 0)
+    lines.push(`${f.cut} ${f.cut === 1 ? 'line' : 'lines'} longer than ${PR_DIFF_LINE_CHARS} characters were cut.`)
   return lines.join('\n')
 }
 
-export function diffPage(files: readonly PrChangedFile[], req: DiffPageRequest, pageBytes = PR_DIFF_PAGE_BYTES): DiffPageResult {
+export function diffPage(
+  files: readonly PrChangedFile[],
+  req: DiffPageRequest,
+  pageBytes = PR_DIFF_PAGE_BYTES,
+): DiffPageResult {
   const filter = req.path?.trim() ?? ''
   if (bytes(filter) > FILTER_MAX_BYTES) return { ok: false, message: '"path" is a file or directory path of the diff.' }
   const shown = filter ? files.filter((f) => matchesPathFilter(f, filter)) : [...files]
   if (shown.length === 0) {
     if (files.length === 0) return { ok: true, text: 'This pull request changes no files.', page: 1, pages: 1 }
-    return { ok: false, message: `No changed file matches "${shownPath(filter)}". Changed files: ${namesList(files.map((f) => f.path))}.` }
+    return {
+      ok: false,
+      message: `No changed file matches "${shownPath(filter)}". Changed files: ${namesList(files.map((f) => f.path))}.`,
+    }
   }
 
   const heading = `${clipBytes(req.heading, HEADER_SHOWN_BYTES)}\n`
   const intro = `${HOW_TO_READ}\n\n`
   const shownFilter = filter ? shownPath(filter) : ''
-  const unmatched = shown.length < files.length ? namesList(files.filter((f) => !shown.includes(f)).map((f) => f.path)) : ''
+  const unmatched =
+    shown.length < files.length ? namesList(files.filter((f) => !shown.includes(f)).map((f) => f.path)) : ''
   const lineCount = shown.reduce((n, f) => n + f.hunks.reduce((m, h) => m + h.lines.length, 0), 0)
   // No more pages than blocks: a header per file, at most one block per line or per empty hunk.
   const maxPages = shown.length + lineCount + shown.reduce((n, f) => n + f.hunks.length, 0)
   // The largest footer this diff can render: page numbers and the cut count at
   // their widest, a full list of the files on other pages. Plus the newline before it.
-  const footerRoom = 1 + bytes(renderFooter({
-    page: maxPages,
-    total: maxPages + 1,
-    filter: shownFilter,
-    matched: shown.length,
-    files: files.length,
-    leftOut: 'x'.repeat(FOOTER_LIST_BYTES),
-    unmatched,
-    cut: lineCount,
-  }))
+  const footerRoom =
+    1 +
+    bytes(
+      renderFooter({
+        page: maxPages,
+        total: maxPages + 1,
+        filter: shownFilter,
+        matched: shown.length,
+        files: files.length,
+        leftOut: 'x'.repeat(FOOTER_LIST_BYTES),
+        unmatched,
+        cut: lineCount,
+      }),
+    )
   const budget = pageBytes - footerRoom
   const pages: Block[][] = [[]]
   let used = bytes(heading) + bytes(intro)
@@ -210,7 +229,10 @@ export function diffPage(files: readonly PrChangedFile[], req: DiffPageRequest, 
   const total = pages.length
   const page = req.page ?? 1
   if (!Number.isInteger(page) || page < 1 || page > total) {
-    return { ok: false, message: `There ${total === 1 ? 'is 1 page' : `are ${total} pages`}${shownFilter ? ` for "${shownFilter}"` : ''}; page ${String(req.page)} does not exist.` }
+    return {
+      ok: false,
+      message: `There ${total === 1 ? 'is 1 page' : `are ${total} pages`}${shownFilter ? ` for "${shownFilter}"` : ''}; page ${String(req.page)} does not exist.`,
+    }
   }
 
   const blocks = pages[page - 1]
@@ -225,5 +247,10 @@ export function diffPage(files: readonly PrChangedFile[], req: DiffPageRequest, 
     unmatched,
     cut: blocks.reduce((n, b) => n + b.cut, 0),
   })
-  return { ok: true, text: `${heading}${page === 1 ? intro : ''}${blocks.map((b) => b.text).join('')}\n${footer}`, page, pages: total }
+  return {
+    ok: true,
+    text: `${heading}${page === 1 ? intro : ''}${blocks.map((b) => b.text).join('')}\n${footer}`,
+    page,
+    pages: total,
+  }
 }

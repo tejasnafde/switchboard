@@ -11,16 +11,19 @@ const STORAGE_KEY = 'switchboard.worktree-creations.desktop.v1'
 function isIntent(value: unknown): value is DesktopNewChatIntent {
   if (!value || typeof value !== 'object') return false
   const input = value as Partial<DesktopNewChatIntent>
-  return typeof input.projectPath === 'string'
-    && typeof input.machineId === 'string'
-    && input.checkout === 'worktree'
-    && (input.agentType === 'claude-code' || input.agentType === 'codex' || input.agentType === 'opencode')
+  return (
+    typeof input.projectPath === 'string' &&
+    typeof input.machineId === 'string' &&
+    input.checkout === 'worktree' &&
+    (input.agentType === 'claude-code' || input.agentType === 'codex' || input.agentType === 'opencode') &&
     // Absent when the backend was left to pick it.
-    && (input.runtimeMode === undefined || isRuntimeMode(input.runtimeMode))
+    (input.runtimeMode === undefined || isRuntimeMode(input.runtimeMode))
+  )
 }
 
-export function createDesktopNewChatJournal(storage: Pick<Storage, 'getItem' | 'setItem'>):
-DesktopNewChatJournal & { list(): DesktopNewChatJournalEntry[] } {
+export function createDesktopNewChatJournal(
+  storage: Pick<Storage, 'getItem' | 'setItem'>,
+): DesktopNewChatJournal & { list(): DesktopNewChatJournalEntry[] } {
   const read = (): DesktopNewChatJournalEntry[] => {
     try {
       const value = JSON.parse(storage.getItem(STORAGE_KEY) ?? '[]') as unknown
@@ -29,9 +32,7 @@ DesktopNewChatJournal & { list(): DesktopNewChatJournalEntry[] } {
         if (!entry || typeof entry !== 'object') return []
         const candidate = entry as { intent?: unknown; request?: unknown }
         const parsed = parseWorktreeCreationRequest(candidate.request)
-        return isIntent(candidate.intent) && parsed.ok
-          ? [{ intent: candidate.intent, request: parsed.value }]
-          : []
+        return isIntent(candidate.intent) && parsed.ok ? [{ intent: candidate.intent, request: parsed.value }] : []
       })
     } catch {
       return []

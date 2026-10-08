@@ -55,9 +55,7 @@ async function holdsContent(absPath: string, expected: string | null): Promise<b
   return expected !== null && current.replace(/\r\n/g, '\n') === expected.replace(/\r\n/g, '\n')
 }
 
-export type WriteResult =
-  | { ok: true; mtimeMs: number }
-  | { ok: false; error: string; conflict?: boolean }
+export type WriteResult = { ok: true; mtimeMs: number } | { ok: false; error: string; conflict?: boolean }
 
 async function detectEol(absPath: string): Promise<'\r\n' | '\n'> {
   try {
@@ -84,7 +82,8 @@ async function conflictReason(absPath: string, opts: WriteOptions, stat: TargetS
     if (stat.missing) return CONFLICT_SINCE_OPEN
     if (stat.exists && stat.mtimeMs > opts.expectedMtimeMs) return CONFLICT_SINCE_OPEN
   }
-  if (opts.expectedContent !== undefined && !(await holdsContent(absPath, opts.expectedContent))) return CONFLICT_SINCE_DIFF
+  if (opts.expectedContent !== undefined && !(await holdsContent(absPath, opts.expectedContent)))
+    return CONFLICT_SINCE_DIFF
   return null
 }
 
@@ -105,11 +104,7 @@ async function statTarget(absPath: string): Promise<TargetStat> {
   }
 }
 
-export async function writeFileSafe(
-  absPath: string,
-  content: string,
-  opts: WriteOptions = {},
-): Promise<WriteResult> {
+export async function writeFileSafe(absPath: string, content: string, opts: WriteOptions = {}): Promise<WriteResult> {
   const before = await statTarget(absPath)
   const conflict = await conflictReason(absPath, opts, before)
   if (conflict) return { ok: false, error: conflict, conflict: true }
@@ -148,7 +143,11 @@ export type DeleteResult = { ok: true } | { ok: false; error: string }
 export async function deleteFileSafe(absPath: string, expectedContent?: string): Promise<DeleteResult> {
   try {
     // Already absent is the state a delete wants, so only a changed file conflicts.
-    if (expectedContent !== undefined && !(await holdsContent(absPath, expectedContent)) && !(await holdsContent(absPath, null))) {
+    if (
+      expectedContent !== undefined &&
+      !(await holdsContent(absPath, expectedContent)) &&
+      !(await holdsContent(absPath, null))
+    ) {
       return { ok: false, error: CONFLICT_SINCE_DIFF }
     }
     await fs.unlink(absPath)

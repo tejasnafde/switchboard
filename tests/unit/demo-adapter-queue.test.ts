@@ -20,7 +20,12 @@ describe('DemoAdapter queued messages', () => {
     expect(events).toContainEqual({ type: 'turn.queued', threadId: 't1', messageId: 'remote_q1' })
     await expect(adapter.cancelQueuedTurn('t1', 'remote_q1')).resolves.toBe(true)
     await expect(adapter.cancelQueuedTurn('t1', 'remote_q1')).resolves.toBe(false)
-    expect(events).toContainEqual({ type: 'turn.dequeued', threadId: 't1', messageId: 'remote_q1', reason: 'cancelled' })
+    expect(events).toContainEqual({
+      type: 'turn.dequeued',
+      threadId: 't1',
+      messageId: 'remote_q1',
+      reason: 'cancelled',
+    })
     await adapter.stopSession('t1')
   })
 

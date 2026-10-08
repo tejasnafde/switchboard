@@ -17,15 +17,7 @@
  * src/renderer/components/onboarding/feature-registry.ts.
  */
 import { execFileSync } from 'node:child_process'
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -58,8 +50,8 @@ const pause = (page, ms) => page.waitForTimeout(ms)
 
 /** Point the fixture at this Mac's code-server install so `ide` never downloads. */
 function linkCodeServer(userData) {
-  const source = process.env.SB_TOUR_CODE_SERVER
-    ?? join(homedir(), 'Library', 'Application Support', 'switchboard', 'code-server')
+  const source =
+    process.env.SB_TOUR_CODE_SERVER ?? join(homedir(), 'Library', 'Application Support', 'switchboard', 'code-server')
   if (!existsSync(source)) {
     console.warn(`code-server not found at ${source}; the ide scene will show the download state`)
     return
@@ -78,24 +70,36 @@ function linkCodeServer(userData) {
   mkdirSync(extensionsTo, { recursive: true })
   if (existsSync(extensionsFrom)) {
     for (const name of readdirSync(extensionsFrom)) {
-      if (name === 'extensions.json' || name.startsWith('.') || /^(atlassian\.|mattpocock\.|switchboard\.sb-bridge)/.test(name)) continue
+      if (
+        name === 'extensions.json' ||
+        name.startsWith('.') ||
+        /^(atlassian\.|mattpocock\.|switchboard\.sb-bridge)/.test(name)
+      )
+        continue
       symlinkSync(join(extensionsFrom, name), join(extensionsTo, name), 'dir')
     }
   }
   // Quiet first-run prompts that have nothing to do with the feature being
   // shown. The app merges its own defaults over this file, so extra keys stay.
   mkdirSync(join(target, 'data', 'User'), { recursive: true })
-  writeFileSync(join(target, 'data', 'User', 'settings.json'), JSON.stringify({
-    'update.mode': 'none',
-    'extensions.ignoreRecommendations': true,
-    'extensions.autoCheckUpdates': false,
-    'extensions.autoUpdate': false,
-    'typescript.surveys.enabled': false,
-    'workbench.enableExperiments': false,
-    'workbench.tips.enabled': false,
-    'git.openRepositoryInParentFolders': 'never',
-    'telemetry.telemetryLevel': 'off',
-  }, null, 2))
+  writeFileSync(
+    join(target, 'data', 'User', 'settings.json'),
+    JSON.stringify(
+      {
+        'update.mode': 'none',
+        'extensions.ignoreRecommendations': true,
+        'extensions.autoCheckUpdates': false,
+        'extensions.autoUpdate': false,
+        'typescript.surveys.enabled': false,
+        'workbench.enableExperiments': false,
+        'workbench.tips.enabled': false,
+        'git.openRepositoryInParentFolders': 'never',
+        'telemetry.telemetryLevel': 'off',
+      },
+      null,
+      2,
+    ),
+  )
 }
 
 async function launch(userData, recordDir) {
@@ -131,11 +135,13 @@ async function launch(userData, recordDir) {
   if (await skipTour.isVisible().catch(() => false)) await skipTour.click()
   // Quiet the first-launch surfaces so they never appear in a clip, and make
   // sure a fixture app never posts analytics.
-  await win.evaluate(() => Promise.all([
-    window.api.settings.set('tour.autoplay', 'false'),
-    window.api.settings.set('analytics.enabled', 'false'),
-    window.api.settings.set('analytics.noticeSeen', 'true'),
-  ]))
+  await win.evaluate(() =>
+    Promise.all([
+      window.api.settings.set('tour.autoplay', 'false'),
+      window.api.settings.set('analytics.enabled', 'false'),
+      window.api.settings.set('analytics.noticeSeen', 'true'),
+    ]),
+  )
   await pause(win, 650)
   return { app, win }
 }
@@ -171,7 +177,10 @@ async function selectConversation(win, title = 'Debug auth callback') {
   try {
     await thread.waitFor({ state: 'visible', timeout: 15_000 })
   } catch (error) {
-    const sidebarText = await win.locator('.sidebar-root').innerText({ timeout: 2_000 }).catch(() => '(sidebar unavailable)')
+    const sidebarText = await win
+      .locator('.sidebar-root')
+      .innerText({ timeout: 2_000 })
+      .catch(() => '(sidebar unavailable)')
     console.error(`Sidebar at capture failure:\n${sidebarText}`)
     throw error
   }
@@ -232,7 +241,9 @@ const scenes = {
     await selectConversation(win)
     await pause(win, 900)
     await win.getByRole('button', { name: 'Board', exact: true }).click()
-    const card = win.getByText('Trace webhook retries', { exact: true }).locator('xpath=ancestor::div[@role="button"][1]')
+    const card = win
+      .getByText('Trace webhook retries', { exact: true })
+      .locator('xpath=ancestor::div[@role="button"][1]')
     await card.waitFor({ state: 'visible' })
     await pause(win, 1200)
     const target = win.getByText('In progress', { exact: true })
@@ -307,7 +318,12 @@ const scenes = {
     await pause(win, 900)
     await win.getByRole('button', { name: 'Open beside' }).click()
     await pause(win, 700)
-    await win.locator('.sb-floating-surface').getByRole('button').filter({ hasText: 'Compare retry strategies' }).first().click()
+    await win
+      .locator('.sb-floating-surface')
+      .getByRole('button')
+      .filter({ hasText: 'Compare retry strategies' })
+      .first()
+      .click()
     await pause(win, 1400)
     await glide(win, { x: 500, y: 400 }, { x: 900, y: 400 }, 30)
     await pause(win, 2200)
@@ -350,13 +366,20 @@ const scenes = {
     await pause(win, 500)
     await chip.click()
     await pause(win, 900)
-    await win.getByRole('button').filter({ hasText: /^backend$/ }).first().click()
+    await win
+      .getByRole('button')
+      .filter({ hasText: /^backend$/ })
+      .first()
+      .click()
     // Switching kills panes that printed in the last 30s, so the app may ask
     // first. Answer yes, as a user would.
     const ask = win.getByRole('alertdialog', { name: /^Switch to launch config/ })
     const first = await Promise.race([
       ask.waitFor({ state: 'visible', timeout: 10_000 }).then(() => 'ask'),
-      chip.filter({ hasText: /backend/ }).waitFor({ timeout: 10_000 }).then(() => 'switched'),
+      chip
+        .filter({ hasText: /backend/ })
+        .waitFor({ timeout: 10_000 })
+        .then(() => 'switched'),
     ])
     if (first === 'ask') await ask.getByRole('button', { name: 'OK', exact: true }).click()
     await pause(win, 3600)
@@ -372,7 +395,11 @@ const scenes = {
     const dialog = win.getByRole('dialog', { name: 'Provider, instance, and model picker' })
     await dialog.waitFor({ state: 'visible' })
     await pause(win, 1200)
-    await dialog.getByRole('button').filter({ hasText: /^Codex$/ }).first().click()
+    await dialog
+      .getByRole('button')
+      .filter({ hasText: /^Codex$/ })
+      .first()
+      .click()
     await pause(win, 1400)
     await win.keyboard.press('Escape')
     await pause(win, 1500)
@@ -406,16 +433,16 @@ const scenes = {
       await win.mouse.up()
     }
     const local = win.locator('.sidebar-machine-toggle').filter({ hasText: 'This Mac' }).first()
-    if (await local.getAttribute('aria-expanded') === 'true') await local.click()
+    if ((await local.getAttribute('aria-expanded')) === 'true') await local.click()
     await pause(win, 650)
     const offline = win.locator('.sidebar-machine-toggle').filter({ hasText: 'Remote machines' }).first()
-    if (await offline.getAttribute('aria-expanded') === 'false') await offline.click()
+    if ((await offline.getAttribute('aria-expanded')) === 'false') await offline.click()
     await pause(win, 650)
     const linux = win.locator('.sidebar-machine-toggle').filter({ hasText: 'Work machine' }).first()
     await linux.scrollIntoViewIfNeeded()
     const build = win.locator('.sidebar-machine-toggle').filter({ hasText: 'Build server' }).first()
-    if (await linux.getAttribute('aria-expanded') === 'true') await linux.click()
-    if (await build.getAttribute('aria-expanded') === 'true') await build.click()
+    if ((await linux.getAttribute('aria-expanded')) === 'true') await linux.click()
+    if ((await build.getAttribute('aria-expanded')) === 'true') await build.click()
     await pause(win, 650)
     await linux.click()
     await pause(win, 900)
@@ -451,7 +478,10 @@ const scenes = {
     await terminal.click({ position: { x: 80, y: 90 } })
     await win.keyboard.press('Meta+Shift+T')
     await pause(win, 800)
-    await win.locator('[data-terminal-pane]').last().click({ position: { x: 80, y: 90 } })
+    await win
+      .locator('[data-terminal-pane]')
+      .last()
+      .click({ position: { x: 80, y: 90 } })
     await win.keyboard.type('npm test', { delay: 70 })
     await win.keyboard.press('Enter')
     await pause(win, 2400)
@@ -463,13 +493,34 @@ const tourSceneIds = Object.keys(scenes).filter((id) => id !== 'hero')
 // ─── Encode ──────────────────────────────────────────────────────────────
 
 function encodeClip(rawPath, outputPath, startSeconds) {
-  execFileSync('ffmpeg', [
-    '-hide_banner', '-loglevel', 'error', '-y',
-    '-ss', startSeconds.toFixed(2), '-i', rawPath,
-    '-vf', 'fps=30,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=0x090b0d',
-    '-c:v', 'libx264', '-preset', 'slow', '-crf', '21',
-    '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', outputPath,
-  ], { stdio: 'inherit' })
+  execFileSync(
+    'ffmpeg',
+    [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-ss',
+      startSeconds.toFixed(2),
+      '-i',
+      rawPath,
+      '-vf',
+      'fps=30,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=0x090b0d',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'slow',
+      '-crf',
+      '21',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      '+faststart',
+      '-an',
+      outputPath,
+    ],
+    { stdio: 'inherit' },
+  )
 }
 
 async function screenshot(name, outputPath) {

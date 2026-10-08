@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 // ─── safeStorage mock (via the runtime shim) ───────────────────
 let safeStorageAvailable = true
 let decryptCalls = 0
-const safeStoragePrefix = Buffer.from([0xAA, 0xBB])
+const safeStoragePrefix = Buffer.from([0xaa, 0xbb])
 
 vi.mock('../../src/main/runtime', () => ({
   isElectron: false,
@@ -90,12 +90,14 @@ function prepare(sql: string) {
         return r ? { agent_type: r.agent_type } : undefined
       }
       if (norm.startsWith('SELECT count(*) AS c FROM provider_instances WHERE agent_type = ? AND id != ?')) {
-        const c = [...store.values()].filter(
-          (r) => r.agent_type === args[0] && r.id !== args[1],
-        ).length
+        const c = [...store.values()].filter((r) => r.agent_type === args[0] && r.id !== args[1]).length
         return { c }
       }
-      if (norm.startsWith('SELECT * FROM provider_instances WHERE agent_type = ? AND enabled = 1 ORDER BY created_at ASC LIMIT 1')) {
+      if (
+        norm.startsWith(
+          'SELECT * FROM provider_instances WHERE agent_type = ? AND enabled = 1 ORDER BY created_at ASC LIMIT 1',
+        )
+      ) {
         return [...store.values()]
           .filter((r) => r.agent_type === args[0] && r.enabled === 1)
           .sort((a, b) => a.created_at - b.created_at)[0]
@@ -105,8 +107,7 @@ function prepare(sql: string) {
     all: (..._args: unknown[]) => {
       if (norm.startsWith('SELECT * FROM provider_instances ORDER BY agent_type ASC, created_at ASC')) {
         return [...store.values()].sort(
-          (a, b) =>
-            a.agent_type.localeCompare(b.agent_type) || a.created_at - b.created_at,
+          (a, b) => a.agent_type.localeCompare(b.agent_type) || a.created_at - b.created_at,
         )
       }
       throw new Error(`mock all: unhandled SQL: ${norm}`)
@@ -114,17 +115,61 @@ function prepare(sql: string) {
     run: (...args: unknown[]) => {
       if (norm.startsWith('INSERT INTO provider_instances')) {
         const [
-          id, agent_type, display_name, accent_color, auth_mode,
-          env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at,
-        ] = args as [string, string, string, string | null, string, Buffer | null, string | null, string | null, string | null, number, number, number]
+          id,
+          agent_type,
+          display_name,
+          accent_color,
+          auth_mode,
+          env_encrypted,
+          env_keys,
+          oauth_dir,
+          config_json,
+          enabled,
+          created_at,
+          updated_at,
+        ] = args as [
+          string,
+          string,
+          string,
+          string | null,
+          string,
+          Buffer | null,
+          string | null,
+          string | null,
+          string | null,
+          number,
+          number,
+          number,
+        ]
         store.set(id, {
-          id, agent_type, display_name, accent_color, auth_mode,
-          env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at,
+          id,
+          agent_type,
+          display_name,
+          accent_color,
+          auth_mode,
+          env_encrypted,
+          env_keys,
+          oauth_dir,
+          config_json,
+          enabled,
+          created_at,
+          updated_at,
         })
         return { changes: 1 }
       }
       if (norm.startsWith('UPDATE provider_instances SET display_name')) {
-        const [name, accent, auth, env, envKeys, oauthDir, config, enabled, updated, id] = args as [string, string | null, string, Buffer | null, string | null, string | null, string | null, number, number, string]
+        const [name, accent, auth, env, envKeys, oauthDir, config, enabled, updated, id] = args as [
+          string,
+          string | null,
+          string,
+          Buffer | null,
+          string | null,
+          string | null,
+          string | null,
+          number,
+          number,
+          string,
+        ]
         const r = store.get(id)
         if (!r) return { changes: 0 }
         Object.assign(r, {
@@ -224,13 +269,16 @@ describe('expandTilde (behavior 2 - normalizes absolute paths too)', () => {
   // POSIX-literal string round-trip, which only holds on a POSIX host - skip
   // on win32 rather than assert a separator style no real Windows install
   // would produce either (see oauth-path.ts).
-  it.skipIf(process.platform === 'win32')('collapses redundant `..`/`//` segments in a non-tilde absolute path', async () => {
-    const { expandTilde } = await loadModule()
-    // No leading `~`, so today's implementation returns the path verbatim -
-    // a redundant absolute path (as users paste from Finder "Copy as Pathname"
-    // or a shell with a trailing slash) is stored un-normalized.
-    expect(expandTilde('/tmp/codex-home/../codex-home2//sub')).toBe('/tmp/codex-home2/sub')
-  })
+  it.skipIf(process.platform === 'win32')(
+    'collapses redundant `..`/`//` segments in a non-tilde absolute path',
+    async () => {
+      const { expandTilde } = await loadModule()
+      // No leading `~`, so today's implementation returns the path verbatim -
+      // a redundant absolute path (as users paste from Finder "Copy as Pathname"
+      // or a shell with a trailing slash) is stored un-normalized.
+      expect(expandTilde('/tmp/codex-home/../codex-home2//sub')).toBe('/tmp/codex-home2/sub')
+    },
+  )
 })
 
 // Item 4 (wire canonicalization): the wire row's `oauthDir` is deliberately
@@ -270,12 +318,14 @@ describe('listProviderInstances - wire canonicalization (item 4)', () => {
 describe('upsertProviderInstance - oauth_dir validation (behavior 4)', () => {
   it('rejects an empty/blank oauth_dir path when authMode is oauth_dir', async () => {
     const { upsertProviderInstance } = await loadModule()
-    expect(() => upsertProviderInstance({
-      agentType: 'codex',
-      displayName: 'Empty Path',
-      authMode: 'oauth_dir',
-      oauthDir: '   ',
-    })).toThrow(/oauth.?dir|path/i)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'codex',
+        displayName: 'Empty Path',
+        authMode: 'oauth_dir',
+        oauthDir: '   ',
+      }),
+    ).toThrow(/oauth.?dir|path/i)
   })
 
   it('rejects a duplicate effective oauth_dir among enabled codex rows', async () => {
@@ -286,22 +336,26 @@ describe('upsertProviderInstance - oauth_dir validation (behavior 4)', () => {
       authMode: 'oauth_dir',
       oauthDir: '/tmp/codex-shared',
     })
-    expect(() => upsertProviderInstance({
-      agentType: 'codex',
-      displayName: 'Duplicate',
-      authMode: 'oauth_dir',
-      oauthDir: '/tmp/codex-shared',
-    })).toThrow(/duplicate|already (used|in use)/i)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'codex',
+        displayName: 'Duplicate',
+        authMode: 'oauth_dir',
+        oauthDir: '/tmp/codex-shared',
+      }),
+    ).toThrow(/duplicate|already (used|in use)/i)
   })
 
   it('reserves the canonical ~/.codex dir to the default row', async () => {
     const { upsertProviderInstance } = await loadModule()
-    expect(() => upsertProviderInstance({
-      agentType: 'codex',
-      displayName: 'Impersonator',
-      authMode: 'oauth_dir',
-      oauthDir: '~/.codex',
-    })).toThrow(/reserved|default/i)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'codex',
+        displayName: 'Impersonator',
+        authMode: 'oauth_dir',
+        oauthDir: '~/.codex',
+      }),
+    ).toThrow(/reserved|default/i)
   })
 })
 
@@ -348,7 +402,7 @@ describe('upsertProviderInstance', () => {
 
 describe('decrypt budget (each decrypt can be a keychain prompt)', () => {
   beforeEach(async () => {
-    (await loadModule()).clearDecryptedEnvCache()
+    ;(await loadModule()).clearDecryptedEnvCache()
   })
 
   it('an oauth_dir instance with no overlay never decrypts for a usage read', async () => {

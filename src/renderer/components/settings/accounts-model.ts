@@ -61,7 +61,13 @@ export function stableOrder(
   const byId = new Map(instances.map((i) => [i.id, i]))
   const kept = shown.flatMap((id) => byId.get(id) ?? [])
   const keptIds = new Set(kept.map((i) => i.id))
-  return [...kept, ...sortByRoomLeft(instances.filter((i) => !keptIds.has(i.id)), usages)]
+  return [
+    ...kept,
+    ...sortByRoomLeft(
+      instances.filter((i) => !keptIds.has(i.id)),
+      usages,
+    ),
+  ]
 }
 
 /** "in 2 h 14 min" under a day, the date after that. */
@@ -75,7 +81,9 @@ export function untilReset(resetsAtMs: number | null, nowMs: number): string {
 }
 
 export function windowSummary(usage: ProviderUsage | undefined): string {
-  return numbered(usage).map((w) => `${w.label} ${Math.round(w.usedPercent)}%`).join(', ')
+  return numbered(usage)
+    .map((w) => `${w.label} ${Math.round(w.usedPercent)}%`)
+    .join(', ')
 }
 
 export interface SummaryCell {
@@ -100,9 +108,12 @@ export function accountsSummary(
   const reading = !listed || instances.some((inst) => !usages[inst.id])
   const pending = { value: '-', detail: 'Reading usage…' }
   const best = sortByRoomLeft(instances, usages)[0]
-  const mostRoom = best && roomLeft(usages[best.id]) !== null
-    ? { value: best.displayName, detail: windowSummary(usages[best.id]) }
-    : reading ? pending : { value: '-', detail: 'No usage reported yet' }
+  const mostRoom =
+    best && roomLeft(usages[best.id]) !== null
+      ? { value: best.displayName, detail: windowSummary(usages[best.id]) }
+      : reading
+        ? pending
+        : { value: '-', detail: 'No usage reported yet' }
 
   let soonest: { at: number; name: string; label: string } | null = null
   for (const inst of instances) {
@@ -114,17 +125,28 @@ export function accountsSummary(
   }
   const nextReset = soonest
     ? { value: untilReset(soonest.at, nowMs), detail: `${soonest.name}, ${soonest.label}` }
-    : reading ? pending : { value: '-', detail: 'No reset times reported' }
+    : reading
+      ? pending
+      : { value: '-', detail: 'No reset times reported' }
 
   const flagged = instances.filter((inst) => needsAttention(usages[inst.id]))
   const count = flagged.length
-  const attention = count === 0 && reading ? { count, ...pending } : {
-    count,
-    value: count === 0 ? 'None' : `${count} account${count === 1 ? '' : 's'}`,
-    detail: count === 0
-      ? 'Every account is readable'
-      : flagged.map((inst) => `${inst.displayName} ${usages[inst.id]?.status === 'error' ? 'could not be read' : 'is signed out'}`).join(', '),
-  }
+  const attention =
+    count === 0 && reading
+      ? { count, ...pending }
+      : {
+          count,
+          value: count === 0 ? 'None' : `${count} account${count === 1 ? '' : 's'}`,
+          detail:
+            count === 0
+              ? 'Every account is readable'
+              : flagged
+                  .map(
+                    (inst) =>
+                      `${inst.displayName} ${usages[inst.id]?.status === 'error' ? 'could not be read' : 'is signed out'}`,
+                  )
+                  .join(', '),
+        }
   return { mostRoom, nextReset, attention }
 }
 
@@ -146,7 +168,12 @@ export function defaultAccountId(
   stored: { scoped?: string; legacy?: string },
 ): string {
   const owner = (id: string | undefined) => instances.find((i) => i.id === id)?.agentType ?? null
-  const id = resolveMachineInstanceId({ agentType: kind, scoped: stored.scoped, legacy: stored.legacy, legacyAgentType: owner(stored.legacy) })
+  const id = resolveMachineInstanceId({
+    agentType: kind,
+    scoped: stored.scoped,
+    legacy: stored.legacy,
+    legacyAgentType: owner(stored.legacy),
+  })
   return id && owner(id) === kind ? id : defaultInstanceId(kind)
 }
 

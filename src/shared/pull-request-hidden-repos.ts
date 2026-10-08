@@ -47,10 +47,14 @@ export const MAX_REPOS_PER_HIDE = 200
 
 export function isRepoRef(value: unknown): value is RepoRef {
   const r = value as Partial<RepoRef> | null
-  return !!r
-    && (r.host === 'github' || r.host === 'bitbucket')
-    && typeof r.owner === 'string' && SEGMENT.test(r.owner)
-    && typeof r.name === 'string' && SEGMENT.test(r.name)
+  return (
+    !!r &&
+    (r.host === 'github' || r.host === 'bitbucket') &&
+    typeof r.owner === 'string' &&
+    SEGMENT.test(r.owner) &&
+    typeof r.name === 'string' &&
+    SEGMENT.test(r.name)
+  )
 }
 
 /** The `repos` argument of hide / unhide, or `null` when it is not a non-empty list of repositories. */

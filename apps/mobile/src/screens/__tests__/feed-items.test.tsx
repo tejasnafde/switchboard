@@ -15,7 +15,9 @@ import { renderComponent, type Node } from '../../test/render'
 
 /** The Pressable around the text `label`. */
 function pressable(root: Node, label: string): Node {
-  let node: Node | null = root.find((n) => typeof n.type === 'string' && n.children.length === 1 && n.children[0] === label)
+  let node: Node | null = root.find(
+    (n) => typeof n.type === 'string' && n.children.length === 1 && n.children[0] === label,
+  )
   while (node && typeof node.props.onPress !== 'function') node = node.parent
   if (!node) throw new Error(`nothing pressable around "${label}"`)
   return node
@@ -60,7 +62,9 @@ describe('ToolItem', () => {
 
   it('picks an icon that matches the tool', () => {
     expect(renderComponent(<ToolItem item={tool({ toolName: 'Bash' })} />).iconNames()).toContain('terminal')
-    expect(renderComponent(<ToolItem item={tool({ toolName: 'Grep', input: { pattern: 'x' } })} />).iconNames()).toContain('search')
+    expect(
+      renderComponent(<ToolItem item={tool({ toolName: 'Grep', input: { pattern: 'x' } })} />).iconNames(),
+    ).toContain('search')
   })
 
   it('collapses output until asked, so a turn of tools stays scannable', () => {
@@ -153,22 +157,41 @@ describe('ApprovalItem', () => {
   })
 
   const reply: HostWriteCard = {
-    action: 'reply', agentLabel: 'Codex', host: 'github', prLabel: 'app #612', target: { repository: 'acme/app', number: 612 }, url: null,
-    location: 'sync/worker.py:88', quote: null, replyText: 'Done.', suggestResolve: true, maxChars: 8000,
+    action: 'reply',
+    agentLabel: 'Codex',
+    host: 'github',
+    prLabel: 'app #612',
+    target: { repository: 'acme/app', number: 612 },
+    url: null,
+    location: 'sync/worker.py:88',
+    quote: null,
+    replyText: 'Done.',
+    suggestResolve: true,
+    maxChars: 8000,
   }
   const review: HostWriteCard = {
-    ...reply, action: 'review', location: null, replyText: undefined, suggestResolve: undefined,
+    ...reply,
+    action: 'review',
+    location: null,
+    replyText: undefined,
+    suggestResolve: undefined,
     review: { summary: 'Two notes.', comments: [], verdicts: ['comment', 'approve', 'request_changes'] },
   }
 
   it('offers Approve and Deny for an ordinary approval', () => {
-    const text = renderComponent(<ApprovalItem item={approval()} backendTakesPhoneApproval={false} onDecide={() => {}} />).texts().join(' ')
+    const text = renderComponent(
+      <ApprovalItem item={approval()} backendTakesPhoneApproval={false} onDecide={() => {}} />,
+    )
+      .texts()
+      .join(' ')
     expect(text).toContain('Approve')
     expect(text).toContain('Deny')
   })
 
   it('offers only Deny for a pull request write on a backend that refuses a phone approval', () => {
-    const texts = renderComponent(<ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval={false} onDecide={() => {}} />).texts()
+    const texts = renderComponent(
+      <ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval={false} onDecide={() => {}} />,
+    ).texts()
     expect(texts).not.toContain('Approve')
     expect(texts).not.toContain('Post and resolve')
     expect(texts).toContain('Deny')
@@ -176,14 +199,18 @@ describe('ApprovalItem', () => {
   })
 
   it('offers only Deny for a card cached with the old desktop-only flag', () => {
-    const texts = renderComponent(<ApprovalItem item={approval({ desktopOnly: true })} backendTakesPhoneApproval onDecide={() => {}} />).texts()
+    const texts = renderComponent(
+      <ApprovalItem item={approval({ desktopOnly: true })} backendTakesPhoneApproval onDecide={() => {}} />,
+    ).texts()
     expect(texts).not.toContain('Approve')
     expect(texts).toContain('Deny')
   })
 
   it('names the write and its action buttons, and sends the resolve choice', () => {
     const decide = jest.fn()
-    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval onDecide={decide} />)
+    const root = renderComponent(
+      <ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval onDecide={decide} />,
+    )
     const texts = root.texts()
     expect(texts).toContain('Reply and resolve a review conversation')
     expect(texts).toContain('GitHub · app #612 · sync/worker.py:88')
@@ -193,55 +220,102 @@ describe('ApprovalItem', () => {
     expect(texts).not.toContain('Approve')
     expect(texts.join(' ')).toContain('Edit on the desktop')
     press(root.root, 'Post and resolve')
-    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { resolve: true, shown: hostWriteShownDigest('sbmcp_1', reply) })
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', {
+      resolve: true,
+      shown: hostWriteShownDigest('sbmcp_1', reply),
+    })
   })
 
-  it('offers a review\'s verdicts, none as the primary button, and sends the one picked', () => {
+  it("offers a review's verdicts, none as the primary button, and sends the one picked", () => {
     const decide = jest.fn()
-    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: review })} backendTakesPhoneApproval onDecide={decide} />)
+    const root = renderComponent(
+      <ApprovalItem item={approval({ hostWrite: review })} backendTakesPhoneApproval onDecide={decide} />,
+    )
     const texts = root.texts()
     expect(texts).toEqual(expect.arrayContaining(['Comment', 'Request changes', 'Approve', 'Deny']))
     press(root.root, 'Request changes')
-    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { verdict: 'request_changes', shown: hostWriteShownDigest('sbmcp_1', review) })
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', {
+      verdict: 'request_changes',
+      shown: hostWriteShownDigest('sbmcp_1', review),
+    })
   })
 
   it('shows the reviewers a pull request asks, and approves with a digest that covers them', () => {
     const create: HostWriteCard = {
-      ...reply, action: 'create', prLabel: 'acme/app', target: { repository: 'acme/app', number: null }, location: null, replyText: undefined, suggestResolve: undefined,
+      ...reply,
+      action: 'create',
+      prLabel: 'acme/app',
+      target: { repository: 'acme/app', number: null },
+      location: null,
+      replyText: undefined,
+      suggestResolve: undefined,
       create: {
-        repoLabel: 'acme/app', sourceBranch: 'feat/x', targetBranch: 'main', title: 'Add it', description: '', draft: false,
-        reviewers: [{ id: 'jdoe', login: 'jdoe', displayName: 'Jane Doe', kind: 'user' }, { id: 'rk', login: 'rk', displayName: 'rk', kind: 'user' }],
+        repoLabel: 'acme/app',
+        sourceBranch: 'feat/x',
+        targetBranch: 'main',
+        title: 'Add it',
+        description: '',
+        draft: false,
+        reviewers: [
+          { id: 'jdoe', login: 'jdoe', displayName: 'Jane Doe', kind: 'user' },
+          { id: 'rk', login: 'rk', displayName: 'rk', kind: 'user' },
+        ],
       },
     }
     const decide = jest.fn()
-    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: create })} backendTakesPhoneApproval onDecide={decide} />)
+    const root = renderComponent(
+      <ApprovalItem item={approval({ hostWrite: create })} backendTakesPhoneApproval onDecide={decide} />,
+    )
     expect(root.texts()).toContain('Jane Doe (jdoe)\nrk')
     press(root.root, 'Open pull request')
     const shown = hostWriteShownDigest('sbmcp_1', create)
     expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { shown })
-    expect(shown).not.toBe(hostWriteShownDigest('sbmcp_1', { ...create, create: { ...create.create!, reviewers: undefined } }))
+    expect(shown).not.toBe(
+      hostWriteShownDigest('sbmcp_1', { ...create, create: { ...create.create!, reviewers: undefined } }),
+    )
   })
 
   it('answers quietly once "Don\'t wake the agent" is ticked, on a backend that takes it', () => {
     const decide = jest.fn()
-    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval backendAsyncApproval onDecide={decide} />)
+    const root = renderComponent(
+      <ApprovalItem
+        item={approval({ hostWrite: reply })}
+        backendTakesPhoneApproval
+        backendAsyncApproval
+        onDecide={decide}
+      />,
+    )
     expect(root.texts().join(' ')).toContain("Don't wake the agent")
-    act(() => { root.root.findByProps({ testID: 'approval-quiet' }).props.onPress() })
+    act(() => {
+      root.root.findByProps({ testID: 'approval-quiet' }).props.onPress()
+    })
     expect(root.texts()).toContain('Dismiss')
     press(root.root, 'Post and resolve quietly')
-    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', { resolve: true, shown: hostWriteShownDigest('sbmcp_1', reply), quiet: true })
+    expect(decide).toHaveBeenCalledWith('sbmcp_1', 'approve', {
+      resolve: true,
+      shown: hostWriteShownDigest('sbmcp_1', reply),
+      quiet: true,
+    })
     press(root.root, 'Dismiss')
     expect(decide).toHaveBeenLastCalledWith('sbmcp_1', 'deny', { quiet: true })
   })
 
   it('offers no quiet answer on an older backend', () => {
-    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval onDecide={() => {}} />)
+    const root = renderComponent(
+      <ApprovalItem item={approval({ hostWrite: reply })} backendTakesPhoneApproval onDecide={() => {}} />,
+    )
     expect(root.texts().join(' ')).not.toContain("Don't wake the agent")
   })
 
   it('shows a long reply in full, and enables its buttons only once it is opened', () => {
     const long = Array.from({ length: 40 }, (_, i) => `Line ${i + 1} of the reply.`).join('\n')
-    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: { ...reply, replyText: long } })} backendTakesPhoneApproval onDecide={() => {}} />)
+    const root = renderComponent(
+      <ApprovalItem
+        item={approval({ hostWrite: { ...reply, replyText: long } })}
+        backendTakesPhoneApproval
+        onDecide={() => {}}
+      />,
+    )
     expect(root.texts()).toContain(long)
     expect(pressable(root.root, 'Post and resolve').props.disabled).toBe(true)
     expect(root.texts()).toContain('Show the full draft to approve it.')
@@ -253,10 +327,21 @@ describe('ApprovalItem', () => {
 
   it('shows every comment of a long review in full, with its place, before a verdict is enabled', () => {
     const comments = Array.from({ length: 4 }, (_, i) => ({
-      id: `c${i + 1}`, path: `src/f${i}.ts`, side: 'new' as const, line: 10 + i, text: `${'x'.repeat(500)} end of comment ${i + 1}`, excerpt: [],
+      id: `c${i + 1}`,
+      path: `src/f${i}.ts`,
+      side: 'new' as const,
+      line: 10 + i,
+      text: `${'x'.repeat(500)} end of comment ${i + 1}`,
+      excerpt: [],
     }))
     const summary = `${'s'.repeat(400)} end of summary`
-    const root = renderComponent(<ApprovalItem item={approval({ hostWrite: { ...review, review: { ...review.review!, summary, comments } } })} backendTakesPhoneApproval onDecide={() => {}} />)
+    const root = renderComponent(
+      <ApprovalItem
+        item={approval({ hostWrite: { ...review, review: { ...review.review!, summary, comments } } })}
+        backendTakesPhoneApproval
+        onDecide={() => {}}
+      />,
+    )
     const texts = root.texts()
     expect(texts).toContain(summary)
     for (const c of comments) {
@@ -270,15 +355,22 @@ describe('ApprovalItem', () => {
 
   it('sends the user to the desktop when the card cannot be shown in full', () => {
     const older = { ...review, review: { summary: 'Two notes.', verdicts: ['approve'] } } as unknown as HostWriteCard
-    const texts = renderComponent(<ApprovalItem item={approval({ hostWrite: older })} backendTakesPhoneApproval onDecide={() => {}} />).texts()
+    const texts = renderComponent(
+      <ApprovalItem item={approval({ hostWrite: older })} backendTakesPhoneApproval onDecide={() => {}} />,
+    ).texts()
     expect(texts).not.toContain('Approve')
     expect(texts).toContain('Deny')
     expect(texts.join(' ')).toContain('Approve this on the desktop')
   })
 
   it('offers only Comment to the author', () => {
-    const own: HostWriteCard = { ...review, review: { ...review.review!, verdicts: ['comment'], commentOnly: 'author' } }
-    const texts = renderComponent(<ApprovalItem item={approval({ hostWrite: own })} backendTakesPhoneApproval onDecide={() => {}} />).texts()
+    const own: HostWriteCard = {
+      ...review,
+      review: { ...review.review!, verdicts: ['comment'], commentOnly: 'author' },
+    }
+    const texts = renderComponent(
+      <ApprovalItem item={approval({ hostWrite: own })} backendTakesPhoneApproval onDecide={() => {}} />,
+    ).texts()
     expect(texts).toContain('Comment')
     expect(texts).not.toContain('Approve')
     expect(texts).not.toContain('Request changes')

@@ -37,11 +37,11 @@ const FENCED_BLOCK = /^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]{0,3}\1[`
 
 export function plainPreviewText(text: string): string {
   return text
-    .replace(FENCED_BLOCK, ' ')                  // fenced code blocks, closed or still streaming
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')    // images -> alt text
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')     // links -> link text
-    .replace(/`([^`]*)`/g, '$1')                 // inline code
-    .replace(/(\*\*|__)(.+?)\1/g, '$2')           // bold
+    .replace(FENCED_BLOCK, ' ') // fenced code blocks, closed or still streaming
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // images -> alt text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links -> link text
+    .replace(/`([^`]*)`/g, '$1') // inline code
+    .replace(/(\*\*|__)(.+?)\1/g, '$2') // bold
     .replace(/(^|[^\w*])[*_]([^*_\n]+)[*_](?=[^\w*]|$)/g, '$1$2') // italic
     .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '') // headings, quotes, list markers
     .replace(/\s+/g, ' ')
@@ -84,9 +84,7 @@ export function turnPreviewLine(messages: PreviewMessage[]): string | undefined 
     if (!message.isAssistant || !message.text) continue
     const raw = plainPreviewText(stripDigest(message.text, { streaming: true }))
     if (!raw) continue
-    return raw.length > RAW_PREVIEW_MAX_LENGTH
-      ? `${raw.slice(0, RAW_PREVIEW_MAX_LENGTH - 1)}…`
-      : raw
+    return raw.length > RAW_PREVIEW_MAX_LENGTH ? `${raw.slice(0, RAW_PREVIEW_MAX_LENGTH - 1)}…` : raw
   }
 
   return undefined
@@ -98,13 +96,12 @@ export function turnPreviewLine(messages: PreviewMessage[]): string | undefined 
  */
 export function sessionPreviewLine(messages: ChatMessage[]): string | undefined {
   return turnPreviewLine(
-    messages.map(
-      (message): PreviewMessage => ({
-        text: message.content,
-        isAssistant: message.role === 'assistant',
-        // A background-task notification is not a turn boundary for the preview.
-        isUser: message.role === 'user' && (message.displayBody !== undefined || !isSyntheticOnlyUserText(message.content)),
-      }),
-    ),
+    messages.map((message): PreviewMessage => ({
+      text: message.content,
+      isAssistant: message.role === 'assistant',
+      // A background-task notification is not a turn boundary for the preview.
+      isUser:
+        message.role === 'user' && (message.displayBody !== undefined || !isSyntheticOnlyUserText(message.content)),
+    })),
   )
 }

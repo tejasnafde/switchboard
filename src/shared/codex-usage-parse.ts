@@ -45,17 +45,14 @@ function looksSnakeCase(snapshot: Record<string, unknown>): boolean {
   return false
 }
 
-function readWindow(
-  raw: unknown,
-  id: string,
-  labelPrefix: string,
-): UsageWindow | null {
+function readWindow(raw: unknown, id: string, labelPrefix: string): UsageWindow | null {
   if (!isRecord(raw)) return null
   const percent = toPercent(raw.usedPercent)
   if (percent === null) return null
-  const minutes = typeof raw.windowDurationMins === 'number' && Number.isFinite(raw.windowDurationMins)
-    ? raw.windowDurationMins
-    : null
+  const minutes =
+    typeof raw.windowDurationMins === 'number' && Number.isFinite(raw.windowDurationMins)
+      ? raw.windowDurationMins
+      : null
   const base = windowLabelForMinutes(minutes)
   return buildWindow({
     id,
@@ -87,9 +84,8 @@ function readSnapshot(
   // window at 16% must not turn red because the 5-hour window hit 100%.
   if (windowReached && windows.length > 0) {
     const full = windows.filter((w) => (w.usedPercent ?? 0) >= 100)
-    const hit = full.length > 0
-      ? full
-      : [windows.reduce((a, b) => ((b.usedPercent ?? 0) > (a.usedPercent ?? 0) ? b : a))]
+    const hit =
+      full.length > 0 ? full : [windows.reduce((a, b) => ((b.usedPercent ?? 0) > (a.usedPercent ?? 0) ? b : a))]
     for (const w of hit) w.severity = 'critical'
   }
 
@@ -99,17 +95,19 @@ function readSnapshot(
   if (isRecord(individual)) {
     const remaining = toPercent(individual.remainingPercent)
     if (remaining !== null) {
-      windows.push(buildWindow({
-        id: `${key}_individual`,
-        label: labelPrefix ? `Spend limit (${labelPrefix})` : 'Spend limit',
-        kind: 'other',
-        percent: 100 - remaining,
-        resetsAtMs: unixSecondsToMs(individual.resetsAt),
-        windowMinutes: null,
-        ...(typeof individual.used === 'string' && typeof individual.limit === 'string'
-          ? { detail: `${individual.used} of ${individual.limit}` }
-          : {}),
-      }))
+      windows.push(
+        buildWindow({
+          id: `${key}_individual`,
+          label: labelPrefix ? `Spend limit (${labelPrefix})` : 'Spend limit',
+          kind: 'other',
+          percent: 100 - remaining,
+          resetsAtMs: unixSecondsToMs(individual.resetsAt),
+          windowMinutes: null,
+          ...(typeof individual.used === 'string' && typeof individual.limit === 'string'
+            ? { detail: `${individual.used} of ${individual.limit}` }
+            : {}),
+        }),
+      )
     }
   }
 
@@ -121,11 +119,12 @@ function readSnapshot(
       label: 'Credits',
       enabled: true,
       usedPercent: null,
-      detail: credits.unlimited === true
-        ? 'Unlimited'
-        : credits.balance !== null && credits.balance !== undefined
-          ? `${String(credits.balance)} available`
-          : 'Available',
+      detail:
+        credits.unlimited === true
+          ? 'Unlimited'
+          : credits.balance !== null && credits.balance !== undefined
+            ? `${String(credits.balance)} available`
+            : 'Available',
       blockedReason: null,
     })
   }
@@ -169,11 +168,12 @@ export function parseCodexRateLimits(raw: unknown): CodexUsageParse {
   const multiple = entries.length > 1
 
   for (const [key, snapshot] of entries) {
-    const limitName = typeof snapshot.limitName === 'string' && snapshot.limitName.trim()
-      ? snapshot.limitName.trim()
-      : typeof snapshot.limitId === 'string' && snapshot.limitId.trim()
-        ? snapshot.limitId.trim()
-        : key
+    const limitName =
+      typeof snapshot.limitName === 'string' && snapshot.limitName.trim()
+        ? snapshot.limitName.trim()
+        : typeof snapshot.limitId === 'string' && snapshot.limitId.trim()
+          ? snapshot.limitId.trim()
+          : key
     const parsed = readSnapshot(snapshot, key, multiple ? limitName : '')
     windows.push(...parsed.windows)
     overage.push(...parsed.overage)
@@ -181,11 +181,12 @@ export function parseCodexRateLimits(raw: unknown): CodexUsageParse {
   }
 
   if (resetCredits) {
-    const count = typeof resetCredits.availableCount === 'number'
-      ? resetCredits.availableCount
-      : typeof resetCredits.availableCount === 'bigint'
-        ? Number(resetCredits.availableCount)
-        : null
+    const count =
+      typeof resetCredits.availableCount === 'number'
+        ? resetCredits.availableCount
+        : typeof resetCredits.availableCount === 'bigint'
+          ? Number(resetCredits.availableCount)
+          : null
     if (count !== null && count > 0) {
       overage.push({
         id: 'reset_credits',

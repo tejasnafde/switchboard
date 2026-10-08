@@ -162,54 +162,58 @@ export class SqliteConversationForkStore {
   constructor(private readonly db: Database.Database) {}
 
   get(machineId: string, requestId: string): ConversationForkOperationRecord | null {
-    const row = this.db.prepare(`
+    const row = this.db
+      .prepare(`
       SELECT * FROM conversation_fork_operations
        WHERE machine_id = ? AND request_id = ?
-    `).get(machineId, requestId) as OperationRow | undefined
+    `)
+      .get(machineId, requestId) as OperationRow | undefined
     return row ? operationRecord(row) : null
   }
 
   getResult(machineId: string, requestId: string): ForkConversationResult | null {
     const record = this.get(machineId, requestId)
     return record?.status === 'completed' && record.resultJson
-      ? JSON.parse(record.resultJson) as ForkConversationResult
+      ? (JSON.parse(record.resultJson) as ForkConversationResult)
       : null
   }
 
   getResultForConversation(conversationId: string): ForkConversationResult | null {
-    const row = this.db.prepare(`
+    const row = this.db
+      .prepare(`
       SELECT result_json FROM conversation_fork_operations
        WHERE result_conversation_id = ? AND status = 'completed'
        ORDER BY updated_at DESC LIMIT 1
-    `).get(conversationId) as { result_json: string | null } | undefined
-    return row?.result_json ? JSON.parse(row.result_json) as ForkConversationResult : null
+    `)
+      .get(conversationId) as { result_json: string | null } | undefined
+    return row?.result_json ? (JSON.parse(row.result_json) as ForkConversationResult) : null
   }
 
   reserve(input: ReserveConversationForkInput): ReserveConversationForkResult {
-    const insert = this.db.prepare(`
+    const insert = this.db
+      .prepare(`
       INSERT OR IGNORE INTO conversation_fork_operations (
         machine_id, request_id, schema_version, request_json, request_hash,
         source_conversation_id, status, revision, prepared_json, prepared_hash,
         created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?)
-    `).run(
-      input.machineId,
-      input.request.requestId,
-      input.request.schemaVersion,
-      input.requestJson,
-      input.requestHash,
-      input.request.sourceConversationId,
-      input.preparedJson,
-      input.preparedHash,
-      input.now,
-      input.now,
-    )
+    `)
+      .run(
+        input.machineId,
+        input.request.requestId,
+        input.request.schemaVersion,
+        input.requestJson,
+        input.requestHash,
+        input.request.sourceConversationId,
+        input.preparedJson,
+        input.preparedHash,
+        input.now,
+        input.now,
+      )
     const record = this.get(input.machineId, input.request.requestId)
     if (!record) throw new Error('Fork operation reservation was not persisted')
     if (record.requestHash !== input.requestHash) return { kind: 'conflict', record }
-    return insert.changes === 1
-      ? { kind: 'reserved', record }
-      : { kind: 'duplicate', record }
+    return insert.changes === 1 ? { kind: 'reserved', record } : { kind: 'duplicate', record }
   }
 
   commitCompleted(input: CommitCompletedConversationForkInput): CommitCompletedConversationForkResult {
@@ -220,14 +224,15 @@ export class SqliteConversationForkStore {
     input: CommitCompletedConversationForkInput,
   ): CommitCompletedConversationForkResult {
     this.assertCommitMatchesResult(input)
-      const operation = this.get(input.machineId, input.requestId)
-      if (!operation) throw new Error(`Fork operation not found: ${input.requestId}`)
-      if (operation.status !== 'pending' || operation.revision !== input.expectedRevision) {
-        return { kind: 'stale' as const, record: operation }
-      }
+    const operation = this.get(input.machineId, input.requestId)
+    if (!operation) throw new Error(`Fork operation not found: ${input.requestId}`)
+    if (operation.status !== 'pending' || operation.revision !== input.expectedRevision) {
+      return { kind: 'stale' as const, record: operation }
+    }
 
-      const conversation = input.conversation
-      this.db.prepare(`
+    const conversation = input.conversation
+    this.db
+      .prepare(`
         INSERT INTO conversations (
           id, project_path, agent_type, session_id, title, created_at, updated_at,
           parent_conversation_id, forked_at_message_id, worktree_path,
@@ -241,7 +246,8 @@ export class SqliteConversationForkStore {
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed',
           ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
-      `).run(
+      `)
+      .run(
         conversation.id,
         conversation.projectPath,
         conversation.agentType,
@@ -272,17 +278,19 @@ export class SqliteConversationForkStore {
         input.result.git?.omittedChangeSummary ?? null,
       )
 
-      // A Codex / OpenCode native fork resumes a session of its own id, found
-      // through its typed segment the way a normal restart finds it. Claude's
-      // forked session id is the conversation id, so it needs neither row.
-      const native = input.result.nativeResume
-      if (native && native.provider !== 'claude') {
-        this.db.prepare(`
+    // A Codex / OpenCode native fork resumes a session of its own id, found
+    // through its typed segment the way a normal restart finds it. Claude's
+    // forked session id is the conversation id, so it needs neither row.
+    const native = input.result.nativeResume
+    if (native && native.provider !== 'claude') {
+      this.db
+        .prepare(`
           INSERT INTO conversation_segments (
             id, conversation_id, provider, provider_session_id,
             provider_instance_id, ordinal, created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-        `).run(
+        `)
+        .run(
           `${conversation.id}:${conversation.agentType}:${native.sessionId}`,
           conversation.id,
           conversation.agentType,
@@ -291,42 +299,46 @@ export class SqliteConversationForkStore {
           conversation.createdAt,
           conversation.createdAt,
         )
-        this.db.prepare(`
+      this.db
+        .prepare(`
           INSERT OR REPLACE INTO thread_sessions (claude_session_id, thread_id, recorded_at)
           VALUES (?, ?, ?)
-        `).run(native.sessionId, conversation.id, conversation.createdAt)
-      }
+        `)
+        .run(native.sessionId, conversation.id, conversation.createdAt)
+    }
 
-      const insertMessage = this.db.prepare(`
+    const insertMessage = this.db.prepare(`
         INSERT INTO messages (
           id, conversation_id, role, content, tool_calls, images, timestamp,
           display_body, pills_meta, attachments_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      for (const message of input.messages) {
-        insertMessage.run(
-          message.id,
-          message.conversationId,
-          message.role,
-          message.content,
-          message.toolCallsJson,
-          message.imagesJson,
-          message.timestamp,
-          message.displayBody,
-          message.pillsMetaJson,
-          message.attachmentsJson,
-        )
-      }
+    for (const message of input.messages) {
+      insertMessage.run(
+        message.id,
+        message.conversationId,
+        message.role,
+        message.content,
+        message.toolCallsJson,
+        message.imagesJson,
+        message.timestamp,
+        message.displayBody,
+        message.pillsMetaJson,
+        message.attachmentsJson,
+      )
+    }
 
-      const resultJson = JSON.stringify(input.result)
-      const update = this.db.prepare(`
+    const resultJson = JSON.stringify(input.result)
+    const update = this.db
+      .prepare(`
         UPDATE conversation_fork_operations
            SET status = 'completed', revision = revision + 1,
                result_conversation_id = ?, result_json = ?, error_json = NULL,
                worktree_creation_id = ?, updated_at = ?
          WHERE machine_id = ? AND request_id = ?
            AND status = 'pending' AND revision = ?
-      `).run(
+      `)
+      .run(
         conversation.id,
         resultJson,
         input.worktreeCreationId,
@@ -335,7 +347,7 @@ export class SqliteConversationForkStore {
         input.requestId,
         input.expectedRevision,
       )
-      if (update.changes !== 1) throw new Error('Fork operation changed during commit')
+    if (update.changes !== 1) throw new Error('Fork operation changed during commit')
 
     const record = this.get(input.machineId, input.requestId)
     if (!record) throw new Error('Completed fork operation disappeared')

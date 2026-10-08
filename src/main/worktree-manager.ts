@@ -24,7 +24,14 @@ import {
   type WorktreeRemovalAck,
   type WorktreeRow,
 } from '@shared/worktree-manager'
-import { getDb, getProjects, getSetting, listInUseWorktreePaths, listWorktreeChatLinks, setSetting } from './db/database'
+import {
+  getDb,
+  getProjects,
+  getSetting,
+  listInUseWorktreePaths,
+  listWorktreeChatLinks,
+  setSetting,
+} from './db/database'
 import { listWorktrees, pathKey, protectionFor, removeWorktree, type GitRunner } from './worktree'
 import { inspectWorktreeGit, resolveBaseRef, WorktreeSizeCache } from './worktree-inspect'
 import { createMainLogger } from './logger'
@@ -55,11 +62,14 @@ export function defaultWorktreeManagerDeps(): WorktreeManagerDeps {
     readProtection: () => parseWorktreeProtection(getSetting(WORKTREE_PROTECTION_SETTING)),
     // IMMEDIATE takes the write lock before the read, so another process on
     // the same database (a second backend) cannot slip a write in between.
-    updateProtection: (mutate) => getDb().transaction(() => {
-      const next = mutate(parseWorktreeProtection(getSetting(WORKTREE_PROTECTION_SETTING)))
-      setSetting(WORKTREE_PROTECTION_SETTING, JSON.stringify(next))
-      return next
-    }).immediate(),
+    updateProtection: (mutate) =>
+      getDb()
+        .transaction(() => {
+          const next = mutate(parseWorktreeProtection(getSetting(WORKTREE_PROTECTION_SETTING)))
+          setSetting(WORKTREE_PROTECTION_SETTING, JSON.stringify(next))
+          return next
+        })
+        .immediate(),
     sizes: new WorktreeSizeCache(),
   }
 }
@@ -153,9 +163,12 @@ export async function buildWorktreeInventory(
   const rows: WorktreeRow[] = []
   const errors: WorktreeInventory['errors'] = []
   const paths: string[] = []
-  const requestedPaths: readonly unknown[] = projectPaths === undefined
-    ? deps.listProjects().map((p) => p.path)
-    : Array.isArray(projectPaths) ? projectPaths : [projectPaths]
+  const requestedPaths: readonly unknown[] =
+    projectPaths === undefined
+      ? deps.listProjects().map((p) => p.path)
+      : Array.isArray(projectPaths)
+        ? projectPaths
+        : [projectPaths]
   for (const requested of requestedPaths) {
     const project = configuredProject(requested, deps)
     if (project) paths.push(project.path)
@@ -181,7 +194,7 @@ export async function buildWorktreeInventory(
     if (fresh.length === 0) continue
     for (const wt of fresh) seen.add(pathKey(wt.path))
     const ctx = await projectContext(projectPath, deps)
-    rows.push(...await mapLimit(fresh, INSPECT_CONCURRENCY, (wt) => toRow(ctx, wt, deps.runner)))
+    rows.push(...(await mapLimit(fresh, INSPECT_CONCURRENCY, (wt) => toRow(ctx, wt, deps.runner))))
   }
   return { rows, errors }
 }
@@ -236,14 +249,21 @@ export async function removeManagedWorktree(
     // and before git finishes is deleted too when `--force` is set (that is,
     // when uncommitted files were confirmed), and an ignored file written in
     // that window is deleted either way.
-    removed = await removeWorktree(project.path, wt.path, { force: verdict.force, deleteBranch: verdict.deleteBranch }, deps.runner)
+    removed = await removeWorktree(
+      project.path,
+      wt.path,
+      { force: verdict.force, deleteBranch: verdict.deleteBranch },
+      deps.runner,
+    )
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     log.warn(`git worktree remove failed for ${wt.path}: ${error}`)
     return { ok: false, error }
   }
   deps.sizes.invalidate(wt.path)
-  log.info(`removed worktree ${wt.path}${row.git && (row.git.uncommittedFiles || row.git.ignoredFiles) ? ` (confirmed losing ${row.git.uncommittedFiles} uncommitted, ${row.git.ignoredFiles} ignored)` : ''}`)
+  log.info(
+    `removed worktree ${wt.path}${row.git && (row.git.uncommittedFiles || row.git.ignoredFiles) ? ` (confirmed losing ${row.git.uncommittedFiles} uncommitted, ${row.git.ignoredFiles} ignored)` : ''}`,
+  )
   return removed.branchWarning ? { ok: true, warning: removed.branchWarning } : { ok: true }
 }
 
@@ -267,9 +287,11 @@ export async function updateWorktreeProtection(
     : listIn(deps.readProtection()).some((p) => pathKey(p) === key)
   if (!allowed) {
     log.warn(`refused to ${patch.protected ? 'protect' : 'unprotect'} ${patch.target} ${patch.path}`)
-    throw new Error(patch.protected
-      ? `Not a ${patch.target === 'project' ? 'project' : 'worktree of a project'} in Switchboard: ${patch.path}`
-      : `Not protected: ${patch.path}`)
+    throw new Error(
+      patch.protected
+        ? `Not a ${patch.target === 'project' ? 'project' : 'worktree of a project'} in Switchboard: ${patch.path}`
+        : `Not protected: ${patch.path}`,
+    )
   }
   const next = deps.updateProtection((current) => {
     // Drop the path under any spelling first, so an unprotect clears it and a
@@ -288,7 +310,9 @@ async function isWorktreeOfConfiguredProject(path: string, deps: WorktreeManager
     try {
       if ((await listWorktrees(project.path, deps.runner)).some((wt) => pathKey(wt.path) === key)) return true
     } catch (err) {
-      log.debug(`protect: could not list worktrees of ${project.path}: ${err instanceof Error ? err.message : String(err)}`)
+      log.debug(
+        `protect: could not list worktrees of ${project.path}: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
   return false

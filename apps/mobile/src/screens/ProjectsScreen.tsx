@@ -152,15 +152,9 @@ export default function ProjectsScreen({ route, navigation }: Props) {
             onPress={() => toggleWorkspaceCollapsed(section.key)}
             accessibilityRole="button"
             accessibilityState={{ expanded: !section.collapsed }}
-            accessibilityHint={
-              section.collapsed ? 'Expands the workspace' : 'Collapses the workspace'
-            }
+            accessibilityHint={section.collapsed ? 'Expands the workspace' : 'Collapses the workspace'}
           >
-            <Ionicons
-              name={section.collapsed ? 'chevron-forward' : 'chevron-down'}
-              size={14}
-              color={colors.textDim}
-            />
+            <Ionicons name={section.collapsed ? 'chevron-forward' : 'chevron-down'} size={14} color={colors.textDim} />
             <Text style={styles.sectionTitle}>{section.title.toUpperCase()}</Text>
             <Text style={styles.sectionCount}>{section.count}</Text>
           </Pressable>
@@ -185,19 +179,13 @@ export default function ProjectsScreen({ route, navigation }: Props) {
         ) : null
       }
       refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => void load(true)}
-          tintColor={colors.textDim}
-        />
+        <RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.textDim} />
       }
       ListEmptyComponent={
         <View style={styles.center}>
           <Text style={styles.stateTitle}>{query === '' ? 'No projects' : 'No matches'}</Text>
           <Text style={styles.stateDetail}>
-            {query === ''
-              ? 'Add a project on the desktop app to see it here.'
-              : `Nothing matches "${query.trim()}".`}
+            {query === '' ? 'Add a project on the desktop app to see it here.' : `Nothing matches "${query.trim()}".`}
           </Text>
         </View>
       }
@@ -218,10 +206,7 @@ export default function ProjectsScreen({ route, navigation }: Props) {
                 <Text style={styles.name} numberOfLines={1}>
                   {item.name}
                 </Text>
-                <ProjectUnread
-                  connectionId={connectionId}
-                  sessionIds={item.sessions.map((s) => s.id)}
-                />
+                <ProjectUnread connectionId={connectionId} sessionIds={item.sessions.map((s) => s.id)} />
               </View>
               <Text style={styles.meta}>
                 {item.sessions.length} {item.sessions.length === 1 ? 'session' : 'sessions'}

@@ -19,10 +19,7 @@ describe('turnPreviewLine', () => {
   })
 
   it('returns the digest from the newest assistant message', () => {
-    const messages = [
-      user('start'),
-      assistant('<agent_digest>Reading files</agent_digest>'),
-    ]
+    const messages = [user('start'), assistant('<agent_digest>Reading files</agent_digest>')]
     expect(turnPreviewLine(messages)).toBe('Reading files')
   })
 
@@ -49,11 +46,7 @@ describe('turnPreviewLine', () => {
   })
 
   it('falls back to a truncated raw preview of the newest assistant message when the turn has no digest', () => {
-    const messages = [
-      user('start'),
-      assistant('Reading the config file now'),
-      assistant('Now running the test suite'),
-    ]
+    const messages = [user('start'), assistant('Reading the config file now'), assistant('Now running the test suite')]
     expect(turnPreviewLine(messages)).toBe('Now running the test suite')
   })
 
@@ -77,19 +70,12 @@ describe('turnPreviewLine', () => {
   })
 
   it('treats the whole array as the turn when there is no user message', () => {
-    const messages = [
-      assistant('Reading the config file now'),
-      assistant('<agent_digest>Found it</agent_digest>'),
-    ]
+    const messages = [assistant('Reading the config file now'), assistant('<agent_digest>Found it</agent_digest>')]
     expect(turnPreviewLine(messages)).toBe('Found it')
   })
 
   it('skips an empty assistant message and looks further back within the turn', () => {
-    const messages = [
-      user('start'),
-      assistant('<agent_digest>Real status</agent_digest>'),
-      assistant(''),
-    ]
+    const messages = [user('start'), assistant('<agent_digest>Real status</agent_digest>'), assistant('')]
     expect(turnPreviewLine(messages)).toBe('Real status')
   })
 
@@ -110,8 +96,9 @@ describe('turnPreviewLine', () => {
 
 describe('plainPreviewText', () => {
   it('drops inline code, bold, italic and link markup but keeps the words', () => {
-    expect(plainPreviewText('`pos_gatepass` is a **column**, see [docs](https://x.y) and _this_'))
-      .toBe('pos_gatepass is a column, see docs and this')
+    expect(plainPreviewText('`pos_gatepass` is a **column**, see [docs](https://x.y) and _this_')).toBe(
+      'pos_gatepass is a column, see docs and this',
+    )
   })
 
   it('drops fenced code, including a block that is still streaming', () => {
@@ -126,7 +113,11 @@ describe('plainPreviewText', () => {
   })
 
   it('falls back to the raw text when a digest is only a code block', () => {
-    const msg = { text: 'Real text here <agent_digest>\n```\ncode\n```\n</agent_digest>', isAssistant: true, isUser: false }
+    const msg = {
+      text: 'Real text here <agent_digest>\n```\ncode\n```\n</agent_digest>',
+      isAssistant: true,
+      isUser: false,
+    }
     expect(turnPreviewLine([msg])).toBe('Real text here')
   })
 
@@ -139,7 +130,8 @@ describe('plainPreviewText', () => {
   })
 
   it('is applied to the raw fallback preview', () => {
-    expect(turnPreviewLine([{ text: 'The counts mean **projects**', isAssistant: true, isUser: false }]))
-      .toBe('The counts mean projects')
+    expect(turnPreviewLine([{ text: 'The counts mean **projects**', isAssistant: true, isUser: false }])).toBe(
+      'The counts mean projects',
+    )
   })
 })

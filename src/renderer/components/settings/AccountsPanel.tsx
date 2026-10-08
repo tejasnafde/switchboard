@@ -10,20 +10,16 @@ import type { ProviderUsage, UsageWindow } from '@shared/provider-usage'
 import { buildWindow, fmtResetsAt } from '@shared/provider-usage'
 import { agentLabel, defaultInstanceId } from '@shared/types'
 import { providerInstanceInitials } from '@shared/provider-instance-initials'
+import { oauthCreateDirCommand, oauthEnvName, oauthLoginCommand, suggestedOauthDir } from '@shared/provider-auth-format'
 import {
-  oauthCreateDirCommand,
-  oauthEnvName,
-  oauthLoginCommand,
-  suggestedOauthDir,
-} from '@shared/provider-auth-format'
-import { defaultInstanceSettingKey, defaultModelSettingKey, SETTING_DEFAULT_INSTANCE_ID } from '@shared/session-defaults'
+  defaultInstanceSettingKey,
+  defaultModelSettingKey,
+  SETTING_DEFAULT_INSTANCE_ID,
+} from '@shared/session-defaults'
 import { defaultModelFor, modelsForAgent } from '@shared/models'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import type { ProviderInstanceUpsertInput } from '../../../preload'
-import {
-  credentialHomeDisplay,
-  defaultAuthModeForNewInstance,
-} from '../../shared/provider-instance-display'
+import { credentialHomeDisplay, defaultAuthModeForNewInstance } from '../../shared/provider-instance-display'
 import type { AgentProvider } from '@shared/types'
 import { AGENT_PROVIDERS } from '@shared/types'
 import { confirm } from '../ui/confirm'
@@ -49,14 +45,7 @@ import {
 
 const log = createRendererLogger('settings:accounts')
 
-const DEFAULT_ACCENT_PALETTE = [
-  '#ff8a3d',
-  '#3da8ff',
-  '#7c5cff',
-  '#3dd17a',
-  '#ff5ca8',
-  '#ffd23d',
-]
+const DEFAULT_ACCENT_PALETTE = ['#ff8a3d', '#3da8ff', '#7c5cff', '#3dd17a', '#ff5ca8', '#ffd23d']
 
 const TONE_COLOR: Record<BarTone, string> = {
   ok: 'var(--success)',
@@ -95,7 +84,9 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
-    return () => { mounted.current = false }
+    return () => {
+      mounted.current = false
+    }
   }, [])
 
   // Always re-list: another client or the composer may have changed them.
@@ -156,7 +147,9 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
           className="mb-3 flex items-start gap-[10px] rounded-[6px] border border-[var(--error)] px-[10px] py-2 text-[12px]"
         >
           <span className="flex-1 leading-[1.5]">{error}</span>
-          <Button variant="outline" size="sm" onClick={clearError}>Dismiss</Button>
+          <Button variant="outline" size="sm" onClick={clearError}>
+            Dismiss
+          </Button>
         </div>
       )}
 
@@ -171,7 +164,9 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
           const model = stored[modelKey] ?? defaultModelFor(kind)
           return (
             <section key={kind} className="mb-[18px]">
-              <h3 className="mb-2 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]">{agentLabel(kind)}</h3>
+              <h3 className="mb-2 text-[11px] font-[600] uppercase tracking-[0.07em] text-[var(--text-muted)]">
+                {agentLabel(kind)}
+              </h3>
               {group.map((inst) => (
                 <AccountCard
                   key={inst.id}
@@ -186,7 +181,9 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
                   loadUsage={loadUsage}
                 />
               ))}
-              {loaded && group.length === 0 && <div className="text-[12px] text-[var(--text-muted)]">No accounts yet.</div>}
+              {loaded && group.length === 0 && (
+                <div className="text-[12px] text-[var(--text-muted)]">No accounts yet.</div>
+              )}
             </section>
           )
         })}
@@ -197,48 +194,59 @@ export function AccountsPanel({ Anchor }: { Anchor: ComponentType<{ def: Setting
       </Anchor>
 
       <Anchor def={SETTING_ROW.sourceControl}>
-        <div className="mt-[22px]"><SourceControlPanel /></div>
+        <div className="mt-[22px]">
+          <SourceControlPanel />
+        </div>
       </Anchor>
 
-      {editing && (
-        <ProviderInstanceDialog
-          instance={editing}
-          onClose={() => setEditing(null)}
-        />
-      )}
-      {adding && (
-        <ProviderInstanceDialog
-          agentType={adding}
-          onClose={() => setAdding(null)}
-        />
-      )}
+      {editing && <ProviderInstanceDialog instance={editing} onClose={() => setEditing(null)} />}
+      {adding && <ProviderInstanceDialog agentType={adding} onClose={() => setAdding(null)} />}
     </div>
   )
 }
 
 function SummaryTile({ title, cell, alarm = false }: { title: string; cell: SummaryCell; alarm?: boolean }) {
   return (
-    <div data-summary-tile={title} className="min-w-0 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-[10px]">
+    <div
+      data-summary-tile={title}
+      className="min-w-0 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-[10px]"
+    >
       <div className="text-[11.5px] text-[var(--text-secondary)]">{title}</div>
-      <div className={cn('truncate text-[18px] font-[600] tabular-nums', alarm && 'text-[var(--error)]')}>{cell.value}</div>
-      <div className="truncate text-[11.5px] text-[var(--text-secondary)]" title={cell.detail}>{cell.detail}</div>
+      <div className={cn('truncate text-[18px] font-[600] tabular-nums', alarm && 'text-[var(--error)]')}>
+        {cell.value}
+      </div>
+      <div className="truncate text-[11.5px] text-[var(--text-secondary)]" title={cell.detail}>
+        {cell.detail}
+      </div>
     </div>
   )
 }
 
-const menuItemClass = 'flex w-full cursor-pointer items-center justify-between rounded-[5px] border-0 bg-transparent px-2 py-[5px] text-left text-[12.5px] text-[var(--text-primary)] outline-none hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]'
-const menuSurfaceClass = 'sb-floating-surface z-[1200] w-[230px] rounded-[8px] border border-[var(--border)] p-1 shadow-[0_12px_30px_rgba(0,0,0,0.45)]!'
+const menuItemClass =
+  'flex w-full cursor-pointer items-center justify-between rounded-[5px] border-0 bg-transparent px-2 py-[5px] text-left text-[12.5px] text-[var(--text-primary)] outline-none hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]'
+const menuSurfaceClass =
+  'sb-floating-surface z-[1200] w-[230px] rounded-[8px] border border-[var(--border)] p-1 shadow-[0_12px_30px_rgba(0,0,0,0.45)]!'
 
 function AddAccountButton({ onPick }: { onPick: (kind: AgentProvider) => void }) {
   const [open, setOpen] = useState(false)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm">+ Add account</Button>
+        <Button variant="outline" size="sm">
+          + Add account
+        </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className={menuSurfaceClass}>
         {AGENT_PROVIDERS.map((kind) => (
-          <button key={kind} type="button" className={menuItemClass} onClick={() => { setOpen(false); onPick(kind) }}>
+          <button
+            key={kind}
+            type="button"
+            className={menuItemClass}
+            onClick={() => {
+              setOpen(false)
+              onPick(kind)
+            }}
+          >
             {agentLabel(kind)}
           </button>
         ))}
@@ -275,7 +283,9 @@ function AccountCard({
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
-    return () => { mounted.current = false }
+    return () => {
+      mounted.current = false
+    }
   }, [])
 
   async function run(label: string, task: () => Promise<void>) {
@@ -287,11 +297,12 @@ function AccountCard({
     }
   }
 
-  const handleTest = () => run('Testing the sign-in…', async () => {
-    setNote(null)
-    const result = await test(instance.id)
-    if (mounted.current) setNote(result)
-  })
+  const handleTest = () =>
+    run('Testing the sign-in…', async () => {
+      setNote(null)
+      const result = await test(instance.id)
+      if (mounted.current) setNote(result)
+    })
 
   async function copy(text: string, done: string) {
     try {
@@ -313,7 +324,14 @@ function AccountCard({
   }
 
   async function handleDelete() {
-    if (await confirm({ title: `Delete "${instance.displayName}"?`, body: 'Its saved credentials are removed from Switchboard.', confirmLabel: 'Delete', destructive: true })) {
+    if (
+      await confirm({
+        title: `Delete "${instance.displayName}"?`,
+        body: 'Its saved credentials are removed from Switchboard.',
+        confirmLabel: 'Delete',
+        destructive: true,
+      })
+    ) {
       remove(instance.id).catch((err: unknown) => log.warn('delete failed', err))
     }
   }
@@ -327,14 +345,26 @@ function AccountCard({
   // Until the first reading lands, skeleton bars hold the card at its final
   // height. OpenCode never reports a quota, only a one-line note.
   const skeleton = usage === undefined && instance.agentType !== 'opencode'
-  const muted = signedOut || failed ? null : usage === undefined ? (skeleton ? null : 'Loading usage…') : usage.status === 'ok' ? null : usage.message
+  const muted =
+    signedOut || failed
+      ? null
+      : usage === undefined
+        ? skeleton
+          ? null
+          : 'Loading usage…'
+        : usage.status === 'ok'
+          ? null
+          : usage.message
   const identity = [usage?.plan && `Plan: ${usage.plan}`, usage?.account].filter(Boolean).join(' · ')
 
   return (
     <div
       data-account={instance.id}
       aria-busy={refreshing && !skeleton}
-      className={cn('mb-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-[14px] py-3 transition-opacity', refreshing && !skeleton && 'opacity-60')}
+      className={cn(
+        'mb-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-[14px] py-3 transition-opacity',
+        refreshing && !skeleton && 'opacity-60',
+      )}
     >
       <div className="flex items-center gap-[10px]">
         <span
@@ -347,22 +377,39 @@ function AccountCard({
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-[500]" title={identity || undefined}>
             {instance.displayName}
-            {starred && <span title="Default account" aria-label="Default account" className="ml-1 text-[12px] text-[var(--warning)]">★</span>}
+            {starred && (
+              <span
+                title="Default account"
+                aria-label="Default account"
+                className="ml-1 text-[12px] text-[var(--warning)]"
+              >
+                ★
+              </span>
+            )}
           </div>
           <div className="truncate text-[12px] text-[var(--text-secondary)]">
             {signedOut ? (
-              <><span className="text-[var(--error)]">Signed out</span>{usage?.message && ` · ${usage.message}`}</>
+              <>
+                <span className="text-[var(--error)]">Signed out</span>
+                {usage?.message && ` · ${usage.message}`}
+              </>
             ) : failed ? (
               <span className="text-[var(--error)]">{usage?.message ?? 'Usage could not be read'}</span>
             ) : (
               <>
                 {modelLabel} · <span data-credential>{credentialSummary(instance)}</span>
-                {home.warning && !isDefault(instance) && <span className="text-[var(--warning)]"> · {home.warning}</span>}
+                {home.warning && !isDefault(instance) && (
+                  <span className="text-[var(--warning)]"> · {home.warning}</span>
+                )}
               </>
             )}
           </div>
         </div>
-        {signedOut && <Button size="sm" onClick={signInAgain}>Sign in again</Button>}
+        {signedOut && (
+          <Button size="sm" onClick={signInAgain}>
+            Sign in again
+          </Button>
+        )}
         <AccountMenu
           instance={instance}
           starred={starred}
@@ -372,7 +419,11 @@ function AccountCard({
           onEdit={onEdit}
           onTest={() => void handleTest()}
           onRefresh={() => void loadUsage(instance.id, { force: true })}
-          onCopyFolder={instance.effectiveOauthDir ? () => void copy(instance.effectiveOauthDir!, `Copied ${instance.effectiveOauthDir}.`) : null}
+          onCopyFolder={
+            instance.effectiveOauthDir
+              ? () => void copy(instance.effectiveOauthDir!, `Copied ${instance.effectiveOauthDir}.`)
+              : null
+          }
           onDelete={isDefault(instance) ? null : () => void handleDelete()}
         />
       </div>
@@ -386,7 +437,14 @@ function AccountCard({
       )}
       {overage.map((o) => (
         <div key={o.id} className="mt-2 text-[12px] text-[var(--text-secondary)]">
-          {[o.label, o.usedPercent !== null && `${Math.round(o.usedPercent)}%`, o.detail, o.blockedReason?.replace(/_/g, ' ')].filter(Boolean).join(' · ')}
+          {[
+            o.label,
+            o.usedPercent !== null && `${Math.round(o.usedPercent)}%`,
+            o.detail,
+            o.blockedReason?.replace(/_/g, ' '),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </div>
       ))}
       {muted && <div className="mt-2 text-[12px] text-[var(--text-muted)]">{muted}</div>}
@@ -402,7 +460,12 @@ function AccountCard({
         </Button>
       )}
       {(busy || note) && (
-        <div className={cn('mt-2 break-words text-[12px]', !busy && note && !note.ok ? 'text-[var(--error)]' : 'text-[var(--text-muted)]')}>
+        <div
+          className={cn(
+            'mt-2 break-words text-[12px]',
+            !busy && note && !note.ok ? 'text-[var(--error)]' : 'text-[var(--text-muted)]',
+          )}
+        >
           {busy ?? note?.message}
         </div>
       )}
@@ -412,7 +475,8 @@ function AccountCard({
 
 /** Same markup as a real meter with the text hidden, so the heights match. */
 const SKELETON_WINDOWS = ['session', 'weekly'].map((id) =>
-  buildWindow({ id, label: 'Usage', kind: 'other', percent: null, resetsAtMs: null, windowMinutes: null }))
+  buildWindow({ id, label: 'Usage', kind: 'other', percent: null, resetsAtMs: null, windowMinutes: null }),
+)
 
 function UsageMeter({ window: w, placeholder = false }: { window: UsageWindow; placeholder?: boolean }) {
   const tone = barTone(w)
@@ -421,7 +485,9 @@ function UsageMeter({ window: w, placeholder = false }: { window: UsageWindow; p
     return (
       <div aria-hidden="true">
         <div className="flex text-[12px]">
-          <span className="w-[45%] rounded-[3px] bg-[var(--bg-tertiary)] text-transparent animate-[sb-pulse_1.4s_ease-in-out_infinite]">{w.label}</span>
+          <span className="w-[45%] rounded-[3px] bg-[var(--bg-tertiary)] text-transparent animate-[sb-pulse_1.4s_ease-in-out_infinite]">
+            {w.label}
+          </span>
         </div>
         <div className="mt-[5px] h-[7px] rounded-[4px] bg-[var(--bg-tertiary)] animate-[sb-pulse_1.4s_ease-in-out_infinite]" />
       </div>
@@ -430,9 +496,14 @@ function UsageMeter({ window: w, placeholder = false }: { window: UsageWindow; p
   return (
     <div>
       <div className="flex justify-between gap-2 text-[12px] tabular-nums">
-        <span>{w.label} · {w.usedPercent === null ? '-' : `${Math.round(w.usedPercent)}%`}</span>
+        <span>
+          {w.label} · {w.usedPercent === null ? '-' : `${Math.round(w.usedPercent)}%`}
+        </span>
         {reset && (
-          <span title={fmtResetsAt(w.resetsAtMs)} style={{ color: tone === 'ok' ? 'var(--text-secondary)' : TONE_COLOR[tone] }}>
+          <span
+            title={fmtResetsAt(w.resetsAtMs)}
+            style={{ color: tone === 'ok' ? 'var(--text-secondary)' : TONE_COLOR[tone] }}
+          >
             resets {reset}
           </span>
         )}
@@ -445,7 +516,10 @@ function UsageMeter({ window: w, placeholder = false }: { window: UsageWindow; p
         aria-valuemax={100}
         className="mt-[5px] h-[7px] overflow-hidden rounded-[4px] bg-[var(--bg-tertiary)]"
       >
-        <div className="h-full rounded-[4px]" style={{ width: `${w.usedPercent ?? 0}%`, background: TONE_COLOR[tone] }} />
+        <div
+          className="h-full rounded-[4px]"
+          style={{ width: `${w.usedPercent ?? 0}%`, background: TONE_COLOR[tone] }}
+        />
       </div>
     </div>
   )
@@ -476,20 +550,46 @@ function AccountMenu({
 }) {
   const [open, setOpen] = useState(false)
   const [models, setModels] = useState(false)
-  const pick = (action: () => void) => () => { setOpen(false); action() }
+  const pick = (action: () => void) => () => {
+    setOpen(false)
+    action()
+  }
   return (
-    <Popover open={open} onOpenChange={(next) => { setOpen(next); setModels(false) }}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        setModels(false)
+      }}
+    >
       <PopoverTrigger asChild>
-        <Button variant="outline" size="icon-xs" className="size-[26px] font-[400] text-[var(--text-secondary)]" aria-label={`Actions for ${instance.displayName}`}>⋯</Button>
+        <Button
+          variant="outline"
+          size="icon-xs"
+          className="size-[26px] font-[400] text-[var(--text-secondary)]"
+          aria-label={`Actions for ${instance.displayName}`}
+        >
+          ⋯
+        </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className={menuSurfaceClass}>
         {models ? (
           <>
-            <button type="button" className={cn(menuItemClass, 'text-[var(--text-secondary)]')} onClick={() => setModels(false)}>
+            <button
+              type="button"
+              className={cn(menuItemClass, 'text-[var(--text-secondary)]')}
+              onClick={() => setModels(false)}
+            >
               ‹ Default model for new {agentLabel(instance.agentType)} chats
             </button>
             {modelsForAgent(instance.agentType).map((m) => (
-              <button key={m.id} type="button" className={menuItemClass} aria-pressed={m.id === model} onClick={pick(() => onSetModel(m.id))}>
+              <button
+                key={m.id}
+                type="button"
+                className={menuItemClass}
+                aria-pressed={m.id === model}
+                onClick={pick(() => onSetModel(m.id))}
+              >
                 {m.label}
                 {m.id === model && <span aria-hidden="true">✓</span>}
               </button>
@@ -497,13 +597,33 @@ function AccountMenu({
           </>
         ) : (
           <>
-            {!starred && <button type="button" className={menuItemClass} onClick={pick(onSetDefault)}>Set as default</button>}
-            <button type="button" className={menuItemClass} onClick={() => setModels(true)}>Default model <span aria-hidden="true">›</span></button>
-            <button type="button" className={menuItemClass} onClick={pick(onEdit)}>Rename or edit…</button>
-            <button type="button" className={menuItemClass} onClick={pick(onTest)}>Test the sign-in</button>
-            <button type="button" className={menuItemClass} onClick={pick(onRefresh)}>Refresh usage</button>
-            {onCopyFolder && <button type="button" className={menuItemClass} onClick={pick(onCopyFolder)}>Copy the folder path</button>}
-            {onDelete && <button type="button" className={cn(menuItemClass, 'text-[var(--error)]')} onClick={pick(onDelete)}>Delete</button>}
+            {!starred && (
+              <button type="button" className={menuItemClass} onClick={pick(onSetDefault)}>
+                Set as default
+              </button>
+            )}
+            <button type="button" className={menuItemClass} onClick={() => setModels(true)}>
+              Default model <span aria-hidden="true">›</span>
+            </button>
+            <button type="button" className={menuItemClass} onClick={pick(onEdit)}>
+              Rename or edit…
+            </button>
+            <button type="button" className={menuItemClass} onClick={pick(onTest)}>
+              Test the sign-in
+            </button>
+            <button type="button" className={menuItemClass} onClick={pick(onRefresh)}>
+              Refresh usage
+            </button>
+            {onCopyFolder && (
+              <button type="button" className={menuItemClass} onClick={pick(onCopyFolder)}>
+                Copy the folder path
+              </button>
+            )}
+            {onDelete && (
+              <button type="button" className={cn(menuItemClass, 'text-[var(--error)]')} onClick={pick(onDelete)}>
+                Delete
+              </button>
+            )}
           </>
         )}
       </PopoverContent>
@@ -523,9 +643,7 @@ function ProviderInstanceDialog({
   const upsert = useProviderInstanceStore((s) => s.upsert)
   const kind = instance?.agentType ?? agentType!
   const [displayName, setDisplayName] = useState(instance?.displayName ?? '')
-  const [accentColor, setAccentColor] = useState<string>(
-    instance?.accentColor ?? DEFAULT_ACCENT_PALETTE[0],
-  )
+  const [accentColor, setAccentColor] = useState<string>(instance?.accentColor ?? DEFAULT_ACCENT_PALETTE[0])
   const [authMode, setAuthMode] = useState<'env' | 'oauth_dir'>(
     instance?.authMode ?? defaultAuthModeForNewInstance(kind),
   )
@@ -838,11 +956,7 @@ function ProviderInstanceDialog({
           </Field>
         )}
 
-        {error && (
-          <div style={{ fontSize: '11px', color: 'var(--danger, #d04848)', margin: '8px 0' }}>
-            {error}
-          </div>
-        )}
+        {error && <div style={{ fontSize: '11px', color: 'var(--danger, #d04848)', margin: '8px 0' }}>{error}</div>}
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
           <button
@@ -904,15 +1018,7 @@ const smallButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
 }
 
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string
-  hint?: string
-  children: React.ReactNode
-}) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: '12px' }}>
       <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '4px' }}>
@@ -920,9 +1026,7 @@ function Field({
       </div>
       {children}
       {hint && (
-        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.5 }}>
-          {hint}
-        </div>
+        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.5 }}>{hint}</div>
       )}
     </div>
   )

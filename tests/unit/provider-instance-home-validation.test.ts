@@ -90,27 +90,82 @@ function prepare(sql: string) {
     },
     all: () => {
       if (norm.startsWith('SELECT * FROM provider_instances ORDER BY')) {
-        return [...store.values()].sort((a, b) =>
-          a.agent_type.localeCompare(b.agent_type) || a.created_at - b.created_at)
+        return [...store.values()].sort(
+          (a, b) => a.agent_type.localeCompare(b.agent_type) || a.created_at - b.created_at,
+        )
       }
       throw new Error(`mock all: unhandled SQL: ${norm}`)
     },
     run: (...args: unknown[]) => {
       if (norm.startsWith('INSERT INTO provider_instances')) {
-        const [id, agent_type, display_name, accent_color, auth_mode,
-          env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at] =
-          args as [string, string, string, string | null, string, Buffer | null, string | null, string | null, string | null, number, number, number]
-        store.set(id, { id, agent_type, display_name, accent_color, auth_mode, env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at })
+        const [
+          id,
+          agent_type,
+          display_name,
+          accent_color,
+          auth_mode,
+          env_encrypted,
+          env_keys,
+          oauth_dir,
+          config_json,
+          enabled,
+          created_at,
+          updated_at,
+        ] = args as [
+          string,
+          string,
+          string,
+          string | null,
+          string,
+          Buffer | null,
+          string | null,
+          string | null,
+          string | null,
+          number,
+          number,
+          number,
+        ]
+        store.set(id, {
+          id,
+          agent_type,
+          display_name,
+          accent_color,
+          auth_mode,
+          env_encrypted,
+          env_keys,
+          oauth_dir,
+          config_json,
+          enabled,
+          created_at,
+          updated_at,
+        })
         return { changes: 1 }
       }
       if (norm.startsWith('UPDATE provider_instances SET display_name')) {
-        const [name, accent, auth, env, envKeys, oauthDir, config, enabled, updated, id] =
-          args as [string, string | null, string, Buffer | null, string | null, string | null, string | null, number, number, string]
+        const [name, accent, auth, env, envKeys, oauthDir, config, enabled, updated, id] = args as [
+          string,
+          string | null,
+          string,
+          Buffer | null,
+          string | null,
+          string | null,
+          string | null,
+          number,
+          number,
+          string,
+        ]
         const r = store.get(id)
         if (!r) return { changes: 0 }
         Object.assign(r, {
-          display_name: name, accent_color: accent, auth_mode: auth, env_encrypted: env,
-          env_keys: envKeys, oauth_dir: oauthDir, config_json: config, enabled, updated_at: updated,
+          display_name: name,
+          accent_color: accent,
+          auth_mode: auth,
+          env_encrypted: env,
+          env_keys: envKeys,
+          oauth_dir: oauthDir,
+          config_json: config,
+          enabled,
+          updated_at: updated,
         })
         return { changes: 1 }
       }
@@ -139,93 +194,146 @@ describe('credential-home uniqueness across auth modes (behavior 7)', () => {
     const { upsertProviderInstance } = await db()
     envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/shared-codex' })
 
-    expect(() => upsertProviderInstance({
-      agentType: 'codex', displayName: 'Work', authMode: 'oauth_dir', oauthDir: '/tmp/shared-codex',
-    })).toThrow(/already used by instance codex-legacy/)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'codex',
+        displayName: 'Work',
+        authMode: 'oauth_dir',
+        oauthDir: '/tmp/shared-codex',
+      }),
+    ).toThrow(/already used by instance codex-legacy/)
   })
 
   it('rejects an env overlay home that an oauth_dir row already owns', async () => {
     const { upsertProviderInstance } = await db()
     seedRow({ id: 'codex-work', agent_type: 'codex', auth_mode: 'oauth_dir', oauth_dir: '/tmp/shared-codex' })
 
-    expect(() => upsertProviderInstance({
-      agentType: 'codex', displayName: 'Legacy', authMode: 'env', env: { CODEX_HOME: '/tmp/shared-codex' },
-    })).toThrow(/already used by instance codex-work/)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'codex',
+        displayName: 'Legacy',
+        authMode: 'env',
+        env: { CODEX_HOME: '/tmp/shared-codex' },
+      }),
+    ).toThrow(/already used by instance codex-work/)
   })
 
   it('compares homes canonically, not as typed', async () => {
     const { upsertProviderInstance } = await db()
     seedRow({ id: 'codex-work', agent_type: 'codex', auth_mode: 'oauth_dir', oauth_dir: '/tmp/shared-codex' })
 
-    expect(() => upsertProviderInstance({
-      agentType: 'codex', displayName: 'Sneaky', authMode: 'env',
-      env: { CODEX_HOME: '/tmp/other/../shared-codex/' },
-    })).toThrow(/already used by instance codex-work/)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'codex',
+        displayName: 'Sneaky',
+        authMode: 'env',
+        env: { CODEX_HOME: '/tmp/other/../shared-codex/' },
+      }),
+    ).toThrow(/already used by instance codex-work/)
   })
 
   it('applies the same rule to claude CLAUDE_CONFIG_DIR overlays', async () => {
     const { upsertProviderInstance } = await db()
     envRow('claude-legacy', 'claude-code', { CLAUDE_CONFIG_DIR: '/tmp/shared-claude' })
 
-    expect(() => upsertProviderInstance({
-      agentType: 'claude-code', displayName: 'Work', authMode: 'oauth_dir', oauthDir: '/tmp/shared-claude',
-    })).toThrow(/already used by instance claude-legacy/)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'claude-code',
+        displayName: 'Work',
+        authMode: 'oauth_dir',
+        oauthDir: '/tmp/shared-claude',
+      }),
+    ).toThrow(/already used by instance claude-legacy/)
   })
 
   it('ignores a cross-kind var in an overlay - it is ordinary env, not a home', async () => {
     const { upsertProviderInstance } = await db()
     seedRow({ id: 'codex-work', agent_type: 'codex', auth_mode: 'oauth_dir', oauth_dir: '/tmp/shared-codex' })
 
-    expect(() => upsertProviderInstance({
-      agentType: 'claude-code', displayName: 'Unrelated', authMode: 'env',
-      env: { CODEX_HOME: '/tmp/shared-codex' },
-    })).not.toThrow()
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'claude-code',
+        displayName: 'Unrelated',
+        authMode: 'env',
+        env: { CODEX_HOME: '/tmp/shared-codex' },
+      }),
+    ).not.toThrow()
   })
 
   it('still ignores disabled rows - a disabled profile runs nothing', async () => {
     const { upsertProviderInstance } = await db()
     envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/shared-codex' }, { enabled: 0 })
 
-    expect(() => upsertProviderInstance({
-      agentType: 'codex', displayName: 'Work', authMode: 'oauth_dir', oauthDir: '/tmp/shared-codex',
-    })).not.toThrow()
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'codex',
+        displayName: 'Work',
+        authMode: 'oauth_dir',
+        oauthDir: '/tmp/shared-codex',
+      }),
+    ).not.toThrow()
   })
 
   it('reserves the canonical ~/.codex against an env overlay too', async () => {
     const { upsertProviderInstance } = await db()
-    expect(() => upsertProviderInstance({
-      agentType: 'codex', displayName: 'Hijack', authMode: 'env', env: { CODEX_HOME: CANONICAL_CODEX },
-    })).toThrow(/reserved for the default Codex instance/)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'codex',
+        displayName: 'Hijack',
+        authMode: 'env',
+        env: { CODEX_HOME: CANONICAL_CODEX },
+      }),
+    ).toThrow(/reserved for the default Codex instance/)
   })
 
   it('lets the default codex row name its own canonical home', async () => {
     const { upsertProviderInstance } = await db()
-    expect(() => upsertProviderInstance({
-      id: 'codex-default', agentType: 'codex', displayName: 'Default',
-      authMode: 'oauth_dir', oauthDir: CANONICAL_CODEX,
-    })).not.toThrow()
+    expect(() =>
+      upsertProviderInstance({
+        id: 'codex-default',
+        agentType: 'codex',
+        displayName: 'Default',
+        authMode: 'oauth_dir',
+        oauthDir: CANONICAL_CODEX,
+      }),
+    ).not.toThrow()
   })
 
   it('reserves the canonical ~/.claude against a new oauth_dir row too', async () => {
     const { upsertProviderInstance } = await db()
-    expect(() => upsertProviderInstance({
-      agentType: 'claude-code', displayName: 'Hijack', authMode: 'oauth_dir', oauthDir: CANONICAL_CLAUDE,
-    })).toThrow(/reserved for the default Claude instance/)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'claude-code',
+        displayName: 'Hijack',
+        authMode: 'oauth_dir',
+        oauthDir: CANONICAL_CLAUDE,
+      }),
+    ).toThrow(/reserved for the default Claude instance/)
   })
 
   it('reserves the canonical ~/.claude against an env overlay too', async () => {
     const { upsertProviderInstance } = await db()
-    expect(() => upsertProviderInstance({
-      agentType: 'claude-code', displayName: 'Hijack', authMode: 'env', env: { CLAUDE_CONFIG_DIR: CANONICAL_CLAUDE },
-    })).toThrow(/reserved for the default Claude instance/)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'claude-code',
+        displayName: 'Hijack',
+        authMode: 'env',
+        env: { CLAUDE_CONFIG_DIR: CANONICAL_CLAUDE },
+      }),
+    ).toThrow(/reserved for the default Claude instance/)
   })
 
   it('lets the default claude-code row name its own canonical home', async () => {
     const { upsertProviderInstance } = await db()
-    expect(() => upsertProviderInstance({
-      id: 'claude-code-default', agentType: 'claude-code', displayName: 'Default',
-      authMode: 'oauth_dir', oauthDir: CANONICAL_CLAUDE,
-    })).not.toThrow()
+    expect(() =>
+      upsertProviderInstance({
+        id: 'claude-code-default',
+        agentType: 'claude-code',
+        displayName: 'Default',
+        authMode: 'oauth_dir',
+        oauthDir: CANONICAL_CLAUDE,
+      }),
+    ).not.toThrow()
   })
 })
 
@@ -233,12 +341,18 @@ describe('unchanged legacy rows keep saving (behavior 8)', () => {
   it('allows a cosmetic edit of a legacy non-default row already at ~/.codex', async () => {
     const { upsertProviderInstance } = await db()
     seedRow({
-      id: 'codex-legacy', agent_type: 'codex', display_name: 'Old Name',
-      auth_mode: 'oauth_dir', oauth_dir: '~/.codex',
+      id: 'codex-legacy',
+      agent_type: 'codex',
+      display_name: 'Old Name',
+      auth_mode: 'oauth_dir',
+      oauth_dir: '~/.codex',
     })
 
     const saved = upsertProviderInstance({
-      id: 'codex-legacy', agentType: 'codex', displayName: 'New Name', accentColor: '#abc',
+      id: 'codex-legacy',
+      agentType: 'codex',
+      displayName: 'New Name',
+      accentColor: '#abc',
     })
     expect(saved.displayName).toBe('New Name')
   })
@@ -247,25 +361,41 @@ describe('unchanged legacy rows keep saving (behavior 8)', () => {
     const { upsertProviderInstance } = await db()
     seedRow({ id: 'codex-legacy', agent_type: 'codex', auth_mode: 'oauth_dir', oauth_dir: CANONICAL_CODEX })
 
-    expect(() => upsertProviderInstance({
-      id: 'codex-legacy', agentType: 'codex', displayName: 'Legacy', enabled: false,
-    })).not.toThrow()
+    expect(() =>
+      upsertProviderInstance({
+        id: 'codex-legacy',
+        agentType: 'codex',
+        displayName: 'Legacy',
+        enabled: false,
+      }),
+    ).not.toThrow()
   })
 
   it('still blocks MOVING a row onto the canonical home', async () => {
     const { upsertProviderInstance } = await db()
     seedRow({ id: 'codex-work', agent_type: 'codex', auth_mode: 'oauth_dir', oauth_dir: '/tmp/codex-work' })
 
-    expect(() => upsertProviderInstance({
-      id: 'codex-work', agentType: 'codex', displayName: 'Work', authMode: 'oauth_dir', oauthDir: '~/.codex',
-    })).toThrow(/reserved for the default Codex instance/)
+    expect(() =>
+      upsertProviderInstance({
+        id: 'codex-work',
+        agentType: 'codex',
+        displayName: 'Work',
+        authMode: 'oauth_dir',
+        oauthDir: '~/.codex',
+      }),
+    ).toThrow(/reserved for the default Codex instance/)
   })
 
   it('still blocks a NEW row claiming the canonical home', async () => {
     const { upsertProviderInstance } = await db()
-    expect(() => upsertProviderInstance({
-      agentType: 'codex', displayName: 'Fresh', authMode: 'oauth_dir', oauthDir: CANONICAL_CODEX,
-    })).toThrow(/reserved for the default Codex instance/)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'codex',
+        displayName: 'Fresh',
+        authMode: 'oauth_dir',
+        oauthDir: CANONICAL_CODEX,
+      }),
+    ).toThrow(/reserved for the default Codex instance/)
   })
 
   it('does not hold a cleared oauth_dir against a row being re-enabled', async () => {
@@ -275,10 +405,16 @@ describe('unchanged legacy rows keep saving (behavior 8)', () => {
 
     // Dropping back to env mode gives up the claim on /tmp/shared, so there
     // is nothing left to collide with codex-work.
-    expect(() => upsertProviderInstance({
-      id: 'codex-old', agentType: 'codex', displayName: 'Old',
-      authMode: 'env', oauthDir: null, enabled: true,
-    })).not.toThrow()
+    expect(() =>
+      upsertProviderInstance({
+        id: 'codex-old',
+        agentType: 'codex',
+        displayName: 'Old',
+        authMode: 'env',
+        oauthDir: null,
+        enabled: true,
+      }),
+    ).not.toThrow()
   })
 
   it('still blocks re-enabling a disabled row that sits on another live profile dir', async () => {
@@ -286,9 +422,14 @@ describe('unchanged legacy rows keep saving (behavior 8)', () => {
     seedRow({ id: 'codex-work', agent_type: 'codex', auth_mode: 'oauth_dir', oauth_dir: '/tmp/shared' })
     seedRow({ id: 'codex-old', agent_type: 'codex', auth_mode: 'oauth_dir', oauth_dir: '/tmp/shared', enabled: 0 })
 
-    expect(() => upsertProviderInstance({
-      id: 'codex-old', agentType: 'codex', displayName: 'Old', enabled: true,
-    })).toThrow(/already used by instance codex-work/)
+    expect(() =>
+      upsertProviderInstance({
+        id: 'codex-old',
+        agentType: 'codex',
+        displayName: 'Old',
+        enabled: true,
+      }),
+    ).toThrow(/already used by instance codex-work/)
   })
 })
 
@@ -296,12 +437,18 @@ describe('unchanged legacy Claude rows keep saving, same as Codex (behavior 8 sy
   it('allows a cosmetic edit of a legacy non-default claude row already at ~/.claude', async () => {
     const { upsertProviderInstance } = await db()
     seedRow({
-      id: 'claude-legacy', agent_type: 'claude-code', display_name: 'Old Name',
-      auth_mode: 'oauth_dir', oauth_dir: '~/.claude',
+      id: 'claude-legacy',
+      agent_type: 'claude-code',
+      display_name: 'Old Name',
+      auth_mode: 'oauth_dir',
+      oauth_dir: '~/.claude',
     })
 
     const saved = upsertProviderInstance({
-      id: 'claude-legacy', agentType: 'claude-code', displayName: 'New Name', accentColor: '#abc',
+      id: 'claude-legacy',
+      agentType: 'claude-code',
+      displayName: 'New Name',
+      accentColor: '#abc',
     })
     expect(saved.displayName).toBe('New Name')
   })
@@ -310,25 +457,41 @@ describe('unchanged legacy Claude rows keep saving, same as Codex (behavior 8 sy
     const { upsertProviderInstance } = await db()
     seedRow({ id: 'claude-legacy', agent_type: 'claude-code', auth_mode: 'oauth_dir', oauth_dir: CANONICAL_CLAUDE })
 
-    expect(() => upsertProviderInstance({
-      id: 'claude-legacy', agentType: 'claude-code', displayName: 'Legacy', enabled: false,
-    })).not.toThrow()
+    expect(() =>
+      upsertProviderInstance({
+        id: 'claude-legacy',
+        agentType: 'claude-code',
+        displayName: 'Legacy',
+        enabled: false,
+      }),
+    ).not.toThrow()
   })
 
   it('still blocks MOVING a claude row onto the canonical home', async () => {
     const { upsertProviderInstance } = await db()
     seedRow({ id: 'claude-work', agent_type: 'claude-code', auth_mode: 'oauth_dir', oauth_dir: '/tmp/claude-work' })
 
-    expect(() => upsertProviderInstance({
-      id: 'claude-work', agentType: 'claude-code', displayName: 'Work', authMode: 'oauth_dir', oauthDir: '~/.claude',
-    })).toThrow(/reserved for the default Claude instance/)
+    expect(() =>
+      upsertProviderInstance({
+        id: 'claude-work',
+        agentType: 'claude-code',
+        displayName: 'Work',
+        authMode: 'oauth_dir',
+        oauthDir: '~/.claude',
+      }),
+    ).toThrow(/reserved for the default Claude instance/)
   })
 
   it('still blocks a NEW claude row claiming the canonical home', async () => {
     const { upsertProviderInstance } = await db()
-    expect(() => upsertProviderInstance({
-      agentType: 'claude-code', displayName: 'Fresh', authMode: 'oauth_dir', oauthDir: CANONICAL_CLAUDE,
-    })).toThrow(/reserved for the default Claude instance/)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'claude-code',
+        displayName: 'Fresh',
+        authMode: 'oauth_dir',
+        oauthDir: CANONICAL_CLAUDE,
+      }),
+    ).toThrow(/reserved for the default Claude instance/)
   })
 })
 
@@ -365,20 +528,27 @@ describe('overlay credential home survives an unrelated save (behavior 9)', () =
   // real Windows install would produce either (see oauth-path.ts). The raw
   // `.env.CODEX_HOME`/`.env.CLAUDE_CONFIG_DIR` assertions this test also
   // makes are unaffected (they read the uncanonicalized stored value).
-  it.skipIf(process.platform === 'win32')('keeps a legacy CODEX_HOME when a rename sends an empty env map', async () => {
-    const { upsertProviderInstance, getProviderInstanceFull } = await db()
-    envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/codex-work' }, { display_name: 'Old Name' })
+  it.skipIf(process.platform === 'win32')(
+    'keeps a legacy CODEX_HOME when a rename sends an empty env map',
+    async () => {
+      const { upsertProviderInstance, getProviderInstanceFull } = await db()
+      envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/codex-work' }, { display_name: 'Old Name' })
 
-    const saved = upsertProviderInstance({
-      id: 'codex-legacy', agentType: 'codex', displayName: 'New Name', authMode: 'env', env: {},
-    })
+      const saved = upsertProviderInstance({
+        id: 'codex-legacy',
+        agentType: 'codex',
+        displayName: 'New Name',
+        authMode: 'env',
+        env: {},
+      })
 
-    expect(getProviderInstanceFull('codex-legacy')!.env.CODEX_HOME).toBe('/tmp/codex-work')
-    expect(saved.displayName).toBe('New Name')
-    expect(saved.envKeys).toContain('CODEX_HOME')
-    expect(saved.effectiveOauthDir).toBe('/tmp/codex-work')
-    expect(saved.effectiveOauthDirSource).toBe('env')
-  })
+      expect(getProviderInstanceFull('codex-legacy')!.env.CODEX_HOME).toBe('/tmp/codex-work')
+      expect(saved.displayName).toBe('New Name')
+      expect(saved.envKeys).toContain('CODEX_HOME')
+      expect(saved.effectiveOauthDir).toBe('/tmp/codex-work')
+      expect(saved.effectiveOauthDirSource).toBe('env')
+    },
+  )
 
   // Same POSIX-literal-fixture caveat as above.
   it.skipIf(process.platform === 'win32')('keeps a legacy CLAUDE_CONFIG_DIR the same way', async () => {
@@ -386,7 +556,11 @@ describe('overlay credential home survives an unrelated save (behavior 9)', () =
     envRow('claude-legacy', 'claude-code', { CLAUDE_CONFIG_DIR: '/tmp/claude-work' })
 
     const saved = upsertProviderInstance({
-      id: 'claude-legacy', agentType: 'claude-code', displayName: 'Renamed', authMode: 'env', env: {},
+      id: 'claude-legacy',
+      agentType: 'claude-code',
+      displayName: 'Renamed',
+      authMode: 'env',
+      env: {},
     })
 
     expect(getProviderInstanceFull('claude-legacy')!.env.CLAUDE_CONFIG_DIR).toBe('/tmp/claude-work')
@@ -398,13 +572,19 @@ describe('overlay credential home survives an unrelated save (behavior 9)', () =
     try {
       const { upsertProviderInstance, getProviderInstanceFull, encryptEnv } = await db()
       seedRow({
-        id: 'codex-ancient', agent_type: 'codex', auth_mode: 'env',
+        id: 'codex-ancient',
+        agent_type: 'codex',
+        auth_mode: 'env',
         env_encrypted: encryptEnv({ CODEX_HOME: '/tmp/codex-ancient', OPENAI_API_KEY: 'sk-x' }),
         env_keys: null, // predates the env_keys column: presence is 'unknown'
       })
 
       upsertProviderInstance({
-        id: 'codex-ancient', agentType: 'codex', displayName: 'Renamed', authMode: 'env', env: {},
+        id: 'codex-ancient',
+        agentType: 'codex',
+        displayName: 'Renamed',
+        authMode: 'env',
+        env: {},
       })
 
       expect(getProviderInstanceFull('codex-ancient')!.env.CODEX_HOME).toBe('/tmp/codex-ancient')
@@ -420,35 +600,53 @@ describe('overlay credential home survives an unrelated save (behavior 9)', () =
     delete process.env.SWITCHBOARD_SECRET // the key is gone: the blob is opaque now
 
     seedRow({
-      id: 'codex-sealed', agent_type: 'codex', auth_mode: 'env',
-      env_encrypted: blob, env_keys: JSON.stringify(['CODEX_HOME']),
+      id: 'codex-sealed',
+      agent_type: 'codex',
+      auth_mode: 'env',
+      env_encrypted: blob,
+      env_keys: JSON.stringify(['CODEX_HOME']),
     })
 
-    expect(() => upsertProviderInstance({
-      id: 'codex-sealed', agentType: 'codex', displayName: 'Renamed', authMode: 'env', env: {},
-    })).toThrow(/credential home/i)
+    expect(() =>
+      upsertProviderInstance({
+        id: 'codex-sealed',
+        agentType: 'codex',
+        displayName: 'Renamed',
+        authMode: 'env',
+        env: {},
+      }),
+    ).toThrow(/credential home/i)
   })
 
   // Same POSIX-literal-fixture caveat as above.
-  it.skipIf(process.platform === 'win32')('still repoints the home when the save names the key explicitly', async () => {
-    const { upsertProviderInstance, getProviderInstanceFull } = await db()
-    envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/codex-work' })
+  it.skipIf(process.platform === 'win32')(
+    'still repoints the home when the save names the key explicitly',
+    async () => {
+      const { upsertProviderInstance, getProviderInstanceFull } = await db()
+      envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/codex-work' })
 
-    const saved = upsertProviderInstance({
-      id: 'codex-legacy', agentType: 'codex', displayName: 'Legacy', authMode: 'env',
-      env: { CODEX_HOME: '/tmp/codex-moved' },
-    })
+      const saved = upsertProviderInstance({
+        id: 'codex-legacy',
+        agentType: 'codex',
+        displayName: 'Legacy',
+        authMode: 'env',
+        env: { CODEX_HOME: '/tmp/codex-moved' },
+      })
 
-    expect(getProviderInstanceFull('codex-legacy')!.env.CODEX_HOME).toBe('/tmp/codex-moved')
-    expect(saved.effectiveOauthDir).toBe('/tmp/codex-moved')
-  })
+      expect(getProviderInstanceFull('codex-legacy')!.env.CODEX_HOME).toBe('/tmp/codex-moved')
+      expect(saved.effectiveOauthDir).toBe('/tmp/codex-moved')
+    },
+  )
 
   it('still clears the home when the save names the key blank', async () => {
     const { upsertProviderInstance, getProviderInstanceFull } = await db()
     envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/codex-work' })
 
     upsertProviderInstance({
-      id: 'codex-legacy', agentType: 'codex', displayName: 'Legacy', authMode: 'env',
+      id: 'codex-legacy',
+      agentType: 'codex',
+      displayName: 'Legacy',
+      authMode: 'env',
       env: { CODEX_HOME: '' },
     })
 
@@ -460,7 +658,11 @@ describe('overlay credential home survives an unrelated save (behavior 9)', () =
     envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/codex-work', OPENAI_API_KEY: 'sk-old' })
 
     const saved = upsertProviderInstance({
-      id: 'codex-legacy', agentType: 'codex', displayName: 'Legacy', authMode: 'env', env: {},
+      id: 'codex-legacy',
+      agentType: 'codex',
+      displayName: 'Legacy',
+      authMode: 'env',
+      env: {},
     })
 
     expect(getProviderInstanceFull('codex-legacy')!.env).toEqual({ CODEX_HOME: '/tmp/codex-work' })
@@ -472,20 +674,31 @@ describe('overlay credential home survives an unrelated save (behavior 9)', () =
     envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/codex-work', OPENAI_API_KEY: 'sk-old' })
 
     upsertProviderInstance({
-      id: 'codex-legacy', agentType: 'codex', displayName: 'Legacy', env: null,
+      id: 'codex-legacy',
+      agentType: 'codex',
+      displayName: 'Legacy',
+      env: null,
     })
 
-    expect(getProviderInstanceFull('codex-legacy')!.env)
-      .toEqual({ CODEX_HOME: '/tmp/codex-work', OPENAI_API_KEY: 'sk-old' })
+    expect(getProviderInstanceFull('codex-legacy')!.env).toEqual({
+      CODEX_HOME: '/tmp/codex-work',
+      OPENAI_API_KEY: 'sk-old',
+    })
   })
 
   it('lets a legacy row already on the reserved canonical home be renamed, keeping it', async () => {
     const { upsertProviderInstance, getProviderInstanceFull } = await db()
     envRow('codex-legacy', 'codex', { CODEX_HOME: CANONICAL_CODEX })
 
-    expect(() => upsertProviderInstance({
-      id: 'codex-legacy', agentType: 'codex', displayName: 'Renamed', authMode: 'env', env: {},
-    })).not.toThrow()
+    expect(() =>
+      upsertProviderInstance({
+        id: 'codex-legacy',
+        agentType: 'codex',
+        displayName: 'Renamed',
+        authMode: 'env',
+        env: {},
+      }),
+    ).not.toThrow()
     expect(getProviderInstanceFull('codex-legacy')!.env.CODEX_HOME).toBe(CANONICAL_CODEX)
   })
 
@@ -494,12 +707,21 @@ describe('overlay credential home survives an unrelated save (behavior 9)', () =
     envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/codex-work' })
 
     upsertProviderInstance({
-      id: 'codex-legacy', agentType: 'codex', displayName: 'Renamed', authMode: 'env', env: {},
+      id: 'codex-legacy',
+      agentType: 'codex',
+      displayName: 'Renamed',
+      authMode: 'env',
+      env: {},
     })
 
-    expect(() => upsertProviderInstance({
-      agentType: 'codex', displayName: 'Impostor', authMode: 'oauth_dir', oauthDir: '/tmp/codex-work',
-    })).toThrow(/already used by instance codex-legacy/)
+    expect(() =>
+      upsertProviderInstance({
+        agentType: 'codex',
+        displayName: 'Impostor',
+        authMode: 'oauth_dir',
+        oauthDir: '/tmp/codex-work',
+      }),
+    ).toThrow(/already used by instance codex-legacy/)
   })
 
   it('ignores a cross-kind var - a stray CODEX_HOME on a claude row is ordinary env', async () => {
@@ -507,7 +729,11 @@ describe('overlay credential home survives an unrelated save (behavior 9)', () =
     envRow('claude-legacy', 'claude-code', { CODEX_HOME: '/tmp/not-a-home' })
 
     upsertProviderInstance({
-      id: 'claude-legacy', agentType: 'claude-code', displayName: 'Renamed', authMode: 'env', env: {},
+      id: 'claude-legacy',
+      agentType: 'claude-code',
+      displayName: 'Renamed',
+      authMode: 'env',
+      env: {},
     })
 
     expect(getProviderInstanceFull('claude-legacy')!.env).toEqual({})

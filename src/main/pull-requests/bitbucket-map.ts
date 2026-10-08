@@ -51,7 +51,10 @@ export interface BbPullRequest {
   draft?: boolean
   author?: BbUser
   source: { branch: { name: string }; commit?: { hash: string } | null }
-  destination: { branch: { name: string; merge_strategies?: string[]; default_merge_strategy?: string }; commit?: { hash: string } | null }
+  destination: {
+    branch: { name: string; merge_strategies?: string[]; default_merge_strategy?: string }
+    commit?: { hash: string } | null
+  }
   comment_count?: number
   created_on: string
   updated_on: string
@@ -75,7 +78,14 @@ export interface BbComment {
   created_on: string
   deleted?: boolean
   parent?: { id: number }
-  inline?: { path: string; from?: number | null; to?: number | null; start_from?: number | null; start_to?: number | null; outdated?: boolean }
+  inline?: {
+    path: string
+    from?: number | null
+    to?: number | null
+    start_from?: number | null
+    start_to?: number | null
+    outdated?: boolean
+  }
   resolution?: { type?: string; created_on?: string } | null
   links?: { html?: { href?: string } }
 }
@@ -126,7 +136,9 @@ export interface BbWorkspaceMember {
 }
 
 export function mapBbCandidates(members: readonly BbWorkspaceMember[]): PrReviewerCandidate[] {
-  return members.flatMap((m): PrReviewerCandidate[] => (m.user?.uuid ? [{ id: m.user.uuid, person: mapBbUser(m.user), kind: 'user', reviewed: 0 }] : []))
+  return members.flatMap((m): PrReviewerCandidate[] =>
+    m.user?.uuid ? [{ id: m.user.uuid, person: mapBbUser(m.user), kind: 'user', reviewed: 0 }] : [],
+  )
 }
 
 export function mapBbUser(user: BbUser | null | undefined): PrPerson {
@@ -149,7 +161,12 @@ function mapReviewers(pr: BbPullRequest): PrReviewer[] {
   const out = new Map<string, PrReviewer>()
   for (const p of pr.participants ?? []) {
     const key = p.user.uuid ?? p.user.account_id ?? p.user.display_name ?? String(out.size)
-    out.set(key, { id: p.user.uuid ?? null, person: mapBbUser(p.user), state: participantState(p), requested: p.role === 'REVIEWER' })
+    out.set(key, {
+      id: p.user.uuid ?? null,
+      person: mapBbUser(p.user),
+      state: participantState(p),
+      requested: p.role === 'REVIEWER',
+    })
   }
   // `reviewers` lists requested reviewers who have not participated yet.
   for (const u of pr.reviewers ?? []) {
@@ -159,15 +176,29 @@ function mapReviewers(pr: BbPullRequest): PrReviewer[] {
   return [...out.values()]
 }
 
-const STATE: Record<BbPullRequest['state'], PrSummary['state']> = { OPEN: 'open', MERGED: 'merged', DECLINED: 'closed', SUPERSEDED: 'closed' }
+const STATE: Record<BbPullRequest['state'], PrSummary['state']> = {
+  OPEN: 'open',
+  MERGED: 'merged',
+  DECLINED: 'closed',
+  SUPERSEDED: 'closed',
+}
 
-export function mapBbSummary(repo: RepoRef, pr: BbPullRequest, viewer: BbViewer, extra: BbEnrichment | null): PrSummary {
+export function mapBbSummary(
+  repo: RepoRef,
+  pr: BbPullRequest,
+  viewer: BbViewer,
+  extra: BbEnrichment | null,
+): PrSummary {
   const reviewers = mapReviewers(pr)
   const viewerParticipant = (pr.participants ?? []).find((p) => sameUser(p.user, viewer))
-  const viewerRequested = (pr.reviewers ?? []).some((u) => sameUser(u, viewer)) || viewerParticipant?.role === 'REVIEWER'
+  const viewerRequested =
+    (pr.reviewers ?? []).some((u) => sameUser(u, viewer)) || viewerParticipant?.role === 'REVIEWER'
   const viewerReviewed = !!viewerParticipant && (viewerParticipant.approved || !!viewerParticipant.state)
   // Bitbucket adds a commenter as a PARTICIPANT; a requested reviewer is listed before taking part, so needs `participated_on`.
-  const viewerCommented = !!viewerParticipant && !viewerReviewed && (viewerParticipant.role === 'PARTICIPANT' || !!viewerParticipant.participated_on)
+  const viewerCommented =
+    !!viewerParticipant &&
+    !viewerReviewed &&
+    (viewerParticipant.role === 'PARTICIPANT' || !!viewerParticipant.participated_on)
   return {
     ref: { ...repo, number: pr.id },
     title: pr.title,
@@ -221,7 +252,8 @@ export function mapBbStatuses(statuses: readonly BbStatus[]): PrCheck[] {
       description: s.description || null,
       url: s.url || null,
       // First post to last post: close to the run time for Pipelines, which posts at start and end.
-      durationMs: state !== 'pending' && created !== null && updated !== null && updated > created ? updated - created : null,
+      durationMs:
+        state !== 'pending' && created !== null && updated !== null && updated > created ? updated - created : null,
       rerunId: null,
     }
   })
@@ -288,9 +320,23 @@ export function mapBbActivity(entries: readonly BbActivity[]): PrActivity[] {
   const out: PrActivity[] = []
   entries.forEach((e, i) => {
     if (e.approval) {
-      out.push({ id: `approval:${i}`, kind: 'reviewed', actor: mapBbUser(e.approval.user), summary: 'approved', detail: null, at: parseTime(e.approval.date) ?? 0 })
+      out.push({
+        id: `approval:${i}`,
+        kind: 'reviewed',
+        actor: mapBbUser(e.approval.user),
+        summary: 'approved',
+        detail: null,
+        at: parseTime(e.approval.date) ?? 0,
+      })
     } else if (e.changes_requested) {
-      out.push({ id: `changes:${i}`, kind: 'reviewed', actor: mapBbUser(e.changes_requested.user), summary: 'requested changes', detail: null, at: parseTime(e.changes_requested.date) ?? 0 })
+      out.push({
+        id: `changes:${i}`,
+        kind: 'reviewed',
+        actor: mapBbUser(e.changes_requested.user),
+        summary: 'requested changes',
+        detail: null,
+        at: parseTime(e.changes_requested.date) ?? 0,
+      })
     } else if (e.comment && !e.comment.deleted) {
       const where = e.comment.inline?.path
       out.push({
@@ -304,12 +350,30 @@ export function mapBbActivity(entries: readonly BbActivity[]): PrActivity[] {
     } else if (e.update) {
       const at = parseTime(e.update.date) ?? 0
       const hash = e.update.source?.commit?.hash
-      if (e.update.state === 'MERGED') out.push({ id: `merged:${i}`, kind: 'merged', actor: mapBbUser(e.update.author), summary: 'merged', detail: null, at })
-      else out.push({ id: `update:${i}`, kind: 'pushed', actor: mapBbUser(e.update.author), summary: 'updated the pull request', detail: hash ? `head ${hash.slice(0, 7)}` : null, at })
+      if (e.update.state === 'MERGED')
+        out.push({
+          id: `merged:${i}`,
+          kind: 'merged',
+          actor: mapBbUser(e.update.author),
+          summary: 'merged',
+          detail: null,
+          at,
+        })
+      else
+        out.push({
+          id: `update:${i}`,
+          kind: 'pushed',
+          actor: mapBbUser(e.update.author),
+          summary: 'updated the pull request',
+          detail: hash ? `head ${hash.slice(0, 7)}` : null,
+          at,
+        })
     }
   })
   // Consecutive updates to the same head collapse to the latest (the API lists newest first); Bitbucket logs one per field edit.
-  const deduped = out.filter((row, i) => !(row.kind === 'pushed' && out[i - 1]?.kind === 'pushed' && out[i - 1]?.detail === row.detail))
+  const deduped = out.filter(
+    (row, i) => !(row.kind === 'pushed' && out[i - 1]?.kind === 'pushed' && out[i - 1]?.detail === row.detail),
+  )
   return deduped.sort((a, b) => a.at - b.at)
 }
 
@@ -369,18 +433,22 @@ const FILE_STATUS: Record<BbDiffstat['status'], ChangedFileStatus> = {
 }
 
 /** `conflictedFiles` come from the conflicts read: the diffstat does not mark them. */
-export function mapBbFiles(diffstat: readonly BbDiffstat[], diffText: string, conflictedFiles: readonly string[] = []): PrChangedFile[] {
+export function mapBbFiles(
+  diffstat: readonly BbDiffstat[],
+  diffText: string,
+  conflictedFiles: readonly string[] = [],
+): PrChangedFile[] {
   const conflicted = new Set(conflictedFiles)
   const patches = new Map<string, ReturnType<typeof splitGitDiff>[number]>()
-  for (const file of splitGitDiff(diffText)) patches.set((file.newPath ?? file.oldPath) ?? '', file)
+  for (const file of splitGitDiff(diffText)) patches.set(file.newPath ?? file.oldPath ?? '', file)
   return diffstat.map((d) => {
     const path = d.new?.path ?? d.old?.path ?? ''
     const patch = patches.get(path)
     const parsed = patch ? parseHunks(patch.patch) : { hunks: [], truncated: false }
     return {
       path,
-      oldPath: d.status === 'renamed' ? d.old?.path ?? null : null,
-      status: conflicted.has(path) ? 'conflicted' : FILE_STATUS[d.status] ?? 'modified',
+      oldPath: d.status === 'renamed' ? (d.old?.path ?? null) : null,
+      status: conflicted.has(path) ? 'conflicted' : (FILE_STATUS[d.status] ?? 'modified'),
       additions: d.lines_added,
       deletions: d.lines_removed,
       binary: !!patch?.binary,

@@ -1,4 +1,11 @@
-import { activeShortcuts, currentPlatform, matchShortcut, type ShortcutCommand, type ShortcutKeyInput, type ShortcutPlatform } from '@shared/shortcuts'
+import {
+  activeShortcuts,
+  currentPlatform,
+  matchShortcut,
+  type ShortcutCommand,
+  type ShortcutKeyInput,
+  type ShortcutPlatform,
+} from '@shared/shortcuts'
 
 export type GlobalKeyAction =
   | { type: 'toggle-sidebar' }

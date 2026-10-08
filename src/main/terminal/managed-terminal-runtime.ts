@@ -6,10 +6,7 @@ import { createMainLogger } from '../logger'
 
 const log = createMainLogger('terminal:managed-runtime')
 
-export type ManagedTerminalSpec = Pick<
-  TerminalCreateOptions,
-  'id' | 'cwd' | 'initialCommand' | 'waitFor'
->
+export type ManagedTerminalSpec = Pick<TerminalCreateOptions, 'id' | 'cwd' | 'initialCommand' | 'waitFor'>
 
 export interface ManagedTerminalBackend {
   has(id: string): boolean
@@ -106,18 +103,12 @@ export class ManagedTerminalRuntime {
         starting = (async () => {
           let commandClaim: ManagedTerminalCommandClaim | null = null
           try {
-            commandClaim = terminal.initialCommand
-              ? await this.commandLedger.claim(terminal.id)
-              : null
+            commandClaim = terminal.initialCommand ? await this.commandLedger.claim(terminal.id) : null
             await backend.create({
               id: terminal.id,
               ...(terminal.cwd ? { cwd: terminal.cwd } : {}),
-              ...(commandClaim && terminal.initialCommand
-                ? { initialCommand: terminal.initialCommand }
-                : {}),
-              ...(commandClaim && terminal.initialCommand && terminal.waitFor
-                ? { waitFor: terminal.waitFor }
-                : {}),
+              ...(commandClaim && terminal.initialCommand ? { initialCommand: terminal.initialCommand } : {}),
+              ...(commandClaim && terminal.initialCommand && terminal.waitFor ? { waitFor: terminal.waitFor } : {}),
             })
             return true
           } catch (error) {
@@ -140,7 +131,7 @@ export class ManagedTerminalRuntime {
           if (this.starting.get(terminal.id) === starting) this.starting.delete(terminal.id)
         })
       }
-      if (!await starting) return { status: 'failed', terminalIds }
+      if (!(await starting)) return { status: 'failed', terminalIds }
       terminalIds.push(terminal.id)
     }
     return { status: 'succeeded', terminalIds }

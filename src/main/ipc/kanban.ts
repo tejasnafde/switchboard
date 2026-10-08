@@ -29,10 +29,7 @@ import type {
   WorktreeCreationRequest,
   WorktreeCreationSnapshot,
 } from '@shared/worktree-creation'
-import {
-  buildExistingCardWorktreeRequest,
-  buildNewCardWorktreeRequest,
-} from '../kanban/worktree-requests'
+import { buildExistingCardWorktreeRequest, buildNewCardWorktreeRequest } from '../kanban/worktree-requests'
 
 const log = createMainLogger('kanban')
 
@@ -45,10 +42,7 @@ export interface KanbanHandlerDependencies {
   now?: () => number
 }
 
-export function registerKanbanHandlers(
-  host: BackendHost,
-  deps: KanbanHandlerDependencies = {},
-): void {
+export function registerKanbanHandlers(host: BackendHost, deps: KanbanHandlerDependencies = {}): void {
   const createCardId = deps.createCardId ?? (() => `card_${randomUUID()}`)
   const createCreationId = deps.createCreationId ?? randomUUID
   const now = deps.now ?? Date.now
@@ -137,7 +131,9 @@ export function registerKanbanHandlers(
       try {
         await removeCardWorktree(id)
       } catch (err) {
-        log.warn(`worktree removal failed during card delete (${id}): ${err instanceof Error ? err.message : String(err)}`)
+        log.warn(
+          `worktree removal failed during card delete (${id}): ${err instanceof Error ? err.message : String(err)}`,
+        )
         throw err
       }
     }
@@ -145,10 +141,7 @@ export function registerKanbanHandlers(
     log.info(`deleted card ${id}`)
   })
 
-  host.handle(KanbanChannels.CREATE_WORKTREE, async (
-    id: string,
-    intent?: KanbanWorktreeCreationIntent,
-  ) => {
+  host.handle(KanbanChannels.CREATE_WORKTREE, async (id: string, intent?: KanbanWorktreeCreationIntent) => {
     const card = getKanbanCard(id)
     if (!card) throw new Error(`Unknown card: ${id}`)
     if (card.worktreePath) return card // idempotent

@@ -17,8 +17,14 @@ import { makeDemoRepo, makeSideRepo, seedDatabase } from './fixtures/demo-worksp
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
-const mk = (p) => { const d = mkdtempSync(join(tmpdir(), p)); scratch.push(d); return d }
-process.on('exit', () => { for (const d of scratch) rmSync(d, { recursive: true, force: true }) })
+const mk = (p) => {
+  const d = mkdtempSync(join(tmpdir(), p))
+  scratch.push(d)
+  return d
+}
+process.on('exit', () => {
+  for (const d of scratch) rmSync(d, { recursive: true, force: true })
+})
 const userData = mk('sb-review-chat-ud-')
 const project = realpathSync(mk('sb-review-chat-proj-'))
 const side = realpathSync(mk('sb-review-chat-side-'))
@@ -28,15 +34,21 @@ makeDemoRepo(project)
 makeSideRepo(side)
 
 async function launch() {
-  const app = await electron.launch({ args: ['.'], cwd: repoRoot, timeout: 30_000,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SHELL: '/bin/sh' } })
+  const app = await electron.launch({
+    args: ['.'],
+    cwd: repoRoot,
+    timeout: 30_000,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SHELL: '/bin/sh' },
+  })
   const win = await app.firstWindow({ timeout: 20_000 })
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
-  await win.evaluate(() => Promise.all([
-    window.api.settings.set('tour.autoplay', 'false'),
-    window.api.settings.set('analytics.enabled', 'false'),
-    window.api.settings.set('analytics.noticeSeen', 'true'),
-  ]))
+  await win.evaluate(() =>
+    Promise.all([
+      window.api.settings.set('tour.autoplay', 'false'),
+      window.api.settings.set('analytics.enabled', 'false'),
+      window.api.settings.set('analytics.noticeSeen', 'true'),
+    ]),
+  )
   const skip = win.getByRole('button', { name: 'Skip tour' })
   if (await skip.isVisible().catch(() => false)) await skip.click()
   return { app, win }
@@ -48,7 +60,10 @@ seedDatabase(db, project, side, { linkPullRequest: true })
 ;({ app, win } = await launch())
 
 const results = []
-const check = (name, ok, detail = '') => { results.push({ ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`) }
+const check = (name, ok, detail = '') => {
+  results.push({ ok })
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`)
+}
 const CHAT = 'Debug auth callback'
 const reviews = () => win.locator('[data-reviews-view]')
 const pills = () => win.locator('.chat-composer [data-pill-chip]')
@@ -57,7 +72,9 @@ async function openReviewsOn612() {
   await win.getByRole('button', { name: 'Reviews', exact: true }).click()
   await reviews().locator('[data-pr-row*="#612"]').click()
   await reviews().getByRole('tab', { name: 'Overview' }).click()
-  await reviews().getByText('Replaces the fixed 30 s retry', { exact: false }).waitFor({ state: 'visible', timeout: 20_000 })
+  await reviews()
+    .getByText('Replaces the fixed 30 s retry', { exact: false })
+    .waitFor({ state: 'visible', timeout: 20_000 })
 }
 
 try {
@@ -68,45 +85,81 @@ try {
   check('chat header shows the linked PR', (await header.innerText()).includes('#612'), await header.innerText())
   // The title wins: at the default width the control is compact (icon + number),
   // in a wide header it carries the phrase, and the title is never cut.
-  const titleFits = () => win.locator('.chat-identity-title').first().evaluate((el) => el.scrollWidth <= el.clientWidth)
+  const titleFits = () =>
+    win
+      .locator('.chat-identity-title')
+      .first()
+      .evaluate((el) => el.scrollWidth <= el.clientWidth)
   const phraseShown = () => header.locator('span.truncate').isVisible()
-  check('default width: compact control, whole title', !(await phraseShown()) && await titleFits())
+  check('default width: compact control, whole title', !(await phraseShown()) && (await titleFits()))
   const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize())
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1900, 900))
   await win.waitForTimeout(400)
-  check('wide header: phrase shown, whole title', await phraseShown() && (await header.innerText()).includes('build failed') && await titleFits())
+  check(
+    'wide header: phrase shown, whole title',
+    (await phraseShown()) && (await header.innerText()).includes('build failed') && (await titleFits()),
+  )
   await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), size)
   await win.waitForTimeout(400)
 
   await header.click()
   await win.getByRole('button', { name: 'Open in Reviews' }).click()
-  await reviews().getByText('Replaces the fixed 30 s retry', { exact: false }).waitFor({ state: 'visible', timeout: 20_000 })
-  check('Open in Reviews selects the PR', await reviews().locator('[data-pr-row*="#612"][aria-current="true"]').isVisible())
+  await reviews()
+    .getByText('Replaces the fixed 30 s retry', { exact: false })
+    .waitFor({ state: 'visible', timeout: 20_000 })
+  check(
+    'Open in Reviews selects the PR',
+    await reviews().locator('[data-pr-row*="#612"][aria-current="true"]').isVisible(),
+  )
 
   // The failed check: one linked chat, so it goes straight there.
   await reviews().getByRole('button', { name: 'Ask the agent', exact: true }).first().click()
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible', timeout: 10_000 })
   await pills().first().waitFor({ state: 'visible', timeout: 10_000 })
-  check('failed check lands as one pill', (await pills().count()) === 1 && (await pills().first().innerText()).includes('1 failed check · #612 · integration'), await pills().first().innerText())
+  check(
+    'failed check lands as one pill',
+    (await pills().count()) === 1 &&
+      (await pills().first().innerText()).includes('1 failed check · #612 · integration'),
+    await pills().first().innerText(),
+  )
 
   await openReviewsOn612()
-  await reviews().getByRole('tab', { name: /^Conversations/ }).click()
+  await reviews()
+    .getByRole('tab', { name: /^Conversations/ })
+    .click()
   await reviews().getByRole('button', { name: 'Send all 3 open conversations' }).click()
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible', timeout: 10_000 })
   await pills().nth(1).waitFor({ state: 'visible', timeout: 10_000 })
   const second = await pills().nth(1).innerText()
-  check('all open conversations land as one pill', (await pills().count()) === 2 && second.includes('3 review conversations · #612'), second)
+  check(
+    'all open conversations land as one pill',
+    (await pills().count()) === 2 && second.includes('3 review conversations · #612'),
+    second,
+  )
 
   await win.locator('[contenteditable="true"][aria-label="Chat message"]').last().click()
   await win.keyboard.press('End')
   await win.keyboard.type('Fix these.')
   await win.keyboard.press('Enter')
   await win.waitForTimeout(2500)
-  const stored = q("SELECT display_body || char(10) || '---' || char(10) || content FROM messages WHERE conversation_id = 'promo-context' AND role = 'user' ORDER BY timestamp DESC LIMIT 1")
+  const stored = q(
+    "SELECT display_body || char(10) || '---' || char(10) || content FROM messages WHERE conversation_id = 'promo-context' AND role = 'user' ORDER BY timestamp DESC LIMIT 1",
+  )
   const displayBody = stored.split('---')[0]
-  check('stored display body keeps the pill tokens', (displayBody.match(/\[\[pill:review-[a-z0-9-]+\]\]/g) ?? []).length === 2 && displayBody.includes('Fix these.'), displayBody)
-  check('provider text carries the expansion', stored.includes('Failed check: integration') && stored.includes('Review conversation on sync/worker.py:') && stored.includes('pankaj: Cap the jitter too.'))
-  const pillKinds = q("SELECT pills_meta FROM messages WHERE conversation_id = 'promo-context' AND role = 'user' ORDER BY timestamp DESC LIMIT 1")
+  check(
+    'stored display body keeps the pill tokens',
+    (displayBody.match(/\[\[pill:review-[a-z0-9-]+\]\]/g) ?? []).length === 2 && displayBody.includes('Fix these.'),
+    displayBody,
+  )
+  check(
+    'provider text carries the expansion',
+    stored.includes('Failed check: integration') &&
+      stored.includes('Review conversation on sync/worker.py:') &&
+      stored.includes('pankaj: Cap the jitter too.'),
+  )
+  const pillKinds = q(
+    "SELECT pills_meta FROM messages WHERE conversation_id = 'promo-context' AND role = 'user' ORDER BY timestamp DESC LIMIT 1",
+  )
   check('pill metadata stores the review kind', (pillKinds.match(/"kind":"review"/g) ?? []).length === 2, pillKinds)
   const sent = win.locator('[data-chat-panel] [data-pill-chip], [data-chat-panel] span[title*="review conversations"]')
   check('the sent bubble draws the pills', (await sent.count()) >= 1)
@@ -117,7 +170,10 @@ try {
   await unlink.scrollIntoViewIfNeeded()
   await unlink.click()
   await unlink.waitFor({ state: 'hidden', timeout: 10_000 })
-  check('unlink removes the stored link', q("SELECT unlinked_at IS NOT NULL FROM conversation_pull_requests WHERE conversation_id = 'promo-context'") === '1')
+  check(
+    'unlink removes the stored link',
+    q("SELECT unlinked_at IS NOT NULL FROM conversation_pull_requests WHERE conversation_id = 'promo-context'") === '1',
+  )
   await win.getByRole('button', { name: 'Chats', exact: true }).click()
   await win.locator('[data-linked-pr]').waitFor({ state: 'hidden', timeout: 10_000 })
   check('chat header drops the unlinked PR', !(await win.locator('[data-linked-pr]').isVisible()))
@@ -126,9 +182,14 @@ try {
   // repository is no local project's, so it has no chat to offer (and a chat of
   // another project is never offered).
   await openReviewsOn612()
-  await reviews().getByRole('tab', { name: /^Files/ }).click()
+  await reviews()
+    .getByRole('tab', { name: /^Files/ })
+    .click()
   await reviews().getByRole('button', { name: 'Select line 84' }).last().click()
-  await reviews().getByRole('button', { name: 'Select line 86' }).last().click({ modifiers: ['Shift'] })
+  await reviews()
+    .getByRole('button', { name: 'Select line 86' })
+    .last()
+    .click({ modifiers: ['Shift'] })
   await reviews().getByRole('button', { name: 'Ask the agent' }).click()
   const dialog = win.getByRole('dialog', { name: 'Which chat should get this?' })
   await dialog.waitFor({ state: 'visible', timeout: 10_000 })
@@ -142,7 +203,10 @@ try {
   // Linked again, the same selection goes straight to the chat.
   q("UPDATE conversation_pull_requests SET unlinked_at = NULL WHERE conversation_id = 'promo-context'")
   await reviews().getByRole('button', { name: 'Select line 84' }).last().click()
-  await reviews().getByRole('button', { name: 'Select line 86' }).last().click({ modifiers: ['Shift'] })
+  await reviews()
+    .getByRole('button', { name: 'Select line 86' })
+    .last()
+    .click({ modifiers: ['Shift'] })
   await reviews().getByRole('button', { name: 'Ask the agent' }).click()
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible', timeout: 10_000 })
   await pills().first().waitFor({ state: 'visible', timeout: 10_000 })
@@ -155,7 +219,11 @@ try {
   await win.locator('.chat-identity-title').filter({ hasText: CHAT }).waitFor({ state: 'visible', timeout: 10_000 })
   await pills().nth(1).waitFor({ state: 'visible', timeout: 10_000 })
   const conflicts = await pills().nth(1).innerText()
-  check('merge conflicts land as one pill', conflicts.includes('Merge conflicts with main · #612 · worker.py, config.py'), conflicts)
+  check(
+    'merge conflicts land as one pill',
+    conflicts.includes('Merge conflicts with main · #612 · worker.py, config.py'),
+    conflicts,
+  )
 } catch (err) {
   check('flow completed', false, String(err))
 } finally {

@@ -20,7 +20,9 @@ vi.mock('../../src/main/logger', () => ({
   createMainLogger: () => ({
     debug: () => {},
     info: () => {},
-    warn: (message: string) => { warnings.push(message) },
+    warn: (message: string) => {
+      warnings.push(message)
+    },
     error: () => {},
   }),
 }))
@@ -29,8 +31,12 @@ vi.mock('../../src/main/db/provider-instances', () => ({ getProviderInstanceFull
 
 vi.mock('../../src/main/db/database', () => ({
   getSetting: (key: string) => settings.get(key) ?? null,
-  setSetting: (key: string, value: string) => { settings.set(key, value) },
-  removeSetting: (key: string) => { settings.delete(key) },
+  setSetting: (key: string, value: string) => {
+    settings.set(key, value)
+  },
+  removeSetting: (key: string) => {
+    settings.delete(key)
+  },
   listSettingsWithPrefix: (prefix: string) =>
     [...settings].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
   getConversationAgentType: () => null,
@@ -112,13 +118,15 @@ describe('project overrides', () => {
 })
 
 describe('the backend consumer', () => {
-  it('starts a new session in its project\'s mode, and a session elsewhere in the global one', () => {
+  it("starts a new session in its project's mode, and a session elsewhere in the global one", () => {
     settings.set('chat.defaultRuntimeMode', 'accept-edits')
     setProjectOverride(repo, 'chat.defaultRuntimeMode', 'plan')
     expect(sessionDefaultsFor('t-new', 'claude-code', {}, repo).runtimeMode).toBe('plan')
     expect(sessionDefaultsFor('t-other', 'claude-code', {}, other).runtimeMode).toBe('accept-edits')
     // A request still wins over every stored default.
-    expect(sessionDefaultsFor('t-new', 'claude-code', { runtimeMode: 'full-access' }, repo).runtimeMode).toBe('full-access')
+    expect(sessionDefaultsFor('t-new', 'claude-code', { runtimeMode: 'full-access' }, repo).runtimeMode).toBe(
+      'full-access',
+    )
   })
 
   it('follows the parent project for a worktree chat', () => {

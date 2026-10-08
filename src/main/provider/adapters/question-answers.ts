@@ -29,10 +29,7 @@ export interface ShapedAnswerPayload {
  *   array of selected option labels. For "Other" free-text, QuestionCard
  *   collapses the typed string into picks[0] of length 1.
  */
-export function shapeQuestionAnswers(
-  questions: Question[],
-  userAnswers: string[][],
-): ShapedAnswerPayload {
+export function shapeQuestionAnswers(questions: Question[], userAnswers: string[][]): ShapedAnswerPayload {
   const answers: Record<string, string> = {}
 
   questions.forEach((q, i) => {

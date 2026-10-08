@@ -17,11 +17,7 @@ import { MAX_STT_AUDIO_BYTES, MAX_STT_AUDIO_DURATION_MS } from '@shared/stt'
  * The user keeps priority: any edit or send between stop and the correction
  * (draft no longer equals the snapshot) discards the correction silently.
  */
-export function resolveTranscriptSwap(
-  draftNow: string,
-  nativeFinal: string,
-  whisperDraft: string,
-): string | null {
+export function resolveTranscriptSwap(draftNow: string, nativeFinal: string, whisperDraft: string): string | null {
   if (whisperDraft.trim().length === 0) return null
   if (draftNow !== nativeFinal) return null
   if (whisperDraft === draftNow) return null

@@ -3,9 +3,7 @@ import { createMainLogger } from '../logger'
 
 const log = createMainLogger('conversations:native-fork')
 
-export type CodexForkTurn =
-  | { ok: true; turnId: string }
-  | { ok: false; code: string; message: string }
+export type CodexForkTurn = { ok: true; turnId: string } | { ok: false; code: string; message: string }
 
 function turnIdOf(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
@@ -49,25 +47,48 @@ export function findCodexForkTurn(
     const message = normalizeCodexEvent(event)
     if (!message) continue
     const passthrough = payload?.internal_chat_message_metadata_passthrough as Record<string, unknown> | undefined
-    messages.push({ id: message.id, role: message.role, content: message.content, turnId: turnIdOf(passthrough?.turn_id) ?? currentTurn })
+    messages.push({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      turnId: turnIdOf(passthrough?.turn_id) ?? currentTurn,
+    })
   }
 
   const matches = messages.filter((message) => message.id === anchorMessageId)
   if (matches.length !== 1) {
-    return { ok: false, code: 'native-history-missing', message: 'The selected message was not found once in the Codex thread.' }
+    return {
+      ok: false,
+      code: 'native-history-missing',
+      message: 'The selected message was not found once in the Codex thread.',
+    }
   }
   const index = messages.indexOf(matches[0])
   const anchor = matches[0]
   if (!anchor.turnId) {
-    return { ok: false, code: 'native-turn-missing', message: 'The Codex thread does not record a turn id for the selected message.' }
+    return {
+      ok: false,
+      code: 'native-turn-missing',
+      message: 'The Codex thread does not record a turn id for the selected message.',
+    }
   }
   const next = messages[index + 1]
   if (anchor.role !== 'assistant' || next?.turnId === anchor.turnId) {
-    return { ok: false, code: 'native-anchor-mid-turn', message: 'Codex forks whole turns, and the selected message does not end one.' }
+    return {
+      ok: false,
+      code: 'native-anchor-mid-turn',
+      message: 'Codex forks whole turns, and the selected message does not end one.',
+    }
   }
-  if (index + 1 !== prefix.length || prefix.some((expected, at) =>
-    messages[at].role !== expected.role || messages[at].content !== expected.content)) {
-    return { ok: false, code: 'native-lineage-incompatible', message: 'The Codex thread does not hold the whole conversation up to the selected message.' }
+  if (
+    index + 1 !== prefix.length ||
+    prefix.some((expected, at) => messages[at].role !== expected.role || messages[at].content !== expected.content)
+  ) {
+    return {
+      ok: false,
+      code: 'native-lineage-incompatible',
+      message: 'The Codex thread does not hold the whole conversation up to the selected message.',
+    }
   }
   return { ok: true, turnId: anchor.turnId }
 }
@@ -97,9 +118,7 @@ export interface OpencodeForkSegment {
 /** How much later than the chat's first message its OpenCode session may be recorded. */
 const OPENCODE_SESSION_START_SKEW_MS = 60_000
 
-export type OpencodeForkSession =
-  | { ok: true; sessionId: string }
-  | { ok: false; code: string; message: string }
+export type OpencodeForkSession = { ok: true; sessionId: string } | { ok: false; code: string; message: string }
 
 /**
  * OpenCode's ACP fork copies the WHOLE session (1.18.33 calls
@@ -116,17 +135,41 @@ export function pickOpencodeForkSession(input: {
 }): OpencodeForkSession {
   const { anchor } = input
   if (anchor.canonicalIndex !== anchor.canonicalMessageCount - 1) {
-    return { ok: false, code: 'native-anchor-not-latest', message: 'OpenCode forks whole sessions, so only the latest message forks natively.' }
+    return {
+      ok: false,
+      code: 'native-anchor-not-latest',
+      message: 'OpenCode forks whole sessions, so only the latest message forks natively.',
+    }
   }
   if (anchor.role !== 'assistant') {
-    return { ok: false, code: 'native-anchor-mid-turn', message: 'OpenCode forks natively only after a finished reply.' }
+    return {
+      ok: false,
+      code: 'native-anchor-mid-turn',
+      message: 'OpenCode forks natively only after a finished reply.',
+    }
   }
   const [segment, ...rest] = input.segments
-  if (!segment || rest.length > 0 || segment.provider !== 'opencode' || segment.provider_instance_id !== input.instanceId) {
-    return { ok: false, code: 'native-lineage-incompatible', message: 'More than one agent session holds this conversation.' }
+  if (
+    !segment ||
+    rest.length > 0 ||
+    segment.provider !== 'opencode' ||
+    segment.provider_instance_id !== input.instanceId
+  ) {
+    return {
+      ok: false,
+      code: 'native-lineage-incompatible',
+      message: 'More than one agent session holds this conversation.',
+    }
   }
-  if (input.firstMessageAt === undefined || segment.created_at > input.firstMessageAt + OPENCODE_SESSION_START_SKEW_MS) {
-    return { ok: false, code: 'native-lineage-incompatible', message: 'The OpenCode session started after the conversation did.' }
+  if (
+    input.firstMessageAt === undefined ||
+    segment.created_at > input.firstMessageAt + OPENCODE_SESSION_START_SKEW_MS
+  ) {
+    return {
+      ok: false,
+      code: 'native-lineage-incompatible',
+      message: 'The OpenCode session started after the conversation did.',
+    }
   }
   return { ok: true, sessionId: segment.provider_session_id }
 }

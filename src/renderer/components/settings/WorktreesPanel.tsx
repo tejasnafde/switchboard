@@ -24,13 +24,7 @@ import { createRendererLogger } from '../../logger'
 import { confirm } from '../ui/confirm'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
-import {
-  canBatchRemove,
-  protectedNote,
-  pruneSelection,
-  removeButtonLabel,
-  visibleRows,
-} from './worktree-list'
+import { canBatchRemove, protectedNote, pruneSelection, removeButtonLabel, visibleRows } from './worktree-list'
 
 const log = createRendererLogger('settings:worktrees')
 
@@ -61,7 +55,9 @@ export function useWorktreeInventory(projectPaths?: string[]): WorktreeInventory
     }
   }, [key])
 
-  useEffect(() => { void reload() }, [reload])
+  useEffect(() => {
+    void reload()
+  }, [reload])
   return { inventory, loading, error, reload }
 }
 
@@ -73,7 +69,8 @@ function useWorktreeSizes(rows: readonly WorktreeRow[]): Map<string, number | nu
     for (const row of rows) {
       if (row.prunable || requested.current.has(row.path)) continue
       requested.current.add(row.path)
-      window.api.worktreeManager.size(row.path)
+      window.api.worktreeManager
+        .size(row.path)
         .then(({ bytes }) => setSizes((prev) => new Map(prev).set(row.path, bytes)))
         .catch((err) => {
           log.warn('worktree size failed', row.path, err)
@@ -84,7 +81,10 @@ function useWorktreeSizes(rows: readonly WorktreeRow[]): Map<string, number | nu
   return sizes
 }
 
-export function WorktreesPanel({ state, onManageProtection }: {
+export function WorktreesPanel({
+  state,
+  onManageProtection,
+}: {
   state: WorktreeInventoryState
   /** Opens wherever project protection is managed. Absent: the note has no link. */
   onManageProtection?: () => void
@@ -102,14 +102,17 @@ export function WorktreesPanel({ state, onManageProtection }: {
   const shown = useMemo(() => visibleRows(rows, filter, showProtected), [rows, filter, showProtected])
   const note = useMemo(() => protectedNote(rows), [rows])
 
-  useEffect(() => { setSelected((prev) => pruneSelection(prev, rows)) }, [rows])
+  useEffect(() => {
+    setSelected((prev) => pruneSelection(prev, rows))
+  }, [rows])
 
-  const toggle = (path: string) => setSelected((prev) => {
-    const next = new Set(prev)
-    if (next.has(path)) next.delete(path)
-    else next.add(path)
-    return next
-  })
+  const toggle = (path: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
 
   const removeRows = async (targets: WorktreeRow[], acknowledge: boolean) => {
     setBusy(true)
@@ -122,9 +125,14 @@ export function WorktreesPanel({ state, onManageProtection }: {
         const result = await window.api.worktreeManager.remove({
           projectPath: row.projectPath,
           worktreePath: row.path,
-          acknowledged: acknowledge && row.git
-            ? { uncommittedFiles: row.git.uncommittedFiles, unpushedCommits: row.git.unpushedCommits, ignoredFiles: row.git.ignoredFiles }
-            : null,
+          acknowledged:
+            acknowledge && row.git
+              ? {
+                  uncommittedFiles: row.git.uncommittedFiles,
+                  unpushedCommits: row.git.unpushedCommits,
+                  ignoredFiles: row.git.ignoredFiles,
+                }
+              : null,
         })
         if (!result.ok) failures.push(`${row.branch ?? row.path}: ${result.error}`)
         else if (result.warning) {
@@ -146,22 +154,31 @@ export function WorktreesPanel({ state, onManageProtection }: {
     const targets = rows.filter((row) => selected.has(row.path))
     if (targets.length === 0) return
     const n = targets.length
-    if (!(await confirm({
-      title: `Remove ${n} worktree${n === 1 ? '' : 's'}?`,
-      body: `${n === 1 ? 'It is' : 'Each is'} clean with nothing unpushed, so no work is lost. The folders are removed with git worktree remove.`,
-      confirmLabel: 'Remove',
-    }))) return
+    if (
+      !(await confirm({
+        title: `Remove ${n} worktree${n === 1 ? '' : 's'}?`,
+        body: `${n === 1 ? 'It is' : 'Each is'} clean with nothing unpushed, so no work is lost. The folders are removed with git worktree remove.`,
+        confirmLabel: 'Remove',
+      }))
+    )
+      return
     await removeRows(targets, false)
   }
 
   const removeWithChanges = async (row: WorktreeRow) => {
-    if (!(await confirm({
-      title: `Remove ${row.branch ?? 'this worktree'}?`,
-      body: removalConfirmBody(row),
-      // Unpushed commits on a branch survive; uncommitted or ignored files, or a detached HEAD's commits, are lost.
-      confirmLabel: row.git?.uncommittedFiles || row.git?.ignoredFiles || !row.branch ? 'Remove and lose changes' : 'Remove worktree',
-      destructive: true,
-    }))) return
+    if (
+      !(await confirm({
+        title: `Remove ${row.branch ?? 'this worktree'}?`,
+        body: removalConfirmBody(row),
+        // Unpushed commits on a branch survive; uncommitted or ignored files, or a detached HEAD's commits, are lost.
+        confirmLabel:
+          row.git?.uncommittedFiles || row.git?.ignoredFiles || !row.branch
+            ? 'Remove and lose changes'
+            : 'Remove worktree',
+        destructive: true,
+      }))
+    )
+      return
     await removeRows([row], true)
   }
 
@@ -178,7 +195,11 @@ export function WorktreesPanel({ state, onManageProtection }: {
 
   return (
     <div className="@container">
-      <div role="toolbar" aria-label="Filter worktrees" className="mb-3 flex gap-[18px] border-b border-[var(--border)]">
+      <div
+        role="toolbar"
+        aria-label="Filter worktrees"
+        className="mb-3 flex gap-[18px] border-b border-[var(--border)]"
+      >
         {WORKTREE_FILTERS.map((f) => (
           <button
             key={f.id}
@@ -193,7 +214,12 @@ export function WorktreesPanel({ state, onManageProtection }: {
             )}
           >
             {f.label}
-            <span className={cn('ml-[5px] tabular-nums', filter === f.id ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]')}>
+            <span
+              className={cn(
+                'ml-[5px] tabular-nums',
+                filter === f.id ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]',
+              )}
+            >
               {counts[f.id]}
             </span>
           </button>
@@ -201,16 +227,27 @@ export function WorktreesPanel({ state, onManageProtection }: {
       </div>
 
       {(error || actionError) && (
-        <div role="alert" className="mb-2 whitespace-pre-line text-[12px] text-[var(--error)]">{error ?? actionError}</div>
+        <div role="alert" className="mb-2 whitespace-pre-line text-[12px] text-[var(--error)]">
+          {error ?? actionError}
+        </div>
       )}
       {actionWarning && (
-        <div role="status" className="mb-2 whitespace-pre-line text-[12px] text-[var(--warning)]">{actionWarning}</div>
+        <div role="status" className="mb-2 whitespace-pre-line text-[12px] text-[var(--warning)]">
+          {actionWarning}
+        </div>
       )}
       {inventory?.errors.map((e) => (
-        <div key={e.projectPath} className="mb-2 text-[12px] text-[var(--warning)]">Could not list {e.projectPath}: {e.message}</div>
+        <div key={e.projectPath} className="mb-2 text-[12px] text-[var(--warning)]">
+          Could not list {e.projectPath}: {e.message}
+        </div>
       ))}
 
-      <div className={cn('overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] transition-opacity', loading && inventory && 'opacity-60')}>
+      <div
+        className={cn(
+          'overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] transition-opacity',
+          loading && inventory && 'opacity-60',
+        )}
+      >
         <div className={cn(gridClass, 'text-[11px] uppercase tracking-[0.05em] text-[var(--text-muted)]')}>
           <span />
           <span>Project / branch</span>
@@ -246,13 +283,21 @@ export function WorktreesPanel({ state, onManageProtection }: {
               <button type="button" onClick={() => setShowProtected((v) => !v)} className={linkClass}>
                 {showProtected ? 'Hide' : 'Show'}
               </button>
-              {onManageProtection && <button type="button" onClick={onManageProtection} className={linkClass}>Manage</button>}
+              {onManageProtection && (
+                <button type="button" onClick={onManageProtection} className={linkClass}>
+                  Manage
+                </button>
+              )}
             </>
           )}
         </span>
         <span className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => void reload()} disabled={loading || busy}>Refresh</Button>
-          {selected.size > 0 && <span className="text-[12px] tabular-nums text-[var(--text-secondary)]">{selected.size} selected</span>}
+          <Button variant="ghost" size="sm" onClick={() => void reload()} disabled={loading || busy}>
+            Refresh
+          </Button>
+          {selected.size > 0 && (
+            <span className="text-[12px] tabular-nums text-[var(--text-secondary)]">{selected.size} selected</span>
+          )}
           <Button size="sm" onClick={() => void removeSelected()} disabled={selected.size === 0 || busy || loading}>
             {busy ? 'Removing…' : selected.size > 0 ? removeButtonLabel(selected, sizes) : 'Remove'}
           </Button>
@@ -262,7 +307,15 @@ export function WorktreesPanel({ state, onManageProtection }: {
   )
 }
 
-function WorktreeListRow({ row, checked, size, disabled, onToggle, onRemove, onProtect }: {
+function WorktreeListRow({
+  row,
+  checked,
+  size,
+  disabled,
+  onToggle,
+  onRemove,
+  onProtect,
+}: {
   row: WorktreeRow
   checked: boolean
   size: number | null | undefined
@@ -309,10 +362,14 @@ function WorktreeListRow({ row, checked, size, disabled, onToggle, onRemove, onP
       </span>
       <span className="flex justify-end gap-1">
         {category === 'has_changes' && row.git && (
-          <button type="button" disabled={disabled} onClick={onRemove} className={rowActionClass}>Remove…</button>
+          <button type="button" disabled={disabled} onClick={onRemove} className={rowActionClass}>
+            Remove…
+          </button>
         )}
         {category === 'protected' && row.protectedBy === 'worktree' && (
-          <button type="button" disabled={disabled} onClick={() => onProtect(false)} className={rowActionClass}>Unprotect</button>
+          <button type="button" disabled={disabled} onClick={() => onProtect(false)} className={rowActionClass}>
+            Unprotect
+          </button>
         )}
         {(category === 'safe' || category === 'has_changes') && (
           <button
@@ -333,7 +390,16 @@ function WorktreeListRow({ row, checked, size, disabled, onToggle, onRemove, onP
 
 function LockIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="shrink-0">
+    <svg
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+      className="shrink-0"
+    >
       <rect x="5" y="11" width="14" height="10" rx="2" />
       <path d="M8 11V7a4 4 0 0 1 8 0v4" />
     </svg>
@@ -342,7 +408,16 @@ function LockIcon() {
 
 function WarnIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="shrink-0">
+    <svg
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+      className="shrink-0"
+    >
       <path d="M12 9v4M12 17h.01" />
       <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
     </svg>
@@ -350,8 +425,11 @@ function WarnIcon() {
 }
 
 // Six columns; under 620px of panel width the Chat column goes.
-const gridClass = 'grid grid-cols-[20px_1.7fr_1fr_1.2fr_72px_84px] items-center gap-2.5 px-[14px] py-[9px] first:border-t-0 @max-[620px]:grid-cols-[20px_1.6fr_1.4fr_64px_84px]'
+const gridClass =
+  'grid grid-cols-[20px_1.7fr_1fr_1.2fr_72px_84px] items-center gap-2.5 px-[14px] py-[9px] first:border-t-0 @max-[620px]:grid-cols-[20px_1.6fr_1.4fr_64px_84px]'
 const chatColClass = '@max-[620px]:hidden'
 const emptyClass = 'border-t border-[var(--border)] px-[14px] py-3 text-[12.5px] text-[var(--text-secondary)]'
-const linkClass = 'cursor-pointer border-0 bg-transparent p-0 text-[12px] text-[var(--accent)] outline-none hover:underline focus-visible:underline'
-const rowActionClass = 'inline-flex cursor-pointer items-center rounded-[4px] border-0 bg-transparent px-1 py-0.5 text-[11.5px] text-[var(--text-secondary)] outline-none hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-40'
+const linkClass =
+  'cursor-pointer border-0 bg-transparent p-0 text-[12px] text-[var(--accent)] outline-none hover:underline focus-visible:underline'
+const rowActionClass =
+  'inline-flex cursor-pointer items-center rounded-[4px] border-0 bg-transparent px-1 py-0.5 text-[11.5px] text-[var(--text-secondary)] outline-none hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-40'

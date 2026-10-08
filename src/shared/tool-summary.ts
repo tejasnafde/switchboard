@@ -102,32 +102,37 @@ const withPr = (o: Record<string, unknown>, rest: string) => [prLabel(o.pr), res
  * review text and PR descriptions in Markdown, which the generic rule would
  * show raw, so each gets an action and the one field that identifies it.
  */
-const SWITCHBOARD_TOOLS = new Map<string, { title: string; detail: (o: Record<string, unknown>) => string; mono?: boolean }>(Object.entries({
-  create_pull_request: { title: 'Open pull request', detail: (o) => condense(pick(o, 'title') ?? '') },
-  reply_to_conversation: { title: 'Reply', detail: (o) => prLabel(o.pr) },
-  resolve_conversation: { title: 'Resolve', detail: (o) => prLabel(o.pr) },
-  rerun_check: { title: 'Re-run check', detail: (o) => prLabel(o.pr) },
-  comment_on_line: {
-    title: 'Comment on line',
-    detail: (o) => {
-      const path = pick(o, 'path')
-      return path ? `${shortenPath(path)}${typeof o.line === 'number' ? `:${o.line}` : ''}` : ''
+const SWITCHBOARD_TOOLS = new Map<
+  string,
+  { title: string; detail: (o: Record<string, unknown>) => string; mono?: boolean }
+>(
+  Object.entries({
+    create_pull_request: { title: 'Open pull request', detail: (o) => condense(pick(o, 'title') ?? '') },
+    reply_to_conversation: { title: 'Reply', detail: (o) => prLabel(o.pr) },
+    resolve_conversation: { title: 'Resolve', detail: (o) => prLabel(o.pr) },
+    rerun_check: { title: 'Re-run check', detail: (o) => prLabel(o.pr) },
+    comment_on_line: {
+      title: 'Comment on line',
+      detail: (o) => {
+        const path = pick(o, 'path')
+        return path ? `${shortenPath(path)}${typeof o.line === 'number' ? `:${o.line}` : ''}` : ''
+      },
+      mono: true,
     },
-    mono: true,
-  },
-  draft_review: {
-    title: 'Draft review',
-    detail: (o) => {
-      const n = Array.isArray(o.comments) ? o.comments.length : 0
-      return withPr(o, n > 0 ? `${n} ${n === 1 ? 'comment' : 'comments'}` : '')
+    draft_review: {
+      title: 'Draft review',
+      detail: (o) => {
+        const n = Array.isArray(o.comments) ? o.comments.length : 0
+        return withPr(o, n > 0 ? `${n} ${n === 1 ? 'comment' : 'comments'}` : '')
+      },
     },
-  },
-  get_pr_status: { title: 'PR status', detail: (o) => prLabel(o.pr) },
-  list_pr_conversations: { title: 'PR conversations', detail: (o) => prLabel(o.pr) },
-  get_pr_diff: { title: 'PR diff', detail: (o) => withPr(o, shortenPath(pick(o, 'path') ?? '')) },
-  send_agent_message: { title: 'Send to session', detail: () => '' },
-  list_agent_sessions: { title: 'List sessions', detail: () => '' },
-}))
+    get_pr_status: { title: 'PR status', detail: (o) => prLabel(o.pr) },
+    list_pr_conversations: { title: 'PR conversations', detail: (o) => prLabel(o.pr) },
+    get_pr_diff: { title: 'PR diff', detail: (o) => withPr(o, shortenPath(pick(o, 'path') ?? '')) },
+    send_agent_message: { title: 'Send to session', detail: () => '' },
+    list_agent_sessions: { title: 'List sessions', detail: () => '' },
+  }),
+)
 
 function summarizeSwitchboardTool(toolName: string, input: unknown): ToolSummary | null {
   const tool = SWITCHBOARD_TOOLS.get(SWITCHBOARD_TOOL.exec(toolName)?.[1] ?? '')

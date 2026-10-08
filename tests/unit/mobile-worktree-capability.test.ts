@@ -42,9 +42,10 @@ function creationState(
       machineId: 'machine-1',
       projectPath: '/repo',
       projectName: 'repo',
-      checkout: checkout === 'worktree'
-        ? { kind: 'worktree', baseRef: 'HEAD', branchSeed: 'repo', setupPolicy: 'skip' }
-        : { kind: 'parent-checkout' },
+      checkout:
+        checkout === 'worktree'
+          ? { kind: 'worktree', baseRef: 'HEAD', branchSeed: 'repo', setupPolicy: 'skip' }
+          : { kind: 'parent-checkout' },
       conversation: { id: 'conversation-1', agentType: 'codex' },
       provider: {},
     },
@@ -66,7 +67,11 @@ describe('IapTransport backend capabilities', () => {
     expect(transport.supportsCapability('worktree_creation_v1')).toBeUndefined()
 
     FakeIapSocket.instance!.receive({
-      k: 'ready', epoch: 'old-backend', seq: 0, replayed: 0, gap: false,
+      k: 'ready',
+      epoch: 'old-backend',
+      seq: 0,
+      replayed: 0,
+      gap: false,
     })
 
     expect(transport.supportsCapability('worktree_creation_v1')).toBe(false)

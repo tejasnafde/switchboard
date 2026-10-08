@@ -142,15 +142,11 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   }
 
   autoUpdater.on('checking-for-update', () => send({ kind: 'checking' }))
-  autoUpdater.on('update-available', (info) =>
-    send({ kind: 'available', version: info?.version ?? 'unknown' }),
-  )
+  autoUpdater.on('update-available', (info) => send({ kind: 'available', version: info?.version ?? 'unknown' }))
   autoUpdater.on('update-not-available', (info) =>
     send({ kind: 'up-to-date', version: info?.version ?? app.getVersion() }),
   )
-  autoUpdater.on('download-progress', (p) =>
-    send({ kind: 'downloading', percent: Math.round(p.percent ?? 0) }),
-  )
+  autoUpdater.on('download-progress', (p) => send({ kind: 'downloading', percent: Math.round(p.percent ?? 0) }))
   autoUpdater.on('update-downloaded', (info) => {
     // A download that completes re-arms the stale-cache retry below, so a
     // later update in the same session gets its own attempt.

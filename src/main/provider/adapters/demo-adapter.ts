@@ -38,7 +38,12 @@
  * same disk + SQLite merge a real Claude chat does.
  */
 import type { TurnDelivery } from '@shared/turn-delivery'
-import { AGENT_REPLY_MAX_CHARS, hostWriteDetail, type HostWriteCard, type HostWriteDiffLine } from '@shared/agent-host-writes'
+import {
+  AGENT_REPLY_MAX_CHARS,
+  hostWriteDetail,
+  type HostWriteCard,
+  type HostWriteDiffLine,
+} from '@shared/agent-host-writes'
 import { PR_DESCRIPTION_MAX_CHARS } from '@shared/agent-pr-create'
 import { agentLabel, toAgentProvider, type AgentType } from '@shared/types'
 import { buildWindow, type ProviderUsage, type UsageWindow } from '@shared/provider-usage'
@@ -48,39 +53,68 @@ import { join } from 'path'
 import { encodeClaudeProjectPath } from '../../projects/session-scanner'
 import { LEGACY_ID_MATCH_WINDOW_MS } from '../../agent/dedupe-messages'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../types'
-import type {
-  ApprovalDecision,
-  ProviderKind,
-  RuntimeEvent,
-  RuntimeMode,
-} from '@shared/provider-events'
+import type { ApprovalDecision, ProviderKind, RuntimeEvent, RuntimeMode } from '@shared/provider-events'
 import type { ProviderSkill } from '@shared/types'
 import { denialMessage } from '../policy'
 import { createMainLogger } from '../../logger'
 
 const log = createMainLogger('provider:demo')
 
-const ctx = (newLine: number, text: string): HostWriteDiffLine => ({ kind: 'context', text, oldLine: newLine - 4, newLine, target: false })
-const add = (newLine: number, text: string, target = false): HostWriteDiffLine => ({ kind: 'add', text, oldLine: null, newLine, target })
+const ctx = (newLine: number, text: string): HostWriteDiffLine => ({
+  kind: 'context',
+  text,
+  oldLine: newLine - 4,
+  newLine,
+  target: false,
+})
+const add = (newLine: number, text: string, target = false): HostWriteDiffLine => ({
+  kind: 'add',
+  text,
+  oldLine: null,
+  newLine,
+  target,
+})
 
 /** The draft review the "draft a review" script opens: demo PR #161, the Kanban cost cap. */
 const DEMO_REVIEW: HostWriteCard['review'] = {
-  summary: 'The cap works and the migration is safe to re-run. Two things before it merges: a cap of 0 is treated as no cap, and the input takes negative numbers.',
+  summary:
+    'The cap works and the migration is safe to re-run. Two things before it merges: a cap of 0 is treated as no cap, and the input takes negative numbers.',
   comments: [
     {
-      id: 'c1', path: 'src/main/db/kanban.ts', side: 'new', line: 88,
+      id: 'c1',
+      path: 'src/main/db/kanban.ts',
+      side: 'new',
+      line: 88,
       text: 'A cap of 0 falls through as falsy here, so it means "no cap". Compare with null instead.',
-      excerpt: [ctx(87, '  const used = card.cost_used_usd ?? 0'), add(88, '  if (!card.cost_cap_usd) return false', true), add(89, '  return used >= card.cost_cap_usd')],
+      excerpt: [
+        ctx(87, '  const used = card.cost_used_usd ?? 0'),
+        add(88, '  if (!card.cost_cap_usd) return false', true),
+        add(89, '  return used >= card.cost_cap_usd'),
+      ],
     },
     {
-      id: 'c2', path: 'src/renderer/components/kanban/CardModal.tsx', side: 'new', line: 141,
+      id: 'c2',
+      path: 'src/renderer/components/kanban/CardModal.tsx',
+      side: 'new',
+      line: 141,
       text: 'Add min={0} and reject a negative value in the save handler too; the field is typed but not checked.',
-      excerpt: [add(140, '        <input'), add(141, '          type="number"', true), add(142, '          value={costCap ?? \'\'}')],
+      excerpt: [
+        add(140, '        <input'),
+        add(141, '          type="number"', true),
+        add(142, "          value={costCap ?? ''}"),
+      ],
     },
     {
-      id: 'c3', path: 'src/shared/kanban.ts', side: 'new', line: 12,
+      id: 'c3',
+      path: 'src/shared/kanban.ts',
+      side: 'new',
+      line: 12,
       text: 'Nit: costCapUsd, to match the column name.',
-      excerpt: [ctx(11, 'export interface KanbanCard {'), add(12, '  cap?: number | null', true), ctx(13, '  status: KanbanStatus')],
+      excerpt: [
+        ctx(11, 'export interface KanbanCard {'),
+        add(12, '  cap?: number | null', true),
+        ctx(13, '  status: KanbanStatus'),
+      ],
     },
   ],
   verdicts: ['comment', 'approve', 'request_changes'],
@@ -108,9 +142,7 @@ const SKILLS: Record<ProviderKind, ProviderSkill[]> = {
     { name: 'commit', description: 'Commit staged changes with a message', source: 'claude-code' },
     { name: 'init', description: 'Initialize CLAUDE.md for this repo', source: 'claude-code' },
   ],
-  codex: [
-    { name: 'explain', description: 'Explain the selected code', source: 'codex' },
-  ],
+  codex: [{ name: 'explain', description: 'Explain the selected code', source: 'codex' }],
   opencode: [],
 }
 
@@ -263,13 +295,17 @@ export class DemoAdapter implements ProviderAdapter {
       const entry: DemoQueuedTurn = { id: queuedId, message }
       session.queued.push(entry)
       if (queuedId) session.onEvent({ type: 'turn.queued', threadId, messageId: queuedId })
-      session.running = this.guard(threadId, session, session.running.then(() => {
-        const index = session.queued.indexOf(entry)
-        if (index < 0) return
-        session.queued.splice(index, 1)
-        if (entry.id) session.onEvent({ type: 'turn.dequeued', threadId, messageId: entry.id, reason: 'started' })
-        return this.run(threadId, session, message)
-      }))
+      session.running = this.guard(
+        threadId,
+        session,
+        session.running.then(() => {
+          const index = session.queued.indexOf(entry)
+          if (index < 0) return
+          session.queued.splice(index, 1)
+          if (entry.id) session.onEvent({ type: 'turn.dequeued', threadId, messageId: entry.id, reason: 'started' })
+          return this.run(threadId, session, message)
+        }),
+      )
       return
     }
     session.running = this.guard(threadId, session, this.run(threadId, session, message))
@@ -345,7 +381,11 @@ export class DemoAdapter implements ProviderAdapter {
       await this.pause(turn, 350)
       emit({ type: 'tool.denied', threadId, toolName: 'Write', reason: denialMessage('plan', 'Write'), mode: 'plan' })
       await this.pause(turn, 600)
-      await this.say(threadId, turn, 'Plan mode blocks writes. Switch to Sandbox or Accept Edits and I will apply the change.')
+      await this.say(
+        threadId,
+        turn,
+        'Plan mode blocks writes. Switch to Sandbox or Accept Edits and I will apply the change.',
+      )
     } else if (/reply to the review/i.test(message)) {
       await this.say(threadId, turn, 'All three are fixed. I will reply on each conversation and resolve it.')
       if (turn.cancelled) return
@@ -357,8 +397,12 @@ export class DemoAdapter implements ProviderAdapter {
         target: { repository: 'geoiq/ssg-bot-v2', number: 612 },
         url: null,
         location: 'sync/worker.py:86',
-        quote: { author: 'pankaj', body: 'Cap the jitter too. With 20 % on top of a 300 s cap, two workers can still meet at the ceiling.' },
-        replyText: 'Done in a1b2c3d: the jitter is applied before the cap in next_delay, so the ceiling stays 300 s. test_cap_includes_jitter covers it.',
+        quote: {
+          author: 'pankaj',
+          body: 'Cap the jitter too. With 20 % on top of a 300 s cap, two workers can still meet at the ceiling.',
+        },
+        replyText:
+          'Done in a1b2c3d: the jitter is applied before the cap in next_delay, so the ceiling stays 300 s. test_cap_includes_jitter covers it.',
         suggestResolve: true,
         maxChars: AGENT_REPLY_MAX_CHARS,
       }
@@ -366,14 +410,28 @@ export class DemoAdapter implements ProviderAdapter {
       const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
         session.approvals.set(requestId, resolve)
         emit({
-          type: 'request.opened', threadId, requestId, requestType: 'tool',
-          toolName: 'mcp__switchboard__reply_to_conversation', detail: hostWriteDetail(card), hostWrite: card,
+          type: 'request.opened',
+          threadId,
+          requestId,
+          requestType: 'tool',
+          toolName: 'mcp__switchboard__reply_to_conversation',
+          detail: hostWriteDetail(card),
+          hostWrite: card,
         })
       })
       session.approvals.delete(requestId)
-      session.onEvent({ type: 'request.closed', threadId, requestId, decision: decision === 'cancelled' ? 'deny' : decision })
+      session.onEvent({
+        type: 'request.closed',
+        threadId,
+        requestId,
+        decision: decision === 'cancelled' ? 'deny' : decision,
+      })
       if (decision === 'cancelled') return
-      await this.say(threadId, turn, decision === 'approve' ? 'Replied on worker.py:86.' : 'Left that conversation for you.')
+      await this.say(
+        threadId,
+        turn,
+        decision === 'approve' ? 'Replied on worker.py:86.' : 'Left that conversation for you.',
+      )
     } else if (/raise a pull request|open a pull request/i.test(message)) {
       await this.say(threadId, turn, 'Pushed feat/sync-jitter. I will open the pull request through Switchboard.')
       if (turn.cancelled) return
@@ -391,7 +449,8 @@ export class DemoAdapter implements ProviderAdapter {
           sourceBranch: 'feat/sync-jitter',
           targetBranch: 'main',
           title: 'Cap the sync backoff jitter at the ceiling',
-          description: 'The jitter is applied before the 300 s cap in next_delay, so two workers can no longer meet above it.\n\n- test_cap_includes_jitter covers the ceiling\n- the retry log line names the delay',
+          description:
+            'The jitter is applied before the 300 s cap in next_delay, so two workers can no longer meet above it.\n\n- test_cap_includes_jitter covers the ceiling\n- the retry log line names the delay',
           draft: false,
         },
         maxChars: PR_DESCRIPTION_MAX_CHARS,
@@ -400,14 +459,28 @@ export class DemoAdapter implements ProviderAdapter {
       const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
         session.approvals.set(requestId, resolve)
         emit({
-          type: 'request.opened', threadId, requestId, requestType: 'tool',
-          toolName: 'mcp__switchboard__create_pull_request', detail: hostWriteDetail(card), hostWrite: card,
+          type: 'request.opened',
+          threadId,
+          requestId,
+          requestType: 'tool',
+          toolName: 'mcp__switchboard__create_pull_request',
+          detail: hostWriteDetail(card),
+          hostWrite: card,
         })
       })
       session.approvals.delete(requestId)
-      session.onEvent({ type: 'request.closed', threadId, requestId, decision: decision === 'cancelled' ? 'deny' : decision })
+      session.onEvent({
+        type: 'request.closed',
+        threadId,
+        requestId,
+        decision: decision === 'cancelled' ? 'deny' : decision,
+      })
       if (decision === 'cancelled') return
-      await this.say(threadId, turn, decision === 'approve' ? 'Opened it; it is linked to this chat.' : 'Nothing was opened.')
+      await this.say(
+        threadId,
+        turn,
+        decision === 'approve' ? 'Opened it; it is linked to this chat.' : 'Nothing was opened.',
+      )
     } else if (/draft a review/i.test(message)) {
       await this.say(threadId, turn, 'I read the diff. Here is a draft with three line comments; the verdict is yours.')
       if (turn.cancelled) return
@@ -427,12 +500,22 @@ export class DemoAdapter implements ProviderAdapter {
       const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
         session.approvals.set(requestId, resolve)
         emit({
-          type: 'request.opened', threadId, requestId, requestType: 'tool',
-          toolName: 'mcp__switchboard__draft_review', detail: hostWriteDetail(card), hostWrite: card,
+          type: 'request.opened',
+          threadId,
+          requestId,
+          requestType: 'tool',
+          toolName: 'mcp__switchboard__draft_review',
+          detail: hostWriteDetail(card),
+          hostWrite: card,
         })
       })
       session.approvals.delete(requestId)
-      session.onEvent({ type: 'request.closed', threadId, requestId, decision: decision === 'cancelled' ? 'deny' : decision })
+      session.onEvent({
+        type: 'request.closed',
+        threadId,
+        requestId,
+        decision: decision === 'cancelled' ? 'deny' : decision,
+      })
       if (decision === 'cancelled') return
       await this.say(threadId, turn, decision === 'approve' ? 'Your review is on #161.' : 'Nothing was posted.')
     } else if (/\brun\b/i.test(message)) {
@@ -443,15 +526,33 @@ export class DemoAdapter implements ProviderAdapter {
       const requestId = `demo_req_${++this.seq}`
       const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
         session.approvals.set(requestId, resolve)
-        emit({ type: 'request.opened', threadId, requestId, requestType: 'command', toolName: 'Bash', detail: 'npm test' })
+        emit({
+          type: 'request.opened',
+          threadId,
+          requestId,
+          requestType: 'command',
+          toolName: 'Bash',
+          detail: 'npm test',
+        })
       })
       session.approvals.delete(requestId)
       // Close it even when cancelled, or the registry keeps replaying an
       // approval nobody can answer.
-      session.onEvent({ type: 'request.closed', threadId, requestId, decision: decision === 'cancelled' ? 'deny' : decision })
+      session.onEvent({
+        type: 'request.closed',
+        threadId,
+        requestId,
+        decision: decision === 'cancelled' ? 'deny' : decision,
+      })
       if (decision === 'cancelled') return
       if (decision === 'approve') {
-        await this.tool(threadId, turn, 'Bash', { command: 'npm test' }, 'ok 1 - exchanges an OAuth code once\nok 2 - rejects an expired state token')
+        await this.tool(
+          threadId,
+          turn,
+          'Bash',
+          { command: 'npm test' },
+          'ok 1 - exchanges an OAuth code once\nok 2 - rejects an expired state token',
+        )
         await this.say(threadId, turn, 'Both tests pass.')
       } else {
         await this.say(threadId, turn, 'Skipped the test run.')
@@ -468,7 +569,13 @@ export class DemoAdapter implements ProviderAdapter {
         'Done. The callback now rejects an expired state before any network call. Review the diff below and accept or reject each hunk.',
       )
     } else if (/render order/i.test(message)) {
-      emit({ type: 'content', threadId, messageId: `demo_think_${++this.seq}`, streamKind: 'reasoning', text: 'Weighing where the order could break.' })
+      emit({
+        type: 'content',
+        threadId,
+        messageId: `demo_think_${++this.seq}`,
+        streamKind: 'reasoning',
+        text: 'Weighing where the order could break.',
+      })
       await sleep(300)
       await this.say(threadId, turn, 'Interim note: checking the reload path first.')
       await this.tool(threadId, turn, 'Bash', { command: 'sleep 61' }, 'ok', undefined, LONG_TOOL_MS)
@@ -594,15 +701,40 @@ const MINUTE = 60_000
 export function demoUsage(id: string, agentType: AgentType): ProviderUsage {
   const now = Number(process.env.SB_DEMO_NOW) || Date.now()
   const reading = (status: ProviderUsage['status'], windows: UsageWindow[], message?: string): ProviderUsage => ({
-    instanceId: id, agentType, status, plan: null, account: null, windows, overage: [], fetchedAtMs: now,
+    instanceId: id,
+    agentType,
+    status,
+    plan: null,
+    account: null,
+    windows,
+    overage: [],
+    fetchedAtMs: now,
     ...(message ? { message } : {}),
   })
   const pair = (session: number, sessionReset: number, weekly: number, weeklyReset: number) => [
-    buildWindow({ id: 'five_hour', label: '5-hour session', kind: 'session', percent: session, resetsAtMs: now + sessionReset * MINUTE, windowMinutes: 300 }),
-    buildWindow({ id: 'seven_day', label: 'Weekly', kind: 'weekly', percent: weekly, resetsAtMs: now + weeklyReset * MINUTE, windowMinutes: 10080 }),
+    buildWindow({
+      id: 'five_hour',
+      label: '5-hour session',
+      kind: 'session',
+      percent: session,
+      resetsAtMs: now + sessionReset * MINUTE,
+      windowMinutes: 300,
+    }),
+    buildWindow({
+      id: 'seven_day',
+      label: 'Weekly',
+      kind: 'weekly',
+      percent: weekly,
+      resetsAtMs: now + weeklyReset * MINUTE,
+      windowMinutes: 10080,
+    }),
   ]
   if (agentType === 'opencode') {
-    return reading('not-applicable', [], 'OpenCode runs on your own provider API keys, so there is no subscription quota to report.')
+    return reading(
+      'not-applicable',
+      [],
+      'OpenCode runs on your own provider API keys, so there is no subscription quota to report.',
+    )
   }
   if (id.endsWith('-personal')) return reading('unauthenticated', [], 'the sign-in expired after 30 days without use')
   if (id.endsWith('-work')) return reading('ok', pair(1, 280, 0, 6 * 1440))

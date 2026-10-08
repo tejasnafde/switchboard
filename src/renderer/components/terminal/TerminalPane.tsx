@@ -77,15 +77,18 @@ export const TerminalPane = memo(function TerminalPane(props: TerminalPaneProps)
     return () => document.removeEventListener('keydown', onKey, true)
   }, [])
 
-  const handleQuery = useCallback((q: string) => {
-    queryRef.current = q
-    if (q === '') {
-      clearTerminalSearch(id)
-      setMatches({ current: 0, total: 0 })
-      return
-    }
-    searchTerminalNext(id, q)
-  }, [id])
+  const handleQuery = useCallback(
+    (q: string) => {
+      queryRef.current = q
+      if (q === '') {
+        clearTerminalSearch(id)
+        setMatches({ current: 0, total: 0 })
+        return
+      }
+      searchTerminalNext(id, q)
+    },
+    [id],
+  )
 
   const handleNext = useCallback(() => {
     if (queryRef.current) searchTerminalNext(id, queryRef.current)
@@ -121,18 +124,14 @@ export const TerminalPane = memo(function TerminalPane(props: TerminalPaneProps)
       }}
     >
       {!hideHeader && (
-        <TerminalHeader
-          label={label}
-          status={status}
-          isActive={isActive}
-          onClose={onClose}
-          onClick={onFocus}
-        />
+        <TerminalHeader label={label} status={status} isActive={isActive} onClose={onClose} onClick={onFocus} />
       )}
       <div style={{ flex: '1 1 0%', position: 'relative', minHeight: 0 }}>
-        {stale
-          ? <StalePaneOverlay sessionId={props.sessionId} id={props.id} command={props.command} cwd={props.cwd} />
-          : <LivePane {...props} wait_for={props.wait_for} />}
+        {stale ? (
+          <StalePaneOverlay sessionId={props.sessionId} id={props.id} command={props.command} cwd={props.cwd} />
+        ) : (
+          <LivePane {...props} wait_for={props.wait_for} />
+        )}
         {searchOpen && (
           <InPaneSearchBar
             onQuery={handleQuery}
@@ -199,43 +198,52 @@ function StalePaneOverlay({
         color: 'var(--text-secondary)',
       }}
     >
-      <div style={{
-        fontSize: '10.5px',
-        textTransform: 'uppercase',
-        letterSpacing: '0.8px',
-        color: 'var(--text-muted)',
-        fontWeight: 600,
-      }}>
+      <div
+        style={{
+          fontSize: '10.5px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.8px',
+          color: 'var(--text-muted)',
+          fontWeight: 600,
+        }}
+      >
         Restored from previous session
       </div>
       {command && (
-        <div style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '12px',
-          color: 'var(--text-primary)',
-          padding: '6px 10px',
-          background: 'var(--bg-tertiary)',
-          borderRadius: '4px',
-          border: '1px solid var(--border)',
-          maxWidth: '90%',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
+        <div
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '12px',
+            color: 'var(--text-primary)',
+            padding: '6px 10px',
+            background: 'var(--bg-tertiary)',
+            borderRadius: '4px',
+            border: '1px solid var(--border)',
+            maxWidth: '90%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
           {command}
         </div>
       )}
       {cwd && (
-        <div style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '10.5px',
-          color: 'var(--text-muted)',
-        }}>
+        <div
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '10.5px',
+            color: 'var(--text-muted)',
+          }}
+        >
           {cwd}
         </div>
       )}
       <button
-        onClick={(e) => { e.stopPropagation(); markStarted(sessionId, id) }}
+        onClick={(e) => {
+          e.stopPropagation()
+          markStarted(sessionId, id)
+        }}
         style={{
           padding: '6px 18px',
           borderRadius: 'var(--radius)',

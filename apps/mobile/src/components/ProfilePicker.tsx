@@ -34,10 +34,7 @@ export const ProfilePicker = memo(function ProfilePicker({
   onPick: (provider: ProviderKind, instanceId?: string) => void
   onClose: () => void
 }) {
-  const byAgent = useMemo(
-    () => AGENTS.map((a) => ({ ...a, profiles: profilesFor(instances, a.kind) })),
-    [instances],
-  )
+  const byAgent = useMemo(() => AGENTS.map((a) => ({ ...a, profiles: profilesFor(instances, a.kind) })), [instances])
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -73,9 +70,7 @@ export const ProfilePicker = memo(function ProfilePicker({
                       >
                         {/* The accent the desktop assigns this profile, so the
                             same credentials look the same on both clients. */}
-                        <View
-                          style={[styles.dot, { backgroundColor: p.accentColor || colors.textFaint }]}
-                        />
+                        <View style={[styles.dot, { backgroundColor: p.accentColor || colors.textFaint }]} />
                         <Text style={[styles.rowText, active && styles.rowTextActive]} numberOfLines={1}>
                           {p.displayName}
                         </Text>

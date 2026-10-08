@@ -194,9 +194,7 @@ describe('mobile worktree creation durable storage', () => {
     await memory.storage.setItem(storage.key(intent.connectionId, intent.projectPath), '{bad json')
 
     await expect(storage.load(intent.connectionId, intent.projectPath)).resolves.toBeNull()
-    expect(memory.storage.removeItem).toHaveBeenCalledWith(
-      storage.key(intent.connectionId, intent.projectPath),
-    )
+    expect(memory.storage.removeItem).toHaveBeenCalledWith(storage.key(intent.connectionId, intent.projectPath))
   })
 
   it('loads legacy records without a submission phase as conservatively submitted', async () => {
@@ -208,10 +206,7 @@ describe('mobile worktree creation durable storage', () => {
       request: worktreeRequest(),
       snapshot: snapshot(),
     }
-    await memory.storage.setItem(
-      storage.key(intent.connectionId, intent.projectPath),
-      JSON.stringify(legacyRecord),
-    )
+    await memory.storage.setItem(storage.key(intent.connectionId, intent.projectPath), JSON.stringify(legacyRecord))
 
     await expect(storage.load(intent.connectionId, intent.projectPath)).resolves.toMatchObject({
       ...legacyRecord,
@@ -221,11 +216,13 @@ describe('mobile worktree creation durable storage', () => {
 })
 
 describe('mobile durable worktree new-session coordinator', () => {
-  function harness(options: {
-    create?: () => Promise<WorktreeCreationSnapshot>
-    get?: () => Promise<WorktreeCreationSnapshot>
-    saveRejects?: boolean
-  } = {}) {
+  function harness(
+    options: {
+      create?: () => Promise<WorktreeCreationSnapshot>
+      get?: () => Promise<WorktreeCreationSnapshot>
+      saveRejects?: boolean
+    } = {},
+  ) {
     const events: string[] = []
     let progress: ((event: WorktreeCreationProgressEvent) => void) | undefined
     let saved: PersistedMobileNewSessionCreation | null = null
@@ -233,7 +230,7 @@ describe('mobile durable worktree new-session coordinator', () => {
       events.push('remote:create')
       return options.create ? options.create() : snapshot()
     })
-    const get = vi.fn(async () => options.get ? options.get() : snapshot())
+    const get = vi.fn(async () => (options.get ? options.get() : snapshot()))
     const act = vi.fn(async (_request: WorktreeCreationActionRequest) => readySnapshot())
     const parent = vi.fn(async () => ({
       creationId: 'parent-creation-2',
@@ -254,9 +251,7 @@ describe('mobile durable worktree new-session coordinator', () => {
       }),
     }
     const coordinator = createNewSessionCreationCoordinator({
-      nextCreationId: vi.fn()
-        .mockReturnValueOnce('creation-mobile-1')
-        .mockReturnValueOnce('parent-creation-2'),
+      nextCreationId: vi.fn().mockReturnValueOnce('creation-mobile-1').mockReturnValueOnce('parent-creation-2'),
       now: () => 1_000,
       worktrees: {
         create,
@@ -336,11 +331,13 @@ describe('mobile durable worktree new-session coordinator', () => {
       machineId: 'connection-1',
     })
     expect(restored.create).not.toHaveBeenCalled()
-    expect(restored.onReady).toHaveBeenCalledWith(expect.objectContaining({
-      projectPath: '/canonical/repo',
-      worktreePath: '/canonical/repo/.switchboard/worktrees/mobile-worktree',
-      worktreeId: 'worktree-mobile-1',
-    }))
+    expect(restored.onReady).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectPath: '/canonical/repo',
+        worktreePath: '/canonical/repo/.switchboard/worktrees/mobile-worktree',
+        worktreeId: 'worktree-mobile-1',
+      }),
+    )
   })
 
   it('submits the exact saved request after restoring a prepared pre-dispatch record', async () => {
@@ -414,9 +411,10 @@ describe('mobile durable worktree new-session coordinator', () => {
   it('keeps an accepted snapshot durable when the screen unmounts before acknowledgement', async () => {
     let resolveCreate!: (value: WorktreeCreationSnapshot) => void
     const h = harness({
-      create: () => new Promise((resolve) => {
-        resolveCreate = resolve
-      }),
+      create: () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve
+        }),
     })
 
     const submitting = h.coordinator.begin(intent)
@@ -493,15 +491,19 @@ describe('mobile durable worktree new-session coordinator', () => {
     await fallback.coordinator.begin(intent)
     await fallback.coordinator.startInProject()
     expect(fallback.act).not.toHaveBeenCalled()
-    expect(fallback.parent).toHaveBeenCalledWith(expect.objectContaining({
-      creationId: 'parent-creation-2',
-      projectPath: '/repo',
-    }))
+    expect(fallback.parent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        creationId: 'parent-creation-2',
+        projectPath: '/repo',
+      }),
+    )
     expect(fallback.onReady).toHaveBeenCalledOnce()
-    expect(fallback.onReady).toHaveBeenCalledWith(expect.objectContaining({
-      creationId: 'parent-creation-2',
-      projectPath: '/canonical/repo',
-    }))
+    expect(fallback.onReady).toHaveBeenCalledWith(
+      expect.objectContaining({
+        creationId: 'parent-creation-2',
+        projectPath: '/canonical/repo',
+      }),
+    )
     expect(fallback.onReady.mock.calls[0][0]).not.toHaveProperty('worktreePath')
   })
 
@@ -548,14 +550,18 @@ describe('mobile durable worktree new-session coordinator', () => {
     await h.coordinator.startInProject()
 
     expect(h.act).not.toHaveBeenCalled()
-    expect(h.parent).toHaveBeenCalledWith(expect.objectContaining({
-      creationId: 'parent-creation-2',
-      projectPath: '/repo',
-    }))
-    expect(h.onReady).toHaveBeenCalledWith(expect.objectContaining({
-      creationId: 'parent-creation-2',
-      projectPath: '/canonical/repo',
-    }))
+    expect(h.parent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        creationId: 'parent-creation-2',
+        projectPath: '/repo',
+      }),
+    )
+    expect(h.onReady).toHaveBeenCalledWith(
+      expect.objectContaining({
+        creationId: 'parent-creation-2',
+        projectPath: '/canonical/repo',
+      }),
+    )
   })
 
   it.each([
@@ -564,7 +570,9 @@ describe('mobile durable worktree new-session coordinator', () => {
     ['authorization', new Error('Remote worktree setup requires the terminal device scope; choose skip setup.')],
   ])('classifies a deterministic %s rejection as failed and stops reconnect resubmission', async (_kind, rejection) => {
     const h = harness({
-      create: async () => { throw rejection },
+      create: async () => {
+        throw rejection
+      },
     })
 
     await h.coordinator.begin(intent)

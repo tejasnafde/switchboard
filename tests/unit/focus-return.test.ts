@@ -2,7 +2,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { focusReturnTarget } from '../../src/renderer/components/ui/focus-return'
 
-afterEach(() => { document.body.innerHTML = '' })
+afterEach(() => {
+  document.body.innerHTML = ''
+})
 
 function composer(): HTMLElement {
   const panel = document.createElement('div')

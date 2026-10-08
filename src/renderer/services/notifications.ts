@@ -62,7 +62,10 @@ export async function fireTestNotification(): Promise<{ ok: boolean; reason?: st
     return { ok: false, reason: 'Notification API unavailable in this renderer.' }
   }
   if (Notification.permission === 'denied') {
-    return { ok: false, reason: 'OS-level permission denied. Enable in macOS System Settings → Notifications → Switchboard.' }
+    return {
+      ok: false,
+      reason: 'OS-level permission denied. Enable in macOS System Settings → Notifications → Switchboard.',
+    }
   }
   if (Notification.permission === 'default') {
     try {

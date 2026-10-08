@@ -17,7 +17,14 @@ import { JsonlParser, type JsonlSource } from '../../src/main/agent/jsonl-parser
 import { mergeConversationMessages } from '../../src/main/agent/dedupe-messages'
 import { projectTurnPresentation } from '../../src/renderer/components/chat/turn-presentation'
 import { groupIntoTurns } from '../../src/renderer/components/chat/MessageList'
-import { fileDiffRowId, historyTail, historyTailStart, storedToolText, STORED_TOOL_TEXT_MAX_CHARS, toolRowId } from '../../src/shared/turn-activity'
+import {
+  fileDiffRowId,
+  historyTail,
+  historyTailStart,
+  storedToolText,
+  STORED_TOOL_TEXT_MAX_CHARS,
+  toolRowId,
+} from '../../src/shared/turn-activity'
 import type { ChatMessage, ToolCall } from '../../src/shared/types'
 
 const at = (iso: string) => Date.parse(`2026-09-24T10:00:${iso}Z`)
@@ -34,16 +41,33 @@ function parseFixture(name: string, source: JsonlSource): ChatMessage[] {
 function mirrorRows(tools: ToolCall[], toolAt: number[]): ChatMessage[] {
   return [
     { id: 'live_user', role: 'user', content: 'fix the state check', timestamp: at('00.005') },
-    { id: 'live_text_1', role: 'assistant', content: 'Moving the state check ahead of the token exchange.', timestamp: at('03.100') },
+    {
+      id: 'live_text_1',
+      role: 'assistant',
+      content: 'Moving the state check ahead of the token exchange.',
+      timestamp: at('03.100'),
+    },
     ...tools.map((call, i): ChatMessage => ({
-      id: toolRowId('t1', call.id), role: 'assistant', content: '', timestamp: toolAt[i], toolCalls: [call],
+      id: toolRowId('t1', call.id),
+      role: 'assistant',
+      content: '',
+      timestamp: toolAt[i],
+      toolCalls: [call],
     })),
     { id: 'live_text_2', role: 'assistant', content: 'Done. Review the diff below.', timestamp: at('07.100') },
     {
-      id: fileDiffRowId('ab12cd34-1:src/api/auth.ts'), role: 'assistant', content: '', timestamp: at('07.300'),
+      id: fileDiffRowId('ab12cd34-1:src/api/auth.ts'),
+      role: 'assistant',
+      content: '',
+      timestamp: at('07.300'),
       fileDiff: {
-        fileEditId: 'ab12cd34-1:src/api/auth.ts', repoRoot: '/work/acme', relPath: 'src/api/auth.ts',
-        changeKind: 'modify', oldContent: 'a\n', newContent: 'b\n', status: 'accepted',
+        fileEditId: 'ab12cd34-1:src/api/auth.ts',
+        repoRoot: '/work/acme',
+        relPath: 'src/api/auth.ts',
+        changeKind: 'modify',
+        oldContent: 'a\n',
+        newContent: 'b\n',
+        status: 'accepted',
       },
     },
   ]
@@ -53,9 +77,12 @@ function mirrorRows(tools: ToolCall[], toolAt: number[]): ChatMessage[] {
 function renderedTurn(messages: ChatMessage[]): string[] {
   const assistant = groupIntoTurns(messages).find((turn) => turn[0].role === 'assistant') ?? []
   return projectTurnPresentation(assistant).map((item) =>
-    item.kind === 'message' ? `text:${item.message.content.split(' ')[0]}`
-      : item.kind === 'activity' ? `tools:${item.toolCount}`
-        : `files:${item.messages.length}`)
+    item.kind === 'message'
+      ? `text:${item.message.content.split(' ')[0]}`
+      : item.kind === 'activity'
+        ? `tools:${item.toolCount}`
+        : `files:${item.messages.length}`,
+  )
 }
 
 describe('reopening a Claude chat', () => {
@@ -101,14 +128,34 @@ describe('reopening a Codex chat', () => {
 describe('mirrored activity rows in the merge', () => {
   it('never pairs two different empty-content rows that are close in time', () => {
     const diskTool: ChatMessage = {
-      id: 'uuid-1', role: 'assistant', content: '', timestamp: 1000,
+      id: 'uuid-1',
+      role: 'assistant',
+      content: '',
+      timestamp: 1000,
       toolCalls: [{ id: 'toolu_a', name: 'Read', input: '{}' }],
     }
     const mirrored: ChatMessage[] = [
-      { id: toolRowId('t1', 'toolu_b'), role: 'assistant', content: '', timestamp: 1500, toolCalls: [{ id: 'toolu_b', name: 'Bash', input: '{}' }] },
       {
-        id: fileDiffRowId('x-1:a.ts'), role: 'assistant', content: '', timestamp: 1600,
-        fileDiff: { fileEditId: 'x-1:a.ts', repoRoot: '/r', relPath: 'a.ts', changeKind: 'add', oldContent: '', newContent: 'a', status: 'pending' },
+        id: toolRowId('t1', 'toolu_b'),
+        role: 'assistant',
+        content: '',
+        timestamp: 1500,
+        toolCalls: [{ id: 'toolu_b', name: 'Bash', input: '{}' }],
+      },
+      {
+        id: fileDiffRowId('x-1:a.ts'),
+        role: 'assistant',
+        content: '',
+        timestamp: 1600,
+        fileDiff: {
+          fileEditId: 'x-1:a.ts',
+          repoRoot: '/r',
+          relPath: 'a.ts',
+          changeKind: 'add',
+          oldContent: '',
+          newContent: 'a',
+          status: 'pending',
+        },
       },
     ]
     const merged = mergeConversationMessages([diskTool], mirrored)
@@ -119,7 +166,13 @@ describe('mirrored activity rows in the merge', () => {
 describe('a history window', () => {
   it('counts messages with text, so tool rows do not crowd out turns', () => {
     const text = (id: string): ChatMessage => ({ id, role: 'assistant', content: id, timestamp: 0 })
-    const tool = (id: string): ChatMessage => ({ id, role: 'assistant', content: '', timestamp: 0, toolCalls: [{ id, name: 'Bash', input: '{}' }] })
+    const tool = (id: string): ChatMessage => ({
+      id,
+      role: 'assistant',
+      content: '',
+      timestamp: 0,
+      toolCalls: [{ id, name: 'Bash', input: '{}' }],
+    })
     const messages = [text('a'), tool('t1'), text('b'), tool('t2'), tool('t3'), text('c')]
     expect(messages.slice(historyTailStart(messages, 2)).map((m) => m.id)).toEqual(['b', 't2', 't3', 'c'])
     expect(historyTailStart(messages, 3)).toBe(0)
@@ -128,11 +181,26 @@ describe('a history window', () => {
   it('bounds the tool and changed-file text it carries, dropping the oldest activity first', () => {
     const text = (id: string): ChatMessage => ({ id, role: 'assistant', content: id, timestamp: 0 })
     const tool = (id: string, chars: number): ChatMessage => ({
-      id, role: 'assistant', content: '', timestamp: 0, toolCalls: [{ id, name: 'Edit', input: 'x'.repeat(chars) }],
+      id,
+      role: 'assistant',
+      content: '',
+      timestamp: 0,
+      toolCalls: [{ id, name: 'Edit', input: 'x'.repeat(chars) }],
     })
     const card = (id: string, chars: number): ChatMessage => ({
-      id, role: 'assistant', content: '', timestamp: 0,
-      fileDiff: { fileEditId: id, repoRoot: '/r', relPath: 'a.ts', changeKind: 'modify', oldContent: 'o'.repeat(chars), newContent: '', status: 'pending' },
+      id,
+      role: 'assistant',
+      content: '',
+      timestamp: 0,
+      fileDiff: {
+        fileEditId: id,
+        repoRoot: '/r',
+        relPath: 'a.ts',
+        changeKind: 'modify',
+        oldContent: 'o'.repeat(chars),
+        newContent: '',
+        status: 'pending',
+      },
     })
     const messages = [text('a'), tool('old', 60), text('b'), card('mid', 30), tool('new', 30), text('c')]
     expect(historyTail(messages, 10, 70).map((m) => m.id)).toEqual(['a', 'b', 'mid', 'new', 'c'])

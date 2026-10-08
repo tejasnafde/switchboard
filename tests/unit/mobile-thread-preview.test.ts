@@ -13,8 +13,20 @@ describe('threadPreviewLine', () => {
 
   it('ignores non-assistant text streams', () => {
     const items: FeedItem[] = [
-      { kind: 'text', id: 'r1', text: '<agent_digest>Should not count</agent_digest>', stream: 'reasoning', done: true },
-      { kind: 'text', id: 'p1', text: '<agent_digest>Should not count either</agent_digest>', stream: 'plan', done: true },
+      {
+        kind: 'text',
+        id: 'r1',
+        text: '<agent_digest>Should not count</agent_digest>',
+        stream: 'reasoning',
+        done: true,
+      },
+      {
+        kind: 'text',
+        id: 'p1',
+        text: '<agent_digest>Should not count either</agent_digest>',
+        stream: 'plan',
+        done: true,
+      },
     ]
     expect(threadPreviewLine(items)).toBeUndefined()
   })

@@ -37,7 +37,16 @@ export const PR_GROUP_LABEL: Record<PrGroupId, string> = {
 export const MERGED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
 /** Row icon. The renderer maps each to one glyph and one tone. */
-export type PrRowIcon = 'conflict' | 'failed' | 'review' | 'conversation' | 'running' | 'waiting' | 'ready' | 'merged' | 'draft'
+export type PrRowIcon =
+  | 'conflict'
+  | 'failed'
+  | 'review'
+  | 'conversation'
+  | 'running'
+  | 'waiting'
+  | 'ready'
+  | 'merged'
+  | 'draft'
 
 export interface PrRowStatus {
   group: PrGroupId
@@ -114,7 +123,7 @@ export function groupPullRequests(prs: readonly PrSummary[], now: number): PrGro
   for (const id of PR_GROUP_ORDER) {
     const list = buckets.get(id)
     if (!list?.length) continue
-    const at = (pr: PrSummary) => (id === 'merged' ? pr.mergedAt ?? 0 : pr.updatedAt)
+    const at = (pr: PrSummary) => (id === 'merged' ? (pr.mergedAt ?? 0) : pr.updatedAt)
     list.sort((a, b) => at(b.pr) - at(a.pr))
     out.push({ id, label: PR_GROUP_LABEL[id], prs: list })
   }
@@ -140,7 +149,12 @@ export interface PrRepoSection {
  * order of their first row, so the repository that needs you most comes
  * first.
  */
-export function groupPullRequestsByRepo(prs: readonly PrSummary[], now: number, collapsed: readonly string[], filtering: boolean): PrRepoSection[] {
+export function groupPullRequestsByRepo(
+  prs: readonly PrSummary[],
+  now: number,
+  collapsed: readonly string[],
+  filtering: boolean,
+): PrRepoSection[] {
   const sections = new Map<string, PrGroup['prs']>()
   for (const group of groupPullRequests(prs, now)) {
     for (const row of group.prs) {
@@ -153,7 +167,13 @@ export function groupPullRequestsByRepo(prs: readonly PrSummary[], now: number, 
   return [...sections].map(([key, rows]) => {
     const isCollapsed = collapsed.includes(key)
     const { owner, name } = rows[0].pr.ref
-    return { key, label: `${owner} / ${name}`, count: rows.length, collapsed: isCollapsed, prs: isCollapsed && !filtering ? [] : rows }
+    return {
+      key,
+      label: `${owner} / ${name}`,
+      count: rows.length,
+      collapsed: isCollapsed,
+      prs: isCollapsed && !filtering ? [] : rows,
+    }
   })
 }
 
@@ -177,12 +197,24 @@ export function filterPullRequests<T extends PrSummary>(prs: readonly T[], query
   const q = query.trim().toLowerCase().replace(/^#/, '')
   if (!q) return [...prs]
   return prs.filter((pr) =>
-    [pr.title, pr.ref.name, pr.ref.owner, String(pr.ref.number), pr.author.login, pr.author.displayName, pr.sourceBranch]
-      .some((field) => field.toLowerCase().includes(q)))
+    [
+      pr.title,
+      pr.ref.name,
+      pr.ref.owner,
+      String(pr.ref.number),
+      pr.author.login,
+      pr.author.displayName,
+      pr.sourceBranch,
+    ].some((field) => field.toLowerCase().includes(q)),
+  )
 }
 
 /** Splits the stored hides for one list read: the keys still hidden, and the ones whose PR came back (to clear). */
-export function applyHidden(prs: readonly PrSummary[], hiddenAt: ReadonlyMap<string, number>, now: number): { hidden: string[]; cameBack: string[] } {
+export function applyHidden(
+  prs: readonly PrSummary[],
+  hiddenAt: ReadonlyMap<string, number>,
+  now: number,
+): { hidden: string[]; cameBack: string[] } {
   const hidden: string[] = []
   const cameBack: string[] = []
   for (const pr of prs) {

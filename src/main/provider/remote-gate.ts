@@ -100,28 +100,35 @@ function codexLoginStatusSaysLoggedIn(configDir: string): Promise<boolean> {
   if (inflight) return inflight
 
   const run = new Promise<boolean>((resolve) => {
-    execFile('codex', ['login', 'status'], {
-      env: { ...process.env, CODEX_HOME: configDir, PATH: managedPath(process.env) },
-      timeout: CODEX_LOGIN_PROBE_TIMEOUT_MS,
-      encoding: 'utf-8',
-      windowsHide: true,
-    }, (err, stdout) => {
-      if (err) {
-        log.warn(`codex login status probe failed: ${err.message}`)
-        resolve(false)
-        return
-      }
-      resolve(parsesAsLoggedIn(String(stdout ?? '')))
-    })
-  }).catch((err: unknown) => {
-    // Spawn threw synchronously (no HOME, bad env) rather than calling back.
-    log.warn(`codex login status probe failed: ${err instanceof Error ? err.message : String(err)}`)
-    return false
-  }).then((loggedIn) => {
-    codexLoginProbeCache.set(configDir, { at: Date.now(), loggedIn })
-    codexLoginProbeInflight.delete(configDir)
-    return loggedIn
+    execFile(
+      'codex',
+      ['login', 'status'],
+      {
+        env: { ...process.env, CODEX_HOME: configDir, PATH: managedPath(process.env) },
+        timeout: CODEX_LOGIN_PROBE_TIMEOUT_MS,
+        encoding: 'utf-8',
+        windowsHide: true,
+      },
+      (err, stdout) => {
+        if (err) {
+          log.warn(`codex login status probe failed: ${err.message}`)
+          resolve(false)
+          return
+        }
+        resolve(parsesAsLoggedIn(String(stdout ?? '')))
+      },
+    )
   })
+    .catch((err: unknown) => {
+      // Spawn threw synchronously (no HOME, bad env) rather than calling back.
+      log.warn(`codex login status probe failed: ${err instanceof Error ? err.message : String(err)}`)
+      return false
+    })
+    .then((loggedIn) => {
+      codexLoginProbeCache.set(configDir, { at: Date.now(), loggedIn })
+      codexLoginProbeInflight.delete(configDir)
+      return loggedIn
+    })
 
   codexLoginProbeInflight.set(configDir, run)
   return run
@@ -157,9 +164,9 @@ export async function checkRemoteProviderAuth(
 ): Promise<RemoteProviderAuthCheck> {
   const codex = agentType === 'codex'
   const loggedIn = codex
-    ? Boolean(process.env.OPENAI_API_KEY)
-      || hasNonEmptyFile(join(configDir, 'auth.json'))
-      || await codexLoginStatusSaysLoggedIn(configDir)
+    ? Boolean(process.env.OPENAI_API_KEY) ||
+      hasNonEmptyFile(join(configDir, 'auth.json')) ||
+      (await codexLoginStatusSaysLoggedIn(configDir))
     : Boolean(process.env.ANTHROPIC_API_KEY) || hasNonEmptyFile(join(configDir, '.credentials.json'))
   // The dir reaches a shell the user pastes into, so it is quoted by the one
   // POSIX-safe quoter rather than a local regex that leaves `$` live.
@@ -169,10 +176,7 @@ export async function checkRemoteProviderAuth(
   return { loggedIn, loginCommand, configDir }
 }
 
-export async function remoteProviderLoginPrompt(
-  agentType: RemoteAuthAgent,
-  configDir: string,
-): Promise<string | null> {
+export async function remoteProviderLoginPrompt(agentType: RemoteAuthAgent, configDir: string): Promise<string | null> {
   const check = await checkRemoteProviderAuth(agentType, configDir)
   if (check.loggedIn) return null
   if (agentType === 'codex') {
@@ -249,10 +253,7 @@ export function listRemoteClaudeConfigDirs(home: string = homedir()): string[] {
   return dirs
 }
 
-export function remoteProviderConfigDir(
-  agentType: RemoteAuthAgent,
-  remoteConfigDir: string | undefined,
-): string {
+export function remoteProviderConfigDir(agentType: RemoteAuthAgent, remoteConfigDir: string | undefined): string {
   const fallback = agentType === 'codex' ? '.codex' : '.claude'
   return join(homedir(), sanitizeSegment(remoteConfigDir, fallback))
 }

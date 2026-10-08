@@ -179,9 +179,7 @@ const ROLES: ReadonlySet<string> = new Set(['user', 'assistant', 'system'])
 const SURFACES: ReadonlySet<string> = new Set(['desktop', 'react-native', 'android', 'automation'])
 
 function record(value: unknown): UnknownRecord | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as UnknownRecord
-    : null
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as UnknownRecord) : null
 }
 
 function stableValue(value: unknown): unknown {
@@ -201,9 +199,10 @@ export function canonicalizeForkConversationRequest(request: ForkConversationReq
 
 export function canonicalizeForkConversationIdentity(request: ForkConversationRequest): string {
   const { requestedAt: _requestedAt, ...provenance } = request.provenance
-  const checkout = request.checkout.kind === 'new-worktree'
-    ? { kind: request.checkout.kind, basePolicy: request.checkout.basePolicy }
-    : request.checkout
+  const checkout =
+    request.checkout.kind === 'new-worktree'
+      ? { kind: request.checkout.kind, basePolicy: request.checkout.basePolicy }
+      : request.checkout
   return JSON.stringify(stableValue({ ...request, checkout, provenance }))
 }
 
@@ -212,10 +211,7 @@ export function canonicalizeForkMessage(message: ChatMessage): string {
   return JSON.stringify(stableValue(durable))
 }
 
-export function digestForkMessage(
-  message: ChatMessage,
-  sha256: (canonicalMessage: string) => string,
-): string {
+export function digestForkMessage(message: ChatMessage, sha256: (canonicalMessage: string) => string): string {
   const digest = sha256(canonicalizeForkMessage(message)).toLowerCase()
   if (!SHA256.test(digest)) throw new Error('Fork message digest must be a SHA-256 hex value')
   return digest
@@ -229,11 +225,7 @@ export function isForkableForkMessage(message: ChatMessage): boolean {
 
 export function parseForkConversationRequest(input: unknown): ForkConversationParseResult {
   const issues: ForkConversationValidationIssue[] = []
-  const issue = (
-    code: ForkConversationValidationIssue['code'],
-    path: string,
-    message: string,
-  ): void => {
+  const issue = (code: ForkConversationValidationIssue['code'], path: string, message: string): void => {
     issues.push({ code, path, message })
   }
   const root = record(input)
@@ -293,7 +285,11 @@ export function parseForkConversationRequest(input: unknown): ForkConversationPa
           issue('invalid_value', 'checkout.dirtySourceConfirmed.headSha', 'headSha must be an exact commit SHA.')
         }
         if (typeof confirmation.statusDigest !== 'string' || !SHA256.test(confirmation.statusDigest)) {
-          issue('invalid_value', 'checkout.dirtySourceConfirmed.statusDigest', 'statusDigest must be a SHA-256 hex value.')
+          issue(
+            'invalid_value',
+            'checkout.dirtySourceConfirmed.statusDigest',
+            'statusDigest must be a SHA-256 hex value.',
+          )
         }
       }
     }
@@ -329,20 +325,23 @@ export function parseForkConversationRequest(input: unknown): ForkConversationPa
       timestamp: parsedAnchor.timestamp as number,
       contentDigest: (parsedAnchor.contentDigest as string).toLowerCase(),
     },
-    checkout: parsedCheckout.kind === 'shared-checkout'
-      ? { kind: 'shared-checkout' }
-      : {
-          kind: 'new-worktree',
-          basePolicy: 'source-head',
-          ...(parsedCheckout.dirtySourceConfirmed === undefined
-            ? {}
-            : {
-                dirtySourceConfirmed: {
-                  headSha: ((parsedCheckout.dirtySourceConfirmed as UnknownRecord).headSha as string).toLowerCase(),
-                  statusDigest: ((parsedCheckout.dirtySourceConfirmed as UnknownRecord).statusDigest as string).toLowerCase(),
-                },
-              }),
-        },
+    checkout:
+      parsedCheckout.kind === 'shared-checkout'
+        ? { kind: 'shared-checkout' }
+        : {
+            kind: 'new-worktree',
+            basePolicy: 'source-head',
+            ...(parsedCheckout.dirtySourceConfirmed === undefined
+              ? {}
+              : {
+                  dirtySourceConfirmed: {
+                    headSha: ((parsedCheckout.dirtySourceConfirmed as UnknownRecord).headSha as string).toLowerCase(),
+                    statusDigest: (
+                      (parsedCheckout.dirtySourceConfirmed as UnknownRecord).statusDigest as string
+                    ).toLowerCase(),
+                  },
+                }),
+          },
     provenance: {
       surface: parsedProvenance.surface as ForkConversationSurface,
       requestedAt: parsedProvenance.requestedAt as number,

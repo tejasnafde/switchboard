@@ -117,7 +117,9 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
         role="button"
         tabIndex={0}
         onClick={() => setCollapsed((c) => !c)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setCollapsed((c) => !c) }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') setCollapsed((c) => !c)
+        }}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -130,17 +132,21 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
           transition: 'border-bottom-color 180ms ease',
         }}
       >
-        <span style={{
-          color: 'var(--text-muted)',
-          fontSize: 10,
-          width: 14,
-          flexShrink: 0,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'transform 180ms cubic-bezier(0.4,0,0.2,1), color 180ms ease',
-          transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
-        }}>›</span>
+        <span
+          style={{
+            color: 'var(--text-muted)',
+            fontSize: 10,
+            width: 14,
+            flexShrink: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'transform 180ms cubic-bezier(0.4,0,0.2,1), color 180ms ease',
+            transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+          }}
+        >
+          ›
+        </span>
         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{relPath}</span>
         <span style={{ opacity: 0.6 }}>{KIND_LABEL[changeKind]}</span>
         <span style={{ flex: 1 }} />
@@ -171,33 +177,39 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
       </div>
 
       {noRevert && !resolved && (
-        <div style={{
-          padding: '5px 10px',
-          borderBottom: '1px solid var(--border)',
-          color: 'var(--text-muted)',
-          fontSize: 11,
-        }}>
+        <div
+          style={{
+            padding: '5px 10px',
+            borderBottom: '1px solid var(--border)',
+            color: 'var(--text-muted)',
+            fontSize: 11,
+          }}
+        >
           {fileDiffNoRevertMessage(noRevert)}
         </div>
       )}
 
       {writeError && (
-        <div style={{
-          padding: '5px 10px',
-          borderBottom: '1px solid var(--border)',
-          color: 'var(--error, #f85149)',
-          fontSize: 11,
-        }}>
+        <div
+          style={{
+            padding: '5px 10px',
+            borderBottom: '1px solid var(--border)',
+            color: 'var(--error, #f85149)',
+            fontSize: 11,
+          }}
+        >
           Could not save: {writeError}
         </div>
       )}
 
       {/* Collapsible body - grid trick animates height without knowing it */}
-      <div style={{
-        display: 'grid',
-        gridTemplateRows: collapsed ? '0fr' : '1fr',
-        transition: 'grid-template-rows 200ms cubic-bezier(0.4,0,0.2,1)',
-      }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateRows: collapsed ? '0fr' : '1fr',
+          transition: 'grid-template-rows 200ms cubic-bezier(0.4,0,0.2,1)',
+        }}
+      >
         <div style={{ overflow: 'hidden' }}>
           {/* Hunks - bounded height with scroll so a large diff stays usable */}
           {metadata == null ? (

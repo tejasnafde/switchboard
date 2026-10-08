@@ -23,9 +23,7 @@ describe('pruneThreadPrefs', () => {
   })
 
   it('keeps exactly the cap when over it', () => {
-    expect(Object.keys(pruneThreadPrefs(makePrefs(MAX_REMEMBERED_THREADS + 50)))).toHaveLength(
-      MAX_REMEMBERED_THREADS,
-    )
+    expect(Object.keys(pruneThreadPrefs(makePrefs(MAX_REMEMBERED_THREADS + 50)))).toHaveLength(MAX_REMEMBERED_THREADS)
   })
 
   it('drops the least recently touched entries', () => {

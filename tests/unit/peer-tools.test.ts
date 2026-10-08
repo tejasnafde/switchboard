@@ -44,8 +44,7 @@ function fakeHost(over: Partial<PeerToolHost> = {}) {
   return { host, delivered }
 }
 
-const text = (result: { content: Array<{ text: string }> }) =>
-  result.content.map((c) => c.text).join('\n')
+const text = (result: { content: Array<{ text: string }> }) => result.content.map((c) => c.text).join('\n')
 
 describe('peer tool identity', () => {
   it('names the tools as the model and canUseTool see them', () => {
@@ -116,12 +115,14 @@ describe('send_agent_message', () => {
     })
 
     expect(out.isError).toBeFalsy()
-    expect(delivered).toEqual([{
-      fromThreadId: 'sender',
-      targetThreadId: 'agent_1712',
-      text: 'the auth migration landed on main',
-      initiator: 'agent',
-    }])
+    expect(delivered).toEqual([
+      {
+        fromThreadId: 'sender',
+        targetThreadId: 'agent_1712',
+        text: 'the auth migration landed on main',
+        initiator: 'agent',
+      },
+    ])
   })
 
   // The model has to be told the peer answers elsewhere, or it waits for a

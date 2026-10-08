@@ -102,9 +102,7 @@ function sendSelection(intent) {
   const sel = editor.selection
   const text = editor.document.getText(sel.isEmpty ? editor.document.lineAt(sel.active.line).range : sel)
   socket.send(
-    JSON.stringify(
-      buildSelection(editor.document.uri.fsPath, sel.start.line + 1, sel.end.line + 1, text, intent)
-    )
+    JSON.stringify(buildSelection(editor.document.uri.fsPath, sel.start.line + 1, sel.end.line + 1, text, intent)),
   )
 }
 
@@ -129,7 +127,7 @@ function activate(context) {
     // (tasks, debug, extensions) are left alone - disposing them killed task
     // runs mid-flight.
     vscode.commands.registerCommand('switchboard.openTerminal', requestSwitchboardTerminal),
-    vscode.commands.registerCommand('switchboard.dsMode', requestDataScienceMode)
+    vscode.commands.registerCommand('switchboard.dsMode', requestDataScienceMode),
   )
   connect()
 }

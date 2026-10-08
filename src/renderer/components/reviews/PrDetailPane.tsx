@@ -5,7 +5,13 @@
  */
 import { useEffect, type ReactNode } from 'react'
 import { PR_HOST_LABEL, prKey, type PrSummary } from '@shared/pull-requests'
-import { useReviewStore, type Loadable, type ReviewTab, type TabData, type TabResource } from '../../stores/review-store'
+import {
+  useReviewStore,
+  type Loadable,
+  type ReviewTab,
+  type TabData,
+  type TabResource,
+} from '../../stores/review-store'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { PrChecks } from './PrChecks'
@@ -51,8 +57,17 @@ export function usePrResource<K extends TabResource>(pr: PrSummary, resource: K)
   return { value, retry }
 }
 
-export function Loaded<T>({ value, retry, children }: { value: Loadable<T> | undefined; retry: () => void; children: (data: T) => ReactNode }) {
-  if (!value || value.status === 'loading') return <div className="p-[22px] text-[12.5px] text-[var(--text-muted)]">Loading…</div>
+export function Loaded<T>({
+  value,
+  retry,
+  children,
+}: {
+  value: Loadable<T> | undefined
+  retry: () => void
+  children: (data: T) => ReactNode
+}) {
+  if (!value || value.status === 'loading')
+    return <div className="p-[22px] text-[12.5px] text-[var(--text-muted)]">Loading…</div>
   if (value.status === 'error') {
     return (
       <div className="max-w-[640px] p-[22px]">
@@ -78,27 +93,65 @@ export function PrDetailPane({ summary, now }: { summary: PrSummary; now: number
     <>
       <header className="border-b border-[var(--border)] px-[22px] pt-4">
         <div className="flex items-center gap-[6px] text-[12px] text-[var(--text-muted)]">
-          <span className="inline-flex items-center gap-[5px] text-[var(--text-secondary)]"><Icon name="pr" />{host}</span>
-          <span aria-hidden="true">/</span>{pr.ref.owner}<span aria-hidden="true">/</span>{pr.ref.name}
+          <span className="inline-flex items-center gap-[5px] text-[var(--text-secondary)]">
+            <Icon name="pr" />
+            {host}
+          </span>
+          <span aria-hidden="true">/</span>
+          {pr.ref.owner}
+          <span aria-hidden="true">/</span>
+          {pr.ref.name}
         </div>
         <div className="mt-[6px] flex items-start gap-3">
           <h2 className="m-0 min-w-0 flex-1 text-[17px] font-[600] tracking-[-0.01em]">
             {pr.title} <span className="font-[400] text-[var(--text-muted)]">#{pr.ref.number}</span>
           </h2>
           <Button variant="ghost" size="sm" onClick={() => openExternal(pr.url)}>
-            <Icon name="ext" />Open in {host}
+            <Icon name="ext" />
+            Open in {host}
           </Button>
           <PrHeaderActions pr={pr} />
         </div>
         <div className="mt-[6px] mb-3 flex flex-wrap items-center gap-[6px] text-[12.5px] text-[var(--text-secondary)]">
-          <Branch name={pr.sourceBranch} />into<Branch name={pr.targetBranch} />
-          <Dot />{byline}
-          {pr.state === 'merged' && pr.mergedAt !== null && <><Dot />merged {agoPhrase(pr.mergedAt, now)}</>}
-          {pr.draft && <><Dot />draft</>}
-          {pr.viewer.isRequestedReviewer && <><Dot />you were asked to review</>}
-          {pr.mergeConflicts && <><Dot /><span data-pr-conflicts className="text-[var(--warning)]">{conflictPhrase(pr)}</span></>}
+          <Branch name={pr.sourceBranch} />
+          into
+          <Branch name={pr.targetBranch} />
+          <Dot />
+          {byline}
+          {pr.state === 'merged' && pr.mergedAt !== null && (
+            <>
+              <Dot />
+              merged {agoPhrase(pr.mergedAt, now)}
+            </>
+          )}
+          {pr.draft && (
+            <>
+              <Dot />
+              draft
+            </>
+          )}
+          {pr.viewer.isRequestedReviewer && (
+            <>
+              <Dot />
+              you were asked to review
+            </>
+          )}
+          {pr.mergeConflicts && (
+            <>
+              <Dot />
+              <span data-pr-conflicts className="text-[var(--warning)]">
+                {conflictPhrase(pr)}
+              </span>
+            </>
+          )}
           {pr.additions !== null && pr.deletions !== null && (
-            <><Dot /><span className="tabular-nums">+{pr.additions} −{pr.deletions}</span>{pr.changedFiles !== null && ` in ${pr.changedFiles} ${pr.changedFiles === 1 ? 'file' : 'files'}`}</>
+            <>
+              <Dot />
+              <span className="tabular-nums">
+                +{pr.additions} −{pr.deletions}
+              </span>
+              {pr.changedFiles !== null && ` in ${pr.changedFiles} ${pr.changedFiles === 1 ? 'file' : 'files'}`}
+            </>
           )}
         </div>
         <div role="tablist" aria-label="Pull request" className="flex gap-[22px]">
@@ -114,7 +167,9 @@ export function PrDetailPane({ summary, now }: { summary: PrSummary; now: number
                 onClick={() => setTab(t.id)}
                 className={cn(
                   'flex cursor-pointer items-center gap-[6px] border-0 border-b-2 border-solid bg-transparent px-0 pt-[9px] pb-[10px] text-[13px]',
-                  active ? 'border-[var(--text-primary)] text-[var(--text-primary)]' : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+                  active
+                    ? 'border-[var(--text-primary)] text-[var(--text-primary)]'
+                    : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
                 )}
               >
                 {t.label}
@@ -135,9 +190,17 @@ export function PrDetailPane({ summary, now }: { summary: PrSummary; now: number
 }
 
 function Branch({ name }: { name: string }) {
-  return <span className="rounded-[5px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[6px] py-px font-[family-name:var(--font-mono)] text-[11.5px] text-[var(--text-primary)]">{name}</span>
+  return (
+    <span className="rounded-[5px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[6px] py-px font-[family-name:var(--font-mono)] text-[11.5px] text-[var(--text-primary)]">
+      {name}
+    </span>
+  )
 }
 
 function Dot() {
-  return <span aria-hidden="true" className="text-[var(--text-muted)]">·</span>
+  return (
+    <span aria-hidden="true" className="text-[var(--text-muted)]">
+      ·
+    </span>
+  )
 }

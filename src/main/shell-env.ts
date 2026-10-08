@@ -88,14 +88,19 @@ export function warmShellEnv(): Promise<Record<string, string> | null> {
 
   const probe = (flag: string): Promise<Record<string, string> | null> =>
     new Promise((resolve) => {
-      execFile(shell, [flag, '-c', 'env -0'], {
-        timeout: PROBE_TIMEOUT_MS,
-        windowsHide: true,
-        encoding: 'buffer',
-        maxBuffer: 4 * 1024 * 1024,
-      }, (err, stdout) => {
-        resolve(err ? null : parseEnvZero(stdout))
-      })
+      execFile(
+        shell,
+        [flag, '-c', 'env -0'],
+        {
+          timeout: PROBE_TIMEOUT_MS,
+          windowsHide: true,
+          encoding: 'buffer',
+          maxBuffer: 4 * 1024 * 1024,
+        },
+        (err, stdout) => {
+          resolve(err ? null : parseEnvZero(stdout))
+        },
+      )
     })
 
   warmupInFlight = (async () => {

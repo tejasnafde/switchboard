@@ -11,10 +11,7 @@ import {
   launchCardChat,
   resolveCardRuntimeMode,
 } from '../../src/renderer/components/kanban/card-launch'
-import {
-  useAgentStore,
-  setStoreDefaultRuntimeMode,
-} from '../../src/renderer/stores/agent-store'
+import { useAgentStore, setStoreDefaultRuntimeMode } from '../../src/renderer/stores/agent-store'
 import type { KanbanCard } from '../../src/shared/kanban'
 
 function card(overrides: Partial<KanbanCard> = {}): KanbanCard {
@@ -49,9 +46,7 @@ describe('deriveCardLaunch', () => {
     // which broke sidebar grouping (the worktree dir is not a registered
     // project). Sidebar matches on strict equality of session.projectPath
     // === project.path, so we must keep the parent as the grouping key.
-    const out = deriveCardLaunch(
-      card({ projectPath: '/repo', worktreePath: '/repo/.switchboard/worktrees/x' }),
-    )
+    const out = deriveCardLaunch(card({ projectPath: '/repo', worktreePath: '/repo/.switchboard/worktrees/x' }))
     expect(out.projectPath).toBe('/repo')
     expect(out.cwd).toBe('/repo/.switchboard/worktrees/x')
     expect(out.title).toBe('Do the thing')
@@ -64,24 +59,20 @@ describe('buildKanbanFirstTurn', () => {
   })
 
   it('joins title and description with a blank line between them', () => {
-    expect(
-      buildKanbanFirstTurn(card({ title: 'Refactor login', description: 'Use OAuth instead.' })),
-    ).toBe('Refactor login\n\nUse OAuth instead.')
+    expect(buildKanbanFirstTurn(card({ title: 'Refactor login', description: 'Use OAuth instead.' }))).toBe(
+      'Refactor login\n\nUse OAuth instead.',
+    )
   })
 
   it('trims whitespace-only descriptions to just the title', () => {
-    expect(
-      buildKanbanFirstTurn(card({ title: 'Refactor login', description: '   \n\t' })),
-    ).toBe('Refactor login')
+    expect(buildKanbanFirstTurn(card({ title: 'Refactor login', description: '   \n\t' }))).toBe('Refactor login')
   })
 
   it('falls back to a placeholder when both are empty', () => {
     // Defensive: card create requires a title, but an empty-string title
     // can sneak in via update. We send *something* so the agent gets a
     // turn instead of an immediate context-empty error.
-    expect(buildKanbanFirstTurn(card({ title: '', description: '' }))).toBe(
-      'Start working on this card.',
-    )
+    expect(buildKanbanFirstTurn(card({ title: '', description: '' }))).toBe('Start working on this card.')
   })
 })
 
@@ -126,7 +117,11 @@ function installApiMock(persistedMode: string | null = null, persistedModel: str
       startSession: vi.fn(async () => ({ ok: true })),
       sendTurn: vi.fn(async () => undefined),
       submitUserTurn: vi.fn(async () => ({
-        status: 'accepted', accepted: true, duplicate: false, state: 'completed', acceptedAt: 1,
+        status: 'accepted',
+        accepted: true,
+        duplicate: false,
+        state: 'completed',
+        acceptedAt: 1,
       })),
       setRuntimeMode: vi.fn(async () => undefined),
       setModel: vi.fn(async () => undefined),
@@ -233,29 +228,36 @@ describe('launchCardChat', () => {
     })
     // First turn auto-sent with title + description.
     expect(api.provider.submitUserTurn).toHaveBeenCalledTimes(1)
-    expect(api.provider.submitUserTurn).toHaveBeenCalledWith(expect.objectContaining({
-      origin: 'kanban:card_x:initial-prompt',
-      providerText: 'Refactor auth\n\nUse OAuth.',
-    }))
+    expect(api.provider.submitUserTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: 'kanban:card_x:initial-prompt',
+        providerText: 'Refactor auth\n\nUse OAuth.',
+      }),
+    )
     // Card linked to the new conversation.
-    expect(api.kanban.update).toHaveBeenCalledWith('card_x', expect.objectContaining({
-      conversationId: result.sessionId,
-    }))
+    expect(api.kanban.update).toHaveBeenCalledWith(
+      'card_x',
+      expect.objectContaining({
+        conversationId: result.sessionId,
+      }),
+    )
   })
 
   it('jumps to the existing session if the card is already linked', async () => {
     const api = installApiMock()
     useAgentStore.setState({
-      sessions: [{
-        id: 'existing_1',
-        type: 'claude-code',
-        status: 'idle',
-        projectPath: '/repo',
-        title: 't',
-        messages: [],
-        unreadCount: 0,
-        runtimeMode: 'sandbox',
-      }],
+      sessions: [
+        {
+          id: 'existing_1',
+          type: 'claude-code',
+          status: 'idle',
+          projectPath: '/repo',
+          title: 't',
+          messages: [],
+          unreadCount: 0,
+          runtimeMode: 'sandbox',
+        },
+      ],
       activeSessionId: null,
     })
     const c = card({ conversationId: 'existing_1' })
@@ -270,23 +272,28 @@ describe('launchCardChat', () => {
 
   it('hydrates a durable linked conversation instead of creating a second one after renderer restart', async () => {
     const api = installApiMock()
-    api.app.getConversations.mockResolvedValue([{
-      id: 'backend_conv',
-      project_path: '/repo',
-      agent_type: 'claude-code',
-      session_id: null,
-      title: 'Backend-owned card',
-      created_at: 1,
-      updated_at: 1,
-      worktree_path: '/repo/.switchboard/worktrees/card',
-      worktree_branch: 'kanban/card',
-    }])
+    api.app.getConversations.mockResolvedValue([
+      {
+        id: 'backend_conv',
+        project_path: '/repo',
+        agent_type: 'claude-code',
+        session_id: null,
+        title: 'Backend-owned card',
+        created_at: 1,
+        updated_at: 1,
+        worktree_path: '/repo/.switchboard/worktrees/card',
+        worktree_branch: 'kanban/card',
+      },
+    ])
 
-    const result = await launchCardChat(card({
-      conversationId: 'backend_conv',
-      worktreePath: '/repo/.switchboard/worktrees/card',
-      worktreeBranch: 'kanban/card',
-    }), { openChat: true })
+    const result = await launchCardChat(
+      card({
+        conversationId: 'backend_conv',
+        worktreePath: '/repo/.switchboard/worktrees/card',
+        worktreeBranch: 'kanban/card',
+      }),
+      { openChat: true },
+    )
 
     expect(result).toEqual({ sessionId: 'backend_conv', reused: true })
     expect(api.app.createConversation).not.toHaveBeenCalled()
@@ -306,16 +313,18 @@ describe('launchCardChat', () => {
     // conversation will keep getting filtered out of project scans.
     const api = installApiMock()
     useAgentStore.setState({
-      sessions: [{
-        id: 'conv_done',
-        type: 'claude-code',
-        status: 'idle',
-        projectPath: '/repo',
-        title: 't',
-        messages: [],
-        unreadCount: 0,
-        runtimeMode: 'sandbox',
-      }],
+      sessions: [
+        {
+          id: 'conv_done',
+          type: 'claude-code',
+          status: 'idle',
+          projectPath: '/repo',
+          title: 't',
+          messages: [],
+          unreadCount: 0,
+          runtimeMode: 'sandbox',
+        },
+      ],
       activeSessionId: null,
     })
     const c = card({ conversationId: 'conv_done', status: 'done' })
@@ -377,17 +386,19 @@ describe('launchCardChat', () => {
     // guess), and the user's saved mode for this conversation is 'full-access'.
     const api = installApiMock('full-access')
     useAgentStore.setState({
-      sessions: [{
-        id: 'existing_1',
-        type: 'claude-code',
-        status: 'idle',
-        projectPath: '/repo',
-        title: 't',
-        messages: [],
-        unreadCount: 0,
-        runtimeMode: 'sandbox',
-        runtimeModeUnresolved: true,
-      }],
+      sessions: [
+        {
+          id: 'existing_1',
+          type: 'claude-code',
+          status: 'idle',
+          projectPath: '/repo',
+          title: 't',
+          messages: [],
+          unreadCount: 0,
+          runtimeMode: 'sandbox',
+          runtimeModeUnresolved: true,
+        },
+      ],
       activeSessionId: null,
     })
     const c = card({ conversationId: 'existing_1' })
@@ -408,16 +419,18 @@ describe('launchCardChat', () => {
     // `model` field, while the conversation row has a real pin saved.
     const api = installApiMock(null, 'claude-opus-4')
     useAgentStore.setState({
-      sessions: [{
-        id: 'existing_1',
-        type: 'claude-code',
-        status: 'idle',
-        projectPath: '/repo',
-        title: 't',
-        messages: [],
-        unreadCount: 0,
-        runtimeMode: 'accept-edits',
-      }],
+      sessions: [
+        {
+          id: 'existing_1',
+          type: 'claude-code',
+          status: 'idle',
+          projectPath: '/repo',
+          title: 't',
+          messages: [],
+          unreadCount: 0,
+          runtimeMode: 'accept-edits',
+        },
+      ],
       activeSessionId: null,
     })
     const c = card({ conversationId: 'existing_1' })

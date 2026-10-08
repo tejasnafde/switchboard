@@ -20,8 +20,14 @@ import { openLandingProjectPicker } from './lib/new-chat.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
-const mk = (p) => { const d = mkdtempSync(join(tmpdir(), p)); scratch.push(d); return d }
-process.on('exit', () => { for (const d of scratch) rmSync(d, { recursive: true, force: true }) })
+const mk = (p) => {
+  const d = mkdtempSync(join(tmpdir(), p))
+  scratch.push(d)
+  return d
+}
+process.on('exit', () => {
+  for (const d of scratch) rmSync(d, { recursive: true, force: true })
+})
 const userData = mk('sb-overflow-ud-')
 const project = realpathSync(mk('sb-overflow-proj-'))
 // `chore/release-0.8.64` in the reply becomes a file pill only if it exists.
@@ -33,16 +39,22 @@ const db = join(userData, 'data', 'switchboard.db')
 const q = (sql) => execFileSync('sqlite3', [db, sql]).toString().trim()
 
 async function launch() {
-  const app = await electron.launch({ args: ['.'], cwd: repoRoot, timeout: 30_000,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SHELL: '/bin/sh' } })
+  const app = await electron.launch({
+    args: ['.'],
+    cwd: repoRoot,
+    timeout: 30_000,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1', SHELL: '/bin/sh' },
+  })
   const win = await app.firstWindow({ timeout: 20_000 })
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
-  await win.evaluate(() => Promise.all([
-    window.api.settings.set('tour.autoplay', 'false'),
-    window.api.settings.set('analytics.enabled', 'false'),
-    window.api.settings.set('analytics.noticeSeen', 'true'),
-    window.api.settings.set('session.defaultEnvMode', 'local'),
-  ]))
+  await win.evaluate(() =>
+    Promise.all([
+      window.api.settings.set('tour.autoplay', 'false'),
+      window.api.settings.set('analytics.enabled', 'false'),
+      window.api.settings.set('analytics.noticeSeen', 'true'),
+      window.api.settings.set('session.defaultEnvMode', 'local'),
+    ]),
+  )
   const skip = win.getByRole('button', { name: 'Skip tour' })
   if (await skip.isVisible().catch(() => false)) await skip.click()
   return { app, win }
@@ -50,11 +62,16 @@ async function launch() {
 
 let { app, win } = await launch()
 await app.close()
-q(`INSERT OR REPLACE INTO projects (path, name, added_at, sort_order) VALUES ('${project}', 'overflow', ${Date.now()}, 0);`)
+q(
+  `INSERT OR REPLACE INTO projects (path, name, added_at, sort_order) VALUES ('${project}', 'overflow', ${Date.now()}, 0);`,
+)
 ;({ app, win } = await launch())
 
 const results = []
-const check = (name, ok, detail = '') => { results.push({ ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`) }
+const check = (name, ok, detail = '') => {
+  results.push({ ok })
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`)
+}
 
 try {
   await win.locator('body').click({ position: { x: 900, y: 400 } })
@@ -81,7 +98,10 @@ try {
     // A code block's own lines are meant to run past it and scroll.
     const escapes = [...bubble.querySelectorAll('*')]
       .filter((el) => !el.parentElement.closest('pre'))
-      .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.left < box.left - 0.5 || r.right > box.right + 0.5) })
+      .filter((el) => {
+        const r = el.getBoundingClientRect()
+        return r.width > 0 && (r.left < box.left - 0.5 || r.right > box.right + 0.5)
+      })
       .map((el) => `${el.tagName}.${el.className} "${el.textContent.slice(0, 30)}"`)
     // A marker is drawn in the list's left padding, outside every box it
     // could be measured by, so compare its text width with that padding.
@@ -92,7 +112,9 @@ try {
       ol.firstElementChild.appendChild(probe)
       const width = probe.getBoundingClientRect().width
       probe.remove()
-      return width > parseFloat(getComputedStyle(ol).paddingLeft) ? [`${probe.textContent.trim()} needs ${width | 0}px`] : []
+      return width > parseFloat(getComputedStyle(ol).paddingLeft)
+        ? [`${probe.textContent.trim()} needs ${width | 0}px`]
+        : []
     })
     const pre = md.querySelector('pre')
     return {
@@ -115,8 +137,16 @@ try {
   check('the branch name renders as a file pill', geometry.chips > 0, `chips=${geometry.chips}`)
   check('the @-mentioned file renders as a pill in the user bubble', !!geometry.userPill)
   check('the user bubble pill stays inside its bubble', !!geometry.userPill?.inside, JSON.stringify(geometry.userPill))
-  check('nothing in the message is wider than its bubble', geometry.escapes.length === 0, geometry.escapes.slice(0, 5).join(', '))
-  check('two-digit list markers fit the list padding', geometry.clippedMarkers.length === 0, geometry.clippedMarkers.join(', '))
+  check(
+    'nothing in the message is wider than its bubble',
+    geometry.escapes.length === 0,
+    geometry.escapes.slice(0, 5).join(', '),
+  )
+  check(
+    'two-digit list markers fit the list padding',
+    geometry.clippedMarkers.length === 0,
+    geometry.clippedMarkers.join(', '),
+  )
   check('the message list does not scroll sideways', geometry.listOverflow <= 0, `overflow=${geometry.listOverflow}px`)
   check('the code block scrolls instead of wrapping', geometry.preScrolls)
 } catch (e) {

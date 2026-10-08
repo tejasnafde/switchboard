@@ -42,16 +42,22 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
     return () => document.removeEventListener('mousedown', onClick)
   }, [tabsOpen])
 
-  const handleClosePane = useCallback((paneId: string) => {
-    destroyTerminal(paneId)
-    removePane(sessionId, paneId)
-  }, [sessionId, removePane])
+  const handleClosePane = useCallback(
+    (paneId: string) => {
+      destroyTerminal(paneId)
+      removePane(sessionId, paneId)
+    },
+    [sessionId, removePane],
+  )
 
-  const handleSwitchPane = useCallback((paneId: string) => {
-    setActivePane(sessionId, paneId)
-    setTabsOpen(false)
-    setTimeout(() => focusTerminal(paneId), 20)
-  }, [sessionId, setActivePane])
+  const handleSwitchPane = useCallback(
+    (paneId: string) => {
+      setActivePane(sessionId, paneId)
+      setTabsOpen(false)
+      setTimeout(() => focusTerminal(paneId), 20)
+    },
+    [sessionId, setActivePane],
+  )
 
   const handleNewPane = useCallback(() => {
     const count = window.paneIds.length + 1
@@ -69,9 +75,7 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
   if (!activePane) return null
 
   const paneCount = window.paneIds.length
-  const tabIndicator = paneCount > 1
-    ? `${window.paneIds.indexOf(activePaneId) + 1}/${paneCount}`
-    : null
+  const tabIndicator = paneCount > 1 ? `${window.paneIds.indexOf(activePaneId) + 1}/${paneCount}` : null
 
   return (
     <div
@@ -106,18 +110,18 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
             the visual cue for "this is the pane keystrokes go to". Errors
             still surface red regardless of focus. Inactive windows get
             a muted dim dot so the slot is still discoverable. */}
-        <span style={{
-          width: '5px',
-          height: '5px',
-          borderRadius: '50%',
-          background:
-            activePane.status === 'error' ? 'var(--error)'
-            : isActiveWindow ? 'var(--success)'
-            : 'var(--text-muted)',
-          opacity: isActiveWindow || activePane.status === 'error' ? 1 : 0.45,
-          flexShrink: 0,
-          transition: 'background 0.12s, opacity 0.12s',
-        }} />
+        <span
+          style={{
+            width: '5px',
+            height: '5px',
+            borderRadius: '50%',
+            background:
+              activePane.status === 'error' ? 'var(--error)' : isActiveWindow ? 'var(--success)' : 'var(--text-muted)',
+            opacity: isActiveWindow || activePane.status === 'error' ? 1 : 0.45,
+            flexShrink: 0,
+            transition: 'background 0.12s, opacity 0.12s',
+          }}
+        />
 
         {renaming ? (
           <input
@@ -181,7 +185,10 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
         {tabIndicator && (
           <button
             ref={tabsBtnRef}
-            onClick={(e) => { e.stopPropagation(); setTabsOpen(!tabsOpen) }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setTabsOpen(!tabsOpen)
+            }}
             title="Show tabs"
             style={{
               display: 'flex',
@@ -203,7 +210,10 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
 
         {/* New pane (tab) */}
         <button
-          onClick={(e) => { e.stopPropagation(); handleNewPane() }}
+          onClick={(e) => {
+            e.stopPropagation()
+            handleNewPane()
+          }}
           title={'New tab (\u2318\\)'}
           style={{
             background: 'none',
@@ -220,7 +230,10 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
 
         {/* Close active pane (or window if last) */}
         <button
-          onClick={(e) => { e.stopPropagation(); handleClosePane(activePaneId) }}
+          onClick={(e) => {
+            e.stopPropagation()
+            handleClosePane(activePaneId)
+          }}
           title={paneCount > 1 ? 'Close tab (\u2318W)' : 'Close window (\u2318W)'}
           style={{
             background: 'none',
@@ -260,7 +273,10 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
               return (
                 <div
                   key={pid}
-                  onClick={(e) => { e.stopPropagation(); handleSwitchPane(pid) }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleSwitchPane(pid)
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -271,24 +287,32 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
                     cursor: 'pointer',
                     fontSize: '11.5px',
                   }}
-                  onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-                  onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                  onMouseEnter={(e) => {
+                    if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'
+                  }}
                 >
-                  <span style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '9.5px',
-                    color: 'var(--text-muted)',
-                    width: '14px',
-                    flexShrink: 0,
-                  }}>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '9.5px',
+                      color: 'var(--text-muted)',
+                      width: '14px',
+                      flexShrink: 0,
+                    }}
+                  >
                     {idx + 1}
                   </span>
-                  <span style={{
-                    flex: 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
+                  <span
+                    style={{
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {p.label}
                   </span>
                   <button
@@ -312,13 +336,15 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
                 </div>
               )
             })}
-            <div style={{
-              borderTop: '1px solid var(--border)',
-              padding: '4px 10px',
-              fontSize: '10px',
-              color: 'var(--text-muted)',
-              fontFamily: 'var(--font-mono)',
-            }}>
+            <div
+              style={{
+                borderTop: '1px solid var(--border)',
+                padding: '4px 10px',
+                fontSize: '10px',
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
               {'\u2318\u21E7]/[' + ' to cycle \u00b7 \u2318\\ new \u00b7 \u2318W close'}
             </div>
           </div>

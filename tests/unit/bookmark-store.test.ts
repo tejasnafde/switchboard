@@ -107,9 +107,15 @@ describe('bookmark-store', () => {
 
   it('load populates bookmarks from API', async () => {
     const existing: Bookmark = {
-      id: 'b1', sessionId: 's2', projectPath: '/x', sessionTitle: 'X',
-      agentType: 'codex', messageRole: 'user', contentExcerpt: 'hi',
-      messageTimestamp: 500, savedAt: 9999,
+      id: 'b1',
+      sessionId: 's2',
+      projectPath: '/x',
+      sessionTitle: 'X',
+      agentType: 'codex',
+      messageRole: 'user',
+      contentExcerpt: 'hi',
+      messageTimestamp: 500,
+      savedAt: 9999,
     }
     stubApi(makeApi({ list: vi.fn().mockResolvedValue([existing]) }))
     await useBookmarkStore.getState().load()

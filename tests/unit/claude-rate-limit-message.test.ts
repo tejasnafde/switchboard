@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  buildRateLimitMessage,
-  classifyOverageScope,
-  isOverageRejection,
-} from '../../src/shared/claude-rate-limit'
+import { buildRateLimitMessage, classifyOverageScope, isOverageRejection } from '../../src/shared/claude-rate-limit'
 import { fmtResetsAt } from '../../src/shared/provider-usage'
 
 /**
@@ -14,8 +10,7 @@ import { fmtResetsAt } from '../../src/shared/provider-usage'
 function expectCarriesAbsoluteDate(msg: string, resetsAtSeconds: number) {
   const absolute = fmtResetsAt(resetsAtSeconds * 1000)
   expect(msg).toContain(absolute)
-  const timeOnly = new Date(resetsAtSeconds * 1000)
-    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const timeOnly = new Date(resetsAtSeconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   expect(absolute).not.toBe(timeOnly)
 }
 
@@ -183,10 +178,7 @@ describe('buildRateLimitMessage: reset timestamps', () => {
 
   it('keeps an absolute date for a reset weeks away', () => {
     const resetsAt = Math.floor(Date.parse('2026-09-01T00:00:00Z') / 1000)
-    const msg = buildRateLimitMessage(
-      { ...LIVE_ORG_REJECTION, resetsAt },
-      Date.parse('2026-08-01T00:00:00Z'),
-    )
+    const msg = buildRateLimitMessage({ ...LIVE_ORG_REJECTION, resetsAt }, Date.parse('2026-08-01T00:00:00Z'))
     expectCarriesAbsoluteDate(msg, resetsAt)
   })
 

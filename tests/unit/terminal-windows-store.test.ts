@@ -31,11 +31,9 @@ describe('terminal window/pane store', () => {
   })
 
   it('adopts backend-owned terminal handles without inventing replacement pane ids', () => {
-    useTerminalStore.getState().adoptManagedTerminals(
-      SID,
-      ['managed-1', 'managed-2'],
-      '/repo/.switchboard/worktrees/thread',
-    )
+    useTerminalStore
+      .getState()
+      .adoptManagedTerminals(SID, ['managed-1', 'managed-2'], '/repo/.switchboard/worktrees/thread')
 
     const layout = useTerminalStore.getState().getLayout(SID)
     expect(useTerminalStore.getState().getAllPaneIds(SID)).toEqual(['managed-1', 'managed-2'])

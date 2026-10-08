@@ -23,11 +23,20 @@ import { openLandingProjectPicker } from './lib/new-chat.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
-const mk = (p) => { const d = mkdtempSync(join(tmpdir(), p)); scratch.push(d); return d }
-process.on('exit', () => { for (const d of scratch) rmSync(d, { recursive: true, force: true }) })
+const mk = (p) => {
+  const d = mkdtempSync(join(tmpdir(), p))
+  scratch.push(d)
+  return d
+}
+process.on('exit', () => {
+  for (const d of scratch) rmSync(d, { recursive: true, force: true })
+})
 
 const results = []
-const check = (name, ok, detail = '') => { results.push({ ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`) }
+const check = (name, ok, detail = '') => {
+  results.push({ ok })
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`)
+}
 
 const ORIGINAL = 'export async function exchangeCode(code: string) {\n  return code\n}\n'
 
@@ -49,17 +58,29 @@ async function scenario(mode) {
   const q = (sql) => execFileSync('sqlite3', [db, sql]).toString().trim()
 
   async function launch() {
-    const app = await electron.launch({ args: ['.'], cwd: repoRoot, timeout: 30_000,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '', SB_USER_DATA: userData, SB_DEMO_ADAPTER: '1',
-        ...(claudeDir ? { SB_DEMO_CLAUDE_TRANSCRIPT_DIR: claudeDir } : {}), SHELL: '/bin/sh' } })
+    const app = await electron.launch({
+      args: ['.'],
+      cwd: repoRoot,
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '',
+        SB_USER_DATA: userData,
+        SB_DEMO_ADAPTER: '1',
+        ...(claudeDir ? { SB_DEMO_CLAUDE_TRANSCRIPT_DIR: claudeDir } : {}),
+        SHELL: '/bin/sh',
+      },
+    })
     const win = await app.firstWindow({ timeout: 20_000 })
     await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
-    await win.evaluate(() => Promise.all([
-      window.api.settings.set('tour.autoplay', 'false'),
-      window.api.settings.set('analytics.enabled', 'false'),
-      window.api.settings.set('analytics.noticeSeen', 'true'),
-      window.api.settings.set('session.defaultEnvMode', 'local'),
-    ]))
+    await win.evaluate(() =>
+      Promise.all([
+        window.api.settings.set('tour.autoplay', 'false'),
+        window.api.settings.set('analytics.enabled', 'false'),
+        window.api.settings.set('analytics.noticeSeen', 'true'),
+        window.api.settings.set('session.defaultEnvMode', 'local'),
+      ]),
+    )
     const skip = win.getByRole('button', { name: 'Skip tour' })
     if (await skip.isVisible().catch(() => false)) await skip.click()
     return { app, win }
@@ -67,7 +88,9 @@ async function scenario(mode) {
 
   let { app, win } = await launch()
   await app.close()
-  q(`INSERT OR REPLACE INTO projects (path, name, added_at, sort_order) VALUES ('${project}', 'toolrow', ${Date.now()}, 0);`)
+  q(
+    `INSERT OR REPLACE INTO projects (path, name, added_at, sort_order) VALUES ('${project}', 'toolrow', ${Date.now()}, 0);`,
+  )
   if (claudeDir) {
     // History scans every enabled oauth_dir, so this is where it finds the transcript.
     q(`INSERT OR REPLACE INTO provider_instances (id, agent_type, display_name, auth_mode, oauth_dir, enabled)
@@ -76,13 +99,14 @@ async function scenario(mode) {
   ;({ app, win } = await launch())
 
   /** Tool and changed-files summaries in the focused chat, in DOM order. */
-  const summaries = () => win.evaluate(() => {
-    const panel = document.querySelector('[data-chat-panel]')
-    if (!panel) return ''
-    return [...panel.querySelectorAll('.turn-activity > summary, .turn-files-toggle, .turn-files > header')]
-      .map((el) => el.textContent.replace(/ · .*$/, '').trim())
-      .join(',')
-  })
+  const summaries = () =>
+    win.evaluate(() => {
+      const panel = document.querySelector('[data-chat-panel]')
+      if (!panel) return ''
+      return [...panel.querySelectorAll('.turn-activity > summary, .turn-files-toggle, .turn-files > header')]
+        .map((el) => el.textContent.replace(/ · .*$/, '').trim())
+        .join(',')
+    })
   const replied = async (prefix, timeout) => {
     const until = Date.now() + timeout
     while (!q(`SELECT 1 FROM messages WHERE role = 'assistant' AND content LIKE '${prefix}%';`)) {
@@ -143,19 +167,31 @@ async function scenario(mode) {
     writeFileSync(authFile, 'edited by hand\n')
     await rejectAll().click()
     await files().getByText('changed on disk after the diff was captured').waitFor({ timeout: 5000 })
-    check(`[${mode}] rejecting a reopened card after a later edit is refused`, readFileSync(authFile, 'utf8') === 'edited by hand\n')
+    check(
+      `[${mode}] rejecting a reopened card after a later edit is refused`,
+      readFileSync(authFile, 'utf8') === 'edited by hand\n',
+    )
 
     writeFileSync(authFile, agentWrote)
     await rejectAll().click()
     await files().getByText('↩ reverted').waitFor({ timeout: 5000 })
-    check(`[${mode}] rejecting it while the file holds the agent's change reverts it`, readFileSync(authFile, 'utf8') === ORIGINAL)
+    check(
+      `[${mode}] rejecting it while the file holds the agent's change reverts it`,
+      readFileSync(authFile, 'utf8') === ORIGINAL,
+    )
 
     await app.close()
     ;({ app, win } = await launch())
     await open('fix the state check')
     await settle()
     await files().locator('.turn-files-toggle').click()
-    const kept = await files().getByText('↩ reverted').waitFor({ timeout: 5000 }).then(() => true, () => false)
+    const kept = await files()
+      .getByText('↩ reverted')
+      .waitFor({ timeout: 5000 })
+      .then(
+        () => true,
+        () => false,
+      )
     check(`[${mode}] after another restart, the card remembers it was reverted`, kept)
   } catch (e) {
     check(`[${mode}] unexpected error`, false, e.message.split('\n').slice(0, 3).join(' / '))

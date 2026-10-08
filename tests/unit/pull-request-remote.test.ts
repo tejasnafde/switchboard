@@ -35,19 +35,28 @@ describe('repoFromRemotes', () => {
   const out = (lines: string[]) => lines.join('\n')
 
   it('prefers upstream, then origin, then any supported remote', () => {
-    expect(repoFromRemotes(out([
-      'origin\tgit@github.com:me/fork.git (fetch)',
-      'origin\tgit@github.com:me/fork.git (push)',
-      'upstream\thttps://github.com/org/repo.git (fetch)',
-    ]))).toEqual({ host: 'github', owner: 'org', name: 'repo' })
-    expect(repoFromRemotes(out([
-      'mirror\thttps://bitbucket.org/geoiq/mirror.git (fetch)',
-      'origin\thttps://bitbucket.org/geoiq/main.git (fetch)',
-    ]))).toEqual({ host: 'bitbucket', owner: 'geoiq', name: 'main' })
-    expect(repoFromRemotes(out([
-      'origin\thttps://gitlab.com/a/b.git (fetch)',
-      'backup\tgit@github.com:me/backup.git (fetch)',
-    ]))).toEqual({ host: 'github', owner: 'me', name: 'backup' })
+    expect(
+      repoFromRemotes(
+        out([
+          'origin\tgit@github.com:me/fork.git (fetch)',
+          'origin\tgit@github.com:me/fork.git (push)',
+          'upstream\thttps://github.com/org/repo.git (fetch)',
+        ]),
+      ),
+    ).toEqual({ host: 'github', owner: 'org', name: 'repo' })
+    expect(
+      repoFromRemotes(
+        out([
+          'mirror\thttps://bitbucket.org/geoiq/mirror.git (fetch)',
+          'origin\thttps://bitbucket.org/geoiq/main.git (fetch)',
+        ]),
+      ),
+    ).toEqual({ host: 'bitbucket', owner: 'geoiq', name: 'main' })
+    expect(
+      repoFromRemotes(
+        out(['origin\thttps://gitlab.com/a/b.git (fetch)', 'backup\tgit@github.com:me/backup.git (fetch)']),
+      ),
+    ).toEqual({ host: 'github', owner: 'me', name: 'backup' })
   })
 
   it('reads only fetch URLs, and nothing from an empty or unsupported list', () => {

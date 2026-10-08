@@ -11,8 +11,16 @@ import {
 
 function row(path: string, overrides: Partial<WorktreeRow> = {}): WorktreeRow {
   return {
-    projectPath: '/repo', projectName: 'repo', path, branch: `b/${path}`, head: 'abc', prunable: false,
-    locked: false, owned: false, chat: null, protectedBy: null,
+    projectPath: '/repo',
+    projectName: 'repo',
+    path,
+    branch: `b/${path}`,
+    head: 'abc',
+    prunable: false,
+    locked: false,
+    owned: false,
+    chat: null,
+    protectedBy: null,
     git: { uncommittedFiles: 0, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: true },
     ...overrides,
   }
@@ -20,7 +28,9 @@ function row(path: string, overrides: Partial<WorktreeRow> = {}): WorktreeRow {
 
 describe('worktree list', () => {
   const safe = row('/a')
-  const changed = row('/b', { git: { uncommittedFiles: 2, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: false } })
+  const changed = row('/b', {
+    git: { uncommittedFiles: 2, ignoredFiles: 0, ignoredSample: [], unpushedCommits: 0, merged: false },
+  })
   const inUse = row('/c', { owned: true })
   const guarded = row('/d', { protectedBy: 'project', projectName: 'bot' })
 
@@ -46,7 +56,9 @@ describe('worktree list', () => {
 
   it('says what protection hides', () => {
     expect(protectedNote([safe])).toBeNull()
-    expect(protectedNote([guarded, row('/e', { protectedBy: 'project', projectName: 'bot' })])).toBe('bot is protected and hidden (2 worktrees).')
+    expect(protectedNote([guarded, row('/e', { protectedBy: 'project', projectName: 'bot' })])).toBe(
+      'bot is protected and hidden (2 worktrees).',
+    )
     expect(protectedNote([row('/f', { protectedBy: 'worktree' })])).toBe('1 worktree protected and hidden.')
   })
 

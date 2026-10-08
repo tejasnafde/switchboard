@@ -40,7 +40,8 @@ function parsePersistedRecord(value: unknown): PersistedMobileNewSessionCreation
   const parsed = parseWorktreeCreationRequest(record.request)
   if (!parsed.ok) return null
   const intent = record.intent as Partial<MobileNewSessionIntent>
-  const validIdentity = typeof intent.connectionId === 'string' &&
+  const validIdentity =
+    typeof intent.connectionId === 'string' &&
     typeof intent.machineId === 'string' &&
     typeof intent.projectPath === 'string' &&
     intent.connectionId.length > 0 &&
@@ -49,9 +50,12 @@ function parsePersistedRecord(value: unknown): PersistedMobileNewSessionCreation
     parsed.value.repository.machineId === intent.machineId &&
     parsed.value.repository.projectPath === intent.projectPath
   if (!validIdentity) return null
-  if (record.submissionPhase !== undefined &&
+  if (
+    record.submissionPhase !== undefined &&
     record.submissionPhase !== 'prepared' &&
-    record.submissionPhase !== 'submitted') return null
+    record.submissionPhase !== 'submitted'
+  )
+    return null
   return {
     ...(record as Omit<PersistedMobileNewSessionCreation, 'submissionPhase'>),
     submissionPhase: record.submissionPhase ?? 'submitted',

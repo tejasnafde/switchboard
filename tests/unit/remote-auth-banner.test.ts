@@ -67,8 +67,7 @@ describe('remoteAuthCacheKey', () => {
   })
 
   it('separates providers even when their profile segment is the same', () => {
-    expect(remoteAuthCacheKey('vm-1', 'work', 'claude-code'))
-      .not.toBe(remoteAuthCacheKey('vm-1', 'work', 'codex'))
+    expect(remoteAuthCacheKey('vm-1', 'work', 'claude-code')).not.toBe(remoteAuthCacheKey('vm-1', 'work', 'codex'))
   })
 
   it('separates the same segment on different machines', () => {

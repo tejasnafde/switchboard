@@ -6,10 +6,10 @@ const manager = readFileSync(
   resolve(__dirname, '../../src/renderer/components/sidebar/WorkspaceManager.tsx'),
   'utf8',
 ).replace(/\r\n/g, '\n')
-const sidebar = readFileSync(
-  resolve(__dirname, '../../src/renderer/components/sidebar/Sidebar.tsx'),
-  'utf8',
-).replace(/\r\n/g, '\n')
+const sidebar = readFileSync(resolve(__dirname, '../../src/renderer/components/sidebar/Sidebar.tsx'), 'utf8').replace(
+  /\r\n/g,
+  '\n',
+)
 
 describe('workspace organizer production structure', () => {
   it('uses a two-pane dialog with sortable workspace and project lists', () => {

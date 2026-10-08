@@ -65,9 +65,18 @@ function makeHarness(overrides: { healthResults?: boolean[]; failFirstSpawn?: bo
       onExit: () => {
         harness.exits++
       },
-    }
+    },
   )
-  return { manager, spawned, ports, healthResults, healthProbes, get exits() { return harness.exits } }
+  return {
+    manager,
+    spawned,
+    ports,
+    healthResults,
+    healthProbes,
+    get exits() {
+      return harness.exits
+    },
+  }
 }
 
 describe('CodeServerManager', () => {
@@ -150,7 +159,7 @@ describe('CodeServerManager', () => {
         extensionsDir: '/fake/ext',
         userDataDir: '/fake/data',
         env: { SB_BRIDGE_PORT: '9999', SB_BRIDGE_TOKEN: 'tok' },
-      }
+      },
     )
     await manager.ensureStarted()
     expect(seenEnv?.SB_BRIDGE_PORT).toBe('9999')

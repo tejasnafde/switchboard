@@ -17,11 +17,19 @@ function shellSegments(command: string): string[] {
     const ch = command[i]
     if (quote) {
       if (ch === quote) quote = null
-      else if (ch === '\\' && quote === '"') { current += ch + (command[i + 1] ?? ''); i++; continue }
+      else if (ch === '\\' && quote === '"') {
+        current += ch + (command[i + 1] ?? '')
+        i++
+        continue
+      }
       current += ch
       continue
     }
-    if (ch === '"' || ch === "'") { quote = ch; current += ch; continue }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      current += ch
+      continue
+    }
     if (ch === ';' || ch === '\n' || ch === '|' || (ch === '&' && command[i + 1] === '&')) {
       segments.push(current)
       current = ''
@@ -92,7 +100,9 @@ export function toolInputCwd(input: string): string | null {
  */
 export function bbprTargetsForInput(command: string, chatCwd: string | null, recordedCwd: string | null): BbprTarget[] {
   if (recordedCwd === null) return bbprTargets(command, chatCwd)
-  return bbprTargets(command, recordedCwd).map((t) => (t.runsIn === 'cwd' ? { number: t.number, runsIn: 'dir' as const, dir: recordedCwd } : t))
+  return bbprTargets(command, recordedCwd).map((t) =>
+    t.runsIn === 'cwd' ? { number: t.number, runsIn: 'dir' as const, dir: recordedCwd } : t,
+  )
 }
 
 /**
@@ -142,7 +152,10 @@ export function bbprTargets(command: string, cwd: string | null): BbprTarget[] {
       const arg = cdArgument(cd[1])
       const base: string | null = dir ?? cwd
       // An absolute cd resets even an unknown directory; a relative one after it stays unknown.
-      dir = arg === null || (!arg.startsWith('/') && (dir === undefined || !base)) ? undefined : resolvePosix(base ?? '/', arg)
+      dir =
+        arg === null || (!arg.startsWith('/') && (dir === undefined || !base))
+          ? undefined
+          : resolvePosix(base ?? '/', arg)
       continue
     }
     if (segment === 'popd') {
@@ -152,7 +165,13 @@ export function bbprTargets(command: string, cwd: string | null): BbprTarget[] {
     const match = BBPR_AT_START.exec(segment)
     const number = match ? Number(match[1]) : 0
     if (number <= 0) continue
-    out.push(dir === null ? { number, runsIn: 'cwd' } : dir === undefined ? { number, runsIn: 'unknown' } : { number, runsIn: 'dir', dir })
+    out.push(
+      dir === null
+        ? { number, runsIn: 'cwd' }
+        : dir === undefined
+          ? { number, runsIn: 'unknown' }
+          : { number, runsIn: 'dir', dir },
+    )
   }
   return out
 }

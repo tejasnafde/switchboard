@@ -29,10 +29,12 @@ describe('parseCodexSessionMetaRecord', () => {
   })
 
   it('keeps a normal or rotated foreground thread independent', () => {
-    expect(parseCodexSessionMetaRecord({
-      type: 'session_meta',
-      payload: { id: 'foreground', cwd: '/repo', source: 'cli' },
-    })).toMatchObject({ relationship: 'foreground', parentSessionId: null })
+    expect(
+      parseCodexSessionMetaRecord({
+        type: 'session_meta',
+        payload: { id: 'foreground', cwd: '/repo', source: 'cli' },
+      }),
+    ).toMatchObject({ relationship: 'foreground', parentSessionId: null })
   })
 
   it('rejects malformed records instead of guessing lineage', () => {

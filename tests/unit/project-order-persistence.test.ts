@@ -4,12 +4,15 @@ import { deriveProjectPositions } from '../../src/main/db/project-ordering'
 
 describe('deriveProjectPositions', () => {
   it('migrates a global saved order into contiguous positions per workspace', () => {
-    const positions = deriveProjectPositions([
-      { path: '/a', workspaceId: 'one', addedAt: 10 },
-      { path: '/b', workspaceId: 'one', addedAt: 30 },
-      { path: '/c', workspaceId: 'two', addedAt: 20 },
-      { path: '/d', workspaceId: null, addedAt: 5 },
-    ], ['/c', '/a', '/missing'])
+    const positions = deriveProjectPositions(
+      [
+        { path: '/a', workspaceId: 'one', addedAt: 10 },
+        { path: '/b', workspaceId: 'one', addedAt: 30 },
+        { path: '/c', workspaceId: 'two', addedAt: 20 },
+        { path: '/d', workspaceId: null, addedAt: 5 },
+      ],
+      ['/c', '/a', '/missing'],
+    )
 
     expect(positions).toEqual([
       { path: '/c', workspaceId: 'two', sortOrder: 0 },
@@ -20,11 +23,14 @@ describe('deriveProjectPositions', () => {
   })
 
   it('uses newest-first then path as the deterministic fallback', () => {
-    const positions = deriveProjectPositions([
-      { path: '/b', workspaceId: null, addedAt: 10 },
-      { path: '/c', workspaceId: null, addedAt: 20 },
-      { path: '/a', workspaceId: null, addedAt: 10 },
-    ], null)
+    const positions = deriveProjectPositions(
+      [
+        { path: '/b', workspaceId: null, addedAt: 10 },
+        { path: '/c', workspaceId: null, addedAt: 20 },
+        { path: '/a', workspaceId: null, addedAt: 10 },
+      ],
+      null,
+    )
 
     expect(positions.map((position) => position.path)).toEqual(['/c', '/a', '/b'])
     expect(positions.map((position) => position.sortOrder)).toEqual([0, 1, 2])
@@ -35,10 +41,11 @@ describe('deriveProjectPositions', () => {
       { path: '/a', workspaceId: null, addedAt: 1 },
       { path: '/b', workspaceId: null, addedAt: 2 },
     ]
-    expect(deriveProjectPositions(rows, ['/a', '/a', 5] as unknown as string[]).map((item) => item.path))
-      .toEqual(['/a', '/b'])
-    expect(deriveProjectPositions(rows, 'bad' as unknown as string[]).map((item) => item.path))
-      .toEqual(['/b', '/a'])
+    expect(deriveProjectPositions(rows, ['/a', '/a', 5] as unknown as string[]).map((item) => item.path)).toEqual([
+      '/a',
+      '/b',
+    ])
+    expect(deriveProjectPositions(rows, 'bad' as unknown as string[]).map((item) => item.path)).toEqual(['/b', '/a'])
   })
 })
 

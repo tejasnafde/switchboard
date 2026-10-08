@@ -24,8 +24,7 @@
  */
 
 export const HANDOFF_PREAMBLE_HEADER = 'Conversation so far:'
-export const HANDOFF_PREAMBLE_FOOTER =
-  'Respond to the latest user message, using the conversation above as context.'
+export const HANDOFF_PREAMBLE_FOOTER = 'Respond to the latest user message, using the conversation above as context.'
 const TRUNCATION_NOTICE_START = '(Earlier conversation truncated:'
 
 /** Default cap on the rendered preamble, in characters (~7.5k tokens). */
@@ -61,9 +60,8 @@ export function buildHandoffPreamble(
     // otherwise preambles nest and the size doubles per handoff.
     const raw = m.role === 'user' ? stripHandoffPreamble(m.content ?? '') : (m.content ?? '')
     const text = raw.trim()
-    const imageNotes = m.images && m.images.length > 0
-      ? Array.from({ length: m.images.length }, () => '[image omitted]').join('\n')
-      : ''
+    const imageNotes =
+      m.images && m.images.length > 0 ? Array.from({ length: m.images.length }, () => '[image omitted]').join('\n') : ''
     const body = [text, imageNotes].filter(Boolean).join('\n')
     if (!body) continue // interrupted / tool-only / empty partial turn
     turns.push(`${m.role}: ${body}`)
@@ -71,9 +69,8 @@ export function buildHandoffPreamble(
   if (turns.length === 0) return null
 
   const render = (omitted: number, kept: string[]): string => {
-    const notice = omitted > 0
-      ? `${TRUNCATION_NOTICE_START} ${omitted} older turn${omitted === 1 ? '' : 's'} omitted.)\n`
-      : ''
+    const notice =
+      omitted > 0 ? `${TRUNCATION_NOTICE_START} ${omitted} older turn${omitted === 1 ? '' : 's'} omitted.)\n` : ''
     return `${notice}${HANDOFF_PREAMBLE_HEADER}\n${kept.join('\n')}\n\n${HANDOFF_PREAMBLE_FOOTER}`
   }
 

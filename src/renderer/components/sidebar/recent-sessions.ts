@@ -77,22 +77,26 @@ function recentStatusLine(
  * show: a re-sent card with a new tool or question must repaint the row.
  */
 export function recentLiveSignal(sessions: readonly RecentLiveSession[]): string {
-  return sessions.map((session) => {
-    const pending = (session.pendingRequests ?? []).map((event) => {
-      switch (event.type) {
-        case 'request.opened':
-          return `${event.type}:${event.requestId}:${event.toolName}`
-        case 'question.asked':
-          return `${event.type}:${event.requestId}:${event.questions[0]?.question ?? ''}`
-        case 'plan.proposed':
-          return `${event.type}:${event.planId}`
-      }
-    }).join(',')
-    // Message count and newest id change when history hydrates or a message
-    // lands (line 2's preview), not on every streamed token.
-    const newest = session.messages[session.messages.length - 1]?.id ?? ''
-    return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pending}:${session.unreadCount ?? 0}:${session.messages.length}:${newest}`
-  }).join('|')
+  return sessions
+    .map((session) => {
+      const pending = (session.pendingRequests ?? [])
+        .map((event) => {
+          switch (event.type) {
+            case 'request.opened':
+              return `${event.type}:${event.requestId}:${event.toolName}`
+            case 'question.asked':
+              return `${event.type}:${event.requestId}:${event.questions[0]?.question ?? ''}`
+            case 'plan.proposed':
+              return `${event.type}:${event.planId}`
+          }
+        })
+        .join(',')
+      // Message count and newest id change when history hydrates or a message
+      // lands (line 2's preview), not on every streamed token.
+      const newest = session.messages[session.messages.length - 1]?.id ?? ''
+      return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pending}:${session.unreadCount ?? 0}:${session.messages.length}:${newest}`
+    })
+    .join('|')
 }
 
 export interface RecentSessionItem {
@@ -126,24 +130,28 @@ export function deriveRecentSessions(_input: {
   ]
   const seen = new Set<string>()
   return projectSets
-    .flatMap(({ machineId, projects }) => projects.flatMap((project) => project.sessions.map((session) => {
-      const key = `${machineId}\0${session.id}`
-      if (seen.has(key)) return null
-      seen.add(key)
-      const live = liveById.get(key)
-      const status = recentSessionStatus(session, live)
-      const previewLine = (live && sessionPreviewLine(live.messages)) || session.statusLine || undefined
-      return {
-        session,
-        projectPath: project.path,
-        projectName: project.name,
-        machineId,
-        status,
-        previewLine,
-        statusLine: recentStatusLine(session, status, live, previewLine, project.name),
-        priority: status ? STATUS_PRIORITY[status] : 0,
-      }
-    })))
+    .flatMap(({ machineId, projects }) =>
+      projects.flatMap((project) =>
+        project.sessions.map((session) => {
+          const key = `${machineId}\0${session.id}`
+          if (seen.has(key)) return null
+          seen.add(key)
+          const live = liveById.get(key)
+          const status = recentSessionStatus(session, live)
+          const previewLine = (live && sessionPreviewLine(live.messages)) || session.statusLine || undefined
+          return {
+            session,
+            projectPath: project.path,
+            projectName: project.name,
+            machineId,
+            status,
+            previewLine,
+            statusLine: recentStatusLine(session, status, live, previewLine, project.name),
+            priority: status ? STATUS_PRIORITY[status] : 0,
+          }
+        }),
+      ),
+    )
     .filter((item): item is NonNullable<typeof item> => item !== null)
     .sort((a, b) => b.priority - a.priority || b.session.startedAt - a.session.startedAt)
     .map(({ priority: _priority, ...item }) => item)

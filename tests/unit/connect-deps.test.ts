@@ -83,7 +83,8 @@ beforeEach(async () => {
   vi.useFakeTimers()
   FakeWebSocket.instances = []
   process.env.npm_package_version = LOCAL_VERSION
-  ;({ waitForHealth, spawnTunnel, allocatePort, REMOTE_COMMAND, REMOTE_BRIDGE_PORT, SERVER_VERSION_CHANNEL } = await import('../../src/main/machines/connect-deps'))
+  ;({ waitForHealth, spawnTunnel, allocatePort, REMOTE_COMMAND, REMOTE_BRIDGE_PORT, SERVER_VERSION_CHANNEL } =
+    await import('../../src/main/machines/connect-deps'))
 })
 
 afterEach(() => {
@@ -167,7 +168,10 @@ describe('waitForHealth', () => {
     await vi.advanceTimersByTimeAsync(0)
     FakeWebSocket.instances[0].emitOpen()
     FakeWebSocket.instances[0].emitMessage({ k: 'res', id: 1, ok: false, error: 'no handler: server:version' })
-    expect(await promise).toEqual({ ok: false, reason: `server version mismatch (local ${LOCAL_VERSION}, remote error: no handler: server:version)` })
+    expect(await promise).toEqual({
+      ok: false,
+      reason: `server version mismatch (local ${LOCAL_VERSION}, remote error: no handler: server:version)`,
+    })
   })
 
   it('open followed by a matching version response resolves healthy and does not double count as a failure', async () => {
@@ -193,47 +197,51 @@ describe('waitForHealth', () => {
 })
 
 describe('spawnTunnel', () => {
-  it.skipIf(process.platform === 'win32')('finds gcloud on the login-shell path when Finder supplied a minimal PATH', async () => {
-    vi.useRealTimers()
-    const root = mkdtempSync(join(tmpdir(), 'sb-gcloud-tunnel-'))
-    const bin = join(root, 'bin')
-    const shell = join(root, 'login-shell')
-    const gcloud = join(bin, 'gcloud')
-    const previousPath = process.env.PATH
-    const previousShell = process.env.SHELL
-    try {
-      mkdirSync(bin)
-      writeFileSync(shell, `#!/bin/sh\nprintf 'PATH=${bin}:/usr/bin:/bin\\0'\n`)
-      writeFileSync(gcloud, '#!/bin/sh\nexit 0\n')
-      chmodSync(shell, 0o755)
-      chmodSync(gcloud, 0o755)
-      process.env.PATH = '/usr/bin:/bin'
-      process.env.SHELL = shell
-      _resetShellEnvCacheForTests()
+  it.skipIf(process.platform === 'win32')(
+    'finds gcloud on the login-shell path when Finder supplied a minimal PATH',
+    async () => {
+      vi.useRealTimers()
+      const root = mkdtempSync(join(tmpdir(), 'sb-gcloud-tunnel-'))
+      const bin = join(root, 'bin')
+      const shell = join(root, 'login-shell')
+      const gcloud = join(bin, 'gcloud')
+      const previousPath = process.env.PATH
+      const previousShell = process.env.SHELL
+      try {
+        mkdirSync(bin)
+        writeFileSync(shell, `#!/bin/sh\nprintf 'PATH=${bin}:/usr/bin:/bin\\0'\n`)
+        writeFileSync(gcloud, '#!/bin/sh\nexit 0\n')
+        chmodSync(shell, 0o755)
+        chmodSync(gcloud, 0o755)
+        process.env.PATH = '/usr/bin:/bin'
+        process.env.SHELL = shell
+        _resetShellEnvCacheForTests()
 
-      const proc = spawnTunnel('gcloud', ['--version'])
-      const exited = await Promise.race([
-        new Promise<boolean>((resolve) => proc.onExit(() => resolve(true))),
-        // Was 1000ms. This spawns a REAL login shell to resolve PATH, and one
-        // second is the cold-start budget of an idle machine, not of a box
-        // running the rest of this suite in parallel. It flaked on CI and
-        // locally; the assertion is "it exits at all", so a generous ceiling
-        // costs nothing when it passes.
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 8_000)),
-      ])
+        const proc = spawnTunnel('gcloud', ['--version'])
+        const exited = await Promise.race([
+          new Promise<boolean>((resolve) => proc.onExit(() => resolve(true))),
+          // Was 1000ms. This spawns a REAL login shell to resolve PATH, and one
+          // second is the cold-start budget of an idle machine, not of a box
+          // running the rest of this suite in parallel. It flaked on CI and
+          // locally; the assertion is "it exits at all", so a generous ceiling
+          // costs nothing when it passes.
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 8_000)),
+        ])
 
-      expect(exited).toBe(true)
-    } finally {
-      if (previousPath === undefined) delete process.env.PATH
-      else process.env.PATH = previousPath
-      if (previousShell === undefined) delete process.env.SHELL
-      else process.env.SHELL = previousShell
-      _resetShellEnvCacheForTests()
-      rmSync(root, { recursive: true, force: true })
-    }
-    // Above vitest's 5s default, so the 8s race above is the thing that
-    // decides the result rather than the runner killing the test first.
-  }, 20_000)
+        expect(exited).toBe(true)
+      } finally {
+        if (previousPath === undefined) delete process.env.PATH
+        else process.env.PATH = previousPath
+        if (previousShell === undefined) delete process.env.SHELL
+        else process.env.SHELL = previousShell
+        _resetShellEnvCacheForTests()
+        rmSync(root, { recursive: true, force: true })
+      }
+      // Above vitest's 5s default, so the 8s race above is the thing that
+      // decides the result rather than the runner killing the test first.
+    },
+    20_000,
+  )
 
   // Real child processes: their exit events are plain IO, so the fake timers
   // installed by beforeEach are irrelevant here - but switch back anyway so a

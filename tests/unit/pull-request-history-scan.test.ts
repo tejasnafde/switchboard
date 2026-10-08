@@ -12,7 +12,9 @@ import type { HistoryPartKind } from '../../src/main/pull-requests/history-sourc
 import { historyScanSummary } from '../../src/shared/pull-request-links'
 import { projectReposFrom } from '../../src/shared/project-repos'
 
-vi.mock('../../src/main/logger', () => ({ createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}))
 
 const BOT: RepoRef = { host: 'bitbucket', owner: 'geoiq', name: 'ssg-bot-v2' }
 const SB: RepoRef = { host: 'github', owner: 'tejasnafde', name: 'switchboard' }
@@ -51,16 +53,26 @@ function ownRepoOf(d: Pick<PullRequestHistoryScanDeps, 'repoForProject'>): PullR
   return vi.fn(async (path: string) => projectReposFrom(await d.repoForProject(path), []))
 }
 
-function pendingDeps(ids: string[], overrides: Partial<PullRequestHistoryScanDeps> = {}): PullRequestHistoryScanDeps & { scanned: Set<string> } {
+function pendingDeps(
+  ids: string[],
+  overrides: Partial<PullRequestHistoryScanDeps> = {},
+): PullRequestHistoryScanDeps & { scanned: Set<string> } {
   const scanned = new Set<string>()
   const d = {
     scanned,
-    listUnscanned: vi.fn((limit) => ids.filter((id) => !scanned.has(id)).slice(0, limit).map((id) => ({ id, projectPath: '/repo' }))),
+    listUnscanned: vi.fn((limit) =>
+      ids
+        .filter((id) => !scanned.has(id))
+        .slice(0, limit)
+        .map((id) => ({ id, projectPath: '/repo' })),
+    ),
     readHistory: vi.fn(async () => {}),
     repoForProject: vi.fn(async () => BOT),
     link: vi.fn(() => true),
     notify: vi.fn(),
-    markScanned: vi.fn((id: string) => { scanned.add(id) }),
+    markScanned: vi.fn((id: string) => {
+      scanned.add(id)
+    }),
     ...overrides,
   }
   return { ...d, projectRepos: overrides.projectRepos ?? ownRepoOf(d) }
@@ -68,7 +80,10 @@ function pendingDeps(ids: string[], overrides: Partial<PullRequestHistoryScanDep
 
 describe('pull request history scan', () => {
   it('links a bbpr-style Bitbucket URL from stored tool output', async () => {
-    const d = deps([['toolInput', '{"command":"bbpr show"}'], ['toolOutput', `PR: ${BOT_605}`]])
+    const d = deps([
+      ['toolInput', '{"command":"bbpr show"}'],
+      ['toolOutput', `PR: ${BOT_605}`],
+    ])
 
     const result = await scanPullRequestHistoryForConversation(TARGET, d)
 
@@ -87,7 +102,9 @@ describe('pull request history scan', () => {
   })
 
   it('links a bare bbpr number in a tool input to the Bitbucket project', async () => {
-    const d = deps([['toolInput', JSON.stringify({ command: 'cd /repo && bbpr 605 diff', description: 'Show the diff' })]])
+    const d = deps([
+      ['toolInput', JSON.stringify({ command: 'cd /repo && bbpr 605 diff', description: 'Show the diff' })],
+    ])
 
     await scanPullRequestHistoryForConversation(TARGET, d)
 
@@ -112,8 +129,13 @@ describe('pull request history scan', () => {
   })
 
   it("resolves a relative cd and a bare bbpr against the chat's worktree", async () => {
-    const d = deps([['toolInput', JSON.stringify({ command: 'cd .. && bbpr 605' })], ['toolInput', '{"command":"bbpr 606"}']])
-    vi.mocked(d.repoForProject).mockImplementation(async (path) => (path === '/repo/.switchboard/worktrees' ? null : BOT))
+    const d = deps([
+      ['toolInput', JSON.stringify({ command: 'cd .. && bbpr 605' })],
+      ['toolInput', '{"command":"bbpr 606"}'],
+    ])
+    vi.mocked(d.repoForProject).mockImplementation(async (path) =>
+      path === '/repo/.switchboard/worktrees' ? null : BOT,
+    )
 
     await scanPullRequestHistoryForConversation({ ...TARGET, worktreePath: '/repo/.switchboard/worktrees/x' }, d)
 
@@ -121,7 +143,10 @@ describe('pull request history scan', () => {
   })
 
   it('ignores a bare bbpr number in chat text, and on a GitHub project', async () => {
-    const text = deps([['text', 'bbpr 605 diff'], ['toolOutput', 'bbpr 606']])
+    const text = deps([
+      ['text', 'bbpr 605 diff'],
+      ['toolOutput', 'bbpr 606'],
+    ])
     await scanPullRequestHistoryForConversation(TARGET, text)
     expect(text.link).not.toHaveBeenCalled()
 
@@ -131,10 +156,13 @@ describe('pull request history scan', () => {
   })
 
   it('scans user text and ignores a pull request from another repository', async () => {
-    const d = deps([
-      ['text', `please review ${BOT_605}`],
-      ['text', 'tracked in https://github.com/tejasnafde/switchboard/pull/612'],
-    ], SB)
+    const d = deps(
+      [
+        ['text', `please review ${BOT_605}`],
+        ['text', 'tracked in https://github.com/tejasnafde/switchboard/pull/612'],
+      ],
+      SB,
+    )
 
     await scanPullRequestHistoryForConversation(TARGET, d)
 
@@ -142,7 +170,10 @@ describe('pull request history scan', () => {
   })
 
   it('does not revive an unlinked tombstone', async () => {
-    const d = deps([['text', `Closed ${BOT_605} earlier.`], ['toolInput', '{"command":"bbpr 605"}']])
+    const d = deps([
+      ['text', `Closed ${BOT_605} earlier.`],
+      ['toolInput', '{"command":"bbpr 605"}'],
+    ])
     vi.mocked(d.link).mockReturnValue(false)
 
     const result = await scanPullRequestHistoryForConversation(TARGET, d)
@@ -165,7 +196,10 @@ describe('pull request history scan', () => {
 
 describe('the character cap', () => {
   it('stops reading at the cap and says the chat was only partly read', async () => {
-    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS + 10_000)], ['text', BOT_605]])
+    const d = deps([
+      ['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS + 10_000)],
+      ['text', BOT_605],
+    ])
 
     const result = await scanPullRequestHistoryForConversation(TARGET, d)
 
@@ -176,7 +210,10 @@ describe('the character cap', () => {
   })
 
   it('reports a partial read when text follows a part that fills the cap exactly', async () => {
-    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS)], ['text', 'more']])
+    const d = deps([
+      ['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS)],
+      ['text', 'more'],
+    ])
 
     const result = await scanPullRequestHistoryForConversation(TARGET, d)
 
@@ -184,7 +221,10 @@ describe('the character cap', () => {
   })
 
   it('does not report a partial read when a chat fills the cap exactly and ends', async () => {
-    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS)], ['text', '  ']])
+    const d = deps([
+      ['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS)],
+      ['text', '  '],
+    ])
 
     expect((await scanPullRequestHistoryForConversation(TARGET, d)).capped).toBe(false)
   })
@@ -201,7 +241,10 @@ describe('the character cap', () => {
 
   it('never takes a bbpr number the cap cut short', async () => {
     const command = 'bbpr 605'
-    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS - command.length + 2)], ['toolInput', command]])
+    const d = deps([
+      ['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS - command.length + 2)],
+      ['toolInput', command],
+    ])
 
     await scanPullRequestHistoryForConversation(TARGET, d)
 
@@ -209,7 +252,11 @@ describe('the character cap', () => {
   })
 
   it('counts text repeated by another source once', async () => {
-    const d = deps([['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS / 2 + 1)], ['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS / 2 + 1)], ['text', BOT_605]])
+    const d = deps([
+      ['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS / 2 + 1)],
+      ['text', 'a'.repeat(MAX_HISTORY_SCAN_CHARS / 2 + 1)],
+      ['text', BOT_605],
+    ])
 
     const result = await scanPullRequestHistoryForConversation(TARGET, d)
 
@@ -252,7 +299,9 @@ describe('the pending scan', () => {
       if (vi.mocked(d.repoForProject).mock.calls.length === 1) throw new Error('git remote failed')
       return BOT
     })
-    vi.mocked(d.link).mockImplementation(() => { throw new Error('database is locked') })
+    vi.mocked(d.link).mockImplementation(() => {
+      throw new Error('database is locked')
+    })
 
     const results = await scanPendingPullRequestHistory(d, { batchSize: 10, concurrency: 1, yieldMs: 0 })
 
@@ -276,7 +325,9 @@ describe('the pending scan', () => {
     const d = pendingDeps(['unreadable'])
     vi.mocked(d.readHistory).mockRejectedValue(new Error('EACCES'))
 
-    await expect(scanPullRequestHistoryForConversation({ id: 'unreadable', projectPath: '/repo' }, d)).rejects.toBeInstanceOf(HistoryReadError)
+    await expect(
+      scanPullRequestHistoryForConversation({ id: 'unreadable', projectPath: '/repo' }, d),
+    ).rejects.toBeInstanceOf(HistoryReadError)
     expect(d.markScanned).not.toHaveBeenCalled()
   })
 
@@ -303,7 +354,12 @@ describe('historyScanSummary', () => {
       title: 'Linked 2 pull requests',
       body: "Only pull requests of this chat's project repository are linked, and one you unlinked stays unlinked. This chat is long, so only its first 250,000 characters were read.",
     })
-    expect(historyScanSummary({ ok: true, linked: 0, capped: false, capChars: 250_000 }).title).toBe('No new pull requests found')
-    expect(historyScanSummary({ ok: false, message: 'Not a chat.' })).toEqual({ title: 'Could not scan this chat', body: 'Not a chat.' })
+    expect(historyScanSummary({ ok: true, linked: 0, capped: false, capChars: 250_000 }).title).toBe(
+      'No new pull requests found',
+    )
+    expect(historyScanSummary({ ok: false, message: 'Not a chat.' })).toEqual({
+      title: 'Could not scan this chat',
+      body: 'Not a chat.',
+    })
   })
 })

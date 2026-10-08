@@ -6,10 +6,7 @@
  * isVoiceAvailable() and never touch the module directly.
  */
 import { createLogger } from '@shared/logger'
-import type {
-  ExpoSpeechRecognitionErrorEvent,
-  ExpoSpeechRecognitionResultEvent,
-} from 'expo-speech-recognition'
+import type { ExpoSpeechRecognitionErrorEvent, ExpoSpeechRecognitionResultEvent } from 'expo-speech-recognition'
 
 const log = createLogger('mobile:voice')
 

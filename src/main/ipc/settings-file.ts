@@ -6,9 +6,19 @@
  */
 import { app, ipcMain, shell, type BrowserWindow } from 'electron'
 import { SettingsFileChannels } from '@shared/ipc-channels'
-import { FILE_SETTINGS, SETTINGS_FILE_SYNCED_HASH_KEY, type SettingsFileOp, type SettingsSnapshot } from '@shared/settings-file'
+import {
+  FILE_SETTINGS,
+  SETTINGS_FILE_SYNCED_HASH_KEY,
+  type SettingsFileOp,
+  type SettingsSnapshot,
+} from '@shared/settings-file'
 import { KEYBOARD_OVERRIDES_SETTING } from '@shared/shortcuts'
-import { PROJECT_OVERRIDE_PREFIX, isScopableSetting, parseProjectOverrideKey, projectOverrideKey } from '@shared/project-settings'
+import {
+  PROJECT_OVERRIDE_PREFIX,
+  isScopableSetting,
+  parseProjectOverrideKey,
+  projectOverrideKey,
+} from '@shared/project-settings'
 import { getProjects, getSetting, listSettingsWithPrefix, removeSetting, setSetting } from '../db/database'
 import { removeProjectOverride, setProjectOverride } from '../project-settings'
 import { pathKey } from '../worktree'

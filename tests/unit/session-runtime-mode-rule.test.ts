@@ -38,13 +38,13 @@ beforeEach(() => {
 describe('initialRuntimeMode', () => {
   it.each([
     // chosen                 project   shown           sent
-    ['full-access',           APP,      'full-access',  'full-access'],
-    ['sandbox',               OTHER,    'sandbox',      'sandbox'],
-    [undefined,               APP,      'plan',         undefined],
-    [undefined,               OTHER,    'accept-edits', undefined],
-    [null,                    APP,      'plan',         undefined],
-    ['not-a-mode',            OTHER,    'accept-edits', undefined],
-    [undefined,               '/not/loaded', 'accept-edits', undefined],
+    ['full-access', APP, 'full-access', 'full-access'],
+    ['sandbox', OTHER, 'sandbox', 'sandbox'],
+    [undefined, APP, 'plan', undefined],
+    [undefined, OTHER, 'accept-edits', undefined],
+    [null, APP, 'plan', undefined],
+    ['not-a-mode', OTHER, 'accept-edits', undefined],
+    [undefined, '/not/loaded', 'accept-edits', undefined],
   ])('chosen %s in %s shows %s and sends %s', (chosen, projectPath, shown, sent) => {
     const fields = initialRuntimeMode(projectPath, chosen)
     expect(fields.runtimeMode).toBe(shown)
@@ -62,10 +62,16 @@ describe('every way a session enters the store applies it', () => {
     expect(runtimeModeToSend(session('open'))).toBeUndefined()
   })
 
-  it('adoptLiveSessions (a chat the backend or the phone is running): its mode is the backend\'s', () => {
-    const live = (threadId: string, runtimeMode?: string) => ({
-      threadId, provider: 'claude', status: 'idle', cwd: APP, runtimeMode, createdAt: 0,
-    }) as unknown as LiveSessionSummary
+  it("adoptLiveSessions (a chat the backend or the phone is running): its mode is the backend's", () => {
+    const live = (threadId: string, runtimeMode?: string) =>
+      ({
+        threadId,
+        provider: 'claude',
+        status: 'idle',
+        cwd: APP,
+        runtimeMode,
+        createdAt: 0,
+      }) as unknown as LiveSessionSummary
     useAgentStore.getState().adoptLiveSessions([live('phone', 'full-access'), live('bare')], 'local')
     expect(runtimeModeToSend(session('phone'))).toBe('full-access')
     expect(runtimeModeToSend(session('bare'))).toBeUndefined()
@@ -88,7 +94,16 @@ describe('kanban reuse (the reported path)', () => {
       api: {
         app: {
           unarchiveConversation: vi.fn(async () => undefined),
-          getConversations: vi.fn(async () => [{ id: 'conv', project_path: APP, title: 't', agent_type: 'claude-code', worktree_path: null, worktree_branch: null }]),
+          getConversations: vi.fn(async () => [
+            {
+              id: 'conv',
+              project_path: APP,
+              title: 't',
+              agent_type: 'claude-code',
+              worktree_path: null,
+              worktree_branch: null,
+            },
+          ]),
           getConversationRuntimeMode: vi.fn(async () => ({ mode: storedMode })),
           getConversationModel: vi.fn(async () => ({ model: null })),
         },
@@ -98,7 +113,16 @@ describe('kanban reuse (the reported path)', () => {
     return setRuntimeMode
   }
   const card = (runtimeMode: string | null) =>
-    ({ id: 'k', projectPath: APP, title: 't', description: '', runtimeMode, conversationId: 'conv', worktreePath: null, worktreeBranch: null }) as unknown as KanbanCard
+    ({
+      id: 'k',
+      projectPath: APP,
+      title: 't',
+      description: '',
+      runtimeMode,
+      conversationId: 'conv',
+      worktreePath: null,
+      worktreeBranch: null,
+    }) as unknown as KanbanCard
 
   it('leaves the mode unresolved when neither the conversation nor the card has one', async () => {
     const setRuntimeMode = api(null)
@@ -108,7 +132,7 @@ describe('kanban reuse (the reported path)', () => {
     expect(setRuntimeMode).not.toHaveBeenCalled()
   })
 
-  it('applies the conversation\'s stored mode before the card\'s', async () => {
+  it("applies the conversation's stored mode before the card's", async () => {
     api('full-access')
     await launchCardChat(card('sandbox'), { openChat: true })
     expect(runtimeModeToSend(session('conv'))).toBe('full-access')
@@ -116,7 +140,14 @@ describe('kanban reuse (the reported path)', () => {
 
   it('keeps the mode of a session already in memory', async () => {
     const setRuntimeMode = api(null)
-    useAgentStore.getState().addSession({ id: 'conv', type: 'claude-code', status: 'idle', projectPath: APP, title: 't', runtimeMode: 'full-access' })
+    useAgentStore.getState().addSession({
+      id: 'conv',
+      type: 'claude-code',
+      status: 'idle',
+      projectPath: APP,
+      title: 't',
+      runtimeMode: 'full-access',
+    })
     await launchCardChat(card('sandbox'), { openChat: true })
     expect(runtimeModeToSend(session('conv'))).toBe('full-access')
     expect(setRuntimeMode).not.toHaveBeenCalled()
@@ -126,7 +157,12 @@ describe('kanban reuse (the reported path)', () => {
     const setRuntimeMode = api(null)
     let answer!: (value: { mode: string }) => void
     const app = (globalThis as { window: { api: { app: Record<string, unknown> } } }).window.api.app
-    app.getConversationRuntimeMode = vi.fn(() => new Promise((resolve) => { answer = resolve }))
+    app.getConversationRuntimeMode = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve
+        }),
+    )
     const launch = launchCardChat(card(null), { openChat: true })
     await vi.waitFor(() => expect(answer).toBeDefined())
     useAgentStore.getState().setRuntimeMode('conv', 'plan')
@@ -136,7 +172,7 @@ describe('kanban reuse (the reported path)', () => {
     expect(setRuntimeMode).not.toHaveBeenCalled()
   })
 
-  it('falls back to the card\'s own mode', async () => {
+  it("falls back to the card's own mode", async () => {
     api(null)
     await launchCardChat(card('sandbox'), { openChat: true })
     expect(runtimeModeToSend(session('conv'))).toBe('sandbox')
@@ -144,21 +180,30 @@ describe('kanban reuse (the reported path)', () => {
 })
 
 describe('source guard', () => {
-  interface Source { path: string; text: string }
+  interface Source {
+    path: string
+    text: string
+  }
   const root = join(__dirname, '../../src/renderer')
-  const files = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name)
-    return statSync(path).isDirectory() ? files(path) : /\.tsx?$/.test(name) ? [path] : []
-  })
+  const files = (dir: string): string[] =>
+    readdirSync(dir).flatMap((name) => {
+      const path = join(dir, name)
+      return statSync(path).isDirectory() ? files(path) : /\.tsx?$/.test(name) ? [path] : []
+    })
   // Platform-neutral: a Windows checkout has backslash paths and, with
   // autocrlf, CRLF line endings. Both are folded before any check.
-  const normalise = ({ path, text }: Source): Source => ({ path: path.replace(/\\/g, '/'), text: text.replace(/\r\n/g, '\n') })
+  const normalise = ({ path, text }: Source): Source => ({
+    path: path.replace(/\\/g, '/'),
+    text: text.replace(/\r\n/g, '\n'),
+  })
   const sources = files(root).map((path) => normalise({ path: relative(root, path), text: readFileSync(path, 'utf8') }))
 
   /** What the guard asserts, as data, so it can be run over any spelling of the tree. */
   function findings(tree: readonly Source[]) {
     // A fresh session literal is the only place `unreadCount: 0` appears unspread.
-    const builders = tree.filter(({ text }) => text.split('\n').some((line) => /\bunreadCount: 0\b/.test(line) && !line.includes('...')))
+    const builders = tree.filter(({ text }) =>
+      text.split('\n').some((line) => /\bunreadCount: 0\b/.test(line) && !line.includes('...')),
+    )
     const flagWriters = tree.filter(({ text }) => /runtimeModeUnresolved:\s*true/.test(text))
     const store = tree.find((f) => f.path === 'stores/agent-store.ts')?.text ?? ''
     return {
@@ -183,11 +228,15 @@ describe('source guard', () => {
 
   it('reaches the same verdict on a Windows checkout (backslash paths, CRLF endings)', () => {
     const windows = sources.map(({ path, text }) =>
-      normalise({ path: win32.join(...path.split('/')), text: text.replace(/\n/g, '\r\n') }))
+      normalise({ path: win32.join(...path.split('/')), text: text.replace(/\n/g, '\r\n') }),
+    )
     expect(windows.some((f) => f.path.includes('\\'))).toBe(false)
     expect(findings(windows)).toEqual(findings(sources))
     // Without the folding the checks would miss: this is what failed on the Windows runner.
-    const raw = sources.map(({ path, text }) => ({ path: win32.join(...path.split('/')), text: text.replace(/\n/g, '\r\n') }))
+    const raw = sources.map(({ path, text }) => ({
+      path: win32.join(...path.split('/')),
+      text: text.replace(/\n/g, '\r\n'),
+    }))
     expect(findings(raw)).not.toEqual(findings(sources))
   })
 })

@@ -36,7 +36,12 @@ import { loadKeyboardOverrides, reloadKeyboardOverrides } from './services/keybo
 import { attachSettingsFileSync } from './services/settings-file-sync'
 import { isShortcutCaptureActive } from '@shared/shortcuts'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/feature-registry'
-import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/context-bridge'
+import {
+  appendIdeSelectionToDraft,
+  appendTerminalSelectionToDraft,
+  captureSelection,
+  formatIdeSelection,
+} from './services/context-bridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { sessionExecutionRootPath } from './services/execution-root'
 import { emitSessionCreated, onProviderEvent, onSessionRename } from './services/session-events'
@@ -57,7 +62,15 @@ import { draftSessionId, isDraftSessionId } from '@shared/new-chat-draft'
 import { parkFirstSend, peekFirstSend, setDraftMaterializer, takeFirstSend } from './services/draft-chat'
 import { toAgentProvider, type SessionSummary, type ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
-import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionResumeId, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
+import {
+  needsMessageReload,
+  resolveSessionDisplayTitle,
+  resolveSessionOpenAgentType,
+  resolveSessionResumeId,
+  resolveSessionSelectTarget,
+  shouldEvictMessages,
+  shouldRetrySessionLoadAfterCreate,
+} from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 import { focusComposer } from './services/composer-registry'
 import { useDraftStore } from './stores/draft-store'
@@ -101,7 +114,9 @@ export function App() {
   const newChatCoordinators = useRef(new Map<string, DesktopNewChatCoordinator>())
   const materializingDrafts = useRef(new Set<string>())
   const newChatJournal = useRef(createDesktopNewChatJournal(window.localStorage))
-  const [worktreeCreationSnapshots, setWorktreeCreationSnapshots] = useState<Record<string, WorktreeCreationSnapshot>>({})
+  const [worktreeCreationSnapshots, setWorktreeCreationSnapshots] = useState<Record<string, WorktreeCreationSnapshot>>(
+    {},
+  )
 
   const {
     sidebarWidth,
@@ -166,7 +181,9 @@ export function App() {
   useEffect(() => {
     const onUnavailable = (event: Event) => {
       const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
-      setAppToast(`Context was kept for ${sessionId?.slice(0, 12) ?? 'the closed chat'}, but that chat is no longer open. Reopen it to recover the draft.`)
+      setAppToast(
+        `Context was kept for ${sessionId?.slice(0, 12) ?? 'the closed chat'}, but that chat is no longer open. Reopen it to recover the draft.`,
+      )
     }
     window.addEventListener('sb-context-target-unavailable', onUnavailable)
     return () => window.removeEventListener('sb-context-target-unavailable', onUnavailable)
@@ -179,42 +196,53 @@ export function App() {
   // Terminal intent inside the workbench (ctrl+` or cmd+j): the webview
   // swallows Switchboard's global keys, so the bridge forwards it - flip the
   // right pane to the terminal strip.
-  useEffect(() =>
-    window.api.ide.onTerminalRequest(() => {
-      const layout = useLayoutStore.getState()
-      layout.setRightPaneMode('terminal')
-      if (!layout.terminalVisible) layout.toggleTerminal()
-      // Pull focus out of the workbench webview into the terminal so app-level
-      // keys (cmd+b toggles the Switchboard sidebar) work again.
-      const sid = useLayoutStore.getState().companionSessionId()
-      const pid = sid ? useTerminalStore.getState().getActivePaneId(sid) : null
-      if (pid) setTimeout(() => focusTerminal(pid), 40)
-    }), [])
+  useEffect(
+    () =>
+      window.api.ide.onTerminalRequest(() => {
+        const layout = useLayoutStore.getState()
+        layout.setRightPaneMode('terminal')
+        if (!layout.terminalVisible) layout.toggleTerminal()
+        // Pull focus out of the workbench webview into the terminal so app-level
+        // keys (cmd+b toggles the Switchboard sidebar) work again.
+        const sid = useLayoutStore.getState().companionSessionId()
+        const pid = sid ? useTerminalStore.getState().getActivePaneId(sid) : null
+        if (pid) setTimeout(() => focusTerminal(pid), 40)
+      }),
+    [],
+  )
 
   // cmd+shift+J inside the workbench webview: VS Code owns the keys there, so
   // the sb-bridge forwards the intent and we toggle data scientist mode here.
-  useEffect(() =>
-    window.api.ide.onDsModeRequest(() => {
-      const layout = useLayoutStore.getState()
-      layout.toggleDataScienceMode()
-      if (!layout.terminalVisible) layout.toggleTerminal()
-    }), [])
+  useEffect(
+    () =>
+      window.api.ide.onDsModeRequest(() => {
+        const layout = useLayoutStore.getState()
+        layout.toggleDataScienceMode()
+        if (!layout.terminalVisible) layout.toggleTerminal()
+      }),
+    [],
+  )
 
   // Workbench selections: cmd+l appends a draft pill; cmd+k (intent 'edit')
   // opens the quick prompt pre-filled with the selection - Cursor-style, but
   // the edit runs through the active agent + in-chat diff review.
-  const [ideEditContext, setIdeEditContext] = useState<{ sessionId: string; preview: string; full: string } | null>(null)
-  useEffect(() =>
-    window.api.ide.onSelection((msg) => {
-      if (msg.intent === 'edit') {
-        const formatted = formatIdeSelection(msg)
-        if (!formatted) return
-        setIdeEditContext({ sessionId: formatted.sessionId, preview: formatted.label, full: formatted.block })
-        setQuickPromptOpen(true)
-      } else {
-        appendIdeSelectionToDraft(msg)
-      }
-    }), [])
+  const [ideEditContext, setIdeEditContext] = useState<{ sessionId: string; preview: string; full: string } | null>(
+    null,
+  )
+  useEffect(
+    () =>
+      window.api.ide.onSelection((msg) => {
+        if (msg.intent === 'edit') {
+          const formatted = formatIdeSelection(msg)
+          if (!formatted) return
+          setIdeEditContext({ sessionId: formatted.sessionId, preview: formatted.label, full: formatted.block })
+          setQuickPromptOpen(true)
+        } else {
+          appendIdeSelectionToDraft(msg)
+        }
+      }),
+    [],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -228,13 +256,20 @@ export function App() {
         const autoplayOn = autoplay !== 'false' // default true
         if (autoplayOn && seen !== TOUR_VERSION) {
           // Defer one tick so first render settles before the modal mounts
-          setTimeout(() => { if (!cancelled) { setTourStartAt(0); setTourOpen(true) } }, 400)
+          setTimeout(() => {
+            if (!cancelled) {
+              setTourStartAt(0)
+              setTourOpen(true)
+            }
+          }, 400)
         }
       } catch (err) {
         log.debug('tour auto-open settings unavailable - skipping', err)
       }
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const handleTryIt = useCallback((action: TryItAction) => {
@@ -285,12 +320,18 @@ export function App() {
   }, [appToast])
 
   // Load bookmarks on mount
-  useEffect(() => { void useBookmarkStore.getState().load() }, [])
+  useEffect(() => {
+    void useBookmarkStore.getState().load()
+  }, [])
 
   // A PR an agent opened shows in Reviews without waiting for the next interval.
-  useEffect(() => window.api.pullRequests.onLinksChanged((change) => {
-    if (change.created) useReviewStore.getState().markStale()
-  }), [])
+  useEffect(
+    () =>
+      window.api.pullRequests.onLinksChanged((change) => {
+        if (change.created) useReviewStore.getState().markStale()
+      }),
+    [],
+  )
 
   useEffect(() => {
     loadKeyboardOverrides().catch((err) => log.warn('loading shortcut overrides failed; using the defaults', err))
@@ -324,9 +365,8 @@ export function App() {
         // that is bound to no slot, and seeding it here would replace the
         // landing screen with a bare draft.
         const chats = ids.filter((id) => !isDraftSessionId(id))
-        const initial = state.activeSessionId && chats.includes(state.activeSessionId)
-          ? state.activeSessionId
-          : chats[0]
+        const initial =
+          state.activeSessionId && chats.includes(state.activeSessionId) ? state.activeSessionId : chats[0]
         if (initial) useLayoutStore.getState().selectChatSession(initial)
       }
     }
@@ -355,8 +395,12 @@ export function App() {
     // Keep cached remote sidebar rows in sync with renames - nothing else
     // refreshes a snapshot until the next connect-time sync.
     const unsubRename = onSessionRename((sessionId, title) =>
-      useMachineStore.getState().renameSnapshotSession(sessionId, title))
-    return () => { unsubStatus(); unsubRename() }
+      useMachineStore.getState().renameSnapshotSession(sessionId, title),
+    )
+    return () => {
+      unsubStatus()
+      unsubRename()
+    }
   }, [])
 
   // Load saved theme on mount
@@ -421,9 +465,10 @@ export function App() {
       const current = () => resumeGapTickets.current.get(key) === ticket
       void (async () => {
         try {
-          const live = machineId === null
-            ? await window.api.provider.listSessions()
-            : await window.api.routing.invokeOn<LiveSessionSummary[]>(machineId, ProviderChannels.LIST_SESSIONS)
+          const live =
+            machineId === null
+              ? await window.api.provider.listSessions()
+              : await window.api.routing.invokeOn<LiveSessionSummary[]>(machineId, ProviderChannels.LIST_SESSIONS)
           if (!current()) return
           const store = useAgentStore.getState()
           store.settleSessionsNotLive(live, machineId)
@@ -433,7 +478,7 @@ export function App() {
             if (!session || session.type === 'terminal') continue
             if (machineId !== null && session.machineId !== machineId) continue
             if (session.status === 'running' || session.status === 'thinking') continue
-            const loaded = await window.api.app.loadSessionById(id) as { messages?: ChatMessage[] } | null
+            const loaded = (await window.api.app.loadSessionById(id)) as { messages?: ChatMessage[] } | null
             if (!current()) return
             const now = useAgentStore.getState().sessions.find((s) => s.id === id)
             // A turn that started while this loaded owns the transcript now.
@@ -504,22 +549,30 @@ export function App() {
     const remove = window.api.onFullscreenChanged((isFullscreen: boolean) => {
       document.documentElement.dataset.fullscreen = isFullscreen ? 'true' : 'false'
     })
-    return () => { remove() }
+    return () => {
+      remove()
+    }
   }, [])
 
   // Listen for settings shortcut from native menu
   useEffect(() => {
     if (typeof window.api?.onOpenSettings !== 'function') return
     // The shortcut toggles: Settings covers the whole window, so the same keys take you back.
-    const remove = window.api.onOpenSettings(unlessConfirmOpen(() => {
-      setSettingsPage((open) => (open === null ? 'general' : null))
-    }))
-    return () => { remove() }
+    const remove = window.api.onOpenSettings(
+      unlessConfirmOpen(() => {
+        setSettingsPage((open) => (open === null ? 'general' : null))
+      }),
+    )
+    return () => {
+      remove()
+    }
   }, [])
 
   useEffect(() => {
     if (typeof window.api?.onOpenChatBeside !== 'function') return
-    return window.api.onOpenChatBeside(unlessConfirmOpen(() => toggleDualChatWorkspace(() => setSessionPickerOpen(true))))
+    return window.api.onOpenChatBeside(
+      unlessConfirmOpen(() => toggleDualChatWorkspace(() => setSessionPickerOpen(true))),
+    )
   }, [])
 
   // ⌘W  close active TAB (close window when last tab)
@@ -527,178 +580,195 @@ export function App() {
   // No active window → close the app window.
   useEffect(() => {
     if (typeof window.api?.onClosePaneOrWindow !== 'function') return
-    const remove = window.api.onClosePaneOrWindow(unlessConfirmOpen((opts: { shift?: boolean }) => {
-      // Main intercepts ⌘W before the page sees it; Settings is recording it.
-      if (isShortcutCaptureActive()) return
-      // Route ⌘W by focus context.
-      const focus = classifyCloseFocus(document.activeElement as unknown as ClosestEl | null)
-      const layoutState = useLayoutStore.getState()
+    const remove = window.api.onClosePaneOrWindow(
+      unlessConfirmOpen((opts: { shift?: boolean }) => {
+        // Main intercepts ⌘W before the page sees it; Settings is recording it.
+        if (isShortcutCaptureActive()) return
+        // Route ⌘W by focus context.
+        const focus = classifyCloseFocus(document.activeElement as unknown as ClosestEl | null)
+        const layoutState = useLayoutStore.getState()
 
-      // IDE pane → the workbench webview owns its own tab lifecycle; a ⌘W
-      // here should not close the app window out from under it.
-      if (focus === 'editor') return
+        // IDE pane → the workbench webview owns its own tab lifecycle; a ⌘W
+        // here should not close the app window out from under it.
+        if (focus === 'editor') return
 
-      // Chat panel in dual mode → close that panel.
-      if (layoutState.secondarySessionId && (focus === 'chat-left' || focus === 'chat-right')) {
-        layoutState.closeChatSlot(focus === 'chat-right' ? 'secondary' : 'primary')
-        return
-      }
-
-      // Only close a terminal when one is actually focused - never from
-      // ambiguous focus (that's how ⌘W was killing SSH'd-in ptys).
-      if (focus === 'terminal') {
-        const sid = useLayoutStore.getState().companionSessionId()
-        if (sid) {
-          const layout = useTerminalStore.getState().getLayout(sid)
-          const wid = layout.activeWindowId
-          const win = wid ? layout.windows[wid] : null
-          if (win) {
-            if (opts.shift) {
-              // ⌘⇧W - close the whole window and its tabs
-              for (const pid of win.paneIds) destroyTerminal(pid)
-              useTerminalStore.getState().removeWindow(sid, wid!)
-            } else {
-              // ⌘W - close just the active tab (window closes itself if last tab)
-              const activePaneId = win.activePaneId
-              if (activePaneId) {
-                destroyTerminal(activePaneId)
-                useTerminalStore.getState().removePane(sid, activePaneId)
-              }
-            }
-            return
-          }
+        // Chat panel in dual mode → close that panel.
+        if (layoutState.secondarySessionId && (focus === 'chat-left' || focus === 'chat-right')) {
+          layoutState.closeChatSlot(focus === 'chat-right' ? 'secondary' : 'primary')
+          return
         }
-        // Terminal focused but no pane to close - close the app window.
-        window.api.closeWindow?.()
-      }
-      // 'other' / ambiguous focus → do nothing (no destructive close).
-    }))
-    return () => { remove() }
+
+        // Only close a terminal when one is actually focused - never from
+        // ambiguous focus (that's how ⌘W was killing SSH'd-in ptys).
+        if (focus === 'terminal') {
+          const sid = useLayoutStore.getState().companionSessionId()
+          if (sid) {
+            const layout = useTerminalStore.getState().getLayout(sid)
+            const wid = layout.activeWindowId
+            const win = wid ? layout.windows[wid] : null
+            if (win) {
+              if (opts.shift) {
+                // ⌘⇧W - close the whole window and its tabs
+                for (const pid of win.paneIds) destroyTerminal(pid)
+                useTerminalStore.getState().removeWindow(sid, wid!)
+              } else {
+                // ⌘W - close just the active tab (window closes itself if last tab)
+                const activePaneId = win.activePaneId
+                if (activePaneId) {
+                  destroyTerminal(activePaneId)
+                  useTerminalStore.getState().removePane(sid, activePaneId)
+                }
+              }
+              return
+            }
+          }
+          // Terminal focused but no pane to close - close the app window.
+          window.api.closeWindow?.()
+        }
+        // 'other' / ambiguous focus → do nothing (no destructive close).
+      }),
+    )
+    return () => {
+      remove()
+    }
   }, [])
 
   // "+ New Chat" submits one backend-owned creation intent. Worktree mode
   // never falls through to the parent checkout: that is a separate recovery
   // action the user must choose explicitly.
-  const publishAuthoritativeSession = useCallback((session: {
-    id: string
-    type: AgentProvider
-    status: 'idle'
-    projectPath: string
-    machineId: string
-    worktreeId?: string
-    worktreePath?: string
-    worktreeBranch?: string
-    managedTerminalIds?: string[]
-    title: string
-    /** Absent when nobody chose one and the project's overrides were unknown: the backend decides. */
-    runtimeMode?: RuntimeMode
-  }) => {
-    window.api.routing.bind(session.id, session.machineId)
-    // A draft's first send created this conversation: hand its message and its
-    // picker choices to the real session before the pane mounts it.
-    const parkedDraftId = peekFirstSend(session.id)?.draftId
-    if (parkedDraftId) materializingDrafts.current.delete(parkedDraftId)
-    const draft = parkedDraftId
-      ? useAgentStore.getState().sessions.find((s) => s.id === parkedDraftId)
-      : undefined
-    if (session.managedTerminalIds?.length && session.worktreePath) {
-      useTerminalStore.getState().adoptManagedTerminals(
-        session.id,
-        session.managedTerminalIds,
-        session.worktreePath,
-      )
-    }
-    addSession({
-      ...session,
-      ...(draft?.model ? { model: draft.model } : {}),
-      ...(draft?.instanceId ? { instanceId: draft.instanceId } : {}),
-      ...(draft?.reasoningEffort ? { reasoningEffort: draft.reasoningEffort } : {}),
-    })
-    if (draft?.model) window.api.app.setConversationModel?.(session.id, draft.model).catch((err: unknown) => log.warn('carry draft model failed', err))
-    if (draft?.instanceId) window.api.app.setConversationProviderInstanceId(session.id, draft.instanceId).catch((err: unknown) => log.warn('carry draft instance failed', err))
-    if (draft?.reasoningEffort) window.api.app.setConversationReasoningEffort(session.id, draft.reasoningEffort).catch((err: unknown) => log.warn('carry draft effort failed', err))
-    // An unresolved mode is not stored: a stored mode would outrank the project's override on the backend.
-    if (draft && session.runtimeMode) window.api.app.setConversationRuntimeMode?.(session.id, session.runtimeMode).catch((err: unknown) => log.warn('persist runtime mode failed', err))
-    // The new chat takes the slot its draft was written in (the landing
-    // screen is the primary one), not whichever slot has focus.
-    if (parkedDraftId && useLayoutStore.getState().slotForChatSession(parkedDraftId)) {
-      useLayoutStore.getState().rotateChatSessionId(parkedDraftId, session.id)
-      useLayoutStore.getState().selectChatSession(session.id)
-    } else {
-      selectChatSession(session.id)
-    }
-    if (session.machineId === 'local') {
-      emitSessionCreated({
-        id: session.id,
-        projectPath: session.projectPath,
-        title: session.title,
-        startedAt: Date.now(),
-        source: 'switchboard',
+  const publishAuthoritativeSession = useCallback(
+    (session: {
+      id: string
+      type: AgentProvider
+      status: 'idle'
+      projectPath: string
+      machineId: string
+      worktreeId?: string
+      worktreePath?: string
+      worktreeBranch?: string
+      managedTerminalIds?: string[]
+      title: string
+      /** Absent when nobody chose one and the project's overrides were unknown: the backend decides. */
+      runtimeMode?: RuntimeMode
+    }) => {
+      window.api.routing.bind(session.id, session.machineId)
+      // A draft's first send created this conversation: hand its message and its
+      // picker choices to the real session before the pane mounts it.
+      const parkedDraftId = peekFirstSend(session.id)?.draftId
+      if (parkedDraftId) materializingDrafts.current.delete(parkedDraftId)
+      const draft = parkedDraftId ? useAgentStore.getState().sessions.find((s) => s.id === parkedDraftId) : undefined
+      if (session.managedTerminalIds?.length && session.worktreePath) {
+        useTerminalStore.getState().adoptManagedTerminals(session.id, session.managedTerminalIds, session.worktreePath)
+      }
+      addSession({
+        ...session,
+        ...(draft?.model ? { model: draft.model } : {}),
+        ...(draft?.instanceId ? { instanceId: draft.instanceId } : {}),
+        ...(draft?.reasoningEffort ? { reasoningEffort: draft.reasoningEffort } : {}),
       })
-    } else {
-      useMachineStore.getState().addSnapshotSession(session.machineId, session.projectPath, {
-        id: session.id,
-        title: session.title,
-        agentType: session.type,
-      })
-    }
-  }, [addSession, selectChatSession])
-
-  const makeNewChatCoordinator = useCallback((onState?: (state: DesktopNewChatState) => void) => createDesktopNewChatCoordinator({
-    worktrees: {
-      create: window.api.worktreeCreation.create,
-      get: window.api.worktreeCreation.get,
-      onProgress: window.api.worktreeCreation.onProgress,
-    },
-    sessions: { addAuthoritative: publishAuthoritativeSession },
-    parent: {
-      create: async (intent) => {
-        window.api.routing.bind(intent.conversationId, intent.machineId)
-        await window.api.app.createConversation({
-          id: intent.conversationId,
-          projectPath: intent.projectPath,
-          agentType: intent.agentType,
-          title: intent.title,
-          ...(intent.existingWorktree
-            ? { worktreePath: intent.existingWorktree.path, worktreeBranch: intent.existingWorktree.branch }
-            : {}),
-        })
-        publishAuthoritativeSession({
-          id: intent.conversationId,
-          type: intent.agentType,
-          status: 'idle',
-          projectPath: intent.projectPath,
-          machineId: intent.machineId,
-          title: intent.title,
-          runtimeMode: intent.runtimeMode,
-          ...(intent.existingWorktree
-            ? { worktreePath: intent.existingWorktree.path, worktreeBranch: intent.existingWorktree.branch }
-            : {}),
-        })
-        return { conversationId: intent.conversationId }
-      },
-    },
-    journal: newChatJournal.current,
-    createId: () => crypto.randomUUID(),
-    now: Date.now,
-    onStateChange: (state) => {
-      onState?.(state)
-      if (!state.creationId || !state.snapshot) return
-      if (state.snapshot.status === 'ready' || shouldDismissDesktopWorktreeSnapshot(state.snapshot)) {
-        newChatJournal.current.remove(state.creationId)
-        setWorktreeCreationSnapshots((current) => {
-          const next = { ...current }
-          delete next[state.creationId!]
-          return next
+      if (draft?.model)
+        window.api.app
+          .setConversationModel?.(session.id, draft.model)
+          .catch((err: unknown) => log.warn('carry draft model failed', err))
+      if (draft?.instanceId)
+        window.api.app
+          .setConversationProviderInstanceId(session.id, draft.instanceId)
+          .catch((err: unknown) => log.warn('carry draft instance failed', err))
+      if (draft?.reasoningEffort)
+        window.api.app
+          .setConversationReasoningEffort(session.id, draft.reasoningEffort)
+          .catch((err: unknown) => log.warn('carry draft effort failed', err))
+      // An unresolved mode is not stored: a stored mode would outrank the project's override on the backend.
+      if (draft && session.runtimeMode)
+        window.api.app
+          .setConversationRuntimeMode?.(session.id, session.runtimeMode)
+          .catch((err: unknown) => log.warn('persist runtime mode failed', err))
+      // The new chat takes the slot its draft was written in (the landing
+      // screen is the primary one), not whichever slot has focus.
+      if (parkedDraftId && useLayoutStore.getState().slotForChatSession(parkedDraftId)) {
+        useLayoutStore.getState().rotateChatSessionId(parkedDraftId, session.id)
+        useLayoutStore.getState().selectChatSession(session.id)
+      } else {
+        selectChatSession(session.id)
+      }
+      if (session.machineId === 'local') {
+        emitSessionCreated({
+          id: session.id,
+          projectPath: session.projectPath,
+          title: session.title,
+          startedAt: Date.now(),
+          source: 'switchboard',
         })
       } else {
-        setWorktreeCreationSnapshots((current) => ({
-          ...current,
-          [state.creationId!]: state.snapshot!,
-        }))
+        useMachineStore.getState().addSnapshotSession(session.machineId, session.projectPath, {
+          id: session.id,
+          title: session.title,
+          agentType: session.type,
+        })
       }
     },
-  }), [publishAuthoritativeSession])
+    [addSession, selectChatSession],
+  )
+
+  const makeNewChatCoordinator = useCallback(
+    (onState?: (state: DesktopNewChatState) => void) =>
+      createDesktopNewChatCoordinator({
+        worktrees: {
+          create: window.api.worktreeCreation.create,
+          get: window.api.worktreeCreation.get,
+          onProgress: window.api.worktreeCreation.onProgress,
+        },
+        sessions: { addAuthoritative: publishAuthoritativeSession },
+        parent: {
+          create: async (intent) => {
+            window.api.routing.bind(intent.conversationId, intent.machineId)
+            await window.api.app.createConversation({
+              id: intent.conversationId,
+              projectPath: intent.projectPath,
+              agentType: intent.agentType,
+              title: intent.title,
+              ...(intent.existingWorktree
+                ? { worktreePath: intent.existingWorktree.path, worktreeBranch: intent.existingWorktree.branch }
+                : {}),
+            })
+            publishAuthoritativeSession({
+              id: intent.conversationId,
+              type: intent.agentType,
+              status: 'idle',
+              projectPath: intent.projectPath,
+              machineId: intent.machineId,
+              title: intent.title,
+              runtimeMode: intent.runtimeMode,
+              ...(intent.existingWorktree
+                ? { worktreePath: intent.existingWorktree.path, worktreeBranch: intent.existingWorktree.branch }
+                : {}),
+            })
+            return { conversationId: intent.conversationId }
+          },
+        },
+        journal: newChatJournal.current,
+        createId: () => crypto.randomUUID(),
+        now: Date.now,
+        onStateChange: (state) => {
+          onState?.(state)
+          if (!state.creationId || !state.snapshot) return
+          if (state.snapshot.status === 'ready' || shouldDismissDesktopWorktreeSnapshot(state.snapshot)) {
+            newChatJournal.current.remove(state.creationId)
+            setWorktreeCreationSnapshots((current) => {
+              const next = { ...current }
+              delete next[state.creationId!]
+              return next
+            })
+          } else {
+            setWorktreeCreationSnapshots((current) => ({
+              ...current,
+              [state.creationId!]: state.snapshot!,
+            }))
+          }
+        },
+      }),
+    [publishAuthoritativeSession],
+  )
 
   // "+ New Chat", cmd+shift+O and the landing screen open a draft. Nothing is
   // created until the first send, so an abandoned click leaves no
@@ -735,11 +805,14 @@ export function App() {
 
   // A new chat is written on the landing screen, which takes the primary
   // slot; the chat it replaces stays open in the sidebar.
-  const openDraftChat = useCallback(async (projectPath: string, machineId: string = 'local') => {
-    useLayoutStore.getState().setAppView('chats')
-    useLayoutStore.getState().showLanding(await ensureDraftSession(projectPath, machineId))
-    requestAnimationFrame(() => focusComposer(LANDING_COMPOSER_ID))
-  }, [ensureDraftSession])
+  const openDraftChat = useCallback(
+    async (projectPath: string, machineId: string = 'local') => {
+      useLayoutStore.getState().setAppView('chats')
+      useLayoutStore.getState().showLanding(await ensureDraftSession(projectPath, machineId))
+      requestAnimationFrame(() => focusComposer(LANDING_COMPOSER_ID))
+    },
+    [ensureDraftSession],
+  )
 
   // cmd+shift+O, "+ New chat" and the palette: the landing screen, on the
   // project of the chat in focus.
@@ -774,10 +847,10 @@ export function App() {
   const retainCoordinator = useCallback((coordinator: DesktopNewChatCoordinator, checkout: 'project' | 'worktree') => {
     const state = coordinator.state()
     if (
-      checkout === 'worktree'
-      && state.creationId
-      && state.status !== 'ready'
-      && (!state.snapshot || !shouldDismissDesktopWorktreeSnapshot(state.snapshot))
+      checkout === 'worktree' &&
+      state.creationId &&
+      state.status !== 'ready' &&
+      (!state.snapshot || !shouldDismissDesktopWorktreeSnapshot(state.snapshot))
     ) {
       newChatCoordinators.current.set(state.creationId, coordinator)
     } else {
@@ -818,9 +891,15 @@ export function App() {
       }
       const coordinator = makeNewChatCoordinator((state) => {
         const snapshot = state.snapshot
-        if (state.status === 'failed' || (snapshot && snapshot.status !== 'ready' && (
-          snapshot.status === 'failed' || snapshot.status === 'cleanup_required' || shouldDismissDesktopWorktreeSnapshot(snapshot)
-        ))) giveBack()
+        if (
+          state.status === 'failed' ||
+          (snapshot &&
+            snapshot.status !== 'ready' &&
+            (snapshot.status === 'failed' ||
+              snapshot.status === 'cleanup_required' ||
+              shouldDismissDesktopWorktreeSnapshot(snapshot)))
+        )
+          giveBack()
       })
       parkFirstSend(conversationId, { ...send, draftId })
       useAgentStore.getState().updateStatus(draftId, 'running')
@@ -860,75 +939,78 @@ export function App() {
       retainCoordinator(coordinator, checkout === 'worktree' ? 'worktree' : 'project')
       if (failed) {
         const message = startError instanceof Error ? startError.message : state.error
-        return { accepted: false, error: message ?? 'The new chat could not be created. See the worktree card for recovery.' }
+        return {
+          accepted: false,
+          error: message ?? 'The new chat could not be created. See the worktree card for recovery.',
+        }
       }
       return { accepted: true }
     })
     return () => setDraftMaterializer(null)
   }, [makeNewChatCoordinator, retainCoordinator])
 
-  const handleWorktreeCreationAction = useCallback(async (
-    snapshot: WorktreeCreationSnapshot,
-    action: WorktreeCreationRecoveryAction,
-  ) => {
-    const coordinator = newChatCoordinators.current.get(snapshot.creationId)
-    if (!snapshot) return
-    try {
-      if (action === 'start_in_project') {
-        if (!coordinator) {
-          throw new Error('The original new-chat request is unavailable. Retry or remove the retained worktree.')
+  const handleWorktreeCreationAction = useCallback(
+    async (snapshot: WorktreeCreationSnapshot, action: WorktreeCreationRecoveryAction) => {
+      const coordinator = newChatCoordinators.current.get(snapshot.creationId)
+      if (!snapshot) return
+      try {
+        if (action === 'start_in_project') {
+          if (!coordinator) {
+            throw new Error('The original new-chat request is unavailable. Retry or remove the retained worktree.')
+          }
+          await coordinator.startInProject()
+          setWorktreeCreationSnapshots((current) => {
+            const next = { ...current }
+            delete next[snapshot.creationId]
+            return next
+          })
+          coordinator.dispose()
+          newChatCoordinators.current.delete(snapshot.creationId)
+          return
         }
-        await coordinator.startInProject()
-        setWorktreeCreationSnapshots((current) => {
-          const next = { ...current }
-          delete next[snapshot.creationId]
-          return next
-        })
-        coordinator.dispose()
-        newChatCoordinators.current.delete(snapshot.creationId)
-        return
-      }
-      const result = coordinator
-        ? await retryDesktopWorktreeCreation({
-            snapshot,
-            action,
-            reconcile: () => coordinator.reconcile(),
-            act: (request) => window.api.worktreeCreation.act(request),
+        const result = coordinator
+          ? await retryDesktopWorktreeCreation({
+              snapshot,
+              action,
+              reconcile: () => coordinator.reconcile(),
+              act: (request) => window.api.worktreeCreation.act(request),
+            })
+          : await window.api.worktreeCreation.act({
+              creationId: snapshot.creationId,
+              machineId: snapshot.provenance.machineId,
+              expectedRevision: snapshot.revision,
+              action,
+            })
+        if (!('phase' in result)) return
+        const updated = result
+        if (shouldDismissDesktopWorktreeSnapshot(updated)) {
+          coordinator?.dismiss()
+          coordinator?.dispose()
+          newChatCoordinators.current.delete(snapshot.creationId)
+          setWorktreeCreationSnapshots((current) => {
+            const next = { ...current }
+            delete next[snapshot.creationId]
+            return next
           })
-        : await window.api.worktreeCreation.act({
-            creationId: snapshot.creationId,
-            machineId: snapshot.provenance.machineId,
-            expectedRevision: snapshot.revision,
-            action,
+          return
+        }
+        setWorktreeCreationSnapshots((current) => ({ ...current, [snapshot.creationId]: updated }))
+        if (updated.status === 'ready' && coordinator) {
+          await coordinator.reconcile()
+          coordinator.dispose()
+          newChatCoordinators.current.delete(snapshot.creationId)
+          setWorktreeCreationSnapshots((current) => {
+            const next = { ...current }
+            delete next[snapshot.creationId]
+            return next
           })
-      if (!('phase' in result)) return
-      const updated = result
-      if (shouldDismissDesktopWorktreeSnapshot(updated)) {
-        coordinator?.dismiss()
-        coordinator?.dispose()
-        newChatCoordinators.current.delete(snapshot.creationId)
-        setWorktreeCreationSnapshots((current) => {
-          const next = { ...current }
-          delete next[snapshot.creationId]
-          return next
-        })
-        return
+        }
+      } catch (error) {
+        setAppToast(error instanceof Error ? error.message : 'Could not update worktree creation.')
       }
-      setWorktreeCreationSnapshots((current) => ({ ...current, [snapshot.creationId]: updated }))
-      if (updated.status === 'ready' && coordinator) {
-        await coordinator.reconcile()
-        coordinator.dispose()
-        newChatCoordinators.current.delete(snapshot.creationId)
-        setWorktreeCreationSnapshots((current) => {
-          const next = { ...current }
-          delete next[snapshot.creationId]
-          return next
-        })
-      }
-    } catch (error) {
-      setAppToast(error instanceof Error ? error.message : 'Could not update worktree creation.')
-    }
-  }, [])
+    },
+    [],
+  )
 
   useEffect(() => {
     let disposed = false
@@ -937,18 +1019,21 @@ export function App() {
       const coordinator = makeNewChatCoordinator()
       restored.push(coordinator)
       newChatCoordinators.current.set(entry.request.creationId, coordinator)
-      void coordinator.restore(entry).then((state) => {
-        if (state.snapshot && (
-          state.snapshot.status === 'ready'
-          || shouldDismissDesktopWorktreeSnapshot(state.snapshot)
-        )) {
-          coordinator.dismiss()
-          coordinator.dispose()
-          newChatCoordinators.current.delete(entry.request.creationId)
-        }
-      }).catch((error) => {
-        if (!disposed) setAppToast(error instanceof Error ? error.message : 'Could not reconcile worktree creation.')
-      })
+      void coordinator
+        .restore(entry)
+        .then((state) => {
+          if (
+            state.snapshot &&
+            (state.snapshot.status === 'ready' || shouldDismissDesktopWorktreeSnapshot(state.snapshot))
+          ) {
+            coordinator.dismiss()
+            coordinator.dispose()
+            newChatCoordinators.current.delete(entry.request.creationId)
+          }
+        })
+        .catch((error) => {
+          if (!disposed) setAppToast(error instanceof Error ? error.message : 'Could not reconcile worktree creation.')
+        })
     }
     return () => {
       disposed = true
@@ -982,9 +1067,8 @@ export function App() {
       // Terminal summaries are companion surfaces, not chats. Treat an
       // "open beside" request from a generic sidebar menu as an ordinary
       // selection so a terminal can never occupy the secondary chat slot.
-      const placeSession = placement === 'beside' && session.agentType !== 'terminal'
-        ? openChatBeside
-        : selectChatSession
+      const placeSession =
+        placement === 'beside' && session.agentType !== 'terminal' ? openChatBeside : selectChatSession
 
       const recoveryKey = retainedWorktreeCreationKey(session, machineId)
       if (recoveryKey) {
@@ -1005,10 +1089,9 @@ export function App() {
       const openingTicket = waits.open(openingSlot, { id: session.id, title: session.title, projectPath })
       // A focus change while the load runs would place the chat in the other
       // slot, so the open stops instead.
-      const isCurrentOpen = () => (
-        useChatWaitStore.getState().opening[openingSlot]?.ticket === openingTicket
-        && (placeSession === openChatBeside || useLayoutStore.getState().focusedChatSlot === openingSlot)
-      )
+      const isCurrentOpen = () =>
+        useChatWaitStore.getState().opening[openingSlot]?.ticket === openingTicket &&
+        (placeSession === openChatBeside || useLayoutStore.getState().focusedChatSlot === openingSlot)
       try {
         const storeState = useAgentStore.getState()
         const existing = storeState.sessions.find((s) => s.id === session.id)
@@ -1025,12 +1108,9 @@ export function App() {
           if (!isCurrentOpen()) return
           placeSession(sessionId)
           if (
-            current
-            && shouldEvictMessages(current)
-            && shouldEvictReplacedSession(
-              current.id,
-              useLayoutStore.getState().displayedChatSessionIds(),
-            )
+            current &&
+            shouldEvictMessages(current) &&
+            shouldEvictReplacedSession(current.id, useLayoutStore.getState().displayedChatSessionIds())
           ) {
             clearMessages(current.id)
           }
@@ -1043,7 +1123,7 @@ export function App() {
           // Messages may have been evicted - reload from disk if so.
           if (needsMessageReload(existing)) {
             try {
-              const resp = await window.api.app.loadSessionById(session.id) as ChatLoadDiagnostics & {
+              const resp = (await window.api.app.loadSessionById(session.id)) as ChatLoadDiagnostics & {
                 messages: ChatMessage[]
                 meta: { id: string; title: string; projectPath: string; agentType: string } | null
               }
@@ -1055,12 +1135,20 @@ export function App() {
               } else if (effectiveMachineId !== 'local') {
                 // Empty reload for a remote chat means routing/scan failure, not
                 // an empty conversation.
-                log.warn('remote history reload returned no messages', { sessionId: session.id, machineId: effectiveMachineId })
+                log.warn('remote history reload returned no messages', {
+                  sessionId: session.id,
+                  machineId: effectiveMachineId,
+                })
               }
             } catch (err) {
               loadDiagnostics = null
               log.warn('session history reload failed', { sessionId: session.id, machineId: effectiveMachineId, err })
-              waits.settleLoad(openingSlot, openingTicket, session.id, 'Could not load conversation. Select this chat to retry.')
+              waits.settleLoad(
+                openingSlot,
+                openingTicket,
+                session.id,
+                'Could not load conversation. Select this chat to retry.',
+              )
             }
           }
           if (!isCurrentOpen()) return
@@ -1075,7 +1163,14 @@ export function App() {
         // Terminal sessions have no JSONL - PTY is gone after restart, just activate.
         if (session.agentType === 'terminal') {
           openTiming.cancel('terminal')
-          addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title, machineId: effectiveMachineId })
+          addSession({
+            id: session.id,
+            type: 'terminal',
+            status: 'idle',
+            projectPath,
+            title: session.title,
+            machineId: effectiveMachineId,
+          })
           placeAndEvict(session.id)
           return
         }
@@ -1105,11 +1200,16 @@ export function App() {
         }
         let loaded: LoadedSession | null = null
         try {
-          loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
+          loaded = (await window.api.app.loadSessionById(session.id)) as LoadedSession
           waits.settleLoad(openingSlot, openingTicket, session.id)
         } catch (err) {
           log.warn('session history load failed', { sessionId: session.id, machineId: effectiveMachineId, err })
-          waits.settleLoad(openingSlot, openingTicket, session.id, 'Could not load conversation. Select this chat to retry.')
+          waits.settleLoad(
+            openingSlot,
+            openingTicket,
+            session.id,
+            'Could not load conversation. Select this chat to retry.',
+          )
         }
         let loadDiagnostics: ChatLoadDiagnostics | null = loaded
 
@@ -1153,11 +1253,13 @@ export function App() {
               machineId: effectiveMachineId,
             })
             if (creationSnapshot.startupReceipt?.terminalIds.length && creationSnapshot.worktreePath) {
-              useTerminalStore.getState().adoptManagedTerminals(
-                session.id,
-                creationSnapshot.startupReceipt.terminalIds,
-                creationSnapshot.worktreePath,
-              )
+              useTerminalStore
+                .getState()
+                .adoptManagedTerminals(
+                  session.id,
+                  creationSnapshot.startupReceipt.terminalIds,
+                  creationSnapshot.worktreePath,
+                )
             }
           } catch (error) {
             log.warn('worktree startup receipt recovery failed', { sessionId: session.id, error })
@@ -1174,9 +1276,10 @@ export function App() {
           worktreeBranch: loaded?.meta?.worktreeBranch ?? session.worktreeBranch ?? null,
           executionRootRevision: loaded?.meta?.executionRootRevision ?? 0,
           managedTerminalIds: creationSnapshot?.startupReceipt?.terminalIds,
-          resumeSessionId: loaded?.meta?.forkMetadata?.resumeMode === 'transcript-handoff'
-            ? undefined
-            : resolveSessionResumeId(session.source, session.id),
+          resumeSessionId:
+            loaded?.meta?.forkMetadata?.resumeMode === 'transcript-handoff'
+              ? undefined
+              : resolveSessionResumeId(session.source, session.id),
           title: session.title,
           runtimeMode: loaded?.meta?.runtimeMode ?? undefined,
           model: loaded?.meta?.model ?? undefined,
@@ -1188,24 +1291,31 @@ export function App() {
 
         // Ensure conversation row exists in DB so subsequent saveMessage /
         // bulkSaveMessages calls don't skip due to missing FK.
-        await window.api.app.createConversation({
-          id: session.id,
-          projectPath,
-          agentType: toAgentProvider(session.source),
-          title: session.title,
-        }).catch((err) => {
-          log.debug(`createConversation failed for ${session.id} - row may already exist`, err)
-        })
+        await window.api.app
+          .createConversation({
+            id: session.id,
+            projectPath,
+            agentType: toAgentProvider(session.source),
+            title: session.title,
+          })
+          .catch((err) => {
+            log.debug(`createConversation failed for ${session.id} - row may already exist`, err)
+          })
 
         if (shouldRetrySessionLoadAfterCreate(Boolean(loaded?.meta), session.filePath)) {
           try {
-            loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
+            loaded = (await window.api.app.loadSessionById(session.id)) as LoadedSession
             loadDiagnostics = loaded
             waits.settleLoad(openingSlot, openingTicket, session.id)
           } catch (err) {
             loadDiagnostics = null
             log.warn('session history reload after create failed', { sessionId: session.id, err })
-            waits.settleLoad(openingSlot, openingTicket, session.id, 'Could not load conversation. Select this chat to retry.')
+            waits.settleLoad(
+              openingSlot,
+              openingTicket,
+              session.id,
+              'Could not load conversation. Select this chat to retry.',
+            )
           }
         }
 
@@ -1268,7 +1378,15 @@ export function App() {
     registerReviewChatOpener(async (chat) => {
       const open = useAgentStore.getState().sessions.find((session) => chat.familyIds.includes(session.id))
       await handleSessionSelect(
-        { id: open?.id ?? chat.id, source: toAgentProvider(chat.agentType), title: chat.title, startedAt: chat.updatedAt, messageCount: 0, filePath: '', agentType: chat.agentType },
+        {
+          id: open?.id ?? chat.id,
+          source: toAgentProvider(chat.agentType),
+          title: chat.title,
+          startedAt: chat.updatedAt,
+          messageCount: 0,
+          filePath: '',
+          agentType: chat.agentType,
+        },
         open?.projectPath ?? chat.projectPath,
         open?.machineId ?? 'local',
       )
@@ -1277,25 +1395,28 @@ export function App() {
     return () => registerReviewChatOpener(null)
   }, [handleSessionSelect])
 
-  const handleOpenLoadedSessionBeside = useCallback(async (sessionId: string) => {
-    const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)
-    if (!session) {
-      setAppToast('That chat is no longer loaded. Open it from the sidebar and try again.')
-      return
-    }
-    openChatBeside(sessionId)
-    if (needsMessageReload(session)) {
-      try {
-        const loaded = await window.api.app.loadSessionById(sessionId) as { messages?: ChatMessage[] } | null
-        if (loaded?.messages?.length) setMessages(sessionId, loaded.messages)
-      } catch (err) {
-        log.warn('open-beside history reload failed', { sessionId, err })
-        setAppToast('The chat opened, but its history could not be reloaded.')
+  const handleOpenLoadedSessionBeside = useCallback(
+    async (sessionId: string) => {
+      const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)
+      if (!session) {
+        setAppToast('That chat is no longer loaded. Open it from the sidebar and try again.')
+        return
       }
-    }
-    void recoverPendingRequests(sessionId)
-    requestAnimationFrame(() => focusComposer(sessionId))
-  }, [openChatBeside, setMessages])
+      openChatBeside(sessionId)
+      if (needsMessageReload(session)) {
+        try {
+          const loaded = (await window.api.app.loadSessionById(sessionId)) as { messages?: ChatMessage[] } | null
+          if (loaded?.messages?.length) setMessages(sessionId, loaded.messages)
+        } catch (err) {
+          log.warn('open-beside history reload failed', { sessionId, err })
+          setAppToast('The chat opened, but its history could not be reloaded.')
+        }
+      }
+      void recoverPendingRequests(sessionId)
+      requestAnimationFrame(() => focusComposer(sessionId))
+    },
+    [openChatBeside, setMessages],
+  )
 
   useEffect(() => {
     registerSidebarEl(sidebarRef.current)
@@ -1386,9 +1507,10 @@ export function App() {
           const ids = st.getAllWindowIds(sid)
           const label = `Terminal ${ids.length + 1}`
           const cwd = sessionExecutionRootPath(sid)
-          const ref = ids.length === 0
-            ? st.addWindow(sid, { label, cwd })
-            : st.splitActiveWindow(sid, action.direction, { label, cwd })
+          const ref =
+            ids.length === 0
+              ? st.addWindow(sid, { label, cwd })
+              : st.splitActiveWindow(sid, action.direction, { label, cwd })
           if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
           if (ref) setTimeout(() => focusTerminal(ref.paneId), 80)
           break
@@ -1405,11 +1527,9 @@ export function App() {
           const s = useAgentStore.getState().sessions.find((x) => x.id === sid)
           if (s && (s.status === 'running' || s.status === 'thinking')) {
             const active = document.activeElement
-            const inText = active instanceof HTMLElement && (
-              active.tagName === 'INPUT' ||
-              active.tagName === 'TEXTAREA' ||
-              active.contentEditable === 'true'
-            )
+            const inText =
+              active instanceof HTMLElement &&
+              (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.contentEditable === 'true')
             if (!inText && sid) {
               e.preventDefault()
               window.api.provider?.interrupt?.(sid).catch((err) => {
@@ -1488,15 +1608,9 @@ export function App() {
     return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [toggleSidebar, toggleTerminal, toggleRightPaneMode, showLandingScreen])
 
-  const handleSidebarResizeEnd = useCallback(
-    (px: number) => setSidebarWidth(px),
-    [setSidebarWidth],
-  )
+  const handleSidebarResizeEnd = useCallback((px: number) => setSidebarWidth(px), [setSidebarWidth])
 
-  const handleTerminalResizeEnd = useCallback(
-    (px: number) => setTerminalWidth(px),
-    [setTerminalWidth],
-  )
+  const handleTerminalResizeEnd = useCallback((px: number) => setTerminalWidth(px), [setTerminalWidth])
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -1517,7 +1631,16 @@ export function App() {
       >
         <span style={{ flex: 1 }} />
         <span style={{ fontWeight: 500, letterSpacing: '0.3px' }}>Switchboard</span>
-        <span style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', paddingRight: '12px', alignItems: 'center', gap: '8px' }}>
+        <span
+          style={{
+            flex: 1,
+            display: 'flex',
+            justifyContent: 'flex-end',
+            paddingRight: '12px',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
           {/* Chats ↔ Board view toggle. ⌘⇧K does the same thing - this
               gives discoverability for users who don't know the shortcut. */}
           <ViewToggle />
@@ -1535,11 +1658,24 @@ export function App() {
               WebkitAppRegion: 'no-drag',
               transition: 'color 0.12s',
             }}
-            onMouseEnter={(e) => { (e.target as HTMLElement).style.color = 'var(--text-primary)' }}
-            onMouseLeave={(e) => { (e.target as HTMLElement).style.color = 'var(--text-muted)' }}
+            onMouseEnter={(e) => {
+              ;(e.target as HTMLElement).style.color = 'var(--text-primary)'
+            }}
+            onMouseLeave={(e) => {
+              ;(e.target as HTMLElement).style.color = 'var(--text-muted)'
+            }}
             title="Settings"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
@@ -1571,7 +1707,9 @@ export function App() {
         >
           <Sidebar
             onNewChat={openDraftChat}
-            onPickNewChat={() => { void showLandingScreen() }}
+            onPickNewChat={() => {
+              void showLandingScreen()
+            }}
             onSessionSelect={handleSessionSelect}
             onOpenBeside={(session, projectPath, machineId) => {
               void handleSessionSelect(session, projectPath, machineId, 'beside')
@@ -1633,7 +1771,9 @@ export function App() {
                 dataScienceMode={dataScienceMode}
                 onOpenBeside={() => setSessionPickerOpen(true)}
                 ensureDraftSession={ensureDraftSession}
-                onOpenChat={(chat) => { void handleSessionSelect(chat.session, chat.projectPath, chat.machineId) }}
+                onOpenChat={(chat) => {
+                  void handleSessionSelect(chat.session, chat.projectPath, chat.machineId)
+                }}
               />
             </div>
             {activeTerminalPaneId && (
@@ -1726,12 +1866,19 @@ export function App() {
 
       <StatusBar />
 
-
       {Object.values(worktreeCreationSnapshots).some((snapshot) => snapshot.status !== 'ready') && (
-        <div style={{
-          position: 'fixed', right: 16, bottom: 42, width: 360, zIndex: 1200,
-          display: 'flex', flexDirection: 'column', gap: 8,
-        }}>
+        <div
+          style={{
+            position: 'fixed',
+            right: 16,
+            bottom: 42,
+            width: 360,
+            zIndex: 1200,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
           {Object.values(worktreeCreationSnapshots)
             .filter((snapshot) => snapshot.status !== 'ready')
             .map((snapshot) => (
@@ -1749,17 +1896,36 @@ export function App() {
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        onOpenSettings={() => { setPaletteOpen(false); setSettingsPage('general') }}
-        onOpenSearch={() => { setPaletteOpen(false); setSearchOpen(true) }}
-        onOpenSessionPicker={() => { setPaletteOpen(false); setSessionPickerOpen(true) }}
-        onOpenQuickPrompt={() => { setPaletteOpen(false); setQuickPromptOpen(true) }}
-        onContextBridge={() => { setPaletteOpen(false); appendTerminalSelectionToDraft() }}
-        onNewChat={() => { void showLandingScreen() }}
+        onOpenSettings={() => {
+          setPaletteOpen(false)
+          setSettingsPage('general')
+        }}
+        onOpenSearch={() => {
+          setPaletteOpen(false)
+          setSearchOpen(true)
+        }}
+        onOpenSessionPicker={() => {
+          setPaletteOpen(false)
+          setSessionPickerOpen(true)
+        }}
+        onOpenQuickPrompt={() => {
+          setPaletteOpen(false)
+          setQuickPromptOpen(true)
+        }}
+        onContextBridge={() => {
+          setPaletteOpen(false)
+          appendTerminalSelectionToDraft()
+        }}
+        onNewChat={() => {
+          void showLandingScreen()
+        }}
       />
       <SessionPickerModal
         open={sessionPickerOpen}
         onClose={() => setSessionPickerOpen(false)}
-        onPick={(id) => { void handleOpenLoadedSessionBeside(id) }}
+        onPick={(id) => {
+          void handleOpenLoadedSessionBeside(id)
+        }}
         excludeIds={useLayoutStore.getState().displayedChatSessionIds()}
         title="Open a loaded chat beside this one"
       />

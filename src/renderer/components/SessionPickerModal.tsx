@@ -19,17 +19,16 @@ export function sessionPickerIdentity(
   session: PickerSessionIdentity,
   machineName?: string,
 ): { provider: string; title: string; context: string } {
-  const provider = session.type === 'codex'
-    ? 'Codex'
-    : session.type === 'opencode'
-      ? 'OpenCode'
-      : session.type === 'terminal'
-        ? 'Terminal'
-        : 'Claude'
+  const provider =
+    session.type === 'codex'
+      ? 'Codex'
+      : session.type === 'opencode'
+        ? 'OpenCode'
+        : session.type === 'terminal'
+          ? 'Terminal'
+          : 'Claude'
   const folder = (session.worktreePath ?? session.projectPath)?.split('/').filter(Boolean).pop()
-  const machine = session.machineId && session.machineId !== 'local'
-    ? machineName ?? session.machineId
-    : 'Local'
+  const machine = session.machineId && session.machineId !== 'local' ? (machineName ?? session.machineId) : 'Local'
   return {
     provider,
     title: session.title ?? session.id.slice(0, 8),
@@ -94,7 +93,12 @@ export function SessionPickerModal({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent
         ref={contentRef}
         aria-describedby={undefined}
@@ -119,27 +123,30 @@ export function SessionPickerModal({
           <div className="overflow-y-auto py-[4px]">
             {candidates.map((s, i) => {
               const selected = i === activeIdx
-              const identity = sessionPickerIdentity(
-                s,
-                remotes.find((machine) => machine.id === s.machineId)?.name,
-              )
+              const identity = sessionPickerIdentity(s, remotes.find((machine) => machine.id === s.machineId)?.name)
               return (
                 <button
                   key={s.id}
-                  onClick={() => { onPick(s.id); onClose() }}
+                  onClick={() => {
+                    onPick(s.id)
+                    onClose()
+                  }}
                   onMouseEnter={() => setActiveIdx(i)}
                   className={cn(
                     'flex w-full cursor-pointer items-start gap-[8px] border-0 px-[14px] py-[8px] text-left text-[var(--text-primary)]',
                     selected ? 'bg-[var(--bg-hover)]' : 'bg-transparent',
                   )}
                 >
-                  <span className={cn('min-w-[46px] text-[10px] [font-family:var(--font-mono)]', selected ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]')}>
+                  <span
+                    className={cn(
+                      'min-w-[46px] text-[10px] [font-family:var(--font-mono)]',
+                      selected ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]',
+                    )}
+                  >
                     {identity.provider}
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                    <span className="truncate text-[13px]">
-                      {identity.title}
-                    </span>
+                    <span className="truncate text-[13px]">{identity.title}</span>
                     <span className="text-[10px] [font-family:var(--font-mono)] text-[var(--text-muted)]">
                       {identity.context}
                     </span>

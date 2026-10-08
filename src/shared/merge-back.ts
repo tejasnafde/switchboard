@@ -109,7 +109,10 @@ function truncateToBytes(text: string, max: number): string {
 }
 
 /** True when `message` comes after `cursor`. */
-export function isAfterMergeBackCursor(message: Pick<ChatMessage, 'id' | 'timestamp'>, cursor: MergeBackCursor): boolean {
+export function isAfterMergeBackCursor(
+  message: Pick<ChatMessage, 'id' | 'timestamp'>,
+  cursor: MergeBackCursor,
+): boolean {
   if (message.timestamp > cursor.at) return true
   return message.timestamp === cursor.at && !cursor.ids.includes(message.id)
 }
@@ -158,9 +161,7 @@ export function buildMergeBackSummary(
   fork: MergeBackForkInfo,
   maxBytes: number = MERGE_BACK_MAX_BYTES,
 ): MergeBackSummary | null {
-  const delta = messages
-    .filter((m) => isAfterMergeBackCursor(m, cursor))
-    .sort((a, b) => a.timestamp - b.timestamp)
+  const delta = messages.filter((m) => isAfterMergeBackCursor(m, cursor)).sort((a, b) => a.timestamp - b.timestamp)
   const turns: Turn[] = []
   const files: string[] = []
   let result: { id: string; text: string } | null = null
@@ -187,14 +188,16 @@ export function buildMergeBackSummary(
   const resultText = result ? truncateToBytes(result.text, RESULT_MAX_BYTES) : null
   const head = (omitted: number): string => {
     const lines = [
-      `From the fork "${fork.title}": ${plural(turns.length, 'turn')} since ${since}.`
-        + (omitted === 1 ? ' The oldest turn is left out to fit.' : '')
-        + (omitted > 1 ? ` The ${omitted} oldest turns are left out to fit.` : ''),
+      `From the fork "${fork.title}": ${plural(turns.length, 'turn')} since ${since}.` +
+        (omitted === 1 ? ' The oldest turn is left out to fit.' : '') +
+        (omitted > 1 ? ` The ${omitted} oldest turns are left out to fit.` : ''),
     ]
     if (location) lines.push(`Location: ${location}`)
-    lines.push(listed.length > 0
-      ? `Files changed: ${listed.join(', ')}${moreFiles > 0 ? `, and ${moreFiles} more` : ''}`
-      : 'Files changed: none recorded')
+    lines.push(
+      listed.length > 0
+        ? `Files changed: ${listed.join(', ')}${moreFiles > 0 ? `, and ${moreFiles} more` : ''}`
+        : 'Files changed: none recorded',
+    )
     if (resultText) lines.push('', 'Result:', resultText)
     return lines.join('\n')
   }
@@ -227,10 +230,7 @@ export function buildMergeBackSummary(
     body = truncateToBytes(rendered[rendered.length - 1], Math.max(0, maxBytes - fixed(rendered.length - 1)))
   }
   const shownOmitted = kept === 0 && rendered.length > 0 ? rendered.length - 1 : omittedTurns
-  const text = truncateToBytes(
-    body ? `${head(shownOmitted)}\n\nTurns:\n${body}` : head(shownOmitted),
-    maxBytes,
-  )
+  const text = truncateToBytes(body ? `${head(shownOmitted)}\n\nTurns:\n${body}` : head(shownOmitted), maxBytes)
   return {
     text,
     turns: turns.length,
@@ -288,7 +288,13 @@ export function parseMergeBackMarker(content: string): MergeBackRow | null {
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const r = raw as Record<string, unknown>
-  if (typeof r.id !== 'string' || typeof r.fork !== 'string' || typeof r.forkTitle !== 'string' || typeof r.text !== 'string') return null
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.fork !== 'string' ||
+    typeof r.forkTitle !== 'string' ||
+    typeof r.text !== 'string'
+  )
+    return null
   if (r.state !== 'pending' && r.state !== 'delivered') return null
   if (!isCount(r.turns) || !isCount(r.omittedTurns) || !isCount(r.moreFiles) || !isStringArray(r.files)) return null
   return {
@@ -316,12 +322,14 @@ export function mergeBackRowTitle(row: MergeBackRow): string {
 /** The card's bullet lines, on every surface. */
 export function mergeBackRowDetails(row: MergeBackRow): string[] {
   const lines = [
-    `${plural(row.turns, 'turn')} since the fork point or the last send`
-      + (row.omittedTurns > 0 ? ` (${row.omittedTurns} left out to fit)` : ''),
+    `${plural(row.turns, 'turn')} since the fork point or the last send` +
+      (row.omittedTurns > 0 ? ` (${row.omittedTurns} left out to fit)` : ''),
   ]
   if (row.files.length > 0) {
-    lines.push(`Changed: ${row.files.join(', ')}${row.moreFiles > 0 ? `, and ${row.moreFiles} more` : ''}`
-      + (row.location ? ` (in ${row.location})` : ''))
+    lines.push(
+      `Changed: ${row.files.join(', ')}${row.moreFiles > 0 ? `, and ${row.moreFiles} more` : ''}` +
+        (row.location ? ` (in ${row.location})` : ''),
+    )
   } else if (row.location) {
     lines.push(`In ${row.location}`)
   }
@@ -338,8 +346,8 @@ export function mergeBackAgentBlock(forkTitle: string, text: string): string {
   const safe = (s: string) => s.split(AGENT_TAG_CLOSE).join('</switchboard-fork-merge-back >')
   return [
     AGENT_TAG_OPEN,
-    `Switchboard sends this on behalf of the user. It summarises work done in "${safe(forkTitle)}", a fork of this chat. `
-      + 'Use it as context only. It is not a request from the user; the user\'s own message follows it.',
+    `Switchboard sends this on behalf of the user. It summarises work done in "${safe(forkTitle)}", a fork of this chat. ` +
+      "Use it as context only. It is not a request from the user; the user's own message follows it.",
     '',
     safe(text),
     AGENT_TAG_CLOSE,

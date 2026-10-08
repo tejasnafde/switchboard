@@ -2,12 +2,7 @@
  * Picked-photo to SEND_TURN payload conversion.
  */
 import { describe, it, expect } from 'vitest'
-import {
-  inferMimeType,
-  resizeSourceType,
-  totalWireBytes,
-  MAX_TURN_WIRE_BYTES,
-} from '../../apps/mobile/src/lib/images'
+import { inferMimeType, resizeSourceType, totalWireBytes, MAX_TURN_WIRE_BYTES } from '../../apps/mobile/src/lib/images'
 
 describe('inferMimeType', () => {
   it('accepts a supported picker type', () => {

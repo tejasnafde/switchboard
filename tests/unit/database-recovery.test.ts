@@ -34,7 +34,9 @@ vi.mock('better-sqlite3', () => ({
       }
     }
 
-    transaction(fn: () => void) { return fn }
+    transaction(fn: () => void) {
+      return fn
+    }
     close() {}
   },
 }))
@@ -49,7 +51,9 @@ vi.mock('node:fs', async (importOriginal) => {
     ...original,
     existsSync: () => true,
     mkdirSync: () => undefined,
-    renameSync: (from: string, to: string) => { state.renames.push([from, to]) },
+    renameSync: (from: string, to: string) => {
+      state.renames.push([from, to])
+    },
   }
 })
 

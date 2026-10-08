@@ -7,7 +7,13 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentStore } from '../../stores/agent-store'
 import { useSkillStore } from '../../stores/skill-store'
 import { useShowFileDiffCards } from '../../services/effective-settings'
-import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from './turn-presentation'
+import {
+  activitySummaryLabel,
+  changedFilesLabel,
+  findCollapsedFilesGroupKey,
+  isFilesGroupExpanded,
+  projectTurnPresentation,
+} from './turn-presentation'
 import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 
 interface MessageListProps {
@@ -19,7 +25,12 @@ interface MessageListProps {
   agentType?: AgentType
   // Promise-returning so the cards downstream can re-enable themselves when
   // the underlying IPC rejects.
-  onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string, response?: HostWriteResponse) => void | Promise<void>
+  onApproval?: (
+    requestId: string,
+    decision: 'approve' | 'deny',
+    note?: string,
+    response?: HostWriteResponse,
+  ) => void | Promise<void>
   onAnswerQuestion?: (requestId: string, answers: string[][]) => void | Promise<void>
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
   onFileDiffResolve?: (
@@ -44,10 +55,13 @@ function MeasuredTurn({
 }) {
   const rowRef = useRef<HTMLDivElement>(null)
   const previousGroupRef = useRef<ChatMessage[] | null>(null)
-  const setRowRef = useCallback((node: HTMLDivElement | null) => {
-    rowRef.current = node
-    measureElement(node)
-  }, [measureElement])
+  const setRowRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      rowRef.current = node
+      measureElement(node)
+    },
+    [measureElement],
+  )
 
   // ResizeObserver is the long-lived safety net, but a React commit already
   // knows this same-key turn may have changed height. Grouping creates fresh
@@ -56,9 +70,10 @@ function MeasuredTurn({
   useLayoutEffect(() => {
     const previous = previousGroupRef.current
     previousGroupRef.current = group
-    const changed = !previous
-      || previous.length !== group.length
-      || group.some((message, messageIndex) => message !== previous[messageIndex])
+    const changed =
+      !previous ||
+      previous.length !== group.length ||
+      group.some((message, messageIndex) => message !== previous[messageIndex])
     if (changed && rowRef.current) measureElement(rowRef.current)
   })
 
@@ -110,7 +125,8 @@ export function groupIntoTurns(messages: ChatMessage[]): ChatMessage[][] {
       !msg.fileDiff &&
       !msg.images?.length &&
       !msg.denial
-    ) continue
+    )
+      continue
 
     if (msg.role !== currentRole) {
       if (currentGroup.length > 0) groups.push(currentGroup)
@@ -143,13 +159,26 @@ export function roleLabel(role: ChatMessage['role'], agentType: AgentType = 'cla
  * matches the pre-virtualized layout exactly; tests for `groupIntoTurns`
  * still pass since the grouping is the same.
  */
-export function MessageList({ messages, sessionId, visible = true, busy = false, agentType = 'claude-code', onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageListProps) {
+export function MessageList({
+  messages,
+  sessionId,
+  visible = true,
+  busy = false,
+  agentType = 'claude-code',
+  onApproval,
+  onAnswerQuestion,
+  onPlanAction,
+  onFileDiffResolve,
+}: MessageListProps) {
   useLayoutEffect(() => {
     if (sessionId) chatMessagesCommitted(sessionId, messages, visible)
   })
-  useLayoutEffect(() => () => {
-    if (sessionId) chatMessagesUnmounted(sessionId)
-  }, [sessionId])
+  useLayoutEffect(
+    () => () => {
+      if (sessionId) chatMessagesUnmounted(sessionId)
+    },
+    [sessionId],
+  )
 
   const containerRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -178,9 +207,7 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
   // Falls back to undefined when the session hasn't published yet, in
   // which case MessageBubble suppresses chip rendering rather than
   // showing false positives.
-  const knownSkillNames = useSkillStore(
-    (s) => (sessionId ? s.namesBySession[sessionId] : undefined),
-  )
+  const knownSkillNames = useSkillStore((s) => (sessionId ? s.namesBySession[sessionId] : undefined))
 
   const virtualizer = useVirtualizer({
     count: turns.length,
@@ -203,8 +230,7 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
   const handleScroll = useCallback(() => {
     const container = containerRef.current
     if (!container) return
-    const distanceFromBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
     if (programmaticScrollRef.current) {
       if (distanceFromBottom <= 50) isScrollLockedRef.current = false
       return
@@ -219,8 +245,7 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
   const finishProgrammaticFollow = useCallback(() => {
     const container = containerRef.current
     if (container) {
-      const distanceFromBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
       if (distanceFromBottom <= 50) isScrollLockedRef.current = false
     }
     programmaticScrollRef.current = false
@@ -271,7 +296,15 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
       cancelAnimationFrame(finalFrame)
       finishProgrammaticFollow()
     }
-  }, [sessionId, visible, beginProgrammaticFollow, finishProgrammaticFollow, measureMountedTurns, scrollToLatestIfFollowing, virtualizer])
+  }, [
+    sessionId,
+    visible,
+    beginProgrammaticFollow,
+    finishProgrammaticFollow,
+    measureMountedTurns,
+    scrollToLatestIfFollowing,
+    virtualizer,
+  ])
 
   // A tab, board, or pane can reveal this list by changing an ancestor from
   // display:none without changing sessionId. TanStack observes the new
@@ -311,7 +344,16 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
       cancelAnimationFrame(secondFrame)
       finishProgrammaticFollow()
     }
-  }, [sessionId, visible, turns.length > 0, beginProgrammaticFollow, finishProgrammaticFollow, measureMountedTurns, scrollToLatestIfFollowing, virtualizer])
+  }, [
+    sessionId,
+    visible,
+    turns.length > 0,
+    beginProgrammaticFollow,
+    finishProgrammaticFollow,
+    measureMountedTurns,
+    scrollToLatestIfFollowing,
+    virtualizer,
+  ])
 
   // Auto-scroll-to-bottom on new messages (only if user hasn't scrolled up).
   // Same guard as above: if a pending search-jump is in flight for this
@@ -341,7 +383,15 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
       cancelAnimationFrame(finalFrame)
       finishProgrammaticFollow()
     }
-  }, [messages.length, beginProgrammaticFollow, finishProgrammaticFollow, measureMountedTurns, scrollToLatestIfFollowing, sessionId, turns.length])
+  }, [
+    messages.length,
+    beginProgrammaticFollow,
+    finishProgrammaticFollow,
+    measureMountedTurns,
+    scrollToLatestIfFollowing,
+    sessionId,
+    turns.length,
+  ])
 
   // The effect above follows new messages only. While a turn runs, a row can
   // grow after it was measured (a queued message's footer, streamed text, an
@@ -351,7 +401,9 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
   useEffect(() => {
     const content = contentRef.current
     if (!content || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => { if (busyRef.current) scrollToLatestIfFollowing() })
+    const observer = new ResizeObserver(() => {
+      if (busyRef.current) scrollToLatestIfFollowing()
+    })
     observer.observe(content)
     return () => observer.disconnect()
   }, [turns.length > 0, scrollToLatestIfFollowing])
@@ -384,9 +436,7 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
     // render (triggered by expandedFileGroups changing) to actually scroll -
     // don't clear the pending request yet, or this effect never gets to
     // finish the jump.
-    const collapsedGroupKey = findCollapsedFilesGroupKey(
-      turns[turnIdx], matches, showFileDiffCards, expandedFileGroups,
-    )
+    const collapsedGroupKey = findCollapsedFilesGroupKey(turns[turnIdx], matches, showFileDiffCards, expandedFileGroups)
     if (collapsedGroupKey) {
       setExpandedFileGroups((prev) => new Set(prev).add(collapsedGroupKey))
       return
@@ -446,9 +496,7 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
     const groupKey = focusFilesHeaderKeyRef.current
     if (!groupKey) return
     focusFilesHeaderKeyRef.current = null
-    containerRef.current
-      ?.querySelector<HTMLElement>(`[data-files-group-header="${groupKey}"]`)
-      ?.focus()
+    containerRef.current?.querySelector<HTMLElement>(`[data-files-group-header="${groupKey}"]`)?.focus()
   }, [expandedFileGroups])
 
   if (turns.length === 0) {
@@ -467,7 +515,16 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
       >
         <div>
           <div style={{ marginBottom: '12px', opacity: 0.4 }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
           </div>
@@ -485,8 +542,12 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
       ref={containerRef}
       data-message-list-scroll
       onScroll={handleScroll}
-      onWheel={() => { programmaticScrollRef.current = false }}
-      onPointerDown={() => { programmaticScrollRef.current = false }}
+      onWheel={() => {
+        programmaticScrollRef.current = false
+      }}
+      onPointerDown={() => {
+        programmaticScrollRef.current = false
+      }}
       style={{
         flex: 1,
         overflowY: 'auto',
@@ -514,7 +575,7 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
           const presentation = projectTurnPresentation(group)
           const activity = presentation.find((item) => item.kind === 'activity')
           const turnDurationMs = group.reduce<number | undefined>(
-            (duration, message) => typeof message.turnDurationMs === 'number' ? message.turnDurationMs : duration,
+            (duration, message) => (typeof message.turnDurationMs === 'number' ? message.turnDurationMs : duration),
             undefined,
           )
           const hasActivity = activity?.kind === 'activity'
@@ -542,15 +603,19 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
               measureElement={virtualizer.measureElement}
             >
               {/* Turn role label. A group of provider-generated user rows is not "You". */}
-              {!(isUser && group.every(isSyntheticOnlyMessage)) && <div style={{
-                padding: '4px 16px 0',
-                fontSize: '11px',
-                color: isSystem ? 'var(--warning)' : 'var(--text-muted)',
-                fontWeight: 500,
-                textAlign: isUser ? 'right' : 'left',
-              }}>
-                {roleLabel(role, agentType)}
-              </div>}
+              {!(isUser && group.every(isSyntheticOnlyMessage)) && (
+                <div
+                  style={{
+                    padding: '4px 16px 0',
+                    fontSize: '11px',
+                    color: isSystem ? 'var(--warning)' : 'var(--text-muted)',
+                    fontWeight: 500,
+                    textAlign: isUser ? 'right' : 'left',
+                  }}
+                >
+                  {roleLabel(role, agentType)}
+                </div>
+              )}
 
               {/* Preserve message objects and handlers while lowering the
                   default prominence of implementation detail. */}
@@ -594,13 +659,16 @@ export function MessageList({ messages, sessionId, visible = true, busy = false,
               })}
 
               {/* Turn timestamp */}
-              <div className="turn-timestamp" style={{
-                padding: '0 16px',
-                fontSize: '10px',
-                color: 'var(--text-muted)',
-                opacity: 0.5,
-                textAlign: isUser ? 'right' : 'left',
-              }}>
+              <div
+                className="turn-timestamp"
+                style={{
+                  padding: '0 16px',
+                  fontSize: '10px',
+                  color: 'var(--text-muted)',
+                  opacity: 0.5,
+                  textAlign: isUser ? 'right' : 'left',
+                }}
+              >
                 {new Date(timestamp).toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',

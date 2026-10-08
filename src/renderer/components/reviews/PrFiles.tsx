@@ -31,23 +31,40 @@ export function PrFiles({ summary, now }: { summary: PrSummary; now: number }) {
   )
 }
 
-function FilesBody({ pr, files, conversations, now }: { pr: PrSummary; files: PrChangedFile[]; conversations: PrConversation[]; now: number }) {
+function FilesBody({
+  pr,
+  files,
+  conversations,
+  now,
+}: {
+  pr: PrSummary
+  files: PrChangedFile[]
+  conversations: PrConversation[]
+  now: number
+}) {
   const focusPath = useReviewStore((s) => s.focusPath)
   const [picked, setPicked] = useState<string | null>(null)
-  const selectedPath = picked ?? (focusPath && files.some((f) => f.path === focusPath) ? focusPath : files[0]?.path ?? null)
+  const selectedPath =
+    picked ?? (focusPath && files.some((f) => f.path === focusPath) ? focusPath : (files[0]?.path ?? null))
   const selected = files.find((f) => f.path === selectedPath) ?? null
   const openCount = (path: string) => conversations.filter((c) => c.path === path && !c.resolved).length
 
-  if (files.length === 0) return <div className="p-[22px] text-[12.5px] text-[var(--text-muted)]">No changed files.</div>
+  if (files.length === 0)
+    return <div className="p-[22px] text-[12.5px] text-[var(--text-muted)]">No changed files.</div>
 
   return (
     <div className="flex h-full flex-col">
       <PendingReviewBar pr={pr} />
       <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)]">
-        <nav aria-label="Changed files" className="overflow-auto border-r border-[var(--border)] px-2 py-[10px] text-[12.5px]">
+        <nav
+          aria-label="Changed files"
+          className="overflow-auto border-r border-[var(--border)] px-2 py-[10px] text-[12.5px]"
+        >
           {groupFilesByDir(files).map((group) => (
             <div key={group.dir}>
-              <div className="truncate px-2 pt-[6px] pb-[2px] text-[11.5px] text-[var(--text-muted)]" title={group.dir}>{group.dir}</div>
+              <div className="truncate px-2 pt-[6px] pb-[2px] text-[11.5px] text-[var(--text-muted)]" title={group.dir}>
+                {group.dir}
+              </div>
               {group.files.map((f) => {
                 const open = openCount(f.path)
                 const active = f.path === selectedPath
@@ -64,15 +81,26 @@ function FilesBody({ pr, files, conversations, now }: { pr: PrSummary; files: Pr
                     )}
                   >
                     {f.status === 'conflicted' ? <Icon name="conflict" tone="warn" /> : <Icon name="file" tone="dim" />}
-                    <span className={cn('min-w-0 truncate', f.status === 'deleted' && 'line-through')}>{fileName(f.path)}</span>
+                    <span className={cn('min-w-0 truncate', f.status === 'deleted' && 'line-through')}>
+                      {fileName(f.path)}
+                    </span>
                     <span className="ml-auto flex shrink-0 items-center gap-[6px] text-[11.5px] text-[var(--text-muted)] tabular-nums">
-                      {open > 0 && <><Icon name="msg" tone="warn" size={12} />{open}</>}
-                      {f.status === 'conflicted'
-                        ? <span data-file-conflict className="text-[var(--warning)]">conflict</span>
-                        : <>
+                      {open > 0 && (
+                        <>
+                          <Icon name="msg" tone="warn" size={12} />
+                          {open}
+                        </>
+                      )}
+                      {f.status === 'conflicted' ? (
+                        <span data-file-conflict className="text-[var(--warning)]">
+                          conflict
+                        </span>
+                      ) : (
+                        <>
                           {f.additions > 0 && <span className="text-[var(--success)]">+{f.additions}</span>}
                           {f.deletions > 0 && <span className="text-[var(--error)]">−{f.deletions}</span>}
-                        </>}
+                        </>
+                      )}
                     </span>
                   </button>
                 )
@@ -88,10 +116,17 @@ function FilesBody({ pr, files, conversations, now }: { pr: PrSummary; files: Pr
                   {selected.oldPath ? `${selected.oldPath} → ${selected.path}` : selected.path}
                 </span>
                 <span className="text-[12px] tabular-nums">
-                  <span className="text-[var(--success)]">+{selected.additions}</span> <span className="text-[var(--error)]">−{selected.deletions}</span>
+                  <span className="text-[var(--success)]">+{selected.additions}</span>{' '}
+                  <span className="text-[var(--error)]">−{selected.deletions}</span>
                 </span>
               </div>
-              <PrDiff key={selected.path} pr={pr} file={selected} conversations={conversations.filter((c) => c.path === selected.path)} now={now} />
+              <PrDiff
+                key={selected.path}
+                pr={pr}
+                file={selected}
+                conversations={conversations.filter((c) => c.path === selected.path)}
+                now={now}
+              />
             </>
           )}
         </div>

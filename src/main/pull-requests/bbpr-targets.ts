@@ -24,10 +24,13 @@ export async function bbprNumbersInRepo(
   const inRepo = (dir: string): Promise<boolean> => {
     let hit = dirs.get(dir)
     if (!hit) {
-      hit = repoForDir(dir).then((repo) => repo !== null && repoKey(repo) === key, (err) => {
-        log.warn('reading the repository of a bbpr directory failed', { dir, err: String(err) })
-        return false
-      })
+      hit = repoForDir(dir).then(
+        (repo) => repo !== null && repoKey(repo) === key,
+        (err) => {
+          log.warn('reading the repository of a bbpr directory failed', { dir, err: String(err) })
+          return false
+        },
+      )
       dirs.set(dir, hit)
     }
     return hit
@@ -35,7 +38,7 @@ export async function bbprNumbersInRepo(
   const numbers: number[] = []
   for (const target of targets) {
     if (numbers.includes(target.number)) continue
-    if (target.runsIn === 'cwd' || (target.runsIn === 'dir' && await inRepo(target.dir))) numbers.push(target.number)
+    if (target.runsIn === 'cwd' || (target.runsIn === 'dir' && (await inRepo(target.dir)))) numbers.push(target.number)
   }
   return numbers
 }

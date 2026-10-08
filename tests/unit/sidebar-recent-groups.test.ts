@@ -13,9 +13,12 @@ const ids = (result: ReturnType<typeof groupRecentSessions<{ id: number; status?
 
 describe('recentDot', () => {
   it('maps every waiting state and an error to needs-you', () => {
-    expect(['approval', 'input', 'plan', 'failed'].map((s) => recentDot(s as RecentSessionStatus))).toEqual(
-      ['needs-you', 'needs-you', 'needs-you', 'needs-you'],
-    )
+    expect(['approval', 'input', 'plan', 'failed'].map((s) => recentDot(s as RecentSessionStatus))).toEqual([
+      'needs-you',
+      'needs-you',
+      'needs-you',
+      'needs-you',
+    ])
     expect(recentDot('working')).toBe('working')
     expect(recentDot('done')).toBe('finished')
     expect(recentDot(undefined)).toBe('idle')
@@ -25,14 +28,21 @@ describe('recentDot', () => {
 describe('groupRecentSessions', () => {
   it('keeps needs-you and working in full and fills the rest of the limit with done', () => {
     const result = groupRecentSessions(rows(['approval', 'working', 'done', undefined, undefined, undefined]), 4, 0)
-    expect(ids(result)).toEqual([['needs-you', [0]], ['working', [1]], ['done', [2, 3]]])
+    expect(ids(result)).toEqual([
+      ['needs-you', [0]],
+      ['working', [1]],
+      ['done', [2, 3]],
+    ])
     expect(result.hiddenCount).toBe(2)
     expect(result.nextRevealCount).toBe(2)
   })
 
   it('never hides a chat that needs you behind Show more, even past the limit', () => {
     const result = groupRecentSessions(rows(['approval', 'input', 'plan', 'failed', 'working', undefined]), 4, 0)
-    expect(ids(result)).toEqual([['needs-you', [0, 1, 2, 3]], ['working', [4]]])
+    expect(ids(result)).toEqual([
+      ['needs-you', [0, 1, 2, 3]],
+      ['working', [4]],
+    ])
     expect(result.hiddenCount).toBe(1)
   })
 

@@ -34,7 +34,7 @@ function machineDefaults(agentType: AgentType, projectPath: string | null): Sess
   // The legacy key predates per-agent scoping - only honor it while it still
   // names an instance of the agent kind being started, so a Codex pick made
   // through it can never be handed to a Claude/OpenCode session.
-  const legacyAgentType = legacy ? getProviderInstanceFull(legacy)?.agentType ?? null : null
+  const legacyAgentType = legacy ? (getProviderInstanceFull(legacy)?.agentType ?? null) : null
   return {
     // A project can override the mode its new chats start in.
     runtimeMode: effectiveBackendSetting(SETTING_DEFAULT_RUNTIME_MODE, projectPath),

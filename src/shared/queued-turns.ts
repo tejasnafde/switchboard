@@ -31,7 +31,13 @@ export function applyQueuedTurnEvent(state: QueuedTurnsByMessage, event: Runtime
     if (event.reason === 'failed') {
       return {
         ...state,
-        [event.messageId]: { threadId: event.threadId, messageId: event.messageId, text: '', queuedAt: 0, failed: event.error || 'It could not start.' },
+        [event.messageId]: {
+          threadId: event.threadId,
+          messageId: event.messageId,
+          text: '',
+          queuedAt: 0,
+          failed: event.error || 'It could not start.',
+        },
       }
     }
     if (!(event.messageId in state)) return state

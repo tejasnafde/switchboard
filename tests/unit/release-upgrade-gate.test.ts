@@ -31,8 +31,12 @@ describe('Desktop release compatibility gate', () => {
     expect(workflow).toContain('needs: prepare_release')
     expect(publishJob).toContain('needs: build_mac')
     expect(publishJob.indexOf('verify-release-assets.sh')).toBeGreaterThan(-1)
-    expect(publishJob.indexOf('gh release edit "$TAG" --repo "$REPO" --draft=false --latest')).toBeGreaterThan(publishJob.indexOf('verify-release-assets.sh'))
-    expect(workflow).toMatch(/verify_windows:[\s\S]*needs: \[build_win, publish\][\s\S]*verify-release-assets\.sh[^\n]*win/)
+    expect(publishJob.indexOf('gh release edit "$TAG" --repo "$REPO" --draft=false --latest')).toBeGreaterThan(
+      publishJob.indexOf('verify-release-assets.sh'),
+    )
+    expect(workflow).toMatch(
+      /verify_windows:[\s\S]*needs: \[build_win, publish\][\s\S]*verify-release-assets\.sh[^\n]*win/,
+    )
   })
 
   it('skips the release Gate only when main CI already passed on the same commit', () => {

@@ -41,7 +41,13 @@ import type { RootStackParamList } from '../../App'
 import { colors } from '../theme'
 import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
-import { expiredOpenRequests, isExpiredAnswer, missingPendingFeedItems, NO_LONGER_WAITING, openRequestIds } from '../lib/pending-request-recovery'
+import {
+  expiredOpenRequests,
+  isExpiredAnswer,
+  missingPendingFeedItems,
+  NO_LONGER_WAITING,
+  openRequestIds,
+} from '../lib/pending-request-recovery'
 import {
   completeRejectedEdit,
   drain,
@@ -80,7 +86,17 @@ import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversation-
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import { HOST_WRITE_PHONE_APPROVAL_CAPABILITY } from '@shared/host-write-phone'
 import { AGENT_ASYNC_APPROVAL_CAPABILITY } from '@shared/agent-approval-cards'
-import { ApprovalItem, FileEditItem, FileGroupItem, HeldTurnBar, PeerUndeliveredItem, PlanItem, QuestionItem, TextItem, ToolItem } from './ThreadFeedItems'
+import {
+  ApprovalItem,
+  FileEditItem,
+  FileGroupItem,
+  HeldTurnBar,
+  PeerUndeliveredItem,
+  PlanItem,
+  QuestionItem,
+  TextItem,
+  ToolItem,
+} from './ThreadFeedItems'
 import { styles } from './thread-screen.styles'
 import { blockedSendReason } from '../lib/composer'
 import { heldTurnActions, heldTurnFor, queueToggle } from '../lib/held-turns'
@@ -99,8 +115,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const { connectionId, threadId, projectPath, worktreePath, isNew } = route.params
   const key = threadKey(connectionId, threadId)
   const thread = useChatStore((s) => s.threads[key]) ?? emptyThread()
-  const backendLabel =
-    useConnectionsStore((s) => s.configs.find((c) => c.id === connectionId)?.label) ?? 'backend'
+  const backendLabel = useConnectionsStore((s) => s.configs.find((c) => c.id === connectionId)?.label) ?? 'backend'
 
   // Real header height: the keyboard offset must clear it, and hardcoding 96
   // was wrong on Android where it was 0.
@@ -129,7 +144,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const swipeBack = useEdgeSwipeBack(useCallback(() => navigation.goBack(), [navigation]))
   // Which provider drives this thread. Only OpenCode needs the client-side
   // queue below; Claude queues in its adapter and Codex steers into the turn.
-  const [provider, setProvider] = useState<ProviderKind>(providerKindFor(thread.provider ?? thread.historyMeta?.agentType))
+  const [provider, setProvider] = useState<ProviderKind>(
+    providerKindFor(thread.provider ?? thread.historyMeta?.agentType),
+  )
   const [instances, setInstances] = useState<ProviderInstance[]>([])
   const [instanceId, setInstanceId] = useState<string | undefined>(undefined)
   const [profilePickerOpen, setProfilePickerOpen] = useState(false)
@@ -142,10 +159,17 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const olderLoadingRef = useRef(false)
   const [olderLoading, setOlderLoading] = useState(false)
   const forkMessagesRef = useRef(new Map<string, ChatMessage>())
-  forkMessagesRef.current = useMemo(() => new Map((thread.historyMessages ?? []).flatMap((message) =>
-    message.role === 'user' || (message.role === 'assistant' && message.content.trim())
-      ? [[`h-${message.id}`, message] as const] : [],
-  )), [thread.historyMessages])
+  forkMessagesRef.current = useMemo(
+    () =>
+      new Map(
+        (thread.historyMessages ?? []).flatMap((message) =>
+          message.role === 'user' || (message.role === 'assistant' && message.content.trim())
+            ? [[`h-${message.id}`, message] as const]
+            : [],
+        ),
+      ),
+    [thread.historyMessages],
+  )
 
   // The accessory subscribes to the store itself, so this runs once per thread.
   useEffect(() => {
@@ -194,8 +218,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
     if (!client) return
     const load = (): void => {
       const seq = ++prLinksSeqRef.current
-      client.pullRequestLinks(threadId)
-        .then((links) => { if (seq === prLinksSeqRef.current) setPrLinks(links) })
+      client
+        .pullRequestLinks(threadId)
+        .then((links) => {
+          if (seq === prLinksSeqRef.current) setPrLinks(links)
+        })
         .catch((err) => log.warn('reading linked pull requests failed', err))
     }
     load()
@@ -206,19 +233,23 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
   }, [connectionId, threadId, prLinksConnection])
 
-  const unlinkPr = useCallback((link: PrLink) => {
-    Alert.alert(`Unlink #${link.ref.number}?`, 'It will not be linked to this chat again automatically.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Unlink',
-        style: 'destructive',
-        onPress: () => {
-          void unlinkPrLink(getClient(connectionId), threadId, link.ref)
-            .then((problem) => { if (problem) Alert.alert('Could not unlink', problem) })
+  const unlinkPr = useCallback(
+    (link: PrLink) => {
+      Alert.alert(`Unlink #${link.ref.number}?`, 'It will not be linked to this chat again automatically.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unlink',
+          style: 'destructive',
+          onPress: () => {
+            void unlinkPrLink(getClient(connectionId), threadId, link.ref).then((problem) => {
+              if (problem) Alert.alert('Could not unlink', problem)
+            })
+          },
         },
-      },
-    ])
-  }, [connectionId, threadId])
+      ])
+    },
+    [connectionId, threadId],
+  )
 
   const reportError = useCallback(
     (err: unknown) => {
@@ -303,10 +334,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
           const live = (current?.items ?? []).filter((item) => !beforeItems.includes(item))
           store.seedItems(key, mergeHistoryItems(seeded, live), pending)
           useChatStore.setState((state) => ({
-            threads: { ...state.threads, [key]: {
-              ...state.threads[key], nextBeforeId: loaded.nextBeforeId,
-              historyMeta: loaded.meta, historyMessages: loaded.messages,
-            } },
+            threads: {
+              ...state.threads,
+              [key]: {
+                ...state.threads[key],
+                nextBeforeId: loaded.nextBeforeId,
+                historyMeta: loaded.meta,
+                historyMessages: loaded.messages,
+              },
+            },
           }))
         }
       } catch (err) {
@@ -331,9 +367,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
           // whichever client started first fixed the cwd for both - so the
           // agent edited the wrong tree.
           cwd: loadedMeta?.worktreePath ?? worktreePath ?? loadedMeta?.projectPath ?? projectPath,
-          ...(loadedMeta?.forkMetadata?.resumeMode === 'transcript-handoff'
-            ? {}
-            : { resumeSessionId: threadId }),
+          ...(loadedMeta?.forkMetadata?.resumeMode === 'transcript-handoff' ? {} : { resumeSessionId: threadId }),
           runtimeMode: loadedMeta?.runtimeMode ?? undefined,
           model: loadedMeta?.model ?? undefined,
           instanceId: loadedMeta?.providerInstanceId ?? undefined,
@@ -363,7 +397,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
           const pending = await client.getPendingRequests(threadId)
           if (!isCurrent()) return
           for (const requestId of expiredOpenRequests(openBefore, pending)) {
-            useChatStore.getState().ingestNow(connectionId, { type: 'request.expired', threadId, requestId, reason: NO_LONGER_WAITING })
+            useChatStore
+              .getState()
+              .ingestNow(connectionId, { type: 'request.expired', threadId, requestId, reason: NO_LONGER_WAITING })
           }
           if (pending.length) {
             const items = useChatStore.getState().threads[key]?.items ?? []
@@ -394,7 +430,18 @@ export default function ThreadScreen({ route, navigation }: Props) {
         }
       }
     })()
-  }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated, thread.cached, connectionStatus])
+  }, [
+    connectionId,
+    threadId,
+    projectPath,
+    key,
+    isNew,
+    reportError,
+    staleGeneration,
+    invalidated,
+    thread.cached,
+    connectionStatus,
+  ])
 
   const loadOlder = useCallback(() => {
     const client = getClient(connectionId)
@@ -404,25 +451,33 @@ export default function ThreadScreen({ route, navigation }: Props) {
     olderLoadingRef.current = true
     setOlderLoading(true)
     const generation = useChatStore.getState().threads[key]?.reseedRevision ?? 0
-    void client.loadSessionWindow(threadId, before).then((loaded) => {
-      if ((useChatStore.getState().threads[key]?.reseedRevision ?? 0) !== generation) return
-      if (loaded.cursorReset) {
-        useChatStore.getState().invalidateConnection(connectionId)
-        return
-      }
-      const store = useChatStore.getState()
-      const current = store.threads[key]?.items ?? []
-      store.seedItems(key, mergeHistoryItems(historyToItems(loaded.messages), current))
-      useChatStore.setState((state) => ({
-        threads: { ...state.threads, [key]: {
-          ...state.threads[key], nextBeforeId: loaded.nextBeforeId,
-          historyMessages: [...loaded.messages, ...(state.threads[key].historyMessages ?? [])],
-        } },
-      }))
-    }).catch(reportError).finally(() => {
-      olderLoadingRef.current = false
-      setOlderLoading(false)
-    })
+    void client
+      .loadSessionWindow(threadId, before)
+      .then((loaded) => {
+        if ((useChatStore.getState().threads[key]?.reseedRevision ?? 0) !== generation) return
+        if (loaded.cursorReset) {
+          useChatStore.getState().invalidateConnection(connectionId)
+          return
+        }
+        const store = useChatStore.getState()
+        const current = store.threads[key]?.items ?? []
+        store.seedItems(key, mergeHistoryItems(historyToItems(loaded.messages), current))
+        useChatStore.setState((state) => ({
+          threads: {
+            ...state.threads,
+            [key]: {
+              ...state.threads[key],
+              nextBeforeId: loaded.nextBeforeId,
+              historyMessages: [...loaded.messages, ...(state.threads[key].historyMessages ?? [])],
+            },
+          },
+        }))
+      })
+      .catch(reportError)
+      .finally(() => {
+        olderLoadingRef.current = false
+        setOlderLoading(false)
+      })
   }, [connectionId, threadId, key, reportError])
 
   // Restore the user's last choices. A new chat's mode is pushed to the backend
@@ -486,8 +541,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
           if (nextProvider === provider && nextInstanceId) {
             const rotation = await rotateWithinAgent(threadId, instanceId, nextInstanceId, {
               switchInstance: (id, input) => client.switchInstance(id, input),
-              setConversationProviderInstanceId: (id, inst) =>
-                client.setConversationProviderInstanceId(id, inst),
+              setConversationProviderInstanceId: (id, inst) => client.setConversationProviderInstanceId(id, inst),
               confirmStartFresh: (message) =>
                 new Promise<boolean>((resolve) => {
                   Alert.alert(
@@ -584,15 +638,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
   )
   const itemCount = reversedItems.length
 
-  const settlePick = useCallback((mode: string) => {
-    if (isRuntimeMode(mode)) useChatStore.getState().settlePickedMode(key, mode)
-  }, [key])
+  const settlePick = useCallback(
+    (mode: string) => {
+      if (isRuntimeMode(mode)) useChatStore.getState().settlePickedMode(key, mode)
+    },
+    [key],
+  )
 
   const setMode = (mode: RuntimeMode) => {
     useChatStore.getState().pickRuntimeMode(key, mode)
     usePrefsStore.getState().rememberMode(key, mode)
     // Offline, the pick waits for the next turn to carry it.
-    getClient(connectionId)?.setRuntimeMode(threadId, mode)
+    getClient(connectionId)
+      ?.setRuntimeMode(threadId, mode)
       .then(() => useChatStore.getState().settlePickedMode(key, mode))
       .catch(reportError)
   }
@@ -618,9 +676,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
    */
   const allQueuedMessages = useOutboxStore((outbox) => outbox.messages)
   const queuedMessages = useMemo(
-    () => allQueuedMessages.filter(
-      (message) => message.connectionId === connectionId && message.threadId === threadId,
-    ),
+    () => allQueuedMessages.filter((message) => message.connectionId === connectionId && message.threadId === threadId),
     [allQueuedMessages, connectionId, threadId],
   )
   const queuedByBubbleId = useMemo(
@@ -650,9 +706,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     const images = textOverride ? [] : attachments.map((a) => ({ url: a.url, mimeType: a.mimeType }))
     // An override (Compact) is its own turn; it must not complete a pending edit.
     const editingId = textOverride ? undefined : useOutboxStore.getState().editingId
-    const editingMessage = editingId
-      ? queuedMessages.find((message) => message.messageId === editingId)
-      : undefined
+    const editingMessage = editingId ? queuedMessages.find((message) => message.messageId === editingId) : undefined
     if (!textOverride) {
       setDraft('')
       setVoiceNote(null)
@@ -664,11 +718,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // A backend check here would only cover the cases we can SEE are broken,
     // and the expensive ones are the ambiguous ones: a socket that still reads
     // as open, a reconnect in flight, a turn already running.
-    const titleCandidate = editingMessage?.titleCandidate ?? (
-      isNew && thread.items.filter((item) => item.kind === 'user').length === 0 && text
+    const titleCandidate =
+      editingMessage?.titleCandidate ??
+      (isNew && thread.items.filter((item) => item.kind === 'user').length === 0 && text
         ? generateTitle(text)
-        : undefined
-    )
+        : undefined)
     const turn = buildTurn({
       connectionId,
       threadId,
@@ -683,7 +737,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // existing chat whose items were emptied by /clear, or one whose history
     // has not loaded yet, also has no user items - titling those would
     // overwrite a title the user already has.
-    useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url), turn.bubbleId)
+    useChatStore.getState().addUserMessage(
+      key,
+      text,
+      images.map((i) => i.url),
+      turn.bubbleId,
+    )
     enqueueTurn(turn.queued, enqueue, settlePick)
       .then(async () => {
         if (!editingId) return
@@ -710,11 +769,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
   }, [])
 
   const stop = () => {
-    getClient(connectionId)?.interrupt(threadId)
+    getClient(connectionId)
+      ?.interrupt(threadId)
       .then((result) => {
         // The backend has no turn (its end fell into a resume gap): no
         // closing event will come, so clear the status here.
-        if (interruptFoundNoTurn(result)) useChatStore.getState().ingest(connectionId, { type: 'status', threadId, status: 'idle' })
+        if (interruptFoundNoTurn(result))
+          useChatStore.getState().ingest(connectionId, { type: 'status', threadId, status: 'idle' })
       })
       .catch(reportError)
   }
@@ -755,9 +816,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
       client?.respondToRequest(threadId, requestId, decision, response).catch(async (err: unknown) => {
         // A notice, not an error event: that would mark the thread errored and
         // take Stop away while the agent is still waiting on this card.
-        useChatStore.getState().addNotice(key, `Could not answer the approval: ${err instanceof Error ? err.message : String(err)}`)
+        useChatStore
+          .getState()
+          .addNotice(key, `Could not answer the approval: ${err instanceof Error ? err.message : String(err)}`)
         if (isExpiredAnswer(err)) {
-          useChatStore.getState().ingestNow(connectionId, { type: 'request.expired', threadId, requestId, reason: NO_LONGER_WAITING })
+          useChatStore
+            .getState()
+            .ingestNow(connectionId, { type: 'request.expired', threadId, requestId, reason: NO_LONGER_WAITING })
           return
         }
         // A refused answer can leave the card open on the backend (an older
@@ -770,7 +835,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
             useChatStore.getState().reopenApproval(key, requestId)
           }
         } catch (recheckErr) {
-          useChatStore.getState().addNotice(key, `Could not re-check the approval: ${recheckErr instanceof Error ? recheckErr.message : String(recheckErr)}`)
+          useChatStore
+            .getState()
+            .addNotice(
+              key,
+              `Could not re-check the approval: ${recheckErr instanceof Error ? recheckErr.message : String(recheckErr)}`,
+            )
         }
       })
       useChatStore.getState().markApprovalResolved(key, requestId, decision)
@@ -780,12 +850,17 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const submitAnswers = useCallback(
     (requestId: string, answers: string[][]) => {
-      getClient(connectionId)?.answerQuestion(threadId, requestId, answers).catch((err) => {
-        reportError(err)
-        // The card would otherwise stay Answered with no way to send it again.
-        useChatStore.getState().reopenQuestion(key, requestId)
-        if (isExpiredAnswer(err)) useChatStore.getState().ingestNow(connectionId, { type: 'request.expired', threadId, requestId, reason: NO_LONGER_WAITING })
-      })
+      getClient(connectionId)
+        ?.answerQuestion(threadId, requestId, answers)
+        .catch((err) => {
+          reportError(err)
+          // The card would otherwise stay Answered with no way to send it again.
+          useChatStore.getState().reopenQuestion(key, requestId)
+          if (isExpiredAnswer(err))
+            useChatStore
+              .getState()
+              .ingestNow(connectionId, { type: 'request.expired', threadId, requestId, reason: NO_LONGER_WAITING })
+        })
       useChatStore.getState().markQuestionAnswered(key, requestId, answers)
     },
     [connectionId, threadId, key, reportError],
@@ -793,178 +868,205 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const focusComposer = useCallback(() => composerRef.current?.focus(), [])
 
-  const editRejected = useCallback((messageId: string) => {
-    const rejected = openRejectedForEdit(messageId)
-    if (!rejected) return
-    const recovered = recoverRejectedDraft(rejected)
-    if (!recovered) return
-    setDraft(recovered.text)
-    setAttachments(recovered.images)
-    usePrefsStore.getState().rememberDraft(key, recovered.text)
-    composerRef.current?.focus()
-  }, [key])
+  const editRejected = useCallback(
+    (messageId: string) => {
+      const rejected = openRejectedForEdit(messageId)
+      if (!rejected) return
+      const recovered = recoverRejectedDraft(rejected)
+      if (!recovered) return
+      setDraft(recovered.text)
+      setAttachments(recovered.images)
+      usePrefsStore.getState().rememberDraft(key, recovered.text)
+      composerRef.current?.focus()
+    },
+    [key],
+  )
 
-  const resolveAmbiguous = useCallback((messageId: string) => {
-    Alert.alert(
-      'Delivery unconfirmed',
-      'The agent may already have received this message. Continue without resending it to unblock later messages?',
-      [
-        { text: 'Keep retrying', style: 'cancel' },
-        {
-          text: 'Continue without resending',
-          style: 'destructive',
-          onPress: () => void abandonAmbiguous(messageId)
-            .then(({ message, status }) => {
-              if (resolvedAmbiguousBubbleAction(status) === 'remove') {
-                useChatStore.getState().removeUserMessage(key, echoMessageId(message.messageId))
-              }
-              useChatStore.getState().ingest(connectionId, {
-                type: 'error',
-                threadId,
-                message: status === 'completed'
-                  ? 'Message delivery was confirmed; it was not sent again.'
-                  : 'Unconfirmed message was not resent. Delivery may already have occurred.',
-              })
-            })
-            .catch(reportError),
-        },
-      ],
-    )
-  }, [connectionId, key, reportError, threadId])
-
-  const forkFromMessage = useCallback((message: ChatMessage) => {
-    const client = getClient(connectionId)
-    if (!client) return
-    const execute = async (withWorktree: boolean): Promise<void> => {
-      let request = await mobileForkRequest({
-        connectionId,
-        sourceConversationId: threadId,
-        message,
-        withWorktree,
-      })
-      let outcome = await client.getConversationFork({
-        requestId: request.requestId,
-        sourceConversationId: threadId,
-      })
-      if (outcome?.kind !== 'completed') outcome = await client.forkConversation(request)
-      if (outcome.kind === 'confirmation-required') {
-        const dirtySource = outcome.dirtySource
-        const accepted = await new Promise<boolean>((resolve) => Alert.alert(
-          'Uncommitted changes will not be copied',
-          `The new worktree starts from ${dirtySource.headSha.slice(0, 8)}. ${dirtySource.omittedChangeSummary}`,
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-            { text: 'Continue from HEAD', onPress: () => resolve(true) },
-          ],
-          { cancelable: false },
-        ))
-        if (!accepted) return
-        request = {
-          ...request,
-          checkout: {
-            kind: 'new-worktree',
-            basePolicy: 'source-head',
-            dirtySourceConfirmed: {
-              headSha: dirtySource.headSha,
-              statusDigest: dirtySource.statusDigest,
-            },
+  const resolveAmbiguous = useCallback(
+    (messageId: string) => {
+      Alert.alert(
+        'Delivery unconfirmed',
+        'The agent may already have received this message. Continue without resending it to unblock later messages?',
+        [
+          { text: 'Keep retrying', style: 'cancel' },
+          {
+            text: 'Continue without resending',
+            style: 'destructive',
+            onPress: () =>
+              void abandonAmbiguous(messageId)
+                .then(({ message, status }) => {
+                  if (resolvedAmbiguousBubbleAction(status) === 'remove') {
+                    useChatStore.getState().removeUserMessage(key, echoMessageId(message.messageId))
+                  }
+                  useChatStore.getState().ingest(connectionId, {
+                    type: 'error',
+                    threadId,
+                    message:
+                      status === 'completed'
+                        ? 'Message delivery was confirmed; it was not sent again.'
+                        : 'Unconfirmed message was not resent. Delivery may already have occurred.',
+                  })
+                })
+                .catch(reportError),
           },
+        ],
+      )
+    },
+    [connectionId, key, reportError, threadId],
+  )
+
+  const forkFromMessage = useCallback(
+    (message: ChatMessage) => {
+      const client = getClient(connectionId)
+      if (!client) return
+      const execute = async (withWorktree: boolean): Promise<void> => {
+        let request = await mobileForkRequest({
+          connectionId,
+          sourceConversationId: threadId,
+          message,
+          withWorktree,
+        })
+        let outcome = await client.getConversationFork({
+          requestId: request.requestId,
+          sourceConversationId: threadId,
+        })
+        if (outcome?.kind !== 'completed') outcome = await client.forkConversation(request)
+        if (outcome.kind === 'confirmation-required') {
+          const dirtySource = outcome.dirtySource
+          const accepted = await new Promise<boolean>((resolve) =>
+            Alert.alert(
+              'Uncommitted changes will not be copied',
+              `The new worktree starts from ${dirtySource.headSha.slice(0, 8)}. ${dirtySource.omittedChangeSummary}`,
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Continue from HEAD', onPress: () => resolve(true) },
+              ],
+              { cancelable: false },
+            ),
+          )
+          if (!accepted) return
+          request = {
+            ...request,
+            checkout: {
+              kind: 'new-worktree',
+              basePolicy: 'source-head',
+              dirtySourceConfirmed: {
+                headSha: dirtySource.headSha,
+                statusDigest: dirtySource.statusDigest,
+              },
+            },
+          }
+          outcome = await client.forkConversation(request)
         }
-        outcome = await client.forkConversation(request)
+        if (outcome.kind === 'confirmation-required') {
+          throw new Error('The source changed after confirmation. Review the changes and try again.')
+        }
+        if (outcome.kind === 'failed') throw new Error(outcome.error.message)
+        const fork = outcome.result.conversation
+        await forgetMobileForkRequest({
+          connectionId,
+          sourceConversationId: threadId,
+          messageId: message.id,
+          withWorktree,
+        }).catch((error) => log.warn('could not clear completed fork retry intent', error))
+        navigation.push('Thread', {
+          connectionId,
+          threadId: fork.id,
+          title: fork.title,
+          projectPath: fork.projectPath,
+          worktreePath: fork.worktreePath,
+          worktreeBranch: fork.worktreeBranch ?? undefined,
+          worktreeId: fork.worktreeId ?? undefined,
+        })
       }
-      if (outcome.kind === 'confirmation-required') {
-        throw new Error('The source changed after confirmation. Review the changes and try again.')
-      }
-      if (outcome.kind === 'failed') throw new Error(outcome.error.message)
-      const fork = outcome.result.conversation
-      await forgetMobileForkRequest({
-        connectionId,
-        sourceConversationId: threadId,
-        messageId: message.id,
-        withWorktree,
-      }).catch((error) => log.warn('could not clear completed fork retry intent', error))
-      navigation.push('Thread', {
-        connectionId,
-        threadId: fork.id,
-        title: fork.title,
-        projectPath: fork.projectPath,
-        worktreePath: fork.worktreePath,
-        worktreeBranch: fork.worktreeBranch ?? undefined,
-        worktreeId: fork.worktreeId ?? undefined,
-      })
-    }
-    Alert.alert('Fork conversation', 'Choose how to branch from this message.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Fork conversation here', onPress: () => void execute(false).catch(reportError) },
-      { text: 'Fork into a new worktree from current HEAD', onPress: () => void execute(true).catch(reportError) },
-    ])
-  }, [connectionId, navigation, reportError, threadId])
+      Alert.alert('Fork conversation', 'Choose how to branch from this message.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Fork conversation here', onPress: () => void execute(false).catch(reportError) },
+        { text: 'Fork into a new worktree from current HEAD', onPress: () => void execute(true).catch(reportError) },
+      ])
+    },
+    [connectionId, navigation, reportError, threadId],
+  )
 
   // Held messages only come from a backend that can act on them, but the
   // controls check too, rather than offer buttons whose channel is missing.
   const canControlQueue = getClient(connectionId)?.supportsCapability('turn_queue_controls_v1') === true
-  const phoneApprovesHostWrites = getClient(connectionId)?.supportsCapability(HOST_WRITE_PHONE_APPROVAL_CAPABILITY) === true
+  const phoneApprovesHostWrites =
+    getClient(connectionId)?.supportsCapability(HOST_WRITE_PHONE_APPROVAL_CAPABILITY) === true
   const asyncApprovals = getClient(connectionId)?.supportsCapability(AGENT_ASYNC_APPROVAL_CAPABILITY) === true
 
   // A refused Send now / Cancel belongs on its row: reporting it as a thread
   // error would mark a still-running thread as failed and hide Stop.
   const [heldErrors, setHeldErrors] = useState<Record<string, string>>({})
-  const actOnHeld = useCallback(async (held: QueuedTurnSummary, action: 'promote' | 'cancel' | 'resume') => {
-    const client = getClient(connectionId)
-    if (!client) return
-    const showOnRow = (message: string | undefined) =>
-      setHeldErrors((current) => {
-        const next = { ...current }
-        if (message) next[held.messageId] = message
-        else delete next[held.messageId]
-        return next
-      })
-    showOnRow(undefined)
-    try {
-      if (action === 'resume') {
-        const resumed = await client.resumeQueuedTurns(threadId)
-        if (!resumed.ok) showOnRow(resumed.message ?? 'Nothing is held for this chat.')
-        return
+  const actOnHeld = useCallback(
+    async (held: QueuedTurnSummary, action: 'promote' | 'cancel' | 'resume') => {
+      const client = getClient(connectionId)
+      if (!client) return
+      const showOnRow = (message: string | undefined) =>
+        setHeldErrors((current) => {
+          const next = { ...current }
+          if (message) next[held.messageId] = message
+          else delete next[held.messageId]
+          return next
+        })
+      showOnRow(undefined)
+      try {
+        if (action === 'resume') {
+          const resumed = await client.resumeQueuedTurns(threadId)
+          if (!resumed.ok) showOnRow(resumed.message ?? 'Nothing is held for this chat.')
+          return
+        }
+        const result =
+          action === 'promote'
+            ? await client.promoteQueuedTurn(threadId, held.messageId)
+            : await client.cancelQueuedTurn(threadId, held.messageId)
+        if (!result.ok) {
+          log.warn(`${action} of held message ${held.messageId} refused: ${result.message}`)
+          showOnRow(result.message)
+          return
+        }
+        // The bubble goes on the backend's turn.dequeued; the text comes back here.
+        if (action === 'cancel')
+          setDraft((current) => (current ? `${current}\n\n${result.turn.text}` : result.turn.text))
+      } catch (err) {
+        log.warn(`${action} of held message ${held.messageId} failed`, err)
+        showOnRow(err instanceof Error ? err.message : String(err))
       }
-      const result = action === 'promote'
-        ? await client.promoteQueuedTurn(threadId, held.messageId)
-        : await client.cancelQueuedTurn(threadId, held.messageId)
-      if (!result.ok) {
-        log.warn(`${action} of held message ${held.messageId} refused: ${result.message}`)
-        showOnRow(result.message)
-        return
-      }
-      // The bubble goes on the backend's turn.dequeued; the text comes back here.
-      if (action === 'cancel') setDraft((current) => (current ? `${current}\n\n${result.turn.text}` : result.turn.text))
-    } catch (err) {
-      log.warn(`${action} of held message ${held.messageId} failed`, err)
-      showOnRow(err instanceof Error ? err.message : String(err))
-    }
-  }, [connectionId, threadId])
+    },
+    [connectionId, threadId],
+  )
 
   // Same for a kept Not delivered row: a refusal shows on the row.
   const [undeliveredSending, setUndeliveredSending] = useState<ReadonlySet<string>>(new Set())
   const [undeliveredErrors, setUndeliveredErrors] = useState<Record<string, string | undefined>>({})
-  const sendUndelivered = useCallback(async (item: Extract<FeedItem, { kind: 'undelivered' }>) => {
-    const client = getClient(connectionId)
-    if (!client) return
-    const id = item.messageId
-    setUndeliveredErrors((current) => ({ ...current, [id]: undefined }))
-    setUndeliveredSending((current) => new Set(current).add(id))
-    try {
-      // The row turns sent on the backend's peer.undelivered event.
-      await client.deliverPeerMessage({ fromThreadId: threadId, targetThreadId: item.row.to, text: item.row.text, undeliveredId: id })
-    } catch (err) {
-      log.warn(`sending undelivered peer message ${id} failed`, err)
-      setUndeliveredErrors((current) => ({ ...current, [id]: err instanceof Error ? err.message : String(err) }))
-    } finally {
-      setUndeliveredSending((current) => {
-        const next = new Set(current)
-        next.delete(id)
-        return next
-      })
-    }
-  }, [connectionId, threadId])
+  const sendUndelivered = useCallback(
+    async (item: Extract<FeedItem, { kind: 'undelivered' }>) => {
+      const client = getClient(connectionId)
+      if (!client) return
+      const id = item.messageId
+      setUndeliveredErrors((current) => ({ ...current, [id]: undefined }))
+      setUndeliveredSending((current) => new Set(current).add(id))
+      try {
+        // The row turns sent on the backend's peer.undelivered event.
+        await client.deliverPeerMessage({
+          fromThreadId: threadId,
+          targetThreadId: item.row.to,
+          text: item.row.text,
+          undeliveredId: id,
+        })
+      } catch (err) {
+        log.warn(`sending undelivered peer message ${id} failed`, err)
+        setUndeliveredErrors((current) => ({ ...current, [id]: err instanceof Error ? err.message : String(err) }))
+      } finally {
+        setUndeliveredSending((current) => {
+          const next = new Set(current)
+          next.delete(id)
+          return next
+        })
+      }
+    },
+    [connectionId, threadId],
+  )
 
   const renderItem = useCallback(
     ({ item }: { item: FeedRow }) => {
@@ -997,13 +1099,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
                     conditional rather than a placeholder like "[1 image]". */}
                 {item.text.length > 0 && <Text style={styles.userText}>{item.text}</Text>}
                 {delivery && (
-                  <Text style={[
-                    styles.deliveryText,
-                    delivery.state === 'failed' && styles.deliveryFailed,
-                  ]}>
-                    {delivery.label}{delivery.state === 'failed'
+                  <Text style={[styles.deliveryText, delivery.state === 'failed' && styles.deliveryFailed]}>
+                    {delivery.label}
+                    {delivery.state === 'failed'
                       ? ' - tap to edit'
-                      : delivery.state === 'ambiguous' ? ' - tap to resolve' : ''}
+                      : delivery.state === 'ambiguous'
+                        ? ' - tap to resolve'
+                        : ''}
                   </Text>
                 )}
                 {held && (
@@ -1022,9 +1124,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
           return (
             <TextItem
               item={item}
-              onLongPress={forkMessagesRef.current.has(item.id)
-                ? () => forkFromMessage(forkMessagesRef.current.get(item.id)!)
-                : undefined}
+              onLongPress={
+                forkMessagesRef.current.has(item.id)
+                  ? () => forkFromMessage(forkMessagesRef.current.get(item.id)!)
+                  : undefined
+              }
             />
           )
         case 'tool':
@@ -1038,7 +1142,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
             </View>
           )
         case 'approval':
-          return <ApprovalItem item={item} backendTakesPhoneApproval={phoneApprovesHostWrites} backendAsyncApproval={asyncApprovals} onDecide={decideApproval} />
+          return (
+            <ApprovalItem
+              item={item}
+              backendTakesPhoneApproval={phoneApprovesHostWrites}
+              backendAsyncApproval={asyncApprovals}
+              onDecide={decideApproval}
+            />
+          )
         case 'question':
           return <QuestionItem item={item} onSubmit={submitAnswers} />
         case 'plan':
@@ -1105,7 +1216,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     currentProfiles.length === 0
       ? null
       : (thread.instanceName ??
-          (currentProfiles.find((i) => i.id === effectiveInstanceId) ?? currentProfiles[0]).displayName)
+        (currentProfiles.find((i) => i.id === effectiveInstanceId) ?? currentProfiles[0]).displayName)
 
   const slashQuery = detectSlash(draft)
   const slashMatches = useMemo(
@@ -1168,13 +1279,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
     return undefined
   }, [thread.items])
-  const offerCompaction = !compactionDismissed && shouldOfferCompaction({
-    provider: effectiveProvider,
-    usedTokens: thread.usedTokens,
-    lastMessageAt: thread.lastTurnAt ?? lastUserAt,
-    busy: isRunning,
-    now,
-  })
+  const offerCompaction =
+    !compactionDismissed &&
+    shouldOfferCompaction({
+      provider: effectiveProvider,
+      usedTokens: thread.usedTokens,
+      lastMessageAt: thread.lastTurnAt ?? lastUserAt,
+      busy: isRunning,
+      now,
+    })
 
   return (
     <AnimatedKeyboardAvoidingView
@@ -1201,14 +1314,23 @@ export default function ThreadScreen({ route, navigation }: Props) {
       )}
 
       {offerCompaction && thread.usedTokens != null && (
-        <View style={[styles.forkBanner, styles.compactBanner]} accessibilityRole="summary" testID="compaction-offer-banner">
+        <View
+          style={[styles.forkBanner, styles.compactBanner]}
+          accessibilityRole="summary"
+          testID="compaction-offer-banner"
+        >
           <Text style={[styles.forkBannerText, styles.compactBannerText]} numberOfLines={1}>
             Resume with less context · {formatTokens(thread.usedTokens)} tokens from earlier
           </Text>
           <Pressable onPress={() => send('/compact')} accessibilityRole="button" hitSlop={8}>
             <Text style={styles.compactAction}>Compact</Text>
           </Pressable>
-          <Pressable onPress={() => setCompactionDismissed(true)} accessibilityRole="button" accessibilityLabel="Keep full history" hitSlop={8}>
+          <Pressable
+            onPress={() => setCompactionDismissed(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Keep full history"
+            hitSlop={8}
+          >
             <Text style={styles.forkBannerText}>×</Text>
           </Pressable>
         </View>
@@ -1226,16 +1348,16 @@ export default function ThreadScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {(switchLabel || loadLabel) && <ThreadWaitStatus label={`${switchLabel ?? loadLabel} Your draft is kept; tap Send when ready.`} />}
+      {(switchLabel || loadLabel) && (
+        <ThreadWaitStatus label={`${switchLabel ?? loadLabel} Your draft is kept; tap Send when ready.`} />
+      )}
       {waitError && <ThreadWaitStatus label={waitError} error />}
 
       {/* Outside the list: ListEmptyComponent gets no counter-transform from an
           inverted FlatList, so anything placed there renders mirrored. */}
       {itemCount === 0 ? (
         <View style={styles.emptyWrap}>
-          <Text style={styles.emptyText}>
-            {loadLabel ? '' : 'Say something below.'}
-          </Text>
+          <Text style={styles.emptyText}>{loadLabel ? '' : 'Say something below.'}</Text>
         </View>
       ) : (
         <FlatList
@@ -1275,9 +1397,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
                     onPress={() => chooseModel(m.id)}
                     style={({ pressed }) => [styles.modelRow, pressed && styles.pressed]}
                   >
-                    <Text style={[styles.modelRowText, active && styles.modelRowTextActive]}>
-                      {m.label}
-                    </Text>
+                    <Text style={[styles.modelRowText, active && styles.modelRowTextActive]}>{m.label}</Text>
                     {active && <Text style={styles.modelRowMark}>current</Text>}
                   </Pressable>
                 )
@@ -1301,9 +1421,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
       <Modal visible={lightbox !== null} transparent animationType="fade" onRequestClose={() => setLightbox(null)}>
         <Pressable style={styles.lightbox} onPress={() => setLightbox(null)}>
-          {lightbox !== null && (
-            <Image source={{ uri: lightbox }} style={styles.lightboxImage} resizeMode="contain" />
-          )}
+          {lightbox !== null && <Image source={{ uri: lightbox }} style={styles.lightboxImage} resizeMode="contain" />}
         </Pressable>
       </Modal>
 
@@ -1366,9 +1484,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
             style={[styles.queueChip, toggle.queues && styles.queueChipOn]}
             hitSlop={6}
           >
-            <Text style={[styles.queueChipText, toggle.queues && styles.queueChipTextOn]}>
-              {toggle.label}
-            </Text>
+            <Text style={[styles.queueChipText, toggle.queues && styles.queueChipTextOn]}>{toggle.label}</Text>
           </Pressable>
         )}
         <View style={styles.inputSurface}>
@@ -1377,7 +1493,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder={isRunning ? (canSteer(thread.provider ?? provider) && !toggle.queues ? 'Steer the agent…' : 'Queue a follow-up…') : 'Message the agent…'}
+            placeholder={
+              isRunning
+                ? canSteer(thread.provider ?? provider) && !toggle.queues
+                  ? 'Steer the agent…'
+                  : 'Queue a follow-up…'
+                : 'Message the agent…'
+            }
             placeholderTextColor={colors.textFaint}
             multiline
           />

@@ -132,7 +132,9 @@ export async function removeWorktree(
       // The worktree is gone either way; the caller reports the kept branch.
       const reason = err instanceof Error ? err.message : String(err)
       log.warn(`branch delete (${opts.deleteBranch}) failed: ${reason}`)
-      return { branchWarning: `The worktree was removed, but branch ${opts.deleteBranch} was kept: ${gitErrorLine(reason)}` }
+      return {
+        branchWarning: `The worktree was removed, but branch ${opts.deleteBranch} was kept: ${gitErrorLine(reason)}`,
+      }
     }
   }
   return {}
@@ -177,7 +179,10 @@ export function parseWorktreeList(porcelain: string, mainPath: string): Worktree
     cur = {}
   }
   for (const line of porcelain.split('\n')) {
-    if (line === '') { flush(); continue }
+    if (line === '') {
+      flush()
+      continue
+    }
     const sp = line.indexOf(' ')
     const key = sp === -1 ? line : line.slice(0, sp)
     const val = sp === -1 ? '' : line.slice(sp + 1)
@@ -192,10 +197,7 @@ export function parseWorktreeList(porcelain: string, mainPath: string): Worktree
   return out
 }
 
-export async function listWorktrees(
-  repoPath: string,
-  runner: GitRunner = defaultRunner,
-): Promise<WorktreeInfo[]> {
+export async function listWorktrees(repoPath: string, runner: GitRunner = defaultRunner): Promise<WorktreeInfo[]> {
   const { stdout } = await runner(['worktree', 'list', '--porcelain'], repoPath)
   return parseWorktreeList(stdout, repoPath)
 }
@@ -234,5 +236,10 @@ export async function findStaleWorktrees(
 }
 
 async function pathExists(p: string): Promise<boolean> {
-  try { await access(p); return true } catch { return false }
+  try {
+    await access(p)
+    return true
+  } catch {
+    return false
+  }
 }

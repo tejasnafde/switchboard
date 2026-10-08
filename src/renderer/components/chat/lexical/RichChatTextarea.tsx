@@ -71,7 +71,11 @@ import {
 } from 'lexical'
 import { $createPillNode, $isPillNode, PillNode } from './PillNode'
 import { parseBodyToSegments } from '../../../services/chat-input-body'
-import { selectionToRestore, type ComposerSelection, type SavedComposerSelection } from '../../../services/composer-selection'
+import {
+  selectionToRestore,
+  type ComposerSelection,
+  type SavedComposerSelection,
+} from '../../../services/composer-selection'
 import type { DraftPill } from '../../../stores/draft-store'
 import { createRendererLogger } from '../../../logger'
 import { matchesShortcut } from '@shared/shortcuts'
@@ -122,10 +126,7 @@ export const INSERT_PILL_COMMAND: LexicalCommand<DraftPill> = createCommand('INS
  * pills that have been removed; leaving the raw token string in the
  * editor would confuse the user.
  */
-function $populateFromBody(
-  body: string,
-  pillsById: Record<string, Pick<DraftPill, 'id' | 'label' | 'kind'>>,
-): void {
+function $populateFromBody(body: string, pillsById: Record<string, Pick<DraftPill, 'id' | 'label' | 'kind'>>): void {
   const root = $getRoot()
   root.clear()
   const paragraph = $createParagraphNode()
@@ -165,8 +166,14 @@ function serializeEditorToBody(editor: LexicalEditor): string {
   editor.getEditorState().read(() => {
     const root = $getRoot()
     const visit = (node: LexicalNode): void => {
-      if (node.getType() === 'linebreak') { out += '\n'; return }
-      if ($isPillNode(node)) { out += node.getTextContent(); return }
+      if (node.getType() === 'linebreak') {
+        out += '\n'
+        return
+      }
+      if ($isPillNode(node)) {
+        out += node.getTextContent()
+        return
+      }
       // ElementNode: recurse into children.
       const anyNode = node as LexicalNode & { getChildren?: () => LexicalNode[]; getTextContent?: () => string }
       if (typeof anyNode.getChildren === 'function') {
@@ -349,13 +356,7 @@ function PillInsertPlugin(): null {
  * is currently showing). We compare to the editor's serialized body to
  * detect external writes - a typing-only update will already match.
  */
-function HydrationPlugin({
-  value,
-  pillsById,
-}: {
-  value: string
-  pillsById: RichChatTextareaProps['pillsById']
-}): null {
+function HydrationPlugin({ value, pillsById }: { value: string; pillsById: RichChatTextareaProps['pillsById'] }): null {
   const [editor] = useLexicalComposerContext()
   const lastValueRef = useRef<string | null>(null)
 
@@ -410,8 +411,12 @@ function SelectionMemoryPlugin(): null {
   useEffect(() => {
     let saved: SavedComposerSelection | null = null
     let pointerDown = false
-    const onPointerDown = (): void => { pointerDown = true }
-    const onPointerUp = (): void => { pointerDown = false }
+    const onPointerDown = (): void => {
+      pointerDown = true
+    }
+    const onPointerUp = (): void => {
+      pointerDown = false
+    }
     let rootEl: HTMLElement | null = null
     const removeRoot = editor.registerRootListener((root) => {
       rootEl?.removeEventListener('pointerdown', onPointerDown)
@@ -436,7 +441,8 @@ function SelectionMemoryPlugin(): null {
       () => {
         const dom = window.getSelection()
         const root = editor.getRootElement()
-        if (dom && root?.contains(dom.anchorNode)) editor.read(() => save($selectionOffsets($createRangeSelectionFromDom(dom, editor))))
+        if (dom && root?.contains(dom.anchorNode))
+          editor.read(() => save($selectionOffsets($createRangeSelectionFromDom(dom, editor))))
         return false
       },
       COMMAND_PRIORITY_LOW,
@@ -448,7 +454,12 @@ function SelectionMemoryPlugin(): null {
         const target = selectionToRestore(saved, serializeEditorToBody(editor))
         // Discrete: commit now, inside the focus event, so the DOM selection
         // is ours before the browser's selectionchange is read.
-        editor.update(() => { $selectOffsets(target) }, { discrete: true })
+        editor.update(
+          () => {
+            $selectOffsets(target)
+          },
+          { discrete: true },
+        )
         return false
       },
       COMMAND_PRIORITY_LOW,
@@ -512,11 +523,7 @@ function PasteFilesPlugin({ onPasteFiles }: { onPasteFiles?: (files: File[]) => 
 }
 
 /** Reconstruct PillNodes from `[[pill:<id>]]` tokens on paste so cut/copy round-trips chips. */
-function PasteTextPlugin({
-  pillsById,
-}: {
-  pillsById: RichChatTextareaProps['pillsById']
-}): null {
+function PasteTextPlugin({ pillsById }: { pillsById: RichChatTextareaProps['pillsById'] }): null {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
     return editor.registerCommand<ClipboardEvent>(
@@ -567,9 +574,15 @@ const ImperativeHandlePlugin = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
-      focus: () => { editor.focus() },
-      blur: () => { editor.blur() },
-      insertPill: (pill) => { editor.dispatchCommand(INSERT_PILL_COMMAND, pill) },
+      focus: () => {
+        editor.focus()
+      },
+      blur: () => {
+        editor.blur()
+      },
+      insertPill: (pill) => {
+        editor.dispatchCommand(INSERT_PILL_COMMAND, pill)
+      },
       replaceRange: (start, end, replacement) => {
         const cur = getValue()
         const next = cur.slice(0, start) + replacement + cur.slice(end)
@@ -679,11 +692,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
         <PasteTextPlugin pillsById={pillsById} />
         <PillInsertPlugin />
         <SelectionMemoryPlugin />
-        <ImperativeHandlePlugin
-          ref={ref}
-          pillsById={pillsById}
-          getValue={() => valueRef.current}
-        />
+        <ImperativeHandlePlugin ref={ref} pillsById={pillsById} getValue={() => valueRef.current} />
       </LexicalComposer>
     )
   },

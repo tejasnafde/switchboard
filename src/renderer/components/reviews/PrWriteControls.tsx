@@ -15,7 +15,8 @@ import { rerunUnavailable } from './review-states'
 import { Icon } from './review-ui'
 import { toggleResolved, useWriteAction, WriteError } from './review-writes'
 
-const FIELD = 'w-full resize-y rounded-[7px] border border-[var(--border)] bg-[var(--bg-primary)] px-[10px] py-[6px] font-[family-name:var(--font-sans)] text-[13px] leading-[1.5] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:border-[var(--accent)]'
+const FIELD =
+  'w-full resize-y rounded-[7px] border border-[var(--border)] bg-[var(--bg-primary)] px-[10px] py-[6px] font-[family-name:var(--font-sans)] text-[13px] leading-[1.5] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:border-[var(--accent)]'
 
 /** ⌘Enter (Ctrl+Enter) sends from any of these boxes; Enter alone is a new line. */
 function sendKeys(send: () => void) {
@@ -35,7 +36,9 @@ export function ThreadFooter({ pr, conversation }: { pr: PrSummary; conversation
 
   const send = async () => {
     if (!text.trim() || reply.pending) return
-    const result = await reply.run('reply', () => window.api.pullRequests.reply(pr.ref, { conversationId: conversation.id, body: text }))
+    const result = await reply.run('reply', () =>
+      window.api.pullRequests.reply(pr.ref, { conversationId: conversation.id, body: text }),
+    )
     if (result?.ok) setText('')
   }
   const resolve = async () => {
@@ -59,10 +62,23 @@ export function ThreadFooter({ pr, conversation }: { pr: PrSummary; conversation
           onKeyDown={sendKeys(() => void send())}
           className={cn(FIELD, 'max-h-[160px] min-h-7 resize-none py-[3px] leading-[20px] [field-sizing:content]')}
         />
-        <Button variant="outline" size="sm" className="min-w-[76px]" disabled={!text.trim() || reply.pending} aria-busy={reply.pending || undefined} onClick={() => void send()}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-w-[76px]"
+          disabled={!text.trim() || reply.pending}
+          aria-busy={reply.pending || undefined}
+          onClick={() => void send()}
+        >
           {reply.pending ? 'Sending…' : 'Reply'}
         </Button>
-        <Button variant="outline" size="sm" className="min-w-[82px]" disabled={resolving} onClick={() => void resolve()}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-w-[82px]"
+          disabled={resolving}
+          onClick={() => void resolve()}
+        >
           {conversation.resolved ? 'Unresolve' : 'Resolve'}
         </Button>
       </div>
@@ -72,7 +88,15 @@ export function ThreadFooter({ pr, conversation }: { pr: PrSummary; conversation
 }
 
 /** Opened from a diff selection: post the comment now, or hold it for the review. */
-export function LineCommentBox({ pr, target, onClose }: { pr: PrSummary; target: Omit<InlineCommentInput, 'body'>; onClose: () => void }) {
+export function LineCommentBox({
+  pr,
+  target,
+  onClose,
+}: {
+  pr: PrSummary
+  target: Omit<InlineCommentInput, 'body'>
+  onClose: () => void
+}) {
   const [text, setText] = useState('')
   const write = useWriteAction(pr.ref)
   const body = text.trim()
@@ -80,7 +104,9 @@ export function LineCommentBox({ pr, target, onClose }: { pr: PrSummary; target:
 
   const now = async () => {
     if (!body || write.pending) return
-    const result = await write.run('inline comment', () => window.api.pullRequests.inlineComment(pr.ref, { ...target, body }))
+    const result = await write.run('inline comment', () =>
+      window.api.pullRequests.inlineComment(pr.ref, { ...target, body }),
+    )
     if (result?.ok) onClose()
   }
   const hold = () => {
@@ -90,7 +116,10 @@ export function LineCommentBox({ pr, target, onClose }: { pr: PrSummary; target:
   }
 
   return (
-    <div data-line-comment className="mt-2 mr-4 mb-3 ml-[114px] rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 font-[family-name:var(--font-sans)] whitespace-normal">
+    <div
+      data-line-comment
+      className="mt-2 mr-4 mb-3 ml-[114px] rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 font-[family-name:var(--font-sans)] whitespace-normal"
+    >
       <div className="mb-[6px] text-[12px] text-[var(--text-secondary)]">Comment on {lines}</div>
       <textarea
         autoFocus
@@ -107,11 +136,22 @@ export function LineCommentBox({ pr, target, onClose }: { pr: PrSummary; target:
       />
       <WriteError error={write.error} className="mt-1" />
       <div className="mt-2 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" disabled={write.pending} onClick={onClose}>Cancel</Button>
-        <Button variant="outline" size="sm" className="min-w-[112px]" disabled={!body || write.pending} aria-busy={write.pending || undefined} onClick={() => void now()}>
+        <Button variant="ghost" size="sm" disabled={write.pending} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-w-[112px]"
+          disabled={!body || write.pending}
+          aria-busy={write.pending || undefined}
+          onClick={() => void now()}
+        >
           {write.pending ? 'Commenting…' : 'Comment now'}
         </Button>
-        <Button size="sm" disabled={!body || write.pending} onClick={hold}>Add to review</Button>
+        <Button size="sm" disabled={!body || write.pending} onClick={hold}>
+          Add to review
+        </Button>
       </div>
     </div>
   )
@@ -119,12 +159,21 @@ export function LineCommentBox({ pr, target, onClose }: { pr: PrSummary; target:
 
 export function PendingCommentCard({ pr, comment }: { pr: PrSummary; comment: PendingComment }) {
   return (
-    <div data-pending-comment className="mt-2 mr-4 mb-3 ml-[114px] flex items-start gap-[10px] rounded-[10px] border border-dashed border-[var(--border-strong,var(--border))] bg-[var(--bg-surface)] px-3 py-[10px] font-[family-name:var(--font-sans)] text-[13px] leading-[1.5] whitespace-pre-wrap">
+    <div
+      data-pending-comment
+      className="mt-2 mr-4 mb-3 ml-[114px] flex items-start gap-[10px] rounded-[10px] border border-dashed border-[var(--border-strong,var(--border))] bg-[var(--bg-surface)] px-3 py-[10px] font-[family-name:var(--font-sans)] text-[13px] leading-[1.5] whitespace-pre-wrap"
+    >
       <div className="min-w-0 flex-1">
         <span className="text-[12px] text-[var(--text-muted)]">Pending, in your review</span>
         <div>{comment.body}</div>
       </div>
-      <Button variant="ghost" size="sm" onClick={() => useReviewStore.getState().removePendingComment(pr.ref, comment.id)}>Remove</Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => useReviewStore.getState().removePendingComment(pr.ref, comment.id)}
+      >
+        Remove
+      </Button>
     </div>
   )
 }
@@ -151,7 +200,14 @@ export function PrCommentBox({ pr }: { pr: PrSummary }) {
       />
       <div className="mt-[6px] flex max-w-[640px] items-start gap-2">
         <WriteError error={write.error} className="min-w-0 flex-1" />
-        <Button variant="outline" size="sm" className="ml-auto min-w-[104px]" disabled={!text.trim() || write.pending} aria-busy={write.pending || undefined} onClick={() => void send()}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto min-w-[104px]"
+          disabled={!text.trim() || write.pending}
+          aria-busy={write.pending || undefined}
+          onClick={() => void send()}
+        >
           {write.pending ? 'Commenting…' : 'Comment'}
         </Button>
       </div>
@@ -180,7 +236,8 @@ export function RerunButton({ pr, check }: { pr: PrSummary; check: PrCheck }) {
       title={write.error?.message ?? `Re-run the failed jobs of ${check.name}`}
       onClick={() => void run()}
     >
-      <Icon name="rerun" />{label}
+      <Icon name="rerun" />
+      {label}
     </Button>
   )
 }

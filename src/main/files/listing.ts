@@ -15,7 +15,11 @@ export async function listAllFiles(repoRoot: string, cap = 10000): Promise<strin
   while (stack.length > 0 && out.length < cap) {
     const dir = stack.pop() as string
     let dirents
-    try { dirents = await fs.readdir(dir, { withFileTypes: true }) } catch { continue }
+    try {
+      dirents = await fs.readdir(dir, { withFileTypes: true })
+    } catch {
+      continue
+    }
     for (const d of dirents) {
       if (ALWAYS_SKIP.has(d.name)) continue
       const abs = join(dir, d.name)

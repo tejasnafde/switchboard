@@ -23,7 +23,12 @@ describe('extractWritePaths', () => {
 
   it('codex: fileChange (normalized to Edit) carries changes[].path', () => {
     expect(
-      extractWritePaths('Edit', { changes: [{ path: '/wt/x.ts', kind: 'update' }, { path: '/wt/y.ts', kind: 'add' }] })
+      extractWritePaths('Edit', {
+        changes: [
+          { path: '/wt/x.ts', kind: 'update' },
+          { path: '/wt/y.ts', kind: 'add' },
+        ],
+      }),
     ).toEqual(['/wt/x.ts', '/wt/y.ts'])
   })
 
@@ -60,7 +65,9 @@ describe('extractCommandPaths', () => {
 
   it('quoted paths with spaces survive - Switchboard session worktrees live under "Application Support"', () => {
     expect(
-      paths('Bash', { command: 'git worktree add "/Users/t/Library/Application Support/switchboard/worktrees/r/fix" -b sb/fix' })
+      paths('Bash', {
+        command: 'git worktree add "/Users/t/Library/Application Support/switchboard/worktrees/r/fix" -b sb/fix',
+      }),
     ).toEqual(['/Users/t/Library/Application Support/switchboard/worktrees/r/fix'])
   })
 
@@ -118,7 +125,7 @@ describe('detectDrift', () => {
   it('returns null for writes inside the session folder - including nested worktree dirs when the SESSION is the worktree', () => {
     expect(detectDrift('/repo', ['/repo/src/a.ts'], worktrees)).toBeNull()
     expect(
-      detectDrift('/repo/.switchboard/worktrees/feat-x', ['/repo/.switchboard/worktrees/feat-x/src/a.ts'], worktrees)
+      detectDrift('/repo/.switchboard/worktrees/feat-x', ['/repo/.switchboard/worktrees/feat-x/src/a.ts'], worktrees),
     ).toBeNull()
   })
 
@@ -134,7 +141,11 @@ describe('detectDrift', () => {
   })
 
   it('first drifting write wins across a batch', () => {
-    const paths = ['/repo/src/ok.ts', '/repo/.switchboard/worktrees/feat-x/a.ts', '/repo/.switchboard/worktrees/feat-y/b.ts']
+    const paths = [
+      '/repo/src/ok.ts',
+      '/repo/.switchboard/worktrees/feat-x/a.ts',
+      '/repo/.switchboard/worktrees/feat-y/b.ts',
+    ]
     expect(detectDrift('/repo', paths, worktrees)?.branch).toBe('fork/feat-x')
   })
 })

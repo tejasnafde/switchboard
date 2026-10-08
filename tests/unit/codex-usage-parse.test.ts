@@ -69,10 +69,12 @@ describe('parseCodexRateLimits - window shapes', () => {
   })
 
   it('renders both rows, primary first, when secondary is present', () => {
-    const out = parseCodexRateLimits(snap({
-      primary: { usedPercent: 5, windowDurationMins: 300 },
-      secondary: { usedPercent: 50, windowDurationMins: 10080 },
-    }))
+    const out = parseCodexRateLimits(
+      snap({
+        primary: { usedPercent: 5, windowDurationMins: 300 },
+        secondary: { usedPercent: 50, windowDurationMins: 10080 },
+      }),
+    )
     expect(out.windows.map((w) => w.label)).toEqual(['5-hour', 'Weekly'])
   })
 
@@ -93,7 +95,9 @@ describe('parseCodexRateLimits - window shapes', () => {
   it('rejects the snake_case dialect instead of silently reading undefined', () => {
     // These field names belong to Codex's other protocol. Reading them here
     // would yield undefined for every value and render an empty panel.
-    const out = parseCodexRateLimits(snap({ primary: { used_percent: 42, window_minutes: 300, resets_at: 1787773606 } }))
+    const out = parseCodexRateLimits(
+      snap({ primary: { used_percent: 42, window_minutes: 300, resets_at: 1787773606 } }),
+    )
     expect(out.ok).toBe(false)
     expect(out.windows).toHaveLength(0)
     expect(out.error).toMatch(/snake_case/)
@@ -110,27 +114,44 @@ describe('parseCodexRateLimits - window shapes', () => {
   })
 
   it('converts individualLimit remaining into a used percentage', () => {
-    const out = parseCodexRateLimits(snap({
-      individualLimit: { limit: '$100', used: '$25', remainingPercent: 75, resetsAt: 1787773606 },
-    }))
+    const out = parseCodexRateLimits(
+      snap({
+        individualLimit: { limit: '$100', used: '$25', remainingPercent: 75, resetsAt: 1787773606 },
+      }),
+    )
     const spend = out.windows.find((w) => w.label === 'Spend limit')
     expect(spend?.usedPercent).toBe(25)
     expect(spend?.detail).toBe('$25 of $100')
   })
 
   it('treats a fully consumed spend control as 100 percent', () => {
-    const out = parseCodexRateLimits(snap({ individualLimit: { limit: '$1', used: '$1', remainingPercent: 0, resetsAt: 1 } }))
+    const out = parseCodexRateLimits(
+      snap({ individualLimit: { limit: '$1', used: '$1', remainingPercent: 0, resetsAt: 1 } }),
+    )
     expect(out.windows.find((w) => w.label === 'Spend limit')?.usedPercent).toBe(100)
   })
 })
 
 describe('parseCodexRateLimits - plan and reached state', () => {
   it('passes every plan type through', () => {
-    const plans = ['free', 'go', 'plus', 'pro', 'prolite', 'team', 'self_serve_business_usage_based',
-      'business', 'enterprise_cbp_usage_based', 'enterprise', 'edu', 'unknown']
+    const plans = [
+      'free',
+      'go',
+      'plus',
+      'pro',
+      'prolite',
+      'team',
+      'self_serve_business_usage_based',
+      'business',
+      'enterprise_cbp_usage_based',
+      'enterprise',
+      'edu',
+      'unknown',
+    ]
     for (const planType of plans) {
-      expect(parseCodexRateLimits({ rateLimits: { limitId: 'c', planType, primary: { usedPercent: 1 } } }).plan)
-        .toBe(planType)
+      expect(parseCodexRateLimits({ rateLimits: { limitId: 'c', planType, primary: { usedPercent: 1 } } }).plan).toBe(
+        planType,
+      )
     }
     expect(parseCodexRateLimits({ rateLimits: { limitId: 'c', primary: { usedPercent: 1 } } }).plan).toBeNull()
   })
@@ -168,16 +189,25 @@ describe('parseCodexRateLimits - plan and reached state', () => {
 
   it('does not redden a healthy window when only credits are depleted', () => {
     const out = parseCodexRateLimits({
-      rateLimits: { limitId: 'c', primary: { usedPercent: 5 }, rateLimitReachedType: 'workspace_owner_credits_depleted' },
+      rateLimits: {
+        limitId: 'c',
+        primary: { usedPercent: 5 },
+        rateLimitReachedType: 'workspace_owner_credits_depleted',
+      },
     })
     expect(out.windows[0]?.severity).toBe('ok')
   })
 
   it('reports unlimited and balance-carrying credits', () => {
-    expect(parseCodexRateLimits({ rateLimits: { limitId: 'c', credits: { hasCredits: true, unlimited: true } } })
-      .overage[0]?.detail).toBe('Unlimited')
-    expect(parseCodexRateLimits({ rateLimits: { limitId: 'c', credits: { hasCredits: true, unlimited: false, balance: '12' } } })
-      .overage[0]?.detail).toBe('12 available')
+    expect(
+      parseCodexRateLimits({ rateLimits: { limitId: 'c', credits: { hasCredits: true, unlimited: true } } }).overage[0]
+        ?.detail,
+    ).toBe('Unlimited')
+    expect(
+      parseCodexRateLimits({
+        rateLimits: { limitId: 'c', credits: { hasCredits: true, unlimited: false, balance: '12' } },
+      }).overage[0]?.detail,
+    ).toBe('12 available')
   })
 })
 

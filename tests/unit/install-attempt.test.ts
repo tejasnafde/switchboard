@@ -4,7 +4,9 @@ import { QuitCoordinator } from '../../src/main/quit-coordinator'
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void
-  const promise = new Promise<void>((res) => { resolve = res })
+  const promise = new Promise<void>((res) => {
+    resolve = res
+  })
   return { promise, resolve }
 }
 
@@ -15,7 +17,9 @@ async function flush(): Promise<void> {
 function setup(teardown: () => Promise<void>) {
   const coordinator = new QuitCoordinator(teardown, vi.fn(), (cb) => cb())
   const timers: Array<() => void> = []
-  const attempt = new InstallAttempt(coordinator, 15_000, (cb) => { timers.push(cb) })
+  const attempt = new InstallAttempt(coordinator, 15_000, (cb) => {
+    timers.push(cb)
+  })
   const callbacks = { install: vi.fn(), onAborted: vi.fn(), onRecovered: vi.fn() }
   return { coordinator, timers, attempt, callbacks }
 }

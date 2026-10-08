@@ -14,7 +14,12 @@ type UserItem = Extract<FeedItem, { kind: 'user' }>
  */
 export function splitTranscriptUserItem(item: UserItem): FeedItem[] {
   const split = splitSyntheticUserText(item.text)
-  const rows: FeedItem[] = (split?.parts ?? []).map((part, i) => ({ kind: 'synthetic', id: `${item.id}-s${i}`, part, at: item.at }))
+  const rows: FeedItem[] = (split?.parts ?? []).map((part, i) => ({
+    kind: 'synthetic',
+    id: `${item.id}-s${i}`,
+    part,
+    at: item.at,
+  }))
   const text = split ? split.userText : item.text
   if (text.trim() || item.images?.length) rows.push({ ...item, text })
   return rows
@@ -28,7 +33,9 @@ export function splitTranscriptUserItem(item: UserItem): FeedItem[] {
  * with a marker is misread until the next history load reseeds the feed.
  */
 export function splitLegacyCachedItems(items: FeedItem[]): FeedItem[] {
-  return items.flatMap((item) => (item.kind === 'user' && item.id.startsWith('h-') ? splitTranscriptUserItem(item) : [item]))
+  return items.flatMap((item) =>
+    item.kind === 'user' && item.id.startsWith('h-') ? splitTranscriptUserItem(item) : [item],
+  )
 }
 
 /** Map backend history into the same rows used by the live event reducer. */
@@ -38,7 +45,8 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
     if (message.role === 'user') {
       const urls = (message.images ?? []).map((image) => image.url).filter(Boolean)
       const visible = visibleUserMessageText(message.content, message.displayBody)
-      const text = visible !== null && message.displayBody !== undefined ? pillBodyText(visible, message.pillsMeta) : visible
+      const text =
+        visible !== null && message.displayBody !== undefined ? pillBodyText(visible, message.pillsMeta) : visible
       // Context-only text is hidden, but images sent with it still show.
       if (text === null && urls.length === 0) continue
       const item: UserItem = {
@@ -57,29 +65,41 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
     if (message.role === 'system') {
       const view = systemRowView(message.content)
       const id = `h-${message.id}`
-      if (view.kind === 'peer-undelivered') items.push({ kind: 'undelivered', id, messageId: message.id, row: view.row })
+      if (view.kind === 'peer-undelivered')
+        items.push({ kind: 'undelivered', id, messageId: message.id, row: view.row })
       else if (view.kind === 'error') items.push({ kind: 'error', id, message: view.message })
       else items.push({ kind: 'notice', id, text: view.body ? `${view.title}: ${view.body}` : view.title })
       continue
     }
     if (message.content.trim()) {
       items.push({
-        kind: 'text', id: `h-${message.id}`, text: message.content,
-        stream: 'assistant', done: true,
+        kind: 'text',
+        id: `h-${message.id}`,
+        text: message.content,
+        stream: 'assistant',
+        done: true,
       })
     }
     for (const tool of message.toolCalls ?? []) {
       items.push({
-        kind: 'tool', id: `h-${message.id}-t-${tool.id}`,
-        toolName: tool.name, input: tool.input, output: tool.output, state: 'done',
+        kind: 'tool',
+        id: `h-${message.id}-t-${tool.id}`,
+        toolName: tool.name,
+        input: tool.input,
+        output: tool.output,
+        state: 'done',
       })
     }
     const diff = message.fileDiff
     if (diff) {
       // Same id as the live row, so a reload and a live event coalesce.
       items.push({
-        kind: 'fileEdit', id: `f-${diff.fileEditId}`, relPath: diff.relPath,
-        changeKind: diff.changeKind, oldContent: diff.oldContent, newContent: diff.newContent,
+        kind: 'fileEdit',
+        id: `f-${diff.fileEditId}`,
+        relPath: diff.relPath,
+        changeKind: diff.changeKind,
+        oldContent: diff.oldContent,
+        newContent: diff.newContent,
       })
     }
   }
@@ -105,8 +125,10 @@ export function mergeHistoryItems(history: FeedItem[], live: FeedItem[]): FeedIt
       result.push(item)
     } else {
       const previous = result[index]
-      result[index] = previous.kind === 'text' && item.kind === 'text' && previous.text.includes(item.text)
-        ? { ...item, text: previous.text } : item
+      result[index] =
+        previous.kind === 'text' && item.kind === 'text' && previous.text.includes(item.text)
+          ? { ...item, text: previous.text }
+          : item
     }
   }
   return result

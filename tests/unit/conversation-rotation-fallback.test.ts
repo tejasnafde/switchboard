@@ -20,23 +20,26 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const threadSessions = new Map<string, string>() // claude_session_id -> thread_id
-const conversations = new Map<string, {
-  agent_type?: string
-  session_id?: string | null
-  provider_instance_id?: string | null
-  runtime_mode?: string | null
-  model?: string | null
-  reasoning_effort?: string | null
-  archived?: number
-  last_read_at?: number | null
-  pending_handoff_from?: string | null
-  title?: string | null
-  follow_suggestions?: string | null
-  follow_notice_dismissed?: number | null
-  worked_worktrees?: string | null
-  status_line?: string | null
-  provider_options_json?: string | null
-}>()
+const conversations = new Map<
+  string,
+  {
+    agent_type?: string
+    session_id?: string | null
+    provider_instance_id?: string | null
+    runtime_mode?: string | null
+    model?: string | null
+    reasoning_effort?: string | null
+    archived?: number
+    last_read_at?: number | null
+    pending_handoff_from?: string | null
+    title?: string | null
+    follow_suggestions?: string | null
+    follow_notice_dismissed?: number | null
+    worked_worktrees?: string | null
+    status_line?: string | null
+    provider_options_json?: string | null
+  }
+>()
 
 vi.mock('better-sqlite3', () => {
   class FakeDb {
@@ -80,7 +83,11 @@ vi.mock('better-sqlite3', () => {
             const row = conversations.get(args[0] as string)
             return row ? { pending_handoff_from: row.pending_handoff_from ?? null } : undefined
           }
-          if (/SELECT follow_suggestions, follow_notice_dismissed, worked_worktrees FROM conversations WHERE id = \?/.test(sql)) {
+          if (
+            /SELECT follow_suggestions, follow_notice_dismissed, worked_worktrees FROM conversations WHERE id = \?/.test(
+              sql,
+            )
+          ) {
             const row = conversations.get(args[0] as string)
             return row
               ? {
@@ -90,7 +97,11 @@ vi.mock('better-sqlite3', () => {
                 }
               : undefined
           }
-          if (/SELECT agent_type, model, reasoning_effort, provider_options_json FROM conversations WHERE id = \?/.test(sql)) {
+          if (
+            /SELECT agent_type, model, reasoning_effort, provider_options_json FROM conversations WHERE id = \?/.test(
+              sql,
+            )
+          ) {
             const row = conversations.get(args[0] as string)
             return row
               ? {
@@ -174,7 +185,9 @@ vi.mock('better-sqlite3', () => {
             row.status_line = line
             return { changes: 1 }
           }
-          if (/UPDATE conversations SET follow_suggestions = \?, follow_notice_dismissed = NULL WHERE id = \?/.test(sql)) {
+          if (
+            /UPDATE conversations SET follow_suggestions = \?, follow_notice_dismissed = NULL WHERE id = \?/.test(sql)
+          ) {
             const [mode, id] = args as [string | null, string]
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
@@ -202,8 +215,20 @@ vi.mock('better-sqlite3', () => {
             row.pending_handoff_from = from
             return { changes: 1 }
           }
-          if (sql.includes('UPDATE conversations SET agent_type = ?, model = ?, reasoning_effort = ?, provider_options_json = ?, provider_instance_id = ?')) {
-            const [agentType, model, effort, options, instanceId, , id] = args as [string, string | null, string | null, string, string, number, string]
+          if (
+            sql.includes(
+              'UPDATE conversations SET agent_type = ?, model = ?, reasoning_effort = ?, provider_options_json = ?, provider_instance_id = ?',
+            )
+          ) {
+            const [agentType, model, effort, options, instanceId, , id] = args as [
+              string,
+              string | null,
+              string | null,
+              string,
+              string,
+              number,
+              string,
+            ]
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
             Object.assign(row, {
@@ -317,12 +342,25 @@ describe('atomic conversation provider selection', () => {
     })
     threadSessions.set('uuid-abc', 'agent_123')
 
-    expect(setConversationProviderSelection('uuid-abc', 'claude-code', 'claude-work')).toEqual({ model: null, reasoningEffort: 'high' })
+    expect(setConversationProviderSelection('uuid-abc', 'claude-code', 'claude-work')).toEqual({
+      model: null,
+      reasoningEffort: 'high',
+    })
     setConversationModel('agent_123', 'claude-opus-4')
     setConversationReasoningEffort('agent_123', 'low')
-    expect(setConversationProviderSelection('agent_123', 'codex', 'codex-default')).toEqual({ model: 'gpt-5.5', reasoningEffort: 'high' })
-    expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'codex', model: 'gpt-5.5', reasoning_effort: 'high' })
-    expect(setConversationProviderSelection('agent_123', 'claude-code', 'claude-work')).toEqual({ model: 'claude-opus-4', reasoningEffort: 'low' })
+    expect(setConversationProviderSelection('agent_123', 'codex', 'codex-default')).toEqual({
+      model: 'gpt-5.5',
+      reasoningEffort: 'high',
+    })
+    expect(conversations.get('agent_123')).toMatchObject({
+      agent_type: 'codex',
+      model: 'gpt-5.5',
+      reasoning_effort: 'high',
+    })
+    expect(setConversationProviderSelection('agent_123', 'claude-code', 'claude-work')).toEqual({
+      model: 'claude-opus-4',
+      reasoningEffort: 'low',
+    })
   })
 })
 

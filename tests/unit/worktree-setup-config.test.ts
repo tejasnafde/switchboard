@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  parseLaunchConfigFile,
-  serializeLaunchConfigFile,
-  type LaunchConfigFile,
-} from '../../src/shared/launch-config'
+import { parseLaunchConfigFile, serializeLaunchConfigFile, type LaunchConfigFile } from '../../src/shared/launch-config'
 import { launchConfigListReducer } from '../../src/renderer/services/launch-config-list-reducer'
 
 describe('repository worktree setup launch config', () => {
@@ -59,9 +55,10 @@ terminals:
     ['sometimes', 'default_policy'],
     ['eventually', 'startup_policy'],
   ])('rejects invalid %s policy with an actionable field name', (invalid, field) => {
-    const yaml = field === 'default_policy'
-      ? `worktree:\n  setup:\n    default_policy: ${invalid}\n`
-      : `worktree:\n  setup:\n    startup_policy: ${invalid}\n`
+    const yaml =
+      field === 'default_policy'
+        ? `worktree:\n  setup:\n    default_policy: ${invalid}\n`
+        : `worktree:\n  setup:\n    startup_policy: ${invalid}\n`
 
     expect(() => parseLaunchConfigFile(yaml)).toThrow(new RegExp(field))
   })

@@ -25,7 +25,9 @@ export class InstallAttempt {
   constructor(
     private readonly coordinator: Pick<QuitCoordinator, 'prepare' | 'rearmWhenSettled'>,
     private readonly timeoutMs = 15_000,
-    private readonly setTimer: (callback: () => void, ms: number) => void = (callback, ms) => { setTimeout(callback, ms) },
+    private readonly setTimer: (callback: () => void, ms: number) => void = (callback, ms) => {
+      setTimeout(callback, ms)
+    },
   ) {}
 
   /** False when an attempt (or its recovery) is already in progress. */

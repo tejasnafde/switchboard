@@ -7,7 +7,10 @@ export function forkResumeLabel(metadata: ForkLineageMetadata): string {
   return metadata.resumeMode === 'native' ? 'Native resume' : 'Transcript handoff'
 }
 
-export function ForkLineageBanner({ metadata, onSendBack }: {
+export function ForkLineageBanner({
+  metadata,
+  onSendBack,
+}: {
   metadata: ForkLineageMetadata
   /** Opens the merge-back dialog (send what this fork did back to its parent). */
   onSendBack?: () => void
@@ -26,7 +29,10 @@ export function ForkLineageBanner({ metadata, onSendBack }: {
       <span aria-hidden="true">⑂</span>
       <span className="min-w-0 truncate">
         Forked from <strong className="text-[var(--text-secondary)]">{metadata.parentTitle}</strong>
-        {' · '}{metadata.anchor.preview || 'selected message'}{' · '}{detail}
+        {' · '}
+        {metadata.anchor.preview || 'selected message'}
+        {' · '}
+        {detail}
         {metadata.git?.sourceDirty ? ' · uncommitted changes were not copied' : ''}
       </span>
       <button
@@ -40,7 +46,11 @@ export function ForkLineageBanner({ metadata, onSendBack }: {
       >
         Open parent
       </button>
-      {error && <span role="alert" title={error}>Parent unavailable</span>}
+      {error && (
+        <span role="alert" title={error}>
+          Parent unavailable
+        </span>
+      )}
       {onSendBack && (
         <Button
           size="sm"

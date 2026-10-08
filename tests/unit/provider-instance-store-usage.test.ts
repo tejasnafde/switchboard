@@ -18,14 +18,24 @@ vi.stubGlobal('window', {
 const { useProviderInstanceStore } = await import('../../src/renderer/stores/provider-instance-store')
 
 const reading = (id: string, message: string): ProviderUsage => ({
-  instanceId: id, agentType: 'claude-code', status: 'not-applicable', plan: null, account: null,
-  windows: [], overage: [], message, fetchedAtMs: 0,
+  instanceId: id,
+  agentType: 'claude-code',
+  status: 'not-applicable',
+  plan: null,
+  account: null,
+  windows: [],
+  overage: [],
+  message,
+  fetchedAtMs: 0,
 })
-const inst = (updatedAt: number, id = 'a') => ({ id, agentType: 'claude-code', enabled: true, updatedAt }) as ProviderInstance
+const inst = (updatedAt: number, id = 'a') =>
+  ({ id, agentType: 'claude-code', enabled: true, updatedAt }) as ProviderInstance
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
 describe('provider-instance-store usage reads', () => {
-  beforeEach(() => { calls.length = 0 })
+  beforeEach(() => {
+    calls.length = 0
+  })
 
   it('re-reads, forced, an account edited while its first read was in flight', async () => {
     const store = useProviderInstanceStore
@@ -78,7 +88,10 @@ describe('provider-instance-store usage reads', () => {
     // A re-render, or StrictMode running the effects twice.
     store.getState().syncUsage()
     visit()
-    expect(calls.map((c) => [c.id, c.opts])).toEqual([['v1', undefined], ['v2', undefined]])
+    expect(calls.map((c) => [c.id, c.opts])).toEqual([
+      ['v1', undefined],
+      ['v2', undefined],
+    ])
     for (const c of calls) c.resolve(reading(c.id, 'read'))
     await flush()
 

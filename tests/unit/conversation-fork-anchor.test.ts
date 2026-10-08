@@ -41,16 +41,28 @@ function anchor(value: ChatMessage, overrides: Partial<ForkAnchor> = {}): ForkAn
 describe('canonical conversation fork anchor', () => {
   it('offers anchors only for durable visible transcript messages', () => {
     expect(isForkableCanonicalMessage(message('text', 'assistant', 'Done', 1))).toBe(true)
-    expect(isForkableCanonicalMessage(message('image', 'user', '', 2, {
-      images: [{ url: 'data:image/png;base64,AAAA' }],
-    }))).toBe(true)
+    expect(
+      isForkableCanonicalMessage(
+        message('image', 'user', '', 2, {
+          images: [{ url: 'data:image/png;base64,AAAA' }],
+        }),
+      ),
+    ).toBe(true)
     expect(isForkableCanonicalMessage(message('notice', 'system', 'Fork status', 3))).toBe(false)
-    expect(isForkableCanonicalMessage(message('tool', 'assistant', '', 4, {
-      toolCalls: [{ id: 't', name: 'Bash', input: 'pwd', state: 'running' }],
-    }))).toBe(false)
-    expect(isForkableCanonicalMessage(message('approval', 'assistant', '', 5, {
-      approval: { requestId: 'r', toolName: 'Bash', input: {}, status: 'pending' },
-    }))).toBe(false)
+    expect(
+      isForkableCanonicalMessage(
+        message('tool', 'assistant', '', 4, {
+          toolCalls: [{ id: 't', name: 'Bash', input: 'pwd', state: 'running' }],
+        }),
+      ),
+    ).toBe(false)
+    expect(
+      isForkableCanonicalMessage(
+        message('approval', 'assistant', '', 5, {
+          approval: { requestId: 'r', toolName: 'Bash', input: {}, status: 'pending' },
+        }),
+      ),
+    ).toBe(false)
   })
 
   it('accepts an anchor an older build digested before the compact summary row was wrapped', () => {
@@ -67,10 +79,9 @@ describe('canonical conversation fork anchor', () => {
     const selected = message('m-2', 'assistant', 'I will inspect it', 20)
     const later = message('m-3', 'user', 'Continue', 30)
 
-    expect(resolveCanonicalForkAnchor(
-      [canonical(first), canonical(selected), canonical(later)],
-      anchor(selected),
-    )).toEqual({
+    expect(
+      resolveCanonicalForkAnchor([canonical(first), canonical(selected), canonical(later)], anchor(selected)),
+    ).toEqual({
       ok: true,
       prefix: [first, selected],
       resolved: {
@@ -92,10 +103,7 @@ describe('canonical conversation fork anchor', () => {
     ['digest', { contentDigest: 'f'.repeat(64) }],
   ])('rejects an exact id carrying a stale %s', (_label, changed) => {
     const selected = message('m-2', 'assistant', 'Done', 20)
-    expect(resolveCanonicalForkAnchor(
-      [canonical(selected)],
-      { ...anchor(selected), ...changed },
-    )).toMatchObject({
+    expect(resolveCanonicalForkAnchor([canonical(selected)], { ...anchor(selected), ...changed })).toMatchObject({
       ok: false,
       conflict: { code: 'stale-anchor', candidateCount: 1 },
     })
@@ -121,10 +129,7 @@ describe('canonical conversation fork anchor', () => {
     const second = message('native-2', 'user', 'ok', 1_000)
     const legacyAnchor = anchor(second, { messageId: 'legacy-missing' })
 
-    expect(resolveCanonicalForkAnchor(
-      [canonical(first), canonical(second)],
-      legacyAnchor,
-    )).toEqual({
+    expect(resolveCanonicalForkAnchor([canonical(first), canonical(second)], legacyAnchor)).toEqual({
       ok: false,
       conflict: {
         code: 'ambiguous-anchor',
@@ -136,14 +141,12 @@ describe('canonical conversation fork anchor', () => {
 
   it('does not let a renderer-only notice or provider marker shift the selected boundary', () => {
     const source = message('m-1', 'user', 'Original prompt', 10)
-    const rendererNotice = canonical(
-      message('system_fork_notice_child', 'system', 'Cold fork notice', 11),
-      { forkable: false },
-    )
-    const profileMarker = canonical(
-      message('profile-marker', 'system', '[[sb:instance-rotated]] a → b', 12),
-      { forkable: false },
-    )
+    const rendererNotice = canonical(message('system_fork_notice_child', 'system', 'Cold fork notice', 11), {
+      forkable: false,
+    })
+    const profileMarker = canonical(message('profile-marker', 'system', '[[sb:instance-rotated]] a → b', 12), {
+      forkable: false,
+    })
     const selected = message('m-2', 'assistant', 'Canonical answer', 20)
 
     const result = resolveCanonicalForkAnchor(
@@ -158,10 +161,7 @@ describe('canonical conversation fork anchor', () => {
     const live = message('live-runtime', 'assistant', 'Same answer', 20)
     const resultEvent = message('provider-result', 'assistant', 'Same answer', 20)
 
-    const result = resolveCanonicalForkAnchor(
-      [canonical(live), canonical(resultEvent)],
-      anchor(resultEvent),
-    )
+    const result = resolveCanonicalForkAnchor([canonical(live), canonical(resultEvent)], anchor(resultEvent))
     expect(result).toMatchObject({
       ok: true,
       resolved: { messageId: 'provider-result', canonicalIndex: 1, resolution: 'exact-id' },
@@ -172,22 +172,25 @@ describe('canonical conversation fork anchor', () => {
     const claude = message('claude-message', 'assistant', 'Shared text', 20)
     const codex = message('codex-message', 'assistant', 'Shared text', 20)
 
-    const result = resolveCanonicalForkAnchor([
-      canonical(claude, {
-        provenance: {
-          provider: 'claude-code',
-          providerSessionId: 'claude-session',
-          providerEventId: 'claude-event',
-        },
-      }),
-      canonical(codex, {
-        provenance: {
-          provider: 'codex',
-          providerSessionId: 'codex-session',
-          providerEventId: 'codex-event',
-        },
-      }),
-    ], anchor(codex))
+    const result = resolveCanonicalForkAnchor(
+      [
+        canonical(claude, {
+          provenance: {
+            provider: 'claude-code',
+            providerSessionId: 'claude-session',
+            providerEventId: 'claude-event',
+          },
+        }),
+        canonical(codex, {
+          provenance: {
+            provider: 'codex',
+            providerSessionId: 'codex-session',
+            providerEventId: 'codex-event',
+          },
+        }),
+      ],
+      anchor(codex),
+    )
 
     expect(result).toMatchObject({
       ok: true,
@@ -201,26 +204,27 @@ describe('canonical conversation fork anchor', () => {
 
   it('accepts a second-generation persisted fork message id', () => {
     const selected = message('fork-child:message:3', 'user', 'Fork this fork', 30)
-    expect(resolveCanonicalForkAnchor([canonical(selected)], anchor(selected)))
-      .toMatchObject({ ok: true, resolved: { messageId: 'fork-child:message:3' } })
+    expect(resolveCanonicalForkAnchor([canonical(selected)], anchor(selected))).toMatchObject({
+      ok: true,
+      resolved: { messageId: 'fork-child:message:3' },
+    })
   })
 
   it('accepts an attachment-only canonical user message', () => {
     const selected = message('image-only', 'user', '', 30, {
       images: [{ url: 'data:image/png;base64,AAAA' }],
     })
-    expect(resolveCanonicalForkAnchor([canonical(selected)], anchor(selected)))
-      .toMatchObject({ ok: true, prefix: [selected] })
+    expect(resolveCanonicalForkAnchor([canonical(selected)], anchor(selected))).toMatchObject({
+      ok: true,
+      prefix: [selected],
+    })
   })
 
   it('rejects transient activity even when its id and digest match exactly', () => {
     const activity = message('tool-running', 'assistant', '', 30, {
       toolCalls: [{ id: 'tool-1', name: 'Bash', input: 'npm test', state: 'running' }],
     })
-    expect(resolveCanonicalForkAnchor(
-      [canonical(activity, { forkable: false })],
-      anchor(activity),
-    )).toEqual({
+    expect(resolveCanonicalForkAnchor([canonical(activity, { forkable: false })], anchor(activity))).toEqual({
       ok: false,
       conflict: {
         code: 'non-forkable-anchor',

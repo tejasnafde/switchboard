@@ -40,20 +40,27 @@ export function DraftWorkspaceChips({
     setRefs([])
     if (!cwd) return
     let cancelled = false
-    window.api.git.listRefs(cwd)
-      .then((result) => { if (!cancelled && result.ok) setRefs(result.refs) })
+    window.api.git
+      .listRefs(cwd)
+      .then((result) => {
+        if (!cancelled && result.ok) setRefs(result.refs)
+      })
       .catch((err: unknown) => log.warn('listRefs failed', err))
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [cwd])
 
   const branches = refs.filter((r) => !r.isRemote).map((r) => r.name)
   const worktrees = refs.flatMap((r) =>
-    !r.isRemote && r.worktreePath && r.worktreePath !== cwd ? [{ path: r.worktreePath, branch: r.name }] : [])
+    !r.isRemote && r.worktreePath && r.worktreePath !== cwd ? [{ path: r.worktreePath, branch: r.name }] : [],
+  )
 
-  const pickCheckout = (checkout: DraftChatOptions['checkout']) => setDraftOptions(sessionId, {
-    checkout,
-    ...(checkout === 'existing' && !draft.existing && worktrees[0] ? { existing: worktrees[0] } : {}),
-  })
+  const pickCheckout = (checkout: DraftChatOptions['checkout']) =>
+    setDraftOptions(sessionId, {
+      checkout,
+      ...(checkout === 'existing' && !draft.existing && worktrees[0] ? { existing: worktrees[0] } : {}),
+    })
 
   return (
     <>
@@ -77,7 +84,11 @@ export function DraftWorkspaceChips({
           style={selectStyle}
         >
           <option value="HEAD">from current HEAD</option>
-          {branches.map((name) => <option key={name} value={name}>from {name}</option>)}
+          {branches.map((name) => (
+            <option key={name} value={name}>
+              from {name}
+            </option>
+          ))}
         </select>
       )}
       {draft.checkout === 'existing' && (
@@ -91,7 +102,11 @@ export function DraftWorkspaceChips({
           }}
           style={selectStyle}
         >
-          {worktrees.map((w) => <option key={w.path} value={w.path}>{w.branch}</option>)}
+          {worktrees.map((w) => (
+            <option key={w.path} value={w.path}>
+              {w.branch}
+            </option>
+          ))}
         </select>
       )}
     </>

@@ -39,13 +39,20 @@ const button = (name: string) => {
 // Wrapped, because an async function returning the promise would wait for it.
 async function ask(options: Parameters<typeof confirm>[0]): Promise<{ answer: Promise<boolean> }> {
   let answer!: Promise<boolean>
-  await act(async () => { answer = confirm(options) })
+  await act(async () => {
+    answer = confirm(options)
+  })
   return { answer }
 }
 
 describe('confirm', () => {
   it('resolves true when the action is clicked, and closes', async () => {
-    const { answer } = await ask({ title: 'Delete workspace "A"?', body: 'Its projects will move to Ungrouped.', confirmLabel: 'Delete', destructive: true })
+    const { answer } = await ask({
+      title: 'Delete workspace "A"?',
+      body: 'Its projects will move to Ungrouped.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
     expect(dialog()?.textContent).toContain('Delete workspace "A"?')
     expect(dialog()?.textContent).toContain('Its projects will move to Ungrouped.')
     await act(async () => button('Delete').click())
@@ -72,12 +79,20 @@ describe('confirm', () => {
     opener.focus()
     let second!: Promise<boolean>
     const { answer } = await ask({ title: 'First?' })
-    const chained = answer.then(() => { second = confirm({ title: 'Second?' }); return second })
+    const chained = answer.then(() => {
+      second = confirm({ title: 'Second?' })
+      return second
+    })
     await act(async () => button('Cancel').click())
-    await act(async () => { await answer; await Promise.resolve() })
+    await act(async () => {
+      await answer
+      await Promise.resolve()
+    })
     await vi.waitFor(() => expect(dialog()?.textContent).toContain('Second?'))
     // The first close must not pull focus out of the second dialog.
-    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+    })
     expect(dialog()?.contains(document.activeElement)).toBe(true)
     await act(async () => button('Cancel').click())
     await chained

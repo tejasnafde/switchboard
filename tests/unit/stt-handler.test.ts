@@ -33,9 +33,7 @@ function setup(overrides: Partial<SttDeps> = {}) {
     touch: vi.fn(),
     stop: vi.fn(),
   }
-  const fetchImpl = vi.fn(async () =>
-    new Response(JSON.stringify({ text: '  corrected text  ' }), { status: 200 }),
-  )
+  const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ text: '  corrected text  ' }), { status: 200 }))
   const deps: Partial<SttDeps> = {
     userDataRoot: () => '/tmp/sb-stt-test',
     ensureBinary: vi.fn(async () => '/bin/whisper-server'),
@@ -119,9 +117,7 @@ describe('stt transcribe handler', () => {
 
   it('answers a clean error when no binary resolves, then recovers on retry', async () => {
     let attempts = 0
-    const ensureBinary: SttDeps['ensureBinary'] = vi.fn(async () =>
-      attempts++ === 0 ? null : '/bin/whisper-server',
-    )
+    const ensureBinary: SttDeps['ensureBinary'] = vi.fn(async () => (attempts++ === 0 ? null : '/bin/whisper-server'))
     const { transcribe, host } = setup({ ensureBinary })
     const first = await transcribe(request())
     expect(first.ok).toBe(false)

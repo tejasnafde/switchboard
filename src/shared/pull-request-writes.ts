@@ -10,7 +10,19 @@
  * and default, who may approve, when a review can be submitted, the merge
  * pre-check) are pure and live here too.
  */
-import { repoKey, type MergeStrategy, type PrConversation, type PrChangedFile, type PrDetail, type PrError, type PrHost, type PrReviewer, type PrReviewerCandidate, type PrSummary, type PrViewer } from './pull-requests'
+import {
+  repoKey,
+  type MergeStrategy,
+  type PrConversation,
+  type PrChangedFile,
+  type PrDetail,
+  type PrError,
+  type PrHost,
+  type PrReviewer,
+  type PrReviewerCandidate,
+  type PrSummary,
+  type PrViewer,
+} from './pull-requests'
 
 /** GitHub caps a comment at 65,536 characters; stay under it so a host never cuts one. */
 export const PR_TEXT_MAX_CHARS = 60_000
@@ -119,7 +131,10 @@ export function defaultMergeStrategy(allowed: readonly MergeStrategy[]): MergeSt
 }
 
 /** The user's pick while the repository still allows it, else the default. */
-export function effectiveMergeStrategy(allowed: readonly MergeStrategy[], picked: MergeStrategy | null | undefined): MergeStrategy | null {
+export function effectiveMergeStrategy(
+  allowed: readonly MergeStrategy[],
+  picked: MergeStrategy | null | undefined,
+): MergeStrategy | null {
   if (picked && allowed.includes(picked)) return picked
   return defaultMergeStrategy(allowed)
 }
@@ -153,7 +168,11 @@ export function mergePrecheck(fresh: PrDetail, input: MergeInput): PrError | nul
     return { kind: 'stale', host, message: `Merging is blocked now: ${what}.` }
   }
   if (!fresh.mergeStrategies.includes(input.strategy)) {
-    return { kind: 'invalid', host, message: `This repository does not allow ${MERGE_STRATEGY_LABEL[input.strategy].toLowerCase()} merges.` }
+    return {
+      kind: 'invalid',
+      host,
+      message: `This repository does not allow ${MERGE_STRATEGY_LABEL[input.strategy].toLowerCase()} merges.`,
+    }
   }
   return null
 }
@@ -166,12 +185,18 @@ export function reviewEventsFor(viewer: Pick<PrViewer, 'isAuthor'>): ReviewEvent
 }
 
 /** Why Submit is off, or `null` when the review can go. */
-export function reviewSubmitProblem(host: PrHost, event: ReviewEvent, body: string, pendingComments: number): string | null {
+export function reviewSubmitProblem(
+  host: PrHost,
+  event: ReviewEvent,
+  body: string,
+  pendingComments: number,
+): string | null {
   const text = body.trim()
   if (text.length > PR_TEXT_MAX_CHARS) return 'The summary is too long.'
   if (event === 'comment' && !text && pendingComments === 0) return 'Write a summary or add a comment on a line first.'
   // GitHub refuses a change request without a body; Bitbucket does not ask for one, but a reviewer should say what to change.
-  if (event === 'request_changes' && !text) return host === 'github' ? 'GitHub needs a summary to request changes.' : 'Say what should change.'
+  if (event === 'request_changes' && !text)
+    return host === 'github' ? 'GitHub needs a summary to request changes.' : 'Say what should change.'
   return null
 }
 
@@ -191,7 +216,8 @@ function cleanText(host: PrHost, value: unknown, what: string, allowEmpty = fals
   if (typeof value !== 'string') return invalid(host, `${what} is missing.`)
   const text = value.trim()
   if (!allowEmpty && !text) return invalid(host, `${what} is empty.`)
-  if (text.length > PR_TEXT_MAX_CHARS) return invalid(host, `${what} is longer than ${PR_TEXT_MAX_CHARS.toLocaleString('en-US')} characters.`)
+  if (text.length > PR_TEXT_MAX_CHARS)
+    return invalid(host, `${what} is longer than ${PR_TEXT_MAX_CHARS.toLocaleString('en-US')} characters.`)
   // A NUL reaches neither host intact.
   if (text.includes('\u0000')) return invalid(host, `${what} contains a NUL character.`)
   return { ok: true, value: text }
@@ -208,14 +234,16 @@ function lineNumber(value: unknown): value is number {
 }
 
 export function validateReply(host: PrHost, input: unknown): Valid<ReplyInput> {
-  if (!isRecord(input) || !isConversationId(host, input.conversationId)) return invalid(host, 'Not a conversation of this pull request.')
+  if (!isRecord(input) || !isConversationId(host, input.conversationId))
+    return invalid(host, 'Not a conversation of this pull request.')
   const body = cleanText(host, input.body, 'The reply')
   if (!body.ok) return body
   return { ok: true, value: { conversationId: input.conversationId, body: body.value } }
 }
 
 export function validateResolve(host: PrHost, input: unknown): Valid<ResolveInput> {
-  if (!isRecord(input) || !isConversationId(host, input.conversationId)) return invalid(host, 'Not a conversation of this pull request.')
+  if (!isRecord(input) || !isConversationId(host, input.conversationId))
+    return invalid(host, 'Not a conversation of this pull request.')
   return { ok: true, value: { conversationId: input.conversationId } }
 }
 
@@ -229,7 +257,13 @@ export function validateComment(host: PrHost, input: unknown): Valid<CommentInpu
 export function validateInlineComment(host: PrHost, input: unknown): Valid<InlineCommentInput> {
   if (!isRecord(input)) return invalid(host, 'The comment is missing.')
   const { path, side, line, startLine } = input
-  if (typeof path !== 'string' || !path || path.length > PATH_MAX_CHARS || path.includes('\u0000') || path.startsWith('/')) {
+  if (
+    typeof path !== 'string' ||
+    !path ||
+    path.length > PATH_MAX_CHARS ||
+    path.includes('\u0000') ||
+    path.startsWith('/')
+  ) {
     return invalid(host, 'Not a file of this pull request.')
   }
   if (side !== 'new' && side !== 'old') return invalid(host, 'Not a side of the diff.')
@@ -245,11 +279,13 @@ export function validateInlineComment(host: PrHost, input: unknown): Valid<Inlin
 export function validateSubmitReview(host: PrHost, input: unknown): Valid<SubmitReviewInput> {
   if (!isRecord(input)) return invalid(host, 'The review is missing.')
   const { event } = input
-  if (event !== 'comment' && event !== 'approve' && event !== 'request_changes') return invalid(host, 'Not a review type.')
+  if (event !== 'comment' && event !== 'approve' && event !== 'request_changes')
+    return invalid(host, 'Not a review type.')
   const body = cleanText(host, input.body ?? '', 'The summary', true)
   if (!body.ok) return body
   if (!Array.isArray(input.comments)) return invalid(host, 'The pending comments are missing.')
-  if (input.comments.length > PR_REVIEW_MAX_COMMENTS) return invalid(host, `A review holds at most ${PR_REVIEW_MAX_COMMENTS} comments.`)
+  if (input.comments.length > PR_REVIEW_MAX_COMMENTS)
+    return invalid(host, `A review holds at most ${PR_REVIEW_MAX_COMMENTS} comments.`)
   const comments: InlineCommentInput[] = []
   for (const raw of input.comments) {
     const c = validateInlineComment(host, raw)
@@ -285,7 +321,8 @@ export function isReviewerId(host: PrHost, value: unknown): value is string {
 
 export function validateReviewer(host: PrHost, input: unknown): Valid<ReviewerInput> {
   if (!isRecord(input) || !isReviewerId(host, input.reviewer)) return invalid(host, 'Not a reviewer on this host.')
-  if (host === 'bitbucket' && input.reviewer.startsWith('team:')) return invalid(host, 'Bitbucket has no team reviewers.')
+  if (host === 'bitbucket' && input.reviewer.startsWith('team:'))
+    return invalid(host, 'Bitbucket has no team reviewers.')
   return { ok: true, value: { reviewer: input.reviewer } }
 }
 
@@ -304,7 +341,12 @@ export function canRemoveReviewer(host: PrHost, reviewer: PrReviewer): boolean {
 export function managePrecheck(fresh: PrDetail, what: string): PrError | null {
   const host = fresh.ref.host
   if (fresh.state !== 'open') return { kind: 'stale', host, message: `This pull request is ${fresh.state} now.` }
-  if (!fresh.viewerCanManage) return { kind: 'forbidden', host, message: `Only the author or someone with write access to the repository can ${what}.` }
+  if (!fresh.viewerCanManage)
+    return {
+      kind: 'forbidden',
+      host,
+      message: `Only the author or someone with write access to the repository can ${what}.`,
+    }
   return null
 }
 
@@ -312,10 +354,12 @@ export function addReviewerPrecheck(fresh: PrDetail, input: ReviewerInput): PrEr
   const refused = managePrecheck(fresh, 'change the reviewers')
   if (refused) return refused
   const host = fresh.ref.host
-  if (fresh.reviewers.some((r) => r.id === input.reviewer && r.requested)) return { kind: 'stale', host, message: 'They are a reviewer already.' }
+  if (fresh.reviewers.some((r) => r.id === input.reviewer && r.requested))
+    return { kind: 'stale', host, message: 'They are a reviewer already.' }
   // Bitbucket ids are uuids, so the login is no use there; GitHub logins match case-insensitively.
-  const isAuthor = input.reviewer === fresh.authorId
-    || (host === 'github' && fresh.author.login.toLowerCase() === input.reviewer.toLowerCase())
+  const isAuthor =
+    input.reviewer === fresh.authorId ||
+    (host === 'github' && fresh.author.login.toLowerCase() === input.reviewer.toLowerCase())
   if (isAuthor) return { kind: 'invalid', host, message: 'The author cannot review their own pull request.' }
   return null
 }
@@ -324,8 +368,14 @@ export function removeReviewerPrecheck(fresh: PrDetail, input: ReviewerInput): P
   const refused = managePrecheck(fresh, 'change the reviewers')
   if (refused) return refused
   const reviewer = fresh.reviewers.find((r) => r.id === input.reviewer)
-  if (!reviewer || !reviewer.requested) return { kind: 'stale', host: fresh.ref.host, message: 'They are not a reviewer any more.' }
-  if (!canRemoveReviewer(fresh.ref.host, reviewer)) return { kind: 'invalid', host: fresh.ref.host, message: 'GitHub keeps a submitted review; only a pending request can be removed.' }
+  if (!reviewer || !reviewer.requested)
+    return { kind: 'stale', host: fresh.ref.host, message: 'They are not a reviewer any more.' }
+  if (!canRemoveReviewer(fresh.ref.host, reviewer))
+    return {
+      kind: 'invalid',
+      host: fresh.ref.host,
+      message: 'GitHub keeps a submitted review; only a pending request can be removed.',
+    }
   return null
 }
 
@@ -334,8 +384,12 @@ export function removeReviewerPrecheck(fresh: PrDetail, input: ReviewerInput): P
  * most reviews first, then the members the token can see (people before
  * teams, by name). One entry per id; the first place it appears wins.
  */
-export function orderReviewerCandidates(recent: readonly PrReviewerCandidate[], members: readonly PrReviewerCandidate[]): PrReviewerCandidate[] {
-  const byName = (a: PrReviewerCandidate, b: PrReviewerCandidate) => a.person.displayName.localeCompare(b.person.displayName)
+export function orderReviewerCandidates(
+  recent: readonly PrReviewerCandidate[],
+  members: readonly PrReviewerCandidate[],
+): PrReviewerCandidate[] {
+  const byName = (a: PrReviewerCandidate, b: PrReviewerCandidate) =>
+    a.person.displayName.localeCompare(b.person.displayName)
   const ranked = [...recent].sort((a, b) => b.reviewed - a.reviewed || byName(a, b))
   const rest = [...members].sort((a, b) => (a.kind === b.kind ? byName(a, b) : a.kind === 'user' ? -1 : 1))
   const seen = new Set<string>()
@@ -347,7 +401,10 @@ export function orderReviewerCandidates(recent: readonly PrReviewerCandidate[], 
 }
 
 /** Candidates minus the author and anyone already asked. */
-export function candidatesFor(candidates: readonly PrReviewerCandidate[], pr: Pick<PrSummary, 'author' | 'authorId' | 'reviewers'>): PrReviewerCandidate[] {
+export function candidatesFor(
+  candidates: readonly PrReviewerCandidate[],
+  pr: Pick<PrSummary, 'author' | 'authorId' | 'reviewers'>,
+): PrReviewerCandidate[] {
   const taken = new Set(pr.reviewers.filter((r) => r.requested && r.id).map((r) => r.id))
   return candidates.filter((c) => !taken.has(c.id) && c.id !== pr.authorId && c.person.login !== pr.author.login)
 }
@@ -373,7 +430,12 @@ export function recentReviewers(prs: readonly Pick<PrSummary, 'reviewers'>[]): P
   for (const pr of prs) {
     for (const r of pr.reviewers) {
       if (!r.id || r.state === 'pending') continue
-      const hit = out.get(r.id) ?? { id: r.id, person: r.person, kind: r.id.startsWith('team:') ? 'team' as const : 'user' as const, reviewed: 0 }
+      const hit = out.get(r.id) ?? {
+        id: r.id,
+        person: r.person,
+        kind: r.id.startsWith('team:') ? ('team' as const) : ('user' as const),
+        reviewed: 0,
+      }
       hit.reviewed++
       out.set(r.id, hit)
     }
@@ -402,7 +464,10 @@ export function lineLocation(c: Pick<InlineCommentInput, 'path' | 'side' | 'line
  */
 export type LineTargetFit = 'ok' | 'missing' | 'split'
 
-export function lineTargetFit(files: readonly PrChangedFile[], c: Pick<InlineCommentInput, 'path' | 'side' | 'line' | 'startLine'>): LineTargetFit {
+export function lineTargetFit(
+  files: readonly PrChangedFile[],
+  c: Pick<InlineCommentInput, 'path' | 'side' | 'line' | 'startLine'>,
+): LineTargetFit {
   const file = files.find((f) => f.path === c.path)
   if (!file) return 'missing'
   const start = c.startLine ?? c.line
@@ -411,7 +476,7 @@ export function lineTargetFit(files: readonly PrChangedFile[], c: Pick<InlineCom
   for (const hunk of file.hunks) {
     const shown = new Set<number>()
     for (const l of hunk.lines) {
-      const n = c.side === 'old' ? (l.kind !== 'add' ? l.oldLine : null) : (l.kind !== 'del' ? l.newLine : null)
+      const n = c.side === 'old' ? (l.kind !== 'add' ? l.oldLine : null) : l.kind !== 'del' ? l.newLine : null
       if (n !== null) shown.add(n)
     }
     if (shown.has(c.line) && shown.has(start)) return 'ok'
@@ -422,6 +487,9 @@ export function lineTargetFit(files: readonly PrChangedFile[], c: Pick<InlineCom
 }
 
 /** A line comment must land on a line the diff shows on that side, or the host refuses it (GitHub) or anchors it nowhere (Bitbucket). */
-export function lineInDiff(files: readonly PrChangedFile[], c: Pick<InlineCommentInput, 'path' | 'side' | 'line' | 'startLine'>): boolean {
+export function lineInDiff(
+  files: readonly PrChangedFile[],
+  c: Pick<InlineCommentInput, 'path' | 'side' | 'line' | 'startLine'>,
+): boolean {
   return lineTargetFit(files, c) === 'ok'
 }

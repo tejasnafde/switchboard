@@ -52,17 +52,20 @@ describe('diagnosticsGist', () => {
   })
 
   it('sums every process, not only the ones the table shows', () => {
-    expect(diagnosticsGist(snapshot({
-      processes: [
-        { pid: 1, type: 'Browser', cpuPercent: 0, memoryMb: 1024 },
-        { pid: 2, type: 'Tab', cpuPercent: 0, memoryMb: 1024 },
-      ],
-    }))).toBe('arm64 · 12 terminals · 2.0 GiB')
+    expect(
+      diagnosticsGist(
+        snapshot({
+          processes: [
+            { pid: 1, type: 'Browser', cpuPercent: 0, memoryMb: 1024 },
+            { pid: 2, type: 'Tab', cpuPercent: 0, memoryMb: 1024 },
+          ],
+        }),
+      ),
+    ).toBe('arm64 · 12 terminals · 2.0 GiB')
   })
 
   it('says "translated" in the gist, because that is the one urgent fact', () => {
-    expect(diagnosticsGist(snapshot({ translated: true })))
-      .toBe('arm64 translated · 12 terminals · 259 MiB')
+    expect(diagnosticsGist(snapshot({ translated: true }))).toBe('arm64 translated · 12 terminals · 259 MiB')
   })
 
   it('uses the singular for exactly one terminal', () => {
@@ -78,8 +81,7 @@ describe('diagnosticsGist', () => {
   })
 
   it('never returns an empty string, so the row always previews something', () => {
-    expect(diagnosticsGist(snapshot({ livePtys: null, processes: [] })))
-      .toBe('arm64 · 0 MiB')
+    expect(diagnosticsGist(snapshot({ livePtys: null, processes: [] }))).toBe('arm64 · 0 MiB')
   })
 })
 

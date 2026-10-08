@@ -1,8 +1,5 @@
 import type { WorktreeSetupConfig } from '../../shared/launch-config'
-import type {
-  WorktreeSetupPolicy,
-  WorktreeSetupReceipt,
-} from '../../shared/worktree-creation'
+import type { WorktreeSetupPolicy, WorktreeSetupReceipt } from '../../shared/worktree-creation'
 
 type SetupAction = 'await_decision' | 'run' | 'skip' | 'not_configured'
 
@@ -18,9 +15,7 @@ export function resolveWorktreeSetup(
   config: WorktreeSetupConfig | undefined,
 ): ResolvedWorktreeSetup {
   const startupPolicy = config?.startupPolicy ?? 'wait-for-setup'
-  const resolvedPolicy = requestedPolicy === 'inherit'
-    ? config?.defaultPolicy ?? 'skip'
-    : requestedPolicy
+  const resolvedPolicy = requestedPolicy === 'inherit' ? (config?.defaultPolicy ?? 'skip') : requestedPolicy
 
   if (resolvedPolicy === 'ask') {
     return {

@@ -44,7 +44,9 @@ describe('startTerminalSession - success path', () => {
   it('awaits terminal creation before creating any session/store artifact', async () => {
     const order: string[] = []
     const deps = makeDeps({
-      createTerminal: vi.fn().mockImplementation(async () => { order.push('createTerminal') }),
+      createTerminal: vi.fn().mockImplementation(async () => {
+        order.push('createTerminal')
+      }),
       addSession: vi.fn().mockImplementation(() => order.push('addSession')),
       setActiveSession: vi.fn().mockImplementation(() => order.push('setActiveSession')),
     })
@@ -56,13 +58,10 @@ describe('startTerminalSession - success path', () => {
   it('forwards the login instance identity to createTerminal untouched', async () => {
     const deps = makeDeps()
     await startTerminalSession(deps, baseParams)
-    expect(deps.createTerminal).toHaveBeenCalledWith(
-      expect.any(String),
-      '/repos/app',
-      'codex',
-      undefined,
-      { agentType: 'codex', instanceId: 'codex-work' },
-    )
+    expect(deps.createTerminal).toHaveBeenCalledWith(expect.any(String), '/repos/app', 'codex', undefined, {
+      agentType: 'codex',
+      instanceId: 'codex-work',
+    })
   })
 
   it('persists a conversation row and emits the created event after success', async () => {
@@ -73,7 +72,12 @@ describe('startTerminalSession - success path', () => {
       expect.objectContaining({ projectPath: '/repos/app', agentType: 'terminal', title: 'codex' }),
     )
     expect(deps.emitSessionCreated).toHaveBeenCalledWith(
-      expect.objectContaining({ projectPath: '/repos/app', title: 'codex', source: 'switchboard', agentType: 'terminal' }),
+      expect.objectContaining({
+        projectPath: '/repos/app',
+        title: 'codex',
+        source: 'switchboard',
+        agentType: 'terminal',
+      }),
     )
   })
 

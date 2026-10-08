@@ -43,8 +43,7 @@ describe('transcript placement', () => {
   const ensure = (toDir: string, cwd: string, candidates: string[]) =>
     ensureClaudeSessionResumable({ sessionId: SESSION_ID, cwd, toDir, candidates })
 
-  const readResume = (dir: string, cwd: string) =>
-    readFileSync(claudeSessionResumePath(dir, SESSION_ID, cwd), 'utf-8')
+  const readResume = (dir: string, cwd: string) => readFileSync(claudeSessionResumePath(dir, SESSION_ID, cwd), 'utf-8')
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'sb-transcript-'))
@@ -220,12 +219,14 @@ describe('transcript placement', () => {
     seed(profileA, REPO, first)
     const target = seed(profileB, REPO, first + '{"type":"assistant","message":"two"}\n')
 
-    await expect(prepareClaudeProfileSwitch({
-      sessionId: SESSION_ID,
-      cwd: REPO,
-      fromDir: profileA,
-      toDir: profileB,
-    })).resolves.toMatchObject({
+    await expect(
+      prepareClaudeProfileSwitch({
+        sessionId: SESSION_ID,
+        cwd: REPO,
+        fromDir: profileA,
+        toDir: profileB,
+      }),
+    ).resolves.toMatchObject({
       ok: true,
       copied: false,
       compatibility: 'source-prefix',
@@ -256,9 +257,7 @@ describe('lookup helpers', () => {
   })
 
   it('findClaudeSessionFile still locates a transcript filed under another cwd', () => {
-    expect(findClaudeSessionFile(dir, SESSION_ID, TMP_WORKTREE)).toBe(
-      claudeSessionResumePath(dir, SESSION_ID, REPO),
-    )
+    expect(findClaudeSessionFile(dir, SESSION_ID, TMP_WORKTREE)).toBe(claudeSessionResumePath(dir, SESSION_ID, REPO))
   })
 
   it('claudeSessionResumePath is the path the SDK reads', () => {

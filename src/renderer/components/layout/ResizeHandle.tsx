@@ -52,8 +52,15 @@ export function ResizeHandle({
 
   // Hold callbacks + refs in stable refs so the effect is deps-light
   const cfgRef = useRef({
-    beforeRef, afterRef, prop, invert, min, max, isHorizontal,
-    onResizeEnd, onResizing,
+    beforeRef,
+    afterRef,
+    prop,
+    invert,
+    min,
+    max,
+    isHorizontal,
+    onResizeEnd,
+    onResizing,
   })
   useEffect(() => {
     cfgRef.current = { beforeRef, afterRef, prop, invert, min, max, isHorizontal, onResizeEnd, onResizing }
@@ -85,8 +92,12 @@ export function ResizeHandle({
 
       // setPointerCapture can throw for an already-released pointer id;
       // routine, not worth logging.
-      // eslint-disable-next-line no-restricted-syntax -- see comment above
-      try { handle.setPointerCapture(e.pointerId) } catch { /* ignore */ }
+      try {
+        handle.setPointerCapture(e.pointerId)
+        // eslint-disable-next-line no-restricted-syntax -- see comment above
+      } catch {
+        /* ignore */
+      }
       activePointerRef.current = e.pointerId
       handle.dataset.active = '1'
 
@@ -104,11 +115,20 @@ export function ResizeHandle({
       if (activePointerRef.current !== e.pointerId) return
       cancelAnimationFrame(rafRef.current)
       rafRef.current = requestAnimationFrame(() => {
-        const { beforeRef: b, afterRef: a, invert: inv, prop: p, isHorizontal: h, min: mn, max: mx, onResizing: onR } = cfgRef.current
+        const {
+          beforeRef: b,
+          afterRef: a,
+          invert: inv,
+          prop: p,
+          isHorizontal: h,
+          min: mn,
+          max: mx,
+          onResizing: onR,
+        } = cfgRef.current
         const target = inv ? a?.current : b?.current
         if (!target) return
         const currentPos = h ? e.clientX : e.clientY
-        const delta = inv ? (startPos - currentPos) : (currentPos - startPos)
+        const delta = inv ? startPos - currentPos : currentPos - startPos
         const newSize = Math.max(mn, Math.min(mx, startSize + delta))
         target.style[p] = `${newSize}px`
         onR?.()
@@ -120,8 +140,12 @@ export function ResizeHandle({
       if (e && e.pointerId !== activePointerRef.current) return
       // releasePointerCapture throws routinely (capture already lost/yanked);
       // this is the expected, high-frequency case, not a bug.
-      // eslint-disable-next-line no-restricted-syntax -- see comment above
-      try { handle.releasePointerCapture(activePointerRef.current) } catch { /* ignore */ }
+      try {
+        handle.releasePointerCapture(activePointerRef.current)
+        // eslint-disable-next-line no-restricted-syntax -- see comment above
+      } catch {
+        /* ignore */
+      }
       activePointerRef.current = null
       cancelAnimationFrame(rafRef.current)
       resetStyle()

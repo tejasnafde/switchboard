@@ -56,13 +56,14 @@ const MARKER_PREFIXES: Record<RotationMarker['kind'], string> = {
 }
 
 export function parseRotationMarker(content: string): RotationMarker | null {
-  const kind = (Object.keys(MARKER_PREFIXES) as RotationMarker['kind'][])
-    .find((k) => content.startsWith(MARKER_PREFIXES[k])) ?? null
+  const kind =
+    (Object.keys(MARKER_PREFIXES) as RotationMarker['kind'][]).find((k) => content.startsWith(MARKER_PREFIXES[k])) ??
+    null
   if (!kind) return null
   const prefix = MARKER_PREFIXES[kind]
   const rest = content.slice(prefix.length).trim()
   // Tolerate either '→' (default) or '->' for hand-edited cases.
-  const arrow = rest.includes('→') ? '→' : (rest.includes('->') ? '->' : null)
+  const arrow = rest.includes('→') ? '→' : rest.includes('->') ? '->' : null
   if (!arrow) return null
   const [fromName, toName] = rest.split(arrow).map((s) => s.trim())
   if (!fromName || !toName) return null

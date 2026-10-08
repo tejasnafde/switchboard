@@ -40,11 +40,17 @@ describe('buildOpencodeMcpPermissionContent', () => {
     const permission = JSON.parse(buildOpencodeMcpPermissionContent('sandbox', ['switchboard_x'], true)!).permission
     expect(permission['switchboard_*']).toBeUndefined()
     expect(permission['switchboard_x_*']).toBe('ask')
-    expect(Object.keys(permission).filter((k) => permission[k] === 'allow').every((k) => SWITCHBOARD_OPENCODE_TOOLS.includes(k))).toBe(true)
+    expect(
+      Object.keys(permission)
+        .filter((k) => permission[k] === 'allow')
+        .every((k) => SWITCHBOARD_OPENCODE_TOOLS.includes(k)),
+    ).toBe(true)
   })
 
   it('allows none of our tools when the user has a server named switchboard', () => {
-    const permission = JSON.parse(buildOpencodeMcpPermissionContent('sandbox', ['switchboard', 'github'], true)!).permission
+    const permission = JSON.parse(
+      buildOpencodeMcpPermissionContent('sandbox', ['switchboard', 'github'], true)!,
+    ).permission
     expect(permission).toEqual({ 'switchboard_*': 'ask', 'github_*': 'ask' })
   })
 
@@ -60,21 +66,26 @@ describe('buildOpencodeMcpPermissionContent', () => {
     expect(content).toBeNull()
   })
 
-  it.each(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'] as const)('injects MCP ask rules in %s mode', (mode) => {
-    const content = buildOpencodeMcpPermissionContent(mode, ['github'], false)
-    expect(JSON.parse(content!).permission).toEqual({ 'github_*': 'ask' })
-  })
+  it.each(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'] as const)(
+    'injects MCP ask rules in %s mode',
+    (mode) => {
+      const content = buildOpencodeMcpPermissionContent(mode, ['github'], false)
+      expect(JSON.parse(content!).permission).toEqual({ 'github_*': 'ask' })
+    },
+  )
 
   it('returns no inline config when there are no MCP rules to add', () => {
     expect(buildOpencodeMcpPermissionContent('sandbox', [], false)).toBeNull()
   })
 
   it('returns no inline config when a user config source could not be parsed', () => {
-    expect(buildOpencodeMcpPermissionContent('sandbox', ['github'], true, {
-      permissionRules: [],
-      userMcpServerNames: ['github'],
-      canTrustUserConfig: false,
-    })).toBeNull()
+    expect(
+      buildOpencodeMcpPermissionContent('sandbox', ['github'], true, {
+        permissionRules: [],
+        userMcpServerNames: ['github'],
+        canTrustUserConfig: false,
+      }),
+    ).toBeNull()
   })
 })
 
@@ -102,7 +113,9 @@ describe('OpenCode first-turn acceptance', () => {
   it('does not persist a session title when prompt dispatch rejects synchronously', async () => {
     const mkdir = vi.spyOn(fs, 'mkdir').mockResolvedValue(undefined)
     const adapter = new OpencodeAcpAdapter()
-    const prompt = vi.fn(() => { throw new Error('prompt rejected') })
+    const prompt = vi.fn(() => {
+      throw new Error('prompt rejected')
+    })
     const sessions = Reflect.get(adapter, 'sessions') as Map<string, unknown>
     const active = {
       session: {
@@ -255,18 +268,26 @@ describe('mapSessionUpdate', () => {
   })
 
   it('reports the files a completed edit tool call wrote', () => {
-    const update = (status: string, kind: string) => mapSessionUpdate(
-      tid,
-      {
-        sessionId: 's1',
-        update: {
-          sessionUpdate: 'tool_call_update', toolCallId: 't_9', status, kind,
-          locations: [{ path: '/repo/a.ts' }], rawInput: { filePath: '/repo/b.ts' },
-        },
-      } as any,
-      new Map(),
-    )
-    expect(update('completed', 'edit')[0]).toMatchObject({ type: 'tool.completed', writtenPaths: ['/repo/a.ts', '/repo/b.ts'] })
+    const update = (status: string, kind: string) =>
+      mapSessionUpdate(
+        tid,
+        {
+          sessionId: 's1',
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 't_9',
+            status,
+            kind,
+            locations: [{ path: '/repo/a.ts' }],
+            rawInput: { filePath: '/repo/b.ts' },
+          },
+        } as any,
+        new Map(),
+      )
+    expect(update('completed', 'edit')[0]).toMatchObject({
+      type: 'tool.completed',
+      writtenPaths: ['/repo/a.ts', '/repo/b.ts'],
+    })
     expect(update('failed', 'edit')[0]).not.toHaveProperty('writtenPaths')
     expect(update('completed', 'read')[0]).not.toHaveProperty('writtenPaths')
   })
@@ -417,7 +438,14 @@ describe('parseImageInput', () => {
 describe('OpenCode queued turns', () => {
   function fakeSession(connection: Record<string, unknown>) {
     return {
-      session: { threadId: tid, provider: 'opencode', status: 'idle', runtimeMode: 'sandbox', cwd: '/tmp/project', createdAt: 1 },
+      session: {
+        threadId: tid,
+        provider: 'opencode',
+        status: 'idle',
+        runtimeMode: 'sandbox',
+        cwd: '/tmp/project',
+        createdAt: 1,
+      },
       onEvent: vi.fn(),
       child: null,
       connection,
@@ -439,10 +467,21 @@ describe('OpenCode queued turns', () => {
   it('holds a queued send that arrives while the running send applies its mode', async () => {
     const adapter = new OpencodeAcpAdapter()
     let releaseMode!: () => void
-    const setSessionMode = vi.fn(() => new Promise<void>((resolve) => { releaseMode = resolve }))
+    const setSessionMode = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseMode = resolve
+        }),
+    )
     let finishFirst!: () => void
-    const prompt = vi.fn()
-      .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = () => resolve({}) }))
+    const prompt = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirst = () => resolve({})
+          }),
+      )
       .mockImplementation(() => Promise.resolve({}))
     const active = fakeSession({ prompt, setSessionMode })
     ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
@@ -462,9 +501,17 @@ describe('OpenCode queued turns', () => {
   it('starts the queued message when the prompt ahead of it is rejected', async () => {
     const adapter = new OpencodeAcpAdapter()
     let releaseMode!: () => void
-    const setSessionMode = vi.fn(() => new Promise<void>((resolve) => { releaseMode = resolve }))
-    const prompt = vi.fn()
-      .mockImplementationOnce(() => { throw new Error('prompt rejected') })
+    const setSessionMode = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseMode = resolve
+        }),
+    )
+    const prompt = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('prompt rejected')
+      })
       .mockImplementation(() => Promise.resolve({}))
     const active = fakeSession({ prompt, setSessionMode })
     ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
@@ -480,8 +527,14 @@ describe('OpenCode queued turns', () => {
   it('holds the queue when the running prompt fails, and starts it on resume', async () => {
     const adapter = new OpencodeAcpAdapter()
     let failFirst!: () => void
-    const prompt = vi.fn()
-      .mockImplementationOnce(() => new Promise((_resolve, reject) => { failFirst = () => reject(new Error('usage limit')) }))
+    const prompt = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            failFirst = () => reject(new Error('usage limit'))
+          }),
+      )
       .mockImplementation(() => Promise.resolve({}))
     const active = fakeSession({ prompt })
     ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
@@ -490,7 +543,12 @@ describe('OpenCode queued turns', () => {
     await adapter.sendTurn(tid, 'queued', undefined, undefined, 'queue', 'remote_q1')
     failFirst()
     await vi.waitFor(() => expect(active.inFlightPrompt).toBeNull())
-    expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.queue-held', threadId: tid, held: true, reason: 'usage limit' })
+    expect(active.onEvent).toHaveBeenCalledWith({
+      type: 'turn.queue-held',
+      threadId: tid,
+      held: true,
+      reason: 'usage limit',
+    })
     expect(prompt).toHaveBeenCalledTimes(1)
 
     await expect(adapter.resumeQueuedTurns(tid)).resolves.toBe(true)
@@ -501,8 +559,14 @@ describe('OpenCode queued turns', () => {
   it('takes a held message back on cancel, so the prompt ending starts nothing', async () => {
     const adapter = new OpencodeAcpAdapter()
     let finishFirst!: () => void
-    const prompt = vi.fn()
-      .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = () => resolve({}) }))
+    const prompt = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirst = () => resolve({})
+          }),
+      )
       .mockImplementation(() => Promise.resolve({}))
     const active = fakeSession({ prompt })
     ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
@@ -511,7 +575,12 @@ describe('OpenCode queued turns', () => {
     await adapter.sendTurn(tid, 'never mind', undefined, undefined, 'queue', 'remote_q1')
     expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.queued', threadId: tid, messageId: 'remote_q1' })
     await expect(adapter.cancelQueuedTurn(tid, 'remote_q1')).resolves.toBe(true)
-    expect(active.onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: tid, messageId: 'remote_q1', reason: 'cancelled' })
+    expect(active.onEvent).toHaveBeenCalledWith({
+      type: 'turn.dequeued',
+      threadId: tid,
+      messageId: 'remote_q1',
+      reason: 'cancelled',
+    })
 
     finishFirst()
     await vi.waitFor(() => expect(active.inFlightPrompt).toBeNull())
@@ -534,7 +603,12 @@ describe('OpenCode queued turns', () => {
   it('refuses the second of two plain sends that arrive together', async () => {
     const adapter = new OpencodeAcpAdapter()
     let releaseMode!: () => void
-    const setSessionMode = vi.fn(() => new Promise<void>((resolve) => { releaseMode = resolve }))
+    const setSessionMode = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseMode = resolve
+        }),
+    )
     const prompt = vi.fn(() => new Promise(() => {}))
     const active = fakeSession({ prompt, setSessionMode })
     ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)

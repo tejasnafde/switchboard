@@ -12,12 +12,21 @@ describe('global shortcuts with a focused terminal on macOS', () => {
   const sent: string[] = []
   const listener = (e: KeyboardEvent) => {
     const a = resolveGlobalKeydown(e, 'mac')
-    if (a) { actions.push(a); e.preventDefault() }
+    if (a) {
+      actions.push(a)
+      e.preventDefault()
+    }
   }
 
   beforeAll(async () => {
     Object.defineProperty(window, 'matchMedia', {
-      value: () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }),
+      value: () => ({
+        matches: false,
+        addListener() {},
+        removeListener() {},
+        addEventListener() {},
+        removeEventListener() {},
+      }),
     })
     const { Terminal } = await import('@xterm/xterm')
     const el = document.createElement('div')
@@ -36,11 +45,23 @@ describe('global shortcuts with a focused terminal on macOS', () => {
   function press(key: string, mods: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) {
     actions.length = 0
     sent.length = 0
-    textarea.dispatchEvent(new KeyboardEvent('keydown', { key, keyCode: key.toUpperCase().charCodeAt(0), bubbles: true, cancelable: true, ...mods }))
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key,
+        keyCode: key.toUpperCase().charCodeAt(0),
+        bubbles: true,
+        cancelable: true,
+        ...mods,
+      }),
+    )
   }
 
   it.each([
-    ['k', '\x0b'], ['j', '\n'], ['b', '\x02'], ['l', '\x0c'], ['t', '\x14'],
+    ['k', '\x0b'],
+    ['j', '\n'],
+    ['b', '\x02'],
+    ['l', '\x0c'],
+    ['t', '\x14'],
   ])('Ctrl+%s goes to the shell only', (key, byte) => {
     press(key, { ctrlKey: true })
     expect(actions).toEqual([])

@@ -19,9 +19,21 @@ db.exec(`
 
 vi.mock('../../src/main/db/provider-instances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({
-    id: id ?? `${agentType}-default`, agentType, displayName: id ?? `${agentType}-default`, enabled: true, env: {}, oauthDir: null,
+    id: id ?? `${agentType}-default`,
+    agentType,
+    displayName: id ?? `${agentType}-default`,
+    enabled: true,
+    env: {},
+    oauthDir: null,
   }),
-  getProviderInstanceFull: (id: string) => ({ id, agentType: 'claude-code', displayName: id, enabled: true, env: {}, oauthDir: null }),
+  getProviderInstanceFull: (id: string) => ({
+    id,
+    agentType: 'claude-code',
+    displayName: id,
+    enabled: true,
+    env: {},
+    oauthDir: null,
+  }),
   listOauthDirsForAgent: () => [],
 }))
 
@@ -64,7 +76,9 @@ ensureMergeBackSchema(db)
 
 class FakeHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
-  handle(channel: string, fn: (...args: unknown[]) => unknown): void { this.handlers.set(channel, fn) }
+  handle(channel: string, fn: (...args: unknown[]) => unknown): void {
+    this.handlers.set(channel, fn)
+  }
   on(): void {}
   emit(): void {}
   async invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -84,9 +98,23 @@ class RecordingAdapter implements ProviderAdapter {
   private onEvent: (e: RuntimeEvent) => void = () => {}
   async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     this.onEvent = onEvent
-    return { threadId: opts.threadId, provider: this.provider, status: 'idle', runtimeMode: 'sandbox', cwd: opts.cwd, createdAt: 0 }
+    return {
+      threadId: opts.threadId,
+      provider: this.provider,
+      status: 'idle',
+      runtimeMode: 'sandbox',
+      cwd: opts.cwd,
+      createdAt: 0,
+    }
   }
-  async sendTurn(threadId: string, text: string, _r?: unknown, _i?: unknown, delivery?: TurnDelivery, queuedId?: string): Promise<void> {
+  async sendTurn(
+    threadId: string,
+    text: string,
+    _r?: unknown,
+    _i?: unknown,
+    delivery?: TurnDelivery,
+    queuedId?: string,
+  ): Promise<void> {
     if (this.failNext) {
       this.failNext = false
       throw new Error('connection dropped')
@@ -116,15 +144,32 @@ class RecordingAdapter implements ProviderAdapter {
   async interruptTurn(): Promise<void> {}
   async stopSession(): Promise<void> {}
   async setRuntimeMode(): Promise<void> {}
-  async isAvailable(): Promise<boolean> { return true }
+  async isAvailable(): Promise<boolean> {
+    return true
+  }
 }
 
 let seq = 0
 function seedPending(text: string): string {
   const id = `mb${++seq}`
   const store = new SqliteMergeBackStore(() => db)
-  const summary = { text, turns: 1, omittedTurns: 0, files: [], moreFiles: 0, result: null, through: { at: 10 * seq, ids: [] } }
-  store.createPending({ id, parentId: 't1', forkId: `fork${seq}`, row: mergeBackRowFor(id, { id: `fork${seq}`, title: 'paging' }, summary, text), through: summary.through, now: 5 })
+  const summary = {
+    text,
+    turns: 1,
+    omittedTurns: 0,
+    files: [],
+    moreFiles: 0,
+    result: null,
+    through: { at: 10 * seq, ids: [] },
+  }
+  store.createPending({
+    id,
+    parentId: 't1',
+    forkId: `fork${seq}`,
+    row: mergeBackRowFor(id, { id: `fork${seq}`, title: 'paging' }, summary, text),
+    through: summary.through,
+    now: 5,
+  })
   return id
 }
 
@@ -140,9 +185,14 @@ async function setup() {
   await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd: '/tmp' })
   const published: RuntimeEvent[] = []
   registry.bus.subscribe((e) => published.push(e))
-  const submit = (origin: string, delivery?: TurnDelivery) => host.invoke<UserTurnSubmissionResult>(ProviderChannels.SUBMIT_USER_TURN, {
-    version: 1, threadId: 't1', origin, providerText: `text of ${origin}`, ...(delivery ? { delivery } : {}),
-  })
+  const submit = (origin: string, delivery?: TurnDelivery) =>
+    host.invoke<UserTurnSubmissionResult>(ProviderChannels.SUBMIT_USER_TURN, {
+      version: 1,
+      threadId: 't1',
+      origin,
+      providerText: `text of ${origin}`,
+      ...(delivery ? { delivery } : {}),
+    })
   return { host, adapter, published, submit }
 }
 
@@ -193,9 +243,15 @@ describe('merge-back in the registry', () => {
     const t = await setup()
     const id = seedPending('after-send failure')
     t.adapter.failAfterSend = true
-    await t.host.invoke(ProviderChannels.SUBMIT_USER_TURN, {
-      version: 1, threadId: 't1', origin: 'g', providerText: 'text of g', runtimeMode: 'plan',
-    }).catch(() => undefined)
+    await t.host
+      .invoke(ProviderChannels.SUBMIT_USER_TURN, {
+        version: 1,
+        threadId: 't1',
+        origin: 'g',
+        providerText: 'text of g',
+        runtimeMode: 'plan',
+      })
+      .catch(() => undefined)
     expect(t.adapter.sent.at(-1)).toContain('after-send failure')
     expect(state(id)).toBe('pending')
     expect(await t.host.invoke(ProviderChannels.MERGE_BACK_DISCARD, 't1', id)).toEqual({ ok: true })

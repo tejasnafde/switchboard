@@ -5,7 +5,16 @@
  */
 import { WsTransport } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
-import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels, PullRequestChannels, PushChannels, SttChannels, WorktreeCreationChannels } from '@shared/ipc-channels'
+import {
+  AppChannels,
+  MachineChannels,
+  ProviderChannels,
+  ProviderInstanceChannels,
+  PullRequestChannels,
+  PushChannels,
+  SttChannels,
+  WorktreeCreationChannels,
+} from '@shared/ipc-channels'
 import type { SttTranscribeRequest, SttTranscribeResult } from '@shared/stt'
 import type {
   RuntimeEvent,
@@ -24,17 +33,22 @@ import type {
 import type { ModelOption } from '@shared/models'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
 import type { QueuedTurnActionResult, QueuedTurnSummary } from '@shared/turn-delivery'
-import type { AgentType, Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
+import type {
+  AgentType,
+  Project,
+  ConversationRow,
+  CreateConversationParams,
+  ChatMessage,
+  ProviderInstance,
+  ProviderSkill,
+  Workspace,
+} from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { PrLink, PrLinkResult } from '@shared/pull-request-links'
 import type { PrRef } from '@shared/pull-requests'
-import type {
-  ForkConversationOutcome,
-  ForkConversationRequest,
-  ForkLineageMetadata,
-} from '@shared/conversation-fork'
+import type { ForkConversationOutcome, ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type {
   GetWorktreeCreationRequest,
   WorktreeCreationActionRequest,
@@ -209,7 +223,8 @@ export class SwitchboardClient {
       await this.getSetting(SETTING_DEFAULT_RUNTIME_MODE)
     }
     return this.supportsCapability('history_window_v1') === true
-      ? this.loadSessionWindow(conversationId) : this.loadSessionById(conversationId, 200)
+      ? this.loadSessionWindow(conversationId)
+      : this.loadSessionById(conversationId, 200)
   }
 
   loadSessionWindow(conversationId: string, beforeId?: string): Promise<LoadedSession> {
@@ -441,8 +456,19 @@ export class SwitchboardClient {
   }
 
   /** `response` answers a pull request write card: the resolve choice, or a review's verdict. */
-  respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision, response?: HostWriteResponse): Promise<void> {
-    return this.transport.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision, ...(response ? [response] : []))
+  respondToRequest(
+    threadId: string,
+    requestId: string,
+    decision: ApprovalDecision,
+    response?: HostWriteResponse,
+  ): Promise<void> {
+    return this.transport.invoke(
+      ProviderChannels.RESPOND_TO_REQUEST,
+      threadId,
+      requestId,
+      decision,
+      ...(response ? [response] : []),
+    )
   }
 
   answerQuestion(threadId: string, requestId: string, answers: string[][]): Promise<void> {

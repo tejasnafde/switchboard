@@ -27,10 +27,7 @@ import { LoadingStatus } from '../ui/loading-status'
  * fewer than 2 enabled instances.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
-import {
-  modelsForAgent,
-  type ModelOption,
-} from '@shared/models'
+import { modelsForAgent, type ModelOption } from '@shared/models'
 import {
   AGENT_TYPES,
   agentLabel,
@@ -46,10 +43,7 @@ import { createTerminalAsync } from '../../services/terminal-registry'
 import { emitSessionCreated } from '../../services/session-events'
 import { terminalLoginAgentType } from '../../shared/terminal-login'
 import { shouldShowInstanceRail } from '../../shared/instance-rail-visibility'
-import {
-  resolveVisibleLoginInstanceId,
-  nextTermInstanceId,
-} from '../../shared/terminal-login-account'
+import { resolveVisibleLoginInstanceId, nextTermInstanceId } from '../../shared/terminal-login-account'
 import { startTerminalSession } from '../../shared/terminal-login-start'
 import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
@@ -138,9 +132,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   }, [instances, instanceId, agentType])
 
   const staticModels = modelsForAgent(agentType)
-  const models = dynamicModels && dynamicModels.length > 0
-    ? dynamicModels
-    : staticModels
+  const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : staticModels
 
   const accent = effectiveInstance?.accentColor ?? 'var(--accent)'
   const initials = effectiveInstance ? providerInstanceInitials(effectiveInstance.displayName) : '··'
@@ -161,7 +153,6 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
     const found = models.find((m) => m.id === effective)
     return found?.label ?? effective
   }, [models, model, resolvedModel])
-
 
   return (
     <Popover
@@ -268,9 +259,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
             // Building that env here directly missed Codex entirely and
             // let a Codex login terminal silently fall back to whatever
             // ambient/default CODEX_HOME happened to be set.
-            const loginInstance = loginAgentType
-              ? { agentType: loginAgentType, instanceId: termInstanceId }
-              : undefined
+            const loginInstance = loginAgentType ? { agentType: loginAgentType, instanceId: termInstanceId } : undefined
             setTermError(null)
             setTermStarting(true)
             // Awaits terminal:create BEFORE creating any session/store/
@@ -332,16 +321,33 @@ interface PopoverProps {
   onTermStart: () => void
 }
 
-const inputClass = 'rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px] text-[var(--text-primary)] outline-none'
+const inputClass =
+  'rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px] text-[var(--text-primary)] outline-none'
 const sectionLabelClass = 'mb-[6px] text-[10px] font-[600] uppercase tracking-[0.7px] text-[var(--text-muted)]'
 
 function UnifiedPickerPopover(props: PopoverProps) {
   const {
-    searchRef, showCustom, setShowCustom, agentType, canChangeAgent, onAgentTypeChange,
-    instances, effectiveInstanceId, showRail, onInstanceChange,
-    model, models, onModelChange,
-    allInstances, termCommand, setTermCommand, termInstanceId, setTermInstanceId,
-    termStarting, termError, onTermStart,
+    searchRef,
+    showCustom,
+    setShowCustom,
+    agentType,
+    canChangeAgent,
+    onAgentTypeChange,
+    instances,
+    effectiveInstanceId,
+    showRail,
+    onInstanceChange,
+    model,
+    models,
+    onModelChange,
+    allInstances,
+    termCommand,
+    setTermCommand,
+    termInstanceId,
+    setTermInstanceId,
+    termStarting,
+    termError,
+    onTermStart,
   } = props
   const [query, setQuery] = useState('')
   const [customValue, setCustomValue] = useState('')
@@ -433,12 +439,7 @@ function UnifiedPickerPopover(props: PopoverProps) {
           <div className="flex-1 overflow-y-auto py-[4px]">
             {!showCustom && (
               <>
-                <ModelRow
-                  label="Default"
-                  monoId=""
-                  active={!model}
-                  onSelect={() => onModelChange('')}
-                />
+                <ModelRow label="Default" monoId="" active={!model} onSelect={() => onModelChange('')} />
                 {grouped.ungrouped.map((m) => (
                   <ModelRow
                     key={m.id}
@@ -465,13 +466,14 @@ function UnifiedPickerPopover(props: PopoverProps) {
                   </div>
                 ))}
                 {filtered.length === 0 && (
-                  <div className="p-[12px] text-center text-[11px] text-[var(--text-muted)]">
-                    No matches.
-                  </div>
+                  <div className="p-[12px] text-center text-[11px] text-[var(--text-muted)]">No matches.</div>
                 )}
                 <button
                   type="button"
-                  onClick={() => { setShowCustom(true); setCustomValue(model) }}
+                  onClick={() => {
+                    setShowCustom(true)
+                    setCustomValue(model)
+                  }}
                   className="mt-[4px] block w-full cursor-pointer border-x-0 border-b-0 border-t border-[var(--border)] bg-transparent px-[12px] py-[6px] text-left text-[11px] text-[var(--accent)]"
                 >
                   Custom model id…
@@ -492,17 +494,17 @@ function UnifiedPickerPopover(props: PopoverProps) {
                   className={cn(inputClass, 'py-[5px] [font-family:var(--font-mono)]')}
                 />
                 <div className="flex justify-end gap-[6px]">
-                  <button
-                    type="button"
-                    onClick={() => setShowCustom(false)}
-                    className={pillButtonClass(false)}
-                  >Cancel</button>
+                  <button type="button" onClick={() => setShowCustom(false)} className={pillButtonClass(false)}>
+                    Cancel
+                  </button>
                   <button
                     type="button"
                     onClick={() => onModelChange(customValue.trim())}
                     disabled={!customValue.trim()}
                     className={pillButtonClass(true)}
-                  >Use</button>
+                  >
+                    Use
+                  </button>
                 </div>
               </div>
             )}
@@ -535,9 +537,7 @@ function TerminalTabBody({
   // Instances for whichever CLI binary is selected - main resolves the
   // picked instance's oauthDir (CLAUDE_CONFIG_DIR / CODEX_HOME) at spawn.
   const loginAgentType = terminalLoginAgentType(termCommand)
-  const loginInstances = loginAgentType
-    ? allInstances.filter((i) => i.agentType === loginAgentType && i.enabled)
-    : []
+  const loginInstances = loginAgentType ? allInstances.filter((i) => i.agentType === loginAgentType && i.enabled) : []
   const isCustom = loginAgentType === null
   // Mirrors main's resolveProviderInstance fallback order (canonical
   // default, then oldest enabled) so the highlighted row is always the
@@ -565,7 +565,9 @@ function TerminalTabBody({
                   ? 'border-[var(--warning)] bg-[rgba(210,153,34,0.1)] text-[var(--warning)]'
                   : 'border-[var(--border)] bg-[var(--bg-tertiary)] text-[var(--text-secondary)]',
               )}
-            >{cmd}</button>
+            >
+              {cmd}
+            </button>
           ))}
           <input
             value={isCustom ? termCommand : ''}
@@ -598,7 +600,12 @@ function TerminalTabBody({
                     : 'border-transparent bg-transparent text-[var(--text-secondary)]',
                 )}
               >
-                <span className={cn('size-[6px] shrink-0 rounded-full', active ? 'bg-[var(--accent)]' : 'bg-[var(--text-muted)]')} />
+                <span
+                  className={cn(
+                    'size-[6px] shrink-0 rounded-full',
+                    active ? 'bg-[var(--accent)]' : 'bg-[var(--text-muted)]',
+                  )}
+                />
                 <span className="flex-1 truncate">{inst.displayName}</span>
                 {inst.id.endsWith('-default') && (
                   <span className="text-[9px] [font-family:var(--font-mono)] text-[var(--text-muted)]">default</span>
@@ -613,7 +620,11 @@ function TerminalTabBody({
       <div className="border-b border-[var(--border)] p-[8px]">
         <div className="flex gap-[7px] rounded-[var(--radius)] border border-[rgba(63,185,80,0.15)] bg-[rgba(63,185,80,0.05)] px-[10px] py-[7px] text-[11px] leading-[1.5] text-[var(--text-secondary)]">
           <span className="shrink-0 text-[var(--success)]">●</span>
-          Runs <code className="rounded-[3px] bg-[rgba(63,185,80,0.1)] px-[4px] text-[10.5px] [font-family:var(--font-mono)] text-[var(--success)]">{termCommand}</code> directly - billed from your subscription, not API credits.
+          Runs{' '}
+          <code className="rounded-[3px] bg-[rgba(63,185,80,0.1)] px-[4px] text-[10.5px] [font-family:var(--font-mono)] text-[var(--success)]">
+            {termCommand}
+          </code>{' '}
+          directly - billed from your subscription, not API credits.
         </div>
       </div>
 
@@ -705,7 +716,9 @@ function ModelRow({
     >
       <span className="truncate">{label}</span>
       {monoId && (
-        <span className="max-w-[50%] truncate text-[10px] [font-family:var(--font-mono)] text-[var(--text-muted)]">{monoId}</span>
+        <span className="max-w-[50%] truncate text-[10px] [font-family:var(--font-mono)] text-[var(--text-muted)]">
+          {monoId}
+        </span>
       )}
     </button>
   )

@@ -45,10 +45,11 @@ export function flattenOverBackdrop(buffer) {
  * Compare two PNG buffers. The diff image fades the baseline and paints every
  * changed pixel red; it is null when the sizes differ.
  */
-export function comparePng(expectedBuffer, actualBuffer, {
-  channelTolerance = DEFAULT_CHANNEL_TOLERANCE,
-  maxChangedRatio = DEFAULT_MAX_CHANGED_RATIO,
-} = {}) {
+export function comparePng(
+  expectedBuffer,
+  actualBuffer,
+  { channelTolerance = DEFAULT_CHANNEL_TOLERANCE, maxChangedRatio = DEFAULT_MAX_CHANGED_RATIO } = {},
+) {
   const expected = PNG.sync.read(expectedBuffer)
   const actual = PNG.sync.read(actualBuffer)
   if (expected.width !== actual.width || expected.height !== actual.height) {

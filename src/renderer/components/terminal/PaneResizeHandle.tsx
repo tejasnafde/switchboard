@@ -25,8 +25,12 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
   // Keep latest callbacks in refs so the main effect is stable
   const onResizeRef = useRef(onResize)
   const onResizeEndRef = useRef(onResizeEnd)
-  useEffect(() => { onResizeRef.current = onResize })
-  useEffect(() => { onResizeEndRef.current = onResizeEnd })
+  useEffect(() => {
+    onResizeRef.current = onResize
+  })
+  useEffect(() => {
+    onResizeEndRef.current = onResizeEnd
+  })
 
   const isColumn = direction === 'column'
 
@@ -46,8 +50,12 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
       e.stopPropagation()
       // setPointerCapture can throw for an already-released pointer id;
       // routine, not worth logging.
-      // eslint-disable-next-line no-restricted-syntax -- see comment above
-      try { handle.setPointerCapture(e.pointerId) } catch { /* ignore */ }
+      try {
+        handle.setPointerCapture(e.pointerId)
+        // eslint-disable-next-line no-restricted-syntax -- see comment above
+      } catch {
+        /* ignore */
+      }
       activePointerRef.current = e.pointerId
       lastPosRef.current = isColumn ? e.clientX : e.clientY
       handle.dataset.active = '1'
@@ -71,8 +79,12 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
       if (e && e.pointerId !== activePointerRef.current) return
       // releasePointerCapture throws routinely (capture already lost/yanked);
       // this is the expected, high-frequency case, not a bug.
-      // eslint-disable-next-line no-restricted-syntax -- see comment above
-      try { handle.releasePointerCapture(activePointerRef.current) } catch { /* ignore */ }
+      try {
+        handle.releasePointerCapture(activePointerRef.current)
+        // eslint-disable-next-line no-restricted-syntax -- see comment above
+      } catch {
+        /* ignore */
+      }
       activePointerRef.current = null
       cancelAnimationFrame(rafRef.current)
       resetStyle()

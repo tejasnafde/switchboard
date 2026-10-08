@@ -100,11 +100,7 @@ export function scheduleCopyFeedback<T>(
   return () => cancel(timer)
 }
 
-export function applyCopyButtonFeedback(
-  button: FeedbackButtonTarget,
-  index: number,
-  copied: boolean,
-): void {
+export function applyCopyButtonFeedback(button: FeedbackButtonTarget, index: number, copied: boolean): void {
   button.textContent = copied ? 'Copied' : 'Copy'
   button.classList.toggle('copied', copied)
   button.setAttribute('aria-label', `${copied ? 'Copied' : 'Copy'} code block ${index + 1}`)
@@ -117,9 +113,7 @@ export function restoreCopyButtonFocus<T>(
   bodyElement: T,
 ): boolean {
   if (index === null || (activeElement !== bodyElement && !root.contains(activeElement))) return false
-  const button = root.querySelector(
-    `[data-code-state="settled"] [data-code-copy-index="${index}"]`,
-  )
+  const button = root.querySelector(`[data-code-state="settled"] [data-code-copy-index="${index}"]`)
   if (!button) return false
   button.focus({ preventScroll: true })
   return true
@@ -136,7 +130,9 @@ interface TableControlElement extends ClosestTarget {
 
 export function findTableControl(target: unknown): TableControlTarget | null {
   if (!target || typeof (target as Partial<ClosestTarget>).closest !== 'function') return null
-  const control = (target as ClosestTarget).closest('.table-copy-btn, .table-copy-menu-btn') as TableControlElement | null
+  const control = (target as ClosestTarget).closest(
+    '.table-copy-btn, .table-copy-menu-btn',
+  ) as TableControlElement | null
   if (!control) return null
   const copy = control.dataset?.tableCopyIndex
   const raw = copy ?? control.dataset?.tableMenuIndex
@@ -163,20 +159,13 @@ export function restoreTableControlFocus<T>(
   return true
 }
 
-export function applyTableCopyFeedback(
-  button: FeedbackButtonTarget,
-  index: number,
-  copied: boolean,
-): void {
+export function applyTableCopyFeedback(button: FeedbackButtonTarget, index: number, copied: boolean): void {
   button.textContent = copied ? 'Copied' : 'Copy'
   button.classList.toggle('copied', copied)
   button.setAttribute('aria-label', `${copied ? 'Copied' : 'Copy'} table ${index + 1}`)
 }
 
-export function tableCopyWrite(
-  source: CopyTableSource,
-  format: TableCopyFormat,
-): { html?: string; text: string } {
+export function tableCopyWrite(source: CopyTableSource, format: TableCopyFormat): { html?: string; text: string } {
   if (format === 'markdown') return { text: tableToMarkdown(source) }
   if (format === 'csv') return { text: tableToCsv(source) }
   return tableClipboardPayload(source)
@@ -199,9 +188,7 @@ function hasClosingFence(raw: string): boolean {
   if (!opening) return false
   return lines.slice(1).some((line) => {
     const closing = /^ {0,3}([`~]+)[ \t]*$/.exec(line)?.[1]
-    return !!closing &&
-      closing.length >= opening.length &&
-      [...closing].every((char) => char === opening[0])
+    return !!closing && closing.length >= opening.length && [...closing].every((char) => char === opening[0])
   })
 }
 
@@ -235,7 +222,9 @@ const NUMERIC_CELL = /^[-+]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?%?$/
 export function alignNumericColumns(token: Tokens.Table): void {
   token.align.forEach((align, col) => {
     if (align !== null) return
-    const cells = token.rows.map((row) => row[col]?.text.replace(/[*_`]/g, '').trim() ?? '').filter((t) => t !== '' && t !== '-')
+    const cells = token.rows
+      .map((row) => row[col]?.text.replace(/[*_`]/g, '').trim() ?? '')
+      .filter((t) => t !== '' && t !== '-')
     if (cells.length === 0 || !cells.every((t) => NUMERIC_CELL.test(t))) return
     // The renderer reads each cell's own align, not the table's.
     token.align[col] = 'right'
@@ -250,13 +239,10 @@ export interface RenderedMarkdown {
   tables: CopyTableSource[]
 }
 
-export function wrapRenderedTable(
-  defaultTable: string,
-  state: 'provisional' | 'settled',
-  index: number,
-): string {
+export function wrapRenderedTable(defaultTable: string, state: 'provisional' | 'settled', index: number): string {
   const n = index + 1
-  const controls = '<div class="table-copy-controls">' +
+  const controls =
+    '<div class="table-copy-controls">' +
     `<button class="table-copy-btn" type="button" aria-label="Copy table ${n}" aria-live="polite" data-table-copy-index="${index}">Copy</button>` +
     `<button class="table-copy-menu-btn" type="button" aria-label="More ways to copy table ${n}" aria-haspopup="dialog" aria-expanded="false" data-table-menu-index="${index}"><svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.5 3 4 5.5 6.5 3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` +
     '</div>'
@@ -321,18 +307,12 @@ export function renderMarkdownDocument(
   renderer.link = (token: Tokens.Link) => {
     if (!isSafeMarkdownDestination(token.href)) return renderer.parser.parseInline(token.tokens)
     const rendered = renderLink(token)
-    return rendered.replace(
-      /^<a href="[^"]*"/,
-      `<a href="${escapeHtml(token.href)}"`,
-    )
+    return rendered.replace(/^<a href="[^"]*"/, `<a href="${escapeHtml(token.href)}"`)
   }
   renderer.image = (token: Tokens.Image) => {
     if (!isSafeMarkdownDestination(token.href)) return escapeHtml(token.text)
     const rendered = renderImage(token)
-    return rendered.replace(
-      /^<img src="[^"]*"/,
-      `<img src="${escapeHtml(token.href)}"`,
-    )
+    return rendered.replace(/^<img src="[^"]*"/, `<img src="${escapeHtml(token.href)}"`)
   }
 
   return { html: marked.parser(tokens, { async: false, renderer }), tables }
@@ -396,10 +376,7 @@ class AtomicMarkdownRoot extends Component<AtomicMarkdownRootProps> {
 }
 
 export const MarkdownWithCopyControls = forwardRef<HTMLDivElement, MarkdownWithCopyControlsProps>(
-  function MarkdownWithCopyControls(
-    { markdown, mutable = false, className = 'markdown-content', style },
-    ref,
-  ) {
+  function MarkdownWithCopyControls({ markdown, mutable = false, className = 'markdown-content', style }, ref) {
     const [copiedBlockIndex, setCopiedBlockIndex] = useState<number | null>(null)
     const [copiedTableIndex, setCopiedTableIndex] = useState<number | null>(null)
     // The table whose menu is (or was last) open: kept after closing so the
@@ -412,10 +389,7 @@ export const MarkdownWithCopyControls = forwardRef<HTMLDivElement, MarkdownWithC
     const cancelFeedbackRef = useRef<(() => void) | null>(null)
     const previousFeedbackIndexRef = useRef<number | null>(null)
     const mountedRef = useRef(false)
-    const { html: rendered, tables } = useMemo(
-      () => renderMarkdownDocument(markdown, { mutable }),
-      [markdown, mutable],
-    )
+    const { html: rendered, tables } = useMemo(() => renderMarkdownDocument(markdown, { mutable }), [markdown, mutable])
     const tablesRef = useRef(tables)
     tablesRef.current = tables
 
@@ -473,29 +447,35 @@ export const MarkdownWithCopyControls = forwardRef<HTMLDivElement, MarkdownWithC
         }
         // One item with both formats, as a spreadsheet copies: rich targets
         // take the HTML table, plain-text fields take the TSV.
-        return navigator.clipboard.write([new ClipboardItem({
-          'text/html': new Blob([html], { type: 'text/html' }),
-          'text/plain': new Blob([text], { type: 'text/plain' }),
-        })])
+        return navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([text], { type: 'text/plain' }),
+          }),
+        ])
       }
-      void write().then(() => {
-        if (!mountedRef.current) return
-        cancelTableFeedbackRef.current?.()
-        cancelTableFeedbackRef.current = scheduleCopyFeedback(
-          index,
-          setCopiedTableIndex,
-          (callback, delayMs) => window.setTimeout(callback, delayMs),
-          (timer) => window.clearTimeout(timer),
-        )
-      }, (error: unknown) => {
-        log.warn('table clipboard write failed', { format, error })
-      })
+      void write().then(
+        () => {
+          if (!mountedRef.current) return
+          cancelTableFeedbackRef.current?.()
+          cancelTableFeedbackRef.current = scheduleCopyFeedback(
+            index,
+            setCopiedTableIndex,
+            (callback, delayMs) => window.setTimeout(callback, delayMs),
+            (timer) => window.clearTimeout(timer),
+          )
+        },
+        (error: unknown) => {
+          log.warn('table clipboard write failed', { format, error })
+        },
+      )
     }, [])
 
     const findMenuAnchor = useCallback(
-      () => menuTableIndex === null
-        ? null
-        : rootRef.current?.querySelector<HTMLElement>(`[data-table-menu-index="${menuTableIndex}"]`) ?? null,
+      () =>
+        menuTableIndex === null
+          ? null
+          : (rootRef.current?.querySelector<HTMLElement>(`[data-table-menu-index="${menuTableIndex}"]`) ?? null),
       [menuTableIndex],
     )
 
@@ -506,63 +486,68 @@ export const MarkdownWithCopyControls = forwardRef<HTMLDivElement, MarkdownWithC
       setMenuOpen(false)
     }, [menuTableIndex])
 
-    const handleClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
-      const tableControl = findTableControl(event.target)
-      if (tableControl) {
+    const handleClick = useCallback(
+      (event: MouseEvent<HTMLDivElement>) => {
+        const tableControl = findTableControl(event.target)
+        if (tableControl) {
+          event.preventDefault()
+          event.stopPropagation()
+          const settled = (event.target as Element).closest('[data-table-state="settled"]')
+          if (!settled) return
+          if (tableControl.kind === 'copy') copyTable(tableControl.index, 'table')
+          else if (menuOpen && menuTableIndex === tableControl.index) closeMenu()
+          else {
+            setMenuTableIndex(tableControl.index)
+            setMenuOpen(true)
+          }
+          return
+        }
+        if (!findCopyButton(event.target)) return
         event.preventDefault()
         event.stopPropagation()
-        const settled = (event.target as Element).closest('[data-table-state="settled"]')
-        if (!settled) return
-        if (tableControl.kind === 'copy') copyTable(tableControl.index, 'table')
-        else if (menuOpen && menuTableIndex === tableControl.index) closeMenu()
-        else {
-          setMenuTableIndex(tableControl.index)
-          setMenuOpen(true)
+        const writeText = (text: string): Promise<void> => {
+          if (typeof navigator.clipboard?.writeText !== 'function') {
+            return Promise.reject(new Error('Clipboard API unavailable'))
+          }
+          return navigator.clipboard.writeText(text)
         }
-        return
-      }
-      if (!findCopyButton(event.target)) return
-      event.preventDefault()
-      event.stopPropagation()
-      const writeText = (text: string): Promise<void> => {
-        if (typeof navigator.clipboard?.writeText !== 'function') {
-          return Promise.reject(new Error('Clipboard API unavailable'))
-        }
-        return navigator.clipboard.writeText(text)
-      }
-      void copyCodeFromTarget(event.target, writeText, (error) => {
-        log.warn('clipboard write failed', error)
-      }).then((index) => {
-        if (index === null || !mountedRef.current) return
-        cancelFeedbackRef.current?.()
-        cancelFeedbackRef.current = scheduleCopyFeedback(
-          index,
-          setCopiedBlockIndex,
-          (callback, delayMs) => window.setTimeout(callback, delayMs),
-          (timer) => window.clearTimeout(timer),
-        )
-      })
-    }, [closeMenu, copyTable, menuOpen, menuTableIndex])
+        void copyCodeFromTarget(event.target, writeText, (error) => {
+          log.warn('clipboard write failed', error)
+        }).then((index) => {
+          if (index === null || !mountedRef.current) return
+          cancelFeedbackRef.current?.()
+          cancelFeedbackRef.current = scheduleCopyFeedback(
+            index,
+            setCopiedBlockIndex,
+            (callback, delayMs) => window.setTimeout(callback, delayMs),
+            (timer) => window.clearTimeout(timer),
+          )
+        })
+      },
+      [closeMenu, copyTable, menuOpen, menuTableIndex],
+    )
 
-    return <>
-      <AtomicMarkdownRoot
-        html={rendered}
-        className={className}
-        style={style}
-        rootRef={rootRef}
-        onClick={handleClick}
-      />
-      {tables.length > 0 && (
-        <TableCopyMenu
-          open={menuOpen}
-          findAnchor={findMenuAnchor}
-          onClose={closeMenu}
-          onCopy={(format) => {
-            if (menuTableIndex !== null) copyTable(menuTableIndex, format)
-            closeMenu()
-          }}
+    return (
+      <>
+        <AtomicMarkdownRoot
+          html={rendered}
+          className={className}
+          style={style}
+          rootRef={rootRef}
+          onClick={handleClick}
         />
-      )}
-    </>
+        {tables.length > 0 && (
+          <TableCopyMenu
+            open={menuOpen}
+            findAnchor={findMenuAnchor}
+            onClose={closeMenu}
+            onCopy={(format) => {
+              if (menuTableIndex !== null) copyTable(menuTableIndex, format)
+              closeMenu()
+            }}
+          />
+        )}
+      </>
+    )
   },
 )

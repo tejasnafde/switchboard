@@ -1,9 +1,6 @@
 /** Pure sidebar projection tests for SCAN_SESSIONS and GET_PROJECTS in app.ts. */
 import { describe, it, expect } from 'vitest'
-import {
-  projectManagedRootSessions,
-  sessionSummaryToConversationRow,
-} from '../../src/main/ipc/terminal-sessions'
+import { projectManagedRootSessions, sessionSummaryToConversationRow } from '../../src/main/ipc/terminal-sessions'
 import type { ConversationRow } from '../../src/main/db/database'
 import type { SessionSummary } from '../../src/shared/types'
 
@@ -40,10 +37,7 @@ describe('projectManagedRootSessions', () => {
   })
 
   it('carries the stored status line into the session list every client loads', () => {
-    const rows = [
-      makeRow({ id: 'summarised', status_line: 'Tests pass, PR open' }),
-      makeRow({ id: 'bare' }),
-    ]
+    const rows = [makeRow({ id: 'summarised', status_line: 'Tests pass, PR open' }), makeRow({ id: 'bare' })]
     const sessions = projectManagedRootSessions(rows)
 
     expect(sessions.map((s) => s.statusLine)).toEqual(['Tests pass, PR open', null])
@@ -52,55 +46,54 @@ describe('projectManagedRootSessions', () => {
   })
 
   it('excludes archived rows from the normal sidebar projection', () => {
-    const rows = [
-      makeRow({ id: 'active', updated_at: 10 }),
-      makeRow({ id: 'archived', archived: 1, updated_at: 20 }),
-    ]
+    const rows = [makeRow({ id: 'active', updated_at: 10 }), makeRow({ id: 'archived', archived: 1, updated_at: 20 })]
 
     expect(projectManagedRootSessions(rows).map((session) => session.id)).toEqual(['active'])
   })
 
   it('keeps user-created forks as roots even though they have fork lineage', () => {
-    const rows = [
-      makeRow({ id: 'fork', parent_conversation_id: 'source', title: 'source · fork/fix' }),
-    ]
+    const rows = [makeRow({ id: 'fork', parent_conversation_id: 'source', title: 'source · fork/fix' })]
 
     expect(projectManagedRootSessions(rows).map((session) => session.id)).toEqual(['fork'])
   })
 
   it('marks a retained worktree conversation as recoverable instead of ready', () => {
-    const rows = [makeRow({
-      id: 'retained',
-      worktree_creation_id: 'creation-retained',
-      worktree_creation_status: 'cleanup_required',
-      worktree_creation_recovery_json: JSON.stringify({ disposition: 'retained' }),
-    })]
+    const rows = [
+      makeRow({
+        id: 'retained',
+        worktree_creation_id: 'creation-retained',
+        worktree_creation_status: 'cleanup_required',
+        worktree_creation_recovery_json: JSON.stringify({ disposition: 'retained' }),
+      }),
+    ]
 
-    expect(projectManagedRootSessions(rows)).toMatchObject([{
-      id: 'retained',
-      worktreeCreationId: 'creation-retained',
-      worktreeRecovery: {
-        status: 'cleanup_required',
-        cleanupDisposition: 'retained',
+    expect(projectManagedRootSessions(rows)).toMatchObject([
+      {
+        id: 'retained',
+        worktreeCreationId: 'creation-retained',
+        worktreeRecovery: {
+          status: 'cleanup_required',
+          cleanupDisposition: 'retained',
+        },
       },
-    }])
+    ])
   })
 })
 
 describe('sessionSummaryToConversationRow', () => {
-  const summary = (over: Partial<SessionSummary> = {}): SessionSummary => ({
-    id: 'a3717923-940a-47bf-a15e-cfd4f9cc194a',
-    source: 'claude-code',
-    title: 'Lat Lng',
-    startedAt: 7000,
-    messageCount: 0,
-    filePath: '/x.jsonl',
-    ...over,
-  } as SessionSummary)
+  const summary = (over: Partial<SessionSummary> = {}): SessionSummary =>
+    ({
+      id: 'a3717923-940a-47bf-a15e-cfd4f9cc194a',
+      source: 'claude-code',
+      title: 'Lat Lng',
+      startedAt: 7000,
+      messageCount: 0,
+      filePath: '/x.jsonl',
+      ...over,
+    }) as SessionSummary
 
   it('carries the summary id, which is the id runtime events are keyed on', () => {
-    expect(sessionSummaryToConversationRow(summary(), '/repo').id)
-      .toBe('a3717923-940a-47bf-a15e-cfd4f9cc194a')
+    expect(sessionSummaryToConversationRow(summary(), '/repo').id).toBe('a3717923-940a-47bf-a15e-cfd4f9cc194a')
   })
 
   it('carries the worktree so the phone starts the agent in the right tree', () => {
@@ -120,8 +113,7 @@ describe('sessionSummaryToConversationRow', () => {
 
   it('sorts by real activity: updated_at comes from startedAt', () => {
     // The phone sorts on updated_at, which only the desktop renderer ever moved.
-    expect(sessionSummaryToConversationRow(summary({ startedAt: 12345 }), '/repo').updated_at)
-      .toBe(12345)
+    expect(sessionSummaryToConversationRow(summary({ startedAt: 12345 }), '/repo').updated_at).toBe(12345)
   })
 
   it('prefers the stamped agentType over the scan source', () => {

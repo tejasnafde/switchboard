@@ -29,10 +29,15 @@ function useLinkableChats(pr: PrSummary['ref']): PrLinkChat[] {
   const key = prKey(pr)
   useEffect(() => {
     let live = true
-    window.api.pullRequests.linkableChats(pr)
-      .then((list) => { if (live) setChats(list) })
+    window.api.pullRequests
+      .linkableChats(pr)
+      .then((list) => {
+        if (live) setChats(list)
+      })
       .catch((err) => log.warn('listing chats for a pull request failed', err))
-    return () => { live = false }
+    return () => {
+      live = false
+    }
     // `pr` is a fresh object per render; the key names it.
   }, [key])
   return chats
@@ -61,7 +66,14 @@ export function LinkedChatsCard({ pr }: { pr: PrSummary }) {
   const linked = useLinkedChats(pr)
   const linkable = useLinkableChats(pr.ref)
   const [error, setError] = useState<string | null>(null)
-  const options = useMemo(() => chatOptions(linkable.filter((c) => !linked.some((l) => l.id === c.id)), []), [linkable, linked])
+  const options = useMemo(
+    () =>
+      chatOptions(
+        linkable.filter((c) => !linked.some((l) => l.id === c.id)),
+        [],
+      ),
+    [linkable, linked],
+  )
 
   const change = async (action: 'link' | 'unlink', chat: string) => {
     setError(null)
@@ -87,8 +99,20 @@ export function LinkedChatsCard({ pr }: { pr: PrSummary }) {
           >
             {chat.title}
           </button>
-          <span className="ml-auto shrink-0 text-[12px] text-[var(--text-secondary)]" title={linkSourceLabel(chat.linkSource)}>{chatAgent(chat)}</span>
-          <Button variant="ghost" size="sm" onClick={() => void change('unlink', chat.id)} aria-label={`Unlink ${chat.title}`}>Unlink</Button>
+          <span
+            className="ml-auto shrink-0 text-[12px] text-[var(--text-secondary)]"
+            title={linkSourceLabel(chat.linkSource)}
+          >
+            {chatAgent(chat)}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void change('unlink', chat.id)}
+            aria-label={`Unlink ${chat.title}`}
+          >
+            Unlink
+          </Button>
         </CardRow>
       ))}
       <div className="px-3 py-[8px]">
@@ -102,7 +126,11 @@ export function LinkedChatsCard({ pr }: { pr: PrSummary }) {
           aria-label="Link to chat"
           className="w-full"
         />
-        {error && <div role="alert" className="mt-[6px] text-[12px] text-[var(--error)]">{error}</div>}
+        {error && (
+          <div role="alert" className="mt-[6px] text-[12px] text-[var(--error)]">
+            {error}
+          </div>
+        )}
       </div>
     </SideCard>
   )
@@ -113,7 +141,12 @@ export function AskChatDialog() {
   const pending = useReviewStore((s) => s.pendingAsk)
   const setPendingAsk = useReviewStore((s) => s.setPendingAsk)
   return (
-    <Dialog open={pending !== null} onOpenChange={(open) => { if (!open) setPendingAsk(null) }}>
+    <Dialog
+      open={pending !== null}
+      onOpenChange={(open) => {
+        if (!open) setPendingAsk(null)
+      }}
+    >
       {pending && <AskChatBody key={prKey(pending.pr)} />}
     </Dialog>
   )
@@ -164,7 +197,11 @@ function AskChatBody() {
         className="w-full"
         contentClassName="z-[1400]"
       />
-      {error && <div role="alert" className="text-[12px] text-[var(--error)]">{error}</div>}
+      {error && (
+        <div role="alert" className="text-[12px] text-[var(--error)]">
+          {error}
+        </div>
+      )}
     </DialogContent>
   )
 }

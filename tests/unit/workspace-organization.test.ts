@@ -23,11 +23,7 @@ const project = (path: string, workspaceId: string | null): Project => ({
 
 describe('reorderWorkspacesById', () => {
   it('moves the active workspace and rewrites contiguous sort orders', () => {
-    const result = reorderWorkspacesById(
-      [workspace('a', 0), workspace('b', 1), workspace('c', 2)],
-      'c',
-      'a',
-    )
+    const result = reorderWorkspacesById([workspace('a', 0), workspace('b', 1), workspace('c', 2)], 'c', 'a')
 
     expect(result.map(({ id, sortOrder }) => [id, sortOrder])).toEqual([
       ['c', 0],
@@ -45,12 +41,7 @@ describe('reorderWorkspacesById', () => {
 
 describe('reorderProjectsWithinWorkspace', () => {
   it('reorders only the selected workspace and preserves every other group', () => {
-    const projects = [
-      project('/a', 'one'),
-      project('/b', 'one'),
-      project('/c', 'two'),
-      project('/d', null),
-    ]
+    const projects = [project('/a', 'one'), project('/b', 'one'), project('/c', 'two'), project('/d', null)]
 
     const result = reorderProjectsWithinWorkspace(projects, 'one', '/b', '/a')
 
@@ -67,12 +58,7 @@ describe('reorderProjectsWithinWorkspace', () => {
 
 describe('moveProjectToWorkspace', () => {
   it('appends the project to the target group without disturbing other groups', () => {
-    const projects = [
-      project('/a', 'one'),
-      project('/b', 'two'),
-      project('/c', 'two'),
-      project('/d', null),
-    ]
+    const projects = [project('/a', 'one'), project('/b', 'two'), project('/c', 'two'), project('/d', null)]
 
     const result = moveProjectToWorkspace(projects, '/a', 'two')
 

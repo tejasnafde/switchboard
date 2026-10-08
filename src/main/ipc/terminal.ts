@@ -4,10 +4,7 @@ import { createMainLogger as createLogger } from '../logger'
 import type { TerminalCreateOptions, TerminalResizePayload, TerminalDataPayload } from '@shared/types'
 import { PtyManager } from '../terminal/pty-manager'
 import { OutputCoalescer } from '../terminal/output-coalescer'
-import {
-  FileManagedTerminalCommandLedger,
-  ManagedTerminalRuntime,
-} from '../terminal/managed-terminal-runtime'
+import { FileManagedTerminalCommandLedger, ManagedTerminalRuntime } from '../terminal/managed-terminal-runtime'
 import { userDataDir } from '../runtime'
 import { join } from 'node:path'
 import { withResolvedLoginEnv } from './terminal-login-env'

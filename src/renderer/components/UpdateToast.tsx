@@ -44,9 +44,7 @@ export function UpdateToast() {
         maxWidth: '360px',
       }}
     >
-      <span style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>
-        Update {status.version} ready
-      </span>
+      <span style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>Update {status.version} ready</span>
       <button
         type="button"
         onClick={restart}

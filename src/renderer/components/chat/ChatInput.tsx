@@ -46,7 +46,16 @@ import {
   type SlashCommandContext,
 } from './slash-commands'
 import { detectAtTrigger, filterAtMatches } from './at-mention'
-import { detectPeerPickTrigger, peerPickReplacement, pinSendToTarget, SEND_TO_EMPTY_MESSAGE, sendToPickAfterSend, sendToPickerItems, sendToPickInsertion, type PeerPickCommand } from './send-to-command'
+import {
+  detectPeerPickTrigger,
+  peerPickReplacement,
+  pinSendToTarget,
+  SEND_TO_EMPTY_MESSAGE,
+  sendToPickAfterSend,
+  sendToPickerItems,
+  sendToPickInsertion,
+  type PeerPickCommand,
+} from './send-to-command'
 import { pinLinkTarget } from './link-command'
 import { fuzzyScore } from '../../services/fuzzy-score'
 import { AtMentionMenu } from './AtMentionMenu'
@@ -65,7 +74,6 @@ import { registerComposer } from '../../services/composer-registry'
 import type { RuntimeMode, UserMessagePillsMeta } from '@shared/provider-events'
 import { Button } from '../ui/button'
 import { confirm } from '../ui/confirm'
-
 
 export type ChatSendResult =
   | { accepted: true }
@@ -186,7 +194,6 @@ function composerActionsInset(showStop: boolean): string {
 const EMPTY_PILLS: import('../../stores/draft-store').DraftPill[] = []
 const EMPTY_IMAGES: import('../../stores/draft-store').ImageAttachment[] = []
 
-
 export function ChatInput({
   sessionId,
   onSend,
@@ -225,37 +232,44 @@ export function ChatInput({
   // instance - instance A's list must not hydrate instance B's picker.
   const modelsCacheKey = `models.dynamic.${agentType}${instanceId ? `.${instanceId}` : ''}`
 
-  const persistDynamicModels = useCallback((models: ModelOption[]) => {
-    setDynamicModels(models)
-    void window.api.settings?.set?.(modelsCacheKey, JSON.stringify(models))
-  }, [modelsCacheKey])
+  const persistDynamicModels = useCallback(
+    (models: ModelOption[]) => {
+      setDynamicModels(models)
+      void window.api.settings?.set?.(modelsCacheKey, JSON.stringify(models))
+    },
+    [modelsCacheKey],
+  )
 
   // Stale-while-revalidate: hydrate the last-known dynamic list from the
   // settings cache instantly; live fetches overwrite it when they land.
   useEffect(() => {
     let cancelled = false
     setDynamicModels(null)
-    ;window.api.settings?.get?.(modelsCacheKey).then((raw: string | null) => {
-      if (cancelled || !raw) return
-      try {
-        const parsed = JSON.parse(raw) as ModelOption[]
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // prev ?? parsed: never clobber a live fetch that beat the cache read.
-          setDynamicModels((prev) => prev ?? parsed)
+    window.api.settings
+      ?.get?.(modelsCacheKey)
+      .then((raw: string | null) => {
+        if (cancelled || !raw) return
+        try {
+          const parsed = JSON.parse(raw) as ModelOption[]
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // prev ?? parsed: never clobber a live fetch that beat the cache read.
+            setDynamicModels((prev) => prev ?? parsed)
+          }
+        } catch (err) {
+          log.warn('corrupt dynamic-model cache, awaiting live fetch', { key: modelsCacheKey, err })
         }
-      } catch (err) {
-        log.warn('corrupt dynamic-model cache, awaiting live fetch', { key: modelsCacheKey, err })
-      }
-    }).catch((err) => {
-      log.debug('no model cache yet for settings key', { key: modelsCacheKey, err })
-    })
+      })
+      .catch((err) => {
+        log.debug('no model cache yet for settings key', { key: modelsCacheKey, err })
+      })
 
     // Then the instance's live catalog without waiting for a session, so a
     // model launched after this release shows up in a new chat. A running
     // session's own list, once it lands, stays authoritative.
     liveListRef.current = false
     if (agentType !== 'terminal') {
-      window.api.provider.listCatalog?.({ threadId: sessionId ?? undefined, agentType, instanceId })
+      window.api.provider
+        .listCatalog?.({ threadId: sessionId ?? undefined, agentType, instanceId })
         .then((catalog) => {
           if (cancelled || liveListRef.current || !catalog?.length) return
           persistDynamicModels(catalog)
@@ -263,7 +277,9 @@ export function ChatInput({
         .catch((err: unknown) => log.warn('catalog probe failed, keeping cached list', err))
     }
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [agentType, sessionId, instanceId, persistDynamicModels])
 
   // Provider catalogs only exist after startup, so fetch when the first turn
@@ -277,31 +293,37 @@ export function ChatInput({
     let cancelled = false
     let attempts = 0
     const tryFetch = () => {
-      ;window.api.provider.listModels?.(sessionId).then((models) => {
-        if (cancelled) return
-        if (models && models.length > 0) {
-          liveListRef.current = true
-          persistDynamicModels(models)
-        } else if (attempts++ < 4) {
-          setTimeout(tryFetch, 500 * (attempts + 1))
-        }
-      }).catch((err) => {
-        log.debug(`listModels failed for ${sessionId} - keeping fallback list`, err)
-      })
+      window.api.provider
+        .listModels?.(sessionId)
+        .then((models) => {
+          if (cancelled) return
+          if (models && models.length > 0) {
+            liveListRef.current = true
+            persistDynamicModels(models)
+          } else if (attempts++ < 4) {
+            setTimeout(tryFetch, 500 * (attempts + 1))
+          }
+        })
+        .catch((err) => {
+          log.debug(`listModels failed for ${sessionId} - keeping fallback list`, err)
+        })
     }
     tryFetch()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [agentType, sessionId, sessionIsActive, persistDynamicModels])
 
   const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : staticModels
   // Checked against the live (or last cached live) catalog only: the static
   // list is not evidence that a model was retired.
-  const pickUnavailable = Boolean(model)
-    && Boolean(dynamicModels?.length)
-    && !reconcileSelectedModel(model, { models: dynamicModels ?? [] }, coversFor(agentType))
+  const pickUnavailable =
+    Boolean(model) &&
+    Boolean(dynamicModels?.length) &&
+    !reconcileSelectedModel(model, { models: dynamicModels ?? [] }, coversFor(agentType))
 
   // Per-session draft - reads from store, updates on every keystroke
-  const draft = useDraftStore((s) => (sessionId ? s.drafts[sessionId] ?? '' : ''))
+  const draft = useDraftStore((s) => (sessionId ? (s.drafts[sessionId] ?? '') : ''))
   const setDraft = useDraftStore((s) => s.setDraft)
   const clearDraft = useDraftStore((s) => s.clearDraft)
   // CRITICAL: select the raw map and derive `pills` via useMemo with a
@@ -311,7 +333,7 @@ export function ChatInput({
   // props → Lexical OnChangePlugin re-registering → infinite update loop.
   const pillsBySession = useDraftStore((s) => s.pillsBySession)
   const pills = useMemo(
-    () => (sessionId ? pillsBySession[sessionId] ?? EMPTY_PILLS : EMPTY_PILLS),
+    () => (sessionId ? (pillsBySession[sessionId] ?? EMPTY_PILLS) : EMPTY_PILLS),
     [pillsBySession, sessionId],
   )
   // Per session, exactly like drafts and pills - the previous component-local
@@ -320,7 +342,7 @@ export function ChatInput({
   // from whichever one they hit Send in.
   const imagesBySession = useDraftStore((s) => s.imagesBySession)
   const images = useMemo(
-    () => (sessionId ? imagesBySession[sessionId] ?? EMPTY_IMAGES : EMPTY_IMAGES),
+    () => (sessionId ? (imagesBySession[sessionId] ?? EMPTY_IMAGES) : EMPTY_IMAGES),
     [imagesBySession, sessionId],
   )
   const addImagesToSession = useDraftStore((s) => s.addImages)
@@ -333,18 +355,19 @@ export function ChatInput({
   // is the plain-text-with-pill-tokens representation that flows through
   // draft persistence, slash detection, and Send.
   const [value, setValue] = useState(draft)
-  const providerWait = useChatWaitStore((s) => sessionId ? s.waits[sessionId] : undefined)
+  const providerWait = useChatWaitStore((s) => (sessionId ? s.waits[sessionId] : undefined))
   const [sendError, setSendError] = useState<string | null>(null)
   const [recoveries, setRecoveries] = useState<Record<string, ComposerRecovery>>({})
   const recoveriesRef = useRef<Record<string, ComposerRecovery>>({})
-  const updateRecoveries = useCallback((
-    updater: (current: Record<string, ComposerRecovery>) => Record<string, ComposerRecovery>,
-  ) => {
-    const next = updater(recoveriesRef.current)
-    recoveriesRef.current = next
-    setRecoveries(next)
-  }, [])
-  const recovery = sessionId ? recoveries[sessionId] ?? null : null
+  const updateRecoveries = useCallback(
+    (updater: (current: Record<string, ComposerRecovery>) => Record<string, ComposerRecovery>) => {
+      const next = updater(recoveriesRef.current)
+      recoveriesRef.current = next
+      setRecoveries(next)
+    },
+    [],
+  )
+  const recovery = sessionId ? (recoveries[sessionId] ?? null) : null
   const [isSubmitting, setIsSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const submissionRef = useRef(0)
@@ -383,8 +406,9 @@ export function ChatInput({
   // streamed token, so subscribing would re-render the composer per token.
   const sendToItems = useMemo(() => {
     if (sendToQuery === null || !sessionId) return []
-    return sendToPickerItems(useAgentStore.getState().sessions, sessionId)
-      .filter((i) => sendToQuery === '' || fuzzyScore(sendToQuery, i.label) !== null)
+    return sendToPickerItems(useAgentStore.getState().sessions, sessionId).filter(
+      (i) => sendToQuery === '' || fuzzyScore(sendToQuery, i.label) !== null,
+    )
   }, [sendToQuery, sessionId])
   const sendToMatches = useMemo(() => sendToItems.map((i) => i.label), [sendToItems])
 
@@ -392,10 +416,7 @@ export function ChatInput({
   // menu. Previously the keydown handler re-ran filterAtMatches (a full-list
   // fuzzyScore pass, 10k+ files) unmemoized on every keydown, on top of the
   // menu's own memoized copy.
-  const atMatches = useMemo(
-    () => (atQuery !== null ? filterAtMatches(atQuery, atFiles) : []),
-    [atQuery, atFiles],
-  )
+  const atMatches = useMemo(() => (atQuery !== null ? filterAtMatches(atQuery, atFiles) : []), [atQuery, atFiles])
   const atRangeRef = useRef<{ start: number; end: number } | null>(null)
   // Per-instance file-list cache, mirroring QuickOpenModal's per-mount ref.
   // Dies with ChatInput, so a closed-and-reopened chat picks up tree changes
@@ -412,24 +433,39 @@ export function ChatInput({
   // mount. Without this, `system/init` (Claude SDK) hadn't fired yet at
   // mount time and skills would stay empty until the user reloaded.
   const fetchSkills = useCallback(() => {
-    if (!sessionId) { setAgentSkills([]); return }
-    if (!shouldFetchProviderSkills(agentType)) { setAgentSkills([]); return }
+    if (!sessionId) {
+      setAgentSkills([])
+      return
+    }
+    if (!shouldFetchProviderSkills(agentType)) {
+      setAgentSkills([])
+      return
+    }
     const request = ++skillsRequestRef.current
     const requestScope = skillsScope
     setAgentSkills([])
-    ;window.api.provider.listSkills?.(sessionId).then((skills: ProviderSkill[]) => {
-      if (request !== skillsRequestRef.current || requestScope !== skillsScopeRef.current) return
-      if (Array.isArray(skills) && skills.length > 0) {
-        setAgentSkills(skills)
-      }
-    }).catch((err) => {
-      log.debug(`listSkills failed for ${sessionId} - keeping current list, built-ins still work`, err)
-    })
+    window.api.provider
+      .listSkills?.(sessionId)
+      .then((skills: ProviderSkill[]) => {
+        if (request !== skillsRequestRef.current || requestScope !== skillsScopeRef.current) return
+        if (Array.isArray(skills) && skills.length > 0) {
+          setAgentSkills(skills)
+        }
+      })
+      .catch((err) => {
+        log.debug(`listSkills failed for ${sessionId} - keeping current list, built-ins still work`, err)
+      })
   }, [sessionId, agentType, instanceId, skillsScope])
 
   useEffect(() => {
-    if (!sessionId) { setAgentSkills([]); return }
-    if (!shouldFetchProviderSkills(agentType)) { setAgentSkills([]); return }
+    if (!sessionId) {
+      setAgentSkills([])
+      return
+    }
+    if (!shouldFetchProviderSkills(agentType)) {
+      setAgentSkills([])
+      return
+    }
     const request = ++skillsRequestRef.current
     const requestScope = skillsScope
     setAgentSkills([])
@@ -438,25 +474,27 @@ export function ChatInput({
     // the menu populates as soon as `system/init` lands.
     let attempts = 0
     const tryFetch = () => {
-      ;window.api.provider.listSkills?.(sessionId).then((skills: ProviderSkill[]) => {
-        if (cancelled || request !== skillsRequestRef.current || requestScope !== skillsScopeRef.current) return
-        if (skills && skills.length > 0) {
-          setAgentSkills(skills)
-        } else if (attempts++ < 4) {
-          setTimeout(tryFetch, 500 * (attempts + 1))
-        }
-      }).catch((err) => {
-        log.debug(`listSkills retry failed for ${sessionId} - keeping [], built-ins still work`, err)
-      })
+      window.api.provider
+        .listSkills?.(sessionId)
+        .then((skills: ProviderSkill[]) => {
+          if (cancelled || request !== skillsRequestRef.current || requestScope !== skillsScopeRef.current) return
+          if (skills && skills.length > 0) {
+            setAgentSkills(skills)
+          } else if (attempts++ < 4) {
+            setTimeout(tryFetch, 500 * (attempts + 1))
+          }
+        })
+        .catch((err) => {
+          log.debug(`listSkills retry failed for ${sessionId} - keeping [], built-ins still work`, err)
+        })
     }
     tryFetch()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [sessionId, agentType, instanceId, skillsScope])
 
-  const mergedCommands = useMemo(
-    () => mergeWithAgentSkills(SLASH_COMMANDS, agentSkills),
-    [agentSkills],
-  )
+  const mergedCommands = useMemo(() => mergeWithAgentSkills(SLASH_COMMANDS, agentSkills), [agentSkills])
 
   // Publish the merged skill-name set so MessageBubble can validate
   // leading `/<cmd>` chips against a real registry instead of rendering
@@ -465,7 +503,10 @@ export function ChatInput({
   const setSkillNames = useSkillStore((s) => s.setSkillNames)
   useEffect(() => {
     if (!sessionId) return
-    setSkillNames(sessionId, mergedCommands.map((c) => c.name))
+    setSkillNames(
+      sessionId,
+      mergedCommands.map((c) => c.name),
+    )
   }, [sessionId, mergedCommands, setSkillNames])
 
   // Resolve the instance id the way the backend does: it records the RESOLVED
@@ -501,7 +542,7 @@ export function ChatInput({
   // serialized editor state.
   useEffect(() => {
     if (draft !== value) setValue(draft)
-  // `value` intentionally excluded - see textarea-era comment.
+    // `value` intentionally excluded - see textarea-era comment.
   }, [sessionId, draft])
 
   useEffect(() => {
@@ -514,35 +555,34 @@ export function ChatInput({
   // Map of pill id → metadata, used by the editor to render chips and by
   // Send to expand `[[pill:id]]` tokens into wire content.
   const pillsById = useMemo(() => {
-    const out: Record<string, typeof pills[number]> = {}
+    const out: Record<string, (typeof pills)[number]> = {}
     for (const p of pills) out[p.id] = p
     return out
   }, [pills])
 
-  const composerFingerprint = useMemo(() => desktopComposerFingerprint({
-    value,
-    runtimeMode,
-    pills: pills.map((pill) => ({
-      id: pill.id,
-      kind: pill.kind,
-      label: pill.label,
-      content: pill.content,
-    })),
-    images: images.map((image) => ({
-      id: image.id,
-      name: image.file.name,
-      size: image.file.size,
-      type: image.file.type,
-      lastModified: image.file.lastModified,
-    })),
-  }), [value, runtimeMode, pills, images])
+  const composerFingerprint = useMemo(
+    () =>
+      desktopComposerFingerprint({
+        value,
+        runtimeMode,
+        pills: pills.map((pill) => ({
+          id: pill.id,
+          kind: pill.kind,
+          label: pill.label,
+          content: pill.content,
+        })),
+        images: images.map((image) => ({
+          id: image.id,
+          name: image.file.name,
+          size: image.file.size,
+          type: image.file.type,
+          lastModified: image.file.lastModified,
+        })),
+      }),
+    [value, runtimeMode, pills, images],
+  )
   const recoveryAction = recovery
-    ? desktopComposerRecoveryAction(
-        recovery.fingerprint,
-        composerFingerprint,
-        recovery.ambiguous,
-        recovery.restored,
-      )
+    ? desktopComposerRecoveryAction(recovery.fingerprint, composerFingerprint, recovery.ambiguous, recovery.restored)
     : 'send'
   const composerErrorColor = recovery?.ambiguous ? 'var(--warning)' : 'var(--error)'
   const followUpDefault = useFollowUpDefault(sessionId)
@@ -558,7 +598,7 @@ export function ChatInput({
   // `sendError` clears on the next edit. A recovery outlives edits, so its
   // error shows only while it still offers Restore: once the failed text is
   // back in the composer, editing it makes the error stale.
-  const bannerError = sendError ?? (canRestore && !recovery?.dismissed ? recovery?.error ?? null : null)
+  const bannerError = sendError ?? (canRestore && !recovery?.dismissed ? (recovery?.error ?? null) : null)
   const dismissBanner = useCallback(() => {
     setSendError(null)
     if (sessionId && recoveriesRef.current[sessionId]) {
@@ -566,95 +606,103 @@ export function ChatInput({
     }
   }, [sessionId, updateRecoveries])
 
-  useEffect(() => onUserTurnAccepted((acceptedSessionId, origin) => {
-    if (pendingOriginsRef.current.has(origin)) acceptedOriginsRef.current.add(origin)
-    const acceptedRecovery = recoveriesRef.current[acceptedSessionId]
-    if (acceptedRecovery?.origin === origin) {
-      desktopTurnAttempts.accept(acceptedSessionId, origin)
-      desktopPreparedTurns.accept(acceptedSessionId, origin)
-      const draftStore = useDraftStore.getState()
-      const storedPills = draftStore.pillsBySession[acceptedSessionId] ?? EMPTY_PILLS
-      const storedImages = draftStore.imagesBySession[acceptedSessionId] ?? EMPTY_IMAGES
-      const storedPayload: DraftPayload = {
-        text: draftStore.drafts[acceptedSessionId] ?? '',
-        pills: storedPills,
-        images: storedImages,
-      }
-      if (acceptedRecovery.collisionPayload) {
-        discardDetachedDraftPayload(acceptedRecovery.payload, [
-          acceptedRecovery.collisionPayload,
-          storedPayload,
-        ])
-        const collisionPayload = acceptedRecovery.collisionPayload
-        const restored = draftStore.restoreDraftPayloadIfEmpty(acceptedSessionId, collisionPayload)
-        updateRecoveries((current) => ({
-          ...current,
-          [acceptedSessionId]: {
-            sessionId: acceptedSessionId,
-            origin: acceptedRecovery.collisionOrigin,
-            fingerprint: acceptedRecovery.collisionFingerprint
-              ?? desktopComposerFingerprint(collisionPayload),
-            payload: collisionPayload,
-            error: 'The earlier delivery was accepted. This newer message was not sent.',
-            ambiguous: false,
-            restored,
-          },
-        }))
-        if (acceptedSessionId === sessionId) {
-          if (restored) setValue(collisionPayload.text)
-          setSendError('The earlier delivery was accepted. This newer message was not sent.')
+  useEffect(
+    () =>
+      onUserTurnAccepted((acceptedSessionId, origin) => {
+        if (pendingOriginsRef.current.has(origin)) acceptedOriginsRef.current.add(origin)
+        const acceptedRecovery = recoveriesRef.current[acceptedSessionId]
+        if (acceptedRecovery?.origin === origin) {
+          desktopTurnAttempts.accept(acceptedSessionId, origin)
+          desktopPreparedTurns.accept(acceptedSessionId, origin)
+          const draftStore = useDraftStore.getState()
+          const storedPills = draftStore.pillsBySession[acceptedSessionId] ?? EMPTY_PILLS
+          const storedImages = draftStore.imagesBySession[acceptedSessionId] ?? EMPTY_IMAGES
+          const storedPayload: DraftPayload = {
+            text: draftStore.drafts[acceptedSessionId] ?? '',
+            pills: storedPills,
+            images: storedImages,
+          }
+          if (acceptedRecovery.collisionPayload) {
+            discardDetachedDraftPayload(acceptedRecovery.payload, [acceptedRecovery.collisionPayload, storedPayload])
+            const collisionPayload = acceptedRecovery.collisionPayload
+            const restored = draftStore.restoreDraftPayloadIfEmpty(acceptedSessionId, collisionPayload)
+            updateRecoveries((current) => ({
+              ...current,
+              [acceptedSessionId]: {
+                sessionId: acceptedSessionId,
+                origin: acceptedRecovery.collisionOrigin,
+                fingerprint: acceptedRecovery.collisionFingerprint ?? desktopComposerFingerprint(collisionPayload),
+                payload: collisionPayload,
+                error: 'The earlier delivery was accepted. This newer message was not sent.',
+                ambiguous: false,
+                restored,
+              },
+            }))
+            if (acceptedSessionId === sessionId) {
+              if (restored) setValue(collisionPayload.text)
+              setSendError('The earlier delivery was accepted. This newer message was not sent.')
+            }
+            return
+          }
+          const restoredPayloadIsUnchanged =
+            acceptedRecovery.restored &&
+            draftPayloadEquals(
+              {
+                text: storedPayload.text,
+                pills: storedPayload.pills,
+                images: storedPayload.images,
+              },
+              acceptedRecovery.payload,
+            )
+          if (restoredPayloadIsUnchanged) {
+            const detached = draftStore.detachDraftPayload(acceptedSessionId)
+            discardDetachedDraftPayload(detached ?? acceptedRecovery.payload)
+            if (acceptedSessionId === sessionId) {
+              setValue('')
+              insertedPillsRef.current.clear()
+            }
+          } else if (!acceptedRecovery.restored) {
+            discardDetachedDraftPayload(acceptedRecovery.payload)
+          }
+          updateRecoveries((current) => {
+            const next = { ...current }
+            delete next[acceptedSessionId]
+            return next
+          })
+          if (acceptedSessionId === sessionId) setSendError(null)
+          return
         }
-        return
-      }
-      const restoredPayloadIsUnchanged = acceptedRecovery.restored && draftPayloadEquals({
-        text: storedPayload.text,
-        pills: storedPayload.pills,
-        images: storedPayload.images,
-      }, acceptedRecovery.payload)
-      if (restoredPayloadIsUnchanged) {
-        const detached = draftStore.detachDraftPayload(acceptedSessionId)
-        discardDetachedDraftPayload(detached ?? acceptedRecovery.payload)
-        if (acceptedSessionId === sessionId) {
-          setValue('')
-          insertedPillsRef.current.clear()
-        }
-      } else if (!acceptedRecovery.restored) {
-        discardDetachedDraftPayload(acceptedRecovery.payload)
-      }
-      updateRecoveries((current) => {
-        const next = { ...current }
-        delete next[acceptedSessionId]
-        return next
-      })
-      if (acceptedSessionId === sessionId) setSendError(null)
-      return
-    }
-    if (!sessionId || acceptedSessionId !== sessionId) return
-    if (!desktopTurnAttempts.matches(sessionId, composerFingerprint, origin)) return
-    desktopTurnAttempts.accept(sessionId, origin)
-    desktopPreparedTurns.accept(sessionId, origin)
-    clearDraft(sessionId)
-    clearPills(sessionId)
-    clearImages(sessionId)
-    setValue('')
-    setSendError(null)
-    insertedPillsRef.current.clear()
-  }), [sessionId, composerFingerprint, clearDraft, clearPills, clearImages, updateRecoveries])
+        if (!sessionId || acceptedSessionId !== sessionId) return
+        if (!desktopTurnAttempts.matches(sessionId, composerFingerprint, origin)) return
+        desktopTurnAttempts.accept(sessionId, origin)
+        desktopPreparedTurns.accept(sessionId, origin)
+        clearDraft(sessionId)
+        clearPills(sessionId)
+        clearImages(sessionId)
+        setValue('')
+        setSendError(null)
+        insertedPillsRef.current.clear()
+      }),
+    [sessionId, composerFingerprint, clearDraft, clearPills, clearImages, updateRecoveries],
+  )
 
-  useEffect(() => () => {
-    for (const pendingRecovery of Object.values(recoveriesRef.current)) {
-      if (!pendingRecovery.restored) {
-        discardDetachedDraftPayload(
-          pendingRecovery.payload,
-          pendingRecovery.collisionPayload ? [pendingRecovery.collisionPayload] : [],
-        )
+  useEffect(
+    () => () => {
+      for (const pendingRecovery of Object.values(recoveriesRef.current)) {
+        if (!pendingRecovery.restored) {
+          discardDetachedDraftPayload(
+            pendingRecovery.payload,
+            pendingRecovery.collisionPayload ? [pendingRecovery.collisionPayload] : [],
+          )
+        }
+        if (pendingRecovery.collisionPayload) {
+          discardDetachedDraftPayload(pendingRecovery.collisionPayload)
+        }
       }
-      if (pendingRecovery.collisionPayload) {
-        discardDetachedDraftPayload(pendingRecovery.collisionPayload)
-      }
-    }
-    recoveriesRef.current = {}
-  }, [])
+      recoveriesRef.current = {}
+    },
+    [],
+  )
 
   // ⌘L pill insertion: contextBridge.captureSelection() calls
   // addPill(sessionId, pill) and dispatches `sb-pill-added`. We listen
@@ -691,8 +739,6 @@ export function ChatInput({
     return () => window.removeEventListener('sb-pill-remove', handler)
   }, [sessionId, removePill])
 
-
-
   const addImages = useCallback(
     (files: File[]) => {
       if (!sessionId) return
@@ -720,183 +766,216 @@ export function ChatInput({
     [sessionId, removeImageFromSession],
   )
 
-  const handleSend = useCallback(async (delivery: TurnDelivery = 'steer') => {
-    const trimmed = value.trim()
-    const hasPills = pills.length > 0
-    if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current) return
-    const submittedSessionId = sessionId
-    const submission = ++submissionRef.current
-    const priorRecovery = recovery?.sessionId === submittedSessionId ? recovery : null
-    const action = priorRecovery
-      ? desktopComposerRecoveryAction(
-          priorRecovery.fingerprint,
-          composerFingerprint,
-          priorRecovery.ambiguous,
-          priorRecovery.restored,
-        )
-      : 'send'
-    if (action === 'send-with-warning' && !(await confirm({
-      title: 'The previous delivery could not be confirmed and may already have arrived.',
-      body: 'Send this edited message as a new turn?',
-      confirmLabel: 'Send',
-    }))) return
-    if (action === 'send-with-discard-warning' && !(await confirm({
-      title: 'A failed message is still available to restore.',
-      body: 'Send this newer draft and discard the failed message?',
-      confirmLabel: 'Send',
-      destructive: true,
-    }))) return
-    // The dialog is modal, but a global shortcut can still switch chats under it.
-    if (sessionIdRef.current !== submittedSessionId) return
-    const origin = (action === 'retry' || action === 'retry-safe') && priorRecovery?.origin
-      ? priorRecovery.origin
-      : submittedSessionId
-        ? desktopTurnAttempts.originFor(submittedSessionId, composerFingerprint)
-        : undefined
-    // Pills are inline `[[pill:id]]` tokens in `value`. Expand each into
-    // its full content (path marker + fenced block, terminal block, or
-    // chat-message quote) before handing off. Tokens whose pills were
-    // already removed get dropped silently.
-    const pick = sendToPickRef.current?.sessionId === submittedSessionId ? sendToPickRef.current : null
-    const serialized = serializeBodyWithPills(trimmed, pillsById)
-    const body = pick?.command === 'link' ? pinLinkTarget(serialized, pick) : pinSendToTarget(serialized, pick)
-    const pillsMeta: UserMessagePillsMeta = {}
-    for (const p of pills) {
-      if (trimmed.includes(`[[pill:${p.id}]]`)) {
-        pillsMeta[p.id] = { label: p.label, kind: p.kind }
-      }
-    }
-    const submittedPayload: DraftPayload = submittedSessionId
-      ? useDraftStore.getState().detachDraftPayload(submittedSessionId) ?? {
-          text: value,
-          pills: [...pills],
-          images: [...images],
-        }
-      : { text: value, pills: [...pills], images: [...images] }
-    setValue('')
-    insertedPillsRef.current.clear()
-    submittingRef.current = true
-    setIsSubmitting(true)
-    setSendError(null)
-    if (origin) pendingOriginsRef.current.add(origin)
-    let result: ChatSendResult
-    try {
-      result = await onSend(
-        body,
-        // ChatPanel holds a queued message until the running turn ends.
-        waitsForIdle(agentType, isRunning, delivery) ? 'queue' : undefined,
-        images.length > 0 ? images : undefined,
-        {
-          origin,
-          ...(action === 'send-with-warning' && priorRecovery?.origin
-            ? { confirmedRecoveryOrigin: priorRecovery.origin }
-            : {}),
-          ...(hasPills ? { displayBody: trimmed, pillsMeta } : {}),
-        },
+  const handleSend = useCallback(
+    async (delivery: TurnDelivery = 'steer') => {
+      const trimmed = value.trim()
+      const hasPills = pills.length > 0
+      if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current) return
+      const submittedSessionId = sessionId
+      const submission = ++submissionRef.current
+      const priorRecovery = recovery?.sessionId === submittedSessionId ? recovery : null
+      const action = priorRecovery
+        ? desktopComposerRecoveryAction(
+            priorRecovery.fingerprint,
+            composerFingerprint,
+            priorRecovery.ambiguous,
+            priorRecovery.restored,
+          )
+        : 'send'
+      if (
+        action === 'send-with-warning' &&
+        !(await confirm({
+          title: 'The previous delivery could not be confirmed and may already have arrived.',
+          body: 'Send this edited message as a new turn?',
+          confirmLabel: 'Send',
+        }))
       )
-    } catch (error) {
-      result = { accepted: false, error: error instanceof Error ? error.message : String(error) }
-    } finally {
-      if (submission === submissionRef.current) {
-        submittingRef.current = false
-        setIsSubmitting(false)
-      }
-    }
-    if (!result.accepted && origin && acceptedOriginsRef.current.delete(origin)) {
-      result = { accepted: true }
-    }
-    sendToPickRef.current = sendToPickAfterSend(sendToPickRef.current, pick, result.accepted)
-    if (origin) {
-      pendingOriginsRef.current.delete(origin)
-      acceptedOriginsRef.current.delete(origin)
-    }
-    if (!result.accepted) {
-      const restored = submittedSessionId
-        ? useDraftStore.getState().restoreDraftPayloadIfEmpty(submittedSessionId, submittedPayload)
-        : false
-      if (submittedSessionId) {
-        const preservePriorRecovery = Boolean(
-          priorRecovery?.origin
-          && result.recoveryOrigin === priorRecovery.origin
-          && recoveriesRef.current[submittedSessionId]?.origin === priorRecovery.origin,
-        )
-        if (preservePriorRecovery && priorRecovery) {
-          if (!restored && priorRecovery.collisionPayload) {
-            discardDetachedDraftPayload(priorRecovery.collisionPayload, [submittedPayload])
-          }
-          updateRecoveries((current) => ({
-            ...current,
-            [submittedSessionId]: {
-              ...priorRecovery,
-              error: result.error,
-              dismissed: false,
-              ...(!restored ? {
-                collisionPayload: submittedPayload,
-                collisionFingerprint: composerFingerprint,
-                collisionOrigin: origin,
-              } : {}),
-            },
-          }))
-        } else {
-          if (priorRecovery && !priorRecovery.restored
-            && priorRecovery.fingerprint !== composerFingerprint) {
-            discardDetachedDraftPayload(priorRecovery.payload, [submittedPayload])
-          }
-          if (priorRecovery?.collisionPayload) {
-            discardDetachedDraftPayload(priorRecovery.collisionPayload, [submittedPayload])
-          }
-          updateRecoveries((current) => ({
-            ...current,
-            [submittedSessionId]: {
-              sessionId: submittedSessionId,
-              origin,
-              fingerprint: composerFingerprint,
-              payload: submittedPayload,
-              error: result.error,
-              ambiguous: result.delivery === 'ambiguous',
-              restored,
-            },
-          }))
+        return
+      if (
+        action === 'send-with-discard-warning' &&
+        !(await confirm({
+          title: 'A failed message is still available to restore.',
+          body: 'Send this newer draft and discard the failed message?',
+          confirmLabel: 'Send',
+          destructive: true,
+        }))
+      )
+        return
+      // The dialog is modal, but a global shortcut can still switch chats under it.
+      if (sessionIdRef.current !== submittedSessionId) return
+      const origin =
+        (action === 'retry' || action === 'retry-safe') && priorRecovery?.origin
+          ? priorRecovery.origin
+          : submittedSessionId
+            ? desktopTurnAttempts.originFor(submittedSessionId, composerFingerprint)
+            : undefined
+      // Pills are inline `[[pill:id]]` tokens in `value`. Expand each into
+      // its full content (path marker + fenced block, terminal block, or
+      // chat-message quote) before handing off. Tokens whose pills were
+      // already removed get dropped silently.
+      const pick = sendToPickRef.current?.sessionId === submittedSessionId ? sendToPickRef.current : null
+      const serialized = serializeBodyWithPills(trimmed, pillsById)
+      const body = pick?.command === 'link' ? pinLinkTarget(serialized, pick) : pinSendToTarget(serialized, pick)
+      const pillsMeta: UserMessagePillsMeta = {}
+      for (const p of pills) {
+        if (trimmed.includes(`[[pill:${p.id}]]`)) {
+          pillsMeta[p.id] = { label: p.label, kind: p.kind }
         }
       }
-      if (sessionIdRef.current === submittedSessionId && submission === submissionRef.current) {
-        if (restored) setValue(submittedPayload.text)
-        setSendError(result.error)
+      const submittedPayload: DraftPayload = submittedSessionId
+        ? (useDraftStore.getState().detachDraftPayload(submittedSessionId) ?? {
+            text: value,
+            pills: [...pills],
+            images: [...images],
+          })
+        : { text: value, pills: [...pills], images: [...images] }
+      setValue('')
+      insertedPillsRef.current.clear()
+      submittingRef.current = true
+      setIsSubmitting(true)
+      setSendError(null)
+      if (origin) pendingOriginsRef.current.add(origin)
+      let result: ChatSendResult
+      try {
+        result = await onSend(
+          body,
+          // ChatPanel holds a queued message until the running turn ends.
+          waitsForIdle(agentType, isRunning, delivery) ? 'queue' : undefined,
+          images.length > 0 ? images : undefined,
+          {
+            origin,
+            ...(action === 'send-with-warning' && priorRecovery?.origin
+              ? { confirmedRecoveryOrigin: priorRecovery.origin }
+              : {}),
+            ...(hasPills ? { displayBody: trimmed, pillsMeta } : {}),
+          },
+        )
+      } catch (error) {
+        result = { accepted: false, error: error instanceof Error ? error.message : String(error) }
+      } finally {
+        if (submission === submissionRef.current) {
+          submittingRef.current = false
+          setIsSubmitting(false)
+        }
       }
-      return
-    }
-    if (submittedSessionId) {
-      if (origin) desktopTurnAttempts.accept(submittedSessionId, origin)
-      if (priorRecovery && !priorRecovery.restored
-        && priorRecovery.fingerprint !== composerFingerprint) {
-        discardDetachedDraftPayload(priorRecovery.payload, [submittedPayload])
+      if (!result.accepted && origin && acceptedOriginsRef.current.delete(origin)) {
+        result = { accepted: true }
       }
-      if (priorRecovery?.collisionPayload) {
-        discardDetachedDraftPayload(priorRecovery.collisionPayload, [submittedPayload])
+      sendToPickRef.current = sendToPickAfterSend(sendToPickRef.current, pick, result.accepted)
+      if (origin) {
+        pendingOriginsRef.current.delete(origin)
+        acceptedOriginsRef.current.delete(origin)
       }
-      discardDetachedDraftPayload(submittedPayload)
-    }
-    if (submittedSessionId) {
-      updateRecoveries((current) => {
-        if (!current[submittedSessionId]) return current
-        const next = { ...current }
-        delete next[submittedSessionId]
-        return next
-      })
-    }
-    if (sessionIdRef.current !== submittedSessionId || submission !== submissionRef.current) return
-    insertedPillsRef.current.clear()
-  }, [value, pills, pillsById, images, disabled, onSend, sessionId, composerFingerprint, recovery, updateRecoveries, agentType, isRunning])
+      if (!result.accepted) {
+        const restored = submittedSessionId
+          ? useDraftStore.getState().restoreDraftPayloadIfEmpty(submittedSessionId, submittedPayload)
+          : false
+        if (submittedSessionId) {
+          const preservePriorRecovery = Boolean(
+            priorRecovery?.origin &&
+            result.recoveryOrigin === priorRecovery.origin &&
+            recoveriesRef.current[submittedSessionId]?.origin === priorRecovery.origin,
+          )
+          if (preservePriorRecovery && priorRecovery) {
+            if (!restored && priorRecovery.collisionPayload) {
+              discardDetachedDraftPayload(priorRecovery.collisionPayload, [submittedPayload])
+            }
+            updateRecoveries((current) => ({
+              ...current,
+              [submittedSessionId]: {
+                ...priorRecovery,
+                error: result.error,
+                dismissed: false,
+                ...(!restored
+                  ? {
+                      collisionPayload: submittedPayload,
+                      collisionFingerprint: composerFingerprint,
+                      collisionOrigin: origin,
+                    }
+                  : {}),
+              },
+            }))
+          } else {
+            if (priorRecovery && !priorRecovery.restored && priorRecovery.fingerprint !== composerFingerprint) {
+              discardDetachedDraftPayload(priorRecovery.payload, [submittedPayload])
+            }
+            if (priorRecovery?.collisionPayload) {
+              discardDetachedDraftPayload(priorRecovery.collisionPayload, [submittedPayload])
+            }
+            updateRecoveries((current) => ({
+              ...current,
+              [submittedSessionId]: {
+                sessionId: submittedSessionId,
+                origin,
+                fingerprint: composerFingerprint,
+                payload: submittedPayload,
+                error: result.error,
+                ambiguous: result.delivery === 'ambiguous',
+                restored,
+              },
+            }))
+          }
+        }
+        if (sessionIdRef.current === submittedSessionId && submission === submissionRef.current) {
+          if (restored) setValue(submittedPayload.text)
+          setSendError(result.error)
+        }
+        return
+      }
+      if (submittedSessionId) {
+        if (origin) desktopTurnAttempts.accept(submittedSessionId, origin)
+        if (priorRecovery && !priorRecovery.restored && priorRecovery.fingerprint !== composerFingerprint) {
+          discardDetachedDraftPayload(priorRecovery.payload, [submittedPayload])
+        }
+        if (priorRecovery?.collisionPayload) {
+          discardDetachedDraftPayload(priorRecovery.collisionPayload, [submittedPayload])
+        }
+        discardDetachedDraftPayload(submittedPayload)
+      }
+      if (submittedSessionId) {
+        updateRecoveries((current) => {
+          if (!current[submittedSessionId]) return current
+          const next = { ...current }
+          delete next[submittedSessionId]
+          return next
+        })
+      }
+      if (sessionIdRef.current !== submittedSessionId || submission !== submissionRef.current) return
+      insertedPillsRef.current.clear()
+    },
+    [
+      value,
+      pills,
+      pillsById,
+      images,
+      disabled,
+      onSend,
+      sessionId,
+      composerFingerprint,
+      recovery,
+      updateRecoveries,
+      agentType,
+      isRunning,
+    ],
+  )
 
   const restoreRecovery = useCallback(async () => {
     if (!sessionId || !recovery || (recovery.restored && !recovery.collisionPayload)) return
     const draftStore = useDraftStore.getState()
     const hasNewerDraft = Boolean(
-      draftStore.drafts[sessionId]
-      || draftStore.pillsBySession[sessionId]?.length
-      || draftStore.imagesBySession[sessionId]?.length,
+      draftStore.drafts[sessionId] ||
+      draftStore.pillsBySession[sessionId]?.length ||
+      draftStore.imagesBySession[sessionId]?.length,
     )
-    if (hasNewerDraft && !(await confirm({ title: 'Replace the current draft with the failed message?', confirmLabel: 'Replace', destructive: true }))) return
+    if (
+      hasNewerDraft &&
+      !(await confirm({
+        title: 'Replace the current draft with the failed message?',
+        confirmLabel: 'Replace',
+        destructive: true,
+      }))
+    )
+      return
     // A global shortcut can switch chats while the dialog is open.
     if (sessionIdRef.current !== sessionId) return
     const payload = recovery.collisionPayload ?? recovery.payload
@@ -980,7 +1059,7 @@ export function ChatInput({
         if (view.clearSuggestion && !view.applyRoot) {
           useAgentStore.getState().setDriftSuggestion(sessionId, null)
         }
-        const notice = view.applyRoot ? successNotice ?? view.notice : view.notice
+        const notice = view.applyRoot ? (successNotice ?? view.notice) : view.notice
         if (!notice) return
         useAgentStore.getState().appendMessage(sessionId, {
           // A caller-supplied id is deterministic, so `appendMessage`'s dedupe
@@ -1082,7 +1161,9 @@ export function ChatInput({
     if (driftView?.kind !== 'off') return
     useAgentStore.getState().setFollowNoticeDismissed(sessionId, true)
     window.api.app.dismissConversationFollowNotice(sessionId).then(
-      ({ ok }) => { if (!ok) log.warn('no conversation row to save the dismissed Follow notice on', sessionId) },
+      ({ ok }) => {
+        if (!ok) log.warn('no conversation row to save the dismissed Follow notice on', sessionId)
+      },
       (err: unknown) => log.warn('could not save the dismissed Follow notice', err),
     )
   }
@@ -1108,44 +1189,53 @@ export function ChatInput({
   }, [repoRoot])
 
   /** Commit a picked chat title as the `/send-to` (colon included) or `/link` target. */
-  const runSendToPick = useCallback((label: string) => {
-    const range = sendToRangeRef.current
-    const picked = sendToItems.find((i) => i.label === label)
-    setSendToQuery(null)
-    if (!range || !picked) return
-    // Two chats can share a title, so a title that would not resolve back to
-    // this exact chat goes in as `#<id>` instead.
-    const target = sendToPickInsertion(picked.id, useAgentStore.getState().sessions, sessionId ?? '')
-    const command = sendToCommandRef.current
-    if (sessionId) sendToPickRef.current = { sessionId, id: picked.id, title: target, command }
-    richRef.current?.replaceRange(range.start, range.end, peerPickReplacement(command, target))
-    requestAnimationFrame(() => richRef.current?.focus())
-  }, [sendToItems, sessionId])
+  const runSendToPick = useCallback(
+    (label: string) => {
+      const range = sendToRangeRef.current
+      const picked = sendToItems.find((i) => i.label === label)
+      setSendToQuery(null)
+      if (!range || !picked) return
+      // Two chats can share a title, so a title that would not resolve back to
+      // this exact chat goes in as `#<id>` instead.
+      const target = sendToPickInsertion(picked.id, useAgentStore.getState().sessions, sessionId ?? '')
+      const command = sendToCommandRef.current
+      if (sessionId) sendToPickRef.current = { sessionId, id: picked.id, title: target, command }
+      richRef.current?.replaceRange(range.start, range.end, peerPickReplacement(command, target))
+      requestAnimationFrame(() => richRef.current?.focus())
+    },
+    [sendToItems, sessionId],
+  )
 
-  const runAtMention = useCallback((path: string) => {
-    const range = atRangeRef.current
-    if (!range || !sessionId) { dismissAt(); return }
+  const runAtMention = useCallback(
+    (path: string) => {
+      const range = atRangeRef.current
+      if (!range || !sessionId) {
+        dismissAt()
+        return
+      }
 
-    // Strip the `@query` text - the chip carries the path now, and the
-    // serialized message body will expand `[[pill:id]]` into `@<path>` on
-    // Send (see DraftPill.content below).
-    richRef.current?.replaceRange(range.start, range.end, '')
-    dismissAt()
+      // Strip the `@query` text - the chip carries the path now, and the
+      // serialized message body will expand `[[pill:id]]` into `@<path>` on
+      // Send (see DraftPill.content below).
+      richRef.current?.replaceRange(range.start, range.end, '')
+      dismissAt()
 
-    const fileName = path.split('/').pop() ?? path
-    const pillId = `at_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    useDraftStore.getState().addPill(sessionId, {
-      id: pillId,
-      kind: 'file',
-      label: fileName,
-      // Send-time content is just the `@<path>` marker - Claude SDK
-      // resolves it natively; Codex / OpenCode treat it as a relative
-      // path they can Read on demand.
-      content: `@${path}`,
-    })
-    window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId, pillId } }))
-    requestAnimationFrame(() => richRef.current?.focus())
-  }, [sessionId, dismissAt])
+      const fileName = path.split('/').pop() ?? path
+      const pillId = `at_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      useDraftStore.getState().addPill(sessionId, {
+        id: pillId,
+        kind: 'file',
+        label: fileName,
+        // Send-time content is just the `@<path>` marker - Claude SDK
+        // resolves it natively; Codex / OpenCode treat it as a relative
+        // path they can Read on demand.
+        content: `@${path}`,
+      })
+      window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId, pillId } }))
+      requestAnimationFrame(() => richRef.current?.focus())
+    },
+    [sessionId, dismissAt],
+  )
 
   // Editor → host change pipe. RichChatTextarea calls this with the
   // serialized plain-text-with-pill-tokens body whenever Lexical's editor
@@ -1156,102 +1246,132 @@ export function ChatInput({
   // Stable identity matters: this callback is a prop on RichChatTextarea,
   // and unstable props would make the editor's plugins re-register every
   // render - that's exactly what caused the original infinite-update loop.
-  const handleEditorChange = useCallback((next: string, caretNow: number | null = null) => {
-    setSendError(null)
-    setValue(next)
-    if (sessionId) setDraft(sessionId, next)
-    // Prefer the caret reported WITH this change: the `caret` state is one
-    // Lexical update behind here, so after a click into an empty composer it
-    // still reads 0 and a lone `/` never opened the menu. Fall back to
-    // end-of-string when the editor could not resolve a selection.
-    const cur = caretNow ?? caret ?? next.length
-    const trigger = detectSlashTrigger(next, cur)
-    if (trigger) {
-      setSlashQuery(trigger.query)
-      setSlashActiveIdx(0)
-      slashRangeRef.current = { start: trigger.rangeStart, end: trigger.rangeEnd }
-      // Refresh agent skills the moment the user opens `/` - handles the
-      // case where `system/init` arrives after mount.
-      if (agentSkills.length === 0) fetchSkills()
-    } else if (slashQuery !== null) {
-      dismissSlash()
-    }
-
-    // @-mention detection - independent of slash; the two triggers can't
-    // both fire on the same token.
-    const atTrigger = detectAtTrigger(next, cur)
-    if (atTrigger) {
-      // Only reset when query text changes - arrow key caret moves leave
-      // query identical and must not overwrite handleEditorKeyDown's bump.
-      if (atTrigger.query !== atQuery) {
-        setAtQuery(atTrigger.query)
-        setAtActiveIdx(0)
+  const handleEditorChange = useCallback(
+    (next: string, caretNow: number | null = null) => {
+      setSendError(null)
+      setValue(next)
+      if (sessionId) setDraft(sessionId, next)
+      // Prefer the caret reported WITH this change: the `caret` state is one
+      // Lexical update behind here, so after a click into an empty composer it
+      // still reads 0 and a lone `/` never opened the menu. Fall back to
+      // end-of-string when the editor could not resolve a selection.
+      const cur = caretNow ?? caret ?? next.length
+      const trigger = detectSlashTrigger(next, cur)
+      if (trigger) {
+        setSlashQuery(trigger.query)
+        setSlashActiveIdx(0)
+        slashRangeRef.current = { start: trigger.rangeStart, end: trigger.rangeEnd }
+        // Refresh agent skills the moment the user opens `/` - handles the
+        // case where `system/init` arrives after mount.
+        if (agentSkills.length === 0) fetchSkills()
+      } else if (slashQuery !== null) {
+        dismissSlash()
       }
-      atRangeRef.current = { start: atTrigger.rangeStart, end: atTrigger.rangeEnd }
-      // Kick off file listing on first open. ensureAtFiles is a no-op if
-      // the cache is already warm.
-      void ensureAtFiles()
-    } else if (atQuery !== null) {
-      dismissAt()
-    }
 
-    const linkPick = sendToPickRef.current
-    const committedLink = linkPick?.command === 'link' && linkPick.sessionId === sessionId ? linkPick.title : null
-    const sendToTrigger = detectPeerPickTrigger(next, cur ?? next.length, committedLink)
-    if (sendToTrigger) {
-      sendToCommandRef.current = sendToTrigger.command
-      if (sendToTrigger.query !== sendToQuery) {
-        setSendToQuery(sendToTrigger.query)
-        setSendToActiveIdx(0)
+      // @-mention detection - independent of slash; the two triggers can't
+      // both fire on the same token.
+      const atTrigger = detectAtTrigger(next, cur)
+      if (atTrigger) {
+        // Only reset when query text changes - arrow key caret moves leave
+        // query identical and must not overwrite handleEditorKeyDown's bump.
+        if (atTrigger.query !== atQuery) {
+          setAtQuery(atTrigger.query)
+          setAtActiveIdx(0)
+        }
+        atRangeRef.current = { start: atTrigger.rangeStart, end: atTrigger.rangeEnd }
+        // Kick off file listing on first open. ensureAtFiles is a no-op if
+        // the cache is already warm.
+        void ensureAtFiles()
+      } else if (atQuery !== null) {
+        dismissAt()
       }
-      sendToRangeRef.current = { start: sendToTrigger.start, end: sendToTrigger.end }
-    } else if (sendToQuery !== null) {
-      setSendToQuery(null)
-    }
-  }, [sessionId, setDraft, caret, slashQuery, dismissSlash, agentSkills.length, fetchSkills, atQuery, dismissAt, ensureAtFiles, sendToQuery])
+
+      const linkPick = sendToPickRef.current
+      const committedLink = linkPick?.command === 'link' && linkPick.sessionId === sessionId ? linkPick.title : null
+      const sendToTrigger = detectPeerPickTrigger(next, cur ?? next.length, committedLink)
+      if (sendToTrigger) {
+        sendToCommandRef.current = sendToTrigger.command
+        if (sendToTrigger.query !== sendToQuery) {
+          setSendToQuery(sendToTrigger.query)
+          setSendToActiveIdx(0)
+        }
+        sendToRangeRef.current = { start: sendToTrigger.start, end: sendToTrigger.end }
+      } else if (sendToQuery !== null) {
+        setSendToQuery(null)
+      }
+    },
+    [
+      sessionId,
+      setDraft,
+      caret,
+      slashQuery,
+      dismissSlash,
+      agentSkills.length,
+      fetchSkills,
+      atQuery,
+      dismissAt,
+      ensureAtFiles,
+      sendToQuery,
+    ],
+  )
 
   const handleEditorCaret = useCallback((c: number | null) => {
     setCaret(c)
   }, [])
 
-  const runSlashCommand = useCallback((cmd: SlashCommand) => {
-    const range = slashRangeRef.current
-    if (!range) { dismissSlash(); return }
+  const runSlashCommand = useCallback(
+    (cmd: SlashCommand) => {
+      const range = slashRangeRef.current
+      if (!range) {
+        dismissSlash()
+        return
+      }
 
-    const source = cmd.source ?? 'switchboard'
+      const source = cmd.source ?? 'switchboard'
 
-    // Agent-source commands (Claude/Codex skills): don't fire a local
-    // action - instead, replace the partial `/que` the user typed with
-    // the canonical `/<name> ` and let them fill in any args before
-    // hitting Enter. The agent SDK/CLI parses the leading slash from
-    // the sent prompt and runs the corresponding handler.
-    if (source !== 'switchboard' || cmd.takesArgs) {
-      const inserted = commandInsertion(cmd)
-      richRef.current?.replaceRange(range.start, range.end, inserted)
-      // replaceRange writes through to onChange → setValue + setDraft.
+      // Agent-source commands (Claude/Codex skills): don't fire a local
+      // action - instead, replace the partial `/que` the user typed with
+      // the canonical `/<name> ` and let them fill in any args before
+      // hitting Enter. The agent SDK/CLI parses the leading slash from
+      // the sent prompt and runs the corresponding handler.
+      if (source !== 'switchboard' || cmd.takesArgs) {
+        const inserted = commandInsertion(cmd)
+        richRef.current?.replaceRange(range.start, range.end, inserted)
+        // replaceRange writes through to onChange → setValue + setDraft.
+        dismissSlash()
+        requestAnimationFrame(() => richRef.current?.focus())
+        return
+      }
+
+      // Switchboard built-in: strip the /command text and run its action.
+      richRef.current?.replaceRange(range.start, range.end, '')
       dismissSlash()
+
+      const ctx: SlashCommandContext = {
+        sessionId: sessionId ?? null,
+        setRuntimeMode: (m) => onRuntimeModeChange?.(m),
+        clearMessages: () => onClearMessages?.(),
+        archiveCurrent: () => onArchive?.(),
+        showHelp: () => onShowSlashHelp?.(),
+        pickImage: () => filePickerRef.current?.click(),
+        interrupt: () => onInterrupt?.(),
+        mergeBack: () => onMergeBack?.(),
+      }
+      cmd.run?.(ctx)
+
       requestAnimationFrame(() => richRef.current?.focus())
-      return
-    }
-
-    // Switchboard built-in: strip the /command text and run its action.
-    richRef.current?.replaceRange(range.start, range.end, '')
-    dismissSlash()
-
-    const ctx: SlashCommandContext = {
-      sessionId: sessionId ?? null,
-      setRuntimeMode: (m) => onRuntimeModeChange?.(m),
-      clearMessages: () => onClearMessages?.(),
-      archiveCurrent: () => onArchive?.(),
-      showHelp: () => onShowSlashHelp?.(),
-      pickImage: () => filePickerRef.current?.click(),
-      interrupt: () => onInterrupt?.(),
-      mergeBack: () => onMergeBack?.(),
-    }
-    cmd.run?.(ctx)
-
-    requestAnimationFrame(() => richRef.current?.focus())
-  }, [sessionId, dismissSlash, onRuntimeModeChange, onClearMessages, onArchive, onShowSlashHelp, onInterrupt, onMergeBack])
+    },
+    [
+      sessionId,
+      dismissSlash,
+      onRuntimeModeChange,
+      onClearMessages,
+      onArchive,
+      onShowSlashHelp,
+      onInterrupt,
+      onMergeBack,
+    ],
+  )
 
   // Slash menu navigation. Bound at the wrapper-div level so it fires
   // BEFORE Lexical's own Enter-handler (we preventDefault to swallow).
@@ -1260,7 +1380,8 @@ export function ChatInput({
   const handleEditorKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       // An open @-mention picker claims or passes every key before the slash menu is consulted.
-      const slashMatches = slashQuery === null || atQuery !== null ? null : filterSlashCommands(slashQuery, mergedCommands)
+      const slashMatches =
+        slashQuery === null || atQuery !== null ? null : filterSlashCommands(slashQuery, mergedCommands)
       const action = resolvePickerKeydown(e, {
         sendToMatches: sendToQuery === null ? null : sendToMatches.length,
         atMatches: atQuery === null ? null : atMatches.length,
@@ -1295,7 +1416,22 @@ export function ChatInput({
         else if (matches.length > 0) runSlashCommand(matches[slashActiveIdx] ?? matches[0])
       }
     },
-    [slashQuery, slashActiveIdx, runSlashCommand, dismissSlash, mergedCommands, atQuery, atMatches, atActiveIdx, dismissAt, runAtMention, sendToQuery, sendToMatches, sendToActiveIdx, runSendToPick],
+    [
+      slashQuery,
+      slashActiveIdx,
+      runSlashCommand,
+      dismissSlash,
+      mergedCommands,
+      atQuery,
+      atMatches,
+      atActiveIdx,
+      dismissAt,
+      runAtMention,
+      sendToQuery,
+      sendToMatches,
+      sendToActiveIdx,
+      runSendToPick,
+    ],
   )
 
   const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -1320,14 +1456,17 @@ export function ChatInput({
     }
   }, [])
 
-  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    dragDepthRef.current = 0
-    setIsDragOver(false)
-    const files = Array.from(e.dataTransfer.files)
-    addImages(files)
-    richRef.current?.focus()
-  }, [addImages])
+  const handleDrop = useCallback(
+    (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      dragDepthRef.current = 0
+      setIsDragOver(false)
+      const files = Array.from(e.dataTransfer.files)
+      addImages(files)
+      richRef.current?.focus()
+    },
+    [addImages],
+  )
 
   return (
     <div
@@ -1346,21 +1485,26 @@ export function ChatInput({
     >
       {/* Image previews */}
       {images.length > 0 && (
-        <div style={{
-          display: 'flex',
-          gap: '6px',
-          marginBottom: '6px',
-          flexWrap: 'wrap',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '6px',
+            marginBottom: '6px',
+            flexWrap: 'wrap',
+          }}
+        >
           {images.map((img) => (
-            <div key={img.id} style={{
-              position: 'relative',
-              width: '56px',
-              height: '56px',
-              borderRadius: '6px',
-              overflow: 'hidden',
-              border: '1px solid var(--border)',
-            }}>
+            <div
+              key={img.id}
+              style={{
+                position: 'relative',
+                width: '56px',
+                height: '56px',
+                borderRadius: '6px',
+                overflow: 'hidden',
+                border: '1px solid var(--border)',
+              }}
+            >
               <img
                 src={img.previewUrl}
                 alt="attachment"
@@ -1411,21 +1555,12 @@ export function ChatInput({
             lineHeight: 1.4,
           }}
         >
-          <button
-            type="button"
-            className="composer-banner-dismiss"
-            aria-label="Dismiss"
-            onClick={dismissBanner}
-          >
+          <button type="button" className="composer-banner-dismiss" aria-label="Dismiss" onClick={dismissBanner}>
             x
           </button>
           <div style={{ paddingRight: '18px' }}>{bannerError}</div>
           {canRestore && (
-            <button
-              type="button"
-              className="composer-recovery-action"
-              onClick={restoreRecovery}
-            >
+            <button type="button" className="composer-recovery-action" onClick={restoreRecovery}>
               Restore
             </button>
           )}
@@ -1446,21 +1581,23 @@ export function ChatInput({
 
       {/* Drop overlay */}
       {isDragOver && (
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'rgba(var(--accent-rgb, 59, 130, 246), 0.08)',
-          border: '2px dashed var(--accent)',
-          borderRadius: 'var(--radius)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--accent)',
-          fontSize: '13px',
-          fontWeight: 500,
-          zIndex: 10,
-          pointerEvents: 'none',
-        }}>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(var(--accent-rgb, 59, 130, 246), 0.08)',
+            border: '2px dashed var(--accent)',
+            borderRadius: 'var(--radius)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--accent)',
+            fontSize: '13px',
+            fontWeight: 500,
+            zIndex: 10,
+            pointerEvents: 'none',
+          }}
+        >
           Drop image to attach
         </div>
       )}
@@ -1498,15 +1635,25 @@ export function ChatInput({
             borderRadius: 'var(--radius)',
           }}
         >
-          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>!</span>
+          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>
+            !
+          </span>
           <span style={{ flex: 1, minWidth: 0 }}>
-            {model} is not available on this account any more. Your next message uses the default model, or pick another one.
+            {model} is not available on this account any more. Your next message uses the default model, or pick another
+            one.
           </span>
           {onModelChange && (
             <button
               type="button"
               onClick={() => onModelChange('')}
-              style={{ border: 0, background: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}
+              style={{
+                border: 0,
+                background: 'none',
+                color: 'var(--accent)',
+                cursor: 'pointer',
+                fontSize: '11px',
+                whiteSpace: 'nowrap',
+              }}
             >
               Use default
             </button>
@@ -1532,7 +1679,9 @@ export function ChatInput({
             borderRadius: 'var(--radius)',
           }}
         >
-          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>!</span>
+          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>
+            !
+          </span>
           <span style={{ flex: 1, minWidth: 0 }}>{describeSpendBlock(spendBlock)}</span>
         </div>
       )}
@@ -1541,10 +1690,7 @@ export function ChatInput({
           pill chips inline at the caret position (Cursor-style). The host
           sees a plain string body with `[[pill:id]]` tokens; pillsById
           maps tokens to chip metadata + serialized content. */}
-      <div
-        style={{ position: 'relative', display: 'flex' }}
-        onKeyDownCapture={handleEditorKeyDown}
-      >
+      <div style={{ position: 'relative', display: 'flex' }} onKeyDownCapture={handleEditorKeyDown}>
         {/* Slash command popover - positioned above the editor */}
         {slashQuery !== null && (
           <SlashCommandMenu
@@ -1587,14 +1733,21 @@ export function ChatInput({
         <div
           data-chat-input-textarea
           style={{ display: 'block', position: 'relative', flex: 1, minWidth: 0 }}
-          onBlur={() => { setTimeout(() => { dismissSlash(); dismissAt() }, 120) }}
+          onBlur={() => {
+            setTimeout(() => {
+              dismissSlash()
+              dismissAt()
+            }, 120)
+          }}
         >
           <RichChatTextarea
             ref={richRef}
             value={value}
             onChange={handleEditorChange}
             onCaretChange={handleEditorCaret}
-            onEnter={({ altKey }) => { void handleSend(followUpDelivery(followUpDefault, altKey)) }}
+            onEnter={({ altKey }) => {
+              void handleSend(followUpDelivery(followUpDefault, altKey))
+            }}
             onPasteFiles={addImages}
             pillsById={pillsById}
             placeholder={placeholder}
@@ -1624,7 +1777,9 @@ export function ChatInput({
             )}
             <Button
               size="icon-round"
-              onClick={() => { void handleSend(followUpDefault) }}
+              onClick={() => {
+                void handleSend(followUpDefault)
+              }}
               disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
               aria-label={sendButton.label}
               title={sendButton.tooltip}
@@ -1695,7 +1850,9 @@ export function ChatInput({
             }}
           >
             {REASONING_EFFORTS.map((r) => (
-              <option key={r.id} value={r.id}>{r.label}</option>
+              <option key={r.id} value={r.id}>
+                {r.label}
+              </option>
             ))}
           </select>
         )}
@@ -1727,7 +1884,15 @@ export function ChatInput({
                 <button
                   type="button"
                   onClick={followDrift}
-                  style={{ cursor: 'pointer', border: 'none', background: 'var(--accent, #4a7dff)', color: '#fff', borderRadius: 3, padding: '2px 8px', fontSize: 11 }}
+                  style={{
+                    cursor: 'pointer',
+                    border: 'none',
+                    background: 'var(--accent, #4a7dff)',
+                    color: '#fff',
+                    borderRadius: 3,
+                    padding: '2px 8px',
+                    fontSize: 11,
+                  }}
                 >
                   Follow
                 </button>
@@ -1753,7 +1918,13 @@ export function ChatInput({
               title="Dismiss"
               aria-label="Dismiss"
               onClick={dismissDrift}
-              style={{ cursor: 'pointer', border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: 12 }}
+              style={{
+                cursor: 'pointer',
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                fontSize: 12,
+              }}
             >
               ×
             </button>
@@ -1796,7 +1967,9 @@ export function ChatInput({
             }}
           >
             {RUNTIME_MODE_OPTIONS.map((m) => (
-              <option key={m.value} value={m.value} title={m.detail}>{m.label}</option>
+              <option key={m.value} value={m.value} title={m.detail}>
+                {m.label}
+              </option>
             ))}
           </select>
         )}
@@ -1836,9 +2009,7 @@ export function ChatInput({
               ctx?.drawImage(imgEl, 0, 0)
               canvas.toBlob((blob) => {
                 if (blob) {
-                  navigator.clipboard.write([
-                    new ClipboardItem({ 'image/png': blob }),
-                  ]).catch((err) => {
+                  navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch((err) => {
                     log.warn('failed to copy preview image to clipboard', err)
                   })
                 }
@@ -1870,15 +2041,17 @@ export function ChatInput({
               }}
               onClick={(e) => e.stopPropagation()}
             />
-            <div style={{
-              position: 'absolute',
-              bottom: '-32px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              color: 'rgba(255,255,255,0.6)',
-              fontSize: '11px',
-              whiteSpace: 'nowrap',
-            }}>
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '-32px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                color: 'rgba(255,255,255,0.6)',
+                fontSize: '11px',
+                whiteSpace: 'nowrap',
+              }}
+            >
               Click backdrop to close · Right-click to copy
             </div>
           </div>

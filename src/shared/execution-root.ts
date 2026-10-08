@@ -134,9 +134,10 @@ export function resolveExecutionRoot(input: ExecutionRootInput): ExecutionRoot {
   const worktreePath = worktreeRaw ? normalizeRootPath(worktreeRaw) : ''
   const machineId = input.machineId?.trim() || LOCAL_MACHINE_ID
   const isWorktree = Boolean(worktreePath) && !sameLocation(worktreePath, projectPath)
-  const revision = Number.isSafeInteger(input.executionRootRevision) && (input.executionRootRevision as number) >= 0
-    ? (input.executionRootRevision as number)
-    : 0
+  const revision =
+    Number.isSafeInteger(input.executionRootRevision) && (input.executionRootRevision as number) >= 0
+      ? (input.executionRootRevision as number)
+      : 0
   return {
     projectPath,
     path: isWorktree ? worktreePath : projectPath,

@@ -1,10 +1,7 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
 import type { WorktreeCreationRequest } from '../../src/shared/worktree-creation'
-import {
-  ensureWorktreeCreationSchema,
-  SqliteWorktreeCreationStore,
-} from '../../src/main/db/worktree-creation'
+import { ensureWorktreeCreationSchema, SqliteWorktreeCreationStore } from '../../src/main/db/worktree-creation'
 import type {
   ResolvedGitRepository,
   WorktreeMaterializationInspection,
@@ -52,9 +49,7 @@ function request(input: {
       baseRef: 'HEAD',
       branch: { namespace: 'sb', seed: input.creationId },
       location: 'managed-in-repo',
-      ...(input.sparse
-        ? { sparseCheckout: { mode: 'cone', directories: ['src'] } }
-        : {}),
+      ...(input.sparse ? { sparseCheckout: { mode: 'cone', directories: ['src'] } } : {}),
     },
     owner: {
       kind: 'conversation',
@@ -251,10 +246,12 @@ class DurableProgressSink implements WorktreeCreationProgressSink {
   constructor(private readonly store: SqliteWorktreeCreationStore) {}
 
   publish(event: Parameters<WorktreeCreationProgressSink['publish']>[0]): void {
-    expect(this.store.get({
-      machineId: 'machine-local',
-      creationId: event.creationId,
-    })).toMatchObject({
+    expect(
+      this.store.get({
+        machineId: 'machine-local',
+        creationId: event.creationId,
+      }),
+    ).toMatchObject({
       revision: event.revision,
       phase: event.phase,
       status: event.status,
@@ -312,15 +309,11 @@ describe('WorktreeCreationService repository concurrency', () => {
 
       const secondResult = harness.service.createWorktreeTransaction(second)
       await harness.store.whenReserved(second.creationId)
-      const secondStartedDuringFirstMaterialize = harness.events.includes(
-        `materialize:start:${second.creationId}`,
-      )
+      const secondStartedDuringFirstMaterialize = harness.events.includes(`materialize:start:${second.creationId}`)
 
       releaseFirstMaterialize()
       await harness.git.whenConfigureStarts(first.creationId)
-      const secondStartedDuringFirstConfigure = harness.events.includes(
-        `materialize:start:${second.creationId}`,
-      )
+      const secondStartedDuringFirstConfigure = harness.events.includes(`materialize:start:${second.creationId}`)
 
       releaseFirstConfigure()
       const results = await Promise.all([firstResult, secondResult])
@@ -356,9 +349,7 @@ describe('WorktreeCreationService repository concurrency', () => {
       await harness.git.whenMaterializeStarts(first.creationId)
 
       const secondResult = harness.service.createWorktreeTransaction(second)
-      const overlapped = await startsBeforeRelease(
-        harness.git.whenMaterializeStarts(second.creationId),
-      )
+      const overlapped = await startsBeforeRelease(harness.git.whenMaterializeStarts(second.creationId))
       releaseFirst()
       const results = await Promise.all([firstResult, secondResult])
 
@@ -492,9 +483,7 @@ describe('WorktreeCreationService repository concurrency', () => {
 
       const linkedResult = harness.service.createWorktreeTransaction(fromLinked)
       await harness.store.whenReserved(fromLinked.creationId)
-      const aliasMutatedConcurrently = harness.events.includes(
-        `materialize:start:${fromLinked.creationId}`,
-      )
+      const aliasMutatedConcurrently = harness.events.includes(`materialize:start:${fromLinked.creationId}`)
       releaseMain()
       await Promise.all([mainResult, linkedResult])
 

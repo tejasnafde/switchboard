@@ -98,8 +98,21 @@ export function Combobox({
           )}
         >
           {leading}
-          <span className={cn('truncate', !selected && 'text-[var(--text-muted)]')}>{selected?.label ?? placeholder}</span>
-          <svg aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-[var(--text-muted)]">
+          <span className={cn('truncate', !selected && 'text-[var(--text-muted)]')}>
+            {selected?.label ?? placeholder}
+          </span>
+          <svg
+            aria-hidden="true"
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="shrink-0 text-[var(--text-muted)]"
+          >
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
@@ -117,7 +130,15 @@ export function Combobox({
           contentClassName,
         )}
       >
-        <Command ref={rootRef} tabIndex={-1} shouldFilter={false} loop defaultValue={value} label={ariaLabel} className="outline-none">
+        <Command
+          ref={rootRef}
+          tabIndex={-1}
+          shouldFilter={false}
+          loop
+          defaultValue={value}
+          label={ariaLabel}
+          className="outline-none"
+        >
           {searchable && (
             <Command.Input
               ref={inputRef}
@@ -128,7 +149,9 @@ export function Combobox({
             />
           )}
           <Command.List className="max-h-[280px] overflow-y-auto p-1">
-            <Command.Empty className="px-2 py-3 text-center text-[12px] text-[var(--text-muted)]">{emptyText}</Command.Empty>
+            <Command.Empty className="px-2 py-3 text-center text-[12px] text-[var(--text-muted)]">
+              {emptyText}
+            </Command.Empty>
             {groups.map((group) => (
               <Command.Group
                 key={group.heading ?? ''}
@@ -145,11 +168,24 @@ export function Combobox({
                     }}
                     className="flex cursor-pointer items-center gap-2 rounded-[5px] px-2 py-[5px] text-[12px] text-[var(--text-primary)] data-[selected=true]:bg-[var(--bg-hover)]"
                   >
-                    <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={cn('shrink-0 text-[var(--accent)]', option.value !== value && 'invisible')}>
+                    <svg
+                      aria-hidden="true"
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={cn('shrink-0 text-[var(--accent)]', option.value !== value && 'invisible')}
+                    >
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                     <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                    {option.hint && <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{option.hint}</span>}
+                    {option.hint && (
+                      <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{option.hint}</span>
+                    )}
                   </Command.Item>
                 ))}
               </Command.Group>

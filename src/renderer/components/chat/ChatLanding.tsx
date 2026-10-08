@@ -83,7 +83,8 @@ export function ChatLanding({
   }, [primaryDraftKey])
 
   const loadProjects = useCallback(() => {
-    window.api.app.getProjects()
+    window.api.app
+      .getProjects()
       .then((projects: Project[]) => setLocal(projects))
       .catch((err: unknown) => log.warn('getProjects failed', err))
   }, [])
@@ -94,7 +95,10 @@ export function ChatLanding({
     return () => window.removeEventListener('sidebar-refresh', loadProjects)
   }, [loadProjects])
 
-  const remote = useMemo(() => ({ remotes, connections, projects: remoteProjects }), [remotes, connections, remoteProjects])
+  const remote = useMemo(
+    () => ({ remotes, connections, projects: remoteProjects }),
+    [remotes, connections, remoteProjects],
+  )
   const targets = useMemo(() => buildProjectTargets(local ?? [], remote), [local, remote])
   const recents = useMemo(() => recentLandingChats(local ?? [], remote), [local, remote])
   const pick = primaryDraft ?? picked
@@ -104,16 +108,17 @@ export function ChatLanding({
   // when the remembered draft is emptied or another project gets newer.
   useEffect(() => {
     if (local === null || primaryDraft || selected) return
-    const fallback = defaultLandingTarget(
-      targets,
-      readRememberedPick(localStorage),
-      (p) => draftHasContent(draftSessionId(p.machineId, p.projectPath)),
+    const fallback = defaultLandingTarget(targets, readRememberedPick(localStorage), (p) =>
+      draftHasContent(draftSessionId(p.machineId, p.projectPath)),
     )
     if (fallback) setPicked({ projectPath: fallback.projectPath, machineId: fallback.machineId })
   }, [local, targets, selected, primaryDraft])
 
   useEffect(() => {
-    if (!selected) { setDraftId(null); return }
+    if (!selected) {
+      setDraftId(null)
+      return
+    }
     try {
       writeRememberedPick(localStorage, selected)
     } catch (err) {
@@ -121,9 +126,13 @@ export function ChatLanding({
     }
     let current = true
     ensureDraftSession(selected.projectPath, selected.machineId)
-      .then((id) => { if (current) setDraftId(id) })
+      .then((id) => {
+        if (current) setDraftId(id)
+      })
       .catch((err: unknown) => log.warn('opening the landing draft failed', err))
-    return () => { current = false }
+    return () => {
+      current = false
+    }
   }, [selected, ensureDraftSession])
 
   // Only the selected project's own draft may take input: a target that a
@@ -136,9 +145,15 @@ export function ChatLanding({
   }, [liveDraftId])
   useEffect(() => () => useLayoutStore.getState().setLandingDraftSession(null), [])
 
-  useEffect(() => registerComposer(LANDING_COMPOSER_ID, {
-    focus: () => { if (!draftId || !focusComposer(draftId)) addButtonRef.current?.focus() },
-  }), [draftId])
+  useEffect(
+    () =>
+      registerComposer(LANDING_COMPOSER_ID, {
+        focus: () => {
+          if (!draftId || !focusComposer(draftId)) addButtonRef.current?.focus()
+        },
+      }),
+    [draftId],
+  )
 
   // Focus the composer whenever the landing screen appears or its draft changes.
   useEffect(() => {
@@ -147,17 +162,21 @@ export function ChatLanding({
   }, [draftId])
 
   const noProjects = local !== null && targets.length === 0
-  useEffect(() => registerLandingProjectPicker(() => {
-    if (noProjects) addButtonRef.current?.focus()
-    else setPickerOpen(true)
-  }), [noProjects])
+  useEffect(
+    () =>
+      registerLandingProjectPicker(() => {
+        if (noProjects) addButtonRef.current?.focus()
+        else setPickerOpen(true)
+      }),
+    [noProjects],
+  )
 
   const addProject = useCallback(async () => {
     try {
       const project = await window.api.app.openFolder()
       if (!project) return
       // Listed now, so the default pick does not run before the reload lands.
-      setLocal((prev) => prev?.some((p) => p.path === project.path) ? prev : [...(prev ?? []), project])
+      setLocal((prev) => (prev?.some((p) => p.path === project.path) ? prev : [...(prev ?? []), project]))
       setPicked({ projectPath: project.path, machineId: 'local' })
       window.dispatchEvent(new CustomEvent('sidebar-refresh'))
       if (primaryDraft) useLayoutStore.getState().showLanding(await ensureDraftSession(project.path, 'local'))
@@ -169,56 +188,66 @@ export function ChatLanding({
   // A later pick supersedes an earlier one still waiting on its draft, so
   // the typed text cannot land on a project the chip no longer shows.
   const chooseRequestRef = useRef(0)
-  const choose = useCallback(async (target: ProjectTarget) => {
-    if (sameTarget(target, selected)) return
-    const request = ++chooseRequestRef.current
-    const from = draftId
-    let to: string
-    try {
-      to = await ensureDraftSession(target.projectPath, target.machineId)
-    } catch (err) {
-      log.warn('opening the picked project draft failed', err)
-      return
-    }
-    if (request !== chooseRequestRef.current) return
-    // What was typed follows the project chip instead of staying behind in
-    // a draft the landing screen no longer shows.
-    if (from && from !== to) {
-      const drafts = useDraftStore.getState()
-      const moved = drafts.detachDraftPayload(from)
-      if (moved) {
-        const existing = draftHasContent(to)
-          ? { text: drafts.getDraft(to), pills: drafts.pillsBySession[to] ?? [], images: drafts.imagesBySession[to] ?? [] }
-          : undefined
-        drafts.replaceDraftPayload(to, mergeMovedDraft(existing, moved))
+  const choose = useCallback(
+    async (target: ProjectTarget) => {
+      if (sameTarget(target, selected)) return
+      const request = ++chooseRequestRef.current
+      const from = draftId
+      let to: string
+      try {
+        to = await ensureDraftSession(target.projectPath, target.machineId)
+      } catch (err) {
+        log.warn('opening the picked project draft failed', err)
+        return
       }
-    }
-    setPicked({ projectPath: target.projectPath, machineId: target.machineId })
-    if (primaryDraft) useLayoutStore.getState().showLanding(to)
-    if (from && from !== to) {
-      const agent = useAgentStore.getState()
-      const left = agent.sessions.find((s) => s.id === from)
-      // Terminals opened from the landing screen live on its draft, so a
-      // draft that has some stays for when its project is picked again.
-      if (
-        left?.status === 'idle'
-        && !useLayoutStore.getState().displayedChatSessionIds().includes(from)
-        && useTerminalStore.getState().getAllPaneIds(from).length === 0
-      ) {
-        agent.removeSession(from)
+      if (request !== chooseRequestRef.current) return
+      // What was typed follows the project chip instead of staying behind in
+      // a draft the landing screen no longer shows.
+      if (from && from !== to) {
+        const drafts = useDraftStore.getState()
+        const moved = drafts.detachDraftPayload(from)
+        if (moved) {
+          const existing = draftHasContent(to)
+            ? {
+                text: drafts.getDraft(to),
+                pills: drafts.pillsBySession[to] ?? [],
+                images: drafts.imagesBySession[to] ?? [],
+              }
+            : undefined
+          drafts.replaceDraftPayload(to, mergeMovedDraft(existing, moved))
+        }
       }
-    }
-  }, [draftId, ensureDraftSession, selected, primaryDraft])
+      setPicked({ projectPath: target.projectPath, machineId: target.machineId })
+      if (primaryDraft) useLayoutStore.getState().showLanding(to)
+      if (from && from !== to) {
+        const agent = useAgentStore.getState()
+        const left = agent.sessions.find((s) => s.id === from)
+        // Terminals opened from the landing screen live on its draft, so a
+        // draft that has some stays for when its project is picked again.
+        if (
+          left?.status === 'idle' &&
+          !useLayoutStore.getState().displayedChatSessionIds().includes(from) &&
+          useTerminalStore.getState().getAllPaneIds(from).length === 0
+        ) {
+          agent.removeSession(from)
+        }
+      }
+    },
+    [draftId, ensureDraftSession, selected, primaryDraft],
+  )
 
   const withMachine = showMachineNames(targets)
-  const options = useMemo<ComboboxOption[]>(() => [
-    ...targets.map((t) => ({
-      value: optionValue(t),
-      label: landingChipLabel(t, withMachine),
-      keywords: [t.projectPath],
-    })),
-    { value: ADD_PROJECT, label: 'Add a project…' },
-  ], [targets, withMachine])
+  const options = useMemo<ComboboxOption[]>(
+    () => [
+      ...targets.map((t) => ({
+        value: optionValue(t),
+        label: landingChipLabel(t, withMachine),
+        keywords: [t.projectPath],
+      })),
+      { value: ADD_PROJECT, label: 'Add a project…' },
+    ],
+    [targets, withMachine],
+  )
 
   const block = local === null ? null : landingSendBlock(selected, targets.length)
 
@@ -246,7 +275,9 @@ export function ChatLanding({
       ref={addButtonRef}
       type="button"
       className="chat-landing-add"
-      onClick={() => { void addProject() }}
+      onClick={() => {
+        void addProject()
+      }}
     >
       {landingChipLabel(null, false)}
     </button>
@@ -267,7 +298,10 @@ export function ChatLanding({
         focusComposer(LANDING_COMPOSER_ID)
       }}
       onValueChange={(value) => {
-        if (value === ADD_PROJECT) { void addProject(); return }
+        if (value === ADD_PROJECT) {
+          void addProject()
+          return
+        }
         const target = targets.find((t) => optionValue(t) === value)
         if (target) void choose(target)
       }}
@@ -289,26 +323,27 @@ export function ChatLanding({
             </div>
           ),
           composerLead: projectChip,
-          after: recents.length > 0 ? (
-            <section className="chat-landing-recents" aria-label="Pick up where you left off">
-              <div className="chat-landing-recents-label">Pick up where you left off</div>
-              {recents.map((chat, index) => (
-                <button
-                  key={`${chat.machineId}:${chat.session.id}`}
-                  type="button"
-                  className="chat-landing-recent"
-                  data-highlighted={highlight === index || undefined}
-                  onClick={() => onOpenChat(chat)}
-                >
-                  <ProjectFavicon projectPath={chat.projectPath} size={14} />
-                  <span className="chat-landing-recent-title">{chat.session.title}</span>
-                  <span className="chat-landing-recent-meta">
-                    {chat.projectName} · {formatRelativeTime(chat.session.startedAt)}
-                  </span>
-                </button>
-              ))}
-            </section>
-          ) : undefined,
+          after:
+            recents.length > 0 ? (
+              <section className="chat-landing-recents" aria-label="Pick up where you left off">
+                <div className="chat-landing-recents-label">Pick up where you left off</div>
+                {recents.map((chat, index) => (
+                  <button
+                    key={`${chat.machineId}:${chat.session.id}`}
+                    type="button"
+                    className="chat-landing-recent"
+                    data-highlighted={highlight === index || undefined}
+                    onClick={() => onOpenChat(chat)}
+                  >
+                    <ProjectFavicon projectPath={chat.projectPath} size={14} />
+                    <span className="chat-landing-recent-title">{chat.session.title}</span>
+                    <span className="chat-landing-recent-meta">
+                      {chat.projectName} · {formatRelativeTime(chat.session.startedAt)}
+                    </span>
+                  </button>
+                ))}
+              </section>
+            ) : undefined,
           footer: (
             <div className="chat-landing-hints">
               {hints.map((hint, index) => (

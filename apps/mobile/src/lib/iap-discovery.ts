@@ -13,15 +13,10 @@ export interface IapTargetSelection {
 }
 
 function targetKey(target: SavedIapTarget): string {
-  return [target.project, target.zone, target.instance]
-    .map((part) => part.trim().toLowerCase())
-    .join('\0')
+  return [target.project, target.zone, target.instance].map((part) => part.trim().toLowerCase()).join('\0')
 }
 
-export function selectAvailableIapTargets(
-  sources: SshIapTarget[][],
-  saved: SavedIapTarget[],
-): IapTargetSelection {
+export function selectAvailableIapTargets(sources: SshIapTarget[][], saved: SavedIapTarget[]): IapTargetSelection {
   const discovered = new Map<string, SshIapTarget>()
   for (const source of sources) {
     for (const target of source) {
@@ -31,9 +26,7 @@ export function selectAvailableIapTargets(
   }
 
   const savedKeys = new Set(saved.map(targetKey))
-  const available = [...discovered].flatMap(([key, target]) =>
-    savedKeys.has(key) ? [] : [target],
-  )
+  const available = [...discovered].flatMap(([key, target]) => (savedKeys.has(key) ? [] : [target]))
   const alreadyAddedCount = discovered.size - available.length
   return { available, discoveredCount: discovered.size, alreadyAddedCount }
 }

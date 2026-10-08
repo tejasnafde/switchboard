@@ -17,9 +17,7 @@ import { formatFilePathRef, type FilePathRef } from '@shared/file-path-ref'
 import { renderPillBody } from './render-pill-body'
 import { splitSkillMentions } from './slash-commands'
 import { SkillChip } from './SkillChip'
-import {
-  forkAndOpenSession,
-} from '../../services/fork-session'
+import { forkAndOpenSession } from '../../services/fork-session'
 import { isForkableForkMessage } from '@shared/conversation-fork'
 import { parseRotationMarker } from '@shared/rotation-marker'
 import { parseUndeliveredMarker } from '@shared/peer-links'
@@ -62,11 +60,20 @@ interface MessageBubbleProps {
   knownSkillNames?: Set<string>
   // These return promises so the cards can re-enable themselves (and show an
   // inline error) when the underlying IPC rejects.
-  onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string, response?: HostWriteResponse) => void | Promise<void>
+  onApproval?: (
+    requestId: string,
+    decision: 'approve' | 'deny',
+    note?: string,
+    response?: HostWriteResponse,
+  ) => void | Promise<void>
   onAnswerQuestion?: (requestId: string, answers: string[][]) => void | Promise<void>
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
   /** Resolve a file-diff card: write the chosen content back + persist status. */
-  onFileDiffResolve?: (messageId: string, status: FileDiffResolveStatus, contentToWrite: string | null) => void | Promise<void>
+  onFileDiffResolve?: (
+    messageId: string,
+    status: FileDiffResolveStatus,
+    contentToWrite: string | null,
+  ) => void | Promise<void>
   /** The containing turn already presents duration in its compact activity summary. */
   hideTurnDuration?: boolean
   /**
@@ -105,15 +112,27 @@ function resolveFileCached(projectPath: string, path: string): Promise<boolean> 
   let cached = fileResolveCache.get(key)
   if (!cached) {
     cached = window.api.files.resolve(projectPath, path).then((res: { exists: boolean }) => !!res?.exists)
-    cached.then((exists) => {
-      if (!exists) fileResolveCache.delete(key)
-    }).catch(() => fileResolveCache.delete(key))
+    cached
+      .then((exists) => {
+        if (!exists) fileResolveCache.delete(key)
+      })
+      .catch(() => fileResolveCache.delete(key))
     fileResolveCache.set(key, cached)
   }
   return cached
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve, hideTurnDuration = false, typedText }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({
+  message,
+  sessionId,
+  knownSkillNames,
+  onApproval,
+  onAnswerQuestion,
+  onPlanAction,
+  onFileDiffResolve,
+  hideTurnDuration = false,
+  typedText,
+}: MessageBubbleProps) {
   const body = typedText ?? message.content
   // Drives both markdownContent's stripDigest call below and the file-pill
   // enhancement effect further down - a still-streaming message hides a
@@ -189,25 +208,27 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         span.addEventListener('click', (e) => {
           e.preventDefault()
           e.stopPropagation()
-          useLayoutStore.getState().openInViewer(
-            ref.path,
-            ref.startLine && ref.endLine
-              ? { start: ref.startLine, end: ref.endLine }
-              : null,
-            sessionId,
-          )
+          useLayoutStore
+            .getState()
+            .openInViewer(
+              ref.path,
+              ref.startLine && ref.endLine ? { start: ref.startLine, end: ref.endLine } : null,
+              sessionId,
+            )
         })
 
         // Async existence check - if the file doesn't resolve, revert to plain code.
-        resolveFileCached(projectPath, ref.path).then((exists) => {
-          if (!exists) {
-            const code = document.createElement('code')
-            code.textContent = originalText
-            span.replaceWith(code)
-          }
-        }).catch((err) => {
-          log.debug(`resolveFileCached failed for ${ref.path} - leaving optimistic chip`, err)
-        })
+        resolveFileCached(projectPath, ref.path)
+          .then((exists) => {
+            if (!exists) {
+              const code = document.createElement('code')
+              code.textContent = originalText
+              span.replaceWith(code)
+            }
+          })
+          .catch((err) => {
+            log.debug(`resolveFileCached failed for ${ref.path} - leaving optimistic chip`, err)
+          })
         return span
       })
     }, POST_PROCESS_DEBOUNCE_MS)
@@ -236,46 +257,63 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
 
   // A marker without its own row (a newer kind, the profile-restart handoff,
   // a payload that did not parse) gets the same pill, never its raw payload.
-  const markerNotice = isSystem && !rotation && message.content.startsWith(SYSTEM_MARKER_PREFIX)
-    ? systemRowView(message.content)
-    : null
+  const markerNotice =
+    isSystem && !rotation && message.content.startsWith(SYSTEM_MARKER_PREFIX) ? systemRowView(message.content) : null
 
   // Compact, persistent indicator that the conversation's provider instance
   // changed mid-flight. Renders inline with surrounding bubbles so the
   // user can correlate which credential set produced the next turn.
   if (rotation || markerNotice?.kind === 'notice') {
     return (
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        margin: '8px 0',
-        opacity: 0.78,
-      }}>
-        <div style={{
-          fontSize: 11,
-          color: 'var(--sb-text-secondary, #999)',
-          padding: '4px 10px',
-          borderRadius: 999,
-          border: '1px solid var(--sb-border, rgba(120,120,120,0.25))',
-          background: 'var(--sb-surface-2, rgba(120,120,120,0.08))',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          fontFamily: '-apple-system, system-ui, sans-serif',
-        }}>
-          <span aria-hidden style={{ fontSize: 10 }}>⇄</span>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          margin: '8px 0',
+          opacity: 0.78,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--sb-text-secondary, #999)',
+            padding: '4px 10px',
+            borderRadius: 999,
+            border: '1px solid var(--sb-border, rgba(120,120,120,0.25))',
+            background: 'var(--sb-surface-2, rgba(120,120,120,0.08))',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontFamily: '-apple-system, system-ui, sans-serif',
+          }}
+        >
+          <span aria-hidden style={{ fontSize: 10 }}>
+            ⇄
+          </span>
           {markerNotice?.kind === 'notice' ? (
             <span>{markerNotice.body ? `${markerNotice.title} · ${markerNotice.body}` : markerNotice.title}</span>
           ) : rotation?.kind === 'agent' ? (
-            <span>Switched agent: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · conversation replays as context on your next message</span>
+            <span>
+              Switched agent: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · conversation
+              replays as context on your next message
+            </span>
           ) : rotation?.kind === 'handoff' ? (
-            <span>Context handoff: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · earlier conversation replayed to the new agent</span>
+            <span>
+              Context handoff: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · earlier
+              conversation replayed to the new agent
+            </span>
           ) : rotation?.kind === 'peer' ? (
-            <span>Sent to <strong>{rotation.toName}</strong></span>
+            <span>
+              Sent to <strong>{rotation.toName}</strong>
+            </span>
           ) : rotation?.kind === 'peer-agent' ? (
-            <span>The agent messaged <strong>{rotation.toName}</strong></span>
+            <span>
+              The agent messaged <strong>{rotation.toName}</strong>
+            </span>
           ) : (
-            <span>Switched profile: <strong>{rotation?.fromName}</strong> → <strong>{rotation?.toName}</strong></span>
+            <span>
+              Switched profile: <strong>{rotation?.fromName}</strong> → <strong>{rotation?.toName}</strong>
+            </span>
           )}
         </div>
       </div>
@@ -285,9 +323,10 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   // Provider-generated user-role blocks (task notifications, interrupts)
   // render as compact rows; whatever the user actually typed after them
   // keeps its bubble. displayBody, when set, is already what the user typed.
-  const synthetic = isUser && message.displayBody === undefined && typedText === undefined
-    ? splitSyntheticUserText(message.content)
-    : null
+  const synthetic =
+    isUser && message.displayBody === undefined && typedText === undefined
+      ? splitSyntheticUserText(message.content)
+      : null
   if (synthetic) {
     const rows = synthetic.parts.map((part, i) => <SyntheticUserRow key={i} part={part} />)
     if (synthetic.userText === '' && !message.images?.length) {
@@ -313,15 +352,17 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   }
 
   // Skip rendering if completely empty
-  if (!message.content
-    && !message.toolCalls?.length
-    && !message.approval
-    && !message.images?.length
-    && !message.plan
-    && !message.todos?.items.length
-    && !message.question
-    && !message.fileDiff
-    && !message.denial) {
+  if (
+    !message.content &&
+    !message.toolCalls?.length &&
+    !message.approval &&
+    !message.images?.length &&
+    !message.plan &&
+    !message.todos?.items.length &&
+    !message.question &&
+    !message.fileDiff &&
+    !message.denial
+  ) {
     return null
   }
 
@@ -349,12 +390,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     setForkBusy(withWorktree ? 'worktree' : 'plain')
     setForkError(null)
     try {
-      const res = await forkAndOpenSession(
-        sourceId,
-        message,
-        withWorktree,
-        dirtySourceConfirmed,
-      )
+      const res = await forkAndOpenSession(sourceId, message, withWorktree, dirtySourceConfirmed)
       if (!res.ok) {
         if (res.dirtySource) {
           const proceed = await confirm({
@@ -370,9 +406,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           }
           return
         }
-        const retained = res.recovery?.retainedPath
-          ? ` Retained worktree: ${res.recovery.retainedPath}`
-          : ''
+        const retained = res.recovery?.retainedPath ? ` Retained worktree: ${res.recovery.retainedPath}` : ''
         setForkError(`${res.error.message}${retained}`)
       } else {
         setForkMenu(null)
@@ -392,12 +426,15 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
 
   const handleCopy = () => {
     const text = stripDigest(body || '', { streaming: isMutable })
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    }).catch((err) => {
-      log.warn('failed to copy message text to clipboard', err)
-    })
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch((err) => {
+        log.warn('failed to copy message text to clipboard', err)
+      })
   }
 
   const handleBookmark = () => {
@@ -458,7 +495,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
                 ? 'rgba(248, 81, 73, 0.08)'
                 : isSystem
                   ? 'rgba(210, 153, 34, 0.08)'
-                  : body ? 'var(--bg-secondary)' : 'transparent',
+                  : body
+                    ? 'var(--bg-secondary)'
+                    : 'transparent',
           border: queued
             ? '1px dashed var(--border)'
             : isError
@@ -472,52 +511,55 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         }}
       >
         {/* Render markdown for assistant, plain text for user */}
-        {body && (isUser ? (
-          <div style={{
-            whiteSpace: 'pre-wrap',
-            overflowWrap: 'anywhere',
-            wordBreak: 'break-word',
-          }}>
-            {message.displayBody ? (
-              // pillsMeta is optional: a peer message and a handoff turn both
-              // set displayBody with no pills, and requiring both leaked the
-              // full wire body (instruction paragraph included) into the bubble.
-              renderPillBody(message.displayBody, message.pillsMeta ?? {})
-            ) : (() => {
-              // Chipify every `/<known-skill>` mention so a multi-skill
-              // prompt like `/deslop then /review` round-trips as two
-              // chips. A transcript's `<command-name>` record arrives here
-              // already split to `/name args` (splitSyntheticUserText).
-              if (!knownSkillNames?.size) return body
-              const segments = splitSkillMentions(body, knownSkillNames)
-              if (!segments.some((s) => s.type === 'skill')) return body
-              return segments.map((seg, i) =>
-                seg.type === 'skill'
-                  ? <SkillChip key={i} name={seg.name} />
-                  : <span key={i}>{seg.value}</span>,
-              )
-            })()}
-          </div>
-        ) : (
-          <MarkdownWithCopyControls
-            ref={markdownRef}
-            markdown={markdownContent}
-            mutable={isMutable}
-            className="markdown-content"
-            // Clip sideways only: a table's copy controls float just above
-            // it, over the bubble's padding when the table comes first.
-            style={{ overflowX: 'clip', display: 'flow-root' }}
-          />
-        ))}
+        {body &&
+          (isUser ? (
+            <div
+              style={{
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
+              }}
+            >
+              {message.displayBody
+                ? // pillsMeta is optional: a peer message and a handoff turn both
+                  // set displayBody with no pills, and requiring both leaked the
+                  // full wire body (instruction paragraph included) into the bubble.
+                  renderPillBody(message.displayBody, message.pillsMeta ?? {})
+                : (() => {
+                    // Chipify every `/<known-skill>` mention so a multi-skill
+                    // prompt like `/deslop then /review` round-trips as two
+                    // chips. A transcript's `<command-name>` record arrives here
+                    // already split to `/name args` (splitSyntheticUserText).
+                    if (!knownSkillNames?.size) return body
+                    const segments = splitSkillMentions(body, knownSkillNames)
+                    if (!segments.some((s) => s.type === 'skill')) return body
+                    return segments.map((seg, i) =>
+                      seg.type === 'skill' ? <SkillChip key={i} name={seg.name} /> : <span key={i}>{seg.value}</span>,
+                    )
+                  })()}
+            </div>
+          ) : (
+            <MarkdownWithCopyControls
+              ref={markdownRef}
+              markdown={markdownContent}
+              mutable={isMutable}
+              className="markdown-content"
+              // Clip sideways only: a table's copy controls float just above
+              // it, over the bubble's padding when the table comes first.
+              style={{ overflowX: 'clip', display: 'flow-root' }}
+            />
+          ))}
 
         {/* Attached images */}
         {message.images && message.images.length > 0 && (
-          <div style={{
-            display: 'flex',
-            gap: '6px',
-            flexWrap: 'wrap',
-            marginTop: body ? '8px' : '0',
-          }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: '6px',
+              flexWrap: 'wrap',
+              marginTop: body ? '8px' : '0',
+            }}
+          >
             {message.images.map((img, i) => (
               <div
                 key={i}
@@ -531,8 +573,12 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
                   cursor: 'pointer',
                   transition: 'opacity 0.12s',
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.85' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                onMouseEnter={(e) => {
+                  ;(e.currentTarget as HTMLElement).style.opacity = '0.85'
+                }}
+                onMouseLeave={(e) => {
+                  ;(e.currentTarget as HTMLElement).style.opacity = '1'
+                }}
               >
                 <img
                   src={img.url}
@@ -550,10 +596,13 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         ))}
 
         {/* Approval request */}
-        {message.approval && onApproval && (message.approval.hostWrite
-          ? <HostWriteApprovalCard message={message} onDecide={onApproval} />
-          : <ApprovalCard message={message} onDecide={onApproval} />
-        )}
+        {message.approval &&
+          onApproval &&
+          (message.approval.hostWrite ? (
+            <HostWriteApprovalCard message={message} onDecide={onApproval} />
+          ) : (
+            <ApprovalCard message={message} onDecide={onApproval} />
+          ))}
 
         {/* Plan proposal from agent exiting plan mode */}
         {message.plan && (
@@ -565,9 +614,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         )}
 
         {/* The agent's own checklist. No buttons: nothing is being asked. */}
-        {message.todos && message.todos.items.length > 0 && (
-          <TodoList items={message.todos.items} />
-        )}
+        {message.todos && message.todos.items.length > 0 && <TodoList items={message.todos.items} />}
 
         {/* AskUserQuestion request */}
         {message.question && (
@@ -603,13 +650,21 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
               fontFamily: 'var(--font-mono)',
             }}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--danger, #f85149)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--danger, #f85149)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ flexShrink: 0 }}
+            >
               <circle cx="12" cy="12" r="10" />
               <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
             </svg>
-            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-              Blocked
-            </span>
+            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Blocked</span>
             <span style={{ color: 'var(--text-muted)' }}>·</span>
             <span style={{ fontWeight: 500 }}>{message.denial.toolName}</span>
             <span style={{ color: 'var(--text-muted)' }}>·</span>
@@ -658,7 +713,16 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
                 fontWeight: 500,
               }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                 <path d="M3 3v5h5" />
               </svg>
@@ -666,7 +730,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             </button>
           </div>
         )}
-        {queued && sessionId && <QueuedTurnBar sessionId={sessionId} messageId={message.id} provider={queuedProvider} />}
+        {queued && sessionId && (
+          <QueuedTurnBar sessionId={sessionId} messageId={message.id} provider={queuedProvider} />
+        )}
       </div>
 
       {message.deliveryState && (
@@ -723,7 +789,16 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
               transition: 'color 0.12s, border-color 0.12s, background 0.12s',
             }}
           >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill={isBookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill={isBookmarked ? 'currentColor' : 'none'}
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
             {isBookmarked ? 'Saved' : 'Save'}
@@ -746,7 +821,16 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
               lineHeight: 1,
             }}
           >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <rect x="9" y="9" width="13" height="13" rx="2" />
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
             </svg>
@@ -759,107 +843,112 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           virtualizer's transformed row. Mirrors SlashCommandMenu's
           `sb-floating-surface` look so all our floating menus feel like
           one family. */}
-      {forkMenu && createPortal(
-        <ForkContextMenu
-          x={forkMenu.x}
-          y={forkMenu.y}
-          busy={forkBusy}
-          error={forkError}
-          onFork={() => handleForkRequest(false)}
-          onForkWorktree={() => handleForkRequest(true)}
-          onDismiss={() => setForkMenu(null)}
-        />,
-        document.body,
-      )}
-      {forkToast && createPortal(
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 1400,
-            padding: '8px 14px',
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            boxShadow: '0 6px 24px rgba(0, 0, 0, 0.35)',
-            fontSize: '12.5px',
-            color: 'var(--text-primary)',
-            pointerEvents: 'none',
-          }}
-        >
-          {forkToast}
-        </div>,
-        document.body,
-      )}
+      {forkMenu &&
+        createPortal(
+          <ForkContextMenu
+            x={forkMenu.x}
+            y={forkMenu.y}
+            busy={forkBusy}
+            error={forkError}
+            onFork={() => handleForkRequest(false)}
+            onForkWorktree={() => handleForkRequest(true)}
+            onDismiss={() => setForkMenu(null)}
+          />,
+          document.body,
+        )}
+      {forkToast &&
+        createPortal(
+          <div
+            role="status"
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 1400,
+              padding: '8px 14px',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)',
+              boxShadow: '0 6px 24px rgba(0, 0, 0, 0.35)',
+              fontSize: '12.5px',
+              color: 'var(--text-primary)',
+              pointerEvents: 'none',
+            }}
+          >
+            {forkToast}
+          </div>,
+          document.body,
+        )}
 
       {/* Image lightbox - portalled to document.body so it escapes any
           transformed or overflow-hidden ancestor (the virtualizer uses
           transform on each row, which otherwise clips this to the row). */}
-      {previewImage && createPortal(
-        <div
-          onClick={() => setPreviewImage(null)}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            const imgEl = document.createElement('img')
-            imgEl.crossOrigin = 'anonymous'
-            imgEl.src = previewImage
-            imgEl.onload = () => {
-              const canvas = document.createElement('canvas')
-              canvas.width = imgEl.naturalWidth
-              canvas.height = imgEl.naturalHeight
-              canvas.getContext('2d')?.drawImage(imgEl, 0, 0)
-              canvas.toBlob((blob) => {
-                if (blob) {
-                  navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch((err) => {
-                    log.warn('failed to copy preview image to clipboard', err)
-                  })
-                }
-              }, 'image/png')
-            }
-            setPreviewImage(null)
-          }}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 1100,
-            background: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-        >
-          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '80vh' }}>
-            <img
-              src={previewImage}
-              alt="preview"
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                maxWidth: '90vw',
-                maxHeight: '80vh',
-                objectFit: 'contain',
-                borderRadius: '8px',
-                boxShadow: '0 16px 48px rgba(0, 0, 0, 0.5)',
-              }}
-            />
-            <div style={{
-              position: 'absolute',
-              bottom: '-28px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              color: 'rgba(255,255,255,0.5)',
-              fontSize: '11px',
-              whiteSpace: 'nowrap',
-            }}>
-              Click to close · Right-click to copy
+      {previewImage &&
+        createPortal(
+          <div
+            onClick={() => setPreviewImage(null)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              const imgEl = document.createElement('img')
+              imgEl.crossOrigin = 'anonymous'
+              imgEl.src = previewImage
+              imgEl.onload = () => {
+                const canvas = document.createElement('canvas')
+                canvas.width = imgEl.naturalWidth
+                canvas.height = imgEl.naturalHeight
+                canvas.getContext('2d')?.drawImage(imgEl, 0, 0)
+                canvas.toBlob((blob) => {
+                  if (blob) {
+                    navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch((err) => {
+                      log.warn('failed to copy preview image to clipboard', err)
+                    })
+                  }
+                }, 'image/png')
+              }
+              setPreviewImage(null)
+            }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1100,
+              background: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '80vh' }}>
+              <img
+                src={previewImage}
+                alt="preview"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  maxWidth: '90vw',
+                  maxHeight: '80vh',
+                  objectFit: 'contain',
+                  borderRadius: '8px',
+                  boxShadow: '0 16px 48px rgba(0, 0, 0, 0.5)',
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '-28px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  color: 'rgba(255,255,255,0.5)',
+                  fontSize: '11px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Click to close · Right-click to copy
+              </div>
             </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 })
@@ -914,7 +1003,10 @@ function ForwardMenu({ content, sourceSessionId }: { content: string; sourceSess
   // portalled to document.body (to escape the virtualizer's transform
   // clipping), so we position via viewport-relative `top` / `right`.
   useEffect(() => {
-    if (!open) { setPopoverPos(null); return }
+    if (!open) {
+      setPopoverPos(null)
+      return
+    }
     const rect = buttonRef.current?.getBoundingClientRect()
     if (!rect) return
     setPopoverPos({
@@ -973,81 +1065,100 @@ function ForwardMenu({ content, sourceSessionId }: { content: string; sourceSess
           lineHeight: 1,
         }}
       >
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <polyline points="15 17 20 12 15 7" />
           <path d="M4 18v-2a4 4 0 0 1 4-4h12" />
         </svg>
         Forward
       </button>
-      {open && popoverPos && createPortal(
-        <div
-          ref={popoverRef}
-          className="sb-floating-surface"
-          style={{
-            // Portalled to document.body to escape the virtualizer's
-            // `transform: translateY` ancestor (which would otherwise
-            // clip this `position: fixed` as if it were `absolute`).
-            position: 'fixed',
-            top: popoverPos.top,
-            right: popoverPos.right,
-            zIndex: 1200,
-            minWidth: '240px',
-            maxHeight: '300px',
-            overflowY: 'auto',
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            boxShadow: '0 6px 24px rgba(0, 0, 0, 0.35)',
-          }}
-        >
-          <div style={{
-            padding: '6px 10px 4px',
-            fontSize: '10px',
-            color: 'var(--text-muted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.7px',
-            fontWeight: 600,
-            borderBottom: '1px solid var(--border)',
-          }}>
-            Forward to
-          </div>
-          {others.length === 0 && (
-            <div style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: '11.5px', textAlign: 'center' }}>
-              No other sessions open. Start another chat to forward.
-            </div>
-          )}
-          {others.map((sess) => (
-            <button
-              key={sess.id}
-              onClick={() => handleForward(sess.id)}
+      {open &&
+        popoverPos &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className="sb-floating-surface"
+            style={{
+              // Portalled to document.body to escape the virtualizer's
+              // `transform: translateY` ancestor (which would otherwise
+              // clip this `position: fixed` as if it were `absolute`).
+              position: 'fixed',
+              top: popoverPos.top,
+              right: popoverPos.right,
+              zIndex: 1200,
+              minWidth: '240px',
+              maxHeight: '300px',
+              overflowY: 'auto',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)',
+              boxShadow: '0 6px 24px rgba(0, 0, 0, 0.35)',
+            }}
+          >
+            <div
               style={{
-                display: 'block',
-                width: '100%',
-                padding: '6px 10px',
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--text-primary)',
-                cursor: 'pointer',
-                fontSize: '12px',
-                textAlign: 'left',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                padding: '6px 10px 4px',
+                fontSize: '10px',
+                color: 'var(--text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.7px',
+                fontWeight: 600,
+                borderBottom: '1px solid var(--border)',
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
             >
-              <span style={{ color: 'var(--text-muted)', fontSize: '10px', marginRight: '6px' }}>
-                {agentShortLabel(sess.type)}
-              </span>
-              {displayedSessionIds.includes(sess.id)
-                ? `Send to other panel · ${sess.title ?? sess.id.slice(0, 8)}`
-                : sess.title ?? sess.id.slice(0, 8)}
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
+              Forward to
+            </div>
+            {others.length === 0 && (
+              <div
+                style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: '11.5px', textAlign: 'center' }}
+              >
+                No other sessions open. Start another chat to forward.
+              </div>
+            )}
+            {others.map((sess) => (
+              <button
+                key={sess.id}
+                onClick={() => handleForward(sess.id)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  padding: '6px 10px',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  textAlign: 'left',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+                onMouseEnter={(e) => {
+                  ;(e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
+                }}
+                onMouseLeave={(e) => {
+                  ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                }}
+              >
+                <span style={{ color: 'var(--text-muted)', fontSize: '10px', marginRight: '6px' }}>
+                  {agentShortLabel(sess.type)}
+                </span>
+                {displayedSessionIds.includes(sess.id)
+                  ? `Send to other panel · ${sess.title ?? sess.id.slice(0, 8)}`
+                  : (sess.title ?? sess.id.slice(0, 8))}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
@@ -1060,7 +1171,13 @@ function ForwardMenu({ content, sourceSessionId }: { content: string; sourceSess
  * - Edit message, Retry from here, etc.).
  */
 function ForkContextMenu({
-  x, y, busy, error, onFork, onForkWorktree, onDismiss,
+  x,
+  y,
+  busy,
+  error,
+  onFork,
+  onForkWorktree,
+  onDismiss,
 }: {
   x: number
   y: number
@@ -1094,7 +1211,9 @@ function ForkContextMenu({
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onDismiss()
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onDismiss() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onDismiss()
+    }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -1126,7 +1245,16 @@ function ForkContextMenu({
         disabled={busy !== false}
         onClick={onFork}
         icon={
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <circle cx="6" cy="6" r="3" />
             <circle cx="18" cy="6" r="3" />
             <circle cx="12" cy="20" r="3" />
@@ -1142,7 +1270,16 @@ function ForkContextMenu({
         icon={
           // A small "branch + box" combo evokes "git branch into its own
           // working tree" without screaming for a third-party icon set.
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <circle cx="6" cy="6" r="2.5" />
             <circle cx="6" cy="18" r="2.5" />
             <circle cx="18" cy="9" r="2.5" />
@@ -1154,23 +1291,27 @@ function ForkContextMenu({
         sublabel="uncommitted and untracked changes are not copied"
       />
       {error && (
-        <div style={{
-          padding: '6px 10px',
-          fontSize: '11px',
-          color: 'var(--danger, #f85149)',
-          borderTop: '1px solid var(--border)',
-          marginTop: '4px',
-        }}>
+        <div
+          style={{
+            padding: '6px 10px',
+            fontSize: '11px',
+            color: 'var(--danger, #f85149)',
+            borderTop: '1px solid var(--border)',
+            marginTop: '4px',
+          }}
+        >
           {error}
         </div>
       )}
-      <div style={{
-        padding: '4px 10px 2px',
-        fontSize: '10px',
-        color: 'var(--text-muted)',
-        borderTop: '1px solid var(--border)',
-        marginTop: '4px',
-      }}>
+      <div
+        style={{
+          padding: '4px 10px 2px',
+          fontSize: '10px',
+          color: 'var(--text-muted)',
+          borderTop: '1px solid var(--border)',
+          marginTop: '4px',
+        }}
+      >
         Esc to dismiss
       </div>
     </div>
@@ -1183,7 +1324,11 @@ function ForkContextMenu({
  * disabled / icon scaffolding for each.
  */
 function ForkMenuItem({
-  label, sublabel, icon, disabled, onClick,
+  label,
+  sublabel,
+  icon,
+  disabled,
+  onClick,
 }: {
   label: string
   sublabel?: string
@@ -1209,15 +1354,17 @@ function ForkMenuItem({
         textAlign: 'left',
         borderRadius: '4px',
       }}
-      onMouseEnter={(e) => { if (!disabled) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+      onMouseEnter={(e) => {
+        if (!disabled) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
+      }}
+      onMouseLeave={(e) => {
+        ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+      }}
     >
       {icon}
       <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.3 }}>
         <span>{label}</span>
-        {sublabel && (
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{sublabel}</span>
-        )}
+        {sublabel && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{sublabel}</span>}
       </span>
     </button>
   )

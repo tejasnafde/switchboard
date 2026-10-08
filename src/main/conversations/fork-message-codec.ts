@@ -71,11 +71,10 @@ function messageRow(
   id: string,
 ): { row: ForkMessageRow; warning?: ForkMessageCopyWarning } {
   const sourceRecord = source as ChatMessage & Record<string, unknown>
-  const extensionEntries = Object.entries(sourceRecord)
-    .filter(([key, value]) => !MESSAGE_FIELDS.has(key) && value !== undefined)
-  const extensions = extensionEntries.length > 0
-    ? Object.fromEntries(extensionEntries)
-    : undefined
+  const extensionEntries = Object.entries(sourceRecord).filter(
+    ([key, value]) => !MESSAGE_FIELDS.has(key) && value !== undefined,
+  )
+  const extensions = extensionEntries.length > 0 ? Object.fromEntries(extensionEntries) : undefined
   const attachments: ForkAttachments = {
     ...(source.context === undefined ? {} : { context: source.context }),
     ...(source.approval === undefined ? {} : { approval: source.approval }),

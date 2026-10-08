@@ -38,7 +38,10 @@ export function parseOpencodeVersion(output: string): OpencodeVersion | null {
 
 export class OpencodeUnsupportedVersionError extends Error {
   readonly code = 'SWITCHBOARD_OPENCODE_UNSUPPORTED'
-  constructor(public readonly version: string, public readonly binPath: string) {
+  constructor(
+    public readonly version: string,
+    public readonly binPath: string,
+  ) {
     super(
       `OpenCode ${version} is not supported yet (found at ${binPath}). ` +
         `Switchboard works with OpenCode 1.x only for now. Install OpenCode 1.x ` +
@@ -76,19 +79,26 @@ export function opencodeV2InstallSignal(bin: string): string | null {
   return null
 }
 
-const runVersion: VersionRunner = (bin, env, cwd) => new Promise((resolve, reject) => {
-  // stdout only: a Node wrapper's stderr warnings can carry Node's own version.
-  // The spawn's own cwd, so a per-directory version shim picks what the session will run.
-  const child = execFile(bin, ['--version'], { env, cwd, timeout: VERSION_TIMEOUT_MS, maxBuffer: 64 * 1024 }, (err, stdout) => {
-    if (err) return reject(err)
-    resolve(stdout)
+const runVersion: VersionRunner = (bin, env, cwd) =>
+  new Promise((resolve, reject) => {
+    // stdout only: a Node wrapper's stderr warnings can carry Node's own version.
+    // The spawn's own cwd, so a per-directory version shim picks what the session will run.
+    const child = execFile(
+      bin,
+      ['--version'],
+      { env, cwd, timeout: VERSION_TIMEOUT_MS, maxBuffer: 64 * 1024 },
+      (err, stdout) => {
+        if (err) return reject(err)
+        resolve(stdout)
+      },
+    )
+    // Nothing to read from us; a CLI that waits on stdin must not hang the check.
+    child.stdin?.end()
   })
-  // Nothing to read from us; a CLI that waits on stdin must not hang the check.
-  child.stdin?.end()
-})
 
 /** Env keys a wrapper or version manager can use to pick which binary runs. */
-const BINARY_SELECTING_ENV = /^(PATH|HOME|OPENCODE_.*|XDG_.*|MISE_.*|ASDF_.*|VOLTA_.*|NVM_.*|NODE_.*|NPM_CONFIG_.*|BUN_.*)$/
+const BINARY_SELECTING_ENV =
+  /^(PATH|HOME|OPENCODE_.*|XDG_.*|MISE_.*|ASDF_.*|VOLTA_.*|NVM_.*|NODE_.*|NPM_CONFIG_.*|BUN_.*)$/
 
 /**
  * A hash of the binary-selecting env, so two instances whose env can resolve
@@ -97,7 +107,9 @@ const BINARY_SELECTING_ENV = /^(PATH|HOME|OPENCODE_.*|XDG_.*|MISE_.*|ASDF_.*|VOL
  */
 export function opencodeEnvFingerprint(env: Record<string, string>): string {
   const hash = createHash('sha256')
-  for (const key of Object.keys(env).filter((k) => BINARY_SELECTING_ENV.test(k)).sort()) {
+  for (const key of Object.keys(env)
+    .filter((k) => BINARY_SELECTING_ENV.test(k))
+    .sort()) {
     hash.update(`${key}\0${env[key]}\0`)
   }
   return hash.digest('hex').slice(0, 16)
@@ -137,7 +149,8 @@ export function readOpencodeVersion(
     (output) => {
       const version = parseOpencodeVersion(output)
       // Its size only: a wrapper's stdout can carry anything it inherited, keys included.
-      if (!version) log.warn(`could not parse opencode --version output from ${bin}`, { bytes: Buffer.byteLength(output) })
+      if (!version)
+        log.warn(`could not parse opencode --version output from ${bin}`, { bytes: Buffer.byteLength(output) })
       else log.info(`opencode ${version.raw} at ${bin}`)
       return version
     },
@@ -150,7 +163,9 @@ export function readOpencodeVersion(
   )
   if (key) {
     cache.set(key, read)
-    void read.then((version) => { if (!version) cache.delete(key) })
+    void read.then((version) => {
+      if (!version) cache.delete(key)
+    })
   }
   return read
 }

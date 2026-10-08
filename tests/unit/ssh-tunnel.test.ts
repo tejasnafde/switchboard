@@ -8,19 +8,29 @@ import { buildTunnelCommand, SSH_COMMON_OPTS } from '../../src/main/machines/ssh
 import type { Machine } from '@shared/machines'
 
 const mk = (over: Partial<Machine>): Machine => ({
-  id: 'm1', name: 'prod', sshAlias: null, sshHost: '10.0.0.4', sshUser: 'ubuntu',
-  sshPort: 22, remoteUser: null, sortOrder: 0, createdAt: 0, updatedAt: 0, ...over,
+  id: 'm1',
+  name: 'prod',
+  sshAlias: null,
+  sshHost: '10.0.0.4',
+  sshUser: 'ubuntu',
+  sshPort: 22,
+  remoteUser: null,
+  sortOrder: 0,
+  createdAt: 0,
+  updatedAt: 0,
+  ...over,
 })
 
-const iap = (): Machine => mk({
-  sshAlias: 'geoiq-retailiq-v2-in-prod',
-  sshHost: 'geoiq-retailiq-v2-in-prod',
-  sshUser: 'tejas_geoiq_io',
-  transportKind: 'gcloud-iap',
-  iapInstance: 'geoiq-retailiq-v2-in-prod',
-  iapProject: 'prj-geoiq-product-in-prod',
-  iapZone: 'asia-south1-b',
-})
+const iap = (): Machine =>
+  mk({
+    sshAlias: 'geoiq-retailiq-v2-in-prod',
+    sshHost: 'geoiq-retailiq-v2-in-prod',
+    sshUser: 'tejas_geoiq_io',
+    transportKind: 'gcloud-iap',
+    iapInstance: 'geoiq-retailiq-v2-in-prod',
+    iapProject: 'prj-geoiq-product-in-prod',
+    iapZone: 'asia-south1-b',
+  })
 
 // The remote command is wrapped through `printf %s '<b64>' | base64 -d | bash`
 // (asUserScript), including the login-user passthrough case, so decode it to
@@ -40,20 +50,28 @@ describe('buildTunnelCommand', () => {
 
     expect(command).toBe('gcloud')
     expect(args.slice(0, 2)).toEqual(['compute', 'ssh'])
-    expect(args).toEqual(expect.arrayContaining([
-      'geoiq-retailiq-v2-in-prod',
-      '--zone', 'asia-south1-b',
-      '--project', 'prj-geoiq-product-in-prod',
-      '--tunnel-through-iap',
-      '--command',
-    ]))
+    expect(args).toEqual(
+      expect.arrayContaining([
+        'geoiq-retailiq-v2-in-prod',
+        '--zone',
+        'asia-south1-b',
+        '--project',
+        'prj-geoiq-product-in-prod',
+        '--tunnel-through-iap',
+        '--command',
+      ]),
+    )
     expect(args).not.toContain('tejas_geoiq_io@geoiq-retailiq-v2-in-prod')
     expect(args.some((arg) => arg.includes('7681:127.0.0.1:8765'))).toBe(true)
     expect(decode(args[args.indexOf('--command') + 1])?.endsWith('node server.js')).toBe(true)
   })
 
   it('forwards localPort -> remotePort and runs the server command', () => {
-    const { command, args } = buildTunnelCommand(mk({}), { localPort: 7681, remotePort: 8765, remoteCommand: 'node server.js' })
+    const { command, args } = buildTunnelCommand(mk({}), {
+      localPort: 7681,
+      remotePort: 8765,
+      remoteCommand: 'node server.js',
+    })
     expect(command).toBe('ssh')
     expect(args).toContain('-L')
     expect(args).toContain('7681:127.0.0.1:8765')
@@ -61,7 +79,11 @@ describe('buildTunnelCommand', () => {
   })
 
   it('uses the ssh config alias as the host (lets ~/.ssh/config resolve user/port)', () => {
-    const { args } = buildTunnelCommand(mk({ sshAlias: 'prod-vm' }), { localPort: 1, remotePort: 2, remoteCommand: 'x' })
+    const { args } = buildTunnelCommand(mk({ sshAlias: 'prod-vm' }), {
+      localPort: 1,
+      remotePort: 2,
+      remoteCommand: 'x',
+    })
     expect(args).toContain('prod-vm')
     expect(args).not.toContain('ubuntu@10.0.0.4')
     expect(args).not.toContain('-p') // alias carries the port
@@ -69,7 +91,9 @@ describe('buildTunnelCommand', () => {
 
   it('falls back to user@host and -p port when there is no alias', () => {
     const { args } = buildTunnelCommand(mk({ sshAlias: null, sshUser: 'deploy', sshHost: 'h.dev', sshPort: 2222 }), {
-      localPort: 1, remotePort: 2, remoteCommand: 'x',
+      localPort: 1,
+      remotePort: 2,
+      remoteCommand: 'x',
     })
     expect(args).toContain('deploy@h.dev')
     expect(args).toEqual(expect.arrayContaining(['-p', '2222']))
@@ -77,7 +101,9 @@ describe('buildTunnelCommand', () => {
 
   it('omits user@ when no user is set (ssh uses the current user)', () => {
     const { args } = buildTunnelCommand(mk({ sshAlias: null, sshUser: null, sshHost: 'h.dev' }), {
-      localPort: 1, remotePort: 2, remoteCommand: 'x',
+      localPort: 1,
+      remotePort: 2,
+      remoteCommand: 'x',
     })
     expect(args).toContain('h.dev')
     expect(args.some((a) => a.includes('@'))).toBe(false)
@@ -103,7 +129,9 @@ describe('buildTunnelCommand', () => {
   it('rejects an alias that looks like an ssh option', () => {
     expect(() =>
       buildTunnelCommand(mk({ sshAlias: '-oProxyCommand=touch /tmp/pwned' }), {
-        localPort: 1, remotePort: 2, remoteCommand: 'x',
+        localPort: 1,
+        remotePort: 2,
+        remoteCommand: 'x',
       }),
     ).toThrow(/unsafe ssh alias/)
   })
@@ -111,7 +139,9 @@ describe('buildTunnelCommand', () => {
   it('rejects a host that starts with a dash', () => {
     expect(() =>
       buildTunnelCommand(mk({ sshAlias: null, sshHost: '-oProxyCommand=evil' }), {
-        localPort: 1, remotePort: 2, remoteCommand: 'x',
+        localPort: 1,
+        remotePort: 2,
+        remoteCommand: 'x',
       }),
     ).toThrow(/unsafe ssh host/)
   })
@@ -119,7 +149,9 @@ describe('buildTunnelCommand', () => {
   it('rejects a user containing whitespace/control characters', () => {
     expect(() =>
       buildTunnelCommand(mk({ sshAlias: null, sshUser: 'deploy oops' }), {
-        localPort: 1, remotePort: 2, remoteCommand: 'x',
+        localPort: 1,
+        remotePort: 2,
+        remoteCommand: 'x',
       }),
     ).toThrow(/unsafe ssh user/)
   })

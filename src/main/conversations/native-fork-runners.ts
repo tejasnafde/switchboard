@@ -82,14 +82,22 @@ export function createNativeForkRunners(
       if (!bin) throw new Error('Codex CLI not found')
       const probe = new CodexProbeSession(bin, envOf(instanceId))
       try {
-        await probe.send('initialize', { clientInfo: CLIENT_INFO, capabilities: { experimentalApi: true } }, RPC_TIMEOUT_MS)
+        await probe.send(
+          'initialize',
+          { clientInfo: CLIENT_INFO, capabilities: { experimentalApi: true } },
+          RPC_TIMEOUT_MS,
+        )
         probe.notify('initialized')
-        const result = await probe.send('thread/fork', {
-          threadId: params.threadId,
-          lastTurnId: params.lastTurnId,
-          cwd: params.cwd,
-          excludeTurns: true,
-        }, RPC_TIMEOUT_MS) as { thread?: { id?: unknown; path?: unknown } } | null
+        const result = (await probe.send(
+          'thread/fork',
+          {
+            threadId: params.threadId,
+            lastTurnId: params.lastTurnId,
+            cwd: params.cwd,
+            excludeTurns: true,
+          },
+          RPC_TIMEOUT_MS,
+        )) as { thread?: { id?: unknown; path?: unknown } } | null
         const threadId = result?.thread?.id
         if (typeof threadId !== 'string' || !threadId) throw new Error('Codex thread/fork did not return a thread id')
         return { threadId, path: typeof result?.thread?.path === 'string' ? result.thread.path : null }
@@ -115,18 +123,22 @@ export function createNativeForkRunners(
         child.once('close', (code) => reject(new Error(`opencode acp exited (code ${code ?? 'null'})`)))
       })
       exited.catch((error: unknown) => log.debug('opencode fork child ended', error))
-      const connection = new ClientSideConnection(() => ({
-        sessionUpdate: async () => {},
-        requestPermission: async () => ({ outcome: { outcome: 'cancelled' as const } }),
-      }), ndJsonStream(
-        Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
-        Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
-      ))
+      const connection = new ClientSideConnection(
+        () => ({
+          sessionUpdate: async () => {},
+          requestPermission: async () => ({ outcome: { outcome: 'cancelled' as const } }),
+        }),
+        ndJsonStream(
+          Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
+          Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
+        ),
+      )
       try {
-        const init = await withTimeout(Promise.race([
-          connection.initialize({ protocolVersion: 1, clientCapabilities: {} }),
-          exited,
-        ]), RPC_TIMEOUT_MS, 'initialize')
+        const init = await withTimeout(
+          Promise.race([connection.initialize({ protocolVersion: 1, clientCapabilities: {} }), exited]),
+          RPC_TIMEOUT_MS,
+          'initialize',
+        )
         if (!init.agentCapabilities?.sessionCapabilities?.fork) {
           throw new NativeForkUnsupportedError('OpenCode does not advertise session/fork')
         }
@@ -134,10 +146,14 @@ export function createNativeForkRunners(
         if (!init.agentCapabilities?.sessionCapabilities?.resume) {
           throw new NativeForkUnsupportedError('OpenCode does not advertise session/resume')
         }
-        const forked = await withTimeout(Promise.race([
-          connection.unstable_forkSession({ sessionId: params.sessionId, cwd: params.cwd, mcpServers: [] }),
-          exited,
-        ]), RPC_TIMEOUT_MS, 'session/fork')
+        const forked = await withTimeout(
+          Promise.race([
+            connection.unstable_forkSession({ sessionId: params.sessionId, cwd: params.cwd, mcpServers: [] }),
+            exited,
+          ]),
+          RPC_TIMEOUT_MS,
+          'session/fork',
+        )
         return forked.sessionId
       } finally {
         terminate(child)

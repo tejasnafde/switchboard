@@ -20,19 +20,18 @@ export interface CursorSnapshotResult {
   refreshed: boolean
 }
 
-export function importCursorSnapshot(
-  db: Database.Database,
-  snapshot: CursorSnapshot,
-): CursorSnapshotResult {
+export function importCursorSnapshot(db: Database.Database, snapshot: CursorSnapshot): CursorSnapshotResult {
   const conversationId = `cursor:${snapshot.composerId}`
   return db.transaction((): CursorSnapshotResult => {
-    const existing = db.prepare(
-      'SELECT project_path, origin_source, pending_handoff_from FROM conversations WHERE id = ?',
-    ).get(conversationId) as {
-      project_path: string
-      origin_source: string | null
-      pending_handoff_from: string | null
-    } | undefined
+    const existing = db
+      .prepare('SELECT project_path, origin_source, pending_handoff_from FROM conversations WHERE id = ?')
+      .get(conversationId) as
+      | {
+          project_path: string
+          origin_source: string | null
+          pending_handoff_from: string | null
+        }
+      | undefined
     if (existing && existing.project_path !== snapshot.projectPath) {
       throw new Error('This Cursor conversation belongs to another project in Switchboard')
     }
@@ -40,12 +39,12 @@ export function importCursorSnapshot(
       throw new Error('This conversation ID is already used by a non-Cursor conversation')
     }
 
-    const continued = existing && (
-      existing.pending_handoff_from !== 'cursor'
-      || Boolean(db.prepare(
-        'SELECT 1 FROM conversation_segments WHERE conversation_id = ? LIMIT 1',
-      ).get(conversationId))
-    )
+    const continued =
+      existing &&
+      (existing.pending_handoff_from !== 'cursor' ||
+        Boolean(
+          db.prepare('SELECT 1 FROM conversation_segments WHERE conversation_id = ? LIMIT 1').get(conversationId),
+        ))
     if (continued) {
       db.prepare(`
         UPDATE conversations
@@ -55,11 +54,10 @@ export function importCursorSnapshot(
       return { conversationId, refreshed: false }
     }
 
-    const wouldEraseSnapshot = existing
-      && snapshot.messages.length === 0
-      && Boolean(db.prepare(
-        'SELECT 1 FROM messages WHERE conversation_id = ? LIMIT 1',
-      ).get(conversationId))
+    const wouldEraseSnapshot =
+      existing &&
+      snapshot.messages.length === 0 &&
+      Boolean(db.prepare('SELECT 1 FROM messages WHERE conversation_id = ? LIMIT 1').get(conversationId))
     if (wouldEraseSnapshot) {
       throw new Error('Cursor content could not be loaded; the existing snapshot was left unchanged')
     }
@@ -102,13 +100,7 @@ export function importCursorSnapshot(
     `)
     for (const message of snapshot.messages) {
       if (!message.content) continue
-      insertMessage.run(
-        message.id,
-        conversationId,
-        message.role,
-        message.content,
-        message.timestamp,
-      )
+      insertMessage.run(message.id, conversationId, message.role, message.content, message.timestamp)
     }
     return { conversationId, refreshed: true }
   })()

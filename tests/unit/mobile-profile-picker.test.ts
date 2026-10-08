@@ -40,10 +40,7 @@ describe('profilesFor', () => {
   })
 
   it('hides disabled profiles', () => {
-    const rows = [
-      inst({ id: 'on', displayName: 'On' }),
-      inst({ id: 'off', displayName: 'Off', enabled: false }),
-    ]
+    const rows = [inst({ id: 'on', displayName: 'On' }), inst({ id: 'off', displayName: 'Off', enabled: false })]
     expect(profilesFor(rows, 'claude').map((i) => i.id)).toEqual(['on'])
   })
 

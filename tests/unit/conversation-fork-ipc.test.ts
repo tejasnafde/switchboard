@@ -19,7 +19,10 @@ function request(): ForkConversationRequest {
     sourceConversationId: 'source-remote',
     machineId: 'remote-a',
     anchor: {
-      messageId: 'message-1', role: 'user', timestamp: 1, contentDigest: 'a'.repeat(64),
+      messageId: 'message-1',
+      role: 'user',
+      timestamp: 1,
+      contentDigest: 'a'.repeat(64),
     },
     checkout: { kind: 'shared-checkout' },
     provenance: { surface: 'desktop', requestedAt: 1 },
@@ -36,9 +39,13 @@ describe('conversation fork IPC', () => {
 
     await expect(host.handlers.get(AppChannels.FORK_CONVERSATION)!(request())).resolves.toBe(completed)
     expect(createOrGet).toHaveBeenCalledWith(request())
-    expect(host.handlers.get(AppChannels.GET_CONVERSATION_FORK)!({
-      machineId: 'remote-a', requestId: 'request-1', sourceConversationId: 'source-remote',
-    })).toBe(completed)
+    expect(
+      host.handlers.get(AppChannels.GET_CONVERSATION_FORK)!({
+        machineId: 'remote-a',
+        requestId: 'request-1',
+        sourceConversationId: 'source-remote',
+      }),
+    ).toBe(completed)
     expect(get).toHaveBeenCalledWith('remote-a', 'request-1')
   })
 
@@ -47,9 +54,12 @@ describe('conversation fork IPC', () => {
     const createOrGet = vi.fn()
     registerAppHandlers(host, { conversationFork: { createOrGet, get: vi.fn() } as never })
 
-    await expect(host.handlers.get(AppChannels.FORK_CONVERSATION)!({
-      sourceConversationId: 'source-remote', upToIndex: 4,
-    })).resolves.toMatchObject({
+    await expect(
+      host.handlers.get(AppChannels.FORK_CONVERSATION)!({
+        sourceConversationId: 'source-remote',
+        upToIndex: 4,
+      }),
+    ).resolves.toMatchObject({
       kind: 'failed',
       error: { code: 'upgrade-required', retryable: false },
     })

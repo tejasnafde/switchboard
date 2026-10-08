@@ -84,7 +84,10 @@ export function saveMessage(
   }
 
   stmts.write({
-    id, conversationId, role, content,
+    id,
+    conversationId,
+    role,
+    content,
     toolCalls: toolCalls ?? null,
     images: images ?? null,
     now,
@@ -99,9 +102,11 @@ export function saveMessage(
  * user took back. Only a user row, only in its own conversation.
  */
 export function deleteUserMessage(conversationId: string, messageId: string): boolean {
-  return getDb().prepare(
-    "DELETE FROM messages WHERE id = ? AND conversation_id = ? AND role = 'user'"
-  ).run(messageId, conversationId).changes > 0
+  return (
+    getDb()
+      .prepare("DELETE FROM messages WHERE id = ? AND conversation_id = ? AND role = 'user'")
+      .run(messageId, conversationId).changes > 0
+  )
 }
 
 export interface MessageRow {
@@ -119,18 +124,18 @@ export interface MessageRow {
 }
 
 export function getMessagesForConversation(conversationId: string): MessageRow[] {
-  return getDb().prepare(
-    'SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC'
-  ).all(conversationId) as MessageRow[]
+  return getDb()
+    .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC')
+    .all(conversationId) as MessageRow[]
 }
 
 /** Text columns only, one row at a time, oldest first: for readers that may stop early. */
 export function iterateMessageTextForConversation(
   conversationId: string,
 ): IterableIterator<{ content: string; tool_calls: string | null }> {
-  return getDb().prepare(
-    'SELECT content, tool_calls FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC'
-  ).iterate(conversationId) as IterableIterator<{ content: string; tool_calls: string | null }>
+  return getDb()
+    .prepare('SELECT content, tool_calls FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC')
+    .iterate(conversationId) as IterableIterator<{ content: string; tool_calls: string | null }>
 }
 
 function tryParseJson<T>(s: string): T | undefined {
@@ -175,16 +180,21 @@ export interface DisplayBodyEnrichment {
   pillsMeta?: string
   images?: string
 }
-export function getDisplayBodyEnrichments(
-  conversationId: string,
-): Map<string, DisplayBodyEnrichment> {
-  const rows = getDb().prepare(
-    `SELECT content, display_body, pills_meta, images
+export function getDisplayBodyEnrichments(conversationId: string): Map<string, DisplayBodyEnrichment> {
+  const rows = getDb()
+    .prepare(
+      `SELECT content, display_body, pills_meta, images
        FROM messages
       WHERE conversation_id = ?
         AND role = 'user'
-        AND (display_body IS NOT NULL OR images IS NOT NULL)`
-  ).all(conversationId) as Array<{ content: string; display_body: string | null; pills_meta: string | null; images: string | null }>
+        AND (display_body IS NOT NULL OR images IS NOT NULL)`,
+    )
+    .all(conversationId) as Array<{
+    content: string
+    display_body: string | null
+    pills_meta: string | null
+    images: string | null
+  }>
   const out = new Map<string, DisplayBodyEnrichment>()
   for (const r of rows) {
     out.set(r.content, {
@@ -275,13 +285,15 @@ export function saveActivityMessageIfAbsent(row: {
     log.warn(`saveActivityMessageIfAbsent: conversation ${row.conversationId} not found, skipping`)
     return false
   }
-  return activityMessageStmts(db).insert.run(
-    row.id,
-    row.conversationId,
-    row.toolCalls ? JSON.stringify(row.toolCalls) : null,
-    row.timestamp,
-    row.fileDiff ? JSON.stringify({ fileDiff: row.fileDiff }) : null,
-  ).changes > 0
+  return (
+    activityMessageStmts(db).insert.run(
+      row.id,
+      row.conversationId,
+      row.toolCalls ? JSON.stringify(row.toolCalls) : null,
+      row.timestamp,
+      row.fileDiff ? JSON.stringify({ fileDiff: row.fileDiff }) : null,
+    ).changes > 0
+  )
 }
 
 /**
@@ -316,7 +328,9 @@ export function rewriteSystemMarker(
   )
   const write = db.prepare('UPDATE messages SET content = ? WHERE id = ? AND conversation_id = ?')
   for (const id of threadFamilyIds(conversationId)) {
-    const row = read.get(messageId, id, prefix.length, prefix) as { conversationId: string; content: string } | undefined
+    const row = read.get(messageId, id, prefix.length, prefix) as
+      | { conversationId: string; content: string }
+      | undefined
     if (!row) continue
     const next = rewrite(row.content)
     if (next === null) return null
@@ -335,12 +349,14 @@ export function getSystemMarkerMessages(conversationId: string): Array<{
   // '[[sb:%' catches structural markers (rotation pill); 'Error: %' catches
   // persisted error cards. Both are Switchboard-authored system rows that the
   // JSONL reload path would otherwise drop.
-  return getDb().prepare(
-    `SELECT id, role, content, timestamp
+  return getDb()
+    .prepare(
+      `SELECT id, role, content, timestamp
        FROM messages
       WHERE conversation_id = ?
         AND role = 'system'
         AND (content LIKE '[[sb:%' OR content LIKE 'Error: %')
-      ORDER BY timestamp ASC`
-  ).all(conversationId) as Array<{ id: string; role: string; content: string; timestamp: number }>
+      ORDER BY timestamp ASC`,
+    )
+    .all(conversationId) as Array<{ id: string; role: string; content: string; timestamp: number }>
 }

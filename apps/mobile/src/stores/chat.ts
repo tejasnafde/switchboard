@@ -25,7 +25,12 @@ import { echoMessageId, expiredRequestNotice, visibleUserMessageText } from '@sh
 import { pillBodyText } from '@shared/pill-body-text'
 import { transcriptShowsTaskNotification, type SyntheticUserPart } from '@shared/synthetic-message'
 import { splitLegacyCachedItems } from '../lib/thread-history'
-import { applyQueuedTurnEvent, queuedRowRemoved, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
+import {
+  applyQueuedTurnEvent,
+  queuedRowRemoved,
+  seedQueuedTurns,
+  type QueuedTurnsByMessage,
+} from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { HostWriteCard } from '@shared/agent-host-writes'
 import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-approval-cards'
@@ -34,20 +39,40 @@ import { systemRowView } from '@shared/system-markers'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
-  | { kind: 'text'; id: string; text: string; stream: 'assistant' | 'reasoning' | 'plan'; done: boolean; durationMs?: number }
+  | {
+      kind: 'text'
+      id: string
+      text: string
+      stream: 'assistant' | 'reasoning' | 'plan'
+      done: boolean
+      durationMs?: number
+    }
   | { kind: 'tool'; id: string; toolName: string; input: unknown; output?: string; state: 'running' | 'done' }
   | { kind: 'denial'; id: string; toolName: string; reason: string }
   | {
-    kind: 'approval'; id: string; requestId: string; toolName: string; detail: string; requestType: string; state: 'pending' | 'approve' | 'deny'
-    /** A pull request write an agent asked for. */
-    hostWrite?: HostWriteCard
-    /** Written by releases that kept only this flag for a pull request write; such a card offers Deny only. */
-    desktopOnly?: boolean
-    closed?: true
-  }
+      kind: 'approval'
+      id: string
+      requestId: string
+      toolName: string
+      detail: string
+      requestType: string
+      state: 'pending' | 'approve' | 'deny'
+      /** A pull request write an agent asked for. */
+      hostWrite?: HostWriteCard
+      /** Written by releases that kept only this flag for a pull request write; such a card offers Deny only. */
+      desktopOnly?: boolean
+      closed?: true
+    }
   | { kind: 'question'; id: string; requestId: string; questions: Question[]; answers?: string[][] }
   | { kind: 'plan'; id: string; planId: string; markdown: string }
-  | { kind: 'fileEdit'; id: string; relPath: string; changeKind: 'add' | 'modify' | 'delete'; oldContent: string; newContent: string }
+  | {
+      kind: 'fileEdit'
+      id: string
+      relPath: string
+      changeKind: 'add' | 'modify' | 'delete'
+      oldContent: string
+      newContent: string
+    }
   | { kind: 'error'; id: string; message: string }
   /** Non-agent row the UI inserts itself, e.g. "showing last N of M messages". */
   | { kind: 'notice'; id: string; text: string }
@@ -299,261 +324,289 @@ function findFromEnd(items: FeedItem[], match: (i: FeedItem) => boolean): FeedIt
 
 /** Pure per-event reducer, so a whole batch folds into one set(). */
 function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Partial<ThreadState> {
-      switch (event.type) {
-        case 'content': {
-          const id = `m-${event.messageId}-${event.streamKind}`
-          const existing = findFromEnd(t.items, (i) => i.id === id)
-          if (existing && existing.kind === 'text') {
-            return {
-              items: replaceItem(t.items, (i) => i.id === id, (i) => {
-                const item = i as Extract<FeedItem, { kind: 'text' }>
-                return { ...item, text: applyContentText(item.text, event) }
-              }),
-            }
-          }
-          return {
-            items: [
-              ...t.items,
-              { kind: 'text', id, text: applyContentText(undefined, event), stream: event.streamKind, done: false },
-            ],
-            // Mirror the desktop rule (agent-store appendMessage): unread
-            // bumps once per assistant MESSAGE, not per turn - counts stay
-            // consistent across clients watching the same session.
-            unread: event.streamKind === 'assistant' && !isActive ? t.unread + 1 : t.unread,
-          }
+  switch (event.type) {
+    case 'content': {
+      const id = `m-${event.messageId}-${event.streamKind}`
+      const existing = findFromEnd(t.items, (i) => i.id === id)
+      if (existing && existing.kind === 'text') {
+        return {
+          items: replaceItem(
+            t.items,
+            (i) => i.id === id,
+            (i) => {
+              const item = i as Extract<FeedItem, { kind: 'text' }>
+              return { ...item, text: applyContentText(item.text, event) }
+            },
+          ),
         }
-        // A turn sent from another client (desktop, second phone). Our own
-        // sends carry an origin we recorded, and were added optimistically.
-        case 'user.message': {
-          // The echo of our own send carries the id we appended optimistically,
-          // so this collapses onto it instead of rendering a second bubble.
-          const id = echoMessageId(event.origin ?? String(event.at))
-          if (t.items.some((i) => i.id === id)) return {}
-          const visible = visibleUserMessageText(event.text, event.displayBody)
-          const text = visible !== null && event.displayBody !== undefined ? pillBodyText(visible, event.pillsMeta) : visible
-          const images = event.images?.map((image) => image.url)
-          // Context-only text is hidden, but images sent with it still show.
-          if (text === null && !images?.length) return {}
-          return {
-            items: [
-              ...t.items,
-              { kind: 'user', id, text: text ?? '', at: event.at, images: images?.length ? images : undefined },
-            ],
-          }
-        }
-        case 'task.notification': {
-          if (t.items.some((i) => i.id === event.messageId)) return {}
-          // A replay after a re-seed must not add it back beside the history row.
-          const historyRows = t.items.flatMap((i) => (i.kind === 'synthetic' && i.id.startsWith('h-') && i.at !== undefined ? [{ part: i.part, at: i.at }] : []))
-          if (transcriptShowsTaskNotification(historyRows, event)) return {}
-          const { status, summary, taskId, outputFile } = event
-          return {
-            items: [
-              ...t.items,
-              { kind: 'synthetic', id: event.messageId, part: { kind: 'task-notification', status, summary, taskId, outputFile } },
-            ],
-          }
-        }
-        case 'tool.started':
-          return {
-            items: [
-              ...t.items,
-              { kind: 'tool', id: `t-${event.toolId}`, toolName: event.toolName, input: event.input, state: 'running' },
-            ],
-          }
-        case 'tool.completed':
-          return {
-            items: replaceItem(t.items, (i) => i.id === `t-${event.toolId}`, (i) => ({
-              ...(i as Extract<FeedItem, { kind: 'tool' }>),
-              output: event.output,
-              state: 'done' as const,
-            })),
-          }
-        case 'tool.denied':
-          return {
-            items: [
-              ...t.items,
-              { kind: 'denial', id: `d-${Date.now()}`, toolName: event.toolName, reason: event.reason },
-            ],
-          }
-        case 'request.opened':
-          return {
-            items: [
-              ...t.items,
-              {
-                kind: 'approval',
-                id: `a-${event.requestId}`,
-                requestId: event.requestId,
-                toolName: event.toolName,
-                detail: event.detail,
-                requestType: event.requestType,
-                state: 'pending',
-                ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
-              },
-            ],
-          }
-        case 'request.closed':
-          return {
-            items: replaceItem(
-              t.items,
-              (i) => i.kind === 'approval' && i.requestId === event.requestId,
-              (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: event.decision, closed: true }),
-            ),
-          }
-        case 'request.expired':
-          // The provider can no longer take an answer: the open card becomes
-          // a notice with the reason, so nothing offers buttons that answer nothing.
-          return {
-            items: t.items.map((i) => {
-              // Not by state: an optimistic Approve is still unanswered until request.closed.
-              if (i.kind === 'approval' && i.requestId === event.requestId && !i.closed) {
-                return { kind: 'notice', id: i.id, text: expiredRequestNotice('approval', event.reason) }
-              }
-              if (i.kind === 'question' && i.requestId === event.requestId && !i.answers) {
-                return { kind: 'notice', id: i.id, text: expiredRequestNotice('question', event.reason) }
-              }
-              return i
-            }),
-          }
-        case 'question.asked':
-          return {
-            items: [
-              ...t.items,
-              { kind: 'question', id: `q-${event.requestId}`, requestId: event.requestId, questions: event.questions },
-            ],
-          }
-        case 'question.answered':
-          return {
-            items: replaceItem(
-              t.items,
-              (i) => i.kind === 'question' && i.requestId === event.requestId,
-              (i) => ({ ...(i as Extract<FeedItem, { kind: 'question' }>), answers: event.answers }),
-            ),
-          }
-        case 'plan.proposed':
-          return {
-            items: [...t.items, { kind: 'plan', id: `p-${event.planId}`, planId: event.planId, markdown: event.planMarkdown }],
-          }
-        case 'file.edited':
-          return {
-            items: [
-              ...t.items.filter((i) => i.id !== `f-${event.fileEditId}`), // re-edit within a turn coalesces
-              {
-                kind: 'fileEdit',
-                id: `f-${event.fileEditId}`,
-                relPath: event.relPath,
-                changeKind: event.changeKind,
-                oldContent: event.oldContent,
-                newContent: event.newContent,
-              },
-            ],
-          }
-        case 'turn.completed': {
-          // Mark all texts done; stamp duration on the last assistant text.
-          const lastIdx = t.items.findLastIndex((i) => i.kind === 'text' && i.stream === 'assistant')
-          const items = t.items.map((i, idx) => {
-            if (i.kind === 'text') {
-              return { ...i, done: true, ...(idx === lastIdx ? { durationMs: event.durationMs } : {}) }
-            }
-            // A tool card spins while state === 'running'. If tool.completed
-            // never arrives (or its id does not match) the spinner never stops,
-            // which showed as several cards spinning at once. The turn ending
-            // is proof nothing is still running.
-            if (i.kind === 'tool' && i.state === 'running') return { ...i, state: 'done' as const }
-            return i
-          })
-          return {
-            items,
-            status: 'idle' as const,
-            usedTokens: event.usedTokens ?? t.usedTokens,
-            maxTokens: event.maxTokens ?? t.maxTokens,
-            costUsd: event.costUsd ?? t.costUsd,
-            lastTurnDurationMs: event.durationMs,
-            lastTurnAt: Date.now(),
-          }
-        }
-        case 'status':
-          return { status: event.status, heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event) }
-        case 'turn.queued':
-        case 'turn.queue-held':
-          return { heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event), heldRevision: (t.heldRevision ?? 0) + 1 }
-        case 'turn.dequeued': {
-          const heldTurns = applyQueuedTurnEvent(t.heldTurns ?? {}, event)
-          const heldRevision = (t.heldRevision ?? 0) + 1
-          // A cancelled or dropped message never reached the agent: its
-          // bubble goes, on every client, live or reloaded from history.
-          if (!queuedRowRemoved(event.reason)) return { heldTurns, heldRevision }
-          const gone = new Set([event.messageId, `h-${event.messageId}`])
-          return { heldTurns, heldRevision, items: t.items.filter((i) => !(i.kind === 'user' && gone.has(i.id))) }
-        }
-        case 'session.provider':
-          return {
-            provider: event.provider,
-            instanceId: event.instanceId,
-            instanceName: event.instanceName,
-            // Announced from any client, so it supersedes a pick not yet sent.
-            ...(event.runtimeMode ? { runtimeMode: event.runtimeMode, pickedMode: undefined } : {}),
-          }
-        case 'session':
-          return { sessionId: event.sessionId }
-        case 'model.unavailable':
-          // The backend already fell back to the default; say so in the feed.
-          return {
-            items: [...t.items, {
-              kind: 'notice',
-              id: `model-unavailable-${Date.now()}`,
-              text: `${event.model} is not available on this account any more. This chat now uses the default model.`,
-            }],
-          }
-        case 'context_window':
-          // Codex emits maxTokens: null while the model limit is unknown -
-          // keep a previously-learned limit instead of blanking the meter.
-          return {
-            usedTokens: event.usedTokens,
-            maxTokens: event.maxTokens ?? t.maxTokens,
-            costUsd: event.costUsd ?? t.costUsd,
-          }
-        case 'error':
-          return {
-            items: [...t.items, { kind: 'error', id: `e-${Date.now()}`, message: event.message }],
-            status: 'error' as const,
-          }
-        // An agent's approval card closed; the desktop shows the same row on reload.
-        case 'approval.result': {
-          if (t.items.some((i) => i.id === event.messageId)) return {}
-          const row = parseApprovalResultMarker(event.content)
-          if (!row) return {}
-          return { items: [...t.items, { kind: 'notice', id: event.messageId, text: `${approvalResultLabel(row)}: ${row.text}` }] }
-        }
-        // A link refused a message, or the user sent a kept one: same id as the
-        // history row, so a reload and a live event land on one row.
-        case 'peer.undelivered': {
-          const item: FeedItem = {
-            kind: 'undelivered', id: `h-${event.messageId}`, messageId: event.messageId,
-            row: { to: event.peerThreadId, toLabel: event.peerLabel, reason: event.reason, text: event.text, sent: event.sent },
-          }
-          const at = t.items.findIndex((i) => i.id === item.id)
-          return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
-        }
-        // A fork's summary card in this (parent) chat, read-only here: same id
-        // as the history row, so a reload and a live event land on one row,
-        // and a discarded card goes away.
-        case 'merge-back.row': {
-          const id = `h-${event.messageId}`
-          if (event.content === null) return { items: t.items.filter((i) => i.id !== id) }
-          const view = systemRowView(event.content)
-          if (view.kind !== 'notice') return {}
-          const item: FeedItem = { kind: 'notice', id, text: view.body ? `${view.title}: ${view.body}` : view.title }
-          const at = t.items.findIndex((i) => i.id === id)
-          return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
-        }
-        // Read on another client. applyEvent already resolved the connection's
-        // thread key, so this only has to drop the count.
-        case 'thread.read':
-          return { unread: 0 }
-        default:
-          return {}
       }
+      return {
+        items: [
+          ...t.items,
+          { kind: 'text', id, text: applyContentText(undefined, event), stream: event.streamKind, done: false },
+        ],
+        // Mirror the desktop rule (agent-store appendMessage): unread
+        // bumps once per assistant MESSAGE, not per turn - counts stay
+        // consistent across clients watching the same session.
+        unread: event.streamKind === 'assistant' && !isActive ? t.unread + 1 : t.unread,
+      }
+    }
+    // A turn sent from another client (desktop, second phone). Our own
+    // sends carry an origin we recorded, and were added optimistically.
+    case 'user.message': {
+      // The echo of our own send carries the id we appended optimistically,
+      // so this collapses onto it instead of rendering a second bubble.
+      const id = echoMessageId(event.origin ?? String(event.at))
+      if (t.items.some((i) => i.id === id)) return {}
+      const visible = visibleUserMessageText(event.text, event.displayBody)
+      const text =
+        visible !== null && event.displayBody !== undefined ? pillBodyText(visible, event.pillsMeta) : visible
+      const images = event.images?.map((image) => image.url)
+      // Context-only text is hidden, but images sent with it still show.
+      if (text === null && !images?.length) return {}
+      return {
+        items: [
+          ...t.items,
+          { kind: 'user', id, text: text ?? '', at: event.at, images: images?.length ? images : undefined },
+        ],
+      }
+    }
+    case 'task.notification': {
+      if (t.items.some((i) => i.id === event.messageId)) return {}
+      // A replay after a re-seed must not add it back beside the history row.
+      const historyRows = t.items.flatMap((i) =>
+        i.kind === 'synthetic' && i.id.startsWith('h-') && i.at !== undefined ? [{ part: i.part, at: i.at }] : [],
+      )
+      if (transcriptShowsTaskNotification(historyRows, event)) return {}
+      const { status, summary, taskId, outputFile } = event
+      return {
+        items: [
+          ...t.items,
+          {
+            kind: 'synthetic',
+            id: event.messageId,
+            part: { kind: 'task-notification', status, summary, taskId, outputFile },
+          },
+        ],
+      }
+    }
+    case 'tool.started':
+      return {
+        items: [
+          ...t.items,
+          { kind: 'tool', id: `t-${event.toolId}`, toolName: event.toolName, input: event.input, state: 'running' },
+        ],
+      }
+    case 'tool.completed':
+      return {
+        items: replaceItem(
+          t.items,
+          (i) => i.id === `t-${event.toolId}`,
+          (i) => ({
+            ...(i as Extract<FeedItem, { kind: 'tool' }>),
+            output: event.output,
+            state: 'done' as const,
+          }),
+        ),
+      }
+    case 'tool.denied':
+      return {
+        items: [...t.items, { kind: 'denial', id: `d-${Date.now()}`, toolName: event.toolName, reason: event.reason }],
+      }
+    case 'request.opened':
+      return {
+        items: [
+          ...t.items,
+          {
+            kind: 'approval',
+            id: `a-${event.requestId}`,
+            requestId: event.requestId,
+            toolName: event.toolName,
+            detail: event.detail,
+            requestType: event.requestType,
+            state: 'pending',
+            ...(event.hostWrite ? { hostWrite: event.hostWrite } : {}),
+          },
+        ],
+      }
+    case 'request.closed':
+      return {
+        items: replaceItem(
+          t.items,
+          (i) => i.kind === 'approval' && i.requestId === event.requestId,
+          (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: event.decision, closed: true }),
+        ),
+      }
+    case 'request.expired':
+      // The provider can no longer take an answer: the open card becomes
+      // a notice with the reason, so nothing offers buttons that answer nothing.
+      return {
+        items: t.items.map((i) => {
+          // Not by state: an optimistic Approve is still unanswered until request.closed.
+          if (i.kind === 'approval' && i.requestId === event.requestId && !i.closed) {
+            return { kind: 'notice', id: i.id, text: expiredRequestNotice('approval', event.reason) }
+          }
+          if (i.kind === 'question' && i.requestId === event.requestId && !i.answers) {
+            return { kind: 'notice', id: i.id, text: expiredRequestNotice('question', event.reason) }
+          }
+          return i
+        }),
+      }
+    case 'question.asked':
+      return {
+        items: [
+          ...t.items,
+          { kind: 'question', id: `q-${event.requestId}`, requestId: event.requestId, questions: event.questions },
+        ],
+      }
+    case 'question.answered':
+      return {
+        items: replaceItem(
+          t.items,
+          (i) => i.kind === 'question' && i.requestId === event.requestId,
+          (i) => ({ ...(i as Extract<FeedItem, { kind: 'question' }>), answers: event.answers }),
+        ),
+      }
+    case 'plan.proposed':
+      return {
+        items: [
+          ...t.items,
+          { kind: 'plan', id: `p-${event.planId}`, planId: event.planId, markdown: event.planMarkdown },
+        ],
+      }
+    case 'file.edited':
+      return {
+        items: [
+          ...t.items.filter((i) => i.id !== `f-${event.fileEditId}`), // re-edit within a turn coalesces
+          {
+            kind: 'fileEdit',
+            id: `f-${event.fileEditId}`,
+            relPath: event.relPath,
+            changeKind: event.changeKind,
+            oldContent: event.oldContent,
+            newContent: event.newContent,
+          },
+        ],
+      }
+    case 'turn.completed': {
+      // Mark all texts done; stamp duration on the last assistant text.
+      const lastIdx = t.items.findLastIndex((i) => i.kind === 'text' && i.stream === 'assistant')
+      const items = t.items.map((i, idx) => {
+        if (i.kind === 'text') {
+          return { ...i, done: true, ...(idx === lastIdx ? { durationMs: event.durationMs } : {}) }
+        }
+        // A tool card spins while state === 'running'. If tool.completed
+        // never arrives (or its id does not match) the spinner never stops,
+        // which showed as several cards spinning at once. The turn ending
+        // is proof nothing is still running.
+        if (i.kind === 'tool' && i.state === 'running') return { ...i, state: 'done' as const }
+        return i
+      })
+      return {
+        items,
+        status: 'idle' as const,
+        usedTokens: event.usedTokens ?? t.usedTokens,
+        maxTokens: event.maxTokens ?? t.maxTokens,
+        costUsd: event.costUsd ?? t.costUsd,
+        lastTurnDurationMs: event.durationMs,
+        lastTurnAt: Date.now(),
+      }
+    }
+    case 'status':
+      return { status: event.status, heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event) }
+    case 'turn.queued':
+    case 'turn.queue-held':
+      return { heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event), heldRevision: (t.heldRevision ?? 0) + 1 }
+    case 'turn.dequeued': {
+      const heldTurns = applyQueuedTurnEvent(t.heldTurns ?? {}, event)
+      const heldRevision = (t.heldRevision ?? 0) + 1
+      // A cancelled or dropped message never reached the agent: its
+      // bubble goes, on every client, live or reloaded from history.
+      if (!queuedRowRemoved(event.reason)) return { heldTurns, heldRevision }
+      const gone = new Set([event.messageId, `h-${event.messageId}`])
+      return { heldTurns, heldRevision, items: t.items.filter((i) => !(i.kind === 'user' && gone.has(i.id))) }
+    }
+    case 'session.provider':
+      return {
+        provider: event.provider,
+        instanceId: event.instanceId,
+        instanceName: event.instanceName,
+        // Announced from any client, so it supersedes a pick not yet sent.
+        ...(event.runtimeMode ? { runtimeMode: event.runtimeMode, pickedMode: undefined } : {}),
+      }
+    case 'session':
+      return { sessionId: event.sessionId }
+    case 'model.unavailable':
+      // The backend already fell back to the default; say so in the feed.
+      return {
+        items: [
+          ...t.items,
+          {
+            kind: 'notice',
+            id: `model-unavailable-${Date.now()}`,
+            text: `${event.model} is not available on this account any more. This chat now uses the default model.`,
+          },
+        ],
+      }
+    case 'context_window':
+      // Codex emits maxTokens: null while the model limit is unknown -
+      // keep a previously-learned limit instead of blanking the meter.
+      return {
+        usedTokens: event.usedTokens,
+        maxTokens: event.maxTokens ?? t.maxTokens,
+        costUsd: event.costUsd ?? t.costUsd,
+      }
+    case 'error':
+      return {
+        items: [...t.items, { kind: 'error', id: `e-${Date.now()}`, message: event.message }],
+        status: 'error' as const,
+      }
+    // An agent's approval card closed; the desktop shows the same row on reload.
+    case 'approval.result': {
+      if (t.items.some((i) => i.id === event.messageId)) return {}
+      const row = parseApprovalResultMarker(event.content)
+      if (!row) return {}
+      return {
+        items: [...t.items, { kind: 'notice', id: event.messageId, text: `${approvalResultLabel(row)}: ${row.text}` }],
+      }
+    }
+    // A link refused a message, or the user sent a kept one: same id as the
+    // history row, so a reload and a live event land on one row.
+    case 'peer.undelivered': {
+      const item: FeedItem = {
+        kind: 'undelivered',
+        id: `h-${event.messageId}`,
+        messageId: event.messageId,
+        row: {
+          to: event.peerThreadId,
+          toLabel: event.peerLabel,
+          reason: event.reason,
+          text: event.text,
+          sent: event.sent,
+        },
+      }
+      const at = t.items.findIndex((i) => i.id === item.id)
+      return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
+    }
+    // A fork's summary card in this (parent) chat, read-only here: same id
+    // as the history row, so a reload and a live event land on one row,
+    // and a discarded card goes away.
+    case 'merge-back.row': {
+      const id = `h-${event.messageId}`
+      if (event.content === null) return { items: t.items.filter((i) => i.id !== id) }
+      const view = systemRowView(event.content)
+      if (view.kind !== 'notice') return {}
+      const item: FeedItem = { kind: 'notice', id, text: view.body ? `${view.title}: ${view.body}` : view.title }
+      const at = t.items.findIndex((i) => i.id === id)
+      return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
+    }
+    // Read on another client. applyEvent already resolved the connection's
+    // thread key, so this only has to drop the count.
+    case 'thread.read':
+      return { unread: 0 }
+    default:
+      return {}
+  }
 }
 
 function applyEvent(
@@ -582,126 +635,128 @@ export const chatCacheReady = new Promise<void>((resolve) => {
 export const useChatStore = create<ChatState>()(
   persist(
     (set) => ({
-  threads: {},
-  activeKey: null,
+      threads: {},
+      activeKey: null,
 
-  setActive: (key) =>
-    set((s) => ({
-      activeKey: key,
-      threads: key && s.threads[key] ? patchThread(s.threads, key, () => ({ unread: 0 })) : s.threads,
-    })),
+      setActive: (key) =>
+        set((s) => ({
+          activeKey: key,
+          threads: key && s.threads[key] ? patchThread(s.threads, key, () => ({ unread: 0 })) : s.threads,
+        })),
 
-  setRuntimeMode: (key, mode) =>
-    set((s) => ({ threads: patchThread(s.threads, key, (t) => ({ runtimeMode: t.pickedMode ?? mode })) })),
+      setRuntimeMode: (key, mode) =>
+        set((s) => ({ threads: patchThread(s.threads, key, (t) => ({ runtimeMode: t.pickedMode ?? mode })) })),
 
-  pickRuntimeMode: (key, mode) =>
-    set((s) => ({ threads: patchThread(s.threads, key, () => ({ runtimeMode: mode, pickedMode: mode })) })),
+      pickRuntimeMode: (key, mode) =>
+        set((s) => ({ threads: patchThread(s.threads, key, () => ({ runtimeMode: mode, pickedMode: mode })) })),
 
-  settlePickedMode: (key, mode) =>
-    set((s) => ({ threads: patchThread(s.threads, key, (t) => (t.pickedMode === mode ? { pickedMode: undefined } : {})) })),
+      settlePickedMode: (key, mode) =>
+        set((s) => ({
+          threads: patchThread(s.threads, key, (t) => (t.pickedMode === mode ? { pickedMode: undefined } : {})),
+        })),
 
-  addUserMessage: (key, text, images, id) =>
-    set((s) => ({
-      threads: patchThread(s.threads, key, (t) => ({
-        items: [...t.items, { kind: 'user', id: id ?? `u-${Date.now()}`, text, at: Date.now(), images }],
-      })),
-    })),
+      addUserMessage: (key, text, images, id) =>
+        set((s) => ({
+          threads: patchThread(s.threads, key, (t) => ({
+            items: [...t.items, { kind: 'user', id: id ?? `u-${Date.now()}`, text, at: Date.now(), images }],
+          })),
+        })),
 
-  markQuestionAnswered: (key, requestId, answers) =>
-    set((s) => ({
-      threads: patchThread(s.threads, key, (t) => ({
-        items: replaceItem(
-          t.items,
-          (i) => i.kind === 'question' && i.requestId === requestId,
-          (i) => ({ ...(i as Extract<FeedItem, { kind: 'question' }>), answers }),
-        ),
-      })),
-    })),
+      markQuestionAnswered: (key, requestId, answers) =>
+        set((s) => ({
+          threads: patchThread(s.threads, key, (t) => ({
+            items: replaceItem(
+              t.items,
+              (i) => i.kind === 'question' && i.requestId === requestId,
+              (i) => ({ ...(i as Extract<FeedItem, { kind: 'question' }>), answers }),
+            ),
+          })),
+        })),
 
-  reopenQuestion: (key, requestId) =>
-    set((s) => ({
-      threads: patchThread(s.threads, key, (t) => ({
-        items: replaceItem(
-          t.items,
-          (i) => i.kind === 'question' && i.requestId === requestId,
-          (i) => ({ ...(i as Extract<FeedItem, { kind: 'question' }>), answers: undefined }),
-        ),
-      })),
-    })),
+      reopenQuestion: (key, requestId) =>
+        set((s) => ({
+          threads: patchThread(s.threads, key, (t) => ({
+            items: replaceItem(
+              t.items,
+              (i) => i.kind === 'question' && i.requestId === requestId,
+              (i) => ({ ...(i as Extract<FeedItem, { kind: 'question' }>), answers: undefined }),
+            ),
+          })),
+        })),
 
-  markApprovalResolved: (key, requestId, decision) =>
-    set((s) => ({
-      threads: patchThread(s.threads, key, (t) => ({
-        items: replaceItem(
-          t.items,
-          (i) => i.kind === 'approval' && i.requestId === requestId,
-          (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: decision }),
-        ),
-      })),
-    })),
+      markApprovalResolved: (key, requestId, decision) =>
+        set((s) => ({
+          threads: patchThread(s.threads, key, (t) => ({
+            items: replaceItem(
+              t.items,
+              (i) => i.kind === 'approval' && i.requestId === requestId,
+              (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: decision }),
+            ),
+          })),
+        })),
 
-  reopenApproval: (key, requestId) =>
-    set((s) => ({
-      threads: patchThread(s.threads, key, (t) => ({
-        items: replaceItem(
-          t.items,
-          (i) => i.kind === 'approval' && i.requestId === requestId && !i.closed,
-          (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: 'pending' }),
-        ),
-      })),
-    })),
+      reopenApproval: (key, requestId) =>
+        set((s) => ({
+          threads: patchThread(s.threads, key, (t) => ({
+            items: replaceItem(
+              t.items,
+              (i) => i.kind === 'approval' && i.requestId === requestId && !i.closed,
+              (i) => ({ ...(i as Extract<FeedItem, { kind: 'approval' }>), state: 'pending' }),
+            ),
+          })),
+        })),
 
-  addNotice: (key, text) =>
-    set((s) => ({
-      threads: patchThread(s.threads, key, (t) => ({
-        items: [...t.items, { kind: 'notice', id: `n-${Date.now()}-${t.items.length}`, text }],
-      })),
-    })),
+      addNotice: (key, text) =>
+        set((s) => ({
+          threads: patchThread(s.threads, key, (t) => ({
+            items: [...t.items, { kind: 'notice', id: `n-${Date.now()}-${t.items.length}`, text }],
+          })),
+        })),
 
-  removeUserMessage: (key, id) =>
-    set((s) => ({ threads: patchThread(s.threads, key, (t) => ({ items: t.items.filter((i) => i.id !== id) })) })),
+      removeUserMessage: (key, id) =>
+        set((s) => ({ threads: patchThread(s.threads, key, (t) => ({ items: t.items.filter((i) => i.id !== id) })) })),
 
-  setHeldTurns: (key, turns) =>
-    set((s) => ({ threads: patchThread(s.threads, key, () => ({ heldTurns: seedQueuedTurns(turns) })) })),
+      setHeldTurns: (key, turns) =>
+        set((s) => ({ threads: patchThread(s.threads, key, () => ({ heldTurns: seedQueuedTurns(turns) })) })),
 
-  seedItems: (key, items, keepIds) =>
-    // Clearing `cached` is the point: this feed now came from the backend.
-    set((s) => ({
-      threads: patchThread(s.threads, key, (t) => {
-        // A send can be delivered and still stay queued when the response frame
-        // is lost, so history may ALREADY contain the message the outbox is
-        // holding. History items are re-keyed `h-<id>`, so the collision is
-        // invisible to an id comparison - hence matching on the suffix.
-        const seeded = new Set(items.map((i) => i.id))
-        const alreadySeeded = (id: string): boolean => seeded.has(id) || seeded.has(`h-${id}`)
-        // Kept items go AFTER the history: they are the newest thing the user
-        // did, and history by definition predates them.
-        const keep = keepIds?.length
-          ? t.items.filter((i) => keepIds.includes(i.id) && !alreadySeeded(i.id))
-          : []
-        return { items: [...items, ...keep], cached: false, historyLoaded: true }
-      }),
-    })),
+      seedItems: (key, items, keepIds) =>
+        // Clearing `cached` is the point: this feed now came from the backend.
+        set((s) => ({
+          threads: patchThread(s.threads, key, (t) => {
+            // A send can be delivered and still stay queued when the response frame
+            // is lost, so history may ALREADY contain the message the outbox is
+            // holding. History items are re-keyed `h-<id>`, so the collision is
+            // invisible to an id comparison - hence matching on the suffix.
+            const seeded = new Set(items.map((i) => i.id))
+            const alreadySeeded = (id: string): boolean => seeded.has(id) || seeded.has(`h-${id}`)
+            // Kept items go AFTER the history: they are the newest thing the user
+            // did, and history by definition predates them.
+            const keep = keepIds?.length ? t.items.filter((i) => keepIds.includes(i.id) && !alreadySeeded(i.id)) : []
+            return { items: [...items, ...keep], cached: false, historyLoaded: true }
+          }),
+        })),
 
-  ingest: (connectionId, event) => enqueue(connectionId, event),
+      ingest: (connectionId, event) => enqueue(connectionId, event),
 
-  ingestNow: (connectionId, event) =>
-    set((s) => ({ threads: applyEvent(s.threads, connectionId, event, s.activeKey) })),
+      ingestNow: (connectionId, event) =>
+        set((s) => ({ threads: applyEvent(s.threads, connectionId, event, s.activeKey) })),
 
-  staleGeneration: 0,
+      staleGeneration: 0,
 
-  invalidateConnection: (connectionId) => {
-    flushQueue()
-    set((s) => {
-      const prefix = `${connectionId}:`
-      const threads: Record<string, ThreadState> = {}
-      for (const [key, thread] of Object.entries(s.threads)) {
-        // Keep the displayed feed while replacing its incomplete history.
-        threads[key] = key.startsWith(prefix) ? { ...thread, historyLoaded: false, cached: true, reseedRevision: (thread.reseedRevision ?? 0) + 1 } : thread
-      }
-      return { threads, staleGeneration: s.staleGeneration + 1 }
-    })
-  },
+      invalidateConnection: (connectionId) => {
+        flushQueue()
+        set((s) => {
+          const prefix = `${connectionId}:`
+          const threads: Record<string, ThreadState> = {}
+          for (const [key, thread] of Object.entries(s.threads)) {
+            // Keep the displayed feed while replacing its incomplete history.
+            threads[key] = key.startsWith(prefix)
+              ? { ...thread, historyLoaded: false, cached: true, reseedRevision: (thread.reseedRevision ?? 0) + 1 }
+              : thread
+          }
+          return { threads, staleGeneration: s.staleGeneration + 1 }
+        })
+      },
     }),
     {
       name: 'sb-chat-cache',
@@ -713,7 +768,10 @@ export const useChatStore = create<ChatState>()(
         if (version >= 1 || !state?.threads) return state
         return {
           threads: Object.fromEntries(
-            Object.entries(state.threads).map(([key, t]) => [key, { ...t, items: splitLegacyCachedItems(t.items ?? []) }]),
+            Object.entries(state.threads).map(([key, t]) => [
+              key,
+              { ...t, items: splitLegacyCachedItems(t.items ?? []) },
+            ]),
           ),
         }
       },
@@ -727,10 +785,7 @@ export const useChatStore = create<ChatState>()(
         // 'running' would spin for a turn that finished while the app was
         // closed; 'idle' would claim a connection we have not made.
         state.threads = Object.fromEntries(
-          Object.entries(state.threads).map(([key, t]) => [
-            key,
-            { ...t, status: 'connecting' as const, cached: true },
-          ]),
+          Object.entries(state.threads).map(([key, t]) => [key, { ...t, status: 'connecting' as const, cached: true }]),
         )
         resolveCache()
       },

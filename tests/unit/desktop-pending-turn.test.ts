@@ -72,25 +72,25 @@ describe('Desktop pending user-turn presentation', () => {
   })
 
   it('labels an unchanged ambiguous recovery as a safe retry', () => {
-    const recoveryAction = (submissionModule as unknown as Record<string, unknown>)
-      .desktopComposerRecoveryAction
+    const recoveryAction = (submissionModule as unknown as Record<string, unknown>).desktopComposerRecoveryAction
     expect(typeof recoveryAction).toBe('function')
 
-    expect((recoveryAction as (
-      recoveryFingerprint: string,
-      currentFingerprint: string,
-      ambiguous: boolean,
-    ) => string)('same', 'same', true)).toBe('retry-safe')
+    expect(
+      (recoveryAction as (recoveryFingerprint: string, currentFingerprint: string, ambiguous: boolean) => string)(
+        'same',
+        'same',
+        true,
+      ),
+    ).toBe('retry-safe')
   })
 
   it('requires a warning before an edited ambiguous recovery becomes a new send', () => {
-    const candidate = (submissionModule as unknown as Record<string, unknown>)
-      .desktopComposerRecoveryAction
+    const candidate = (submissionModule as unknown as Record<string, unknown>).desktopComposerRecoveryAction
     expect(typeof candidate).toBe('function')
     const recoveryAction = candidate as (
-        recoveryFingerprint: string,
-        currentFingerprint: string,
-        ambiguous: boolean,
+      recoveryFingerprint: string,
+      currentFingerprint: string,
+      ambiguous: boolean,
     ) => string
 
     expect(recoveryAction('before', 'after', true)).toBe('send-with-warning')
@@ -102,26 +102,22 @@ describe('Desktop pending user-turn presentation', () => {
   })
 
   it('warns before a newer draft discards an unrestored definite failure', () => {
-    expect(submissionModule.desktopComposerRecoveryAction('before', 'after', false))
-      .toBe('send-with-discard-warning')
+    expect(submissionModule.desktopComposerRecoveryAction('before', 'after', false)).toBe('send-with-discard-warning')
   })
 
   it('does not warn when the definite failure was already restored and edited in place', () => {
-    expect(submissionModule.desktopComposerRecoveryAction('before', 'after', false, true))
-      .toBe('send')
+    expect(submissionModule.desktopComposerRecoveryAction('before', 'after', false, true)).toBe('send')
   })
 
   it('treats a missing durable delivery row as safe to move past', () => {
-    const allowsSend = (submissionModule as unknown as Record<string, unknown>)
-      .desktopRecoveryResolutionAllowsSend
+    const allowsSend = (submissionModule as unknown as Record<string, unknown>).desktopRecoveryResolutionAllowsSend
     expect(typeof allowsSend).toBe('function')
     expect((allowsSend as (status: string) => boolean)('not_found')).toBe(true)
     expect((allowsSend as (status: string) => boolean)('pending')).toBe(false)
   })
 
   it('retains prepared turns only while delivery is still genuinely ambiguous', () => {
-    const retain = (submissionModule as unknown as Record<string, unknown>)
-      .shouldRetainPreparedDesktopTurn
+    const retain = (submissionModule as unknown as Record<string, unknown>).shouldRetainPreparedDesktopTurn
     expect(typeof retain).toBe('function')
     expect((retain as (delivery: string) => boolean)('ambiguous')).toBe(true)
     expect((retain as (delivery: string) => boolean)('pending')).toBe(true)
@@ -134,9 +130,11 @@ describe('Desktop pending user-turn presentation', () => {
     expect(typeof registry.get).toBe('function')
     ;(registry.prepare as (value: UserTurnSubmissionV1) => UserTurnSubmissionV1)(turn)
 
-    expect((registry.get as (threadId: string, origin: string) => UserTurnSubmissionV1 | undefined)(
-      turn.threadId,
-      turn.origin,
-    )).toEqual(turn)
+    expect(
+      (registry.get as (threadId: string, origin: string) => UserTurnSubmissionV1 | undefined)(
+        turn.threadId,
+        turn.origin,
+      ),
+    ).toEqual(turn)
   })
 })

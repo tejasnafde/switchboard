@@ -78,7 +78,11 @@ export function AddRemoteProjectModal({ machineId, onClose }: { machineId: strin
     setSubmitting(true)
     setError(null)
     try {
-      const result = await window.api.routing.invokeOn<AddProjectResult>(machineId, AppChannels.ADD_PROJECT_PATH, trimmed)
+      const result = await window.api.routing.invokeOn<AddProjectResult>(
+        machineId,
+        AppChannels.ADD_PROJECT_PATH,
+        trimmed,
+      )
       if ('ok' in result && result.ok === false) {
         setError(result.error)
         return
@@ -155,7 +159,9 @@ export function AddRemoteProjectModal({ machineId, onClose }: { machineId: strin
         </div>
 
         <div className="machine-modal-actions">
-          <button className="machine-modal-cancel" onClick={onClose}>Cancel</button>
+          <button className="machine-modal-cancel" onClick={onClose}>
+            Cancel
+          </button>
           <button className="machine-modal-add" onClick={() => void submit()} disabled={submitting || !path.trim()}>
             Add
           </button>

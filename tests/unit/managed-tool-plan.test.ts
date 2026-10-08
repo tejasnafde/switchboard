@@ -14,7 +14,12 @@ import { describe, it, expect } from 'vitest'
 import { parseProbeOutput, type RemoteProbe } from '../../src/main/machines/remote-probe'
 import { planManagedTools, managedToolsMarker } from '../../src/main/machines/managed-tool-plan'
 import { planProvision } from '../../src/main/machines/provision-plan'
-import { REMOTE_CODEX_VERSION, codexEnsureScript, claudeSymlinkScript, managedToolsMarkerScript } from '../../src/main/machines/provision-setup'
+import {
+  REMOTE_CODEX_VERSION,
+  codexEnsureScript,
+  claudeSymlinkScript,
+  managedToolsMarkerScript,
+} from '../../src/main/machines/provision-setup'
 import { buildProbeCommand } from '../../src/main/machines/provision-commands'
 import type { Machine } from '@shared/machines'
 
@@ -183,15 +188,30 @@ describe('the ssh probe reports resolved executables and versions', () => {
     return m ? Buffer.from(m[1], 'base64').toString('utf8') : remote
   }
   const machine: Machine = {
-    id: 'm1', name: 'prod', sshAlias: 'prod-vm', sshHost: 'h', sshUser: 'u',
-    sshPort: 22, remoteUser: null, sortOrder: 0, createdAt: 0, updatedAt: 0,
+    id: 'm1',
+    name: 'prod',
+    sshAlias: 'prod-vm',
+    sshHost: 'h',
+    sshUser: 'u',
+    sshPort: 22,
+    remoteUser: null,
+    sortOrder: 0,
+    createdAt: 0,
+    updatedAt: 0,
   }
 
   it('parses the new executable/version fields', () => {
     const line = JSON.stringify({
-      node: 'v20.11.0', platform: 'linux', arch: 'x64', abi: '115', server: '0.8.52',
-      claudeBin: '/home/u/.local/bin/claude', claudeVersion: '0.2.141',
-      codexBin: '/home/u/.local/bin/codex', codexVersion: '0.153.2', tools: 'abc123',
+      node: 'v20.11.0',
+      platform: 'linux',
+      arch: 'x64',
+      abi: '115',
+      server: '0.8.52',
+      claudeBin: '/home/u/.local/bin/claude',
+      claudeVersion: '0.2.141',
+      codexBin: '/home/u/.local/bin/codex',
+      codexVersion: '0.153.2',
+      tools: 'abc123',
     })
     const parsed = parseProbeOutput(line)
     expect(parsed.claudeBin).toBe('/home/u/.local/bin/claude')

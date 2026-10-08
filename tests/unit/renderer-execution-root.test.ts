@@ -58,8 +58,7 @@ describe('executionRootForSession', () => {
   })
 
   it('carries the session machine so a remote root is never read as local', () => {
-    expect(executionRootForSession({ projectPath: '/srv/app', machineId: 'vm-7' })?.machineId)
-      .toBe('vm-7')
+    expect(executionRootForSession({ projectPath: '/srv/app', machineId: 'vm-7' })?.machineId).toBe('vm-7')
   })
 
   it('defaults an absent machine to local', () => {
@@ -67,8 +66,7 @@ describe('executionRootForSession', () => {
   })
 
   it('carries the execution-root revision', () => {
-    expect(executionRootForSession({ projectPath: '/repo/app', executionRootRevision: 5 })?.revision)
-      .toBe(5)
+    expect(executionRootForSession({ projectPath: '/repo/app', executionRootRevision: 5 })?.revision).toBe(5)
   })
 })
 

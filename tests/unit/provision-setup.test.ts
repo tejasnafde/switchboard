@@ -1,6 +1,17 @@
 /** Remote setup payload: the package.json + install script we drop on a VM. */
 import { describe, it, expect } from 'vitest'
-import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, codexEnsureScript, versionMarkerScript, bridgeSeedScript, bridgeMarker, codeServerEnsureScript, REMOTE_CODEX_VERSION, REMOTE_SERVER_DIR } from '../../src/main/machines/provision-setup'
+import {
+  remotePackageJson,
+  remoteInstallScript,
+  claudeSymlinkScript,
+  codexEnsureScript,
+  versionMarkerScript,
+  bridgeSeedScript,
+  bridgeMarker,
+  codeServerEnsureScript,
+  REMOTE_CODEX_VERSION,
+  REMOTE_SERVER_DIR,
+} from '../../src/main/machines/provision-setup'
 import { BRIDGE_EXTENSION_DIRNAME } from '../../src/main/ide/code-server-manager'
 
 describe('remotePackageJson', () => {

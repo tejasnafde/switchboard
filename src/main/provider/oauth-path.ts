@@ -30,11 +30,12 @@ export function canonicalizeOauthPath(p: string | null | undefined): string | nu
   if (p === null || p === undefined) return p ?? null
   const trimmed = p.trim()
   if (!trimmed) return ''
-  const expanded = trimmed === '~'
-    ? homedir()
-    : trimmed.startsWith(`~${sep}`) || trimmed.startsWith('~/')
-      ? join(homedir(), trimmed.slice(2))
-      : trimmed
+  const expanded =
+    trimmed === '~'
+      ? homedir()
+      : trimmed.startsWith(`~${sep}`) || trimmed.startsWith('~/')
+        ? join(homedir(), trimmed.slice(2))
+        : trimmed
   return stripTrailingSep(normalize(expanded))
 }
 
@@ -57,9 +58,7 @@ export function isWithinDir(parent: string, child: string): boolean {
   return child.startsWith(parent.endsWith(sep) ? parent : parent + sep)
 }
 
-export type OauthDirResolution =
-  | { ok: true; path: string }
-  | { ok: false; error: string }
+export type OauthDirResolution = { ok: true; path: string } | { ok: false; error: string }
 
 /**
  * Validate a user-typed path for the Settings "Create" button.

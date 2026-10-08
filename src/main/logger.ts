@@ -60,11 +60,15 @@ function pruneOldLogs(): void {
         }
         // This IS the logger; logging a failure inside its own init path would recurse.
         // eslint-disable-next-line no-restricted-syntax -- see comment above
-      } catch { /* skip - one stale log file left behind is not worth failing startup over */ }
+      } catch {
+        /* skip - one stale log file left behind is not worth failing startup over */
+      }
     }
     // This IS the logger; logging a failure inside its own init path would recurse.
     // eslint-disable-next-line no-restricted-syntax -- see comment above
-  } catch { /* ignore - pruning is best-effort and must never block startup */ }
+  } catch {
+    /* ignore - pruning is best-effort and must never block startup */
+  }
 }
 
 // Buffered async sink. `appendFileSync` per log line used to block the main
@@ -117,7 +121,9 @@ async function flushAsync(): Promise<void> {
     // This IS the logger's own disk write; logging the failure would try to
     // write again and recurse.
     // eslint-disable-next-line no-restricted-syntax -- see comment above
-  } catch { /* ignore write failures - console output still reaches the user */ }
+  } catch {
+    /* ignore write failures - console output still reaches the user */
+  }
   flushing = false
   if (buffer.length > 0) scheduleFlush()
 }
@@ -130,7 +136,9 @@ export function flushLogsSync(): void {
     // This IS the logger's own disk write, called from process exit; logging
     // the failure would recurse.
     // eslint-disable-next-line no-restricted-syntax -- see comment above
-  } catch { /* ignore write failures - nothing left to do on the way out */ }
+  } catch {
+    /* ignore write failures - nothing left to do on the way out */
+  }
 }
 
 /**
@@ -146,7 +154,9 @@ export function writeCrashBreadcrumb(scope: string, metadata: Record<string, unk
     // This IS the logger's own disk write; logging the failure would recurse
     // into the same write path.
     // eslint-disable-next-line no-restricted-syntax -- see comment above
-  } catch { /* diagnostics must never take down the app */ }
+  } catch {
+    /* diagnostics must never take down the app */
+  }
 }
 
 function formatLine(level: string, scope: string, args: unknown[]): string {
@@ -154,7 +164,11 @@ function formatLine(level: string, scope: string, args: unknown[]): string {
   const parts = args.map((a) => {
     if (typeof a === 'string') return a
     if (a instanceof Error) return `${a.message}\n${a.stack}`
-    try { return JSON.stringify(a) } catch { return String(a) }
+    try {
+      return JSON.stringify(a)
+    } catch {
+      return String(a)
+    }
   })
   return `${ts} [${level}] [${scope}] ${parts.join(' ')}\n`
 }

@@ -26,11 +26,12 @@ import { applyCredentialHome } from './credential-home'
  * and the Test/usage probes cannot drift apart.
  */
 export function resolveInstanceEnv(instance: ProviderInstanceRow): Record<string, string> {
-  const env: Record<string, string> = instance.agentType === 'codex'
-    ? buildCodexCliEnv()
-    : instance.agentType === 'claude-code'
-      ? buildClaudeCliEnv()
-      : { ...(process.env as Record<string, string>) }
+  const env: Record<string, string> =
+    instance.agentType === 'codex'
+      ? buildCodexCliEnv()
+      : instance.agentType === 'claude-code'
+        ? buildClaudeCliEnv()
+        : { ...(process.env as Record<string, string>) }
   applyEnvOverlay(env, instance.env)
   // Resolved for EVERY instance of a credential-bearing kind, not just
   // oauth_dir ones: an instance with no dir of its own must land on the
