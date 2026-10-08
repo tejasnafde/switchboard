@@ -43,7 +43,7 @@ export interface HeldTurnActions {
   /** The chip: Queued, Held (waits for Resume) or Not sent (could not start). */
   label: 'Queued' | 'Held' | 'Not sent'
   canPromote: boolean
-  /** The queue is held after a failed turn: Resume replaces Send now. */
+  /** The queue is held after Stop or a failed turn: Resume replaces Send now. */
   canResume: boolean
   /** Shown instead of the default hint when Send now is unavailable. */
   hint: string
@@ -51,7 +51,7 @@ export interface HeldTurnActions {
 
 export function heldTurnActions(provider: string | undefined, turn?: QueuedTurnSummary): HeldTurnActions {
   if (turn?.failed) return { label: 'Not sent', canPromote: false, canResume: false, hint: turn.failed }
-  if (turn?.held) return { label: 'Held', canPromote: false, canResume: true, hint: 'The last turn failed. Resume sends the queue.' }
+  if (turn?.held) return { label: 'Held', canPromote: false, canResume: true, hint: 'Held after a stop or a failed turn. Resume sends the queue.' }
   const blocked = promoteUnavailableReason(provider)
   return { label: 'Queued', canPromote: blocked === null, canResume: false, hint: blocked ?? 'Runs after this turn' }
 }

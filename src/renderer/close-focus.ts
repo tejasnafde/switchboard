@@ -17,14 +17,6 @@ export function classifyCloseFocus(active: ClosestEl | null): CloseFocus {
     if (side === 'primary' || side === 'left') return 'chat-left'
     if (side === 'secondary' || side === 'right') return 'chat-right'
   }
-  // Backward compatibility for single wrappers until every caller uses the
-  // unambiguous slot attribute.
-  const panel = active.closest('[data-chat-panel]')
-  if (panel) {
-    const side = panel.getAttribute('data-chat-panel')
-    if (side === 'left') return 'chat-left'
-    if (side === 'right') return 'chat-right'
-  }
   // Ambiguous (e.g. <body>) - callers must not treat this as "close a terminal".
   return 'other'
 }

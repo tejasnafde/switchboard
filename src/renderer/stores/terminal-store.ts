@@ -105,8 +105,6 @@ interface TerminalStore {
    * persisted into `session_layouts.launch_config_name`.
    */
   launchConfigNames: Record<string, string>
-  /** Deprecated - kept for backward compat in older callers */
-  globalActivePaneId: string | null
   activeSessionId: string | null
 
   // Queries
@@ -153,7 +151,6 @@ interface TerminalStore {
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
   layouts: {},
   launchConfigNames: {},
-  globalActivePaneId: null,
   activeSessionId: null,
 
   // ── Queries ──────────────────────────────────────────────────

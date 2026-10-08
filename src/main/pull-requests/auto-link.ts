@@ -1,16 +1,17 @@
 /**
- * Links a chat to a pull request the first time the chat's assistant text, a
- * tool's input or a tool's output names that PR's URL, or a tool's input runs
- * `bbpr <n>` in the chat's own repository (a Bitbucket project only; see
+ * Links a chat to a pull request it works on: one a shell command hands to
+ * gh as the PR to check out, merge, edit, comment on or review, the new PR
+ * `gh pr create` prints, or one fetched for review with bbpr (a URL, or a bare
+ * `bbpr <n>` in the chat's own repository for a Bitbucket project; see
  * `bbpr-targets.ts`), provided the PR is on a repository the chat's project
- * covers (`shared/project-repos.ts`). So a PR opened with `gh pr create` or bbpr in a
- * shell links itself too. Assistant text streams in deltas, so it is scanned
- * whole at the end of the turn; a tool's input and output arrive complete.
+ * covers (`shared/project-repos.ts`). A PR merely mentioned (in the agent's
+ * prose, a file it read, `gh pr view` output) is not linked; the agent links
+ * one on purpose with `link_pull_request`.
  */
 import type { RuntimeEvent } from '@shared/provider-events'
-import { applyContentText } from '@shared/content-stream'
 import { bbprTargetsForInput, toolInputCommand, toolInputCwd } from '@shared/bbpr-command'
-import { findPullRequestUrls, projectPrRefs } from '@shared/pull-request-links'
+import { projectPrRefs } from '@shared/pull-request-links'
+import { prCommandLinks } from '@shared/pr-command-links'
 import type { PrRef, RepoRef } from '@shared/pull-requests'
 import type { ProjectRepos } from '@shared/project-repos'
 import { createMainLogger } from '../logger'
@@ -18,11 +19,8 @@ import { bbprNumbersInRepo } from './bbpr-targets'
 
 const log = createMainLogger('pull-requests:auto-link')
 
-/** Assistant text kept per message until its turn ends. */
-const MAX_BUFFERED_CHARS = 1_000_000
 /** A tool input past this is a file being written, not a command. */
 const MAX_TOOL_INPUT_CHARS = 200_000
-const MENTIONS_HOST = /github\.com\/|bitbucket\.org\//i
 
 /** A tool call's input as the text the matchers read. */
 function toolInputText(input: unknown): string {
@@ -50,39 +48,40 @@ export interface AutoLinkDeps {
 }
 
 export class PullRequestAutoLinker {
-  private text = new Map<string, Map<string, string>>()
+  /** Tool calls running `gh pr create`, per thread, whose output is the new PR's URL. */
+  private creating = new Map<string, Set<string>>()
 
   constructor(private readonly deps: AutoLinkDeps) {}
 
   /** Resolves once any scan the event started has finished (tests await it). */
   onEvent(event: RuntimeEvent): Promise<void> {
-    if (event.type === 'content' && event.streamKind === 'assistant') {
-      let byMessage = this.text.get(event.threadId)
-      if (!byMessage) this.text.set(event.threadId, byMessage = new Map())
-      const before = byMessage.get(event.messageId)
-      if ((before?.length ?? 0) < MAX_BUFFERED_CHARS) {
-        byMessage.set(event.messageId, applyContentText(before, { text: event.text, append: event.append }))
-      }
-      return Promise.resolve()
-    }
     if (event.type === 'tool.started') {
       const input = toolInputText(event.input)
       if (!input || input.length > MAX_TOOL_INPUT_CHARS) return Promise.resolve()
-      return this.scan(event.threadId, input, toolInputCommand(input), toolInputCwd(input))
+      const command = toolInputCommand(input)
+      if (!command) return Promise.resolve()
+      const { urls, creates } = prCommandLinks(command)
+      if (creates) {
+        let ids = this.creating.get(event.threadId)
+        if (!ids) this.creating.set(event.threadId, ids = new Set())
+        ids.add(event.toolId)
+      }
+      return this.scan(event.threadId, urls.join('\n'), command, toolInputCwd(input))
     }
-    if (event.type === 'tool.completed' && event.output) return this.scan(event.threadId, event.output)
-    if (event.type === 'turn.completed' || (event.type === 'status' && (event.status === 'stopped' || event.status === 'error'))) {
-      const byMessage = this.text.get(event.threadId)
-      this.text.delete(event.threadId)
-      if (byMessage) return this.scan(event.threadId, [...byMessage.values()].join('\n'))
+    if (event.type === 'tool.completed') {
+      const ids = this.creating.get(event.threadId)
+      if (!ids?.delete(event.toolId)) return Promise.resolve()
+      if (ids.size === 0) this.creating.delete(event.threadId)
+      if (event.output) return this.scan(event.threadId, event.output)
     }
+    if (event.type === 'status' && event.status === 'stopped') this.creating.delete(event.threadId)
     return Promise.resolve()
   }
 
   /** `command`: the shell command of a tool input, whose bare `bbpr <n>` numbers count when it runs in the chat's repository. */
   private async scan(threadId: string, text: string, command: string | null = null, commandCwd: string | null = null): Promise<void> {
     const mayHaveBbpr = command !== null && command.includes('bbpr')
-    if (!mayHaveBbpr && (!MENTIONS_HOST.test(text) || findPullRequestUrls(text).length === 0)) return
+    if (!mayHaveBbpr && !text) return
     try {
       const chat = this.deps.conversationFor(threadId)
       if (!chat) return

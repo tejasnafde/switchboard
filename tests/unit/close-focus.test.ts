@@ -32,14 +32,14 @@ describe('classifyCloseFocus', () => {
     expect(classifyCloseFocus(fakeEl({ '[data-terminal-pane]': {} }))).toBe('terminal')
   })
 
-  it('classifies chat panels by side', () => {
-    expect(classifyCloseFocus(fakeEl({ '[data-chat-panel]': { side: 'left' } }))).toBe('chat-left')
-    expect(classifyCloseFocus(fakeEl({ '[data-chat-panel]': { side: 'right' } }))).toBe('chat-right')
+  it('classifies chat panels by side via the slot attribute', () => {
+    expect(classifyCloseFocus(fakeEl({ '[data-chat-slot]': { side: 'primary' } }))).toBe('chat-left')
+    expect(classifyCloseFocus(fakeEl({ '[data-chat-slot]': { side: 'secondary' } }))).toBe('chat-right')
   })
 
   it('prefers editor over chat when both match (files pane never closes a terminal)', () => {
     expect(
-      classifyCloseFocus(fakeEl({ '[data-ide-pane]': {}, '[data-chat-panel]': { side: 'left' } })),
+      classifyCloseFocus(fakeEl({ '[data-ide-pane]': {}, '[data-chat-slot]': { side: 'primary' } })),
     ).toBe('editor')
   })
 

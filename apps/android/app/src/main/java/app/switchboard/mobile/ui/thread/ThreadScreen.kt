@@ -1646,7 +1646,7 @@ private fun HeldTurnBar(
     val failed = held.failed[messageId]
     val label = when {
         failed != null -> "Not sent · ${error ?: failed}"
-        held.queueHeld -> "Held · ${error ?: "The last turn failed. Resume sends the queue."}"
+        held.queueHeld -> "Held · ${error ?: "Held after a stop or a failed turn. Resume sends the queue."}"
         else -> "Queued · ${error ?: held.actions.hint}"
     }
     Column(

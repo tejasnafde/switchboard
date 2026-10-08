@@ -234,7 +234,7 @@ function describeLinks(refs: PrRef[]): string {
 const NO_LINK =
   'No pull request is linked to this chat, so there is nothing these tools may read or write. ' +
   'The user links one from Reviews ("Link to chat"), you can link one with link_pull_request, and a pull request of this project ' +
-  'links itself once its URL appears in the chat or it is the open pull request of the chat\'s branch.'
+  'links itself once a shell command works on it (gh pr create, checkout, merge, comment or review; bbpr) or it is the open pull request of the chat\'s branch. A pull request only mentioned is not linked.'
 
 /**
  * The linked PR the agent means: `pr` as a number, "#612" or a URL, or omitted

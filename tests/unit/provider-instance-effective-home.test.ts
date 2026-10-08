@@ -24,6 +24,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { homedir } from 'os'
 import { join } from 'path'
+import type Database from 'better-sqlite3'
+import { createMigratedDb } from './helpers/test-db'
 
 const decryptCalls = { n: 0 }
 
@@ -60,7 +62,7 @@ interface Row {
   updated_at: number
 }
 
-const store = new Map<string, Row>()
+let sqlite: Database.Database
 
 function seedRow(over: Partial<Row> & { id: string; agent_type: string }): Row {
   const t = 1000
@@ -77,7 +79,10 @@ function seedRow(over: Partial<Row> & { id: string; agent_type: string }): Row {
     updated_at: t,
     ...over,
   }
-  store.set(row.id, row)
+  sqlite.prepare(
+    `INSERT OR REPLACE INTO provider_instances (${Object.keys(row).join(', ')})
+     VALUES (${Object.keys(row).map((k) => '@' + k).join(', ')})`,
+  ).run(row)
   return row
 }
 
@@ -90,28 +95,13 @@ function encrypted(env: Record<string, string>): Buffer {
   ])
 }
 
-vi.mock('../../src/main/db/database', () => ({
-  getDb: () => ({
-    prepare: (sql: string) => {
-      const norm = sql.replace(/\s+/g, ' ').trim()
-      return {
-        get: (...args: unknown[]) => {
-          if (norm.startsWith('SELECT * FROM provider_instances WHERE id = ?')) return store.get(args[0] as string)
-          throw new Error(`mock get: unhandled SQL: ${norm}`)
-        },
-        all: () => [...store.values()].sort((a, b) =>
-          a.agent_type.localeCompare(b.agent_type) || a.created_at - b.created_at),
-        run: () => ({ changes: 0 }),
-      }
-    },
-  }),
-}))
-
 const CANONICAL_CODEX = join(homedir(), '.codex')
 const CANONICAL_CLAUDE = join(homedir(), '.claude')
 
 beforeEach(() => {
-  store.clear()
+  sqlite = createMigratedDb()
+  // Each test seeds exactly the rows it lists, without the migration's defaults.
+  sqlite.exec('DELETE FROM provider_instances')
   decryptCalls.n = 0
 })
 

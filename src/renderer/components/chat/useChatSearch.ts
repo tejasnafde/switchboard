@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatMessage } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
+import { ensureFullHistory } from '../../services/history-loader'
 import type { ChatSlot } from '../../services/chat-workspace'
 import { matchesShortcut } from '@shared/shortcuts'
 
@@ -20,6 +21,11 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
   const [searchQuery, setSearchQuery] = useState('')
   const [searchIdx, setSearchIdx] = useState(0)
   const requestScrollToMessage = useAgentStore((s) => s.requestScrollToMessage)
+
+  // A long chat opens with its newest window; search covers all of it.
+  useEffect(() => {
+    if (searchOpen && sessionId) void ensureFullHistory(sessionId)
+  }, [searchOpen, sessionId])
 
   // ── In-pane search: compute matching message ids (substring on text) ──
   const searchMatches = useMemo(() => {
