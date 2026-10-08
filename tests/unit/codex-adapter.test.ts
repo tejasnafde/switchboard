@@ -734,6 +734,52 @@ describe('CodexAdapter', () => {
     expect(messages.filter((message) => message.method === 'thread/start')).toHaveLength(1)
   })
 
+  it('carries the visible conversation into a retried turn when a natively resumed thread goes missing', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    turnStartErrors = ['thread not found: codex-thread-existing']
+    const portableHistory = vi.fn().mockResolvedValue('PRIOR CONVERSATION')
+
+    await adapter.startSession({
+      threadId: 'switchboard-thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      resumeSessionId: 'codex-thread-existing',
+      portableHistory,
+    }, vi.fn())
+
+    await adapter.sendTurn('switchboard-thread-1', 'recover this turn')
+
+    const messages = writes.map((line) => JSON.parse(line))
+    const turnStarts = messages.filter((message) => message.method === 'turn/start')
+    expect(turnStarts).toHaveLength(2)
+    // The first attempt still targets the thread the adapter believed it had resumed.
+    expect(turnStarts[0].params).toMatchObject({
+      threadId: 'codex-thread-existing',
+      input: [{ type: 'text', text: 'recover this turn' }],
+    })
+    // The retry lands on the fresh thread and must carry the earlier visible
+    // conversation - the fresh thread has none of its own.
+    expect(turnStarts[1].params.threadId).toBe('codex-thread-1')
+    const retriedText = turnStarts[1].params.input[0].text as string
+    expect(retriedText).toContain('PRIOR CONVERSATION')
+    expect(retriedText).toContain('recover this turn')
+    expect(portableHistory).toHaveBeenCalledTimes(1)
+
+    // The fallback runs once: a later, ordinary turn on the fresh thread
+    // carries no extra preamble, and a normal native resume (no missing
+    // thread) never triggers it at all - see the `thread/resume` test above.
+    await adapter.interruptTurn('switchboard-thread-1')
+    writes.length = 0
+    await adapter.sendTurn('switchboard-thread-1', 'next turn')
+    const secondTurnStart = writes.map((line) => JSON.parse(line)).find((message) => message.method === 'turn/start')
+    expect(secondTurnStart?.params).toMatchObject({
+      threadId: 'codex-thread-1',
+      input: [{ type: 'text', text: 'next turn' }],
+    })
+    expect(portableHistory).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects a non-recoverable turn-start failure and restores idle status', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

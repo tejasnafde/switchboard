@@ -103,7 +103,10 @@ sealed interface ThreadEventPayload {
         val origin: String?,
         val at: Long,
         val pillsMeta: Map<String, MessagePill> = emptyMap(),
+        /** The backend's context handoff marker row, stored just before this turn. */
+        val handoffMarker: HandoffMarker? = null,
     ) : ThreadEventPayload
+    data class HandoffMarker(val id: String, val text: String)
     data class ToolStarted(val toolId: String, val toolName: String, val input: JsonValue) : ThreadEventPayload
     data class ToolCompleted(val toolId: String, val output: String?) : ThreadEventPayload
     data class ToolDenied(val toolName: String, val reason: String, val mode: String) : ThreadEventPayload
