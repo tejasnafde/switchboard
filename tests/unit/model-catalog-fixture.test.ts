@@ -24,7 +24,8 @@ describe('model catalog fixture', () => {
     const expected = `${JSON.stringify(catalog, null, 2)}\n`
     if (process.env.SB_UPDATE_FIXTURES === '1') writeFileSync(FIXTURE, expected)
     expect(
-      readFileSync(FIXTURE, 'utf8'),
+      // A Windows checkout may hold CRLF line endings; compare the content, not the line ends.
+      readFileSync(FIXTURE, 'utf8').replace(/\r\n/g, '\n'),
       'tests/fixtures/model-catalog.json is stale: run SB_UPDATE_FIXTURES=1 npx vitest run tests/unit/model-catalog-fixture.test.ts',
     ).toBe(expected)
   })
