@@ -19,7 +19,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-const savedMessages: Array<{ id: string; conversationId: string; content: string; timestamp: number }> = []
+const savedMessages: Array<{ id: string; conversationId: string; content: string; timestamp: number; role?: string }> = []
 const threadSessions = new Map<string, string>() // claude_session_id -> thread_id
 const conversations = new Map<string, {
   agent_type?: string
@@ -107,6 +107,12 @@ vi.mock('better-sqlite3', () => {
                   reasoning_effort: row.reasoning_effort ?? null,
                   provider_options_json: row.provider_options_json ?? null,
                 }
+              : undefined
+          }
+          if (/SELECT 1 FROM messages WHERE conversation_id IN \(/.test(sql)) {
+            const ids = args as string[]
+            return savedMessages.some((m) => ids.includes(m.conversationId) && (m.role === 'user' || m.role === 'assistant'))
+              ? { 1: 1 }
               : undefined
           }
           if (/SELECT agent_type FROM conversations WHERE id = \?/.test(sql)) {
@@ -360,6 +366,27 @@ describe('agent switch commits selection, marker and pending handoff together', 
 
     expect(result.pendingHandoffFrom).toBeNull()
     expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'claude-code', pending_handoff_from: null })
+  })
+
+  it('counts stored messages on a rotated id as history when the client saw none', () => {
+    conversations.set('agent_123', { agent_type: 'claude-code' })
+    threadSessions.set('uuid-abc', 'agent_123')
+    savedMessages.push({ id: 'm1', conversationId: 'uuid-abc', content: 'hello', timestamp: 1, role: 'user' })
+
+    const result = switchConversationAgent('agent_123', 'codex', 'codex-default', { hasHistory: false, markerId: 'agentswap_4' })
+
+    expect(result).toMatchObject({ pendingHandoffFrom: 'claude-code', marker: { id: 'agentswap_4' } })
+    expect(conversations.get('agent_123')).toMatchObject({ agent_type: 'codex', pending_handoff_from: 'claude-code' })
+  })
+
+  it('does not count a stored system row as history', () => {
+    conversations.set('agent_123', { agent_type: 'claude-code' })
+    savedMessages.push({ id: 's1', conversationId: 'agent_123', content: 'notice', timestamp: 1, role: 'system' })
+
+    const result = switchConversationAgent('agent_123', 'codex', 'codex-default', { hasHistory: false, markerId: 'agentswap_5' })
+
+    expect(result.marker).toBeUndefined()
+    expect(result.pendingHandoffFrom).toBeNull()
   })
 
   it('writes no marker and schedules nothing without history', () => {

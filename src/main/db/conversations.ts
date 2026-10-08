@@ -887,9 +887,17 @@ export function switchConversationAgent(
       'SELECT agent_type, pending_handoff_from FROM conversations WHERE id = ?'
     ).get(rootId) as { agent_type: string | null; pending_handoff_from: string | null } | undefined
     const previous = row?.agent_type ?? null
+    // The client's count can be empty when a reload returned nothing or
+    // failed, so stored messages on any id of the thread count as history too.
+    const familyIds = threadFamilyIds(rootId)
+    const hasStoredHistory = db.prepare(
+      `SELECT 1 FROM messages WHERE conversation_id IN (${familyIds.map(() => '?').join(', ')})
+       AND role IN ('user', 'assistant') LIMIT 1`
+    ).get(...familyIds) !== undefined
+    const hasHistory = opts.hasHistory || hasStoredHistory
     const restored = setConversationProviderSelection(rootId, agentType, instanceId)
     let marker: { id: string; content: string; timestamp: number } | undefined
-    if (opts.hasHistory && previous && previous !== agentType) {
+    if (hasHistory && previous && previous !== agentType) {
       marker = {
         id: opts.markerId,
         content: `${AGENT_SWITCH_MARKER_PREFIX} ${agentLabel(previous as AgentType)} → ${agentLabel(agentType as AgentType)}`,
@@ -900,7 +908,7 @@ export function switchConversationAgent(
         VALUES (?, ?, 'system', ?, ?)
       `).run(marker.id, rootId, marker.content, marker.timestamp)
     }
-    const pendingHandoffFrom = nextPendingHandoffFrom(row?.pending_handoff_from ?? null, previous, agentType, opts.hasHistory)
+    const pendingHandoffFrom = nextPendingHandoffFrom(row?.pending_handoff_from ?? null, previous, agentType, hasHistory)
     db.prepare('UPDATE conversations SET pending_handoff_from = ?, updated_at = ? WHERE id = ?').run(pendingHandoffFrom, Date.now(), rootId)
     return { ...restored, pendingHandoffFrom, ...(marker ? { marker } : {}) }
   })()
