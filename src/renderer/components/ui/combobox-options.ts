@@ -15,16 +15,26 @@ export interface ComboboxGroup {
 }
 
 /**
- * Case-insensitive substring match on the label, hint and keywords. Order is
- * kept as given: callers order the list on purpose (recent first), and a
- * fuzzy score would reshuffle it on every keystroke.
+ * Case-insensitive substring match on the label, hint and keywords. Callers
+ * order the list on purpose (recent first), so a fuzzy score would reshuffle
+ * it on every keystroke. Only the label tier moves a row: an exact label, then
+ * a label that starts with the query, then one that contains it, then rows
+ * matched only by hint or keyword (a path). Each tier keeps the given order.
+ * Without the tiers, a query that every path contains ("projects") would bury
+ * the row whose name it is.
  */
 export function filterComboboxOptions(options: ComboboxOption[], query: string): ComboboxOption[] {
   const needle = query.trim().toLowerCase()
   if (!needle) return options
-  return options.filter((option) =>
-    [option.label, option.hint, ...(option.keywords ?? [])].some((text) => text?.toLowerCase().includes(needle)),
-  )
+  const tiers: ComboboxOption[][] = [[], [], [], []]
+  for (const option of options) {
+    const label = option.label.toLowerCase()
+    if (label === needle) tiers[0].push(option)
+    else if (label.startsWith(needle)) tiers[1].push(option)
+    else if (label.includes(needle)) tiers[2].push(option)
+    else if ([option.hint, ...(option.keywords ?? [])].some((text) => text?.toLowerCase().includes(needle))) tiers[3].push(option)
+  }
+  return tiers.flat()
 }
 
 /** Options with the same `group` share one heading, placed where that group first appears. */

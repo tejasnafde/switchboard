@@ -1369,16 +1369,15 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               </button>
             )}
 
-            {/* Status text */}
-            {hasSession && (
+            {/* Status text. A running turn has none: the chat's own
+                Working… row already says so. */}
+            {hasSession && (activeSession?.draft || (status !== 'running' && status !== 'thinking')) && (
               <span className={cn('text-[11px] font-[400]', status === 'error' ? 'text-[var(--error,#f85149)]' : 'text-[var(--text-muted)]')}>
                 {activeSession?.draft
                   ? status === 'running' ? 'creating…' : 'draft'
-                  : status === 'running'
-                    ? 'thinking…'
-                    : status === 'idle' && pendingDeliveryState === 'pending'
-                      ? 'sending…'
-                      : status === 'idle' ? 'ready' : status}
+                  : status === 'idle' && pendingDeliveryState === 'pending'
+                    ? 'sending…'
+                    : status === 'idle' ? 'ready' : status}
               </span>
             )}
           </div>
