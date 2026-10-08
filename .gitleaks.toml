@@ -17,4 +17,7 @@ regexes = ['''ATATT3xFfGF0-secret''', '''tok-12345678''']
 [[allowlists]]
 description = "Firebase Android api_key: public by design (restricted by package name), committed for EAS Build"
 targetRules = ["gcp-api-key", "generic-api-key"]
+# Path AND the exact committed key, so any other key in this file is still reported.
+condition = "AND"
 paths = ['''^apps/mobile/google-services\.json$''']
+regexes = ['''AIzaSyAFcw4aNehZAhReL4sGMCNxtnqQu8NrAXM''']
