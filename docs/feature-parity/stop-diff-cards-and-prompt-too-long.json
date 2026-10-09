@@ -1,0 +1,55 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "stop-diff-cards-and-prompt-too-long",
+  "summary": "A Claude turn ended by Stop still gets its diff cards (Reject only for files this chat's tools wrote), as Codex and OpenCode turns already did. A Claude turn whose prompt no longer fits the context window compacts and sends the turn again once instead of showing a raw \"Prompt is too long\", and a profile restart that resumed its own native session no longer gets the visible history replayed on top of it.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/claude-prompt-too-long.ts",
+        "tests/unit/claude-adapter-interrupt-turn-end.test.ts",
+        "tests/unit/claude-adapter-prompt-too-long.test.ts",
+        "tests/unit/stopped-turn-diff-cards.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Backend-only fix. The Expo app already renders the file.edited cards, the reasoning notice and the error event the backend sends; no client code or wire shape changes."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Backend-only fix. Android already renders the file.edited cards, the reasoning notice and the error event the backend sends; no client code or wire shape changes."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/handoff.ts",
+        "tests/unit/handoff-preamble.test.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/claude-prompt-too-long.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or stored-format change. The diff cards a stopped turn now gets are stored through the existing file.edited mirror and turn_checkpoints rows."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No new event, channel or capability. Older clients see the same event types they already handle; the headless server ships the fix with the desktop build."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/claude-adapter-interrupt-turn-end.test.ts tests/unit/claude-adapter-prompt-too-long.test.ts tests/unit/stopped-turn-diff-cards.test.ts tests/unit/handoff-preamble.test.ts",
+      "npm run typecheck",
+      "npm test -- --maxWorkers=2"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A live Claude Stop that ends with an AbortError, or with no result, has not been reproduced; the logs show the CLI usually sends a result, which already got cards. The fix covers the other two endings, tested with a mocked SDK.",
+      "A live \"Prompt is too long\" after a profile switch has not been reproduced; the CLI's synthetic message and result shapes are taken from the SDK 0.3.260 types (terminal_reason prompt_too_long) and tested with a mocked SDK. Whether /compact itself fits on the smaller window depends on the CLI's own compaction; when it does not, the chat shows a clear message."
+    ]
+  }
+}

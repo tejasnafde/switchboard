@@ -296,10 +296,20 @@ describe('planTurnHandoff', () => {
     expect(plan.preamble).toContain('claude answer')
   })
 
-  it('a profile restart replays everything with its own marker', () => {
-    const plan = planTurnHandoff({ messages: abA, pendingFrom: 'claude-code', target: 'claude-code', resumedNatively: true })
+  it('a profile restart that lost its session replays everything with its own marker', () => {
+    const plan = planTurnHandoff({ messages: abA, pendingFrom: 'claude-code', target: 'claude-code', resumedNatively: false })
     expect(plan.preamble).toContain('claude answer')
     expect(plan.markerText).toBe('[[sb:context-handoff]] Claude Code profile restarted with visible history')
+  })
+
+  // The native transcript already holds the conversation: replaying it again
+  // doubled the prompt and failed a chat near its limit with "Prompt is too long".
+  it('a profile restart that resumed its own session replays nothing it has seen', () => {
+    const own = [user('q1'), assistant('claude answer'), user('q2'), assistant('second answer')]
+    expect(planTurnHandoff({ messages: own, pendingFrom: 'claude-code', target: 'claude-code', resumedNatively: true }).preamble).toBeNull()
+    const plan = planTurnHandoff({ messages: abA, pendingFrom: 'claude-code', target: 'claude-code', resumedNatively: true })
+    expect(plan.preamble).toContain('codex answer')
+    expect(plan.preamble).not.toContain('claude answer')
   })
 })
 
