@@ -1,6 +1,7 @@
 package app.switchboard.mobile.ui.browse
 
 import app.switchboard.mobile.domain.remote.BrowseDecisions
+import app.switchboard.mobile.domain.remote.ChatSearch
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.Workspace
 
@@ -50,10 +51,10 @@ object BrowseParityDecisions {
     fun showConversationSearch(conversationCount: Int, query: String): Boolean =
         conversationCount > 8 || query.isNotBlank()
 
-    fun conversationTitleMatches(title: String, query: String): Boolean {
-        val needle = query.trim()
-        return needle.isEmpty() || title.contains(needle, ignoreCase = true)
-    }
+    /** A blank query keeps the list as it is; otherwise the Go to chat ranking (`ChatSearch`). */
+    fun searchConversations(rows: List<BrowseConversationRow>, projectName: String, query: String): List<BrowseConversationRow> =
+        if (query.isBlank()) rows
+        else ChatSearch.rank(rows, query) { ChatSearch.Item(it.title, projectName, it.updatedAt) }
 
     fun sections(
         projects: List<Project>,

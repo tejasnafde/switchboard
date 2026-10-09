@@ -1,0 +1,170 @@
+{
+  "chats": [
+    {
+      "id": "improvements",
+      "title": "improvements",
+      "projectName": "switchboard",
+      "lastActivity": 9000
+    },
+    {
+      "id": "jitter",
+      "title": "Fix sync jitter",
+      "projectName": "ssg-bot-v2",
+      "lastActivity": 8000
+    },
+    {
+      "id": "review",
+      "title": "Review #612",
+      "projectName": "ssg-bot-v2",
+      "lastActivity": 7000
+    },
+    {
+      "id": "backoff",
+      "title": "Sync backoff cap",
+      "projectName": "ssg-bot-v2",
+      "lastActivity": 6000
+    },
+    {
+      "id": "landing",
+      "title": "Landing copy pass",
+      "projectName": "tn07-site",
+      "lastActivity": 5000
+    },
+    {
+      "id": "parity",
+      "title": "Android parity checklist",
+      "projectName": "switchboard",
+      "lastActivity": 4000
+    },
+    {
+      "id": "engine",
+      "title": "Notebook sync engine",
+      "projectName": "switchboard",
+      "lastActivity": 3000
+    },
+    {
+      "id": "sync-exact",
+      "title": "SYNC",
+      "projectName": "scratch",
+      "lastActivity": 1000
+    },
+    {
+      "id": "launch",
+      "title": "tn07 launch",
+      "projectName": "scratch",
+      "lastActivity": 200
+    },
+    {
+      "id": "old-sync",
+      "title": "Old sync plan",
+      "projectName": "switchboard",
+      "lastActivity": 8500,
+      "archived": true
+    },
+    {
+      "id": "old-misc",
+      "title": "Misc notes",
+      "projectName": "tn07-site",
+      "lastActivity": 500,
+      "archived": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "empty query lists every live chat newest first",
+      "query": "",
+      "expected": [
+        "improvements",
+        "jitter",
+        "review",
+        "backoff",
+        "landing",
+        "parity",
+        "engine",
+        "sync-exact",
+        "launch"
+      ]
+    },
+    {
+      "id": "exact title, then starts with, then contains, each newest first",
+      "query": "sync",
+      "expected": [
+        "sync-exact",
+        "backoff",
+        "jitter",
+        "engine"
+      ]
+    },
+    {
+      "id": "case and extra spaces do not matter",
+      "query": "  FIX   Sync ",
+      "expected": [
+        "jitter"
+      ]
+    },
+    {
+      "id": "project name matches come after title matches",
+      "query": "switch",
+      "expected": [
+        "improvements",
+        "parity",
+        "engine"
+      ]
+    },
+    {
+      "id": "a project name match",
+      "query": "bot",
+      "expected": [
+        "jitter",
+        "review",
+        "backoff"
+      ]
+    },
+    {
+      "id": "an older title match outranks a newer project match",
+      "query": "tn07",
+      "expected": [
+        "launch",
+        "landing"
+      ]
+    },
+    {
+      "id": "archived chats only with the archive word, which is not matched",
+      "query": "sync archived",
+      "expected": [
+        "sync-exact",
+        "backoff",
+        "old-sync",
+        "jitter",
+        "engine"
+      ]
+    },
+    {
+      "id": "the archive word alone lists every chat, archived included",
+      "query": "Archive",
+      "expected": [
+        "improvements",
+        "old-sync",
+        "jitter",
+        "review",
+        "backoff",
+        "landing",
+        "parity",
+        "engine",
+        "sync-exact",
+        "old-misc",
+        "launch"
+      ]
+    },
+    {
+      "id": "archive inside another word is an ordinary search",
+      "query": "archives",
+      "expected": []
+    },
+    {
+      "id": "no match",
+      "query": "zzz",
+      "expected": []
+    }
+  ]
+}

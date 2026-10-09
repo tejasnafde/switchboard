@@ -105,7 +105,13 @@ export interface AtomicUserTurnContext {
   clientScope: string
   conversationId?: string
   prepare: () => Promise<void>
-  dispatch: () => Promise<void | DispatchedUserTurn>
+  /**
+   * Last word on what the provider is sent, after preparation. The backend
+   * adds a pending context handoff here. Runs after the payload hash, so a
+   * retry of the same origin is still recognised.
+   */
+  finalize?: (turn: UserTurnSubmissionV1) => Promise<UserTurnSubmissionV1>
+  dispatch: (turn: UserTurnSubmissionV1) => Promise<void | DispatchedUserTurn>
 }
 
 export class AtomicUserTurnSubmission {
@@ -203,6 +209,16 @@ export class AtomicUserTurnSubmission {
       return rejectedResult(error)
     }
 
+    if (context.finalize) {
+      try {
+        turn = await context.finalize(turn)
+      } catch (error) {
+        log.warn(`turn finalization rejected for ${turn.threadId}`, error)
+        this.store.release(key, payloadHash)
+        return rejectedResult(error)
+      }
+    }
+
     if (!this.store.beginDispatch(key, payloadHash)) {
       return {
         status: 'pending',
@@ -275,7 +291,7 @@ export class AtomicUserTurnSubmission {
   ): Promise<UserTurnSubmissionResult> {
     let dispatched: DispatchedUserTurn | undefined
     try {
-      dispatched = (await dispatch()) ?? undefined
+      dispatched = (await dispatch(turn)) ?? undefined
     } catch (error) {
       if (error instanceof TurnNotAcceptedError) {
         log.warn(`provider definitely rejected turn ${turn.threadId}`, error)

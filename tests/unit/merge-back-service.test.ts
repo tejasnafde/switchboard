@@ -1,3 +1,4 @@
+import { buildHandoffPreamble, withHandoffPreamble } from '../../src/shared/handoff'
 import { describe, expect, it } from 'vitest'
 import Database from 'better-sqlite3'
 import type { ChatMessage } from '../../src/shared/types'
@@ -94,7 +95,7 @@ async function parentTurn(
   h: Harness,
   origin: string,
   text: string,
-  opts: { reject?: boolean } = {},
+  opts: { reject?: boolean; handoffPreamble?: string } = {},
 ): Promise<{ sent: string; status: string }> {
   const submission = new AtomicUserTurnSubmission({ store: new SqliteTurnAcceptanceStore(() => h.db), publish: () => {} })
   let sent = ''
@@ -102,9 +103,11 @@ async function parentTurn(
     clientScope: 'scope',
     conversationId: 'parent',
     prepare: async () => {},
-    dispatch: async () => {
+    // The registry adds a pending provider handoff here, before dispatch.
+    finalize: async (turn) => (opts.handoffPreamble ? { ...turn, providerText: withHandoffPreamble(turn.providerText, opts.handoffPreamble) } : turn),
+    dispatch: async (turn) => {
       const claim = h.service.claimForTurn('parent')
-      const providerText = claim ? claim.apply(text) : text
+      const providerText = claim ? claim.apply(turn.providerText) : turn.providerText
       if (opts.reject) {
         claim?.release()
         throw new TurnNotAcceptedError('provider refused')
@@ -140,6 +143,19 @@ describe('MergeBackService', () => {
     expect(h.service.edit('parent', row.id, 'too late')).toMatchObject({ ok: false })
     // A discarded summary is not sent, so the fork still has it to send.
     expect((await h.service.preview('fork')).status).toBe('ready')
+  })
+
+  it('puts a fork summary after the handoff preamble when both ride on one turn', async () => {
+    const h = harness()
+    await sendFromFork(h)
+    const preamble = buildHandoffPreamble([{ role: 'user', content: 'start the parser' }, { role: 'assistant', content: 'parser started' }])!
+    const turn = await parentTurn(h, 'o-handoff', 'carry on', { handoffPreamble: preamble })
+    expect(turn.status).toBe('accepted')
+    const handoffAt = turn.sent.indexOf(preamble)
+    const mergeBackAt = turn.sent.indexOf('<switchboard-fork-merge-back')
+    expect(handoffAt).toBe(0)
+    expect(mergeBackAt).toBeGreaterThan(handoffAt)
+    expect(turn.sent).toContain('carry on')
   })
 
   it('delivers a pending summary with the parent\'s next user turn exactly once', async () => {

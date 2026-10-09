@@ -83,6 +83,12 @@ export interface SessionStartOpts {
    * these tools a second time.
    */
   switchboardMcp?: import('../mcp/switchboard-mcp-server').SwitchboardMcpLaunch
+  /**
+   * The visible conversation as a handoff preamble (registry-populated). An
+   * adapter that could not resume its native session prefixes the next
+   * message it sends with it, so the agent does not continue blind.
+   */
+  portableHistory?: () => Promise<string | null>
 }
 
 export interface ProviderSession {
@@ -227,6 +233,13 @@ export interface ProviderAdapter {
    * that message starts, which only the adapter knows.
    */
   runtimeModeOf?(threadId: string): RuntimeMode | undefined
+
+  /**
+   * True when the live session resumed this chat's earlier native session,
+   * so the agent already holds what it saw before. Decides between a delta
+   * and a full context handoff; absent means a full one.
+   */
+  resumedNativeSession?(threadId: string): boolean
 }
 
 // Re-export Effect for internal adapter use (avoids extra imports elsewhere)

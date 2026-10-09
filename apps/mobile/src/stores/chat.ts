@@ -24,7 +24,7 @@ import { applyContentText, mergeContentChunks } from '@shared/content-stream'
 import { echoMessageId, expiredRequestNotice, visibleUserMessageText } from '@shared/provider-events'
 import { pillBodyText } from '@shared/pill-body-text'
 import { transcriptShowsTaskNotification, type SyntheticUserPart } from '@shared/synthetic-message'
-import { splitLegacyCachedItems } from '../lib/thread-history'
+import { splitLegacyCachedItems, systemRowItem } from '../lib/thread-history'
 import { applyQueuedTurnEvent, queuedRowRemoved, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
 import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { HostWriteCard } from '@shared/agent-host-writes'
@@ -328,15 +328,21 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           // The echo of our own send carries the id we appended optimistically,
           // so this collapses onto it instead of rendering a second bubble.
           const id = echoMessageId(event.origin ?? String(event.at))
-          if (t.items.some((i) => i.id === id)) return {}
+          // The backend's context handoff marker, stored just before the turn.
+          const marker = event.handoffMarker && !t.items.some((i) => i.id === `h-${event.handoffMarker?.id}`)
+            ? [systemRowItem(event.handoffMarker.id, event.handoffMarker.text)]
+            : []
+          const own = t.items.findIndex((i) => i.id === id)
+          if (own >= 0) return marker.length ? { items: [...t.items.slice(0, own), ...marker, ...t.items.slice(own)] } : {}
           const visible = visibleUserMessageText(event.text, event.displayBody)
           const text = visible !== null && event.displayBody !== undefined ? pillBodyText(visible, event.pillsMeta) : visible
           const images = event.images?.map((image) => image.url)
           // Context-only text is hidden, but images sent with it still show.
-          if (text === null && !images?.length) return {}
+          if (text === null && !images?.length) return marker.length ? { items: [...t.items, ...marker] } : {}
           return {
             items: [
               ...t.items,
+              ...marker,
               { kind: 'user', id, text: text ?? '', at: event.at, images: images?.length ? images : undefined },
             ],
           }
