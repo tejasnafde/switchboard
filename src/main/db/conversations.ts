@@ -812,7 +812,16 @@ export function setConversationModel(id: string, model: string): void {
   ).run(model, Date.now(), resolveRootThreadId(id))
 }
 
+/** Same `resolveRootThreadId` fallback as the other per-conversation getters. */
+export function getConversationReasoningEffort(id: string): ReasoningEffort | null {
+  const row = getDb().prepare(
+    'SELECT reasoning_effort FROM conversations WHERE id = ?'
+  ).get(resolveRootThreadId(id)) as { reasoning_effort: string | null } | undefined
+  return isReasoningEffort(row?.reasoning_effort) ? row.reasoning_effort : null
+}
+
 export function setConversationReasoningEffort(id: string, effort: string): void {
+  if (!isReasoningEffort(effort)) throw new Error(`Unknown reasoning effort: ${String(effort)}`)
   getDb().prepare(
     'UPDATE conversations SET reasoning_effort = ?, updated_at = ? WHERE id = ?'
   ).run(effort, Date.now(), resolveRootThreadId(id))

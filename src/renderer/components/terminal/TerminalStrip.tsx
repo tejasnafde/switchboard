@@ -6,6 +6,7 @@ import { PaneResizeHandle } from './PaneResizeHandle'
 import { focusTerminal } from '../../services/terminal-registry'
 import { LaunchConfigPicker } from './LaunchConfigPicker'
 import { sessionExecutionRootPath } from '../../services/execution-root'
+import { terminalCountLabel } from '@shared/format'
 
 /** Where a new pane opens. The session's CURRENT root, so a followed
  *  worktree is picked up instead of the parent checkout. */
@@ -122,35 +123,26 @@ export function TerminalStrip() {
   const panes = layout?.panes ?? {}
   const activeWindowId = layout?.activeWindowId ?? null
   const hasAny = rows.length > 0
+  const paneCount = rows.reduce((n, row) => n + row.windowIds.reduce((m, wid) => m + (windows[wid]?.paneIds.length ?? 0), 0), 0)
 
   return (
     <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        height: '100%',
-        background: 'var(--bg-primary)',
-        overflow: 'hidden',
-      }}
+      data-terminal-strip
+      data-session-id={activeSessionId ?? undefined}
+      className="flex h-full w-full flex-col overflow-hidden bg-[var(--bg-primary)]"
     >
       {/* Toolbar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '3px 8px',
-          borderBottom: '1px solid var(--border)',
-          gap: '4px',
-          flexShrink: 0,
-          background: 'var(--bg-secondary)',
-        }}
-      >
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
+      <div className="flex shrink-0 items-center gap-[4px] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-[8px] py-[3px]">
+        <span className="text-[11px] font-[600] text-[var(--text-muted)]">
           TERMINAL
         </span>
         <LaunchConfigPicker />
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
+        {paneCount > 0 && (
+          <span title="Terminal panes in this chat" className="mr-[4px] text-[11px] text-[var(--text-muted)]">
+            {terminalCountLabel(paneCount)}
+          </span>
+        )}
         {activeSessionId && (
           <>
             <button
@@ -161,20 +153,20 @@ export function TerminalStrip() {
                 setTimeout(() => focusTerminal(r.paneId), 80)
               }}
               title="New window (⌘T)"
-              style={toolbarBtn}
+              className={toolbarBtn}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <line x1="12" y1="3" x2="12" y2="21" />
               </svg>
             </button>
-            <button onClick={newWindowInColumn} title="New window below (⌘⇧T)" style={toolbarBtn}>
+            <button onClick={newWindowInColumn} title="New window below (⌘⇧T)" className={toolbarBtn}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <line x1="3" y1="12" x2="21" y2="12" />
               </svg>
             </button>
-            <button onClick={newPaneInActiveWindow} title={'New tab in active window (⌘\\)'} style={toolbarBtn}>
+            <button onClick={newPaneInActiveWindow} title={'New tab in active window (⌘\\)'} className={toolbarBtn}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
@@ -185,24 +177,9 @@ export function TerminalStrip() {
       </div>
 
       {/* Grid area */}
-      <div
-        style={{
-          flex: '1 1 0%',
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-          overflow: 'hidden',
-        }}
-      >
+      <div className="flex min-h-0 flex-[1_1_0%] flex-col overflow-hidden">
         {!hasAny && (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--text-muted)',
-            fontSize: '12px',
-          }}>
+          <div className="flex flex-1 items-center justify-center text-[12px] text-[var(--text-muted)]">
             {activeSessionId
               ? 'No terminals open. Press ⌘T to create a window.'
               : 'Select a chat to open terminals.'}
@@ -221,13 +198,8 @@ export function TerminalStrip() {
 
             <div
               ref={(el) => registerRowRef(row.id, el)}
-              style={{
-                display: 'flex',
-                flexDirection: 'row',
-                flex: `${rowRatiosRef.current.get(row.id) ?? 1} 1 0%`,
-                minHeight: 0,
-                overflow: 'hidden',
-              }}
+              className="flex min-h-0 flex-row overflow-hidden"
+              style={{ flex: `${rowRatiosRef.current.get(row.id) ?? 1} 1 0%` }}
             >
               {row.windowIds.map((wid, colIndex) => {
                 const win = windows[wid]
@@ -243,14 +215,8 @@ export function TerminalStrip() {
                     )}
                     <div
                       ref={(el) => registerWindowRef(wid, el)}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        flex: `${windowRatiosRef.current.get(wid) ?? 1} 1 0%`,
-                        minWidth: 0,
-                        minHeight: 0,
-                        overflow: 'hidden',
-                      }}
+                      className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+                      style={{ flex: `${windowRatiosRef.current.get(wid) ?? 1} 1 0%` }}
                     >
                       <TerminalWindow
                         sessionId={activeSessionId!}
@@ -271,13 +237,4 @@ export function TerminalStrip() {
   )
 }
 
-const toolbarBtn: React.CSSProperties = {
-  background: 'none',
-  border: 'none',
-  color: 'var(--text-muted)',
-  cursor: 'pointer',
-  padding: '2px 4px',
-  display: 'flex',
-  alignItems: 'center',
-  lineHeight: 1,
-}
+const toolbarBtn = 'flex cursor-pointer items-center border-0 bg-transparent px-[4px] py-[2px] leading-none text-[var(--text-muted)]'

@@ -7,7 +7,7 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/components/StatusBar.tsx",
+        "src/renderer/components/chat/ChatInput.tsx",
         "src/renderer/components/kanban/KanbanView.tsx",
         "src/renderer/components/chat/ContextWindowMeter.tsx",
         "tests/unit/format-cost-context.test.ts"

@@ -18,6 +18,7 @@ import { isRuntimeMode, SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-def
 import { effectiveLocalSetting, projectOverride } from './project-settings-store'
 import { isDraftSessionId, type DraftChatOptions } from '@shared/new-chat-draft'
 import { prependOlder, rebaseOnNewest } from '../services/history-window'
+import { splitModelVariant } from '@shared/effort'
 import type {
   ForkLineageMetadata,
 } from '@shared/conversation-fork'
@@ -194,9 +195,9 @@ interface AgentSession {
    */
   instanceId?: string
   /**
-   * Reasoning effort tier for agents that expose it as a separate selector
-   * (currently Codex only). Maps to the `reasoningEffort` param on
-   * turn/start. Claude doesn't surface this as a UI control.
+   * Thinking effort for Claude and Codex (OpenCode carries it in the model id
+   * as a variant). Offered per model by the composer's effort control, see
+   * `shared/effort.ts`.
    */
   reasoningEffort?: ReasoningEffort
   /** PTY pane id in terminal-registry. Only set for type='terminal' sessions. */
@@ -205,17 +206,19 @@ interface AgentSession {
   /**
    * Cumulative session cost in USD reported by the agent. ACP-backed
    * adapters populate this from `usage_update.cost.amount`; other adapters
-   * leave it undefined. StatusBar shows it next to the context-window count.
+   * leave it undefined. The composer footer shows it next to the context-window ring.
    */
   costUsd?: number
   /**
    * Variants advertised by the agent for the currently selected model
    * (e.g. 'low' / 'medium' / 'high' / 'max'). Empty/undefined for models
-   * without variants. The renderer pairs this with `currentVariant` to
-   * render a thinking-budget chip group next to the model picker.
+   * without variants. The composer's effort control lists them as its levels
+   * and marks `currentVariant`.
    */
   availableVariants?: string[]
   currentVariant?: string
+  /** The model those variants belong to, as the agent named it. */
+  variantModelId?: string
   /**
    * Per-session context-window usage. Sourced from `turn.completed` and
    * `context_window` runtime events. Lives on the session (not on the
@@ -297,14 +300,13 @@ interface AgentStore {
   setResolvedModel: (sessionId: string, resolvedModel: string) => void
   setReasoningEffort: (sessionId: string, effort: ReasoningEffort) => void
   setCostUsd: (sessionId: string, costUsd: number) => void
-  setVariants: (sessionId: string, available: string[], current: string) => void
+  setVariants: (sessionId: string, available: string[], current: string, modelId: string) => void
   setTokenUsage: (sessionId: string, usage: { usedTokens: number; maxTokens: number | null }) => void
   /**
    * Switch the agent backend (claude-code / codex / opencode) for a
-   * session. Required so consumers like StatusBar - which read from the
-   * store rather than the chat-panel-local `agentType` state - see the
-   * change immediately. Without this, the bottom status bar lagged the
-   * dropdown by a full provider round-trip.
+   * session. Required so consumers such as the sidebar - which read from
+   * the store rather than the chat-panel-local `agentType` state - see the
+   * change immediately instead of a full provider round-trip later.
    */
   setAgentType: (sessionId: string, type: AgentType) => void
   /**
@@ -632,9 +634,16 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   setModel: (sessionId, model) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, model } : s
-      ),
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId) return s
+        // OpenCode variants belong to one base model; a variant pick keeps them,
+        // another model drops them until its own `model.variants` arrives.
+        const variants = s.availableVariants ?? []
+        const sameBase = splitModelVariant(model, variants).base === splitModelVariant(s.variantModelId || s.model || '', variants).base
+        return sameBase || !s.availableVariants
+          ? { ...s, model }
+          : { ...s, model, availableVariants: undefined, currentVariant: undefined, variantModelId: undefined }
+      }),
     })),
 
   setResolvedModel: (sessionId, resolvedModel) =>
@@ -658,11 +667,11 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       ),
     })),
 
-  setVariants: (sessionId, available, current) =>
+  setVariants: (sessionId, available, current, modelId) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === sessionId
-          ? { ...s, availableVariants: available, currentVariant: current }
+          ? { ...s, availableVariants: available, currentVariant: current, variantModelId: modelId }
           : s
       ),
     })),

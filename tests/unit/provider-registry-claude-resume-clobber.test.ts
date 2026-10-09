@@ -52,6 +52,7 @@ vi.mock('../../src/main/db/database', () => ({
   saveMessageIfAbsent: () => true,
   getConversationRuntimeMode: () => null,
   getConversationModel: () => null,
+  getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
   getConversationExecutionRoot: () => null,
   getConversationProviderInstanceId: () => null,

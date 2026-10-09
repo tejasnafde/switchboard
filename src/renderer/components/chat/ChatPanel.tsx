@@ -1,9 +1,11 @@
 import { useChatWaitStore } from '../../stores/chat-wait-store'
 import { LoadingStatus } from '../ui/loading-status'
 import { ChatSkeleton } from '../ui/chat-skeleton'
+import { cn } from '../../lib/utils'
 import { perfSpan } from '../../perf'
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
+import type { ReasoningEffort } from '@shared/models'
 import { useAgentStore, adoptStartedRuntimeMode, runtimeModeToSend, type RuntimeMode } from '../../stores/agent-store'
 import { ensureFullHistory } from '../../services/history-loader'
 import { useDraftStore } from '../../stores/draft-store'
@@ -268,7 +270,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     // one after a provider switch.
   }, [sessionId, agentType])
 
-  const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {
+  const handleReasoningEffortChange = useCallback((effort: ReasoningEffort) => {
     if (!sessionId) return
     changeReasoningEffort(sessionId, effort)
   }, [sessionId])
@@ -347,7 +349,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         log.warn('failed to schedule context handoff', err)
       }
     }
-    // Write-through to the store so other consumers (StatusBar, sidebar
+    // Write-through to the store so other consumers (sidebar
     // session badges, command-palette filters) see the new agent type
     // immediately. setAgentType also clears the stored `model` - a model
     // id from one provider almost never round-trips to another (e.g.
@@ -1134,19 +1136,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     <>
       {/* Thinking indicator */}
       {(status === 'running' || status === 'thinking' || pendingDeliveryState === 'pending') && (
-        <div style={{
-          padding: '8px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          fontSize: '12px',
-          color: 'var(--text-muted)',
-          flexShrink: 0,
-        }}>
-          <span className="thinking-dots" style={{ display: 'inline-flex', gap: '3px' }}>
-            <span style={{ animation: 'pulse 1.4s ease-in-out infinite', animationDelay: '0s', width: '4px', height: '4px', borderRadius: '50%', background: 'var(--accent)' }} />
-            <span style={{ animation: 'pulse 1.4s ease-in-out infinite', animationDelay: '0.2s', width: '4px', height: '4px', borderRadius: '50%', background: 'var(--accent)' }} />
-            <span style={{ animation: 'pulse 1.4s ease-in-out infinite', animationDelay: '0.4s', width: '4px', height: '4px', borderRadius: '50%', background: 'var(--accent)' }} />
+        <div className="flex shrink-0 items-center gap-[8px] px-[16px] py-[8px] text-[12px] text-[var(--text-muted)]">
+          <span className="thinking-dots inline-flex gap-[3px]">
+            <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0s_infinite] rounded-[50%] bg-[var(--accent)]" />
+            <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0.2s_infinite] rounded-[50%] bg-[var(--accent)]" />
+            <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0.4s_infinite] rounded-[50%] bg-[var(--accent)]" />
           </span>
           <span>{pendingDeliveryState === 'pending' && status === 'idle'
             ? 'Sending…'
@@ -1264,17 +1258,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       data-focused={showFocusIndicator ? isVisiblyFocused : undefined}
       onFocusCapture={focusSlot}
       onPointerDown={focusSlot}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        height: '100%',
-        background: 'var(--bg-primary)',
-        position: 'relative',
-        boxShadow: isVisiblyFocused
-          ? 'inset 0 0 0 1px color-mix(in srgb, var(--accent) 46%, transparent)'
-          : undefined,
-      }}
+      className={cn(
+        'relative flex h-full w-full flex-col bg-[var(--bg-primary)]',
+        isVisiblyFocused && 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_46%,transparent)]',
+      )}
     >
       {searchOpen && (
         <InPaneSearchBar
@@ -1301,20 +1288,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         <>
           {/* ── Top bar: folder / chat name ──────────────────────── */}
           <div
-            className="chat-panel-header"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '7px 16px',
-              borderBottom: '1px solid var(--border)',
-              gap: '6px',
-              flexShrink: 0,
-              background: 'var(--bg-secondary)',
-              fontSize: '12px',
-              minHeight: '32px',
-              // The linked-PR control hides itself when the header is too narrow for it.
-              containerType: 'inline-size',
-            }}
+            // The linked-PR control hides itself when the header is too narrow for it (container query).
+            className="chat-panel-header flex min-h-[32px] shrink-0 items-center gap-[6px] border-b border-[var(--border)] bg-[var(--bg-secondary)] px-[16px] py-[7px] text-[12px] [container-type:inline-size]"
           >
             {/* Plain identity breadcrumb; only consequential state receives color. */}
             {hasSession ? (
@@ -1334,17 +1309,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
                       if (e.key === 'Escape') setEditingTitle(false)
                     }}
                     onBlur={commitRename}
-                    style={{
-                      border: '1px solid var(--border-focus)',
-                      borderRadius: '3px',
-                      background: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '12px',
-                      padding: '1px 6px',
-                      outline: 'none',
-                      flex: '1 1 0%',
-                      minWidth: 0,
-                    }}
+                    className="min-w-0 flex-[1_1_0%] rounded-[3px] border border-[var(--border-focus)] bg-[var(--bg-primary)] px-[6px] py-[1px] text-[12px] text-[var(--text-primary)] outline-none"
                   />
                 ) : (
                   <span className="chat-identity-title" title={chatTitle}>{chatTitle}</span>
@@ -1352,20 +1317,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
                 {!editingTitle && (
                   <button
                     onClick={startRename}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      padding: '0 2px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      opacity: 0.5,
-                      transition: 'opacity 0.12s',
-                      flexShrink: 0,
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.5' }}
+                    className="flex shrink-0 cursor-pointer items-center border-0 bg-transparent px-[2px] py-0 text-[var(--text-muted)] opacity-50 transition-opacity duration-[120ms] hover:opacity-100"
                     title="Rename"
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1380,10 +1332,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
                 )}
               </div>
             ) : (
-              <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Switchboard</span>
+              <span className="font-[500] text-[var(--text-primary)]">Switchboard</span>
             )}
 
-            <span style={{ flex: 1 }} />
+            <span className="flex-1" />
 
             {activeSession && activeSession.type !== 'terminal' && <LinkedPrControl sessionId={activeSession.id} />}
 
@@ -1418,19 +1370,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               <button
                 onClick={onClose}
                 title="Close this panel (⌘⇧\\)"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '2px 6px',
-                  borderRadius: '3px',
-                  fontSize: '14px',
-                  lineHeight: 1,
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+                className="shrink-0 cursor-pointer rounded-[3px] border-0 bg-transparent px-[6px] py-[2px] text-[14px] leading-none text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               >
                 ×
               </button>
@@ -1439,7 +1379,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             {/* Status text. A running turn has none: the chat's own
                 Working… row already says so. */}
             {hasSession && (activeSession?.draft || (status !== 'running' && status !== 'thinking')) && (
-              <span style={{ color: status === 'error' ? 'var(--error, #f85149)' : 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
+              <span className={cn('text-[11px] font-[400]', status === 'error' ? 'text-[var(--error,#f85149)]' : 'text-[var(--text-muted)]')}>
                 {activeSession?.draft
                   ? status === 'running' ? 'creating…' : 'draft'
                   : status === 'idle' && pendingDeliveryState === 'pending'

@@ -17,6 +17,7 @@ import { hostWriteTitle, type HostWriteResponse } from '@shared/agent-host-write
 import { PR_HOST_LABEL } from '@shared/pull-requests'
 import { peerUndeliveredHeading } from '@shared/peer-links'
 import { peerUndeliveredReasonText } from '@shared/system-markers'
+import { mergeBackRowDetails, mergeBackRowTitle } from '@shared/merge-back'
 
 // ─── Item renderers ────────────────────────────────────────────
 
@@ -456,6 +457,67 @@ export function PeerUndeliveredItem({
             <Text style={styles.undeliveredSendText}>{sending ? 'Sending…' : 'Send'}</Text>
           </Pressable>
         </View>
+      )}
+    </View>
+  )
+}
+
+/**
+ * A fork's summary in this (parent) chat. Pending, Edit and Discard act on it
+ * when the backend takes them (`canAct`); delivered, it says it went with
+ * that message. The backend's merge-back.row event updates or removes it.
+ */
+export function MergeBackItem({
+  item,
+  canAct,
+  busy,
+  error,
+  onEdit,
+  onDiscard,
+}: {
+  item: Extract<FeedItem, { kind: 'mergeBack' }>
+  canAct: boolean
+  busy: boolean
+  error?: string
+  onEdit: () => void
+  onDiscard: () => void
+}) {
+  const { row } = item
+  const [expanded, setExpanded] = useState(false)
+  const pending = row.state === 'pending'
+  return (
+    <View style={styles.undeliveredCard} testID="merge-back-row">
+      <Text style={styles.undeliveredTitle}>{mergeBackRowTitle(row)}</Text>
+      {pending
+        ? mergeBackRowDetails(row).map((line, i) => <Text key={`${i}-${line}`} style={styles.undeliveredReason}>{line}</Text>)
+        : (
+          <>
+            {expanded && <Text style={styles.undeliveredText} selectable>{row.text}</Text>}
+            <Pressable onPress={() => setExpanded((v) => !v)} accessibilityRole="button">
+              <Text style={styles.toggleText}>{expanded ? 'Hide summary' : 'Show summary'}</Text>
+            </Pressable>
+          </>
+        )}
+      {error !== undefined && <Text style={[styles.undeliveredReason, styles.deliveryFailed]} accessibilityLiveRegion="polite">{error}</Text>}
+      {pending && canAct && (
+        <>
+          <View style={styles.buttonRow}>
+            {(['Edit', 'Discard'] as const).map((label) => (
+              <Pressable
+                key={label}
+                onPress={label === 'Edit' ? onEdit : onDiscard}
+                disabled={busy}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: busy }}
+                testID={`merge-back-${label.toLowerCase()}`}
+                style={[styles.actionButton, styles.secondaryButton, busy && styles.buttonDisabled]}
+              >
+                <Text style={styles.undeliveredSendText}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.undeliveredReason}>Goes to the agent with your next message.</Text>
+        </>
       )}
     </View>
   )

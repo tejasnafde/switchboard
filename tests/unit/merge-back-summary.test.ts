@@ -5,9 +5,11 @@ import {
   buildMergeBackSummary,
   formatMergeBackMarker,
   mergeBackAgentBlock,
+  mergeBackPreviewNote,
   mergeBackRowFor,
   parseMergeBackMarker,
   withMergeBacks,
+  type MergeBackPreview,
 } from '../../src/shared/merge-back'
 import { buildHandoffPreamble } from '../../src/shared/handoff'
 import { visibleUserMessageText } from '../../src/shared/provider-events'
@@ -158,5 +160,18 @@ describe('merge-back marker and agent block', () => {
 
   it('changes nothing without blocks', () => {
     expect(withMergeBacks('hello', [])).toBe('hello')
+  })
+})
+
+describe('mergeBackPreviewNote', () => {
+  const ready = (over: Partial<Extract<MergeBackPreview, { status: 'ready' }>>): Extract<MergeBackPreview, { status: 'ready' }> => ({
+    status: 'ready', parentId: 'p', parentTitle: 'Parent', text: 't', turns: 1, omittedTurns: 0, files: ['a.ts'], moreFiles: 0,
+    replacesPending: false, token: { from: { at: 0, ids: [] }, through: { at: 1, ids: [] } }, ...over,
+  })
+
+  it('counts turns and every changed file, and says how many turns were left out', () => {
+    expect(mergeBackPreviewNote(ready({}))).toBe('1 turn · 1 file changed')
+    expect(mergeBackPreviewNote(ready({ turns: 5, omittedTurns: 2, files: ['a.ts', 'b.ts'], moreFiles: 3 })))
+      .toBe('5 turns (2 oldest left out to fit) · 5 files changed')
   })
 })
