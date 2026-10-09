@@ -3,6 +3,7 @@ import { parseArchiveIntent } from '../../src/shared/archive-intent'
 import {
   ftsMatchExpression,
   isPhraseMatch,
+  isWordPrefixMatch,
   messageSearchTerms,
   orderMessageSearchResults,
   textMatchesSearch,
@@ -98,5 +99,27 @@ describe('textMatchesSearch', () => {
     expect(textMatchesSearch('the sync backoff and its jitter', 'sync jitter')).toBe(true)
     expect(textMatchesSearch('the sync backoff', 'sync jitter')).toBe(false)
     expect(textMatchesSearch('anything', '   ')).toBe(false)
+  })
+
+  it('drops a bare FTS operator word even when the text itself has no "and"', () => {
+    // The global search builds its FTS match expression from messageSearchTerms
+    // on the un-lowercased query, which drops AND/OR/NOT/NEAR; a hit it finds
+    // for "sync AND jitter" can be a message with no literal "and" in it, and
+    // this in-chat check must still treat it as a match.
+    expect(textMatchesSearch('the sync, then jitter settles down', 'sync AND jitter')).toBe(true)
+  })
+})
+
+describe('isWordPrefixMatch', () => {
+  it('rejects a term that only occurs inside a word', () => {
+    expect(isWordPrefixMatch('concatenate the buffers', ['cat'])).toBe(false)
+  })
+
+  it('accepts a term that starts a word', () => {
+    expect(isWordPrefixMatch('the cat sat here', ['cat'])).toBe(true)
+  })
+
+  it('requires every term to match', () => {
+    expect(isWordPrefixMatch('sync jitter', ['sync', 'cat'])).toBe(false)
   })
 })

@@ -5,6 +5,7 @@ import {
   ftsMatchExpression,
   ftsPhraseExpression,
   isPhraseMatch,
+  isWordPrefixMatch,
   messageSearchTerms,
   MESSAGE_SEARCH_LIMIT,
   orderMessageSearchResults,
@@ -23,6 +24,12 @@ export type SearchResult = MessageSearchResult
  * shown ones, so a phrase match just past the limit can still rise into it.
  */
 const CANDIDATE_FACTOR = 4
+
+/** Fallback scan page size: rows read by recency per round, filtered in JS. */
+const FALLBACK_CHUNK_SIZE = 200
+// ponytail: cap the fallback scan so an FTS outage on a huge database cannot
+// scan forever looking for boundedLimit valid matches that may not exist.
+const FALLBACK_MAX_CHUNKS = 20
 
 export function searchMessagesInDatabase(
   database: Database.Database,
@@ -95,7 +102,8 @@ export function searchMessagesInDatabase(
       code: (err as { code?: unknown } | null)?.code ?? 'unknown',
     })
     const likes = terms.map(() => 'AND m.content LIKE ?').join(' ')
-    rows = database.prepare(`
+    const likeParams = terms.map((term) => `%${term}%`)
+    const fallbackPage = database.prepare(`
       SELECT ${columns},
         substr(m.content, max(1, instr(lower(m.content), lower(?)) - 20), 80) as snippet
       FROM messages m
@@ -103,8 +111,26 @@ export function searchMessagesInDatabase(
       WHERE 1 = 1 ${likes}
         ${rowFilters}
       ORDER BY m.timestamp DESC
-      LIMIT ?
-    `).all(terms[0], ...terms.map((term) => `%${term}%`), boundedLimit) as Row[]
+      LIMIT ? OFFSET ?
+    `)
+    // LIKE finds a term anywhere in the row, including inside another word
+    // ("cat" in "concatenate"), so a candidate page is filtered down to
+    // FTS5's own word-prefix rule before it counts toward boundedLimit. Read
+    // in bounded pages, oldest-ordered chunk last, so an interior-only match
+    // among the newest rows cannot fill the limit and hide a real one further
+    // back; FALLBACK_MAX_CHUNKS stops the scan once a very long run of
+    // interior-only matches has been read.
+    rows = []
+    for (let chunk = 0; chunk < FALLBACK_MAX_CHUNKS && rows.length < boundedLimit; chunk++) {
+      const page = fallbackPage.all(terms[0], ...likeParams, FALLBACK_CHUNK_SIZE, chunk * FALLBACK_CHUNK_SIZE) as Row[]
+      for (const row of page) {
+        if (isWordPrefixMatch(row.content, terms)) {
+          rows.push(row)
+          if (rows.length >= boundedLimit) break
+        }
+      }
+      if (page.length < FALLBACK_CHUNK_SIZE) break
+    }
   }
 
   const results = rows.map((row): SearchResult => ({

@@ -86,6 +86,25 @@ describe('message search matching', () => {
     expect(results[0].rank).toBeUndefined()
   })
 
+  it('does not let newer interior-only matches fill the fallback limit and hide an older word match', () => {
+    // LIKE '%cat%' matches "concatenate" too, but it is not a word-prefix
+    // match for "cat". Fill the default 50-row limit with newer rows like
+    // that, then put the one real match further back in time; a fallback
+    // that applies LIMIT before the word-prefix filter returns nothing.
+    for (let i = 0; i < 60; i++) insert(`decoy${i}`, 't1', 'concatenate the buffers', 10_000 + i)
+    insert('real', 't1', 'the cat sat here', 1_000)
+    db.exec('DROP TABLE messages_fts')
+    const results = searchMessagesInDatabase(db, 'cat')
+    expect(results.map((r) => r.messageId)).toEqual(['real'])
+  })
+
+  it('stops scanning the fallback after many pages of no matches, rather than scanning forever', () => {
+    for (let i = 0; i < 5_000; i++) insert(`decoy${i}`, 't1', 'concatenate the buffers', 10_000 + i)
+    db.exec('DROP TABLE messages_fts')
+    const results = searchMessagesInDatabase(db, 'cat')
+    expect(results).toEqual([])
+  })
+
   it('leaves stored task notices out of the results', () => {
     insert('a1', 't1', 'The build failed with exit code 2')
     insert(storedTaskNoticeId('t1', 'task_u1'), 't1', '<task-notification>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>', 2_000, 'user')

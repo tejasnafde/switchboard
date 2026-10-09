@@ -67,8 +67,13 @@ export function ftsPhraseExpression(terms: readonly string[]): string | null {
   return `"${terms.join(' ')}"*`
 }
 
+/** The words of text, lower-cased, split the way the unicode61 tokenizer splits it. */
+function wordsOf(text: string): string[] {
+  return text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+}
+
 function normalizedWords(text: string): string {
-  return ` ${text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ')}`
+  return ` ${wordsOf(text).join(' ')}`
 }
 
 /**
@@ -78,6 +83,23 @@ function normalizedWords(text: string): string {
 export function isPhraseMatch(text: string, terms: readonly string[]): boolean {
   if (terms.length < 2) return true
   return normalizedWords(text).includes(` ${terms.join(' ').toLowerCase()}`)
+}
+
+/**
+ * True when every term is a prefix of some word in text, the same rule
+ * FTS5's `"term"*` match expression applies. The fallback scan (`message-search.ts`
+ * in main, used only when the FTS index itself fails) reads candidates with a
+ * looser SQL `LIKE`, which also matches a term occurring inside a word (`cat`
+ * in `concatenate`); this filters those back out so the fallback only keeps
+ * what FTS itself would have matched.
+ */
+export function isWordPrefixMatch(text: string, terms: readonly string[]): boolean {
+  if (terms.length === 0) return false
+  const words = wordsOf(text)
+  return terms.every((term) => {
+    const lowerTerm = term.toLowerCase()
+    return words.some((word) => word.startsWith(lowerTerm))
+  })
 }
 
 type Rankable = Pick<MessageSearchResult, 'rank' | 'timestamp' | 'phraseMatch'>
@@ -118,10 +140,16 @@ export function orderMessageSearchResults<T extends Rankable>(results: readonly 
  * message the global search found is a match here too.
  */
 export function textMatchesSearch(text: string, query: string): boolean {
-  const q = query.trim().toLowerCase()
-  if (!q) return false
+  const raw = query.trim()
+  if (!raw) return false
+  const q = raw.toLowerCase()
   const lower = text.toLowerCase()
   if (lower.includes(q)) return true
-  const terms = messageSearchTerms(q)
+  // Terms come from the trimmed ORIGINAL query, the same input the FTS match
+  // expression is built from (searchMessagesInDatabase), so the two agree on
+  // which words are bare FTS operators (AND/OR/NOT/NEAR) and drop them alike.
+  // Lowercasing first would hide the uppercase operator words from
+  // messageSearchTerms's filter and leave them in as ordinary terms.
+  const terms = messageSearchTerms(raw).map((term) => term.toLowerCase())
   return terms.length > 0 && terms.every((term) => lower.includes(term))
 }
