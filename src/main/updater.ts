@@ -44,6 +44,16 @@ const updaterWindows = new Set<BrowserWindow>()
 let staleDownloadRetried = false
 /** True for the duration of any checkForUpdates() call - manual, initial, or scheduled. */
 let checkInFlight = false
+/**
+ * The real `autoUpdater.checkForUpdates()` call currently running, shared by
+ * every tracked caller. Keyed off this (not off each caller's timeout-raced
+ * view of it) so `checkInFlight` reflects whether the actual request is
+ * still running - a caller's `withTimeout` can give up on a stalled request
+ * and report it without the request itself having settled, and dropping
+ * `checkInFlight` at that point would let a scheduled tick pile another
+ * timeout-wrapped view onto the same stuck request pointlessly.
+ */
+let inFlightCheck: ReturnType<typeof autoUpdater.checkForUpdates> | null = null
 /** Clears the hourly/resume scheduler. Set once registered, null after `stopAutoUpdaterScheduler`. */
 let stopScheduler: (() => void) | null = null
 
@@ -60,13 +70,20 @@ const CHECK_TIMEOUT_MS = 120_000
 /**
  * The one path every checkForUpdates() call goes through - manual, initial,
  * and the hourly/resume scheduler below - so `checkInFlight` covers all of
- * them and a scheduled tick never piles onto a check already running.
+ * them and a scheduled tick never piles onto a check already running. A
+ * concurrent call reuses the same real request (`inFlightCheck`) rather than
+ * starting another one, each still racing its own `withTimeout` so the
+ * timeout behavior a caller sees is unchanged.
  */
 function checkForUpdatesTracked(): ReturnType<typeof autoUpdater.checkForUpdates> {
-  checkInFlight = true
-  return withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS, 'Update check').finally(() => {
-    checkInFlight = false
-  })
+  if (!inFlightCheck) {
+    checkInFlight = true
+    inFlightCheck = autoUpdater.checkForUpdates().finally(() => {
+      checkInFlight = false
+      inFlightCheck = null
+    })
+  }
+  return withTimeout(inFlightCheck, CHECK_TIMEOUT_MS, 'Update check')
 }
 
 function trackWindow(window: BrowserWindow): void {
