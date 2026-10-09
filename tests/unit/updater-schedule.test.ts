@@ -33,12 +33,17 @@ describe('startUpdateScheduler', () => {
     return { checkInFlight: false, downloaded: false, ...overrides }
   }
 
+  /** A no-op resume source: registers nothing real, removes nothing real. */
+  function noResume(): () => void {
+    return () => {}
+  }
+
   it('fires hourly', () => {
     const runCheck = vi.fn()
     const stop = startUpdateScheduler({
       getState: () => fakeState(),
       runCheck,
-      onResume: () => {},
+      onResume: noResume,
     })
 
     expect(runCheck).not.toHaveBeenCalled()
@@ -57,7 +62,7 @@ describe('startUpdateScheduler', () => {
     const stop = startUpdateScheduler({
       getState: () => state,
       runCheck,
-      onResume: () => {},
+      onResume: noResume,
     })
 
     vi.advanceTimersByTime(UPDATE_CHECK_INTERVAL_MS)
@@ -71,7 +76,7 @@ describe('startUpdateScheduler', () => {
     const stop = startUpdateScheduler({
       getState: () => fakeState({ downloaded: true }),
       runCheck,
-      onResume: () => {},
+      onResume: noResume,
     })
 
     vi.advanceTimersByTime(UPDATE_CHECK_INTERVAL_MS)
@@ -88,6 +93,9 @@ describe('startUpdateScheduler', () => {
       runCheck,
       onResume: (listener) => {
         resumeListener = listener
+        return () => {
+          resumeListener = undefined
+        }
       },
     })
 
@@ -107,6 +115,7 @@ describe('startUpdateScheduler', () => {
       runCheck,
       onResume: (listener) => {
         resumeListener = listener
+        return () => {}
       },
     })
 
@@ -121,12 +130,35 @@ describe('startUpdateScheduler', () => {
     const stop = startUpdateScheduler({
       getState: () => fakeState(),
       runCheck,
-      onResume: () => {},
+      onResume: noResume,
     })
 
     stop()
     vi.advanceTimersByTime(UPDATE_CHECK_INTERVAL_MS * 5)
     expect(runCheck).not.toHaveBeenCalled()
+  })
+
+  it('stop() removes the resume listener so a later resume does not fire', () => {
+    const runCheck = vi.fn()
+    let resumeListener: (() => void) | undefined
+    const removeListener = vi.fn(() => {
+      resumeListener = undefined
+    })
+    const stop = startUpdateScheduler({
+      getState: () => fakeState(),
+      runCheck,
+      onResume: (listener) => {
+        resumeListener = listener
+        return removeListener
+      },
+    })
+
+    stop()
+    expect(removeListener).toHaveBeenCalledTimes(1)
+    // Simulates a caller (e.g. electron's powerMonitor) that still holds a
+    // reference to the listener after `off()` was never actually wired up -
+    // a regression here would mean `resumeListener` is still defined.
+    expect(resumeListener).toBeUndefined()
   })
 
   it('unrefs the interval so it cannot keep the process alive on its own', () => {
@@ -137,7 +169,7 @@ describe('startUpdateScheduler', () => {
     startUpdateScheduler({
       getState: () => fakeState(),
       runCheck: vi.fn(),
-      onResume: () => {},
+      onResume: noResume,
       setIntervalFn,
       clearIntervalFn,
     })
@@ -151,7 +183,7 @@ describe('startUpdateScheduler', () => {
       intervalMs: 1_000,
       getState: () => fakeState(),
       runCheck,
-      onResume: () => {},
+      onResume: noResume,
     })
 
     vi.advanceTimersByTime(999)

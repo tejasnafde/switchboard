@@ -245,7 +245,10 @@ function startAutoUpdaterScheduler(): void {
   stopScheduler = startUpdateScheduler({
     getState: () => ({ checkInFlight, downloaded: lastStatus.kind === 'downloaded' }),
     runCheck: runScheduledCheck,
-    onResume: (listener) => powerMonitor.on('resume', listener),
+    onResume: (listener) => {
+      powerMonitor.on('resume', listener)
+      return () => powerMonitor.off('resume', listener)
+    },
   })
 }
 

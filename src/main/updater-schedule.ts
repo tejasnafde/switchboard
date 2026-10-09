@@ -39,18 +39,21 @@ export interface UpdateSchedulerDeps {
   intervalMs?: number
   getState: () => UpdateScheduleState
   runCheck: (reason: ScheduledCheckReason) => void
-  /** Registers a listener for the system waking from sleep. */
-  onResume: (listener: () => void) => void
+  /** Registers a listener for the system waking from sleep; returns a function that removes it. */
+  onResume: (listener: () => void) => () => void
   setIntervalFn?: (handler: () => void, ms: number) => ReturnType<typeof setInterval>
   clearIntervalFn?: (handle: ReturnType<typeof setInterval>) => void
 }
 
 /**
  * Wires `shouldRunScheduledCheck` to a repeating timer and a resume event
- * source. Returns a stop function that clears the timer - call it on quit
- * so the interval can neither keep the process alive nor fire mid-shutdown.
- * The timer is also unref'd as a backstop for a caller that forgets to stop
- * it: an unref'd interval never by itself keeps the event loop alive.
+ * source. Returns a stop function that clears the timer AND removes the
+ * resume listener - call it on quit so the scheduler can neither keep the
+ * process alive, fire mid-shutdown, nor (if the scheduler is later
+ * restarted, see `resumeAutoUpdaterScheduler`) leave a stale listener that
+ * keeps answering `resume` after it was told to stop. The timer is also
+ * unref'd as a backstop for a caller that forgets to stop it: an unref'd
+ * interval never by itself keeps the event loop alive.
  */
 export function startUpdateScheduler(deps: UpdateSchedulerDeps): () => void {
   const intervalMs = deps.intervalMs ?? UPDATE_CHECK_INTERVAL_MS
@@ -66,7 +69,10 @@ export function startUpdateScheduler(deps: UpdateSchedulerDeps): () => void {
   const unrefable = timer as unknown as { unref?: () => void }
   if (typeof unrefable.unref === 'function') unrefable.unref()
 
-  deps.onResume(() => tick('resume'))
+  const removeResumeListener = deps.onResume(() => tick('resume'))
 
-  return () => clearIntervalFn(timer)
+  return () => {
+    clearIntervalFn(timer)
+    removeResumeListener()
+  }
 }

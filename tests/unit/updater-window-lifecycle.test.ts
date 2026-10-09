@@ -33,7 +33,7 @@ vi.mock('electron', () => ({
       mocks.handlers.set(channel, handler)
     },
   },
-  powerMonitor: { on: vi.fn() },
+  powerMonitor: { on: vi.fn(), off: vi.fn() },
 }))
 
 vi.mock('electron-updater', () => ({ autoUpdater: mocks.updater }))
