@@ -21,7 +21,7 @@ import { useAgentStore } from '../stores/agent-store'
 import { emitSessionActivity } from './session-events'
 import { useDraftStore } from '../stores/draft-store'
 import { agentShortLabel } from '@shared/types'
-import { formatFileViewerContext, formatChatMessageContext, chatQuoteAuthor, textWithPillLabels } from './context-formatters'
+import { formatFileViewerContext, formatChatMessageContext, chatQuoteAuthor, selectionQuoteRole, textWithPillLabels } from './context-formatters'
 import { useLayoutStore } from '../stores/layout-store'
 import { focusComposer } from './composer-registry'
 import { materializeDraft } from './draft-chat'
@@ -256,10 +256,14 @@ export function captureSelection(): boolean {
   const source = findContextSource(contextEl)
 
   if (source === 'chat-message') {
-    const role = closestAttribute(contextEl, 'data-message-role')
+    const range = sel?.rangeCount ? sel.getRangeAt(0) : null
+    const roleOf = (node: Node | null | undefined): string | null =>
+      closestAttribute(node instanceof Element ? node : (node?.parentElement ?? null), 'data-message-role')
+    const role = range
+      ? selectionQuoteRole(roleOf(range.startContainer), roleOf(range.endContainer))
+      : closestAttribute(contextEl, 'data-message-role')
     // Chips read as their labels only inside one user bubble; a selection
     // across bubbles keeps the browser's text, which breaks lines between them.
-    const range = sel?.rangeCount ? sel.getRangeAt(0) : null
     const ancestor = range?.commonAncestorContainer
     const ancestorEl = ancestor instanceof Element ? ancestor : ancestor?.parentElement
     const text = range && ancestorEl?.closest('[data-message-role="user"]')

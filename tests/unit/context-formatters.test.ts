@@ -20,7 +20,20 @@ import {
   formatFileViewerContext,
   formatChatMessageContext,
   chatQuoteAuthor,
+  selectionQuoteRole,
 } from '../../src/renderer/services/context-formatters'
+
+describe('selectionQuoteRole', () => {
+  it('keeps the role when both ends sit in bubbles of that role', () => {
+    expect(selectionQuoteRole('user', 'user')).toBe('user')
+    expect(selectionQuoteRole('assistant', 'assistant')).toBe('assistant')
+  })
+
+  it('refuses a selection from a user bubble into an agent reply', () => {
+    expect(selectionQuoteRole('user', 'assistant')).toBeNull()
+    expect(chatQuoteAuthor(selectionQuoteRole('assistant', 'user'), 'Claude')).toBeNull()
+  })
+})
 
 describe('chatQuoteAuthor', () => {
   it('quotes the agent for its replies and "you" for the user\'s own messages', () => {

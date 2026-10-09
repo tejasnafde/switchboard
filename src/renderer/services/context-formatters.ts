@@ -72,6 +72,15 @@ export function chatQuoteAuthor(role: string | null, agent: string): string | nu
   return null
 }
 
+/**
+ * The one role a selection quotes, from the bubbles its two ends sit in. A
+ * selection from a user bubble into an agent reply has no single author, so
+ * it is null and cannot be quoted.
+ */
+export function selectionQuoteRole(startRole: string | null, endRole: string | null): string | null {
+  return startRole === endRole ? startRole : null
+}
+
 /** Set on a chip in a sent bubble to its label, so a quote can read it. */
 export const PILL_LABEL_ATTR = 'data-pill-label'
 
