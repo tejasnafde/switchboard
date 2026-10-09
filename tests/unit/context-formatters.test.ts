@@ -29,6 +29,11 @@ describe('selectionQuoteRole', () => {
     expect(selectionQuoteRole(['assistant', 'assistant', 'assistant'])).toBe('assistant')
   })
 
+  it('ignores an end that lies outside every bubble', () => {
+    expect(selectionQuoteRole([null, 'assistant', 'assistant'])).toBe('assistant')
+    expect(selectionQuoteRole([null, null])).toBeNull()
+  })
+
   it('refuses a selection that takes in both a user message and an agent reply', () => {
     expect(selectionQuoteRole(['user', 'assistant'])).toBeNull()
     expect(selectionQuoteRole(['user', 'user', 'assistant'])).toBeNull()

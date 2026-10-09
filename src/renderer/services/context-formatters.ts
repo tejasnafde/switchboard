@@ -78,8 +78,9 @@ export function chatQuoteAuthor(role: string | null, agent: string): string | nu
  * so it is null and cannot be quoted.
  */
 export function selectionQuoteRole(roles: ReadonlyArray<string | null>): string | null {
-  const distinct = new Set(roles)
-  return distinct.size === 1 ? roles[0] : null
+  // An end outside every bubble (the gap between rows) names no author.
+  const distinct = [...new Set(roles.filter((role) => role !== null))]
+  return distinct.length === 1 ? distinct[0] : null
 }
 
 /** Set on a chip in a sent bubble to its label, so a quote can read it. */
