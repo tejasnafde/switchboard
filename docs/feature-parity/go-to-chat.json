@@ -1,0 +1,78 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "go-to-chat",
+  "summary": "Go to chat, like an editor's Go to File but for chats. Desktop: Mod+P (`app.go-to-chat`, rebindable in Settings > Keyboard) opens a dialog over every chat the sidebar lists (local projects read fresh with app:get-projects on each open, plus each remote machine's projects from the machine store) and the local archived chats. With nothing typed it shows Recent (the newest 5 by last activity) then All chats. A query matches titles and project names only, never message text: exact title, then title starts with, then title contains, then project name contains, newest first inside each tier; the matched part of the title is highlighted. Archived chats appear only when the query holds the word archive or archived, which is then not matched, and their rows say archived. Enter opens the chat in the focused slot through the sidebar's open path (a remote chat opens on its own machine); Mod+Enter opens it beside, through the sidebar's Open beside path. The rules live in src/shared/chat-search.ts. Both phones' per-project chat lists rank their existing search box with the same rules; an empty box shows the list as before.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/GoToChatDialog.tsx",
+        "src/renderer/components/go-to-chat-items.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/services/global-keybindings.ts",
+        "src/renderer/styles/tailwind.css",
+        "tests/unit/go-to-chat-items.test.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots/go-to-chat-dark-darwin.png",
+        "e2e/snapshots/go-to-chat-light-darwin.png",
+        "e2e/snapshots/go-to-chat-translucent-darwin.png",
+        "e2e/snapshots/go-to-chat-search-dark-darwin.png",
+        "e2e/snapshots/go-to-chat-search-light-darwin.png",
+        "e2e/snapshots/go-to-chat-search-translucent-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ConversationsScreen.tsx",
+        "apps/mobile/src/screens/__tests__/conversation-search.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/ChatSearch.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseParityDecisions.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/remote/ChatSearchFixturesTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/browse/BrowseParityDecisionsTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/chat-search.ts",
+        "src/shared/shortcuts.ts",
+        "src/main/db/conversations.ts",
+        "tests/fixtures/chat-search-cases.json",
+        "tests/unit/chat-search.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, column, setting or migration. app:get-archived-conversations now also returns the existing agent_type and origin_source columns; the archived settings page ignores them, and the dialog treats a row without them (an older backend) as a Claude chat."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No native module, permission, package identity, signing or deep link change. The Expo change is JavaScript only, so it ships over the OTA lane; Android ships with its next APK. Every client uses only calls that an older backend already answers."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/chat-search.test.ts runs every case of tests/fixtures/chat-search-cases.json (tiers, recency inside a tier, case and spacing, project matches after title matches, the archive word) plus the Recent / All chats split and the title highlight range.",
+      "ChatSearchFixturesTest (Android unit test) runs the same fixture against the Kotlin port.",
+      "tests/unit/go-to-chat-items.test.ts: local, remote and archived rows, one row per chat, agent and project name for each.",
+      "apps/mobile conversation-search.test.tsx (jest): an empty box lists every chat newest first; a query ranks exact, starts with, contains; no match says No matches.",
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new go-to-chat and go-to-chat-search baselines in Dark, Light and Translucent, read; no existing baseline changed; two runs pass without updating.",
+      "A one-off Playwright probe against the built app (demo workspace, background mode): Enter on a search result opened it in the primary slot; Mod+Enter on another opened it in the second slot beside it.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Opening a remote-machine chat from the dialog was not driven against a connected machine; it goes through the same open path as a sidebar click with the row's machine id.",
+      "Opening an archived chat from the dialog was not driven in the app.",
+      "The phone search boxes were not used on a device; the Expo screen is covered by jest and the Android port by the fixture test."
+    ]
+  }
+}
