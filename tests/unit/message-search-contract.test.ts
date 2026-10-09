@@ -157,3 +157,12 @@ describe('message search order', () => {
     expect(ids('cache')).toEqual(['dense', 'sparse'])
   })
 })
+
+describe('message search phrase candidates', () => {
+  it('finds an adjacent match that more relevant scattered matches would crowd out', () => {
+    // bm25 favours the short scattered rows, so they fill every ordinary candidate slot.
+    for (let i = 0; i < 4; i += 1) insert(`s${i}`, 't1', 'jitter sync')
+    insert('p1', 't2', `${'filler words here '.repeat(40)}sync jitter`)
+    expect(searchMessagesInDatabase(db, 'sync jitter', 1).map((r) => r.messageId)).toEqual(['p1'])
+  })
+})

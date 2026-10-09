@@ -3,6 +3,7 @@ import { STORED_TASK_NOTICE_PREFIX } from '@shared/synthetic-message'
 import { parseArchiveIntent } from '@shared/archive-intent'
 import {
   ftsMatchExpression,
+  ftsPhraseExpression,
   isPhraseMatch,
   messageSearchTerms,
   MESSAGE_SEARCH_LIMIT,
@@ -62,7 +63,7 @@ export function searchMessagesInDatabase(
   type Row = Omit<SearchResult, 'archived' | 'phraseMatch'> & { archived: number | null }
   let rows: Row[]
   try {
-    rows = database.prepare(`
+    const ftsRows = (expression: string) => database.prepare(`
       SELECT ${columns},
         bm25(messages_fts) as rank,
         snippet(messages_fts, 0, '**', '**', '...', 40) as snippet,
@@ -74,7 +75,17 @@ export function searchMessagesInDatabase(
         ${rowFilters}
       ORDER BY rank
       LIMIT ?
-    `).all(SNIPPET_MARK_OPEN, SNIPPET_MARK_CLOSE, match, boundedLimit * CANDIDATE_FACTOR) as Row[]
+    `).all(SNIPPET_MARK_OPEN, SNIPPET_MARK_CLOSE, expression, boundedLimit * CANDIDATE_FACTOR) as Row[]
+    rows = ftsRows(match)
+    // Words matched apart can fill the candidates before an adjacent match,
+    // which ranks first, so phrase candidates are read on their own too.
+    const phrase = ftsPhraseExpression(terms)
+    if (phrase) {
+      const seen = new Set(rows.map((row) => row.messageId))
+      for (const row of ftsRows(phrase)) {
+        if (!seen.has(row.messageId) && isPhraseMatch(row.content, terms)) rows.push(row)
+      }
+    }
   } catch (err) {
     // The terms are quoted letters and digits, so this is a broken or
     // missing index, not the query. A plain scan still finds the words.

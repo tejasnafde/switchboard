@@ -40,9 +40,23 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
     setSearchIdx(0)
   }, [pendingChatFind, sessionId, clearChatFind])
 
+  // Bumped when the full history fails to load, so the cursor stops waiting
+  // for an anchor that cannot arrive.
+  const [anchorLost, setAnchorLost] = useState(0)
+
   // A long chat opens with its newest window; search covers all of it.
   useEffect(() => {
-    if (searchOpen && sessionId) void ensureFullHistory(sessionId)
+    if (!searchOpen || !sessionId) return
+    void ensureFullHistory(sessionId).then((complete) => {
+      const anchor = anchorRef.current
+      if (complete || anchor?.sessionId !== sessionId) return
+      anchorRef.current = null
+      const pending = useAgentStore.getState().pendingScrollToMessage
+      if (pending?.sessionId === sessionId && pending.messageId === anchor.messageId) {
+        useAgentStore.getState().clearScrollToMessage()
+      }
+      setAnchorLost((n) => n + 1)
+    })
   }, [searchOpen, sessionId])
 
   // ── In-pane search: matching message ids (the text, or every word of it) ──
@@ -86,7 +100,7 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
       return
     }
     if (sessionId) requestScrollToMessage(sessionId, searchMatches[safe], searchQuery)
-  }, [searchOpen, searchMatches, searchIdx, sessionId, searchQuery, requestScrollToMessage])
+  }, [searchOpen, searchMatches, searchIdx, sessionId, searchQuery, requestScrollToMessage, anchorLost])
 
   const handleChatSearchQuery = useCallback((q: string) => {
     anchorRef.current = null

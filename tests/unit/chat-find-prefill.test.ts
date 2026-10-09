@@ -13,6 +13,7 @@ vi.mock('../../src/renderer/services/history-loader', () => ({
   ensureFullHistory: vi.fn(async () => true),
 }))
 
+const { ensureFullHistory } = await import('../../src/renderer/services/history-loader')
 const { useChatSearch } = await import('../../src/renderer/components/chat/useChatSearch')
 const { InPaneSearchBar } = await import('../../src/renderer/components/InPaneSearchBar')
 const { useAgentStore } = await import('../../src/renderer/stores/agent-store')
@@ -125,5 +126,15 @@ describe('chat find prefill from message search', () => {
     })
     expect(document.querySelector('input')?.value).toBe('jitter')
     expect(scrolledTo()).toBe('m1')
+  })
+
+  it('steps through the loaded matches when the full history fails to load', async () => {
+    vi.mocked(ensureFullHistory).mockResolvedValueOnce(false)
+    await render(messages.slice(0, 2))
+    await act(async () => {
+      useAgentStore.getState().requestChatFind('s1', 'sync jitter', 'm3')
+    })
+    expect(scrolledTo()).toBe('m1')
+    expect(counter()).toBe('1/1')
   })
 })

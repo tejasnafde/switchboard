@@ -61,6 +61,12 @@ export function ftsMatchExpression(terms: readonly string[]): string | null {
   return terms.map((term) => `"${term}"*`).join(' ')
 }
 
+/** The words as one FTS5 phrase, the last a prefix; null for a single word. */
+export function ftsPhraseExpression(terms: readonly string[]): string | null {
+  if (terms.length < 2) return null
+  return `"${terms.join(' ')}"*`
+}
+
 function normalizedWords(text: string): string {
   return ` ${text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ')}`
 }
