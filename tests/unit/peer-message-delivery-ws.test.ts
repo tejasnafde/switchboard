@@ -51,6 +51,7 @@ vi.mock('../../src/main/db/database', () => ({
   // these tests keep asserting the request tier, which is what they exercise.
   getConversationRuntimeMode: () => null,
   getConversationModel: () => null,
+  getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
   getConversationExecutionRoot: () => null,
   getConversationProviderInstanceId: () => null,

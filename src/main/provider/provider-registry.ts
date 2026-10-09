@@ -11,7 +11,7 @@ import { createMainLogger as createLogger } from '../logger'
 import { trackAnalyticsEvent } from '../analytics'
 import { ClaudeAdapter } from './adapters/claude-adapter'
 import { CodexAdapter } from './adapters/codex-adapter'
-import { demoAdapters } from './adapters/demo-adapter'
+import { demoAdapters, demoCatalog } from './adapters/demo-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { AcpAdapter } from './adapters/acp/acp-adapter'
 import { genericAcpLaunchConfig } from './adapters/acp/agents'
@@ -2286,6 +2286,7 @@ export class ProviderRegistry implements PeerToolHost {
         runtimeMode: opts.runtimeMode,
         model: opts.model,
         instanceId: opts.instanceId,
+        reasoningEffort: opts.reasoningEffort,
       }, opts.cwd)
       opts = { ...opts, ...defaults }
 
@@ -2861,8 +2862,8 @@ export class ProviderRegistry implements PeerToolHost {
       if (!isAgentProvider(req?.agentType)) return []
       // The probe starts the real CLI with this machine's credentials, so the
       // demo adapter's recordings and screenshots would list whatever models
-      // that account has. Empty means the picker's built-in list.
-      if (process.env.SB_DEMO_ADAPTER === '1') return []
+      // that account has. The demo has a fixed one instead.
+      if (process.env.SB_DEMO_ADAPTER === '1') return demoCatalog(req.agentType)
       return probeCatalog(req.agentType, req.instanceId, req.remoteConfigDir)
     })
 

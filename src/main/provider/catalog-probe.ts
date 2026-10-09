@@ -17,6 +17,7 @@ import type { AgentProvider } from '@shared/types'
 import { resolveProviderInstance } from '../db/provider-instances'
 import { createMainLogger } from '../logger'
 import { buildClaudeCliEnv, findClaudeBin } from './adapters/claude-adapter'
+import { claudeModelOptions } from './claude-models'
 import { buildCodexCliEnv, findCodexPath, parseCodexModels } from './adapters/codex-adapter'
 import { buildOpencodeEnv, findOpencodePath } from './adapters/opencode/env'
 import { assertSupportedOpencode } from './adapters/opencode/version'
@@ -53,12 +54,7 @@ async function probeClaude(env: Record<string, string>): Promise<ModelOption[]> 
   })
   try {
     const models = await withTimeout(query.supportedModels(), 'claude supportedModels')
-    return models.map((m) => ({
-      id: m.value,
-      label: m.displayName,
-      tier: inferModelTier(m.value),
-      ...(m.resolvedModel ? { resolvedModel: m.resolvedModel } : {}),
-    }))
+    return claudeModelOptions(models)
   } finally {
     query.close()
   }

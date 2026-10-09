@@ -14,6 +14,15 @@ export interface ModelOption {
    * against the alias row covering it.
    */
   resolvedModel?: string
+  /**
+   * Thinking-effort levels the provider says this model accepts (Claude
+   * `ModelInfo.supportedEffortLevels`, Codex `model/list`
+   * `supportedReasoningEfforts`). An empty list means the model takes none;
+   * absent means the provider did not say.
+   */
+  effortLevels?: ReasoningEffort[]
+  /** The level the provider applies when none is sent, when it says (Codex). */
+  defaultEffort?: ReasoningEffort
 }
 
 /** Pre-session list; `model.variants` replaces it once a session starts.
@@ -64,17 +73,13 @@ export const OPENCODE_MODELS: ModelOption[] = [
 ]
 
 /**
- * Codex-only reasoning-effort selector. Codex desktop shows this as a
- * second dropdown next to the model picker (Low / Medium / High). Maps to
- * the `reasoningEffort` field on turn/start params when supported.
+ * Thinking-effort levels, weakest first. The union of what the agents accept:
+ * Claude takes all five (per model), Codex `low` to `xhigh`. OpenCode carries
+ * its effort in the model id instead (see `shared/effort.ts`).
  */
-export type ReasoningEffort = 'low' | 'medium' | 'high'
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
-export const REASONING_EFFORTS: Array<{ id: ReasoningEffort; label: string }> = [
-  { id: 'low', label: 'Low' },
-  { id: 'medium', label: 'Medium' },
-  { id: 'high', label: 'High' },
-]
+export const EFFORT_LEVELS: readonly ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 
 const FAST_TOKENS = new Set(['haiku', 'mini', 'nano', 'flash', 'fast', 'luna'])
 const MAX_TOKENS = new Set(['opus', 'fable', 'sol', 'pro', 'max', 'ultra', 'large'])
@@ -105,14 +110,6 @@ export function defaultModelFor(agent: AgentType): string {
   if (isGenericAcpAgent(agent)) return ''
   // Named, not positional: reordering the list used to change the default.
   return 'claude-sonnet-5'
-}
-
-/**
- * Does this agent support a separate reasoning-effort selector?
- * Today only Codex surfaces it as a UI control.
- */
-export function agentSupportsReasoningEffort(agent: AgentType): boolean {
-  return agent === 'codex'
 }
 
 /**

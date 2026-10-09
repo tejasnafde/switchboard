@@ -81,7 +81,7 @@ export function defaultInstanceId(kind: AgentType): string {
 
 /**
  * Human-readable label for an agent type. Use everywhere the UI needs to
- * display the agent's name - status bar, message-bubble author, notifications,
+ * display the agent's name - message-bubble author, notifications,
  * export headers - so we never drift to hardcoded "Claude" strings.
  */
 export function agentLabel(type: AgentType | 'cursor' | undefined): string {

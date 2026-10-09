@@ -10,6 +10,7 @@ import {
   getConversationAgentType,
   getConversationExecutionRoot,
   getConversationModel,
+  getConversationReasoningEffort,
   getConversationProviderInstanceId,
   getConversationRuntimeMode,
   getSetting,
@@ -52,6 +53,7 @@ function conversationDefaults(threadId: string, agentType: AgentType): SessionDe
   return {
     runtimeMode: getConversationRuntimeMode(threadId) ?? undefined,
     model: sameAgent ? (getConversationModel(threadId) ?? undefined) : undefined,
+    reasoningEffort: sameAgent ? (getConversationReasoningEffort(threadId) ?? undefined) : undefined,
     instanceId: getConversationProviderInstanceId(threadId) ?? undefined,
   }
 }

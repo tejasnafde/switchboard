@@ -5,6 +5,7 @@ import { ChatSkeleton } from '../ui/chat-skeleton'
 import { perfSpan } from '../../perf'
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import type { HostWriteResponse } from '@shared/agent-host-writes'
+import type { ReasoningEffort } from '@shared/models'
 import { useAgentStore, adoptStartedRuntimeMode, runtimeModeToSend, type RuntimeMode } from '../../stores/agent-store'
 import { ensureFullHistory } from '../../services/history-loader'
 import { useDraftStore } from '../../stores/draft-store'
@@ -270,7 +271,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     // one after a provider switch.
   }, [sessionId, agentType])
 
-  const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {
+  const handleReasoningEffortChange = useCallback((effort: ReasoningEffort) => {
     if (!sessionId) return
     changeReasoningEffort(sessionId, effort)
   }, [sessionId])
@@ -349,7 +350,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         log.warn('failed to schedule context handoff', err)
       }
     }
-    // Write-through to the store so other consumers (StatusBar, sidebar
+    // Write-through to the store so other consumers (sidebar
     // session badges, command-palette filters) see the new agent type
     // immediately. setAgentType also clears the stored `model` - a model
     // id from one provider almost never round-trips to another (e.g.
@@ -1137,9 +1138,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       {(status === 'running' || status === 'thinking' || pendingDeliveryState === 'pending') && (
         <div className="flex shrink-0 items-center gap-[8px] px-[16px] py-[8px] text-[12px] text-[var(--text-muted)]">
           <span className="thinking-dots inline-flex gap-[3px]">
-            <span className="h-[4px] w-[4px] rounded-[50%] bg-[var(--accent)] [animation:pulse_1.4s_ease-in-out_0s_infinite]" />
-            <span className="h-[4px] w-[4px] rounded-[50%] bg-[var(--accent)] [animation:pulse_1.4s_ease-in-out_0.2s_infinite]" />
-            <span className="h-[4px] w-[4px] rounded-[50%] bg-[var(--accent)] [animation:pulse_1.4s_ease-in-out_0.4s_infinite]" />
+            <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0s_infinite] rounded-[50%] bg-[var(--accent)]" />
+            <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0.2s_infinite] rounded-[50%] bg-[var(--accent)]" />
+            <span className="h-[4px] w-[4px] animate-[pulse_1.4s_ease-in-out_0.4s_infinite] rounded-[50%] bg-[var(--accent)]" />
           </span>
           <span>{pendingDeliveryState === 'pending' && status === 'idle'
             ? 'Sending…'
@@ -1259,7 +1260,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       onPointerDown={focusSlot}
       className={cn(
         'relative flex h-full w-full flex-col bg-[var(--bg-primary)]',
-        isVisiblyFocused && '[box-shadow:inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_46%,transparent)]',
+        isVisiblyFocused && 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_46%,transparent)]',
       )}
     >
       {searchOpen && (
@@ -1314,7 +1315,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
                 {!editingTitle && (
                   <button
                     onClick={startRename}
-                    className="flex shrink-0 cursor-pointer items-center border-none p-[0_2px] text-[var(--text-muted)] opacity-50 [background:none] [transition:opacity_0.12s] hover:opacity-100"
+                    className="flex shrink-0 cursor-pointer items-center border-0 bg-transparent px-[2px] py-0 text-[var(--text-muted)] opacity-50 transition-opacity duration-[120ms] hover:opacity-100"
                     title="Rename"
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1367,7 +1368,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               <button
                 onClick={onClose}
                 title="Close this panel (⌘⇧\\)"
-                className="shrink-0 cursor-pointer rounded-[3px] border-none p-[2px_6px] text-[14px] leading-[1] text-[var(--text-muted)] [background:none] hover:text-[var(--text-primary)]"
+                className="shrink-0 cursor-pointer rounded-[3px] border-0 bg-transparent px-[6px] py-[2px] text-[14px] leading-none text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               >
                 ×
               </button>

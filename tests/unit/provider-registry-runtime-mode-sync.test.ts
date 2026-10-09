@@ -42,6 +42,7 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationRuntimeMode: () => null,
   setConversationRuntimeMode: (id: string, mode: string) => { savedModes.push([id, mode]) },
   getConversationModel: () => null,
+  getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
   getConversationProviderInstanceId: () => null,
   getSetting: () => null,

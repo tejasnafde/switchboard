@@ -1,9 +1,8 @@
 import type { ReasoningEffort } from '../../shared/models'
+import { isReasoningEffort } from '../../shared/provider-option-memory'
 import { isRuntimeMode, type RuntimeMode } from '../../shared/provider-events'
 import { isAgentProvider, type AgentType } from '../../shared/types'
 import type { ConversationRow } from '../db/database'
-
-const REASONING_EFFORTS = new Set<ReasoningEffort>(['low', 'medium', 'high'])
 
 export interface ForkSourceExecution {
   conversationId: string
@@ -51,7 +50,7 @@ export function projectForkSourceExecution(
     throw new Error(`fork: unsupported runtime mode ${runtimeMode}`)
   }
   const reasoningEffort = row.reasoning_effort ?? null
-  if (reasoningEffort !== null && !REASONING_EFFORTS.has(reasoningEffort as ReasoningEffort)) {
+  if (reasoningEffort !== null && !isReasoningEffort(reasoningEffort)) {
     throw new Error(`fork: unsupported reasoning effort ${reasoningEffort}`)
   }
 
@@ -68,7 +67,7 @@ export function projectForkSourceExecution(
     providerInstanceId: row.provider_instance_id ?? null,
     runtimeMode,
     model: row.model ?? null,
-    reasoningEffort: reasoningEffort as ReasoningEffort | null,
+    reasoningEffort,
     launchConfigName: row.launch_config_name ?? null,
     title: row.title,
   }

@@ -8,6 +8,7 @@ import app.switchboard.mobile.domain.thread.HostWriteCard
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWritePreview
 import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.domain.thread.MergeBackRow
 import app.switchboard.mobile.domain.thread.PeerUndelivered
 import app.switchboard.mobile.domain.thread.SyntheticPart
 import app.switchboard.mobile.domain.thread.SyntheticTone
@@ -137,6 +138,7 @@ enum class ThreadRowKind {
     TODO,
     RAW_NOTICE,
     SYNTHETIC,
+    MERGE_BACK,
 }
 
 enum class ToolIconKind {
@@ -263,6 +265,15 @@ sealed interface ThreadRowPresentation {
         val row: PeerUndelivered,
     ) : ThreadRowPresentation {
         override val kind = ThreadRowKind.PEER_UNDELIVERED
+    }
+
+    /** A fork's merge-back card in this (parent) chat; `messageId` is its stored row, which Edit/Discard name. */
+    data class MergeBack(
+        override val key: String,
+        val messageId: String,
+        val row: MergeBackRow,
+    ) : ThreadRowPresentation {
+        override val kind = ThreadRowKind.MERGE_BACK
     }
 
     data class Todo(val source: FeedItem.Todo) : ThreadRowPresentation {
@@ -444,7 +455,10 @@ object ThreadPresenter {
         is FeedItem.Peer -> ThreadRowPresentation.Peer(item)
         is FeedItem.Todo -> ThreadRowPresentation.Todo(item)
         is FeedItem.RawNotice -> if (item.eventType == SystemMarkers.ROW_EVENT_TYPE) {
-            when (val view = SystemMarkers.view(item.text)) {
+            val mergeBackRow = SystemMarkers.mergeBackRow(item.text)
+            if (mergeBackRow != null) {
+                ThreadRowPresentation.MergeBack(item.id, item.id.removePrefix("h-"), mergeBackRow)
+            } else when (val view = SystemMarkers.view(item.text)) {
                 is SystemRowView.Undelivered ->
                     ThreadRowPresentation.Undelivered(item.id, item.id.removePrefix("h-"), view.row)
                 is SystemRowView.Error -> ThreadRowPresentation.Error(FeedItem.Error(item.id, view.message, null))

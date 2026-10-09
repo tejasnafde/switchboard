@@ -2,6 +2,7 @@ import { visibleUserMessageText } from '@shared/provider-events'
 import { pillBodyText } from '@shared/pill-body-text'
 import { splitSyntheticUserText } from '@shared/synthetic-message'
 import { systemRowView } from '@shared/system-markers'
+import { parseMergeBackMarker } from '@shared/merge-back'
 import type { ChatMessage } from '@shared/types'
 import type { FeedItem } from '../stores/chat'
 
@@ -84,8 +85,10 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
 
 /** A stored system row as a feed item; a live event for the same row uses the same id. */
 export function systemRowItem(messageId: string, content: string): FeedItem {
-  const view = systemRowView(content)
   const id = `h-${messageId}`
+  const mergeBack = parseMergeBackMarker(content)
+  if (mergeBack) return { kind: 'mergeBack', id, messageId, row: mergeBack }
+  const view = systemRowView(content)
   if (view.kind === 'peer-undelivered') return { kind: 'undelivered', id, messageId, row: view.row }
   if (view.kind === 'error') return { kind: 'error', id, message: view.message }
   return { kind: 'notice', id, text: view.body ? `${view.title}: ${view.body}` : view.title }
