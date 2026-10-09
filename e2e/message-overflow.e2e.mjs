@@ -103,7 +103,7 @@ try {
       preScrolls: pre.scrollWidth > pre.clientWidth && getComputedStyle(pre).whiteSpace === 'pre',
       chips: md.querySelectorAll('.file-chip').length,
       userPill: (() => {
-        const pill = [...document.querySelectorAll('.message-bubble span[title]')].find((el) => el.title === longFile)
+        const pill = [...document.querySelectorAll('.message-bubble [data-pill-chip]')].find((el) => el.getAttribute('data-pill-label') === longFile)
         if (!pill) return null
         const r = pill.getBoundingClientRect()
         const b = pill.closest('.message-bubble').getBoundingClientRect()

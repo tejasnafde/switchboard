@@ -483,7 +483,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
               // pillsMeta is optional: a peer message and a handoff turn both
               // set displayBody with no pills, and requiring both leaked the
               // full wire body (instruction paragraph included) into the bubble.
-              renderPillBody(message.displayBody, message.pillsMeta ?? {})
+              renderPillBody(message.displayBody, message.pillsMeta ?? {}, message.content)
             ) : (() => {
               // Chipify every `/<known-skill>` mention so a multi-skill
               // prompt like `/deslop then /review` round-trips as two
