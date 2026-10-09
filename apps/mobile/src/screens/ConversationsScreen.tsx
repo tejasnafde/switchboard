@@ -21,6 +21,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { isAgentType, type ConversationRow } from '@shared/types'
 import { formatRelativeTime } from '@shared/format'
+import { rankChats } from '@shared/chat-search'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
 import { keyboardAvoidance } from '../lib/keyboard-avoidance'
@@ -162,11 +163,14 @@ export default function ConversationsScreen({ route, navigation }: Props) {
     })
   }, [navigation, connectionId, projectPath, projectName])
 
+  // The desktop's Go to chat rules: title tiers, then the project name, newest first.
   const visibleRows = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (needle === '' || rows === null) return rows ?? []
-    return rows.filter((r) => r.title.toLowerCase().includes(needle))
-  }, [rows, query])
+    if (query.trim() === '' || rows === null) return rows ?? []
+    return rankChats(
+      rows.map((row) => ({ row, title: row.title, projectName, lastActivity: row.updated_at })),
+      query,
+    ).map((match) => match.row)
+  }, [rows, query, projectName])
 
   if (rows === null && error !== null) {
     return (
@@ -236,7 +240,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
           <Text style={styles.stateDetail}>
             {query === ''
               ? `Tap + to start a new session in ${projectName}.`
-              : `No conversation title matches "${query.trim()}".`}
+              : `No conversation title or project matches "${query.trim()}".`}
           </Text>
         </View>
       }

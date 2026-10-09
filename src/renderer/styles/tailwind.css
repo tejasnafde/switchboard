@@ -37,6 +37,7 @@
 @source '../components/chat/lexical/RichChatTextarea.tsx';
 @source '../components/CommandPalette.tsx';
 @source '../components/SessionPickerModal.tsx';
+@source '../components/GoToChatDialog.tsx';
 @source '../components/SearchModal.tsx';
 @source '../components/InPaneSearchBar.tsx';
 @source '../components/QuickPromptModal.tsx';

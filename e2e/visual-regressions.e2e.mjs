@@ -532,6 +532,16 @@ async function captureThemeScreens(win, theme) {
   await snapScreen(win, 'chat', theme, win, [turnTimes, sidebar])
   await snapScreen(win, 'sidebar', theme, sidebar)
 
+  await win.keyboard.press('ControlOrMeta+P')
+  const goToChat = win.getByRole('dialog', { name: 'Go to chat' })
+  await goToChat.getByText('Recent').waitFor({ state: 'visible' })
+  await snapScreen(win, 'go-to-chat', theme, goToChat)
+  await win.keyboard.type('notes')
+  await goToChat.getByText('2 chats').waitFor({ state: 'visible' })
+  await snapScreen(win, 'go-to-chat-search', theme, goToChat)
+  await win.keyboard.press('Escape')
+  await goToChat.waitFor({ state: 'hidden' })
+
   await win.keyboard.press('Meta+Shift+P')
   const palette = win.locator('.palette-modal-content')
   await palette.waitFor({ state: 'visible' })

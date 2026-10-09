@@ -53,6 +53,7 @@ export const SHORTCUTS: readonly ShortcutCommand[] = [
   { id: 'app.toggle-board', label: 'Toggle kanban board', group: 'Navigation', scope: 'global', bindings: ['Mod+Shift+K'] },
   { id: 'app.command-palette', label: 'Command palette', group: 'Navigation', scope: 'global', bindings: ['Mod+Shift+P'] },
   { id: 'app.search', label: 'Search across chats', group: 'Navigation', scope: 'global', bindings: ['Mod+Shift+F'] },
+  { id: 'app.go-to-chat', label: 'Go to chat', group: 'Navigation', scope: 'global', bindings: ['Mod+P'] },
   { id: 'chat.new', label: 'New chat', group: 'Chat', scope: 'global', bindings: ['Mod+Shift+O'] },
   { id: 'chat.dual', label: 'Toggle dual-chat panel', group: 'Chat', scope: 'global', bindings: ['Mod+Shift+\\'] },
   { id: 'chat.interrupt', label: 'Stop agent (when running)', group: 'Chat', scope: 'global', bindings: ['Mod+Backspace'] },
