@@ -407,7 +407,8 @@ export class SwitchboardClient {
     return this.transport.invoke(ProviderChannels.SWITCH_INSTANCE, threadId, input)
   }
 
-  getPendingHandoff(threadId: string): Promise<{ from: string | null }> {
+  /** `backendBuilds`: the backend adds the handoff to the next turn and clears the flag itself. */
+  getPendingHandoff(threadId: string): Promise<{ from: string | null; backendBuilds?: boolean }> {
     return this.transport.invoke(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, threadId)
   }
 

@@ -129,9 +129,9 @@ class ModeAdapter implements ProviderAdapter {
 }
 
 const passThroughSubmission = {
-  async submit(_input: UserTurnSubmissionV1, context: AtomicUserTurnContext) {
+  async submit(input: UserTurnSubmissionV1, context: AtomicUserTurnContext) {
     await context.prepare()
-    await context.dispatch()
+    await context.dispatch(context.finalize ? await context.finalize(input) : input)
     return { status: 'accepted' as const, accepted: true as const, duplicate: false, state: 'completed' as const, acceptedAt: 1 }
   },
 }
