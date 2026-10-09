@@ -523,4 +523,21 @@ describe('a link changing while the send is prepared', () => {
     expect(adapter.turns).toHaveLength(0)
     expect((await linksOf('hub'))[0].used).toBe(0)
   })
+
+  it('refuses an ACP target whose turn started during the await', async () => {
+    const { cwd, adapter } = await setup()
+    await startAll(cwd, ['hub', 'w1'])
+    await link('hub', 'w1')
+    // An ACP agent drops a mid-turn send, so the registry must not dispatch one.
+    Object.defineProperty(adapter, 'provider', { value: 'opencode' })
+    const turns = registry as unknown as { beginOutstandingTurn: (id: string) => void; finishOutstandingTurn: (id: string) => void }
+    duringCheckpoint(() => turns.beginOutstandingTurn('w1'))
+    const out = await toolsFor('hub').sendMessage({ sessionId: 'w1', message: 'the plan' })
+    turns.finishOutstandingTurn('w1')
+
+    expect(out.isError).toBe(true)
+    expect(text(out)).toMatch(/mid-turn/)
+    expect(adapter.turns).toHaveLength(0)
+    expect((await linksOf('hub'))[0].used).toBe(0)
+  })
 })

@@ -4,7 +4,7 @@
  */
 import { execFileSync } from 'child_process'
 import { accessSync, constants } from 'fs'
-import { join } from 'path'
+import { delimiter, join } from 'path'
 import { createMainLogger } from '../../../logger'
 import { peekShellEnv } from '../../../shell-env'
 
@@ -69,12 +69,18 @@ export function findAgentBinary(name: string, now = Date.now()): string | null {
   return path
 }
 
-/** Spawn env, later layers winning: login shell env, process env, the instance overlay. */
+/**
+ * Spawn env, later layers winning: login shell env, process env, the instance
+ * overlay. PATH is the login shell's first, then the process's, so an agent
+ * found through the shell also finds its interpreter (node, python).
+ */
 export function buildAgentEnv(overlay: Record<string, string>): Record<string, string> {
   const shellEnv = peekShellEnv()
+  const PATH = [shellEnv?.PATH, process.env.PATH].filter(Boolean).join(delimiter)
   return {
     ...(shellEnv ?? {}),
     ...(process.env as Record<string, string>),
+    ...(PATH ? { PATH } : {}),
     ...overlay,
   }
 }

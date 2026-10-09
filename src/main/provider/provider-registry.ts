@@ -870,7 +870,7 @@ export class ProviderRegistry implements PeerToolHost {
     chargedEdge: number | null
     fromRoot: string
     targetRoot: string
-  }): { reason: 'link-removed' | 'target-gone'; message: string } | null {
+  }): { reason: 'link-removed' | 'target-gone' | 'target-busy'; message: string } | null {
     if (input.chargedEdge !== null && this.peerLinks.edgeId(input.fromRoot, input.targetRoot) !== input.chargedEdge) {
       return {
         reason: 'link-removed',
@@ -881,6 +881,13 @@ export class ProviderRegistry implements PeerToolHost {
       return {
         reason: 'target-gone',
         message: `"${input.targetLabel}" stopped or changed profiles before the message went out, so it was NOT delivered. Send it again once that session is running.`,
+      }
+    }
+    // A turn may have started during the checkpoint await; an ACP agent would drop the send.
+    if (speaksAcp(input.adapter.provider) && this.hasOutstandingTurn(input.targetThreadId)) {
+      return {
+        reason: 'target-busy',
+        message: `"${input.targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`,
       }
     }
     return null
@@ -1060,7 +1067,8 @@ export class ProviderRegistry implements PeerToolHost {
     if (withdrawn) {
       // A running turn keeps the checkpoint it now has; a fresh one belongs
       // to a turn that will not happen.
-      if (targetCwd && !targetWasMidTurn) this.checkpoints.clear(targetThreadId)
+      // A turn that started meanwhile owns the checkpoint now.
+      if (targetCwd && !targetWasMidTurn && withdrawn.reason !== 'target-busy') this.checkpoints.clear(targetThreadId)
       this.peerGuard.release(verdict.id, key)
       releaseAgentSlot()
       log.warn(`peer message withdrawn before delivery (${withdrawn.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
