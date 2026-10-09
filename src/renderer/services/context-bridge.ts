@@ -259,13 +259,19 @@ export function captureSelection(): boolean {
     const range = sel?.rangeCount ? sel.getRangeAt(0) : null
     const roleOf = (node: Node | null | undefined): string | null =>
       closestAttribute(node instanceof Element ? node : (node?.parentElement ?? null), 'data-message-role')
+    const ancestor = range?.commonAncestorContainer
+    const ancestorEl = ancestor instanceof Element ? ancestor : ancestor?.parentElement
     const role = range
-      ? selectionQuoteRole(roleOf(range.startContainer), roleOf(range.endContainer))
+      ? selectionQuoteRole([
+          roleOf(range.startContainer),
+          roleOf(range.endContainer),
+          ...Array.from(ancestorEl?.querySelectorAll('[data-message-role]') ?? [])
+            .filter((bubble) => range.intersectsNode(bubble))
+            .map((bubble) => bubble.getAttribute('data-message-role')),
+        ])
       : closestAttribute(contextEl, 'data-message-role')
     // Chips read as their labels only inside one user bubble; a selection
     // across bubbles keeps the browser's text, which breaks lines between them.
-    const ancestor = range?.commonAncestorContainer
-    const ancestorEl = ancestor instanceof Element ? ancestor : ancestor?.parentElement
     const text = range && ancestorEl?.closest('[data-message-role="user"]')
       ? textWithPillLabels(range.cloneContents())
       : getDomSelectionText()

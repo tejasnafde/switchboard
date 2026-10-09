@@ -24,14 +24,15 @@ import {
 } from '../../src/renderer/services/context-formatters'
 
 describe('selectionQuoteRole', () => {
-  it('keeps the role when both ends sit in bubbles of that role', () => {
-    expect(selectionQuoteRole('user', 'user')).toBe('user')
-    expect(selectionQuoteRole('assistant', 'assistant')).toBe('assistant')
+  it('keeps the role when every bubble the selection touches has it', () => {
+    expect(selectionQuoteRole(['user', 'user'])).toBe('user')
+    expect(selectionQuoteRole(['assistant', 'assistant', 'assistant'])).toBe('assistant')
   })
 
-  it('refuses a selection from a user bubble into an agent reply', () => {
-    expect(selectionQuoteRole('user', 'assistant')).toBeNull()
-    expect(chatQuoteAuthor(selectionQuoteRole('assistant', 'user'), 'Claude')).toBeNull()
+  it('refuses a selection that takes in both a user message and an agent reply', () => {
+    expect(selectionQuoteRole(['user', 'assistant'])).toBeNull()
+    expect(selectionQuoteRole(['user', 'user', 'assistant'])).toBeNull()
+    expect(chatQuoteAuthor(selectionQuoteRole(['assistant', 'user']), 'Claude')).toBeNull()
   })
 })
 
