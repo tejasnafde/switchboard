@@ -5,7 +5,8 @@
   "summary": "Repository upkeep with no user-visible change: CI scope, secret scan, dependabot, knip, coverage script, contributor docs; the desktop and the Expo app build fork requests through one shared function (buildForkConversationRequest); dead shims removed (claude-adapter policy re-exports, a stale close-focus branch, terminal-store globalActivePaneId); bookmark ids use crypto.randomUUID instead of nanoid.",
   "surfaces": {
     "desktop": { "status": "implemented", "evidence": ["src/renderer/services/fork-session.ts", "src/renderer/close-focus.ts", "src/renderer/stores/terminal-store.ts", "src/renderer/stores/bookmark-store.ts", "tests/unit/conversation-fork-contract.test.ts", "tests/unit/close-focus.test.ts"] },
-    "reactNativeIos": { "status": "implemented", "evidence": ["apps/mobile/src/lib/conversation-fork.ts"] },
+    "reactNativeIos": { "status": "implemented", "evidence": ["apps/mobile/src/lib/conversation-fork.ts",
+        "apps/mobile/jest.config.js"] },
     "nativeAndroid": { "status": "not_applicable", "reason": "Android builds its own fork request in Kotlin; the wire contract is unchanged." },
     "sharedBackendApi": { "status": "implemented", "evidence": ["src/shared/conversation-fork.ts"] },
     "storageDataMigration": { "status": "not_applicable", "reason": "Nothing stored changes; new bookmark ids are still unique strings." },
