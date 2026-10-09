@@ -123,3 +123,15 @@ describe('isWordPrefixMatch', () => {
     expect(isWordPrefixMatch('sync jitter', ['sync', 'cat'])).toBe(false)
   })
 })
+
+describe('diacritics fold like the FTS unicode61 tokenizer', () => {
+  it('matches café for cafe in every rule', () => {
+    expect(textMatchesSearch('Meet at the Café later', 'cafe')).toBe(true)
+    expect(isWordPrefixMatch('Meet at the Café later', ['cafe'])).toBe(true)
+    expect(isPhraseMatch('the café menu', ['cafe', 'men'])).toBe(true)
+  })
+
+  it('matches cafe for a query typed with the accent', () => {
+    expect(textMatchesSearch('cafe opens at nine', 'café')).toBe(true)
+  })
+})

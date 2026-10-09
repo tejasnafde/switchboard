@@ -67,9 +67,17 @@ export function ftsPhraseExpression(terms: readonly string[]): string | null {
   return `"${terms.join(' ')}"*`
 }
 
-/** The words of text, lower-cased, split the way the unicode61 tokenizer splits it. */
+/**
+ * Lower case without Latin diacritics, as the FTS index's unicode61 tokenizer
+ * folds text, so `cafe` matches `café` here too.
+ */
+export function foldForSearch(text: string): string {
+  return text.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase()
+}
+
+/** The words of text, folded, split the way the unicode61 tokenizer splits it. */
 function wordsOf(text: string): string[] {
-  return text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  return foldForSearch(text).split(/[^\p{L}\p{N}]+/u).filter(Boolean)
 }
 
 function normalizedWords(text: string): string {
@@ -82,7 +90,7 @@ function normalizedWords(text: string): string {
  */
 export function isPhraseMatch(text: string, terms: readonly string[]): boolean {
   if (terms.length < 2) return true
-  return normalizedWords(text).includes(` ${terms.join(' ').toLowerCase()}`)
+  return normalizedWords(text).includes(` ${foldForSearch(terms.join(' '))}`)
 }
 
 /**
@@ -97,7 +105,7 @@ export function isWordPrefixMatch(text: string, terms: readonly string[]): boole
   if (terms.length === 0) return false
   const words = wordsOf(text)
   return terms.every((term) => {
-    const lowerTerm = term.toLowerCase()
+    const lowerTerm = foldForSearch(term)
     return words.some((word) => word.startsWith(lowerTerm))
   })
 }
@@ -142,14 +150,14 @@ export function orderMessageSearchResults<T extends Rankable>(results: readonly 
 export function textMatchesSearch(text: string, query: string): boolean {
   const raw = query.trim()
   if (!raw) return false
-  const q = raw.toLowerCase()
-  const lower = text.toLowerCase()
+  const q = foldForSearch(raw)
+  const lower = foldForSearch(text)
   if (lower.includes(q)) return true
   // Terms come from the trimmed ORIGINAL query, the same input the FTS match
   // expression is built from (searchMessagesInDatabase), so the two agree on
   // which words are bare FTS operators (AND/OR/NOT/NEAR) and drop them alike.
   // Lowercasing first would hide the uppercase operator words from
   // messageSearchTerms's filter and leave them in as ordinary terms.
-  const terms = messageSearchTerms(raw).map((term) => term.toLowerCase())
+  const terms = messageSearchTerms(raw).map(foldForSearch)
   return terms.length > 0 && terms.every((term) => lower.includes(term))
 }
