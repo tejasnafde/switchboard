@@ -11,6 +11,9 @@ const PROMPT_TOO_LONG = /\bprompt is too long\b/i
 
 export const COMPACT_COMMAND = '/compact'
 
+/** `/compact`, alone or with instructions; not `/compactor` or `/compact-notes`. */
+const COMPACT_INVOCATION = /^\s*\/compact(?:\s|$)/i
+
 export const COMPACTING_NOTICE =
   "(This conversation no longer fits the model's context window. Compacting it, then sending your message again.)"
 
@@ -58,5 +61,5 @@ export function userMessageText(content: unknown): string {
  * turn that was itself a `/compact` cannot: compacting again would fail the same way.
  */
 export function canRetryAfterCompact(texts: readonly string[]): boolean {
-  return texts.length > 0 && !texts.some((text) => text.trim().toLowerCase().startsWith(COMPACT_COMMAND))
+  return texts.length > 0 && !texts.some((text) => COMPACT_INVOCATION.test(text))
 }

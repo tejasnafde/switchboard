@@ -33,6 +33,8 @@ describe('claude prompt too long rules', () => {
     expect(canRetryAfterCompact(['carry on'])).toBe(true)
     expect(canRetryAfterCompact(['/compact'])).toBe(false)
     expect(canRetryAfterCompact(['  /compact keep the API notes'])).toBe(false)
+    expect(canRetryAfterCompact(['/compactor run'])).toBe(true)
+    expect(canRetryAfterCompact(['/compact-notes'])).toBe(true)
     expect(canRetryAfterCompact([])).toBe(false)
   })
 })
