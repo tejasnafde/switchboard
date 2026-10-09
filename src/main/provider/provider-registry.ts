@@ -38,9 +38,8 @@ import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/provider-instances'
 import { MergeBackService } from '../conversations/merge-back'
-import { loadConversationHistory } from '../conversations/history'
 import { SqliteMergeBackStore } from '../db/merge-backs'
-import { commitConversationProviderSwitch, getConversationRuntimeMode, getSetting, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode } from '../db/database'
+import { commitConversationProviderSwitch, getConversationRuntimeMode, getSetting, deleteUserMessage, recordConversationWorkedWorktrees, type ConversationFollowSuggestions, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, setConversationStatusLine, threadFamilyIds, getConversationById, getConversationTitle, resolveRootThreadId, rewriteSystemMarker, getDb, getConversationExecutionRoot, commitConversationExecutionRoot, setConversationRuntimeMode, getConversationModel, getConversationPendingHandoff, clearConversationPendingHandoff } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope, describeRequestClient, remoteDeviceHasScope } from '../backend/request-context'
 import {
@@ -129,6 +128,8 @@ import {
   type RuntimeFileEditedEvent,
 } from '@shared/provider-events'
 import { agentLabel, isAgentProvider, toAgentProvider } from '@shared/types'
+import { answeredHistory, buildHandoffPreamble, handoffBudgetChars, isHandoffSource, planTurnHandoff, stripHandoffPreamble } from '@shared/handoff'
+import { loadConversationHistory } from '../conversations/history'
 import { peekCatalog, probeCatalog } from './catalog-probe'
 import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-requests'
 import { turnPreviewLine } from '@shared/turn-preview'
@@ -375,6 +376,8 @@ export class ProviderRegistry implements PeerToolHost {
    * unattended chain cannot continue past the limit by waiting a turn.
    */
   private turnDepth = new Map<string, number>()
+  /** Context window (tokens) each provider last reported per resolved model, for handoff budgets. */
+  private contextWindows = new Map<string, number>()
 
   /** Accepted turns not yet matched by a turn.completed event. This is a
    * count, not a boolean: a queued message is its own turn after the running
@@ -1499,6 +1502,10 @@ export class ProviderRegistry implements PeerToolHost {
         ? 'The agent stopped with an error before it was answered.'
         : 'The agent session ended before it was answered.')
     }
+    if (event.type === 'context_window' && event.maxTokens && event.model) {
+      const provider = this.sessionAdapters.get(event.threadId)?.provider
+      if (provider) this.contextWindows.set(`${provider}\0${event.model}`, event.maxTokens)
+    }
     this.bufferAssistantText(event)
     this.bufferToolCall(event)
     // A steer is not counted, but one that lands after the turn's last tool
@@ -1812,7 +1819,8 @@ export class ProviderRegistry implements PeerToolHost {
             throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
           }
         },
-        dispatch: async () => {
+        finalize: (turn) => this.withPendingHandoff(threadId, adapter, turn),
+        dispatch: async (turn) => {
           // A queued message becomes a turn of its own once the running one
           // ends, so it counts; a Codex steer joins the running turn and does not.
           const startsNewProviderTurn = startsOwnProviderTurn(adapter.provider, this.hasOutstandingTurn(threadId), input.delivery)
@@ -1822,13 +1830,14 @@ export class ProviderRegistry implements PeerToolHost {
           // is what a held message is listed, promoted and cancelled by.
           const queuedId = input.delivery === 'queue' ? echoMessageId(input.origin) : undefined
           if (queuedId) {
-            this.queuedTurns.expect(queuedId, queuedTurnComposerText(input.providerText, input.displayBody, input.pillsMeta), Date.now())
+            this.queuedTurns.expect(queuedId, queuedTurnComposerText(turn.providerText, turn.displayBody, turn.pillsMeta), Date.now())
           }
           const modeBefore = adapter.runtimeModeOf?.(threadId)
           // A fork's pending summaries ride on this message. Not on a queued
           // one: it may be cancelled before it ever reaches the agent.
           const mergeBack = queuedId ? null : this.mergeBacks.claimForTurn(threadId)
-          const providerText = mergeBack ? mergeBack.apply(input.providerText) : input.providerText
+          // After finalize, so a fork summary follows any handoff preamble.
+          const providerText = mergeBack ? mergeBack.apply(turn.providerText) : turn.providerText
           try {
             await adapter.sendTurn(threadId, providerText, input.runtimeMode, input.images, input.delivery, queuedId)
           } catch (error) {
@@ -1859,6 +1868,68 @@ export class ProviderRegistry implements PeerToolHost {
     } finally {
       releasePreparation()
     }
+  }
+
+  /** Budget for a handoff to `provider` on this chat's pinned model, when its window is known. */
+  private handoffMaxChars(provider: ProviderKind, rootId: string): number {
+    const model = getConversationModel(rootId)
+    return handoffBudgetChars(model ? this.contextWindows.get(`${provider}\0${model}`) : undefined)
+  }
+
+  /**
+   * Prefix a turn with the chat's pending context handoff. Built here so
+   * every client gets it, phones included, and the flag is consumed only in
+   * the acceptance transaction. A client that already injected one (an older
+   * desktop or Expo build) is left alone. A failed read sends the turn
+   * without one and keeps the flag for the next turn.
+   */
+  private async withPendingHandoff(threadId: string, adapter: ProviderAdapter, turn: UserTurnSubmissionV1): Promise<UserTurnSubmissionV1> {
+    if (turn.handoff || stripHandoffPreamble(turn.providerText) !== turn.providerText) return turn
+    try {
+      const rootId = resolveRootThreadId(threadId)
+      const pendingFrom = getConversationPendingHandoff(rootId)
+      if (!pendingFrom) return turn
+      if (!isHandoffSource(pendingFrom)) {
+        log.warn(`dropping pending handoff from an unknown provider on ${rootId}`)
+        clearConversationPendingHandoff(rootId, pendingFrom)
+        return turn
+      }
+      const { messages } = await loadConversationHistory(rootId, '')
+      const plan = planTurnHandoff({
+        messages,
+        pendingFrom,
+        target: toAgentProvider(adapter.provider),
+        resumedNatively: adapter.resumedNativeSession?.(threadId) ?? false,
+        maxChars: this.handoffMaxChars(adapter.provider, rootId),
+      })
+      log.info(`handoff ${rootId} from=${pendingFrom} to=${adapter.provider} chars=${plan.preamble?.length ?? 0}`)
+      if (!plan.preamble) {
+        // Nothing new to replay; left set, a later turn would replay itself.
+        clearConversationPendingHandoff(rootId, pendingFrom)
+        return turn
+      }
+      return {
+        ...turn,
+        providerText: `${plan.preamble}\n\n${turn.providerText}`,
+        displayBody: turn.displayBody ?? turn.providerText,
+        pillsMeta: turn.pillsMeta ?? {},
+        handoff: { expectedFrom: pendingFrom, markerId: `handoff_${turn.origin}`, markerText: plan.markerText },
+      }
+    } catch (err) {
+      log.warn(`could not build the pending handoff for ${threadId}; sending without it`, err)
+      return turn
+    }
+  }
+
+  /**
+   * The visible conversation as a handoff preamble, for an adapter whose
+   * native session could not be resumed. Leaves out the unanswered user
+   * messages it is about to send as themselves.
+   */
+  private async portableHistory(threadId: string, provider: ProviderKind): Promise<string | null> {
+    const rootId = resolveRootThreadId(threadId)
+    const { messages } = await loadConversationHistory(rootId, '')
+    return buildHandoffPreamble(answeredHistory(messages), { maxChars: this.handoffMaxChars(provider, rootId) })
   }
 
   registerIpcHandlers(): void {
@@ -2235,6 +2306,7 @@ export class ProviderRegistry implements PeerToolHost {
       ]))
       const enrichedOpts: SessionStartOpts = {
         ...opts,
+        portableHistory: () => this.portableHistory(opts.threadId, opts.provider),
         instanceId: resolvedInstanceId,
         resolvedEnv,
         resolvedOauthDir,

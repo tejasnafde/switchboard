@@ -291,12 +291,21 @@ object ThreadStoreReducer {
         return when (val event = known.payload) {
             is ThreadEventPayload.Content -> content(withJournal, event, isViewing)
             is ThreadEventPayload.UserMessage -> {
+                // The backend's context handoff marker, same row as the history load.
+                val marker = event.handoffMarker?.let {
+                    FeedItem.RawNotice("h-${it.id}", SystemMarkers.ROW_EVENT_TYPE, it.text, JsonObject(linkedMapOf()))
+                }
+                val withMarker = if (marker == null || withJournal.feed.any { it.id == marker.id }) {
+                    withJournal
+                } else {
+                    withJournal.copy(feed = withJournal.feed + marker)
+                }
                 val text = UserMessageVisibility.visibleText(event.text, event.displayBody)
                 // Context-only text is hidden, but images sent with it still show.
-                if (text == null && event.images.isEmpty()) return withJournal
-                withJournal.copy(
+                if (text == null && event.images.isEmpty()) return withMarker
+                withMarker.copy(
                     feed = upsert(
-                        withJournal.feed,
+                        withMarker.feed,
                         FeedItem.User(
                             "remote_${event.origin ?: event.at}",
                             text.orEmpty(),

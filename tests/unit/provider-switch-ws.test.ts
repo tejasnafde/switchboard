@@ -139,8 +139,8 @@ import { WsTransport } from '../../src/shared/ws-transport'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
 import { hashClientScope } from '../../src/main/backend/request-context'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
-import type { RuntimeEvent } from '../../src/shared/provider-events'
-import { AtomicUserTurnSubmission, DurableTurnAcceptance } from '../../src/main/provider/durable-turn-acceptance'
+import type { RuntimeEvent, UserTurnSubmissionV1 } from '../../src/shared/provider-events'
+import { AtomicUserTurnSubmission, DurableTurnAcceptance, type AtomicUserTurnContext } from '../../src/main/provider/durable-turn-acceptance'
 import { SqliteTurnAcceptanceStore, ensureTurnAcceptanceSchema } from '../../src/main/db/turn-acceptance'
 import type {
   ReserveTurnResult,
@@ -618,10 +618,10 @@ describe('provider switching over the WebSocket boundary', () => {
     const adapter = new MockEchoAdapter()
     const seen: unknown[] = []
     const atomicSubmission = {
-      submit: async (input: unknown, context: { clientScope: string; prepare: () => Promise<void>; dispatch: () => Promise<void> }) => {
+      submit: async (input: UserTurnSubmissionV1, context: AtomicUserTurnContext) => {
         seen.push(input)
         await context.prepare()
-        await context.dispatch()
+        await context.dispatch(context.finalize ? await context.finalize(input) : input)
         return {
           status: 'accepted', accepted: true, duplicate: false, state: 'completed', acceptedAt: 100,
         }

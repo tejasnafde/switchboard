@@ -9,6 +9,7 @@ export type GlobalKeyAction =
   | { type: 'new-chat' }
   | { type: 'toggle-palette' }
   | { type: 'toggle-search' }
+  | { type: 'go-to-chat' }
   | { type: 'new-terminal-window'; direction: 'column' | 'row' }
   | { type: 'toggle-dual-chat' }
   | { type: 'interrupt' }
@@ -30,6 +31,7 @@ const ACTIONS: Record<string, GlobalKeyAction | ((index: number) => GlobalKeyAct
   'chat.new': { type: 'new-chat' },
   'app.command-palette': { type: 'toggle-palette' },
   'app.search': { type: 'toggle-search' },
+  'app.go-to-chat': { type: 'go-to-chat' },
   'terminal.new-window-right': { type: 'new-terminal-window', direction: 'row' },
   'terminal.new-window-below': { type: 'new-terminal-window', direction: 'column' },
   'chat.dual': { type: 'toggle-dual-chat' },

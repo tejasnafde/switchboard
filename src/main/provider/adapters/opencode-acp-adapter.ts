@@ -23,6 +23,7 @@
 import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
+import { withVisibleHistory, type VisibleHistoryState } from '../visible-history'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { existsSync } from 'fs'
 import { Readable, Writable } from 'stream'
@@ -469,9 +470,11 @@ interface PendingPermission {
   rejectOptionId: string | null
 }
 
-interface ActiveSession {
+interface ActiveSession extends VisibleHistoryState {
   session: ProviderSession
   onEvent: (event: RuntimeEvent) => void
+  /** The session resumed the chat's earlier OpenCode session. */
+  resumed?: boolean
   child: ChildProcessWithoutNullStreams | null
   connection: ClientSideConnection | null
   /** ACP session id returned by `session/new`. */
@@ -780,6 +783,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     const active: ActiveSession = {
       session,
       onEvent,
+      portableHistory: opts.portableHistory,
       child: null,
       connection: null,
       sessionId: null,
@@ -894,19 +898,24 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       // The session this chat last ran (or a native fork's), when the agent
       // can resume one; otherwise a new session, which starts without the
       // chat's earlier context.
-      const resumeId = init.agentCapabilities?.sessionCapabilities?.resume ? this.resumeTarget(opts) : null
+      const canResume = Boolean(init.agentCapabilities?.sessionCapabilities?.resume)
+      const resumeId = canResume ? this.resumeTarget(opts) : null
+      // An agent that cannot resume starts this chat's next session blind.
+      if (!canResume && this.resumeTarget(opts)) active.needsVisibleHistory = true
       let newSession: Pick<NewSessionResponse, 'sessionId' | 'models'> | null = null
       if (resumeId) {
         try {
           const resumed = await connection.resumeSession({ sessionId: resumeId, cwd: opts.cwd, mcpServers })
           newSession = { sessionId: resumeId, models: resumed.models }
+          active.resumed = true
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err)
           log.warn(`acp resumeSession ${resumeId} failed, starting a new session: ${reason}`)
+          active.needsVisibleHistory = true
           onEvent({
             type: 'error',
             threadId: opts.threadId,
-            message: `Could not resume OpenCode session ${resumeId}; this chat continues in a new session without its earlier context. ${reason}`,
+            message: `Could not resume OpenCode session ${resumeId}; this chat continues in a new session with the visible conversation as context. ${reason}`,
           })
         }
       }
@@ -1100,6 +1109,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     // Hold the slot across the mode await below, or a queued send arriving
     // now would start its own prompt ahead of this one.
     active.startingPrompt = true
+    message = await withVisibleHistory(active, threadId, message)
 
     if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
       active.session.runtimeMode = runtimeMode
@@ -1242,6 +1252,10 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       pending.resolve({ outcome: { outcome: 'cancelled' } })
     }
     active.onEvent({ type: 'request.closed', threadId, requestId, decision })
+  }
+
+  resumedNativeSession(threadId: string): boolean {
+    return this.sessions.get(threadId)?.resumed === true
   }
 
   runtimeModeOf(threadId: string): RuntimeMode | undefined {
