@@ -103,7 +103,7 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     id: 'switch-agent',
     title: 'Switch agents per chat',
     description:
-      'Pick Claude Code, Codex, or OpenCode for any chat, along with a named credential profile and model. The status bar and model list follow. Switching hands the new agent a bounded summary of the conversation so far.',
+      'Pick Claude Code, Codex, or OpenCode for any chat, along with a named credential profile and model. The model list and the effort control follow. Switching hands the new agent a bounded summary of the conversation so far.',
   },
   {
     id: 'resume-search',

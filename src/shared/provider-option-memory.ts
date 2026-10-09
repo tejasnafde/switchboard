@@ -1,4 +1,4 @@
-import { REASONING_EFFORTS, type ReasoningEffort } from './models'
+import { EFFORT_LEVELS, type ReasoningEffort } from './models'
 
 /**
  * The model and reasoning effort a conversation last used on each agent
@@ -12,7 +12,7 @@ export interface ProviderOptions {
 }
 export type ProviderOptionMemory = Record<string, ProviderOptions>
 
-const EFFORTS = new Set<unknown>(REASONING_EFFORTS.map((e) => e.id))
+const EFFORTS = new Set<unknown>(EFFORT_LEVELS)
 
 export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return EFFORTS.has(value)
