@@ -27,5 +27,8 @@ module.exports = {
   // babel's own preset (react-native-reanimated/plugin and
   // @react-native/babel-preset). Overriding it here replaced all three with one
   // hand-copied, already-stale line rather than extending it.
+  // The first test in a file pays the cold RN transform; on a loaded CI runner
+  // that alone passed jest's 5 s default (MergeBackSheet, 2026-10-09).
+  testTimeout: 15000,
   clearMocks: true,
 }
