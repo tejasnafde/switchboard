@@ -22,7 +22,8 @@ import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { withVisibleHistory, type VisibleHistoryState } from '../../visible-history'
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import { type ChildProcessWithoutNullStreams } from 'child_process'
+import spawn from 'cross-spawn'
 import { Readable, Writable } from 'stream'
 import { promises as fs } from 'fs'
 import { inferModelTier, type ModelOption } from '@shared/models'
@@ -471,11 +472,19 @@ export class AcpAdapter implements ProviderAdapter {
       })
     }
 
+    // `cross-spawn`, not `child_process.spawn` directly: every generic ACP
+    // agent (gemini, vibe-acp, cline, copilot) is a global npm/uv install,
+    // and on Windows those resolve to a `.cmd`/`.bat` shim that plain
+    // `spawn()` cannot execute without a shell. cross-spawn detects that
+    // case itself and launches through `cmd.exe` with each argument quoted
+    // and shell metacharacters escaped, so a cwd or arg containing spaces or
+    // `&`/`|`/`"` cannot break the command line or inject one. It is an
+    // exact passthrough to `child_process.spawn` on macOS/Linux.
     const child = spawn(binPath, config.args(opts.cwd), {
       cwd: opts.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: markAgentSpawnEnv(active.prep.env),
-    })
+    }) as ChildProcessWithoutNullStreams
     active.child = child
     log.info(`spawned ${this.provider} acp pid=${child.pid} cwd=${opts.cwd}`)
 

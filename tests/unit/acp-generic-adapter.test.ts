@@ -38,31 +38,33 @@ vi.mock('../../src/main/provider/adapters/acp/agent-env', () => ({
   buildAgentEnv: (overlay: Record<string, string>) => ({ ...overlay }),
 }))
 
-vi.mock('child_process', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('child_process')>()
-  return {
-    ...actual,
-    spawn: vi.fn((bin: string, args: string[]) => {
-      const state = fake.state!
-      state.spawns.push({ bin, args })
-      const toAgent = new PassThrough()
-      const toClient = new PassThrough()
-      const child = new EventEmitter() as EventEmitter & Record<string, unknown>
-      child.stdin = toAgent
-      child.stdout = toClient
-      child.stderr = new EventEmitter()
-      child.pid = 4242
-      child.kill = vi.fn()
-      state.lastChild = child as EventEmitter & { kill: ReturnType<typeof vi.fn> }
-      const stream = ndJsonStream(
-        Writable.toWeb(toClient) as WritableStream<Uint8Array>,
-        Readable.toWeb(toAgent) as ReadableStream<Uint8Array>,
-      )
-      state.agentConnection = new AgentSideConnection((conn) => fakeAgent(conn, state), stream)
-      return child
-    }),
-  }
-})
+// The adapter spawns through `cross-spawn`, not `child_process` directly
+// (Windows needs it to launch a global agent CLI's `.cmd` shim through a
+// shell - see acp-adapter-windows-spawn.test.ts), so that is the module to
+// mock here; cross-spawn's own `require('child_process')` is a real,
+// unmocked call on this platform and would otherwise try to spawn
+// `/fake/bin/<agent>` for real.
+vi.mock('cross-spawn', () => ({
+  default: vi.fn((bin: string, args: string[]) => {
+    const state = fake.state!
+    state.spawns.push({ bin, args })
+    const toAgent = new PassThrough()
+    const toClient = new PassThrough()
+    const child = new EventEmitter() as EventEmitter & Record<string, unknown>
+    child.stdin = toAgent
+    child.stdout = toClient
+    child.stderr = new EventEmitter()
+    child.pid = 4242
+    child.kill = vi.fn()
+    state.lastChild = child as EventEmitter & { kill: ReturnType<typeof vi.fn> }
+    const stream = ndJsonStream(
+      Writable.toWeb(toClient) as WritableStream<Uint8Array>,
+      Readable.toWeb(toAgent) as ReadableStream<Uint8Array>,
+    )
+    state.agentConnection = new AgentSideConnection((conn) => fakeAgent(conn, state), stream)
+    return child
+  }),
+}))
 
 function fakeAgent(conn: AgentSideConnection, state: FakeAgentState): Agent {
   return {
