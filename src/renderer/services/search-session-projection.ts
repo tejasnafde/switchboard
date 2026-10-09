@@ -1,4 +1,5 @@
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
+import type { ReasoningEffort } from '@shared/models'
 import type { AgentType } from '@shared/types'
 import type { RuntimeMode } from '../stores/agent-store'
 
@@ -14,7 +15,7 @@ export interface LoadedSearchSessionMeta {
   providerInstanceId?: string | null
   runtimeMode?: RuntimeMode | null
   model?: string | null
-  reasoningEffort?: 'low' | 'medium' | 'high' | null
+  reasoningEffort?: ReasoningEffort | null
   forkMetadata?: ForkLineageMetadata | null
 }
 

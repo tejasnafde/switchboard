@@ -34,6 +34,8 @@ import app.switchboard.mobile.domain.remote.WorktreeCreationRequest
 import app.switchboard.mobile.domain.remote.WorktreeCreationSnapshot
 import app.switchboard.mobile.domain.push.PushBackendResult
 import app.switchboard.mobile.domain.thread.HostWriteResponse
+import app.switchboard.mobile.domain.thread.MergeBackActionResult
+import app.switchboard.mobile.domain.thread.MergeBackPreview
 import app.switchboard.mobile.domain.thread.PrLink
 import app.switchboard.mobile.domain.thread.PrLinkRef
 import app.switchboard.mobile.domain.thread.PrLinkUnlinkResult
@@ -106,6 +108,11 @@ object BackendChannels {
     const val PullRequestUnlink = "pull-requests:unlink"
     /** Payload `{ conversationId, created? }`; re-read the open thread's links rather than matching ids. */
     const val PullRequestLinksChanged = "pull-requests:links-changed"
+    /** Merge-back (src/shared/merge-back.ts); gated behind `fork_merge_back_v1`. */
+    const val MergeBackPreview = "provider:merge-back-preview"
+    const val MergeBackSend = "provider:merge-back-send"
+    const val MergeBackEdit = "provider:merge-back-edit"
+    const val MergeBackDiscard = "provider:merge-back-discard"
 }
 
 class SwitchboardRemoteClient(
@@ -599,6 +606,53 @@ class SwitchboardRemoteClient(
         rpc.onChannelEvent(BackendChannels.PullRequestLinksChanged) { scope, _ ->
             if (scope.connectionId == connectionId && rpc.scope == scope) listener()
         }
+
+    /** What a fork would send back to its parent. */
+    fun mergeBackPreview(
+        forkThreadId: String,
+        callback: (RemoteResponse<MergeBackPreview>) -> Unit,
+    ) = call(
+        BackendChannels.MergeBackPreview,
+        array(JsonString(forkThreadId)),
+        RemoteDecoders::mergeBackPreview,
+        callback,
+    )
+
+    /** [token] is the opaque value a preview answered; it is echoed back unchanged. */
+    fun mergeBackSend(
+        forkThreadId: String,
+        text: String,
+        token: JsonValue,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ) = call(
+        BackendChannels.MergeBackSend,
+        array(JsonString(forkThreadId), JsonString(text), token),
+        RemoteDecoders::mergeBackActionResult,
+        callback,
+    )
+
+    fun mergeBackEdit(
+        parentThreadId: String,
+        mergeBackId: String,
+        text: String,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ) = call(
+        BackendChannels.MergeBackEdit,
+        array(JsonString(parentThreadId), JsonString(mergeBackId), JsonString(text)),
+        RemoteDecoders::mergeBackActionResult,
+        callback,
+    )
+
+    fun mergeBackDiscard(
+        parentThreadId: String,
+        mergeBackId: String,
+        callback: (RemoteResponse<MergeBackActionResult>) -> Unit,
+    ) = call(
+        BackendChannels.MergeBackDiscard,
+        array(JsonString(parentThreadId), JsonString(mergeBackId)),
+        RemoteDecoders::mergeBackActionResult,
+        callback,
+    )
 
     /** The backend's live sessions with their current status, which the desktop also adopts on launch. */
     fun listSessionStatuses(callback: (RemoteResponse<Map<String, String>>) -> Unit) =

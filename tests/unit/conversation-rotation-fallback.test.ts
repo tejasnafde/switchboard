@@ -258,6 +258,7 @@ const {
   setConversationRuntimeMode,
   getConversationModel,
   setConversationModel,
+  getConversationReasoningEffort,
   setConversationReasoningEffort,
   getConversationByThreadId,
   archiveConversation,
@@ -456,6 +457,18 @@ describe('reasoning effort survives provider session-id rotation', () => {
 
     expect(conversations.get('agent_123')?.reasoning_effort).toBe('high')
     expect(conversations.has('uuid-abc')).toBe(false)
+  })
+  it('reads the root row from a rotated UUID', () => {
+    conversations.set('agent_123', { reasoning_effort: 'xhigh' })
+    threadSessions.set('uuid-abc', 'agent_123')
+    expect(getConversationReasoningEffort('uuid-abc')).toBe('xhigh')
+  })
+
+  it('reads an unknown stored level as none and refuses to write one', () => {
+    conversations.set('agent_123', { reasoning_effort: 'ultra' })
+    expect(getConversationReasoningEffort('agent_123')).toBeNull()
+    expect(() => setConversationReasoningEffort('agent_123', 'ultra')).toThrow(/Unknown reasoning effort/)
+    expect(conversations.get('agent_123')?.reasoning_effort).toBe('ultra')
   })
 })
 

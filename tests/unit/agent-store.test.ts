@@ -263,4 +263,17 @@ describe('agent-store', () => {
     // Original content is preserved - later duplicates don't overwrite
     expect(session.messages[0].content).toBe('')
   })
+
+  it('keeps OpenCode variants for a variant pick and drops them for another model', () => {
+    const store = useAgentStore.getState()
+    store.addSession({ id: 'oc', type: 'opencode', status: 'idle' })
+    store.setVariants('oc', ['low', 'high'], 'low', 'p/m')
+    store.setModel('oc', 'p/m/high')
+    expect(useAgentStore.getState().sessions[0].availableVariants).toEqual(['low', 'high'])
+    store.setModel('oc', 'p/other')
+    const s = useAgentStore.getState().sessions[0]
+    expect(s.model).toBe('p/other')
+    expect(s.availableVariants).toBeUndefined()
+    expect(s.variantModelId).toBeUndefined()
+  })
 })

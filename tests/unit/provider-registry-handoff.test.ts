@@ -50,6 +50,7 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationRuntimeMode: () => null,
   setConversationRuntimeMode: () => {},
   getConversationModel: () => null,
+  getConversationReasoningEffort: () => null,
   getConversationAgentType: () => null,
   getConversationProviderInstanceId: () => null,
   getConversationPendingHandoff: () => state.pending,

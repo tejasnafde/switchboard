@@ -552,6 +552,14 @@ async function captureThemeScreens(win, theme) {
   await win.keyboard.press('Escape')
   await picker.waitFor({ state: 'hidden' })
 
+  // The thinking-effort menu, from the demo catalog's per-model levels.
+  await win.locator('.chat-composer [data-effort-picker]').first().click()
+  const effortMenu = win.getByRole('dialog', { name: 'Thinking effort' })
+  await effortMenu.waitFor({ state: 'visible' })
+  await snapScreen(win, 'effort-picker', theme, effortMenu)
+  await win.keyboard.press('Escape')
+  await effortMenu.waitFor({ state: 'hidden' })
+
   // Two more Claude accounts after the picker shot, so its baseline keeps
   // the fixture's one-per-agent list, and before Settings opens, so its
   // prewarm lists them and Accounts paints every card at once. The main

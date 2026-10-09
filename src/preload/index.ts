@@ -9,6 +9,7 @@ import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChan
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { PeerLinkView } from '@shared/peer-links'
+import type { ReasoningEffort } from '@shared/models'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
@@ -70,7 +71,7 @@ export interface StartSessionOpts {
   model?: string
   runtimeMode?: RuntimeMode
   resumeSessionId?: string
-  reasoningEffort?: 'low' | 'medium' | 'high'
+  reasoningEffort?: ReasoningEffort
   /** Provider instance id (named credential set). Falls back to default. */
   instanceId?: string
   /** Remote-only: oauth_dir basename attached by startSession below. */
@@ -241,7 +242,7 @@ const api = {
       transport.invoke(AppChannels.GET_CONVERSATION_MODEL, id),
     setConversationModel: (id: string, model: string): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_MODEL, id, model),
-    setConversationReasoningEffort: (id: string, effort: 'low' | 'medium' | 'high'): Promise<{ ok: boolean }> =>
+    setConversationReasoningEffort: (id: string, effort: ReasoningEffort): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_REASONING_EFFORT, id, effort),
     setConversationProviderSelection: (
       id: string,
@@ -255,7 +256,7 @@ const api = {
     ): Promise<{
       ok: boolean
       model?: string | null
-      reasoningEffort?: 'low' | 'medium' | 'high' | null
+      reasoningEffort?: ReasoningEffort | null
       pendingHandoffFrom?: string | null
       marker?: { id: string; content: string; timestamp: number }
     }> =>
@@ -692,7 +693,7 @@ const api = {
     setModel: (threadId: string, model: string) =>
       transport.invoke(ProviderChannels.SET_MODEL, threadId, model),
 
-    setReasoningEffort: (threadId: string, effort: 'low' | 'medium' | 'high') =>
+    setReasoningEffort: (threadId: string, effort: ReasoningEffort) =>
       transport.invoke(ProviderChannels.SET_REASONING_EFFORT, threadId, effort),
 
     /** Dynamically fetch `opencode models` output. Returns provider/model IDs. */

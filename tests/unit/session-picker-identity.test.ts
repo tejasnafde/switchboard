@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sessionPickerIdentity } from '../../src/renderer/components/SessionPickerModal'
+import { sessionPickerCandidates, sessionPickerIdentity } from '../../src/renderer/components/SessionPickerModal'
 
 describe('dual-chat session picker identity', () => {
   it('describes a local session with provider, project, and status', () => {
@@ -31,5 +31,17 @@ describe('dual-chat session picker identity', () => {
       title: 'Review',
       context: 'fix · fix/dual-chat · Build VM · idle',
     })
+  })
+})
+
+describe('dual-chat session picker candidates', () => {
+  it('offers loaded chats only: no terminal, no unsent draft, nothing already shown', () => {
+    const sessions = [
+      { id: 'draft', type: 'claude', draft: { projectPath: '/p' } },
+      { id: 'shown', type: 'claude' },
+      { id: 'term', type: 'terminal' },
+      { id: 'other', type: 'codex' },
+    ]
+    expect(sessionPickerCandidates(sessions, ['shown']).map((s) => s.id)).toEqual(['other'])
   })
 })

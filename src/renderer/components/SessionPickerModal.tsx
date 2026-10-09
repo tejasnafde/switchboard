@@ -37,6 +37,18 @@ export function sessionPickerIdentity(
   }
 }
 
+/**
+ * The chats the picker offers: loaded ones, minus terminals, unsent drafts
+ * (the landing screen keeps one per project, and it is not a chat yet) and
+ * `excludeIds`.
+ */
+export function sessionPickerCandidates<T extends { id: string; type: string; draft?: unknown }>(
+  sessions: readonly T[],
+  excludeIds: readonly string[],
+): T[] {
+  return sessions.filter((s) => s.type !== 'terminal' && !s.draft && !excludeIds.includes(s.id))
+}
+
 interface SessionPickerModalProps {
   open: boolean
   onClose: () => void
@@ -64,7 +76,7 @@ export function SessionPickerModal({
   const [activeIdx, setActiveIdx] = useState(0)
 
   const candidates = useMemo(
-    () => sessions.filter((s) => s.type !== 'terminal' && !excludeIds.includes(s.id)),
+    () => sessionPickerCandidates(sessions, excludeIds),
     [sessions, excludeIds],
   )
 

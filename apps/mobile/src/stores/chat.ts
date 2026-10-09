@@ -30,7 +30,7 @@ import type { QueuedTurnSummary } from '@shared/turn-delivery'
 import type { HostWriteCard } from '@shared/agent-host-writes'
 import { approvalResultLabel, parseApprovalResultMarker } from '@shared/agent-approval-cards'
 import type { PeerUndelivered } from '@shared/peer-links'
-import { systemRowView } from '@shared/system-markers'
+import { parseMergeBackMarker, type MergeBackRow } from '@shared/merge-back'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -55,6 +55,8 @@ export type FeedItem =
   | { kind: 'synthetic'; id: string; part: SyntheticUserPart; at?: number }
   /** A message a session link refused, kept for the user to send. `messageId` is its stored row. */
   | { kind: 'undelivered'; id: string; messageId: string; row: PeerUndelivered }
+  /** A fork's merge-back card in this (parent) chat. `messageId` is its stored row. */
+  | { kind: 'mergeBack'; id: string; messageId: string; row: MergeBackRow }
 
 export interface ThreadState {
   items: FeedItem[]
@@ -541,15 +543,15 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           const at = t.items.findIndex((i) => i.id === item.id)
           return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
         }
-        // A fork's summary card in this (parent) chat, read-only here: same id
-        // as the history row, so a reload and a live event land on one row,
-        // and a discarded card goes away.
+        // A fork's summary card in this (parent) chat: same id as the history
+        // row, so a reload and a live event land on one row, and a discarded
+        // card goes away.
         case 'merge-back.row': {
           const id = `h-${event.messageId}`
           if (event.content === null) return { items: t.items.filter((i) => i.id !== id) }
-          const view = systemRowView(event.content)
-          if (view.kind !== 'notice') return {}
-          const item: FeedItem = { kind: 'notice', id, text: view.body ? `${view.title}: ${view.body}` : view.title }
+          const row = parseMergeBackMarker(event.content)
+          if (!row) return {}
+          const item: FeedItem = { kind: 'mergeBack', id, messageId: event.messageId, row }
           const at = t.items.findIndex((i) => i.id === id)
           return { items: at === -1 ? [...t.items, item] : t.items.map((i, n) => (n === at ? item : i)) }
         }
