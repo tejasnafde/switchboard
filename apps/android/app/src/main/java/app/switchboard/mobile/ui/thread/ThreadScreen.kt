@@ -120,6 +120,7 @@ import app.switchboard.mobile.domain.thread.AgentDigest
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.HostWriteCards
 import app.switchboard.mobile.domain.thread.HostWritePreview
+import app.switchboard.mobile.domain.thread.MergeBackRow
 import app.switchboard.mobile.domain.thread.PrLink
 import app.switchboard.mobile.domain.thread.PrLinkRef
 import app.switchboard.mobile.domain.thread.PrLinkRows
@@ -129,6 +130,10 @@ import app.switchboard.mobile.domain.thread.TurnDeliveryPolicy
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.domain.remote.ForkLineageMetadata
+import app.switchboard.mobile.data.thread.MergeBackSheet
+import app.switchboard.mobile.data.thread.MergeBackSheetMode
+import app.switchboard.mobile.data.thread.MergeBackSheetPhase
+import app.switchboard.mobile.data.thread.ThreadMergeBackState
 import app.switchboard.mobile.data.thread.ThreadPendingActions
 import app.switchboard.mobile.data.thread.ThreadArchiveState
 import app.switchboard.mobile.data.thread.ThreadModelState
@@ -203,6 +208,13 @@ fun ThreadScreen(
     prLinks: List<PrLink> = emptyList(),
     onUnlinkPrLink: (PrLinkRef) -> Unit = {},
     onHeldResume: (messageId: String) -> Unit = {},
+    mergeBack: ThreadMergeBackState = ThreadMergeBackState(),
+    onOpenMergeBackSend: () -> Unit = {},
+    onOpenMergeBackEdit: (id: String, forkTitle: String, text: String) -> Unit = { _, _, _ -> },
+    onMergeBackTextChange: (String) -> Unit = {},
+    onMergeBackSubmit: () -> Unit = {},
+    onMergeBackClose: () -> Unit = {},
+    onDiscardMergeBack: (id: String) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
@@ -362,7 +374,12 @@ fun ThreadScreen(
                     onDismiss = { compactionDismissed = true },
                 )
             }
-            forkMetadata?.let { ForkLineageBanner(it) }
+            forkMetadata?.let {
+                ForkLineageBanner(
+                    metadata = it,
+                    onSendBack = onOpenMergeBackSend.takeIf { mergeBack.available },
+                )
+            }
             PrLinksBanner(links = prLinks, onUnlink = onUnlinkPrLink)
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
@@ -407,6 +424,9 @@ fun ThreadScreen(
                                 onToggleFileGroup = { key ->
                                     expandedFileGroups = if (key in expandedFileGroups) expandedFileGroups - key else expandedFileGroups + key
                                 },
+                                mergeBack = mergeBack,
+                                onOpenMergeBackEdit = onOpenMergeBackEdit,
+                                onDiscardMergeBack = onDiscardMergeBack,
                             )
                         }
                     }
@@ -417,6 +437,14 @@ fun ThreadScreen(
     }
     lightboxUrl?.let { url ->
         ThreadImageLightbox(url = url, onDismiss = { lightboxUrl = null })
+    }
+    mergeBack.sheet?.let { sheet ->
+        MergeBackSheetDialog(
+            sheet = sheet,
+            onTextChange = onMergeBackTextChange,
+            onSubmit = onMergeBackSubmit,
+            onClose = onMergeBackClose,
+        )
     }
     forkMessageId?.let { messageId ->
         Dialog(onDismissRequest = { forkMessageId = null }) {
@@ -485,23 +513,36 @@ private fun CompactionOfferBanner(
 }
 
 @Composable
-private fun ForkLineageBanner(metadata: ForkLineageMetadata) {
+private fun ForkLineageBanner(metadata: ForkLineageMetadata, onSendBack: (() -> Unit)? = null) {
     val resume = if (metadata.resumeMode == "native") "native resume" else "transcript handoff"
     val git = metadata.branch?.let { branch ->
         " · $branch${metadata.baseSha?.let { " from ${it.take(8)}" }.orEmpty()}"
     }.orEmpty()
-    Text(
-        text = "Forked from ${metadata.parentTitle} · ${metadata.anchorPreview} · $resume$git",
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Surface)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .semantics { contentDescription = "Conversation fork lineage. Forked from ${metadata.parentTitle}. $resume." },
-        color = TextDim,
-        style = MaterialTheme.typography.labelSmall,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-    )
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = "Forked from ${metadata.parentTitle} · ${metadata.anchorPreview} · $resume$git",
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = "Conversation fork lineage. Forked from ${metadata.parentTitle}. $resume." },
+            color = TextDim,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (onSendBack != null) {
+            TextButton(
+                onClick = onSendBack,
+                modifier = Modifier.testTag(ThreadTestTags.MERGE_BACK_SEND_BACK_ACTION),
+            ) {
+                Text("Send back to \"${metadata.parentTitle}\"", color = Accent, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
 }
 
 /** About two and a half rows: the cut-off row shows the list scrolls. */
@@ -1385,6 +1426,9 @@ private fun ThreadRow(
     onHeldAction: (String, Boolean) -> Unit = { _, _ -> },
     onHeldResume: (String) -> Unit = {},
     onToggleFileGroup: (String) -> Unit = {},
+    mergeBack: ThreadMergeBackState = ThreadMergeBackState(),
+    onOpenMergeBackEdit: (id: String, forkTitle: String, text: String) -> Unit = { _, _, _ -> },
+    onDiscardMergeBack: (id: String) -> Unit = {},
 ) {
     when (row) {
         is ThreadRowPresentation.User -> UserRow(
@@ -1449,6 +1493,14 @@ private fun ThreadRow(
             row,
             sending = row.messageId in pendingActions.undeliveredIds,
             onSend = { onAction(ThreadUiAction.SendUndelivered(row.messageId, row.row.to, row.row.text)) },
+        )
+        is ThreadRowPresentation.MergeBack -> MergeBackRowView(
+            row = row,
+            available = mergeBack.available,
+            discarding = row.row.id in mergeBack.discardingIds,
+            error = mergeBack.rowErrors[row.row.id],
+            onEdit = { onOpenMergeBackEdit(row.row.id, row.row.forkTitle, row.row.text) },
+            onDiscard = { onDiscardMergeBack(row.row.id) },
         )
         is ThreadRowPresentation.Todo -> TodoRow(row.source)
         is ThreadRowPresentation.Notice -> NoticeCard(
@@ -2532,6 +2584,134 @@ private fun UndeliveredRow(row: ThreadRowPresentation.Undelivered, sending: Bool
 }
 
 private const val UNDELIVERED_CLAMP_LINES = 4
+private const val MERGE_BACK_CLAMP_LINES = 4
+
+@Composable
+private fun MergeBackRowView(
+    row: ThreadRowPresentation.MergeBack,
+    available: Boolean,
+    discarding: Boolean,
+    error: String?,
+    onEdit: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    val data = row.row
+    if (data.state == "delivered") {
+        var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
+        val long = data.text.length > 200 || data.text.lines().size > MERGE_BACK_CLAMP_LINES
+        CardContainer(tint = TextDim) {
+            Text(SystemMarkers.title(data), fontWeight = FontWeight.SemiBold)
+            Text(
+                data.text,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = if (long && !expanded) MERGE_BACK_CLAMP_LINES else Int.MAX_VALUE,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (long) {
+                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Show less" else "Show more", color = Accent) }
+            }
+        }
+        return
+    }
+    CardContainer(tint = TextDim) {
+        Text(SystemMarkers.title(data), fontWeight = FontWeight.SemiBold)
+        SystemMarkers.details(data).forEach { line ->
+            Text(line, style = MaterialTheme.typography.bodyMedium)
+        }
+        if (available) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onEdit,
+                    enabled = !discarding,
+                    modifier = Modifier.testTag(ThreadTestTags.mergeBackEdit(data.id)),
+                ) { Text("Edit") }
+                OutlinedButton(
+                    onClick = onDiscard,
+                    enabled = !discarding,
+                    modifier = Modifier.testTag(ThreadTestTags.mergeBackDiscard(data.id)),
+                ) { Text(if (discarding) "Discarding…" else "Discard") }
+            }
+            Text("Goes to the agent with your next message.", color = TextDim, style = MaterialTheme.typography.labelSmall)
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+@Composable
+private fun MergeBackSheetDialog(
+    sheet: MergeBackSheet,
+    onTextChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val title = when (val mode = sheet.mode) {
+        is MergeBackSheetMode.Send -> "Send back to \"${mode.parentTitle}\""
+        is MergeBackSheetMode.Edit -> "Edit the summary from fork \"${mode.forkTitle}\""
+    }
+    val description = when (sheet.mode) {
+        is MergeBackSheetMode.Send ->
+            "The parent chat keeps this summary and gives it to its agent with your next message there, as context. Nothing is merged in git."
+        is MergeBackSheetMode.Edit -> "This goes to the agent with your next message in this chat."
+    }
+    Dialog(onDismissRequest = { if (!sheet.saving) onClose() }) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = SurfaceRaised,
+            modifier = Modifier.testTag(ThreadTestTags.MERGE_BACK_SHEET),
+        ) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(description, color = TextDim, style = MaterialTheme.typography.bodySmall)
+                when (val phase = sheet.phase) {
+                    MergeBackSheetPhase.Loading -> Text("Building the summary…", color = TextDim)
+                    is MergeBackSheetPhase.Blocked -> Text(phase.message, style = MaterialTheme.typography.bodyMedium)
+                    is MergeBackSheetPhase.Ready -> {
+                        phase.note?.let { Text(it, color = TextDim, style = MaterialTheme.typography.labelSmall) }
+                        if (phase.replacesPending) {
+                            Text(
+                                "A summary from this fork is already waiting in the parent. Sending replaces it.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        OutlinedTextField(
+                            value = sheet.text,
+                            onValueChange = onTextChange,
+                            enabled = !sheet.saving,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 160.dp, max = 320.dp)
+                                .testTag(ThreadTestTags.MERGE_BACK_SHEET_TEXT),
+                        )
+                        sheet.error?.let {
+                            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(
+                        onClick = onClose,
+                        enabled = !sheet.saving,
+                        modifier = Modifier.testTag(ThreadTestTags.MERGE_BACK_SHEET_CANCEL),
+                    ) { Text("Cancel") }
+                    if (sheet.phase is MergeBackSheetPhase.Ready) {
+                        Button(
+                            onClick = onSubmit,
+                            enabled = !sheet.saving && sheet.text.isNotBlank(),
+                            modifier = Modifier.testTag(ThreadTestTags.MERGE_BACK_SHEET_SUBMIT),
+                        ) {
+                            Text(
+                                when (sheet.mode) {
+                                    is MergeBackSheetMode.Send -> if (sheet.saving) "Sending…" else "Send back"
+                                    is MergeBackSheetMode.Edit -> if (sheet.saving) "Saving…" else "Save"
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun TodoRow(item: FeedItem.Todo) {

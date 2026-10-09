@@ -386,6 +386,14 @@ export type MergeBackPreview =
 
 export type MergeBackActionResult = { ok: true } | { ok: false; message: string }
 
+/** The line above the editable summary, on every surface: "2 turns · 3 files changed". */
+export function mergeBackPreviewNote(preview: Extract<MergeBackPreview, { status: 'ready' }>): string {
+  const files = preview.files.length + preview.moreFiles
+  return plural(preview.turns, 'turn')
+    + (preview.omittedTurns > 0 ? ` (${preview.omittedTurns} oldest left out to fit)` : '')
+    + ` · ${plural(files, 'file')} changed`
+}
+
 /** Null when the text can be stored, else why not. */
 export function mergeBackTextProblem(text: unknown): string | null {
   if (typeof text !== 'string' || !text.trim()) return 'The summary is empty.'
