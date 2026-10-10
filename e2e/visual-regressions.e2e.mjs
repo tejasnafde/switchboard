@@ -518,6 +518,8 @@ async function footerRowProblem(composer, label) {
     }
     const track = footer.querySelector('[data-composer-footer-track]')
     if (track && track.scrollWidth > track.clientWidth) return `the chips overflow by ${track.scrollWidth - track.clientWidth}px`
+    if (footer.scrollWidth > footer.clientWidth) return `the footer overflows by ${footer.scrollWidth - footer.clientWidth}px`
+    if (root.scrollWidth > root.clientWidth) return `the composer overflows by ${root.scrollWidth - root.clientWidth}px`
     return null
   })
   return problem ? `${label}: ${problem}` : null
