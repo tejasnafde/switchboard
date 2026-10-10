@@ -64,6 +64,7 @@ import { resolveResumeSegment } from '../../../db/database'
 import { acpSwitchboardMcpServer } from '../../../mcp/agent-registration'
 import { markAgentSpawnEnv } from '../../agent-spawn-env'
 import type { AcpExpectedCapability, AcpLaunchConfig, AcpProviderKind, AcpSessionPrep } from './launch-config'
+import { acpFsProblem } from './fs-access'
 import { acpModeFor, modelsFromConfigOptions, resolveAcpModeIds, type AcpModeIds } from './session-config'
 
 const log = createLogger('provider:acp')
@@ -1116,6 +1117,11 @@ export class AcpAdapter implements ProviderAdapter {
       },
 
       async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
+        const problem = acpFsProblem('read', params.path, adapter.sessions.get(threadId)?.session.runtimeMode)
+        if (problem) {
+          log.warn('acp readTextFile refused', { threadId, problem })
+          throw new RequestError(-32603, `readTextFile refused: ${problem}`)
+        }
         try {
           const content = await fs.readFile(params.path, 'utf-8')
           return { content }
@@ -1125,6 +1131,11 @@ export class AcpAdapter implements ProviderAdapter {
       },
 
       async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
+        const problem = acpFsProblem('write', params.path, adapter.sessions.get(threadId)?.session.runtimeMode)
+        if (problem) {
+          log.warn('acp writeTextFile refused', { threadId, problem })
+          throw new RequestError(-32603, `writeTextFile refused: ${problem}`)
+        }
         try {
           await fs.writeFile(params.path, params.content, 'utf-8')
           return {}
