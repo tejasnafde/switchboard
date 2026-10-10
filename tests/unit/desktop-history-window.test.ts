@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { holdsWholeHistory, olderThan, prependOlder, rebaseOnNewest, shouldLoadOlder, turnIndexHolding, LOAD_OLDER_THRESHOLD_PX } from '../../src/renderer/services/history-window'
+import { holdsWholeHistory, olderThan, prependOlder, rebaseOnNewest, shouldLoadOlder, turnIndexHolding, PREFETCH_OLDER_PX } from '../../src/renderer/services/history-window'
 import { historyWindow } from '../../src/shared/phone-history-window'
 import type { ChatMessage } from '../../src/shared/types'
 
@@ -29,11 +29,24 @@ describe('desktop history window', () => {
     expect(olderThan(rows, 'missing')).toBeNull()
   })
 
-  it('loads older rows only near the top, once, when there are any', () => {
-    expect(shouldLoadOlder(0, true, false)).toBe(true)
-    expect(shouldLoadOlder(LOAD_OLDER_THRESHOLD_PX + 1, true, false)).toBe(false)
-    expect(shouldLoadOlder(0, false, false)).toBe(false)
-    expect(shouldLoadOlder(0, true, true)).toBe(false)
+  it('loads older rows once, when there are any', () => {
+    const state = { scrollTop: 0, firstVisibleTurn: 0, turnCount: 40, hasOlder: true, loading: false }
+    expect(shouldLoadOlder(state)).toBe(true)
+    expect(shouldLoadOlder({ ...state, hasOlder: false })).toBe(false)
+    expect(shouldLoadOlder({ ...state, loading: true })).toBe(false)
+  })
+
+  it('prefetches within a generous distance of the top, before the top is reached', () => {
+    const state = { firstVisibleTurn: 30, turnCount: 40, hasOlder: true, loading: false }
+    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_PX })).toBe(true)
+    expect(shouldLoadOlder({ ...state, scrollTop: PREFETCH_OLDER_PX + 1 })).toBe(false)
+  })
+
+  it('prefetches once the first turn in view is among the oldest quarter, however far down that is', () => {
+    const state = { scrollTop: 50_000, turnCount: 40, hasOlder: true, loading: false }
+    expect(shouldLoadOlder({ ...state, firstVisibleTurn: 9 })).toBe(true)
+    expect(shouldLoadOlder({ ...state, firstVisibleTurn: 10 })).toBe(false)
+    expect(shouldLoadOlder({ ...state, firstVisibleTurn: null })).toBe(false)
   })
 
   it('finds the turn holding the anchored row after rows are added above', () => {

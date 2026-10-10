@@ -38,8 +38,14 @@ Callers without `window` keep the original contract.
 This bounds wire rows, not JSONL parsing. Keep parse caching separate.
 The desktop opens every chat with the newest 200 rows (`NEWEST_HISTORY_WINDOW`
 in `renderer/services/history-loader.ts`), keeps the session's
-`olderHistoryCursor`, and loads the previous window when the list nears its
-top, keeping the row in view in place. It also asks `imageRefs: true`: base64
+`olderHistoryCursor`, and prefetches the previous window (`shouldLoadOlder` in
+`renderer/services/history-window.ts`: the first turn in view is among the
+oldest quarter of the loaded turns, or within 3,000 px of the top), keeping
+the row in view in place. `MessageList` applies a size correction above the
+view itself and re-renders in the same frame (the virtualizer's own correction
+re-rendered a frame late, which painted the jump), and after a prepend renders
+the rows around the kept row before paint. `e2e/history-prepend.e2e.mjs`
+checks the row in view never moves. It also asks `imageRefs: true`: base64
 images come back as `MessageImage.ref` (message id, index, byte size, with
 `mimeType`) and `app:load-history-image` serves the bytes when a thumbnail
 scrolls into view. A fork anchor digested over a referenced image still
