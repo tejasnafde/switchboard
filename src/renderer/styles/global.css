@@ -42,6 +42,13 @@
   --workspace-color-4: #ffa657; /* amber */
   --workspace-color-5: #79c0ff; /* cyan */
   --workspace-color-6: #ff7b72; /* rose */
+  /* Context chip tints per source kind (PillChipVisual), and its remove cross. */
+  --chip-tint-file: var(--accent);
+  --chip-tint-terminal: #d29922;
+  --chip-tint-chat: #a371f7;
+  --chip-tint-you: #8b949e;
+  --chip-tint-review: #3fb9a0;
+  --chip-remove-opacity: 0.55;
 }
 
 /* ─── Light theme ───────────────────────────────────────────────── */
@@ -77,6 +84,13 @@
   --workspace-color-4: #b45309;
   --workspace-color-5: #1d4ed8;
   --workspace-color-6: #be123c;
+  /* Darker chip tints, so tinted text keeps its contrast on paper. */
+  --chip-tint-file: var(--accent);
+  --chip-tint-terminal: #9a6700;
+  --chip-tint-chat: #8250df;
+  --chip-tint-you: #57606a;
+  --chip-tint-review: #1a7f6b;
+  --chip-remove-opacity: 0.75;
 }
 
 /* ─── Translucent theme ─────────────────────────────────────────── */
@@ -113,6 +127,12 @@
   --workspace-color-4: #ffd09b;
   --workspace-color-5: #aedcff;
   --workspace-color-6: #ffaaa3;
+  --chip-tint-file: var(--accent);
+  --chip-tint-terminal: #d29922;
+  --chip-tint-chat: #a371f7;
+  --chip-tint-you: #8b949e;
+  --chip-tint-review: #3fb9a0;
+  --chip-remove-opacity: 0.65;
 }
 
 html.theme-translucent,
