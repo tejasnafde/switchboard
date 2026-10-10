@@ -339,16 +339,13 @@ export function mapAvailableCommands(commands: AvailableCommand[], source: AcpPr
 export function pickPermissionOptions(
   options: RequestPermissionRequest['options'],
 ): { allow: string | null; reject: string | null } {
-  let allow: string | null = null
-  let reject: string | null = null
-  for (const o of options) {
-    if (!allow && (o.kind === 'allow_once' || o.kind === 'allow_always')) {
-      allow = o.optionId
-    }
-    if (!reject && o.kind === 'reject_once') {
-      reject = o.optionId
-    }
-  }
+  // Once-only first: an "always" grant persists in the agent and would skip
+  // Switchboard's runtime mode on later calls.
+  let allow: string | null =
+    options.find((o) => o.kind === 'allow_once')?.optionId
+    ?? options.find((o) => o.kind === 'allow_always')?.optionId
+    ?? null
+  let reject: string | null = options.find((o) => o.kind === 'reject_once')?.optionId ?? null
   // Fall back to first/last when kinds aren't tagged as expected.
   if (!allow && options.length > 0) allow = options[0].optionId
   if (!reject && options.length > 1) reject = options[options.length - 1].optionId
