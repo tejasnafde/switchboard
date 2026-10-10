@@ -17,7 +17,6 @@ import { coversFor, reconcileSelectedModel } from '@shared/model-reconcile'
 import { followUpDelivery, sendAction, waitsForIdle, type TurnDelivery } from '@shared/turn-delivery'
 import { followOffNotice, followSuggestionView, type FollowSuggestionMode } from '@shared/follow-suggestions'
 import { useFollowUpDefault } from '../../services/effective-settings'
-import { RUNTIME_MODE_OPTIONS } from './runtime-mode-options'
 import { ArrowUpIcon, StopSquareIcon } from './chat-icons'
 import { modelsForAgent, type ModelOption, type ReasoningEffort } from '@shared/models'
 import { effortControlFor, effortPick } from '@shared/effort'
@@ -32,7 +31,6 @@ import { useSpendBlockStore } from '../../stores/spend-block-store'
 import { describeSpendBlock, findSpendBlock } from '@shared/spend-block'
 import { SlashCommandMenu } from './SlashCommandMenu'
 import { resolvePickerKeydown } from './picker-keydown'
-import { EffortPicker } from './EffortPicker'
 import {
   detectSlashTrigger,
   filterSlashCommands,
@@ -47,8 +45,7 @@ import { detectPeerPickTrigger, peerPickReplacement, pinSendToTarget, SEND_TO_EM
 import { pinLinkTarget } from './link-command'
 import { fuzzyScore } from '../../services/fuzzy-score'
 import { AtMentionMenu } from './AtMentionMenu'
-import { DraftWorkspaceChips } from './DraftWorkspaceChips'
-import { BranchPickerTrigger } from './BranchPicker'
+import { ComposerFooter } from './ComposerFooter'
 import { RICH_TEXTAREA_MIN_HEIGHT, RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
 import { serializeBodyWithPills } from '../../services/chat-input-body'
 import {
@@ -1574,15 +1571,13 @@ export function ChatInput({
         </div>
       </div>
 
-      {/* Footer bar: agent selector + mode toggle + hints. Wraps instead of
-          overflowing on a narrow pane; the policy drops the hint and shortens
-          the mode labels first. */}
-      <div className="mt-[6px] flex flex-wrap items-center gap-x-[8px] gap-y-[4px] text-[11px]">
-        {leadingControl}
-
-        {/* Unified provider/instance/model picker - single drop-up popover
-            consolidating what used to be three separate footer controls. */}
-        {onModelChange && onInstanceChange && (
+      {/* Footer: one row of chips that never wraps; lower priorities shorten,
+          then move into "..." as the pane narrows (composer-footer-tiers.ts). */}
+      <ComposerFooter
+        lead={leadingControl}
+        // Unified provider/instance/model picker - single drop-up popover
+        // consolidating what used to be three separate footer controls.
+        provider={onModelChange && onInstanceChange && (
           <UnifiedProviderPicker
             wait={providerWait}
             agentType={agentType}
@@ -1596,23 +1591,19 @@ export function ChatInput({
             resolvedModel={resolvedModel}
           />
         )}
-
-        {effortControl && (
-          <EffortPicker control={effortControl} onPick={pickEffort} />
-        )}
-
-        {driftSuggestion && driftView && driftView.kind !== 'hidden' && (
+        effort={effortControl ? { control: effortControl, onPick: pickEffort } : null}
+        notice={driftSuggestion && driftView && driftView.kind !== 'hidden' && (
           <span
             data-drift-banner
             data-drift-view={driftView.kind}
             className={cn(
-              'inline-flex max-w-full shrink-0 items-center gap-[6px] whitespace-nowrap rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] py-[3px] text-[11px]',
+              'inline-flex h-[24px] min-w-0 shrink items-center gap-[6px] whitespace-nowrap rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px]',
               driftView.kind === 'off' ? 'text-[var(--text-muted)]' : 'text-[var(--text-secondary)]',
             )}
           >
             {driftView.kind === 'chip' ? (
               <>
-                <span className="overflow-hidden text-ellipsis">
+                <span className="min-w-0 overflow-hidden text-ellipsis">
                   Agent is working in <strong>{driftSuggestion.branch}</strong>
                 </span>
                 <button
@@ -1633,7 +1624,7 @@ export function ChatInput({
               </>
             ) : (
               <>
-                <span className="overflow-hidden text-ellipsis">{followOffNotice(driftView)}</span>
+                <span className="min-w-0 overflow-hidden text-ellipsis">{followOffNotice(driftView)}</span>
                 <button type="button" onClick={() => setFollowSuggestions('on')} className={driftLinkClass}>
                   Turn back on
                 </button>
@@ -1650,49 +1641,26 @@ export function ChatInput({
             </button>
           </span>
         )}
-
-        {/* Per-thread branch picker. On `swap-cwd` (picked branch already
-            has a worktree elsewhere) we update the store + persist to the
-            conversations row; the running adapter keeps its old cwd until
-            session restart, then picks up the new pointer. */}
-        {draftOptions && sessionId ? (
-          <DraftWorkspaceChips sessionId={sessionId} cwd={repoRoot} draft={draftOptions} />
-        ) : (
-          <BranchPickerTrigger
-            cwd={repoRoot}
-            followSessionId={sessionId ?? undefined}
-            onTurnFollowBackOn={() => setFollowSuggestions('on')}
-            onSwapWorktree={swapWorktreePointer}
-            onCwdMissing={healOrphanedWorktree}
-          />
-        )}
-
-        {/* Runtime mode selector (per-session) */}
-        {runtimeMode && onRuntimeModeChange && (
-          <select
-            className="runtime-mode-select cursor-pointer rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[6px] py-[3px] text-[11px] text-[var(--text-secondary)] outline-none"
-            data-runtime-mode={runtimeMode}
-            title={RUNTIME_MODE_OPTIONS.find((m) => m.value === runtimeMode)?.detail}
-            value={runtimeMode}
-            onChange={(e) => onRuntimeModeChange(e.target.value as RuntimeMode)}
-          >
-            {RUNTIME_MODE_OPTIONS.map((m) => (
-              <option key={m.value} value={m.value} title={m.detail}>{m.label}</option>
-            ))}
-          </select>
-        )}
-
-        {/* Context meter (24px), last so it sits centred under the Send button,
-            and marginLeft auto keeps it right-aligned when a narrow footer
-            wraps it onto a row of its own. flexShrink 0: this is the one
-            footer item that must never be squeezed under the pane edge. */}
-        {(contextUsage || costLabel) && (
+        sessionId={sessionId ?? null}
+        cwd={repoRoot}
+        draft={draftOptions}
+        // Per-thread branch picker. On `swap-cwd` (picked branch already has
+        // a worktree elsewhere) we update the store + persist to the
+        // conversations row; the running adapter keeps its old cwd until
+        // session restart, then picks up the new pointer.
+        branch={{
+          followSessionId: sessionId ?? undefined,
+          onTurnFollowBackOn: () => setFollowSuggestions('on'),
+          onSwapWorktree: swapWorktreePointer,
+          onCwdMissing: healOrphanedWorktree,
+        }}
+        mode={runtimeMode && onRuntimeModeChange ? { value: runtimeMode, onChange: onRuntimeModeChange } : null}
+        // Context meter (24px), last so it sits centred under the Send
+        // button. shrink-0: it must never be squeezed under the pane edge.
+        meter={(contextUsage || costLabel) && (
           <span
-            className="inline-flex shrink-0 items-center gap-[8px]"
-            style={{
-              marginLeft: 'auto',
-              marginRight: `calc(${COMPOSER_ACTION_INSET} + (${COMPOSER_ACTION_SIZE} - 24px) / 2)`,
-            }}
+            className="inline-flex h-[24px] shrink-0 items-center gap-[8px]"
+            style={{ marginRight: `calc(${COMPOSER_ACTION_INSET} + (${COMPOSER_ACTION_SIZE} - 24px) / 2)` }}
           >
             {/* What the agent reported this session has cost (OpenCode). */}
             {costLabel && (
@@ -1703,7 +1671,7 @@ export function ChatInput({
             {contextUsage && <ContextWindowMeter usage={contextUsage} />}
           </span>
         )}
-      </div>
+      />
 
       {/* Image lightbox */}
       {previewImage && (

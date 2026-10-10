@@ -12,3 +12,26 @@ export async function openLandingProjectPicker(win) {
   await search.waitFor({ timeout: 5000 })
   await win.getByRole('option').first().waitFor({ timeout: 5000 })
 }
+
+/**
+ * Pick `value` from a composer footer chip (a chip that opens a list, where a
+ * native <select> used to be): click the chip, then the row for `value`.
+ */
+export async function pickChipOption(win, chip, value) {
+  await chip.click()
+  const row = win.locator(`[role="listbox"] [role="option"][data-value="${value}"]`)
+  await row.waitFor({ timeout: 5000 })
+  await row.click()
+  await row.waitFor({ state: 'detached', timeout: 5000 })
+}
+
+/** How many rows a composer footer chip's list offers. Leaves it closed. */
+export async function countChipOptions(win, chip) {
+  await chip.click()
+  const rows = win.locator('[role="listbox"] [role="option"]')
+  await rows.first().waitFor({ timeout: 5000 })
+  const count = await rows.count()
+  await win.keyboard.press('Escape')
+  await rows.first().waitFor({ state: 'detached', timeout: 5000 })
+  return count
+}

@@ -26,11 +26,13 @@ import { cn } from '../../lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { rankAndFilterRefs, decideSwitchAction, type Ref } from './branch-picker-policy'
 import { followSuggestionsOff } from '@shared/follow-suggestions'
+import { BranchIcon, ChipCaret, footerChipClass, footerChipValueClass } from './FooterChip'
 
 const log = createRendererLogger('chat:branch-picker')
 
 interface TriggerProps {
   cwd: string | null
+  branch: CurrentBranch
   /**
    * Called when the picker resolves to a `swap-cwd` action - the picked
    * branch already has a worktree at `newCwd`, so the caller should
@@ -40,21 +42,34 @@ interface TriggerProps {
   onSwapWorktree?: (newCwd: string, branch: string) => void
   /** Called whenever the popover closes after a successful checkout. */
   onChanged?: () => void
-  /** The cwd itself no longer exists (deleted worktree) - owner can heal the pointer. */
-  onCwdMissing?: () => void
   /** The conversation whose Follow suggestions the popover can turn back on. */
   followSessionId?: string
   onTurnFollowBackOn?: () => void
 }
 
-export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissing, followSessionId, onTurnFollowBackOn }: TriggerProps) {
-  const [open, setOpen] = useState(false)
+export interface CurrentBranch {
+  /** The checked-out branch, or null when HEAD is detached or unknown. */
+  current: string | null
+  /** False hides the chip: not a repository, or the cwd is gone. */
+  isGitRepo: boolean
+  refresh: () => void
+}
+
+/**
+ * The branch checked out in `cwd`, kept current. One reader per composer:
+ * the chip and the footer's "..." menu share it.
+ */
+export function useCurrentBranch(cwd: string | null, onCwdMissing?: () => void): CurrentBranch {
   const [current, setCurrent] = useState<string | null>(null)
   const [isGitRepo, setIsGitRepo] = useState(true)
+  // A read for a cwd the composer has since left must not overwrite the new one's.
+  const cwdRef = useRef(cwd)
+  cwdRef.current = cwd
 
   const refresh = useCallback(async () => {
     if (!cwd) return
     const res = await window.api.git.currentBranch(cwd)
+    if (cwdRef.current !== cwd) return
     if (res.ok) {
       setCurrent(res.branch)
       setIsGitRepo(true)
@@ -92,14 +107,19 @@ export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissi
     }
   }, [refresh, cwd])
 
+  return { current, isGitRepo: !!cwd && isGitRepo, refresh: () => { void refresh() } }
+}
+
+export function BranchPickerTrigger({ cwd, branch, onSwapWorktree, onChanged, followSessionId, onTurnFollowBackOn }: TriggerProps) {
+  const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  if (!cwd || !isGitRepo) return null
+  if (!cwd || !branch.isGitRepo) return null
 
   const close = (changed: boolean) => {
     setOpen(false)
     if (changed) {
-      refresh()
+      branch.refresh()
       onChanged?.()
     }
   }
@@ -110,18 +130,13 @@ export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissi
         <button
           type="button"
           title="Switch branch"
-          className="inline-flex cursor-pointer items-center gap-[4px] rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] py-[3px] text-[11px] text-[var(--text-secondary)] outline-none"
+          className={footerChipClass}
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-            <line x1="6" y1="3" x2="6" y2="15" />
-            <circle cx="18" cy="6" r="3" />
-            <circle cx="6" cy="18" r="3" />
-            <path d="M18 9a9 9 0 0 1-9 9" />
-          </svg>
-          <span className="max-w-[140px] truncate">
-            {current ?? '(detached)'}
+          <BranchIcon />
+          <span className={cn(footerChipValueClass, 'max-w-[140px] truncate')}>
+            {branch.current ?? '(detached)'}
           </span>
-          <span className="text-[9px] opacity-60">▾</span>
+          <ChipCaret />
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -156,7 +171,7 @@ interface PopoverProps {
   onTurnFollowBackOn?: () => void
 }
 
-function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose, followSessionId, onTurnFollowBackOn }: PopoverProps) {
+export function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose, followSessionId, onTurnFollowBackOn }: PopoverProps) {
   const [refs, setRefs] = useState<Ref[]>([])
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
