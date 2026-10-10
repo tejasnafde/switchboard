@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { openLandingProjectPicker } from './lib/new-chat.mjs'
+import { openLandingProjectPicker, pickChipOption } from './lib/new-chat.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
@@ -61,7 +61,7 @@ try {
   await openLandingProjectPicker(win)
   await win.keyboard.press('Enter')
   await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })
-  await win.getByTestId('draft-workspace').selectOption('project')
+  await pickChipOption(win, win.getByTestId('draft-workspace'), 'project')
   await win.locator('[contenteditable="true"]').last().click()
   await win.keyboard.type('@an-unusually-long')
   await win.getByRole('listbox', { name: 'File mentions' }).getByText(LONG_FILE).waitFor({ timeout: 10_000 })

@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { openLandingProjectPicker } from './lib/new-chat.mjs'
+import { countChipOptions, openLandingProjectPicker, pickChipOption } from './lib/new-chat.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
@@ -67,7 +67,7 @@ async function run(checkout) {
   await win.keyboard.press('Enter')
   await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })
   check(`${checkout}: draft opens with workspace chip`, true)
-  await win.getByTestId('draft-workspace').selectOption(checkout)
+  await pickChipOption(win, win.getByTestId('draft-workspace'), checkout)
   await win.waitForTimeout(300)
   check(`${checkout}: no conversation row while drafting`, Number(q('SELECT count(*) FROM conversations;')) === before)
   await win.screenshot({ path: `/tmp/sb-draft-${checkout}-before.png` })
@@ -101,7 +101,7 @@ try {
     await win.keyboard.type(filter)
     await win.keyboard.press('Enter')
     await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })
-    await win.getByTestId('draft-workspace').selectOption(checkout)
+    await pickChipOption(win, win.getByTestId('draft-workspace'), checkout)
     await win.locator('[contenteditable="true"]').last().click()
     await win.keyboard.type(text)
     await win.keyboard.press('Enter')
@@ -114,9 +114,9 @@ try {
   await win.keyboard.type('drafty')
   await win.keyboard.press('Enter')
   await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })
-  await win.getByTestId('draft-workspace').selectOption('existing')
+  await pickChipOption(win, win.getByTestId('draft-workspace'), 'existing')
   await win.getByTestId('draft-existing-worktree').waitFor({ timeout: 5000 })
-  check('existing: worktree picker offers the worktree on disk', (await win.getByTestId('draft-existing-worktree').locator('option').count()) >= 1)
+  check('existing: worktree picker offers the worktree on disk', (await countChipOptions(win, win.getByTestId('draft-existing-worktree'))) >= 1)
   await win.locator('[contenteditable="true"]').last().click()
   await win.keyboard.type('join the existing worktree')
   await win.keyboard.press('Enter')

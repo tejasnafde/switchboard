@@ -491,6 +491,72 @@ async function prepareScreensFixture() {
   }
 }
 
+/**
+ * The composer footer is one row at every width: every box in it (the chips,
+ * the "..." chip, the context meter) has the same offsetTop, and nothing
+ * scrolls sideways. Returns a problem, or null.
+ */
+async function footerRowProblem(composer, label) {
+  const problem = await composer.evaluate((root) => {
+    const footer = root.querySelector('[data-composer-footer]')
+    if (!footer) return 'no [data-composer-footer]'
+    const boxes = []
+    const collect = (el) => {
+      for (const child of el.children) {
+        const display = getComputedStyle(child).display
+        if (display === 'contents') collect(child)
+        else if (display !== 'none') {
+          boxes.push(child)
+          if (child.hasAttribute('data-composer-footer-track')) collect(child)
+        }
+      }
+    }
+    collect(footer)
+    const tops = boxes.map((el) => el.offsetTop)
+    if (new Set(tops).size > 1) {
+      return `children sit on ${new Set(tops).size} rows (offsetTop ${tops.join(', ')})`
+    }
+    const track = footer.querySelector('[data-composer-footer-track]')
+    if (track && track.scrollWidth > track.clientWidth) return `the chips overflow by ${track.scrollWidth - track.clientWidth}px`
+    return null
+  })
+  return problem ? `${label}: ${problem}` : null
+}
+
+const FOOTER_WIDTHS = [360, 680, 1200]
+
+/**
+ * The chat composer with its width pinned, so the footer's container queries
+ * see each width the design names (360: P3 to P5 in "...", 680: short labels
+ * and the model only, 1200: everything). Pinned near the window's left edge, low enough for the "..." menu to open above it, so
+ * a 1200 px composer is on screen whatever the pane widths are.
+ */
+async function captureFooterWidths(win, theme, composer) {
+  for (const width of FOOTER_WIDTHS) {
+    await composer.evaluate((el, w) => {
+      el.dataset.visualStyle = el.getAttribute('style') ?? ''
+      el.style.cssText += `;position:fixed;left:16px;top:420px;width:${w}px;z-index:1100;`
+    }, width)
+    const problem = await footerRowProblem(composer, `composer-footer-${width}-${theme.toLowerCase()}`)
+    if (problem) screenFailures.push(problem)
+    await snapScreen(win, `composer-footer-${width}`, theme, composer)
+    if (width === 360) {
+      // The "..." menu, holding effort, checkout and mode.
+      await composer.locator('[data-composer-overflow]').click()
+      const menu = win.getByRole('dialog', { name: 'More options' })
+      await menu.waitFor({ state: 'visible' })
+      if (await menu.getByRole('menuitem').count() !== 3) screenFailures.push(`composer-overflow-${theme.toLowerCase()}: expected effort, branch and mode in the menu`)
+      await snapScreen(win, 'composer-overflow-menu', theme, menu)
+      await win.keyboard.press('Escape')
+      await menu.waitFor({ state: 'hidden' })
+    }
+    await composer.evaluate((el) => {
+      el.setAttribute('style', el.dataset.visualStyle ?? '')
+      delete el.dataset.visualStyle
+    })
+  }
+}
+
 async function captureThemeScreens(win, theme) {
   await chooseTheme(win, theme)
   // Each turn's time is stamped by the main process when it is saved, and
@@ -506,6 +572,12 @@ async function captureThemeScreens(win, theme) {
   // Choosing the theme leaves focus (and its ring) on the settings button.
   await editor.click()
   await snapScreen(win, 'landing', theme, win, [win.locator('.sidebar-root')])
+  // The landing card's footer: project, agent and model, effort, checkout and
+  // mode on one row in its 680 px column.
+  const landingComposer = win.locator('.chat-landing .chat-composer').first()
+  const landingProblem = await footerRowProblem(landingComposer, `composer-landing-${theme.toLowerCase()}`)
+  if (landingProblem) screenFailures.push(landingProblem)
+  await snapScreen(win, 'composer-landing', theme, landingComposer)
 
   // A finished turn: text, an Edit tool call and the collapsed "Changed 1
   // file" group. Captured before switching threads, since reopening a thread
@@ -527,6 +599,7 @@ async function captureThemeScreens(win, theme) {
   await win.locator('[data-linked-pr][title*="build failed"]').first().waitFor({ state: 'visible', timeout: 20_000 })
   await snapScreen(win, 'chat', theme, win, [turnTimes, sidebar])
   await snapScreen(win, 'sidebar', theme, sidebar)
+  await captureFooterWidths(win, theme, win.locator('.chat-composer').first())
 
   await win.keyboard.press('ControlOrMeta+P')
   const goToChat = win.getByRole('dialog', { name: 'Go to chat' })
@@ -651,11 +724,15 @@ async function captureThemeScreens(win, theme) {
   // The chat held on that approval heads the sidebar under "Needs you".
   await sidebar.locator('.sidebar-recent-group[data-group="needs-you"]').waitFor({ state: 'visible' })
   await snapScreen(win, 'sidebar-needs-you', theme, sidebar)
+  const runningProblem = await footerRowProblem(win.locator('.chat-composer').first(), `composer-running-${theme.toLowerCase()}`)
+  if (runningProblem) screenFailures.push(runningProblem)
   await snapScreen(win, 'composer-running', theme, win.locator('.chat-composer').first())
   // The draft queued behind that approval: the dashed Queued bubble.
   await editor.click()
   await win.keyboard.press('Alt+Enter')
   await win.locator('[data-queued-turn]').waitFor({ state: 'visible', timeout: 10_000 })
+  const queuedProblem = await footerRowProblem(win.locator('.chat-composer').first(), `queued-message-${theme.toLowerCase()}`)
+  if (queuedProblem) screenFailures.push(queuedProblem)
   await snapScreen(win, 'queued-message', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
 
   // A long list reply in the narrowest window, scrolled to its last list,
@@ -672,6 +749,8 @@ async function captureThemeScreens(win, theme) {
   const list = win.locator('[data-message-list-scroll]').first()
   const sideways = await list.evaluate((el) => el.scrollWidth - el.clientWidth)
   if (sideways > 0) screenFailures.push(`chat-narrow-${theme.toLowerCase()}: the message list scrolls ${sideways}px sideways`)
+  const narrowProblem = await footerRowProblem(win.locator('.chat-composer').first(), `chat-narrow-${theme.toLowerCase()}`)
+  if (narrowProblem) screenFailures.push(narrowProblem)
   await win.locator('.markdown-content ol').last().evaluate((ol) => ol.scrollIntoView({ block: 'start' }))
   await snapScreen(win, 'chat-narrow', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
 

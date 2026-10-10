@@ -1,0 +1,53 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "composer-footer-one-row",
+  "summary": "The desktop composer footer stays on one row at every width. The runtime-mode select and the new-chat checkout, branch and worktree selects become chips that open a popover list, with the same options, labels, tooltips and arrow-key behaviour. Container queries shorten the lower priorities first (effort, checkout, mode), then show the model only, then move mode, checkout and effort into a \"...\" menu. The context meter and Send never move.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ComposerFooter.tsx",
+        "src/renderer/components/chat/ComposerOverflowMenu.tsx",
+        "src/renderer/components/chat/FooterChip.tsx",
+        "src/renderer/components/chat/composer-footer-tiers.ts",
+        "src/renderer/hooks/useContainerTier.ts",
+        "src/renderer/components/chat/DraftWorkspaceChips.tsx",
+        "src/renderer/components/chat/ChatInput.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app does not render this footer. Its composer has its own layout, with no runtime-mode select and no checkout chips."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The Compose composer does not render this footer. Nothing it shows changes."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "A renderer layout change only. The runtime-mode, effort and checkout values sent to the backend are unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes. The same five runtime-mode values and the same draft checkout options are saved."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "An unconditional desktop renderer change with no flag, package identity, signing, update-channel or rollout change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/composer-footer-tiers.test.ts tests/unit/visual-regressions-source.test.ts",
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual (composer-footer-360/680/1200, composer-landing, composer-overflow-menu, and a one-row offsetTop check on the landing, chat, running, queued and narrow composers)",
+      "node e2e/draft-new-chat.e2e.mjs, e2e/queue-steer.e2e.mjs, e2e/chat-render-order.e2e.mjs",
+      "npm run typecheck",
+      "npm test"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Resizing the split chat pane by hand across each step in a running app."
+    ]
+  }
+}
