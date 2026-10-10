@@ -68,6 +68,7 @@ import {
   KEY_ARROW_RIGHT_COMMAND,
   KEY_ENTER_COMMAND,
   PASTE_COMMAND,
+  SKIP_DOM_SELECTION_TAG,
   type BaseSelection,
   type EditorState,
   type LexicalCommand,
@@ -122,6 +123,8 @@ interface RichChatTextareaProps {
 type ComposerPill = Pick<DraftPill, 'id' | 'label' | 'kind'> & Partial<Pick<DraftPill, 'content'>>
 
 export const INSERT_PILL_COMMAND: LexicalCommand<DraftPill> = createCommand('INSERT_PILL')
+/** Update tag of a pill insert, which can arrive while the editor is not focused (⌘L). */
+const PILL_INSERT_TAG = 'sb-pill-insert'
 
 /**
  * Build a Lexical paragraph node tree from the host's plain-text body.
@@ -333,6 +336,12 @@ function PillInsertPlugin(): null {
     return editor.registerCommand<DraftPill>(
       INSERT_PILL_COMMAND,
       (pill) => {
+        // Unfocused (⌘L from a terminal, the IDE or a chat message), the
+        // commit would put the DOM selection in the editor, which focuses it
+        // before the new caret is saved, and the focus then restores the
+        // caret from before the pill. The caller focuses the editor next.
+        const root = editor.getRootElement()
+        const unfocused = !!root && document.activeElement !== root
         editor.update(() => {
           const sel = $getSelection()
           if (!$isRangeSelection(sel)) return
@@ -344,7 +353,7 @@ function PillInsertPlugin(): null {
           // and the pure helper agree on the result. Lexical's
           // `$insertNodes` handles the split-and-stitch automatically.
           $insertNodes([spaceBefore, pillNode, spaceAfter])
-        })
+        }, { tag: unfocused ? [PILL_INSERT_TAG, SKIP_DOM_SELECTION_TAG] : PILL_INSERT_TAG })
         return true
       },
       COMMAND_PRIORITY_LOW,
@@ -433,9 +442,11 @@ function SelectionMemoryPlugin(): null {
     const save = (offsets: ComposerSelection | null): void => {
       if (offsets) saved = { ...offsets, body: serializeEditorToBody(editor) }
     }
-    const removeUpdate = editor.registerUpdateListener(({ editorState }) => {
+    // A pill inserted while the editor is not focused leaves the caret after
+    // it, and focus comes back right after: save that.
+    const removeUpdate = editor.registerUpdateListener(({ editorState, tags }) => {
       const root = editor.getRootElement()
-      if (!root || document.activeElement !== root) return
+      if (!root || (document.activeElement !== root && !tags.has(PILL_INSERT_TAG))) return
       editorState.read(() => save($selectionOffsets()))
     })
     // Lexical learns of a caret move only from a later `selectionchange`, so

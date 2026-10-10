@@ -38,6 +38,7 @@
 @source '../components/chat/visuals';
 @source '../components/chat/MessageImages.tsx';
 @source '../components/chat/HistoryToolCall.tsx';
+@source '../components/chat/MessageList.tsx';
 @source '../components/chat/lexical/RichChatTextarea.tsx';
 @source '../components/chat/lexical/PillChipVisual.tsx';
 @source '../components/CommandPalette.tsx';

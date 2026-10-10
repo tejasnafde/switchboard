@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import { PillChipVisual } from './lexical/PillChipVisual'
 import type { DraftPillKind } from '../../stores/draft-store'
 import { pillContentInMessage } from '../../services/pill-chip-model'
+import { PILL_LABEL_ATTR } from '../../services/context-formatters'
 
 export type PillsMeta = Record<string, { label: string; kind: DraftPillKind }>
 
@@ -32,7 +33,7 @@ export function renderPillBody(body: string, pillsMeta: PillsMeta, messageText =
     const meta = pillsMeta[m[1]]
     if (meta) {
       const content = pillContentInMessage(meta.kind, meta.label, messageText)
-      out.push(<PillChipVisual key={key++} label={meta.label} kind={meta.kind} content={content} selectable />)
+      out.push(<PillChipVisual key={key++} label={meta.label} kind={meta.kind} content={content} selectable rootProps={{ [PILL_LABEL_ATTR]: meta.label }} />)
     }
     cursor = m.index + m[0].length
   }
