@@ -381,6 +381,23 @@ describe('pickPermissionOptions', () => {
     expect(reject).toBe('r1')
   })
 
+  it('prefers allow_once even when allow_always is listed first', () => {
+    const { allow } = pickPermissionOptions([
+      { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
+      { optionId: 'once', name: 'Allow once', kind: 'allow_once' },
+      { optionId: 'r1', name: 'Reject', kind: 'reject_once' },
+    ] as any)
+    expect(allow).toBe('once')
+  })
+
+  it('takes allow_always only when no allow_once is offered', () => {
+    const { allow } = pickPermissionOptions([
+      { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
+      { optionId: 'r1', name: 'Reject', kind: 'reject_once' },
+    ] as any)
+    expect(allow).toBe('always')
+  })
+
   it('falls back to first/last when kinds are not tagged', () => {
     const { allow, reject } = pickPermissionOptions([
       { optionId: 'one', name: 'one' },

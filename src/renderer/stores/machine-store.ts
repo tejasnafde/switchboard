@@ -7,6 +7,7 @@
  * Connection state is driven by the main-process ConnectionManager (M4b): the
  * renderer kicks off connect/disconnect and reflects the status events it emits.
  */
+import { toAgentProvider } from '@shared/types'
 import { create } from 'zustand'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type { Project, SessionSummary } from '@shared/types'
@@ -296,7 +297,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
             const summary: SessionSummary = {
               id: session.id,
               title: session.title,
-              source: session.agentType === 'codex' ? 'codex' : session.agentType === 'opencode' ? 'opencode' : 'claude-code',
+              source: toAgentProvider(session.agentType),
               agentType: session.agentType ?? null,
               startedAt: Date.now(),
               messageCount: 0,

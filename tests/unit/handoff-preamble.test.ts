@@ -18,6 +18,7 @@ import {
   DEFAULT_HANDOFF_MAX_CHARS,
   planTurnHandoff,
   answeredHistory,
+  isHandoffSource,
   withHandoffPreamble,
 } from '../../src/shared/handoff'
 
@@ -315,5 +316,15 @@ describe('answeredHistory and withHandoffPreamble', () => {
     const full = buildHandoffPreamble([user('a'), assistant('b')])!
     expect(withHandoffPreamble(`${delta}\n\ntyped`, full)).toBe(`${full}\n\ntyped`)
     expect(withHandoffPreamble('typed', full)).toBe(`${full}\n\ntyped`)
+  })
+})
+
+describe('isHandoffSource', () => {
+  it('accepts every agent, the generic ACP ones included, and a Cursor import', () => {
+    for (const source of ['claude-code', 'codex', 'opencode', 'gemini', 'copilot', 'cursor']) {
+      expect(isHandoffSource(source)).toBe(true)
+    }
+    expect(isHandoffSource('terminal')).toBe(false)
+    expect(isHandoffSource('nope')).toBe(false)
   })
 })

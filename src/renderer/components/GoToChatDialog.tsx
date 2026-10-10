@@ -17,6 +17,11 @@ const AVATARS: Record<AgentType, { initials: string; className: string }> = {
   codex: { initials: 'CX', className: 'bg-[#10a37f]' },
   opencode: { initials: 'OC', className: 'bg-[#e17055]' },
   terminal: { initials: 'TM', className: 'bg-[var(--text-muted)]' },
+  // ponytail: neutral until these agents get their own colours.
+  gemini: { initials: 'GE', className: 'bg-[var(--text-muted)]' },
+  vibe: { initials: 'VB', className: 'bg-[var(--text-muted)]' },
+  cline: { initials: 'CN', className: 'bg-[var(--text-muted)]' },
+  copilot: { initials: 'CP', className: 'bg-[var(--text-muted)]' },
 }
 
 interface GoToChatDialogProps {

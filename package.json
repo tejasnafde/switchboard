@@ -64,6 +64,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "cross-spawn": "^7.0.6",
     "dompurify": "^3.4.16",
     "effect": "^3.21.1",
     "electron-updater": "^6.8.9",
@@ -81,6 +82,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/cross-spawn": "^6.0.6",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "@types/qrcode": "^1.5.6",
