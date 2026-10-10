@@ -534,6 +534,10 @@ const FOOTER_WIDTHS = [360, 680, 1200]
  * a 1200 px composer is on screen whatever the pane widths are.
  */
 async function captureFooterWidths(win, theme, composer) {
+  // The pinned composer sits over the chat, so a turn's time (stamped by the
+  // real main clock) can show through it. Hidden, not masked: a mask paints
+  // above the composer and the menu too.
+  const hideTurnTimes = await win.addStyleTag({ content: '.turn-timestamp { visibility: hidden !important; }' })
   for (const width of FOOTER_WIDTHS) {
     await composer.evaluate((el, w) => {
       el.dataset.visualStyle = el.getAttribute('style') ?? ''
@@ -557,6 +561,7 @@ async function captureFooterWidths(win, theme, composer) {
       delete el.dataset.visualStyle
     })
   }
+  await hideTurnTimes.evaluate((node) => node.remove())
 }
 
 async function captureThemeScreens(win, theme) {
