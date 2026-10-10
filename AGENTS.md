@@ -122,8 +122,14 @@ Callers without `window` keep the original contract.
 This bounds wire rows, not JSONL parsing. Keep parse caching separate.
 The desktop opens every chat with the newest 200 rows (`NEWEST_HISTORY_WINDOW`
 in `renderer/services/history-loader.ts`), keeps the session's
-`olderHistoryCursor`, and loads the previous window when the list nears its
-top, keeping the row in view in place. It also asks `imageRefs: true`: base64
+`olderHistoryCursor`, and prefetches the previous window (`shouldLoadOlder` in
+`renderer/services/history-window.ts`: the first turn in view is among the
+oldest quarter of the loaded turns, or within 3,000 px of the top), keeping
+the row in view in place. `MessageList` applies a size correction above the
+view itself and re-renders in the same frame (the virtualizer's own correction
+re-rendered a frame late, which painted the jump), and after a prepend renders
+the rows around the kept row before paint. `e2e/history-prepend.e2e.mjs`
+checks the row in view never moves. It also asks `imageRefs: true`: base64
 images come back as `MessageImage.ref` (message id, index, byte size, with
 `mimeType`) and `app:load-history-image` serves the bytes when a thumbnail
 scrolls into view. A fork anchor digested over a referenced image still
@@ -498,7 +504,7 @@ One MCP server per backend process gives Claude, Codex and OpenCode the same too
 - **Remote backend over SSH**: a standalone headless server (`src/server`, `WsHost`) runs agents/PTYs/git/fs on a remote VM; the desktop app connects over an `ssh -L` tunnel via a `Transport` seam and drives local + remote sessions in the same window (`HybridTransport`/`TransportRouter`). Remote chats survive reconnects. See Backend transport seam above. (No mobile client, no cloud relay yet.)
 - Pre-commit hook + CI (GitHub Actions: typecheck + test + build)
 - **Slash command menu in chat input** with agent-skill exposure (2026-04-26): Claude SDK `init.commands` + Codex `skills/list` + OpenCode `available_commands_update` surfaced alongside Switchboard's 9 built-ins. Source-grouped sections in the menu; agent-source selections insert `/<name> ` for the user to fill in args.
-- **`⌘L` multi-source context bridge** (2026-04-29): single keybinding routes by the focused element's `data-context-source` attribute (`terminal | file-viewer | chat-message`). Terminal selection → fenced code block w/ pane label header (50k char cap). File-viewer selection → `@<path>:<start>-<end>` pill + fenced block. Chat-message selection → `> from <agent>: "..."` quoted block. All three append to the active session's draft via `useDraftStore.appendDraft`. Pure formatters (`formatTerminalContext`, `formatFileViewerContext`, `formatChatMessageContext`) are unit-tested.
+- **`⌘L` multi-source context bridge** (2026-04-29): single keybinding routes by the focused element's `data-context-source` attribute (`terminal | file-viewer | chat-message`). Terminal selection → fenced code block w/ pane label header (50k char cap). File-viewer selection → `@<path>:<start>-<end>` pill + fenced block. Chat-message selection (an assistant reply, or the user's own message as `you`, its chips read as their labels through `textWithPillLabels`) → `> from <agent | you>: "..."` quoted block. A pill inserted while the composer is unfocused skips Lexical's DOM selection write (`SKIP_DOM_SELECTION_TAG`) and saves its caret for the focus restore, or the restore puts the caret back before the chip. All three append to the active session's draft via `useDraftStore.appendDraft`. Pure formatters (`formatTerminalContext`, `formatFileViewerContext`, `formatChatMessageContext`) are unit-tested.
 - **Per-turn duration badge** (2026-04-29): adapters stamp `turnStartedAt` on `sendTurn` and emit `durationMs` on `turn.completed`. MessageBubble renders "Worked for X.Xs" under the assistant message via `fmtDuration` from `src/shared/format.ts`. Wired across all 3 active adapters (claude, codex, opencode-acp).
 - **Right-pane "IDE" mode** (⌘⇧E to toggle, 2026-07-10): the right column flips between the terminal strip and the embedded VS Code workbench. `layout-store.rightPaneMode` (persisted under `layout.rightPaneMode`). Both panes stay mounted so toggling preserves xterm/pty and workbench state.
 - **Embedded IDE (code-server)** (2026-07-10): full workbench, one server + one webview per app, idle shutdown, cmd+l selection → chat pill, pill click → open-at-line - see Embedded IDE section
