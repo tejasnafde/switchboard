@@ -1,0 +1,70 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "composer-context-chip",
+  "summary": "Desktop only, visual and interaction: the context chip that Cmd+L, @-mentions and Ask the agent put in the composer, and the same chip in sent user bubbles. Source icon and tint per kind (file, terminal, an agent's message, the user's own message, review), the name (a long file name cut in the middle, keeping its extension), a hairline and a count (lines, an en dash file range, review threads; none for one), an always-visible remove cross. Dark, light and translucent. A 300 ms hover or Space on a selected chip opens a Radix popover card with up to four captured lines that never takes focus; a click or Enter opens the source (file in the IDE at its lines, the terminal pane, the quoted message). In the composer Left/Right select a chip, Backspace/Delete remove it, typed characters go after it. Everything is derived from the stored { label, kind } and, when known, the pill's expansion text; the [[pill:id]] serialisation, the draft pill shape and the stored pills_meta are unchanged. The You kind is a chat-message pill whose label starts `you: \"`, which only the Cmd+L capture of the user's own bubble (PR #303) writes.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/lexical/PillChipVisual.tsx",
+        "src/renderer/components/chat/lexical/PillNode.tsx",
+        "src/renderer/components/chat/lexical/RichChatTextarea.tsx",
+        "src/renderer/components/chat/render-pill-body.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/services/pill-chip-model.ts",
+        "src/renderer/services/pill-chip-open.ts",
+        "src/renderer/styles/global.css",
+        "src/renderer/styles/tailwind.css",
+        "tests/unit/pill-chip-model.test.ts",
+        "tests/unit/pill-chip-keyboard.test.ts",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/review-to-chat.e2e.mjs",
+        "e2e/message-overflow.e2e.mjs",
+        "e2e/snapshots/composer-chips-dark-darwin.png",
+        "e2e/snapshots/composer-chips-light-darwin.png",
+        "e2e/snapshots/composer-chips-translucent-darwin.png",
+        "e2e/snapshots/composer-chip-card-dark-darwin.png",
+        "e2e/snapshots/composer-chip-card-light-darwin.png",
+        "e2e/snapshots/composer-chip-card-translucent-darwin.png",
+        "e2e/snapshots/sent-chips-dark-darwin.png",
+        "e2e/snapshots/sent-chips-light-darwin.png",
+        "e2e/snapshots/sent-chips-translucent-darwin.png"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The Expo app draws no chips: a sent body is plain text with each pill as [label] (src/shared/pill-body-text.ts), and its composer has no pills. Nothing it reads or sends changes."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android has no composer pills; it draws sent pills as a label in an onPrimary box on the accent-coloured user bubble (ThreadScreen.kt, PillBodyPresentation.kt), where per-kind tints would sit on the accent colour. The stored data it reads is unchanged, so it keeps working; restyling it is an Android design decision, not part of this desktop mock."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No channel, event or wire field changes. Pill metadata stays { label, kind } and the expansion text the agent receives is unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No table, column or migration; the draft pills in localStorage keep their shape. The demo fixture's seeded pill labels now use the shapes the capture paths write (auth.ts (1-7), api (12 lines))."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer-only change shipped with the next desktop build. No native module, permission, signing or package identity change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/pill-chip-model.test.ts: kind from metadata (including You), count text per kind, en dash ranges, middle truncation keeping the extension, card preview and open targets, finding each pill's block in a sent message.",
+      "tests/unit/pill-chip-keyboard.test.ts (jsdom, real Lexical editor): Left arrow selects a chip, Backspace removes it and fires sb-pill-remove, Right leaves it, Space opens the card without moving focus, a typed key goes after the chip, the cross removes it. The select and type cases fail with PillSelectPlugin removed.",
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual: new composer-chips, composer-chip-card and sent-chips baselines in Dark, Light and Translucent, read; no existing baseline changed; two runs pass without updating.",
+      "e2e/review-to-chat.e2e.mjs and e2e/message-overflow.e2e.mjs pass against the built app.",
+      "npm run typecheck and npm test pass."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Clicking a chip to open its source (IDE, terminal pane, message) was not driven in the built app; openPillTarget is mocked in the jsdom test.",
+      "The You chip was seeded in the visual fixture, not made by Cmd+L, because that capture lands with PR #303."
+    ]
+  }
+}
