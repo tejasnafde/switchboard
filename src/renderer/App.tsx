@@ -26,7 +26,7 @@ import { SettingsPage } from './components/SettingsPage'
 import type { SettingsPageId } from './components/settings/settings-rows'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
-import type { MachineSearchHit } from './services/message-search'
+import { searchHitShownId, type MachineSearchHit } from './services/message-search'
 import { SessionPickerModal } from './components/SessionPickerModal'
 import { GoToChatDialog } from './components/GoToChatDialog'
 import { QuickPromptModal } from './components/QuickPromptModal'
@@ -1294,7 +1294,7 @@ export function App() {
       open?.projectPath ?? hit.projectPath,
       open?.machineId ?? hit.machineId,
     )
-    return useLayoutStore.getState().focusedChatSessionId()
+    return searchHitShownId(hit, useLayoutStore.getState().focusedChatSessionId())
   }, [handleSessionSelect])
 
   const handleOpenLoadedSessionBeside = useCallback(async (sessionId: string) => {

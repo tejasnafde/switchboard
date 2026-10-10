@@ -37,3 +37,12 @@ export async function searchMessagesOnMachines(
   }))
   return orderMessageSearchResults(answers.flat()).slice(0, MESSAGE_SEARCH_LIMIT)
 }
+
+/**
+ * The chat a search hit's find should run in: the hit's own chat when it is
+ * the one now focused, else null (the open failed or another open replaced
+ * it), so the find never lands in an unrelated chat.
+ */
+export function searchHitShownId(hit: Pick<MessageSearchResult, 'conversationId'>, focusedId: string | null): string | null {
+  return focusedId === hit.conversationId ? focusedId : null
+}

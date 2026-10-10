@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { searchMessagesOnMachines } from '../../src/renderer/services/message-search'
+import { searchHitShownId, searchMessagesOnMachines } from '../../src/renderer/services/message-search'
 import type { MessageSearchResult } from '../../src/shared/message-search'
 
 vi.mock('../../src/renderer/logger', () => ({
@@ -30,5 +30,13 @@ describe('searchMessagesOnMachines', () => {
       { machineId: 'old', search: async () => null },
     ])
     expect(results.map((r) => r.messageId)).toEqual(['a'])
+  })
+})
+
+describe('searchHitShownId', () => {
+  it('names the hit chat only when that chat is the one focused', () => {
+    expect(searchHitShownId({ conversationId: 'c1' }, 'c1')).toBe('c1')
+    expect(searchHitShownId({ conversationId: 'c1' }, 'other')).toBeNull()
+    expect(searchHitShownId({ conversationId: 'c1' }, null)).toBeNull()
   })
 })
