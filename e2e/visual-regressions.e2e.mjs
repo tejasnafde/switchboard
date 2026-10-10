@@ -447,6 +447,11 @@ async function settle(win) {
 
 async function snapScreen(win, screen, theme, target, mask = []) {
   await settle(win)
+  await snapAsIs(screen, theme, target, mask)
+}
+
+/** Compare `target` as it is now, without parking the pointer (a hover state). */
+async function snapAsIs(screen, theme, target, mask = []) {
   const shot = await target.screenshot({ animations: 'disabled', caret: 'hide', scale: 'css', mask, maskColor: '#808080' })
   const error = checkBaseline({
     name: `${screen}-${theme.toLowerCase()}-${process.platform}`,
@@ -506,6 +511,10 @@ async function captureThemeScreens(win, theme) {
   // file" group. Captured before switching threads, since reopening a thread
   // reloads it from the database.
   await openConversation(win, FINISHED_CHAT)
+  // The seeded user message's file and terminal pills, drawn as context chips.
+  const sentChips = win.locator('[data-message-id="promo-m2"]').first()
+  await sentChips.locator('[data-pill-chip]').nth(1).waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'sent-chips', theme, sentChips)
   await editor.click()
   await win.keyboard.type('Move the state check ahead of the token exchange.')
   await win.keyboard.press('Enter')
@@ -849,6 +858,49 @@ async function captureChatWaitScreens(win, theme) {
   } finally { await release() }
 }
 
+/**
+ * A composer holding one context chip of every kind (file, terminal, an
+ * agent's message, the user's own message, a review, a long file name cut
+ * in the middle), then the hover card of the terminal chip. The draft is
+ * seeded the way the draft store keeps it, in a chat no other screen uses.
+ */
+const CHIP_CHAT = { id: 'side-notes', title: 'Add markdown export' }
+const CHIP_PILLS = [
+  { id: 'chip_file', kind: 'file', label: 'auth.ts (1-7)', content: '@src/api/auth.ts:1-7\n```\nexport async function handleCallback(req) {\n  const state = req.query.state\n```\n' },
+  { id: 'chip_term', kind: 'terminal', label: 'api (12 lines)', content: '[from: api @ 10:29 · npm run dev]\n```\nError: state token expired\n    at handleCallback (src/api/oauth/callback.ts:41:11)\n    at processTicksAndRejections\nPOST /api/oauth/callback 500 in 38ms\n' + Array.from({ length: 8 }, (_, i) => `GET /health 200 in ${i + 2}ms\n`).join('') + '```\n' },
+  { id: 'chip_chat', kind: 'chat-message', label: 'Claude: "The exchange should happen only after the"', content: '> from Claude: "The exchange should happen only after the state token passes validation."\n> Right now it runs first.\n' },
+  { id: 'chip_you', kind: 'chat-message', label: 'you: "Keep the old cookie name, the phone app st…"', content: '> from you: "Keep the old cookie name, the phone app still reads it."\n' },
+  { id: 'chip_review', kind: 'review', label: '3 review conversations · #612 · sync/worker.py:84, sync/worker.py:91, api/retry.py:12', content: 'Review conversation on sync/worker.py:84\nReview conversation on sync/worker.py:91\nReview conversation on api/retry.py:12\n' },
+  { id: 'chip_long', kind: 'file', label: 'provider-registry-handoff-preamble.ts (1840-1912)', content: '' },
+]
+const CHIP_DRAFT = `Compare ${CHIP_PILLS.map((pill) => `[[pill:${pill.id}]]`).join(' ')} and tell me which one is wrong.`
+
+async function captureComposerChips(win, theme) {
+  await win.evaluate(({ id, pills, draft }) => {
+    const drafts = JSON.parse(localStorage.getItem('switchboard.drafts') ?? '{}')
+    const pillsBySession = JSON.parse(localStorage.getItem('switchboard.draftPills') ?? '{}')
+    localStorage.setItem('switchboard.drafts', JSON.stringify({ ...drafts, [id]: draft }))
+    localStorage.setItem('switchboard.draftPills', JSON.stringify({ ...pillsBySession, [id]: pills }))
+  }, { id: CHIP_CHAT.id, pills: CHIP_PILLS, draft: CHIP_DRAFT })
+  await win.reload()
+  await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
+  await win.addStyleTag({ content: `${FREEZE_CSS} .turn-timestamp { visibility: hidden !important; }` })
+  await openConversation(win, CHIP_CHAT.title)
+  const composer = win.locator('.chat-composer').first()
+  const chips = composer.locator('[data-pill-chip]')
+  await chips.nth(CHIP_PILLS.length - 1).waitFor({ state: 'visible', timeout: 20_000 })
+  if (await chips.count() !== CHIP_PILLS.length) screenFailures.push(`composer-chips-${theme.toLowerCase()}: expected ${CHIP_PILLS.length} chips, found ${await chips.count()}`)
+  await snapScreen(win, 'composer-chips', theme, composer)
+  // The hover card: settle() parks the pointer, so hover after it and wait for the card.
+  await settle(win)
+  await composer.locator('[data-pill-chip][data-pill-kind="terminal"]').hover()
+  const card = win.getByRole('tooltip', { name: 'Terminal: api' })
+  await card.waitFor({ state: 'visible', timeout: 5_000 })
+  await win.waitForTimeout(250)
+  await snapAsIs('composer-chip-card', theme, win.locator('[data-chat-slot="primary"]'))
+  await win.mouse.move(SCREEN_SIZE.width / 2, 2)
+}
+
 async function runThemeScreens() {
   const fixture = await prepareScreensFixture()
   for (const theme of THEMES) {
@@ -866,6 +918,7 @@ async function runThemeScreens() {
     await win.addStyleTag({ content: FREEZE_CSS })
     await captureThemeScreens(win, theme)
     await captureChatWaitScreens(win, theme)
+    await captureComposerChips(win, theme)
     await closeApp()
   }
 }
