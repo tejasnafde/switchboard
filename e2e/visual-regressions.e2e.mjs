@@ -502,6 +502,19 @@ async function captureThemeScreens(win, theme) {
   await editor.click()
   await snapScreen(win, 'landing', theme, win, [win.locator('.sidebar-root')])
 
+  // Message search, before any live turn: every hit is a seeded message, so
+  // the relative times run off the frozen renderer clock. "ex" is a prefix of
+  // words in several chats (exponential, exchange, export).
+  await win.keyboard.press('ControlOrMeta+Shift+F')
+  const search = win.getByRole('dialog', { name: 'Search across all conversations' })
+  await search.waitFor({ state: 'visible' })
+  await win.keyboard.type('ex')
+  await search.getByText(/\d+ chats?, \d+ match/).waitFor({ state: 'visible', timeout: 10_000 })
+  await win.mouse.move(0, 0)
+  await snapScreen(win, 'message-search', theme, search)
+  await win.keyboard.press('Escape')
+  await search.waitFor({ state: 'hidden' })
+
   // A finished turn: text, an Edit tool call and the collapsed "Changed 1
   // file" group. Captured before switching threads, since reopening a thread
   // reloads it from the database.

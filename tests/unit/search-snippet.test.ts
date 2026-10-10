@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { renderSnippetHtml } from '../../src/renderer/components/search-snippet'
+import { renderSearchResultSnippetHtml, renderSnippetHtml } from '../../src/renderer/components/search-snippet'
 
 describe('renderSnippetHtml', () => {
   it('wraps a ** pair in a balanced, closed <mark>', () => {
@@ -30,5 +30,25 @@ describe('renderSnippetHtml', () => {
 
   it('leaves plain text untouched', () => {
     expect(renderSnippetHtml('plain text')).toBe('plain text')
+  })
+})
+
+describe('renderSearchResultSnippetHtml', () => {
+  const open = '\u0002'
+  const close = '\u0003'
+
+  it('uses the control-character snippet, so markdown bold is plain text', () => {
+    const html = renderSearchResultSnippetHtml({ snippet: '**bold** **x**', snippetMarked: `**bold** ${open}x${close}` })
+    expect(html).toContain('**bold**')
+    expect(html.match(/<mark/g)).toHaveLength(1)
+    expect(html).toMatch(/<mark[^>]*>x<\/mark>/)
+  })
+
+  it('balances stray markers', () => {
+    expect(renderSearchResultSnippetHtml({ snippet: '', snippetMarked: `${close}a ${open}b` })).toMatch(/^a <mark[^>]*>b<\/mark>$/)
+  })
+
+  it('falls back to the ** snippet from an older backend', () => {
+    expect(renderSearchResultSnippetHtml({ snippet: 'see **foo**' })).toMatch(/see <mark[^>]*>foo<\/mark>/)
   })
 })

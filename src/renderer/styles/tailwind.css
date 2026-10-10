@@ -44,6 +44,7 @@
 @source '../components/SessionPickerModal.tsx';
 @source '../components/GoToChatDialog.tsx';
 @source '../components/SearchModal.tsx';
+@source '../components/InPaneSearchBar.tsx';
 @source '../components/QuickPromptModal.tsx';
 @source '../components/sidebar/PromptModal.tsx';
 @source '../components/kanban/CardModal.tsx';

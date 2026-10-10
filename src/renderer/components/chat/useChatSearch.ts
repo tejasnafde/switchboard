@@ -4,6 +4,7 @@ import { useAgentStore } from '../../stores/agent-store'
 import { ensureFullHistory } from '../../services/history-loader'
 import type { ChatSlot } from '../../services/chat-workspace'
 import { matchesShortcut } from '@shared/shortcuts'
+import { textMatchesSearch } from '@shared/message-search'
 
 interface ChatSearchOptions {
   messages: ChatMessage[]
@@ -21,23 +22,50 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
   const [searchQuery, setSearchQuery] = useState('')
   const [searchIdx, setSearchIdx] = useState(0)
   const requestScrollToMessage = useAgentStore((s) => s.requestScrollToMessage)
+  const pendingChatFind = useAgentStore((s) => s.pendingChatFind)
+  const clearChatFind = useAgentStore((s) => s.clearChatFind)
+  // A find opened by message search: the text it starts with (the bar is
+  // keyed by `stamp`, so a second prefill replaces the first) and the message
+  // the cursor starts on once that message is among the matches.
+  const [findPrefill, setFindPrefill] = useState<{ query: string; stamp: number } | null>(null)
+  const anchorRef = useRef<{ sessionId: string; messageId: string; scrolled: boolean } | null>(null)
+
+  useEffect(() => {
+    if (!pendingChatFind || !sessionId || pendingChatFind.sessionId !== sessionId) return
+    clearChatFind()
+    anchorRef.current = { sessionId, messageId: pendingChatFind.messageId, scrolled: false }
+    setFindPrefill({ query: pendingChatFind.query, stamp: pendingChatFind.stamp })
+    setSearchOpen(true)
+    setSearchQuery(pendingChatFind.query)
+    setSearchIdx(0)
+  }, [pendingChatFind, sessionId, clearChatFind])
+
+  // Bumped when the full history fails to load, so the cursor stops waiting
+  // for an anchor that cannot arrive.
+  const [anchorLost, setAnchorLost] = useState(0)
 
   // A long chat opens with its newest window; search covers all of it.
   useEffect(() => {
-    if (searchOpen && sessionId) void ensureFullHistory(sessionId)
+    if (!searchOpen || !sessionId) return
+    void ensureFullHistory(sessionId).then((complete) => {
+      const anchor = anchorRef.current
+      if (complete || anchor?.sessionId !== sessionId) return
+      anchorRef.current = null
+      const pending = useAgentStore.getState().pendingScrollToMessage
+      if (pending?.sessionId === sessionId && pending.messageId === anchor.messageId) {
+        useAgentStore.getState().clearScrollToMessage()
+      }
+      setAnchorLost((n) => n + 1)
+    })
   }, [searchOpen, sessionId])
 
-  // ── In-pane search: compute matching message ids (substring on text) ──
+  // ── In-pane search: matching message ids (the text, or every word of it) ──
   const searchMatches = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return [] as string[]
+    if (!searchQuery.trim()) return [] as string[]
+    // Search the user-visible text content. Tool calls / images aren't
+    // included; the global ⌘⇧F covers FTS over the full DB.
     return messages
-      .filter((m) => {
-        // Search the user-visible text content. Tool calls / images aren't
-        // included; the global ⌘⇧F covers FTS over the full DB.
-        if (typeof m.content === 'string' && m.content.toLowerCase().includes(q)) return true
-        return false
-      })
+      .filter((m) => typeof m.content === 'string' && textMatchesSearch(m.content, searchQuery))
       .map((m) => m.id)
   }, [searchQuery, messages])
 
@@ -45,6 +73,26 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
   // ask MessageList to jump to the current match.
   useEffect(() => {
     if (!searchOpen) return
+    // The panel moved to another chat: that anchor names a message it lacks.
+    if (anchorRef.current && anchorRef.current.sessionId !== sessionId) anchorRef.current = null
+    const anchor = anchorRef.current
+    if (anchor && sessionId) {
+      const at = searchMatches.indexOf(anchor.messageId)
+      if (at < 0) {
+        // Not loaded yet (the full history is still coming) or not a match
+        // here: show the message itself, once, and wait for the list.
+        if (!anchor.scrolled) {
+          anchor.scrolled = true
+          requestScrollToMessage(sessionId, anchor.messageId, searchQuery)
+        }
+        return
+      }
+      anchorRef.current = null
+      if (at !== searchIdx) {
+        setSearchIdx(at)
+        return
+      }
+    }
     if (searchMatches.length === 0) return
     const safe = ((searchIdx % searchMatches.length) + searchMatches.length) % searchMatches.length
     if (safe !== searchIdx) {
@@ -52,19 +100,24 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
       return
     }
     if (sessionId) requestScrollToMessage(sessionId, searchMatches[safe], searchQuery)
-  }, [searchOpen, searchMatches, searchIdx, sessionId, searchQuery, requestScrollToMessage])
+  }, [searchOpen, searchMatches, searchIdx, sessionId, searchQuery, requestScrollToMessage, anchorLost])
 
   const handleChatSearchQuery = useCallback((q: string) => {
+    anchorRef.current = null
     setSearchQuery(q)
     setSearchIdx(0)
   }, [])
   const handleChatSearchNext = useCallback(() => {
+    anchorRef.current = null
     setSearchIdx((i) => i + 1)
   }, [])
   const handleChatSearchPrev = useCallback(() => {
+    anchorRef.current = null
     setSearchIdx((i) => i - 1)
   }, [])
   const handleChatSearchClose = useCallback(() => {
+    anchorRef.current = null
+    setFindPrefill(null)
     setSearchOpen(false)
     setSearchQuery('')
     setSearchIdx(0)
@@ -135,6 +188,7 @@ export function useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot
   return {
     panelRef,
     searchOpen,
+    findPrefill,
     chatSearchMatchInfo,
     handleChatSearchQuery,
     handleChatSearchNext,

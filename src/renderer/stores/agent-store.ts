@@ -249,6 +249,12 @@ interface AgentStore {
   pendingScrollToMessage:
     | { sessionId: string; messageId?: string; messageTimestamp?: number; stamp: number; query?: string }
     | null
+  /**
+   * Open that chat's in-pane find (cmd+F) with `query` typed in, on
+   * `messageId`'s match. Set by message search (cmd+shift+F) after it opens
+   * the chat; the chat panel showing the session takes it and clears it.
+   */
+  pendingChatFind: { sessionId: string; query: string; messageId: string; stamp: number } | null
 
   /** `runtimeMode` only when someone chose it; absent, the session is unresolved (`initialRuntimeMode`). */
   addSession: (session: Omit<AgentSession, 'messages' | 'unreadCount' | 'runtimeMode' | 'runtimeModeUnresolved'> & { runtimeMode?: RuntimeMode }) => void
@@ -344,12 +350,15 @@ interface AgentStore {
    *  this variant - MessageList resolves it to the message id on its end. */
   requestScrollToTimestamp: (sessionId: string, messageTimestamp: number) => void
   clearScrollToMessage: () => void
+  requestChatFind: (sessionId: string, query: string, messageId: string) => void
+  clearChatFind: () => void
 }
 
 export const useAgentStore = create<AgentStore>((set, get) => ({
   sessions: [],
   activeSessionId: null,
   pendingScrollToMessage: null,
+  pendingChatFind: null,
 
   addSession: (session) =>
     set((state) => ({
@@ -778,4 +787,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     set({ pendingScrollToMessage: { sessionId, messageTimestamp, stamp: Date.now() } }),
 
   clearScrollToMessage: () => set({ pendingScrollToMessage: null }),
+
+  requestChatFind: (sessionId, query, messageId) =>
+    set({ pendingChatFind: { sessionId, query, messageId, stamp: Date.now() } }),
+
+  clearChatFind: () => set({ pendingChatFind: null }),
 }))

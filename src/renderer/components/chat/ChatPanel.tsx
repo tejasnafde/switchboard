@@ -1124,6 +1124,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const {
     panelRef,
     searchOpen,
+    findPrefill,
     chatSearchMatchInfo,
     handleChatSearchQuery,
     handleChatSearchNext,
@@ -1264,6 +1265,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     >
       {searchOpen && (
         <InPaneSearchBar
+          key={findPrefill?.stamp ?? 'find'}
+          initialValue={findPrefill?.query}
           onQuery={handleChatSearchQuery}
           onNext={handleChatSearchNext}
           onPrev={handleChatSearchPrev}

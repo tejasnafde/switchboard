@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { matchesShortcut } from '@shared/shortcuts'
+import { cn } from '../lib/utils'
 
 /**
  * Small floating search bar used by both `TerminalPane` and `ChatPanel`
@@ -27,6 +28,8 @@ export interface InPaneSearchBarProps {
   matches?: { current: number; total: number } | null
   /** Optional placeholder. */
   placeholder?: string
+  /** Text the bar opens with (the parent has already searched for it). */
+  initialValue?: string
 }
 
 export function InPaneSearchBar({
@@ -36,9 +39,10 @@ export function InPaneSearchBar({
   onClose,
   matches,
   placeholder = 'Find',
+  initialValue = '',
 }: InPaneSearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState(initialValue)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -88,25 +92,10 @@ export function InPaneSearchBar({
           run()
         }
       }}
-      style={{
-        position: 'absolute',
-        top: 8,
-        right: 12,
-        zIndex: 20,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '6px 8px',
-        // Hardcoded opaque background - `var(--bg-secondary)` is alpha-blended
-        // in the glass theme and the bar has to read clearly over terminal /
-        // chat content, so we don't honor that variable here.
-        background: '#1a1d24',
-        border: '1px solid #3a3f4a',
-        borderRadius: 6,
-        boxShadow: '0 10px 32px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.4)',
-        fontSize: 12,
-        color: 'var(--text-primary)',
-      }}
+      // Hardcoded opaque background - `var(--bg-secondary)` is alpha-blended
+      // in the glass theme and the bar has to read clearly over terminal /
+      // chat content, so we don't honor that variable here.
+      className="absolute top-[8px] right-[12px] z-[20] flex items-center gap-[6px] rounded-[6px] border border-[#3a3f4a] bg-[#1a1d24] px-[8px] py-[6px] text-[12px] text-[var(--text-primary)] shadow-[0_10px_32px_rgba(0,0,0,0.55),0_2px_6px_rgba(0,0,0,0.4)]"
     >
       <input
         ref={inputRef}
@@ -117,27 +106,14 @@ export function InPaneSearchBar({
         }}
         placeholder={placeholder}
         spellCheck={false}
-        style={{
-          width: 200,
-          padding: '4px 8px',
-          background: '#0e0f12',
-          border: '1px solid #2f343d',
-          borderRadius: 4,
-          color: '#e6e8ec',
-          fontSize: 12,
-          fontFamily: 'inherit',
-          outline: 'none',
-        }}
+        className="w-[200px] rounded-[4px] border border-[#2f343d] bg-[#0e0f12] px-[8px] py-[4px] text-[12px] text-[#e6e8ec] [font-family:inherit] outline-none"
       />
       {matches && (
         <span
-          style={{
-            fontFamily: 'var(--font-mono, monospace)',
-            fontSize: 11,
-            color: matches.total === 0 ? 'var(--text-muted)' : 'var(--text-secondary)',
-            minWidth: 36,
-            textAlign: 'right',
-          }}
+          className={cn(
+            'min-w-[36px] text-right text-[11px] [font-family:var(--font-mono,monospace)]',
+            matches.total === 0 ? 'text-[var(--text-muted)]' : 'text-[var(--text-secondary)]',
+          )}
         >
           {matches.total === 0 ? '0' : `${matches.current}/${matches.total}`}
         </span>
@@ -149,7 +125,7 @@ export function InPaneSearchBar({
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => { onPrev(); inputRef.current?.focus() }}
         title="Previous match (Shift+Enter / ↑)"
-        style={iconBtn}
+        className={ICON_BUTTON}
       >
         ↑
       </button>
@@ -158,7 +134,7 @@ export function InPaneSearchBar({
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => { onNext(); inputRef.current?.focus() }}
         title="Next match (Enter / ↓)"
-        style={iconBtn}
+        className={ICON_BUTTON}
       >
         ↓
       </button>
@@ -167,7 +143,7 @@ export function InPaneSearchBar({
         onMouseDown={(e) => e.preventDefault()}
         onClick={onClose}
         title="Close (Esc)"
-        style={iconBtn}
+        className={ICON_BUTTON}
       >
         ×
       </button>
@@ -175,14 +151,4 @@ export function InPaneSearchBar({
   )
 }
 
-const iconBtn: React.CSSProperties = {
-  background: 'transparent',
-  border: '1px solid transparent',
-  color: 'var(--text-secondary)',
-  cursor: 'pointer',
-  padding: '2px 6px',
-  borderRadius: 3,
-  fontSize: 12,
-  lineHeight: 1,
-  fontFamily: 'inherit',
-}
+const ICON_BUTTON = 'cursor-pointer rounded-[3px] border border-transparent bg-transparent px-[6px] py-[2px] text-[12px] leading-[1] text-[var(--text-secondary)] [font-family:inherit]'

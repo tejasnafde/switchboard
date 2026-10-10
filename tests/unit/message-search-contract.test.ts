@@ -1,69 +1,187 @@
-import { describe, expect, it } from 'vitest'
-import Database from 'better-sqlite3'
+/**
+ * Message search over the app's real schema and FTS triggers: the word
+ * prefix rule, punctuation that used to break the FTS query, the archive
+ * rule, routing metadata for a rotated session and the display order.
+ */
+import { beforeEach, describe, expect, it } from 'vitest'
+import type Database from 'better-sqlite3'
+import { createMigratedDb } from './helpers/test-db'
+import { addProject, archiveConversation, createConversation } from '../../src/main/db/database'
 import { searchMessagesInDatabase } from '../../src/main/db/message-search'
 import { storedTaskNoticeId } from '../../src/shared/synthetic-message'
+import { SNIPPET_MARK_CLOSE, SNIPPET_MARK_OPEN } from '../../src/shared/message-search'
 
-describe('message search contract', () => {
-  it('returns canonical root-thread routing metadata for a fragment hit', () => {
-    let sql = ''
-    let params: unknown[] = []
-    const row = {
-      messageId: 'message-1',
-      conversationId: 'root-thread',
-      role: 'assistant',
-      content: 'The durable needle is here',
-      snippet: 'The durable **needle** is here',
-      conversationTitle: 'Repair image sync',
-      projectPath: '/repo',
-      agentType: 'codex',
-      worktreePath: '/repo/.switchboard/worktrees/images',
-      worktreeBranch: 'sb/images',
-    }
-    const database = {
-      prepare(source: string) {
-        sql = source
-        return {
-          all(...values: unknown[]) {
-            params = values
-            return [row]
-          },
-        }
-      },
-    }
+let db: Database.Database
+let rowSeq = 0
 
-    expect(searchMessagesInDatabase(database as never, 'needle', 500)).toEqual([row])
-    expect(sql).toContain('COALESCE(root.id, m.conversation_id) as conversationId')
-    expect(sql).toContain('COALESCE(root.title, c.title) as conversationTitle')
-    expect(sql).toContain('COALESCE(root.project_path, c.project_path) as projectPath')
-    expect(sql).toContain('COALESCE(root.agent_type, c.agent_type) as agentType')
-    expect(sql).toContain('CASE WHEN root.id IS NOT NULL THEN root.worktree_path ELSE c.worktree_path END as worktreePath')
-    expect(sql).toContain('CASE WHEN root.id IS NOT NULL THEN root.worktree_branch ELSE c.worktree_branch END as worktreeBranch')
-    expect(sql).toMatch(/as worktreeBranch,\s+snippet\(messages_fts/)
-    expect(sql).toContain("COALESCE(root.sidebar_role, c.sidebar_role) = 'managed'")
-    expect(sql).toContain('COALESCE(root.archived, c.archived) = 0')
-    expect(params).toEqual(['needle', 50])
+function insert(id: string, conversationId: string, content: string, timestamp = 1_000 + rowSeq, role = 'assistant') {
+  rowSeq += 1
+  db.prepare('INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)')
+    .run(id, conversationId, role, content, timestamp)
+}
+
+const ids = (query: string) => searchMessagesInDatabase(db, query).map((r) => r.messageId)
+
+beforeEach(() => {
+  db = createMigratedDb()
+  rowSeq = 0
+  addProject('/repo', 'repo')
+  createConversation('t1', '/repo', 'claude-code', 'Fix sync jitter')
+  createConversation('t2', '/repo', 'codex', 'Notebook engine')
+})
+
+describe('message search matching', () => {
+  it('matches each word as a prefix, in any order', () => {
+    insert('a1', 't1', 'The syncing worker logs the jitter it chose')
+    insert('a2', 't2', 'Nothing relevant here')
+    expect(ids('sync jit')).toEqual(['a1'])
+    expect(ids('jitter sync')).toEqual(['a1'])
+  })
+
+  it('requires every word', () => {
+    insert('a1', 't1', 'sync backoff')
+    insert('a2', 't1', 'sync jitter')
+    expect(ids('sync jitter')).toEqual(['a2'])
+  })
+
+  it.each([
+    ['fix-jitter', 'a1'],
+    ['"jitter"', 'a1'],
+    ['(jitter OR', 'a1'],
+    ['jitter AND NOT', 'a1'],
+    ['C:\\jitter', 'a2'],
+    ['foo.ts', 'a3'],
+    ['^jitter*', 'a1'],
+    ['fix:jitter', 'a1'],
+    ['NEAR(jitter', 'a1'],
+  ])('searches the words of %s without an FTS syntax error', (query, expected) => {
+    insert('a1', 't1', 'fix the jitter now')
+    insert('a2', 't1', 'path C:\\jitter\\file')
+    insert('a3', 't2', 'edit foo.ts please')
+    const results = searchMessagesInDatabase(db, query)
+    expect(results.map((r) => r.messageId)).toContain(expected)
+    // Only the FTS path ranks rows; the LIKE fallback does not.
+    expect(results.every((r) => typeof r.rank === 'number')).toBe(true)
+  })
+
+  it('returns nothing for a query with no words', () => {
+    insert('a1', 't1', 'anything')
+    expect(searchMessagesInDatabase(db, '"* - ()')).toEqual([])
+    expect(searchMessagesInDatabase(db, 'AND OR')).toEqual([])
+  })
+
+  it('highlights matches with control markers that markdown cannot produce', () => {
+    insert('a1', 't1', 'a **bold** word and the jitter')
+    const [hit] = searchMessagesInDatabase(db, 'jitter')
+    expect(hit.snippetMarked).toContain(`${SNIPPET_MARK_OPEN}jitter${SNIPPET_MARK_CLOSE}`)
+    expect(hit.snippet).toContain('**jitter**')
+  })
+
+  it('scans the messages when the FTS index itself fails', () => {
+    insert('a1', 't1', 'fix the jitter now')
+    insert('a2', 't1', 'fix only')
+    db.exec('DROP TABLE messages_fts')
+    const results = searchMessagesInDatabase(db, 'fix jitter')
+    expect(results.map((r) => r.messageId)).toEqual(['a1'])
+    expect(results[0].rank).toBeUndefined()
+  })
+
+  it('does not let newer interior-only matches fill the fallback limit and hide an older word match', () => {
+    // LIKE '%cat%' matches "concatenate" too, but it is not a word-prefix
+    // match for "cat". Fill the default 50-row limit with newer rows like
+    // that, then put the one real match further back in time; a fallback
+    // that applies LIMIT before the word-prefix filter returns nothing.
+    for (let i = 0; i < 60; i++) insert(`decoy${i}`, 't1', 'concatenate the buffers', 10_000 + i)
+    insert('real', 't1', 'the cat sat here', 1_000)
+    db.exec('DROP TABLE messages_fts')
+    const results = searchMessagesInDatabase(db, 'cat')
+    expect(results.map((r) => r.messageId)).toEqual(['real'])
+  })
+
+  it('stops scanning the fallback after many pages of no matches, rather than scanning forever', () => {
+    for (let i = 0; i < 5_000; i++) insert(`decoy${i}`, 't1', 'concatenate the buffers', 10_000 + i)
+    db.exec('DROP TABLE messages_fts')
+    const results = searchMessagesInDatabase(db, 'cat')
+    expect(results).toEqual([])
+  })
+
+  it('leaves stored task notices out of the results', () => {
+    insert('a1', 't1', 'The build failed with exit code 2')
+    insert(storedTaskNoticeId('t1', 'task_u1'), 't1', '<task-notification>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>', 2_000, 'user')
+    expect(ids('failed')).toEqual(['a1'])
   })
 })
 
-describe('message search over a real index', () => {
-  it('leaves stored task notices out of the results', () => {
-    const db = new Database(':memory:')
-    db.exec(`
-      CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT, project_path TEXT, agent_type TEXT,
-        worktree_path TEXT, worktree_branch TEXT, sidebar_role TEXT, archived INTEGER);
-      CREATE TABLE thread_sessions (claude_session_id TEXT, thread_id TEXT);
-      CREATE TABLE messages (id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT, content TEXT);
-      CREATE VIRTUAL TABLE messages_fts USING fts5(content, conversation_id, role);
-      INSERT INTO conversations VALUES ('t1', 'Build', '/repo', 'claude', NULL, NULL, 'managed', 0);
-    `)
-    const insert = (id: string, role: string, content: string) => {
-      const { lastInsertRowid } = db.prepare('INSERT INTO messages VALUES (?, ?, ?, ?)').run(id, 't1', role, content)
-      db.prepare('INSERT INTO messages_fts(rowid, content, conversation_id, role) VALUES (?, ?, ?, ?)').run(lastInsertRowid, content, 't1', role)
-    }
-    insert('a1', 'assistant', 'The build failed with exit code 2')
-    insert(storedTaskNoticeId('t1', 'task_u1'), 'user', '<task-notification>\n<status>failed</status>\n<summary>Build failed</summary>\n</task-notification>')
+describe('message search result fields', () => {
+  it('names the chat, project, agent and time, routed to the root thread', () => {
+    db.prepare('INSERT INTO conversations (id, project_path, agent_type, title, sidebar_role) VALUES (?, ?, ?, ?, ?)')
+      .run('rotated', '/repo', 'claude-code', 'stale', 'recovery')
+    db.prepare('INSERT INTO thread_sessions (thread_id, claude_session_id) VALUES (?, ?)').run('t1', 'rotated')
+    insert('a1', 'rotated', 'the durable needle', 5_000)
+    const [hit] = searchMessagesInDatabase(db, 'needle')
+    expect(hit).toMatchObject({
+      messageId: 'a1',
+      conversationId: 't1',
+      conversationTitle: 'Fix sync jitter',
+      projectPath: '/repo',
+      agentType: 'claude-code',
+      timestamp: 5_000,
+      archived: false,
+      phraseMatch: true,
+    })
+    expect(typeof hit.rank).toBe('number')
+  })
+})
 
-    expect(searchMessagesInDatabase(db, 'failed').map((r) => r.messageId)).toEqual(['a1'])
-    db.close()
+describe('archived chats', () => {
+  beforeEach(() => {
+    insert('live', 't1', 'deploy notes')
+    insert('old', 't2', 'deploy notes')
+    archiveConversation('t2')
+  })
+
+  it('are left out by default', () => {
+    expect(ids('deploy')).toEqual(['live'])
+  })
+
+  it.each(['archived deploy', 'deploy Archive', 'ARCHIVED deploy'])('are included and marked for %s', (query) => {
+    const results = searchMessagesInDatabase(db, query)
+    expect(results.map((r) => r.messageId).sort()).toEqual(['live', 'old'])
+    expect(results.find((r) => r.messageId === 'old')?.archived).toBe(true)
+    expect(results.find((r) => r.messageId === 'live')?.archived).toBe(false)
+  })
+
+  it('do not search for the word archived itself', () => {
+    insert('word', 't1', 'the archived flag')
+    expect(ids('archived deploy')).not.toContain('word')
+  })
+})
+
+describe('message search order', () => {
+  it('puts an exact phrase match above scattered words', () => {
+    insert('scattered', 't1', 'sync the files, then measure the jitter', 9_000)
+    insert('phrase', 't2', 'the sync jitter is fixed in the worker today', 1_000)
+    expect(ids('sync jitter')).toEqual(['phrase', 'scattered'])
+  })
+
+  it('puts the newer message first among equally relevant ones', () => {
+    insert('older', 't1', 'restart the queue worker', 1_000)
+    insert('newer', 't2', 'restart the queue worker', 2_000)
+    expect(ids('queue')).toEqual(['newer', 'older'])
+  })
+
+  it('keeps clearly more relevant messages above newer ones', () => {
+    insert('dense', 't1', 'cache cache cache', 1_000)
+    insert('sparse', 't2', `cache ${'filler words that dilute the match '.repeat(30)}`, 9_000)
+    expect(ids('cache')).toEqual(['dense', 'sparse'])
+  })
+})
+
+describe('message search phrase candidates', () => {
+  it('finds an adjacent match that more relevant scattered matches would crowd out', () => {
+    // bm25 favours the short scattered rows, so they fill every ordinary candidate slot.
+    for (let i = 0; i < 4; i += 1) insert(`s${i}`, 't1', 'jitter sync')
+    insert('p1', 't2', `${'filler words here '.repeat(40)}sync jitter`)
+    expect(searchMessagesInDatabase(db, 'sync jitter', 1).map((r) => r.messageId)).toEqual(['p1'])
   })
 })
